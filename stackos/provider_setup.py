@@ -12,7 +12,7 @@ _URL_FIELDS = (
     ("homepage_url", "Homepage", "provider_homepage"),
     ("signup_url", "Register", "provider_registration"),
     ("console_url", "Console", "provider_console"),
-    ("api_key_url", "API key", "provider_api_key"),
+    ("credential_url", "Credentials", "provider_credential"),
     ("billing_url", "Billing", "provider_billing"),
     ("docs_url", "Docs", "provider_docs"),
     ("support_url", "Support", "provider_support"),
@@ -32,7 +32,7 @@ _SETUP_URL_KEYS = frozenset(
         "homepage_url",
         "signup_url",
         "console_url",
-        "api_key_url",
+        "credential_url",
         "billing_url",
         "docs_url",
         "support_url",
@@ -69,7 +69,7 @@ class ProviderSetupOut(BaseModel):
     homepage_url: str | None = None
     signup_url: str | None = None
     console_url: str | None = None
-    api_key_url: str | None = None
+    credential_url: str | None = None
     billing_url: str | None = None
     docs_url: str | None = None
     support_url: str | None = None
@@ -114,7 +114,7 @@ def build_provider_setup(
         "homepage_url": _clean_url(setup.get("homepage_url")),
         "signup_url": _clean_url(setup.get("signup_url")),
         "console_url": _clean_url(setup.get("console_url")),
-        "api_key_url": _clean_url(setup.get("api_key_url")),
+        "credential_url": _clean_url(setup.get("credential_url")),
         "billing_url": _clean_url(setup.get("billing_url")),
         "docs_url": docs_url,
         "support_url": _clean_url(setup.get("support_url")),

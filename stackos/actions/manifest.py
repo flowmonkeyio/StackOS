@@ -85,6 +85,7 @@ class ExecutableActionManifest(BaseModel):
     operation: str
     requires_credential: bool = False
     allows_credential: bool = False
+    required_scopes: list[str] = Field(default_factory=list)
     budget_kind: str | None = None
     enforce_budget: bool = False
 
@@ -137,6 +138,14 @@ def parse_action_manifest(
         raise ValidationError("action manifest allows_credential must be a boolean")
     if requires_credential and not allows_credential:
         raise ValidationError("action manifest cannot require and disallow credentials")
+    raw_required_scopes = config.get("required_scopes") or []
+    if not isinstance(raw_required_scopes, list) or any(
+        not isinstance(scope, str) or not scope.strip() for scope in raw_required_scopes
+    ):
+        raise ValidationError("action manifest required_scopes must be a list of strings")
+    required_scopes = sorted({scope.strip() for scope in raw_required_scopes})
+    if required_scopes and not requires_credential:
+        raise ValidationError("action manifest scopes require a credential")
     budget_kind = config.get("budget_kind")
     if budget_kind is not None and not isinstance(budget_kind, str):
         raise ValidationError("action manifest budget_kind must be a string")
@@ -176,6 +185,7 @@ def parse_action_manifest(
         operation=operation,
         requires_credential=requires_credential,
         allows_credential=allows_credential,
+        required_scopes=required_scopes,
         budget_kind=resolved_budget_kind,
         enforce_budget=enforce_budget,
     )

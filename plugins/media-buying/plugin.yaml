@@ -31,6 +31,34 @@ providers:
     description: Meta Marketing API provider contract for ad accounts, campaigns, ad sets, ads, creatives, and insights.
     auth_type: oauth
     auth_methods:
+      - key: oauth2_authorization_code
+        label: Connect with Meta
+        auth_type: oauth
+        interactive: true
+        payload_format: json
+        fields:
+        - key: client_id
+          label: Meta App ID
+          type: secret
+          secret: true
+          required: true
+        - key: client_secret
+          label: Meta App Secret
+          type: secret
+          secret: true
+          required: true
+        - key: business_ref
+          label: Business Ref
+          type: text
+          secret: false
+          required: false
+          placeholder: business or portfolio reference
+        - key: api_version
+          label: API Version
+          type: text
+          secret: false
+          required: false
+          placeholder: v25.0
       - key: oauth2_token
         label: OAuth2 access token
         auth_type: oauth
@@ -54,13 +82,17 @@ providers:
           required: false
           placeholder: v25.0
     config:
+      scopes:
+        - ads_management
+        - ads_read
+        - business_management
       setup:
         credential_label: Meta Marketing API OAuth access token
-        setup_note: Create/select a Meta developer app and Business portfolio, grant Marketing API permissions, then store the access token and safe account refs in StackOS.
+        setup_note: Create/select a Meta developer app and Business portfolio, register the fixed StackOS callback, grant the declared Marketing API permissions, then use Connect with Meta. StackOS exchanges the short-lived login token for a long-lived user token.
         homepage_url: https://www.facebook.com/business/ads
         signup_url: https://www.facebook.com/business/tools/ads-manager
         console_url: https://developers.facebook.com/apps/
-        api_key_url: https://developers.facebook.com/apps/
+        credential_url: https://developers.facebook.com/apps/
         billing_url: https://business.facebook.com/billing_hub
         docs_url: https://developers.facebook.com/docs/marketing-api
         fallback_url: https://developers.facebook.com/docs/marketing-api
@@ -70,7 +102,7 @@ providers:
           homepage_url: verified
           signup_url: directional
           console_url: verified
-          api_key_url: directional
+          credential_url: directional
           billing_url: directional
           docs_url: verified
           fallback_url: verified
@@ -79,6 +111,39 @@ providers:
     description: Google Ads API provider contract for customers, budgets, campaigns, ad groups, assets, ads, reporting, and conversions.
     auth_type: oauth
     auth_methods:
+      - key: oauth2_authorization_code
+        label: Connect with Google
+        auth_type: oauth
+        interactive: true
+        payload_format: json
+        fields:
+        - key: developer_token
+          label: Developer Token
+          type: secret
+          secret: true
+          required: true
+        - key: client_id
+          label: OAuth Client ID
+          type: secret
+          secret: true
+          required: true
+        - key: client_secret
+          label: OAuth Client Secret
+          type: secret
+          secret: true
+          required: true
+        - key: manager_account_ref
+          label: Manager Account Ref
+          type: text
+          secret: false
+          required: false
+          placeholder: safe manager account reference
+        - key: customer_ref
+          label: Customer Ref
+          type: text
+          secret: false
+          required: false
+          placeholder: safe customer account reference
       - key: oauth2_refresh_token
         label: OAuth2 refresh token
         auth_type: oauth
@@ -123,7 +188,7 @@ providers:
         homepage_url: https://ads.google.com/home/
         signup_url: https://ads.google.com/home/
         console_url: https://ads.google.com/aw/apicenter
-        api_key_url: https://ads.google.com/aw/apicenter
+        credential_url: https://ads.google.com/aw/apicenter
         billing_url: https://ads.google.com/aw/billing/summary
         docs_url: https://developers.google.com/google-ads/api/docs/start
         verified_at: "2026-06-11"
@@ -131,17 +196,17 @@ providers:
           homepage_url: verified
           signup_url: verified
           console_url: verified
-          api_key_url: verified
+          credential_url: verified
           billing_url: verified
           docs_url: verified
   - key: outbrain
     name: Outbrain
     description: Outbrain Amplify provider contract. OB-TOKEN-V1 generation, storage, expiry checks, and rotation stay daemon-side.
-    auth_type: api-key
+    auth_type: ob-token-v1
     auth_methods:
       - key: ob_token_v1
         label: OB-TOKEN-V1
-        auth_type: api-key
+        auth_type: ob-token-v1
         payload_format: raw
         payload_field: token
         fields:
@@ -173,7 +238,7 @@ providers:
         homepage_url: https://www.outbrain.com/
         signup_url: https://my.outbrain.com/
         console_url: https://my.outbrain.com/
-        api_key_url: https://amplifyv01.docs.apiary.io/
+        credential_url: https://amplifyv01.docs.apiary.io/
         docs_url: https://amplifyv01.docs.apiary.io/
         fallback_url: https://amplifyv01.docs.apiary.io/
         fallback_reason: Exact token and billing pages are login-gated; official API docs are the closest public setup target.
@@ -182,13 +247,13 @@ providers:
           homepage_url: verified
           signup_url: directional
           console_url: directional
-          api_key_url: directional
+          credential_url: directional
           docs_url: verified
           fallback_url: verified
   - key: taboola
     name: Taboola
     description: Taboola Backstage API provider contract for account-scoped campaigns, items, reports, and conversion rules.
-    auth_type: oauth
+    auth_type: oauth-client-credentials
     auth_methods:
       - key: client_credentials
         label: Client credentials
@@ -218,7 +283,7 @@ providers:
         homepage_url: https://www.taboola.com/
         signup_url: https://signup.realize.com/
         console_url: https://developers.taboola.com/backstage-api/reference/welcome
-        api_key_url: https://developers.taboola.com/backstage-api/reference/welcome
+        credential_url: https://developers.taboola.com/backstage-api/reference/welcome
         docs_url: https://developers.taboola.com/backstage-api/reference/welcome
         fallback_url: https://developers.taboola.com/backstage-api/reference/welcome
         fallback_reason: Exact client-credential and billing pages can be account-gated; official Backstage docs are the closest public setup path.
@@ -227,7 +292,7 @@ providers:
           homepage_url: verified
           signup_url: verified
           console_url: verified
-          api_key_url: directional
+          credential_url: directional
           docs_url: verified
           fallback_url: verified
   - key: custom-media-tool
@@ -275,6 +340,8 @@ actions:
       connector: meta-ads
       operation: account.list
       requires_credential: true
+      required_scopes:
+        - ads_read
   - key: meta.campaign.create
     name: Create Meta Campaign
     description: Create a Meta campaign from an explicit agent-supplied campaign object.
@@ -314,6 +381,8 @@ actions:
       connector: meta-ads
       operation: campaign.create
       requires_credential: true
+      required_scopes:
+        - ads_management
   - key: meta.campaign.update
     name: Update Meta Campaign
     description: Update a Meta campaign from an explicit change object.
@@ -340,6 +409,8 @@ actions:
       connector: meta-ads
       operation: campaign.update
       requires_credential: true
+      required_scopes:
+        - ads_management
   - key: meta.campaign.pause
     name: Pause Meta Campaign
     description: Pause a Meta campaign by safe campaign reference.
@@ -362,6 +433,8 @@ actions:
       connector: meta-ads
       operation: campaign.pause
       requires_credential: true
+      required_scopes:
+        - ads_management
   - key: meta.campaign.resume
     name: Resume Meta Campaign
     description: Resume a Meta campaign by safe campaign reference.
@@ -375,6 +448,8 @@ actions:
       connector: meta-ads
       operation: campaign.resume
       requires_credential: true
+      required_scopes:
+        - ads_management
   - key: meta.ad_set.create
     name: Create Meta Ad Set
     description: Create a Meta ad set from explicit targeting, placement, budget, and schedule input.
@@ -420,6 +495,8 @@ actions:
       connector: meta-ads
       operation: ad_set.create
       requires_credential: true
+      required_scopes:
+        - ads_management
   - key: meta.ad_set.update
     name: Update Meta Ad Set
     description: Update a Meta ad set from an explicit change object.
@@ -444,6 +521,8 @@ actions:
       connector: meta-ads
       operation: ad_set.update
       requires_credential: true
+      required_scopes:
+        - ads_management
   - key: meta.ad_creative.create
     name: Create Meta Ad Creative
     description: Create a Meta AdCreative object from explicit copy, asset refs, and destination metadata.
@@ -485,6 +564,8 @@ actions:
       connector: meta-ads
       operation: ad_creative.create
       requires_credential: true
+      required_scopes:
+        - ads_management
   - key: meta.asset.upload
     name: Upload Meta Asset
     description: Upload or register a Meta creative asset from safe asset refs before AdCreative creation.
@@ -557,6 +638,8 @@ actions:
       connector: meta-ads
       operation: ad.create
       requires_credential: true
+      required_scopes:
+        - ads_management
   - key: meta.ad.update
     name: Update Meta Ad
     description: Update a Meta ad from an explicit change object.
@@ -581,6 +664,8 @@ actions:
       connector: meta-ads
       operation: ad.update
       requires_credential: true
+      required_scopes:
+        - ads_management
   - key: meta.insights.fetch
     name: Fetch Meta Insights
     description: Fetch a bounded Meta performance snapshot for an agent-selected scope.
@@ -624,6 +709,8 @@ actions:
       connector: meta-ads
       operation: insights.fetch
       requires_credential: true
+      required_scopes:
+        - ads_read
   - key: meta.campaign_budget.update
     name: Update Meta Campaign Budget
     description: Apply an explicit campaign-budget-optimization budget change to a Meta campaign reference.
@@ -650,6 +737,8 @@ actions:
       connector: meta-ads
       operation: campaign_budget.update
       requires_credential: true
+      required_scopes:
+        - ads_management
   - key: meta.ad_set_budget.update
     name: Update Meta Ad Set Budget
     description: Apply an explicit ad set budget change to a Meta ad set reference.
@@ -676,6 +765,8 @@ actions:
       connector: meta-ads
       operation: ad_set_budget.update
       requires_credential: true
+      required_scopes:
+        - ads_management
   - key: meta.conversions.send
     name: Send Meta Conversion Events
     description: Send approved Meta conversion events that are already normalized for the Conversions API.
@@ -722,6 +813,8 @@ actions:
       connector: meta-ads
       operation: conversions.send
       requires_credential: true
+      required_scopes:
+        - ads_management
   - key: google.customer.list
     name: List Google Ads Customers
     description: Read accessible Google Ads customer metadata for the configured credential.
@@ -735,6 +828,8 @@ actions:
       connector: google-ads
       operation: customer.list
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/adwords
   - key: google.campaign_budget.create
     name: Create Google Campaign Budget
     description: Create a Google Ads campaign budget from explicit budget fields and safe customer refs.
@@ -759,6 +854,8 @@ actions:
       connector: google-ads
       operation: campaign_budget.create
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/adwords
   - key: google.campaign_budget.update
     name: Update Google Campaign Budget
     description: Update a Google Ads campaign budget from explicit budget changes.
@@ -790,6 +887,8 @@ actions:
       connector: google-ads
       operation: campaign_budget.update
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/adwords
   - key: google.campaign.create
     name: Create Google Campaign
     description: Create a Google Ads campaign from an explicit campaign object and campaign budget ref.
@@ -820,6 +919,8 @@ actions:
       connector: google-ads
       operation: campaign.create
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/adwords
   - key: google.ad_group.create
     name: Create Google Ad Group
     description: Create a Google Ads ad group from explicit bidding, targeting, and status fields.
@@ -849,6 +950,8 @@ actions:
       connector: google-ads
       operation: ad_group.create
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/adwords
   - key: google.asset.create
     name: Create Google Asset
     description: Create a Google Ads asset from an explicit provider-native asset object.
@@ -873,6 +976,8 @@ actions:
       connector: google-ads
       operation: asset.create
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/adwords
   - key: google.ad_group_ad.create
     name: Create Google Ad Group Ad
     description: Create a Google Ads ad group ad from explicit ad content and safe asset refs.
@@ -902,6 +1007,8 @@ actions:
       connector: google-ads
       operation: ad_group_ad.create
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/adwords
   - key: google.report.search
     name: Search Google Ads Report
     description: Run a bounded Google Ads reporting search from explicit GAQL or query parts and paging controls.
@@ -927,6 +1034,8 @@ actions:
       connector: google-ads
       operation: report.search
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/adwords
   - key: google.conversion_action.create
     name: Create Google Conversion Action
     description: Create a Google Ads conversion action from explicit tracking and attribution fields.
@@ -951,6 +1060,8 @@ actions:
       connector: google-ads
       operation: conversion_action.create
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/adwords
   - key: google.conversion_upload.clicks
     name: Upload Google Click Conversions
     description: Upload approved Google Ads click conversions from safe event refs and daemon-side PII handling.
@@ -985,6 +1096,8 @@ actions:
       connector: google-ads
       operation: conversion_upload.clicks
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/adwords
   - key: outbrain.campaign.create
     name: Create Outbrain Campaign
     description: Create an Outbrain campaign from an explicit marketer-scoped campaign object.

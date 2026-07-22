@@ -64,6 +64,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Auth Oauth Callback
+         * @description Complete one bound OAuth transaction and immediately leave the callback URL.
+         */
+        get: operations["auth_oauth_callback_api_v1_auth_oauth_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/providers": {
         parameters: {
             query?: never;
@@ -2036,8 +2056,6 @@ export interface components {
             redirect_uri?: string | null;
             /** Setup Url */
             setup_url?: string | null;
-            /** State */
-            state?: string | null;
             /** Status */
             status: string;
         };
@@ -2045,14 +2063,15 @@ export interface components {
          * AuthStartRequest
          * @description Local-admin setup request. It never carries a secret.
          * @example {
-         *       "auth_method_key": "oauth2"
+         *       "auth_method_key": "oauth2",
+         *       "credential_ref": "cred_..."
          *     }
          */
         AuthStartRequest: {
             /** Auth Method Key */
             auth_method_key?: string | null;
-            /** Redirect Uri */
-            redirect_uri?: string | null;
+            /** Credential Ref */
+            credential_ref?: string | null;
         };
         /** AuthStatusOut */
         AuthStatusOut: {
@@ -3557,14 +3576,14 @@ export interface components {
          * @description Sanitized setup guidance for connecting a provider.
          */
         ProviderSetupOut: {
-            /** Api Key Url */
-            api_key_url?: string | null;
             /** Billing Url */
             billing_url?: string | null;
             /** Console Url */
             console_url?: string | null;
             /** Credential Label */
             credential_label?: string | null;
+            /** Credential Url */
+            credential_url?: string | null;
             /** Docs Url */
             docs_url?: string | null;
             /** Fallback Reason */
@@ -5165,6 +5184,38 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ArtifactOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_oauth_callback_api_v1_auth_oauth_callback_get: {
+        parameters: {
+            query?: {
+                state?: string | null;
+                code?: string | null;
+                error?: string | null;
+                error_description?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            303: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

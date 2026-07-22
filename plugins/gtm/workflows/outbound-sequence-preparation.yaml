@@ -145,7 +145,7 @@ auth_requirements:
     optional: true
   - key: salesloft
     provider: salesloft
-    auth_type: oauth
+    auth_type: oauth-or-api-key
     optional: true
   - key: google_workspace
     provider: google-workspace

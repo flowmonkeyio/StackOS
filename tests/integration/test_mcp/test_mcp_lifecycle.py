@@ -14,6 +14,7 @@ from .conftest import MCPClient
 # Update intentionally when adding generic StackOS MCP tools.
 EXPECTED_NAMESPACE_COUNTS = {
     "action": 5,
+    "actionCall": 1,
     "agentPreset": 3,
     "agentRequest": 9,
     "artifact": 7,
@@ -51,6 +52,7 @@ EXPECTED_NAMESPACE_COUNTS = {
     "runPlan": 13,
     "schedule": 4,
     "schema": 1,
+    "secret": 1,
     "sitemap": 1,
     "skillPreset": 3,
     "toolProfile": 1,

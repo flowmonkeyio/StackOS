@@ -298,7 +298,7 @@ def test_action_describe_reports_project_availability(
     assert described["provider_setup"]["local_setup_url"].endswith(
         f"/projects/{project_id}/connections?provider_key=openai-images"
     )
-    assert described["provider_setup"]["api_key_url"] == "https://platform.openai.com/api-keys"
+    assert described["provider_setup"]["credential_url"] == "https://platform.openai.com/api-keys"
     assert described["provider_setup"]["billing_url"].startswith("https://platform.openai.com/")
     assert described["execution_context"]["discover"]["operation"] == "executionContext.discover"
     assert described["execution_context"]["discover"]["arguments"] == {
@@ -513,9 +513,9 @@ def test_integration_list_summarizes_hidden_external_actions(
     assert row["setup"]["local_setup_url"].endswith(
         f"/projects/{project_id}/connections?provider_key=openai-images"
     )
-    assert row["setup"]["api_key_url"] == "https://platform.openai.com/api-keys"
+    assert row["setup"]["credential_url"] == "https://platform.openai.com/api-keys"
     assert row["setup"]["docs_url"].endswith("/image-generation")
-    assert row["next_action"]["setup"]["api_key_url"] == "https://platform.openai.com/api-keys"
+    assert row["next_action"]["setup"]["credential_url"] == "https://platform.openai.com/api-keys"
     assert any(action["action_ref"] == "utils.image.generate" for action in row["actions"])
 
 

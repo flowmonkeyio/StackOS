@@ -33,6 +33,7 @@ touches committed UI assets.
 | Workspace-bound MCP bootstrap | The bridge resolves the current project, injects `project_id`, and rejects cross-project calls. | `uv run pytest tests/integration/test_mcp/test_mcp_workspaces.py tests/integration/test_mcp/test_mcp_bridge_agent_path.py tests/unit/test_mcp_bridge.py -q` |
 | MCP operation discovery | Agents can inspect OperationSpec purpose, schemas, grants, examples, and toolbox categories from MCP. | `uv run pytest tests/unit/test_mcp_bridge.py tests/unit/test_operations_registry.py -q` |
 | Auth/profile resolution | Agents see safe credential refs/status only, never secrets, and `toolProfile.resolve` gives repair guidance. | `uv run pytest tests/integration/test_mcp/test_mcp_communications.py::test_tool_profile_resolve_telegram_profile_returns_safe_tuple tests/integration/test_repositories/test_auth_providers.py -q` |
+| OAuth lifecycle and Connections | Fixed callback/state/PKCE, provider exchanges, renewal/client credentials, scope gates, sanitized failures, and the one-action Connect UI stay aligned. | `uv run pytest tests/integration/test_repositories/test_oauth_lifecycle.py tests/integration/test_routes/test_auth_provider_routes.py tests/integration/test_repositories/test_auth_providers.py -q`<br>`pnpm --dir ui exec vitest run src/views/ConnectionsView.credentials.spec.ts` |
 | Direct action execution | `action.describe/validate/run` and direct dry-runs use the same connector/auth/audit path. | `uv run pytest tests/integration/test_mcp/test_mcp_actions.py tests/integration/test_routes/test_cli_mock_provider.py -q` |
 | Workflow/run-plan execution | `runPlan.validate/create/start/claimStep/recordStep`, step grants, and non-executable warnings behave predictably. | `uv run pytest tests/unit/test_run_plan_schema.py tests/integration/test_mcp/test_mcp_run_plans.py tests/integration/test_mcp/test_mcp_tool_grants.py -q` |
 | Tracker task/ticket workflow | Bulk create/review/update, dependency previews, compact reads, history, and verification stay agent-friendly. | `uv run pytest tests/integration/test_mcp/test_mcp_tracker.py tests/integration/test_repositories/test_tracker.py tests/unit/test_operation_responses.py tests/unit/test_operations_registry.py -q` |
@@ -59,6 +60,18 @@ uv run pytest \
   tests/integration/test_routes/test_slack_ingress_routes.py \
   tests/integration/test_repositories/test_agent_requests.py::test_agent_request_prepare_run_plan_is_atomic_and_links_request \
   -q
+```
+
+For OAuth core, provider-contract, callback, and Connections changes, run:
+
+```bash
+uv run pytest \
+  tests/integration/test_repositories/test_oauth_lifecycle.py \
+  tests/integration/test_routes/test_auth_provider_routes.py \
+  tests/integration/test_repositories/test_auth_providers.py \
+  -q
+pnpm --dir ui exec vitest run src/views/ConnectionsView.credentials.spec.ts
+npm --prefix workers/oauth-callback-relay test
 ```
 
 For provider connector changes, `make signoff` includes the integration wrapper

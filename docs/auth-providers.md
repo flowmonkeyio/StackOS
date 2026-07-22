@@ -78,7 +78,7 @@ schema directly:
 Provider manifests also declare safe self-service setup metadata under
 `config.setup`. It is not credential material. It may include
 `credential_label`, `setup_note`, official `homepage_url`, `signup_url`,
-`console_url`, `api_key_url`, `billing_url`, `docs_url`, `support_url`,
+`console_url`, `credential_url`, `billing_url`, `docs_url`, `support_url`,
 `fallback_url`, `fallback_reason`, per-field `url_confidence`, and
 `verified_at`. If an exact API-key or billing page is not publicly verifiable,
 use the closest official homepage/docs/console URL and mark that field
@@ -101,19 +101,151 @@ untyped secret blob route is not part of the public contract.
 
 ## OAuth Providers
 
-OAuth providers use the same no-secret boundary, but OAuth execution is
-provider-specific:
+OAuth uses one daemon-owned lifecycle plus a small trusted contract for each
+provider. The shared lifecycle owns transaction state, callback handling, token
+storage, refresh/acquisition, scope enforcement, concurrency, audit, and safe
+failure behavior. A provider contract supplies only protocol facts such as its
+authorization/token endpoints, consent scopes, client-auth style, PKCE mode,
+fixed authorization parameters, trusted response metadata, and an exceptional
+post-exchange hook when the provider actually requires one. Connectors receive
+an already-usable credential; they do not implement OAuth.
 
-- provider manifests can declare an interactive OAuth-style auth method
-- provider code owns the authorization URL, callback validation, token exchange,
-  refresh, scopes, and safe account metadata
-- `oauth_states` is generic infrastructure for provider flows, not a complete
-  provider-neutral OAuth implementation by itself
-- callback and refresh audit metadata must be redacted before persistence
+### Operator OAuth Quick Guide
 
-If a provider does not implement a full start/callback/refresh path, its
-manifest should say so through setup notes or an explicit deferred state rather
-than implying OAuth is ready.
+StackOS currently uses bring-your-own OAuth applications. For each interactive
+provider, an operator first creates or selects an application in that provider's
+developer console and registers StackOS's exact callback URI.
+
+The provider-by-provider console walkthrough, scope ledger, and static
+Cloudflare Pages callback design live in
+[`oauth-provider-setup.md`](./oauth-provider-setup.md). Its upload-ready source
+exists under `workers/oauth-callback-relay/public`, but it is not deployed. The
+page uses browser navigation to reach this same existing callback route on
+loopback; it does not add a Worker, Pages Function, separate completion route,
+or OAuth lifecycle. The current callback behavior below remains the runtime
+truth.
+
+The default local callback URI is:
+
+```text
+http://127.0.0.1:5180/api/v1/auth/oauth/callback
+```
+
+Providers that require a public HTTPS callback can use the operator-controlled
+Pages origin configured with `STACKOS_OAUTH_CALLBACK_BASE_URL`:
+
+```text
+STACKOS_OAUTH_CALLBACK_BASE_URL=https://auth.stackos.flowmonkey.io
+https://auth.stackos.flowmonkey.io/api/v1/auth/oauth/callback
+```
+
+That HTTPS page must navigate the callback to the fixed loopback StackOS route.
+The callback origin and local target are application-owned; a user, agent, or
+provider cannot select an arbitrary return path.
+
+The operator then completes this flow:
+
+1. Open `/projects/{project_id}/connections` in the StackOS UI and choose
+   **Add connection**.
+2. Select the provider and interactive OAuth method, enter the provider
+   application's client fields, and choose **Connect**.
+3. StackOS encrypts those fields, creates a short-lived one-use transaction,
+   and sends the browser to the provider's authorization page.
+4. The user signs in and approves the requested permissions at the provider.
+5. The provider returns the browser to the fixed StackOS callback. StackOS
+   validates the transaction, exchanges the code, encrypts the tokens, and
+   records provider-returned scopes and safe account metadata.
+6. StackOS returns the browser to the committed local UI at:
+
+   ```text
+   http://127.0.0.1:5180/projects/{project_id}/connections?oauth_status={status}&provider_key={provider_key}
+   ```
+
+   `{status}` is only `connected`, `denied`, `expired`, `repair-required`, or
+   `error`. The UI displays the result and immediately removes those query
+   fields. Provider codes, state, tokens, secrets, and error descriptions are
+   never placed in this URL.
+
+The canonical post-callback UI is the daemon-served UI on port `5180`, including
+when development uses the Vite UI on port `5173`. This local return assumes the
+OAuth flow was started in a browser on the same machine as StackOS.
+
+The authorization-code flow is:
+
+1. The local operator stores the provider application's required fields through
+   Connections. Secret fields remain encrypted; safe account/tenant fields stay
+   in credential config.
+2. `auth.start` accepts the provider, auth method, and opaque `credential_ref`.
+   It never accepts a caller-selected callback URL. StackOS uses the fixed
+   `/api/v1/auth/oauth/callback` route at the configured callback origin.
+3. StackOS creates a short-lived transaction bound to the project, provider,
+   credential profile, and auth method. Only a digest of the random state is
+   stored. Any PKCE verifier and pending application values remain encrypted.
+   Starting again consumes earlier uncompleted transactions for that profile.
+4. The exact public callback route consumes the state atomically, handles denial
+   or expiry, exchanges the code once, applies any provider hook, and stores the
+   normalized token payload. A failed reconnect preserves a still-active prior
+   credential; otherwise the connection becomes `repair-required`.
+5. Before an action runs, the resolver refreshes an expired authorization-code
+   token or acquires a client-credentials token when needed. A per-credential
+   async lock plus an `updated_at` compare-and-swap prevents concurrent requests
+   from overwriting newer token material. Generic profile editing exposes only
+   provider-declared setup fields; unchanged setup secrets retain the acquired
+   token and grants, while changed token/application material resets them.
+6. The resolver compares the action manifest's `required_scopes` with the
+   credential's known grants before connector dispatch. Missing or unknown
+   required scopes fail safely without calling the provider action.
+
+Callback, refresh, and acquisition failures are redacted in persisted audit and
+returned diagnostics. The callback immediately redirects with HTTP 303 to the
+local Connections page using only `connected`, `denied`, `expired`,
+`repair-required`, or `error`; provider codes, state, token values, and provider
+error descriptions are never forwarded into the UI URL. A timeout, network
+failure, rate limit, or provider 5xx during renewal leaves the stored credential
+retryable; only a terminal authorization failure such as `invalid_grant` moves
+it to `repair-required`.
+
+Manual OAuth-token methods remain supported for compatibility. A manual profile
+with a refresh token uses the same core renewal path when the provider contract
+supports it. Replacing manual token material clears any grants recorded for the
+old token. Provider-returned grants from a later exchange restore known scope
+state; StackOS does not invent grants when that response omits them. An
+access-token-only profile can be tested and can run actions with no declared
+scope requirement, but a scope-gated action fails closed until grants are known.
+Use the interactive method for the normal scope-gated path. This compatibility
+surface is not a second OAuth implementation.
+
+### Built-In OAuth Provider Matrix
+
+“Interactive” means StackOS implements start, fixed callback, exchange, and
+renewal for that provider. “Core client credentials” means the operator stores
+the application fields and StackOS acquires/renews the access token before
+dispatch. “Manual compatible” is an intentionally retained token-import method,
+not a claim that the operator must manage tokens for the interactive method or
+that an imported token bypasses the known-scope gate.
+
+| Provider | Current StackOS auth path | Provider-specific contract notes | Action scope gate |
+| --- | --- | --- | --- |
+| Google Ads | Interactive authorization code; manual refresh-token compatible | Shared Google endpoints; PKCE supported; offline consent | `adwords` |
+| Google Workspace | Interactive authorization code; manual token compatible | Shared Google endpoints; PKCE supported; offline consent | Gmail send and Calendar events |
+| Google Search Console | Interactive authorization code; manual access/refresh-token compatible | Shared Google endpoints; PKCE supported; offline consent | `webmasters.readonly` |
+| Google Analytics | Interactive authorization code; manual access/refresh-token compatible | Shared Google endpoints; PKCE supported; offline consent | `analytics.readonly` |
+| Google Tag Manager | Interactive authorization code; manual access/refresh-token compatible | Shared Google endpoints; PKCE supported; offline consent | `tagmanager.readonly` |
+| Meta Ads | Interactive authorization code; manual token compatible | Meta login exchange plus the required short-to-long-lived token exchange | Per-action `ads_read` / `ads_management` |
+| Microsoft 365 | Interactive authorization code; manual token compatible | Tenant-validated endpoints; PKCE required | Graph `Mail.Send` / `Calendars.ReadWrite` |
+| Outreach | Interactive authorization code; manual token compatible | Provider endpoints and consent scope | `sequenceStates.write` |
+| Pipedrive | Interactive authorization code; manual OAuth token or API-token alternative | HTTP Basic token exchange; trusted `api_domain` metadata | `deals:read` / `search:read` |
+| Salesforce | Interactive authorization code; manual token compatible | Production, sandbox, or validated My Domain; PKCE required; trusted `instance_url` | `api` |
+| Salesloft | Interactive authorization code; manual OAuth token or API-key alternative | Provider endpoints; body client authentication | `cadences:write` |
+| Taboola | Core client credentials | Body client authentication | No action-level scope declaration currently required |
+| Reddit | Core client credentials | HTTP Basic token acquisition; `user_agent` stays in the encrypted application payload | No action-level scope declaration currently required |
+| HubSpot | Manual OAuth token only | Existing actions remain available; interactive OAuth is explicitly outside this delivery | Existing action contracts |
+| X API | Manual OAuth token only | Provider actions are explicitly deferred | Not executable |
+| LinkedIn | Manual OAuth token only | Provider actions are explicitly deferred | Not executable |
+
+Do not add a provider subclass merely to repeat the generic flow. Add a trusted
+contract row for protocol data, and add dedicated code only for a real variant
+such as Meta's second exchange or trusted provider-specific response metadata.
 
 ## Connections UI Contract
 
@@ -128,6 +260,12 @@ The local Connections screen is service/account first:
   form used for create; prefill safe fields, leave secrets blank, and preserve
   an existing secret unless the operator supplies a replacement
 - setup panel: enabled-plugin providers only, rendered from `auth_methods`
+- interactive setup: one `Connect` action validates and stores the application
+  fields, calls `auth.start` with only the auth method and opaque
+  `credential_ref`, then navigates to the returned HTTPS authorization URL
+- callback result: a global callout renders `connected`, `denied`, `expired`,
+  `repair-required`, or `error`, and the UI clears callback query parameters
+  immediately after reading them
 - diagnostics: `auth.test` returns a sanitized result and records the same
   redacted outcome in the existing credential usage audit; a failed test does
   not disable the stored credential

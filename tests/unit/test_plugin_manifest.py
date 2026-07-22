@@ -16,6 +16,7 @@ from stackos.plugins.manifest import (
     load_plugin_manifest_file,
     load_plugin_manifest_files,
 )
+from stackos.provider_setup import build_provider_setup
 
 
 def _auth_field_keys(provider: ProviderManifest, method_key: str | None = None) -> list[str]:
@@ -58,6 +59,41 @@ def test_only_ftp_transfers_are_background_actions() -> None:
         for key, execution_mode in execution_modes.items()
         if key not in {"ftp.file.upload", "ftp.file.download"}
     )
+
+
+def test_google_actions_use_interactive_oauth_and_declared_scopes() -> None:
+    providers = {
+        provider.key: provider
+        for plugin in BUILTIN_PLUGIN_MANIFESTS
+        for provider in plugin.providers
+    }
+    expected_provider_scopes = {
+        "google-ads": ["https://www.googleapis.com/auth/adwords"],
+        "google-search-console": ["https://www.googleapis.com/auth/webmasters.readonly"],
+        "google-analytics": ["https://www.googleapis.com/auth/analytics.readonly"],
+        "google-tag-manager": ["https://www.googleapis.com/auth/tagmanager.readonly"],
+    }
+    for provider_key in (*expected_provider_scopes, "google-workspace"):
+        method = next(
+            method
+            for method in providers[provider_key].auth_methods
+            if method.key == "oauth2_authorization_code"
+        )
+        assert method.interactive is True
+        assert {field.key for field in method.fields} >= {"client_id", "client_secret"}
+
+    workspace_scopes = {
+        "gmail.message.send": ["https://www.googleapis.com/auth/gmail.send"],
+        "calendar.event.create": ["https://www.googleapis.com/auth/calendar.events"],
+    }
+    for plugin in BUILTIN_PLUGIN_MANIFESTS:
+        for action in plugin.actions:
+            if action.provider in expected_provider_scopes:
+                assert action.config["required_scopes"] == expected_provider_scopes[action.provider]
+            elif action.provider == "google-workspace":
+                assert (
+                    action.config["required_scopes"] == workspace_scopes[action.config["operation"]]
+                )
 
 
 def test_clone_plugin_manifest_generation_changes_with_editable_source(
@@ -193,6 +229,7 @@ def test_builtin_plugin_manifests_validate() -> None:
         "connector": "google-search-console",
         "operation": "search_analytics.query",
         "requires_credential": True,
+        "required_scopes": ["https://www.googleapis.com/auth/webmasters.readonly"],
         "budget_kind": "google-search-console",
         "enforce_budget": False,
     }
@@ -752,7 +789,7 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
                     "homepage_url",
                     "signup_url",
                     "console_url",
-                    "api_key_url",
+                    "credential_url",
                     "docs_url",
                     "fallback_url",
                 )
@@ -763,6 +800,24 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
                 assert value.startswith(("https://", "http://")), (
                     f"{plugin_slug}:{provider.key} has non-URL {key}"
                 )
+
+
+def test_provider_credential_setup_url_is_auth_method_neutral() -> None:
+    setup = build_provider_setup(
+        project_id=1,
+        provider_key="example",
+        provider_config_json={
+            "setup": {
+                "credential_url": "https://example.com/credentials",
+                "url_confidence": {"credential_url": "verified"},
+            }
+        },
+    )
+
+    assert setup is not None
+    credential_url = next(item for item in setup.urls if item.key == "credential_url")
+    assert credential_url.label == "Credentials"
+    assert credential_url.purpose == "provider_credential"
 
 
 def test_communications_plugin_yaml_facade_validates() -> None:
@@ -1120,6 +1175,37 @@ def test_gtm_plugin_yaml_facade_validates() -> None:
     }
     providers = {provider.key: provider for provider in manifest.providers}
     assert _auth_field_keys(providers["hubspot"])[:2] == ["access_token", "portal_ref"]
+    assert providers["apollo"].auth_type == "api-key"
+    assert providers["pipedrive"].auth_type == "oauth-or-api-token"
+    assert providers["salesloft"].auth_type == "oauth-or-api-key"
+    assert providers["clay"].auth_type == "webhook"
+    assert providers["clay"].auth_methods[0].auth_type == "webhook-url-token"
+    assert _auth_field_keys(providers["clay"])[:2] == ["webhook_url", "webhook_token"]
+    for provider_key in ("salesforce", "pipedrive", "outreach", "salesloft", "microsoft-365"):
+        interactive = next(
+            method
+            for method in providers[provider_key].auth_methods
+            if method.key == "oauth2_authorization_code"
+        )
+        assert interactive.interactive is True
+        assert [field.key for field in interactive.fields][:2] == ["client_id", "client_secret"]
+    assert {method.key for method in providers["pipedrive"].auth_methods} == {
+        "oauth2_authorization_code",
+        "oauth2_token",
+        "api_token",
+    }
+    assert {method.key for method in providers["salesloft"].auth_methods} == {
+        "oauth2_authorization_code",
+        "oauth2_token",
+        "api_key",
+    }
+    assert providers["salesforce"].config["scopes"] == ["api", "refresh_token"]
+    assert providers["outreach"].config["scopes"] == ["sequenceStates.write"]
+    assert providers["microsoft-365"].config["scopes"] == [
+        "offline_access",
+        "https://graph.microsoft.com/Mail.Send",
+        "https://graph.microsoft.com/Calendars.ReadWrite",
+    ]
     assert providers["custom-gtm-tool"].auth_type == "local"
     assert (
         providers["custom-gtm-tool"].config["connection_setup"] == "project-local-plugin-required"
@@ -1144,6 +1230,36 @@ def test_gtm_plugin_yaml_facade_validates() -> None:
     assert actions["salesforce.lead.upsert_by_external_id"].config["connector"] == "salesforce"
     assert actions["apollo.people.enrich"].config["connector"] == "apollo"
     assert actions["outreach.sequence_state.create"].config["connector"] == "outreach"
+    assert actions["salesforce.task.create"].config["required_scopes"] == ["api"]
+    assert actions["pipedrive.deals.list"].config["required_scopes"] == ["deals:read"]
+    assert actions["pipedrive.deals.search"].config["required_scopes"] == ["search:read"]
+    assert actions["outreach.sequence_state.create"].config["required_scopes"] == [
+        "sequenceStates.write"
+    ]
+    assert actions["salesloft.cadence_membership.create"].config["required_scopes"] == [
+        "cadences:write"
+    ]
+    assert actions["microsoft-365.graph.mail.send"].config["required_scopes"] == [
+        "https://graph.microsoft.com/Mail.Send"
+    ]
+    assert actions["microsoft-365.graph.calendar.event.create"].config["required_scopes"] == [
+        "https://graph.microsoft.com/Calendars.ReadWrite"
+    ]
+    for action in actions.values():
+        if action.provider == "salesforce":
+            assert action.config["required_scopes"] == ["api"]
+    expected_provider_scopes = {
+        "pipedrive.deals.list": ["deals:read"],
+        "pipedrive.deals.search": ["search:read"],
+        "outreach.sequence_state.create": ["sequenceStates.write"],
+        "salesloft.cadence_membership.create": ["cadences:write"],
+        "microsoft-365.graph.mail.send": ["https://graph.microsoft.com/Mail.Send"],
+        "microsoft-365.graph.calendar.event.create": [
+            "https://graph.microsoft.com/Calendars.ReadWrite"
+        ],
+    }
+    for action_key, required_scopes in expected_provider_scopes.items():
+        assert actions[action_key].config["required_scopes"] == required_scopes
     assert actions["custom_gtm.pipeline.fetch"].config["execution_mode"] == "project-local-http"
     assert {resource.key for resource in manifest.resources} >= {
         "account",
@@ -1180,7 +1296,30 @@ def test_media_buying_plugin_yaml_facade_validates() -> None:
         "custom-media-tool",
     }
     providers = {provider.key: provider for provider in manifest.providers}
-    assert _auth_field_keys(providers["meta-ads"])[:2] == ["access_token", "business_ref"]
+    assert _auth_field_keys(providers["meta-ads"], "oauth2_authorization_code")[:2] == [
+        "client_id",
+        "client_secret",
+    ]
+    assert (
+        next(
+            method
+            for method in providers["meta-ads"].auth_methods
+            if method.key == "oauth2_authorization_code"
+        ).interactive
+        is True
+    )
+    assert _auth_field_keys(providers["meta-ads"], "oauth2_token")[:2] == [
+        "access_token",
+        "business_ref",
+    ]
+    assert providers["meta-ads"].config["scopes"] == [
+        "ads_management",
+        "ads_read",
+        "business_management",
+    ]
+    assert providers["outbrain"].auth_type == "ob-token-v1"
+    assert providers["outbrain"].auth_methods[0].auth_type == "ob-token-v1"
+    assert providers["taboola"].auth_type == "oauth-client-credentials"
     assert providers["custom-media-tool"].auth_type == "local"
     assert (
         providers["custom-media-tool"].config["connection_setup"] == "project-local-plugin-required"
@@ -1195,6 +1334,17 @@ def test_media_buying_plugin_yaml_facade_validates() -> None:
     assert actions["custom_media.campaign.create"].provider == "custom-media-tool"
     assert actions["custom_media.performance.fetch"].capability == "media-measurement"
     assert actions["meta.campaign.create"].config["connector"] == "meta-ads"
+    assert actions["meta.campaign.create"].config["required_scopes"] == ["ads_management"]
+    assert actions["meta.insights.fetch"].config["required_scopes"] == ["ads_read"]
+    for action in actions.values():
+        if action.provider != "meta-ads" or action.config.get("connector") != "meta-ads":
+            continue
+        expected_scope = (
+            "ads_read"
+            if action.key in {"meta.account.list", "meta.insights.fetch"}
+            else "ads_management"
+        )
+        assert action.config["required_scopes"] == [expected_scope]
     assert actions["google.campaign.create"].config["connector"] == "google-ads"
     assert actions["taboola.campaign.create"].config["connector"] == "taboola"
     assert actions["outbrain.campaign.create"].config["execution_mode"] == "deferred-partner-api"
@@ -1233,6 +1383,7 @@ def test_seo_plugin_yaml_facade_validates() -> None:
         "google-tag-manager",
     }
     providers = {provider.key: provider for provider in manifest.providers}
+    assert providers["dataforseo"].auth_type == "basic"
     assert _auth_field_keys(providers["dataforseo"]) == ["login", "password"]
     assert _auth_field_keys(providers["serper"]) == ["api_key"]
     assert {resource.key for resource in manifest.resources} >= {
@@ -1389,7 +1540,7 @@ def test_manifest_rejects_secret_like_provider_setup_url() -> None:
                             "setup": {
                                 "credential_label": "API key",
                                 "setup_note": "Use the setup page.",
-                                "api_key_url": "https://example.com/setup?token=secret-value",
+                                "credential_url": "https://example.com/setup?token=secret-value",
                                 "verified_at": "2026-06-11",
                             }
                         },

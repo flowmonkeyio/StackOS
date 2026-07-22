@@ -18,7 +18,7 @@ StackOS provider work has three states:
 | Review | Scope | Status |
 | --- | --- | --- |
 | [Connector Quality Gate](connector-quality.md) | Every registered executable connector | Required review matrix for validation, errors, pagination/status, rate limits/budget, provider docs, and audit depth. |
-| [Current Connectors](current-connectors.md) | OpenAI Images, xAI Imagine, Reve, Google Gemini Image/Veo, Ideogram, BytePlus Seedream/Seedance, Alibaba Wan, Kling, Firecrawl, Jina, Reddit, DataForSEO, Serper, Ahrefs, Google Search Console, Google Analytics 4, Google Tag Manager, WordPress, Ghost, sitemap, HTTP, and Branding internal evidence | Executable surface audit and provider documentation ledger. |
+| [Current Connectors](current-connectors.md) | Executable connector inventory plus the built-in OAuth/auth-protocol classification, including interactive, client-credentials, mixed, manual-only, and deferred providers | Executable surface audit, provider documentation ledger, and link to the canonical OAuth provider matrix. |
 | [GTM CRM](gtm-crm.md) | HubSpot, Salesforce, Pipedrive CRM and pipeline contracts | First executable connector pass delivered; keep schemas provider-native. |
 | [GTM Prospecting And Outbound](gtm-prospecting-outbound.md) | Apollo, Clay, Clearbit/Clearbit by HubSpot, Outreach, Salesloft, Google Workspace, Microsoft 365 | First executable connector pass delivered except explicit deferred actions. |
 | [Media Buying](media-buying.md) | Meta Marketing API, Google Ads API, Outbrain, Taboola, custom media tool contracts | Meta, Google Ads, and Taboola first pass executable; Outbrain and custom media tool actions deferred until provider docs or project-local HTTP connector config exist. |

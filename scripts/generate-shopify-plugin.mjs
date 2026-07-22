@@ -360,7 +360,7 @@ yaml += `providers:
         setup_note: Use an existing token from a Shopify custom app with only the scopes needed for the enabled actions.
         homepage_url: https://shopify.dev/docs/api/admin-graphql
         console_url: https://admin.shopify.com/
-        api_key_url: https://shopify.dev/docs/apps/build/authentication-authorization/access-tokens
+        credential_url: https://shopify.dev/docs/apps/build/authentication-authorization/access-tokens
         docs_url: https://shopify.dev/docs/api/admin-graphql/latest
         support_url: https://help.shopify.com/
         fallback_url: https://shopify.dev/docs/api/admin-graphql/latest
@@ -369,7 +369,7 @@ yaml += `providers:
         url_confidence:
           homepage_url: verified
           console_url: directional
-          api_key_url: verified
+          credential_url: verified
           docs_url: verified
           support_url: verified
           fallback_url: verified

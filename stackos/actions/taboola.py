@@ -15,8 +15,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import httpx
-
 from stackos.actions.connectors import (
     ActionConnectorRequest,
     ActionConnectorResult,
@@ -37,39 +35,19 @@ from stackos.actions.provider_utils import (
 from stackos.repositories.base import ValidationError
 
 _BASE_URL = "https://backstage.taboola.com"
-_TOKEN_URL = f"{_BASE_URL}/backstage/oauth/token"
 
 
-async def _access_token(request: ActionConnectorRequest) -> str:
+def _access_token(request: ActionConnectorRequest) -> str:
     payload = credential_payload(request)
     access_token = payload.get("access_token")
     if isinstance(access_token, str) and access_token.strip():
         return access_token.strip()
-    client_id = payload.get("client_id")
-    client_secret = payload.get("client_secret")
-    if not isinstance(client_id, str) or not isinstance(client_secret, str):
-        raise ValidationError("taboola credential requires access_token or client_id/client_secret")
-    async with httpx.AsyncClient(timeout=30.0) as http:
-        response = await http.post(
-            _TOKEN_URL,
-            data={
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "grant_type": "client_credentials",
-            },
-        )
-    if response.status_code >= 400:
-        raise ValidationError(f"taboola token request failed with status {response.status_code}")
-    body = response.json()
-    token = body.get("access_token")
-    if not isinstance(token, str) or not token.strip():
-        raise ValidationError("taboola token response missing access_token")
-    return token.strip()
+    raise ValidationError("taboola credential requires a resolved access_token")
 
 
-async def _headers(request: ActionConnectorRequest) -> dict[str, str]:
+def _headers(request: ActionConnectorRequest) -> dict[str, str]:
     return {
-        "Authorization": f"Bearer {await _access_token(request)}",
+        "Authorization": f"Bearer {_access_token(request)}",
         "Content-Type": "application/json",
     }
 
@@ -193,7 +171,7 @@ class TaboolaActionConnector:
         return 0
 
     async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
-        headers = await _headers(request)
+        headers = _headers(request)
         account_id = _account_id(request) if request.operation != "account.get" else None
         base = f"{_BASE_URL}/backstage/api/1.0"
         payload = request.input_json

@@ -39,6 +39,13 @@ actions:
     output_schema:
       type: object
       additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: meta-ads
+      operation: campaign.create
+      requires_credential: true
+      required_scopes:
+        - ads_management
 ```
 
 ## Built-In Plugins
@@ -90,9 +97,30 @@ as credential config; secret fields such as API keys, passwords, client
 secrets, refresh tokens, and bearer tokens stay only in the encrypted backing
 payload.
 
+The provider and method `auth_type` values describe the actual protocol, not
+the fact that setup happens to contain a secret string. OAuth application
+credentials are OAuth, WordPress username/application-password pairs are
+`application-password`, and client-credentials providers are
+`oauth-client-credentials`; do not classify these as `api-key`. A provider may
+offer several honest methods, such as interactive OAuth plus a manual token or
+an API-token alternative.
+
+Set `interactive: true` only on an auth method backed by a daemon OAuth
+contract. The shared auth core then owns state, the fixed callback, code
+exchange, renewal, scope records, concurrency, and sanitized failures. The
+contract supplies trusted endpoints, client-auth style, scopes, PKCE mode, and
+the few provider-specific hooks actually required. Provider connectors receive
+an already-resolved credential and must not acquire or refresh tokens.
+
+Actions that depend on OAuth grants declare exact `config.required_scopes`.
+Those scopes are enforced by the shared credential resolver before the
+connector runs. Provider-level consent scopes describe what StackOS asks the
+operator to authorize; action-level required scopes keep each callable action
+honest about the subset it needs.
+
 Providers also declare `config.setup` as the single self-service source for
 agents and setup UIs. Include the credential label, setup note, official
-registration/console/API-key/billing/docs URLs when known, fallback URL/reason
+registration/console/credential/billing/docs URLs when known, fallback URL/reason
 when exact pages are account-gated, `url_confidence` (`verified` or
 `directional`), and `verified_at`. Do not repeat this provider setup guidance
 inside every action.

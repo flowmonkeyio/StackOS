@@ -136,7 +136,7 @@ capability_requirements:
 auth_requirements:
   - key: dataforseo
     provider: dataforseo
-    auth_type: api-key
+    auth_type: basic
     optional: true
 action_contracts:
   - key: serp_analysis

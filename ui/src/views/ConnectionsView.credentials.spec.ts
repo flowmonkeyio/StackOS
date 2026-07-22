@@ -85,7 +85,10 @@ describe('ConnectionsView credentials and services', () => {
           secret_present: { api_key: true },
         })
       }
-      if (url === '/api/v1/projects/1/auth/credentials/cred_firecrawl' && init?.method === 'PATCH') {
+      if (
+        url === '/api/v1/projects/1/auth/credentials/cred_firecrawl' &&
+        init?.method === 'PATCH'
+      ) {
         const body = JSON.parse(String(init.body)) as { label?: string }
         connectionLabel = body.label ?? connectionLabel
         return json({ data: authConnection({ revokedAt: null, label: connectionLabel }) })
@@ -346,11 +349,21 @@ describe('ConnectionsView credentials and services', () => {
     wrapper.unmount()
   })
 
-  it('offers a safe Continue setup link for an interactive provider flow', async () => {
-    globalThis.fetch = vi.fn(async (input) => {
+  it('persists an interactive provider draft before starting and navigating to OAuth', async () => {
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = []
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    globalThis.fetch = vi.fn(async (input, init) => {
       const url = String(input)
       const catalogResponse = catalogJson(url)
       if (catalogResponse) return catalogResponse
+
+      if (init?.body && url.includes('/auth/')) {
+        requests.push({
+          url,
+          body: JSON.parse(String(init.body)) as Record<string, unknown>,
+        })
+      }
 
       if (url === '/api/v1/projects/1/auth/status') {
         return json({ project_id: 1, provider_key: null, providers: [], connections: [] })
@@ -358,12 +371,29 @@ describe('ConnectionsView credentials and services', () => {
       if (url === '/api/v1/auth/providers') {
         return json([authProvider('oauth-demo', 'OAuth Demo', 'oauth2', interactiveMethod())])
       }
+      if (url === '/api/v1/projects/1/auth/oauth-demo/credentials') {
+        return json(
+          {
+            data: authConnection({
+              revokedAt: null,
+              status: 'pending',
+              providerKey: 'oauth-demo',
+              credentialRef: 'cred_oauth_demo',
+              authType: 'oauth2',
+              authMethodKey: 'oauth2',
+              label: 'Primary OAuth Demo',
+            }),
+          },
+          201,
+        )
+      }
       if (url === '/api/v1/projects/1/auth/oauth-demo/start') {
         return json({
           data: {
             provider_key: 'oauth-demo',
             auth_method_key: 'oauth2',
-            status: 'pending',
+            status: 'authorization-pending',
+            credential_ref: 'cred_oauth_demo',
             authorization_url: 'https://provider.example/connect?state=safe',
             setup_url: null,
           },
@@ -383,19 +413,49 @@ describe('ConnectionsView credentials and services', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected'))
     await clickButton(wrapper, 'Add connection')
     await vi.waitFor(() => expect(wrapper.text()).toContain('OAuth Demo'))
-    await clickButton(wrapper, 'Start setup')
+    await wrapper.get<HTMLInputElement>('#connection-field-client_id').setValue('oauth-client-id')
+    await wrapper
+      .get<HTMLInputElement>('#connection-field-client_secret')
+      .setValue('oauth-client-secret')
+    await clickButton(wrapper, 'Connect')
 
-    await vi.waitFor(() => expect(wrapper.text()).toContain('Continue setup'))
-    const continueLink = wrapper
-      .findAll('a')
-      .find((candidate) => candidate.text().trim() === 'Continue setup →')
-    expect(continueLink).toBeDefined()
-    expect(continueLink?.attributes('href')).toBe('https://provider.example/connect?state=safe')
-    expect(continueLink?.attributes('target')).toBe('_blank')
-    expect(continueLink?.attributes('rel')).toBe('noopener noreferrer')
+    await vi.waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1))
+    expect(requests).toEqual([
+      {
+        url: '/api/v1/projects/1/auth/oauth-demo/credentials',
+        body: {
+          auth_method_key: 'oauth2',
+          profile_key: 'default',
+          label: null,
+          fields: {
+            client_id: 'oauth-client-id',
+            client_secret: 'oauth-client-secret',
+          },
+        },
+      },
+      {
+        url: '/api/v1/projects/1/auth/oauth-demo/start',
+        body: {
+          auth_method_key: 'oauth2',
+          credential_ref: 'cred_oauth_demo',
+        },
+      },
+    ])
+    expect(openSpy).toHaveBeenCalledWith(
+      'https://provider.example/connect?state=safe',
+      '_self',
+      'noopener,noreferrer',
+    )
+    expect(JSON.stringify(requests)).not.toContain('redirect_uri')
   })
 
-  it('rejects an interactive setup URL with an unsafe scheme', async () => {
+  it.each([
+    'javascript:alert(1)',
+    'https://provider.example/connect#access_token=fragment-value',
+    'https://operator:password@provider.example/connect',
+  ])('rejects an unsafe interactive setup URL: %s', async (unsafeUrl) => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input)
       const catalogResponse = catalogJson(url)
@@ -407,13 +467,29 @@ describe('ConnectionsView credentials and services', () => {
       if (url === '/api/v1/auth/providers') {
         return json([authProvider('oauth-demo', 'OAuth Demo', 'oauth2', interactiveMethod())])
       }
+      if (url === '/api/v1/projects/1/auth/oauth-demo/credentials') {
+        return json(
+          {
+            data: authConnection({
+              revokedAt: null,
+              status: 'pending',
+              providerKey: 'oauth-demo',
+              credentialRef: 'cred_oauth_demo',
+              authType: 'oauth2',
+              authMethodKey: 'oauth2',
+            }),
+          },
+          201,
+        )
+      }
       if (url === '/api/v1/projects/1/auth/oauth-demo/start') {
         return json({
           data: {
             provider_key: 'oauth-demo',
             auth_method_key: 'oauth2',
-            status: 'pending',
-            authorization_url: 'javascript:alert(1)',
+            status: 'authorization-pending',
+            credential_ref: 'cred_oauth_demo',
+            authorization_url: unsafeUrl,
             setup_url: null,
           },
         })
@@ -432,13 +508,106 @@ describe('ConnectionsView credentials and services', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected'))
     await clickButton(wrapper, 'Add connection')
     await vi.waitFor(() => expect(wrapper.text()).toContain('OAuth Demo'))
-    await clickButton(wrapper, 'Start setup')
+    await wrapper.get<HTMLInputElement>('#connection-field-client_id').setValue('oauth-client-id')
+    await wrapper
+      .get<HTMLInputElement>('#connection-field-client_secret')
+      .setValue('oauth-client-secret')
+    await clickButton(wrapper, 'Connect')
 
     await vi.waitFor(() =>
       expect(wrapper.text()).toContain('The provider returned an invalid setup URL.'),
     )
-    expect(wrapper.text()).not.toContain('Continue setup')
-    expect(wrapper.html()).not.toContain('javascript:alert(1)')
+    expect(wrapper.html()).not.toContain(unsafeUrl)
+    expect(openSpy).not.toHaveBeenCalled()
+  })
+
+  it('refreshes connection status and clears callback parameters after OAuth returns', async () => {
+    const provider = authProvider('oauth-demo', 'OAuth Demo', 'oauth2', interactiveMethod())
+    let connected = false
+    let statusRequests = 0
+
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      const catalogResponse = catalogJson(url)
+      if (catalogResponse) return catalogResponse
+      if (url === '/api/v1/projects/1/auth/status') {
+        statusRequests += 1
+        return json({
+          project_id: 1,
+          provider_key: null,
+          providers: [provider],
+          connections: connected
+            ? [
+                authConnection({
+                  revokedAt: null,
+                  providerKey: 'oauth-demo',
+                  credentialRef: 'cred_oauth_demo',
+                  authType: 'oauth2',
+                  authMethodKey: 'oauth2',
+                  label: 'Primary OAuth Demo',
+                }),
+              ]
+            : [],
+        })
+      }
+      return json({})
+    }) as typeof fetch
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/connections', component: ConnectionsView }],
+    })
+    await router.push('/projects/1/connections')
+    await router.isReady()
+
+    const wrapper = mountConnections(router)
+    await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected'))
+    connected = true
+    await router.push('/projects/1/connections?oauth_status=connected&provider_key=oauth-demo')
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('OAuth Demo connected successfully.'))
+    await vi.waitFor(() => expect(router.currentRoute.value.query.oauth_status).toBeUndefined())
+    expect(router.currentRoute.value.query.provider_key).toBeUndefined()
+    expect(statusRequests).toBeGreaterThanOrEqual(2)
+    expect(wrapper.text()).toContain('Primary OAuth Demo')
+  })
+
+  it.each([
+    ['denied', 'OAuth Demo authorization was denied. Start setup again when you are ready.'],
+    ['expired', 'OAuth Demo authorization expired. Start setup again.'],
+    [
+      'repair-required',
+      'OAuth Demo could not finish authorization. Review the connection settings and try again.',
+    ],
+  ])('renders the %s OAuth return state without opening setup', async (status, message) => {
+    const provider = authProvider('oauth-demo', 'OAuth Demo', 'oauth2', interactiveMethod())
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      const catalogResponse = catalogJson(url)
+      if (catalogResponse) return catalogResponse
+      if (url === '/api/v1/projects/1/auth/status') {
+        return json({
+          project_id: 1,
+          provider_key: null,
+          providers: [provider],
+          connections: [],
+        })
+      }
+      return json({})
+    }) as typeof fetch
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/connections', component: ConnectionsView }],
+    })
+    await router.push(`/projects/1/connections?oauth_status=${status}&provider_key=oauth-demo`)
+    await router.isReady()
+
+    const wrapper = mountConnections(router)
+    await vi.waitFor(() => expect(wrapper.text()).toContain(message))
+    await vi.waitFor(() => expect(router.currentRoute.value.query.oauth_status).toBeUndefined())
+    expect(router.currentRoute.value.query.provider_key).toBeUndefined()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
   })
 
   it.each(['disabled-provider', 'unknown-provider'])(

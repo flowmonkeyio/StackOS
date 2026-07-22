@@ -451,11 +451,13 @@ def _ftp_connector_request(
     progress_callback: Any,
 ) -> ActionConnectorRequest:
     credential_ref = _credential_ref(session, project_id)
-    credential = AuthRepository(session).resolve_for_execution(
-        project_id=project_id,
-        provider_key="ftp",
-        credential_ref=credential_ref,
-        operation=operation,
+    credential = asyncio.run(
+        AuthRepository(session).resolve_for_execution(
+            project_id=project_id,
+            provider_key="ftp",
+            credential_ref=credential_ref,
+            operation=operation,
+        )
     )
     return ActionConnectorRequest(
         project_id=project_id,

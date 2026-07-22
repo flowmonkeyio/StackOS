@@ -23,11 +23,10 @@ class GoogleAnalyticsIntegration(BaseIntegration):
         super().__init__(**kwargs)
         self._oauth_payload = parse_google_oauth_payload(self.payload, provider=self.vendor)
 
-    async def _headers(self) -> dict[str, str]:
-        return await google_bearer_headers(
+    def _headers(self) -> dict[str, str]:
+        return google_bearer_headers(
             self._oauth_payload,
             provider=self.vendor,
-            http=self._http,
         )
 
     @staticmethod
@@ -52,7 +51,7 @@ class GoogleAnalyticsIntegration(BaseIntegration):
             method="GET",
             url=f"{self.ADMIN_BASE_URL}/accountSummaries",
             params=params or None,
-            headers=await self._headers(),
+            headers=self._headers(),
         )
 
     async def metadata_get(self, *, property_ref: str) -> IntegrationCallResult:
@@ -61,7 +60,7 @@ class GoogleAnalyticsIntegration(BaseIntegration):
             op="properties.metadata.get",
             method="GET",
             url=f"{self.DATA_BASE_URL}/{property_path}/metadata",
-            headers=await self._headers(),
+            headers=self._headers(),
         )
 
     async def run_report(
@@ -76,7 +75,7 @@ class GoogleAnalyticsIntegration(BaseIntegration):
             method="POST",
             url=f"{self.DATA_BASE_URL}/{property_path}:runReport",
             json_body=request_body,
-            headers=await self._headers(),
+            headers=self._headers(),
         )
 
     async def run_realtime_report(
@@ -91,7 +90,7 @@ class GoogleAnalyticsIntegration(BaseIntegration):
             method="POST",
             url=f"{self.DATA_BASE_URL}/{property_path}:runRealtimeReport",
             json_body=request_body,
-            headers=await self._headers(),
+            headers=self._headers(),
         )
 
     async def test_credentials(self) -> dict[str, Any]:

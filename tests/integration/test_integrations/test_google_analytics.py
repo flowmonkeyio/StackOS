@@ -7,35 +7,22 @@ import json
 from typing import Any
 
 import httpx
+import pytest
 from pytest_httpx import HTTPXMock
 
 from stackos.integrations.google_analytics import GoogleAnalyticsIntegration
-from stackos.integrations.google_oauth import GOOGLE_OAUTH_TOKEN_URL
+from stackos.repositories.base import ValidationError
 
 
 def _access_payload() -> bytes:
     return json.dumps({"access_token": "ga-token"}).encode("utf-8")
 
 
-def test_google_analytics_refresh_token_probe_uses_account_summaries(
+def test_google_analytics_wrapper_does_not_refresh_tokens_locally(
     httpx_mock: HTTPXMock,
     project_id: int,
 ) -> None:
-    httpx_mock.add_response(
-        method="POST",
-        url=GOOGLE_OAUTH_TOKEN_URL,
-        json={"access_token": "refreshed-ga-token", "expires_in": 3600},
-    )
-    httpx_mock.add_response(
-        method="GET",
-        url="https://analyticsadmin.googleapis.com/v1beta/accountSummaries?pageSize=1",
-        json={
-            "accountSummaries": [{"name": "accountSummaries/1", "displayName": "Main"}],
-            "nextPageToken": "more",
-        },
-    )
-
-    async def go() -> dict[str, Any]:
+    async def go() -> None:
         async with httpx.AsyncClient() as client:
             integration = GoogleAnalyticsIntegration(
                 payload=json.dumps(
@@ -49,21 +36,12 @@ def test_google_analytics_refresh_token_probe_uses_account_summaries(
                 http=client,
                 qps_override=1000.0,
             )
-            return await integration.test_credentials()
+            await integration.test_credentials()
 
-    result = asyncio.run(go())
-    token_request, summaries_request = httpx_mock.get_requests()
-    token_body = token_request.content.decode("utf-8")
+    with pytest.raises(ValidationError, match="access_token"):
+        asyncio.run(go())
 
-    assert result == {
-        "ok": True,
-        "vendor": "google-analytics",
-        "account_count": 1,
-        "has_next_page": True,
-    }
-    assert summaries_request.headers["Authorization"] == "Bearer refreshed-ga-token"
-    assert "grant_type=refresh_token" in token_body
-    assert "refresh_token=refresh" in token_body
+    assert httpx_mock.get_requests() == []
 
 
 def test_google_analytics_wrapper_maps_data_api_endpoints(

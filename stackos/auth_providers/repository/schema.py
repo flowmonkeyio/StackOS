@@ -81,9 +81,17 @@ class AuthStartOut(BaseModel):
     setup_url: str | None = None
     authorization_url: str | None = None
     redirect_uri: str | None = None
-    state: str | None = None
     credential_ref: str | None = None
     expires_at: datetime | None = None
+
+
+class OAuthCallbackOut(BaseModel):
+    """Sanitized result used only to choose the local callback redirect."""
+
+    project_id: int | None = None
+    provider_key: str | None = None
+    credential_ref: str | None = None
+    status: str
 
 
 class AuthTestOut(BaseModel):

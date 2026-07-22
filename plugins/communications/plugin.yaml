@@ -76,7 +76,7 @@ providers:
         homepage_url: https://telegram.org/
         signup_url: https://telegram.org/apps
         console_url: https://t.me/BotFather
-        api_key_url: https://core.telegram.org/bots/features#botfather
+        credential_url: https://core.telegram.org/bots/features#botfather
         docs_url: https://core.telegram.org/bots/api
         fallback_url: https://core.telegram.org/bots#how-do-i-create-a-bot
         fallback_reason: Bot creation/token issuance happens in Telegram's BotFather chat rather than a normal web console.
@@ -85,7 +85,7 @@ providers:
           homepage_url: verified
           signup_url: verified
           console_url: verified
-          api_key_url: verified
+          credential_url: verified
           docs_url: verified
           fallback_url: verified
       docs:
@@ -121,7 +121,7 @@ providers:
         homepage_url: https://slack.com/
         signup_url: https://slack.com/get-started
         console_url: https://api.slack.com/apps
-        api_key_url: https://api.slack.com/apps
+        credential_url: https://api.slack.com/apps
         billing_url: https://slack.com/pricing
         docs_url: https://docs.slack.dev/
         verified_at: "2026-06-11"
@@ -129,7 +129,7 @@ providers:
           homepage_url: verified
           signup_url: verified
           console_url: verified
-          api_key_url: verified
+          credential_url: verified
           billing_url: verified
           docs_url: verified
       scopes:

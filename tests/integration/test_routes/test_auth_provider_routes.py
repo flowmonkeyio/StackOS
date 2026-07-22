@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+from urllib.parse import parse_qs, urlparse
 
 from fastapi.testclient import TestClient
 from pytest_httpx import HTTPXMock
+
+from stackos.auth_providers import AuthRepository, OAuthCallbackOut
 
 
 class _AuthSMTP:
@@ -107,6 +110,190 @@ def test_auth_start_for_api_key_returns_local_setup_url_only(
     )
     assert body["data"]["authorization_url"] is None
     assert body["data"]["credential_ref"] is None
+
+
+def _create_interactive_google_credential(api: TestClient, project_id: int) -> dict:
+    response = api.post(
+        f"/api/v1/projects/{project_id}/auth/google-search-console/credentials",
+        json={
+            "auth_method_key": "oauth2_authorization_code",
+            "profile_key": "primary",
+            "label": "Primary Search Console",
+            "fields": {
+                "client_id": "route-client-id",
+                "client_secret": "route-client-secret",
+                "default_site_url": "https://example.test/",
+            },
+        },
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["data"]
+
+
+def test_oauth_start_accepts_only_opaque_profile_ref_and_server_callback(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    credential = _create_interactive_google_credential(api, project_id)
+
+    response = api.post(
+        f"/api/v1/projects/{project_id}/auth/google-search-console/start",
+        json={
+            "auth_method_key": "oauth2_authorization_code",
+            "credential_ref": credential["credential_ref"],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()["data"]
+    assert body["status"] == "authorization-pending"
+    assert body["credential_ref"] == credential["credential_ref"]
+    assert "state" not in body
+    query = parse_qs(urlparse(body["authorization_url"]).query)
+    assert query["redirect_uri"] == ["http://127.0.0.1:5180/api/v1/auth/oauth/callback"]
+
+    rejected = api.post(
+        f"/api/v1/projects/{project_id}/auth/google-search-console/start",
+        json={
+            "auth_method_key": "oauth2_authorization_code",
+            "credential_ref": credential["credential_ref"],
+            "redirect_uri": "https://attacker.example/callback",
+        },
+    )
+    assert rejected.status_code == 422
+
+
+def test_oauth_callback_is_the_only_public_host_exception_and_redirects_safely(
+    api: TestClient,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential = _create_interactive_google_credential(api, project_id)
+    started = api.post(
+        f"/api/v1/projects/{project_id}/auth/google-search-console/start",
+        json={
+            "auth_method_key": "oauth2_authorization_code",
+            "credential_ref": credential["credential_ref"],
+        },
+    )
+    assert started.status_code == 200, started.text
+    auth_url = started.json()["data"]["authorization_url"]
+    state = parse_qs(urlparse(auth_url).query)["state"][0]
+    httpx_mock.add_response(
+        method="POST",
+        url="https://oauth2.googleapis.com/token",
+        json={
+            "access_token": "route-access-value",
+            "refresh_token": "route-refresh-value",
+            "expires_in": 3600,
+            "scope": "https://www.googleapis.com/auth/webmasters.readonly",
+            "token_type": "Bearer",
+        },
+    )
+
+    auth_header = api.headers.pop("authorization")
+    try:
+        response = api.get(
+            "/api/v1/auth/oauth/callback",
+            params={"state": state, "code": "route-code-value"},
+            headers={"host": "127.0.0.1:5180"},
+            follow_redirects=False,
+        )
+        wrong_path = api.get(
+            "/api/v1/auth/oauth/callback/extra",
+            headers={"host": "oauth.stackos.example"},
+            follow_redirects=False,
+        )
+        wrong_method = api.post(
+            "/api/v1/auth/oauth/callback",
+            headers={"host": "oauth.stackos.example"},
+            follow_redirects=False,
+        )
+    finally:
+        api.headers["authorization"] = auth_header
+
+    assert response.status_code == 303, response.text
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    location = response.headers["location"]
+    assert location.startswith(f"http://127.0.0.1:5180/projects/{project_id}/connections?")
+    assert "oauth_status=connected" in location
+    assert state not in location
+    assert "route-code-value" not in location
+    assert "route-access-value" not in response.text
+    assert wrong_path.status_code == 421
+    assert wrong_method.status_code == 421
+
+
+def test_oauth_callback_denial_is_generic_and_preserves_no_callback_values(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    credential = _create_interactive_google_credential(api, project_id)
+    started = api.post(
+        f"/api/v1/projects/{project_id}/auth/google-search-console/start",
+        json={
+            "auth_method_key": "oauth2_authorization_code",
+            "credential_ref": credential["credential_ref"],
+        },
+    )
+    auth_url = started.json()["data"]["authorization_url"]
+    state = parse_qs(urlparse(auth_url).query)["state"][0]
+
+    auth_header = api.headers.pop("authorization")
+    try:
+        response = api.get(
+            "/api/v1/auth/oauth/callback",
+            params={
+                "state": state,
+                "error": "access_denied",
+                "error_description": "provider-canary-detail",
+            },
+            follow_redirects=False,
+        )
+    finally:
+        api.headers["authorization"] = auth_header
+
+    assert response.status_code == 303
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    rendered = response.headers["location"] + response.text
+    assert state not in rendered
+    assert "provider-canary-detail" not in rendered
+    assert "access_denied" not in rendered
+    assert "oauth_status=denied" in response.headers["location"]
+
+
+def test_oauth_callback_maps_a_stale_attempt_to_an_expired_return_state(
+    api: TestClient,
+    project_id: int,
+    monkeypatch,
+) -> None:
+    async def stale_callback(*_args, **_kwargs) -> OAuthCallbackOut:
+        return OAuthCallbackOut(
+            project_id=project_id,
+            provider_key="google-search-console",
+            status="stale-attempt",
+        )
+
+    monkeypatch.setattr(AuthRepository, "complete_oauth_callback", stale_callback)
+    auth_header = api.headers.pop("authorization")
+    try:
+        response = api.get(
+            "/api/v1/auth/oauth/callback",
+            params={"state": "opaque-stale-state", "code": "discarded-code"},
+            follow_redirects=False,
+        )
+    finally:
+        api.headers["authorization"] = auth_header
+
+    assert response.status_code == 303
+    location = response.headers["location"]
+    assert location.startswith(f"http://127.0.0.1:5180/projects/{project_id}/connections?")
+    assert "oauth_status=expired" in location
+    assert "stale-attempt" not in location
+    assert "opaque-stale-state" not in location
+    assert "discarded-code" not in location
 
 
 def test_disabled_plugin_rejects_provider_setup(

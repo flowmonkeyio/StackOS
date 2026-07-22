@@ -70,7 +70,7 @@ providers:
         homepage_url: https://www.hubspot.com/
         signup_url: https://app.hubspot.com/signup-hubspot/crm
         console_url: https://app.hubspot.com/
-        api_key_url: https://developers.hubspot.com/docs/apps/legacy-apps/private-apps/overview
+        credential_url: https://developers.hubspot.com/docs/apps/legacy-apps/private-apps/overview
         billing_url: https://www.hubspot.com/pricing
         docs_url: https://developers.hubspot.com/docs/api-reference/latest/overview
         verified_at: "2026-06-11"
@@ -78,7 +78,7 @@ providers:
           homepage_url: verified
           signup_url: verified
           console_url: directional
-          api_key_url: verified
+          credential_url: verified
           billing_url: verified
           docs_url: verified
   - key: salesforce
@@ -86,6 +86,46 @@ providers:
     description: Salesforce provider contract for accounts, leads, contacts, opportunities, notes, tasks, and pipeline reads.
     auth_type: oauth
     auth_methods:
+      - key: oauth2_authorization_code
+        label: Connect with Salesforce
+        auth_type: oauth
+        interactive: true
+        payload_format: json
+        fields:
+        - key: client_id
+          label: Connected App Client ID
+          type: secret
+          secret: true
+          required: true
+        - key: client_secret
+          label: Connected App Client Secret
+          type: secret
+          secret: true
+          required: true
+        - key: environment
+          label: Login Environment
+          type: text
+          secret: false
+          required: false
+          placeholder: production, sandbox, or my-domain
+        - key: login_domain
+          label: Salesforce My Domain
+          type: text
+          secret: false
+          required: false
+          placeholder: company.my.salesforce.com
+        - key: api_version
+          label: REST API Version
+          type: text
+          secret: false
+          required: false
+          placeholder: v61.0
+        - key: external_id_policy_ref
+          label: External ID Policy Ref
+          type: text
+          secret: false
+          required: false
+          placeholder: safe external ID mapping reference
       - key: oauth2_token
         label: OAuth2 access token
         auth_type: oauth
@@ -96,30 +136,18 @@ providers:
           type: secret
           secret: true
           required: true
-        - key: org_ref
-          label: Org Ref
+        - key: instance_url
+          label: Salesforce Instance URL
+          type: text
+          secret: false
+          required: true
+          placeholder: https://company.my.salesforce.com
+        - key: api_version
+          label: REST API Version
           type: text
           secret: false
           required: false
-          placeholder: safe org reference
-        - key: environment_ref
-          label: Environment Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: production or sandbox reference
-        - key: instance_ref
-          label: Instance Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe instance or My Domain reference
-        - key: api_version_ref
-          label: API Version Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe API version policy reference
+          placeholder: v61.0
         - key: external_id_policy_ref
           label: External ID Policy Ref
           type: text
@@ -127,13 +155,16 @@ providers:
           required: false
           placeholder: safe external ID mapping reference
     config:
+      scopes:
+        - api
+        - refresh_token
       setup:
         credential_label: Salesforce OAuth access token
-        setup_note: Create or use a Salesforce connected app, authorize the required REST API scopes, then store the OAuth token details in StackOS.
+        setup_note: Create or use a Salesforce connected app with the fixed StackOS callback, then use Connect with Salesforce. A manually supplied access token remains available for legacy profiles.
         homepage_url: https://www.salesforce.com/
         signup_url: https://developer.salesforce.com/signup
         console_url: https://login.salesforce.com/
-        api_key_url: https://help.salesforce.com/s/articleView?id=sf.connected_app_create.htm&type=5
+        credential_url: https://help.salesforce.com/s/articleView?id=sf.connected_app_create.htm&type=5
         billing_url: https://www.salesforce.com/pricing/
         docs_url: https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/intro_rest.htm
         fallback_url: https://help.salesforce.com/s/articleView?id=sf.connected_app_create.htm&type=5
@@ -143,15 +174,37 @@ providers:
           homepage_url: verified
           signup_url: verified
           console_url: directional
-          api_key_url: directional
+          credential_url: directional
           billing_url: verified
           docs_url: verified
           fallback_url: directional
   - key: pipedrive
     name: Pipedrive
     description: Pipedrive CRM provider contract for organizations, people, deals, activities, and notes.
-    auth_type: oauth
+    auth_type: oauth-or-api-token
     auth_methods:
+      - key: oauth2_authorization_code
+        label: Connect with Pipedrive
+        auth_type: oauth
+        interactive: true
+        payload_format: json
+        fields:
+        - key: client_id
+          label: OAuth Client ID
+          type: secret
+          secret: true
+          required: true
+        - key: client_secret
+          label: OAuth Client Secret
+          type: secret
+          secret: true
+          required: true
+        - key: field_mapping_ref
+          label: Field Mapping Ref
+          type: text
+          secret: false
+          required: false
+          placeholder: safe custom field mapping reference
       - key: oauth2_token
         label: OAuth2 access token
         auth_type: oauth
@@ -162,12 +215,12 @@ providers:
           type: secret
           secret: true
           required: true
-        - key: company_ref
-          label: Company Ref
+        - key: company_domain
+          label: Company Domain
           type: text
           secret: false
-          required: false
-          placeholder: safe company reference
+          required: true
+          placeholder: company-subdomain
         - key: account_ref
           label: Account Ref
           type: text
@@ -180,14 +233,30 @@ providers:
           secret: false
           required: false
           placeholder: safe custom field mapping reference
+      - key: api_token
+        label: Personal API token
+        auth_type: api-token
+        payload_format: json
+        fields:
+        - key: api_token
+          label: Personal API Token
+          type: secret
+          secret: true
+          required: true
+        - key: company_domain
+          label: Company Domain
+          type: text
+          secret: false
+          required: true
+          placeholder: company-subdomain
     config:
       setup:
-        credential_label: Pipedrive OAuth token or personal API key
-        setup_note: Use a Pipedrive app/OAuth credential when available; for personal-key setups, copy the API key from personal preferences and store it in StackOS.
+        credential_label: Pipedrive OAuth credential or personal API token
+        setup_note: Register a Pipedrive app with the fixed StackOS callback and deals:read plus search:read app scopes, then use Connect with Pipedrive. For private personal integrations, the supported personal API token method remains available.
         homepage_url: https://www.pipedrive.com/
         signup_url: https://www.pipedrive.com/en/register
         console_url: https://app.pipedrive.com/
-        api_key_url: https://support.pipedrive.com/en/article/how-can-i-find-my-personal-api-key
+        credential_url: https://support.pipedrive.com/en/article/how-can-i-find-my-personal-api-key
         billing_url: https://www.pipedrive.com/en/pricing
         docs_url: https://developers.pipedrive.com/docs/api/v1
         verified_at: "2026-06-11"
@@ -195,7 +264,7 @@ providers:
           homepage_url: verified
           signup_url: verified
           console_url: directional
-          api_key_url: verified
+          credential_url: verified
           billing_url: verified
           docs_url: verified
   - key: apollo
@@ -251,7 +320,7 @@ providers:
         homepage_url: https://www.apollo.io/
         signup_url: https://app.apollo.io/#/signup
         console_url: https://app.apollo.io/
-        api_key_url: https://docs.apollo.io/docs/create-api-key
+        credential_url: https://docs.apollo.io/docs/create-api-key
         billing_url: https://www.apollo.io/pricing
         docs_url: https://docs.apollo.io/
         verified_at: "2026-06-11"
@@ -259,19 +328,24 @@ providers:
           homepage_url: verified
           signup_url: verified
           console_url: directional
-          api_key_url: verified
+          credential_url: verified
           billing_url: verified
           docs_url: verified
   - key: clay
     name: Clay
     description: Clay enrichment and workflow provider contract.
-    auth_type: api-key
+    auth_type: webhook
     auth_methods:
-      - key: webhook_token
-        label: Webhook token
-        auth_type: api-key
+      - key: webhook
+        label: Table webhook
+        auth_type: webhook-url-token
         payload_format: json
         fields:
+        - key: webhook_url
+          label: Webhook URL
+          type: url
+          secret: false
+          required: true
         - key: webhook_token
           label: Webhook Token
           type: secret
@@ -285,12 +359,12 @@ providers:
           placeholder: safe workspace reference
     config:
       setup:
-        credential_label: Clay webhook/API token
-        setup_note: Clay setup is workspace-specific; use the Clay workspace/API or webhook configuration, then store only the token in StackOS.
+        credential_label: Clay table webhook URL and optional token
+        setup_note: Create a Clay table webhook, then store its URL and optional authentication token in a dedicated StackOS connection profile.
         homepage_url: https://www.clay.com/
         signup_url: https://app.clay.com/signup
         console_url: https://app.clay.com/
-        api_key_url: https://app.clay.com/
+        credential_url: https://app.clay.com/
         billing_url: https://www.clay.com/pricing
         docs_url: https://university.clay.com/
         fallback_url: https://university.clay.com/docs/using-clay-as-an-api
@@ -300,7 +374,7 @@ providers:
           homepage_url: verified
           signup_url: directional
           console_url: directional
-          api_key_url: directional
+          credential_url: directional
           billing_url: verified
           docs_url: verified
           fallback_url: verified
@@ -345,7 +419,7 @@ providers:
         homepage_url: https://clearbit.com/
         signup_url: https://app.hubspot.com/signup-hubspot/crm
         console_url: https://app.clearbit.com/
-        api_key_url: https://app.clearbit.com/
+        credential_url: https://app.clearbit.com/
         billing_url: https://www.hubspot.com/pricing
         docs_url: https://www.hubspot.com/products/data
         fallback_url: https://www.hubspot.com/products/data
@@ -355,7 +429,7 @@ providers:
           homepage_url: verified
           signup_url: directional
           console_url: directional
-          api_key_url: directional
+          credential_url: directional
           billing_url: verified
           docs_url: directional
           fallback_url: directional
@@ -364,6 +438,28 @@ providers:
     description: Outreach sequence provider contract.
     auth_type: oauth
     auth_methods:
+      - key: oauth2_authorization_code
+        label: Connect with Outreach
+        auth_type: oauth
+        interactive: true
+        payload_format: json
+        fields:
+        - key: client_id
+          label: OAuth Client ID
+          type: secret
+          secret: true
+          required: true
+        - key: client_secret
+          label: OAuth Client Secret
+          type: secret
+          secret: true
+          required: true
+        - key: mailbox_policy_ref
+          label: Mailbox Policy Ref
+          type: text
+          secret: false
+          required: false
+          placeholder: safe mailbox policy reference
       - key: oauth2_token
         label: OAuth2 access token
         auth_type: oauth
@@ -399,13 +495,15 @@ providers:
           required: false
           placeholder: safe mailbox policy reference
     config:
+      scopes:
+        - sequenceStates.write
       setup:
         credential_label: Outreach OAuth access token
-        setup_note: Create or use an Outreach app/OAuth integration, approve the required scopes, then store the access token in StackOS.
+        setup_note: Create or use an Outreach OAuth app with the fixed StackOS callback and sequenceStates.write scope, then use Connect with Outreach.
         homepage_url: https://www.outreach.ai/
         signup_url: https://www.outreach.ai/request-demo
         console_url: https://developers.outreach.io/
-        api_key_url: https://developers.outreach.io/
+        credential_url: https://developers.outreach.io/
         billing_url: https://www.outreach.ai/pricing
         docs_url: https://developers.outreach.io/
         verified_at: "2026-06-11"
@@ -413,14 +511,36 @@ providers:
           homepage_url: verified
           signup_url: verified
           console_url: verified
-          api_key_url: directional
+          credential_url: directional
           billing_url: verified
           docs_url: verified
   - key: salesloft
     name: Salesloft
     description: Salesloft cadence provider contract.
-    auth_type: oauth
+    auth_type: oauth-or-api-key
     auth_methods:
+      - key: oauth2_authorization_code
+        label: Connect with Salesloft
+        auth_type: oauth
+        interactive: true
+        payload_format: json
+        fields:
+        - key: client_id
+          label: OAuth Client ID
+          type: secret
+          secret: true
+          required: true
+        - key: client_secret
+          label: OAuth Client Secret
+          type: secret
+          secret: true
+          required: true
+        - key: cadence_policy_ref
+          label: Cadence Policy Ref
+          type: text
+          secret: false
+          required: false
+          placeholder: safe cadence policy reference
       - key: oauth2_token
         label: OAuth2 access token
         auth_type: oauth
@@ -455,14 +575,24 @@ providers:
           secret: false
           required: false
           placeholder: safe cadence policy reference
+      - key: api_key
+        label: API key
+        auth_type: api-key
+        payload_format: json
+        fields:
+        - key: api_key
+          label: API Key
+          type: secret
+          secret: true
+          required: true
     config:
       setup:
-        credential_label: Salesloft OAuth access token
-        setup_note: Create or use a Salesloft OAuth application, approve the required scopes, then store the OAuth token in StackOS.
+        credential_label: Salesloft OAuth credential or API key
+        setup_note: Register a Salesloft OAuth app with the fixed StackOS callback and cadences:write scope, then use Connect with Salesloft. Customer API keys remain an explicit supported alternative.
         homepage_url: https://www.salesloft.com/
         signup_url: https://www.salesloft.com/talk-to-sales
         console_url: https://accounts.salesloft.com/oauth/applications
-        api_key_url: https://accounts.salesloft.com/oauth/applications
+        credential_url: https://accounts.salesloft.com/oauth/applications
         billing_url: https://www.salesloft.com/pricing
         docs_url: https://developers.salesloft.com/
         verified_at: "2026-06-11"
@@ -470,7 +600,7 @@ providers:
           homepage_url: verified
           signup_url: verified
           console_url: verified
-          api_key_url: verified
+          credential_url: verified
           billing_url: verified
           docs_url: verified
   - key: google-workspace
@@ -478,6 +608,34 @@ providers:
     description: Gmail send and Google Calendar event provider contract.
     auth_type: oauth
     auth_methods:
+      - key: oauth2_authorization_code
+        label: Connect with Google
+        auth_type: oauth
+        interactive: true
+        payload_format: json
+        fields:
+        - key: client_id
+          label: OAuth Client ID
+          type: secret
+          secret: true
+          required: true
+        - key: client_secret
+          label: OAuth Client Secret
+          type: secret
+          secret: true
+          required: true
+        - key: workspace_ref
+          label: Workspace Ref
+          type: text
+          secret: false
+          required: false
+          placeholder: safe workspace reference
+        - key: send_policy_ref
+          label: Send Policy Ref
+          type: text
+          secret: false
+          required: false
+          placeholder: safe send policy reference
       - key: oauth2_token
         label: OAuth2 access token
         auth_type: oauth
@@ -507,7 +665,7 @@ providers:
         homepage_url: https://workspace.google.com/
         signup_url: https://workspace.google.com/business/signup/welcome
         console_url: https://console.cloud.google.com/
-        api_key_url: https://console.cloud.google.com/apis/credentials
+        credential_url: https://console.cloud.google.com/apis/credentials
         billing_url: https://support.google.com/a/answer/1230658
         docs_url: https://developers.google.com/workspace
         verified_at: "2026-06-11"
@@ -515,7 +673,7 @@ providers:
           homepage_url: verified
           signup_url: verified
           console_url: verified
-          api_key_url: verified
+          credential_url: verified
           billing_url: verified
           docs_url: verified
   - key: microsoft-365
@@ -523,6 +681,28 @@ providers:
     description: Microsoft Graph mail send and calendar event provider contract.
     auth_type: oauth
     auth_methods:
+      - key: oauth2_authorization_code
+        label: Connect with Microsoft
+        auth_type: oauth
+        interactive: true
+        payload_format: json
+        fields:
+        - key: client_id
+          label: Application Client ID
+          type: secret
+          secret: true
+          required: true
+        - key: client_secret
+          label: Application Client Secret
+          type: secret
+          secret: true
+          required: true
+        - key: tenant
+          label: Microsoft Tenant
+          type: text
+          secret: false
+          required: false
+          placeholder: common, tenant id, or verified tenant domain
       - key: oauth2_token
         label: OAuth2 access token
         auth_type: oauth
@@ -546,13 +726,17 @@ providers:
           required: false
           placeholder: delegated or application permission reference
     config:
+      scopes:
+        - offline_access
+        - https://graph.microsoft.com/Mail.Send
+        - https://graph.microsoft.com/Calendars.ReadWrite
       setup:
         credential_label: Microsoft Graph OAuth credential
-        setup_note: Register an app in Microsoft Entra ID, grant Graph mail/calendar permissions, authorize it, then store the OAuth token in StackOS.
+        setup_note: Register a confidential web app in Microsoft Entra ID with the fixed StackOS callback and delegated Mail.Send, Calendars.ReadWrite, and offline_access permissions, then use Connect with Microsoft.
         homepage_url: https://www.microsoft.com/en-us/microsoft-365
         signup_url: https://www.microsoft.com/en-us/microsoft-365/business
         console_url: https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade
-        api_key_url: https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade
+        credential_url: https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade
         billing_url: https://admin.microsoft.com/Adminportal/Home#/BillingAccounts
         docs_url: https://learn.microsoft.com/en-us/graph/overview
         verified_at: "2026-06-11"
@@ -560,7 +744,7 @@ providers:
           homepage_url: verified
           signup_url: verified
           console_url: verified
-          api_key_url: verified
+          credential_url: verified
           billing_url: verified
           docs_url: verified
   - key: custom-gtm-tool
@@ -826,6 +1010,8 @@ actions:
       connector: salesforce
       operation: account.upsert_by_external_id
       requires_credential: true
+      required_scopes:
+        - api
   - key: salesforce.lead.upsert_by_external_id
     name: Upsert Salesforce Lead By External ID
     description: Upsert a Salesforce Lead using an approved external ID field and safe refs.
@@ -861,6 +1047,8 @@ actions:
       connector: salesforce
       operation: lead.upsert_by_external_id
       requires_credential: true
+      required_scopes:
+        - api
   - key: apollo.people.search
     name: Search Apollo People
     description: Search Apollo people from explicit criteria and source refs; requires an Apollo credential profile marked as a master API key.
@@ -919,6 +1107,8 @@ actions:
       connector: salesforce
       operation: contact.upsert_by_external_id
       requires_credential: true
+      required_scopes:
+        - api
   - key: salesforce.task.create
     name: Create Salesforce Task
     description: Create a Salesforce task from explicit task input.
@@ -962,6 +1152,8 @@ actions:
       connector: salesforce
       operation: task.create
       requires_credential: true
+      required_scopes:
+        - api
   - key: salesforce.opportunities.query
     name: Query Salesforce Opportunities
     description: Query bounded Salesforce Opportunity records through allowlisted query templates.
@@ -982,6 +1174,8 @@ actions:
       connector: salesforce
       operation: opportunities.query
       requires_credential: true
+      required_scopes:
+        - api
   - key: pipedrive.deals.list
     name: List Pipedrive Deals
     description: List bounded Pipedrive deal context for pipeline review.
@@ -1028,6 +1222,8 @@ actions:
       connector: pipedrive
       operation: deals.list
       requires_credential: true
+      required_scopes:
+        - deals:read
   - key: pipedrive.deals.search
     name: Search Pipedrive Deals
     description: Search bounded Pipedrive deal context for pipeline review.
@@ -1066,6 +1262,8 @@ actions:
       connector: pipedrive
       operation: deals.search
       requires_credential: true
+      required_scopes:
+        - search:read
   - key: apollo.people.enrich
     name: Enrich Apollo Person
     description: Run Apollo person enrichment for explicit contact or lead refs.
@@ -1263,6 +1461,8 @@ actions:
       connector: outreach
       operation: sequence_state.create
       requires_credential: true
+      required_scopes:
+        - sequenceStates.write
   - key: salesloft.cadence_membership.create
     name: Create Salesloft Cadence Membership
     description: Add an explicit person to a Salesloft cadence after approval.
@@ -1288,6 +1488,8 @@ actions:
       connector: salesloft
       operation: cadence_membership.create
       requires_credential: true
+      required_scopes:
+        - cadences:write
   - key: google-workspace.gmail.message.send
     name: Send Google Workspace Gmail Message
     description: Send an approved Gmail message from explicit mail input and safe refs.
@@ -1316,6 +1518,8 @@ actions:
       connector: google-workspace
       operation: gmail.message.send
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/gmail.send
   - key: google-workspace.calendar.event.create
     name: Create Google Workspace Calendar Event
     description: Create an approved Google Calendar event from explicit event input and safe refs.
@@ -1347,6 +1551,8 @@ actions:
       connector: google-workspace
       operation: calendar.event.create
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/calendar.events
   - key: microsoft-365.graph.mail.send
     name: Send Microsoft Graph Mail
     description: Submit an approved Microsoft Graph mail send from explicit mail input and safe refs.
@@ -1372,6 +1578,8 @@ actions:
       connector: microsoft-365
       operation: graph.mail.send
       requires_credential: true
+      required_scopes:
+        - https://graph.microsoft.com/Mail.Send
   - key: microsoft-365.graph.calendar.event.create
     name: Create Microsoft Graph Calendar Event
     description: Create an approved Microsoft Graph calendar event from explicit event input and safe refs.
@@ -1400,6 +1608,8 @@ actions:
       connector: microsoft-365
       operation: graph.calendar.event.create
       requires_credential: true
+      required_scopes:
+        - https://graph.microsoft.com/Calendars.ReadWrite
   - key: custom_gtm.lead.import
     name: Import Leads Through Custom GTM Tool
     description: Contract for user-owned GTM tooling. Project-local plugins should provide static HTTP connector config before execution.

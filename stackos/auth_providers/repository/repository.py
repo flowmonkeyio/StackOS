@@ -6,6 +6,7 @@ from sqlmodel import Session
 
 from .credentials import CredentialStorageMixin
 from .events import CredentialEventMixin
+from .oauth import OAuthLifecycleMixin
 from .providers import ProviderMetadataMixin
 from .resolution import CredentialResolutionMixin
 from .status import CredentialStatusMixin
@@ -13,6 +14,7 @@ from .testing import CredentialTestingMixin
 
 
 class AuthRepository(
+    OAuthLifecycleMixin,
     ProviderMetadataMixin,
     CredentialStatusMixin,
     CredentialStorageMixin,

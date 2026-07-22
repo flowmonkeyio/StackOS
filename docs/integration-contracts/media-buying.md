@@ -9,7 +9,13 @@ Reviewed scaffold: `plugins/media-buying/plugin.yaml` and workflow templates und
 
 ## Contract Boundary
 
-StackOS should keep media-buying integrations as static provider/action/template contracts. Agents choose strategy and pass explicit inputs in run plans. Tools validate inputs, resolve daemon-held credentials, call one provider operation, return normalized safe JSON, and record action-call audit. Provider connectors must not infer campaign structure, allocate budgets, pick audiences, or transform broad campaign wishes into spend-bearing objects.
+StackOS should keep media-buying integrations as static provider/action/template
+contracts. Agents choose strategy and pass explicit inputs in run plans. The
+shared runtime resolves daemon-held credentials and records action-call audit;
+provider connectors validate explicit inputs, call one provider operation, and
+return normalized safe JSON. Connectors must not infer campaign structure,
+allocate budgets, pick audiences, or transform broad campaign wishes into
+spend-bearing objects.
 
 Secrets and raw tokens stay daemon-side. Reusable templates should reference safe `*_ref` values such as `account_ref`, `customer_ref`, `campaign_ref`, `ad_set_ref`, `ad_group_ref`, `creative_ref`, and `conversion_event_ref`. Provider object ids may appear only in connector-owned resource provenance or action-call metadata after redaction.
 
@@ -49,7 +55,12 @@ Implication: Google Ads needs separate actions for customer listing, campaign bu
 - Official Apiary reference entry point: https://amplifyv01.docs.apiary.io/
 - Conversion import help: https://www.outbrain.com/help/advertisers/offline-conversions/
 
-Implication: Outbrain is beta/partner-gated and uses `OB-TOKEN-V1` tokens that expire after 30 days. The current `auth_type: api-key` is too vague unless StackOS models a daemon-side token refresh/login flow or treats this as a stored short-lived API token with rotation diagnostics. Outbrain entities are Marketer, Budget, Campaign, PromotedLink, and PerformanceBy*; there is no ad-set/ad-group equivalent.
+Implication: Outbrain is beta/partner-gated and uses `OB-TOKEN-V1` tokens that
+expire after 30 days. The manifest now classifies this as `ob-token-v1` and
+stores an operator-supplied short-lived token with rotation diagnostics; it
+does not claim an API-key or automatic login flow. Outbrain actions remain
+deferred. Outbrain entities are Marketer, Budget, Campaign, PromotedLink, and
+PerformanceBy*; there is no ad-set/ad-group equivalent.
 
 ### Taboola Backstage API
 
@@ -60,7 +71,12 @@ Implication: Outbrain is beta/partner-gated and uses `OB-TOKEN-V1` tokens that e
 - Conversion rules: https://developers.taboola.com/backstage-api/reference/conversion-rule-quick-reference
 - Targeting/dictionaries: https://developers.taboola.com/backstage-api/reference/audience-targeting-quick-reference and https://developers.taboola.com/backstage-api/reference/dictionary-overview
 
-Implication: Taboola uses OAuth2 bearer access tokens and account-scoped paths. The current scaffold uses `auth_type: oauth`. Campaign items are the creative/ad units; a campaign create/update contract must not imply Meta-style ad sets. Updates are partial and pause/resume uses `is_active`, while `status` is read-only.
+Implication: Taboola uses OAuth2 bearer access tokens and account-scoped paths.
+The manifest uses `auth_type: oauth-client-credentials`; the shared resolver
+acquires and renews the token before connector dispatch. Campaign items are the
+creative/ad units; a campaign create/update contract must not imply Meta-style
+ad sets. Updates are partial and pause/resume uses `is_active`, while `status`
+is read-only.
 
 ### Custom Media Tools
 
@@ -73,7 +89,12 @@ Implication: custom media-tool actions are project-local HTTP contracts, not pro
 - Good: Meta Ads, Google Ads, and Taboola now have provider-specific daemon connectors instead of one generic REST adapter.
 - Good: workflow templates separate approval gates from action contracts and keep secrets daemon-side.
 - Resolved in the scaffold: Google Ads now has customer, budget, campaign, ad group, asset, ad, reporting, conversion action, and conversion upload contracts, and the templates can reference Google explicitly.
-- Resolved in the scaffold: Taboola is OAuth-based, Outbrain has a daemon-managed token-lifecycle note, Meta budget updates are split by campaign and ad-set surface, reports use provider-native reporting refs, Meta conversions are represented, and custom media-tool refs are media-specific.
+- Resolved in the scaffold: Taboola uses the core OAuth client-credentials
+  lifecycle, Outbrain has an explicit manual `ob-token-v1` method, Meta and
+  Google Ads use the shared interactive OAuth lifecycle, Meta budget updates
+  are split by campaign and ad-set surface, reports use provider-native
+  reporting refs, Meta conversions are represented, and custom media-tool refs
+  are media-specific.
 - Still deferred: Outbrain endpoint-level campaign/report contracts are partner/API-doc gated, and custom media tools need project-local static HTTP connector config.
 - Still required before expanding execution: stricter provider enum coverage, more mocked provider tests, rate-limit/error classification, and richer pagination handling. Conversion uploads require callers to pass already-normalized provider events; StackOS does not hash or normalize PII inside this connector.
 
@@ -133,10 +154,19 @@ Outputs should be normalized but preserve provider diagnostics:
 
 ## Credential Boundary
 
-- Meta: OAuth tokens and app permissions stay daemon-side. Setup fields may include safe business/account refs and selected API version only.
-- Google Ads: OAuth refresh token, developer token, login customer id, and linked manager/customer metadata stay daemon-side. Templates should use `customer_ref`, not raw customer ids.
-- Outbrain: username/password must never reach agents. If token generation is supported, only the daemon performs login and stores/rotates `OB-TOKEN-V1`.
-- Taboola: OAuth2 client credentials/access tokens stay daemon-side. Provider setup should store safe account refs and token status diagnostics.
+- Meta: OAuth tokens and app permissions stay daemon-side. The core owns the
+  callback and renewal; Meta's dedicated hook performs only the required
+  short-to-long-lived exchange. Setup may include safe business/account refs
+  and selected API version.
+- Google Ads: OAuth refresh token, developer token, login customer id, and
+  linked manager/customer metadata stay daemon-side. The shared Google flow
+  owns callback/renewal. Templates should use `customer_ref`, not raw customer
+  ids.
+- Outbrain: the operator-supplied `OB-TOKEN-V1` stays daemon-side. No automatic
+  username/password login flow is currently implemented or claimed.
+- Taboola: OAuth2 client credentials/access tokens stay daemon-side. The core
+  acquires and renews access tokens; provider setup stores safe account refs and
+  token status diagnostics.
 - Custom media tools: API keys, bearer tokens, HMAC secrets, mTLS material, and custom auth headers stay daemon-side inside the project-local connector. Agents provide only payload refs and approved operation inputs.
 
 ## Remaining Execution Gaps

@@ -921,7 +921,7 @@ def test_bridge_compacts_action_describe_with_capability_metadata() -> None:
                 "local_setup_url": (
                     "http://127.0.0.1:5180/projects/1/connections?provider_key=openai-images"
                 ),
-                "api_key_url": "https://platform.openai.com/api-keys",
+                "credential_url": "https://platform.openai.com/api-keys",
                 "docs_url": "https://developers.openai.com/api/docs/guides/image-generation",
             },
             "execution_context": {
@@ -942,7 +942,7 @@ def test_bridge_compacts_action_describe_with_capability_metadata() -> None:
     assert compact["capability_metadata"]["modes"] == ["text-to-image"]
     assert compact["capability_metadata"]["limits"]["prompt_max_chars"] == 32000
     assert compact["input"]["properties"]["prompt"] == {"type": "string"}
-    assert compact["provider_setup"]["api_key_url"] == "https://platform.openai.com/api-keys"
+    assert compact["provider_setup"]["credential_url"] == "https://platform.openai.com/api-keys"
     assert compact["execution_context"]["discover"]["operation"] == "executionContext.discover"
     assert compact["execution_context"]["pass_context_ref_to"] == [
         "action.validate",
@@ -1101,7 +1101,7 @@ def test_bridge_agent_operation_surface_matches_registered_daemon_tools() -> Non
 def test_daemon_mcp_tools_are_operation_backed_without_expanding_bridge_surface() -> None:
     registry = ToolRegistry()
     register_all(registry)
-    operations = {operation.name for operation in build_operation_registry().all()}
+    operations = {operation.name for operation in build_operation_registry().by_surface("mcp")}
 
     tool_names = {spec.name for spec in registry.all()}
     assert tool_names == operations

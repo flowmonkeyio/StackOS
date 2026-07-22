@@ -84,10 +84,10 @@ def test_readiness_check_reports_scoped_action_missing_setup(
     assert credential["setup"]["local_setup_url"].endswith(
         f"/projects/{project_id}/connections?provider_key=openai-images"
     )
-    assert credential["setup"]["api_key_url"] == "https://platform.openai.com/api-keys"
+    assert credential["setup"]["credential_url"] == "https://platform.openai.com/api-keys"
     assert credential["setup"]["signup_url"] == "https://platform.openai.com/signup"
     assert credential["setup"]["docs_url"].endswith("/image-generation")
-    assert readiness["next_steps"][0]["setup"]["api_key_url"] == (
+    assert readiness["next_steps"][0]["setup"]["credential_url"] == (
         "https://platform.openai.com/api-keys"
     )
     assert readiness["next_steps"][0]["arguments"]["provider_key"] == "openai-images"

@@ -352,7 +352,7 @@ class ActionExecutionMixin:
         run_plan_step_id = prepared.run_plan_step_id
         idempotency_key = prepared.idempotency_key
         connector = self._connectors.get(manifest.connector_key or "")
-        credential = self._resolve_credential(
+        credential = await self._resolve_credential(
             project_id=project_id,
             manifest=manifest,
             credential_ref=resolved_ref,
@@ -586,7 +586,7 @@ class ActionExecutionMixin:
             ) from exc
         return row
 
-    def _resolve_credential(
+    async def _resolve_credential(
         self,
         *,
         project_id: int,
@@ -600,11 +600,12 @@ class ActionExecutionMixin:
             )
         if not manifest.requires_credential and credential_ref is None:
             return None
-        return AuthRepository(self._s).resolve_for_execution(
+        return await AuthRepository(self._s).resolve_for_execution(
             project_id=project_id,
             provider_key=manifest.provider_key,
             credential_ref=credential_ref,
             operation=f"action.{manifest.action_ref}",
+            required_scopes=manifest.required_scopes,
         )
 
     def _connector_request(

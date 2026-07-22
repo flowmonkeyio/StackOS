@@ -32,13 +32,9 @@ from stackos.repositories.base import ValidationError
 
 def _webhook_url(request: ActionConnectorRequest) -> str:
     config = credential_config(request)
-    table_ref = str(request.input_json["table_ref"])
-    webhooks = config.get("webhooks")
-    if not isinstance(webhooks, dict):
-        raise ValidationError("clay credential config missing webhooks map")
-    value = webhooks.get(table_ref)
+    value = config.get("webhook_url")
     if not isinstance(value, str) or not value.strip():
-        raise ValidationError("clay credential config missing table webhook URL")
+        raise ValidationError("clay credential config missing webhook URL")
     url = value.strip()
     parsed = urlsplit(url)
     if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:

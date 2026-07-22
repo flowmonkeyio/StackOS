@@ -21,11 +21,10 @@ class GoogleTagManagerIntegration(BaseIntegration):
         super().__init__(**kwargs)
         self._oauth_payload = parse_google_oauth_payload(self.payload, provider=self.vendor)
 
-    async def _headers(self) -> dict[str, str]:
-        return await google_bearer_headers(
+    def _headers(self) -> dict[str, str]:
+        return google_bearer_headers(
             self._oauth_payload,
             provider=self.vendor,
-            http=self._http,
         )
 
     async def accounts_list(
@@ -44,7 +43,7 @@ class GoogleTagManagerIntegration(BaseIntegration):
             method="GET",
             url=f"{self.BASE_URL}/accounts",
             params=params or None,
-            headers=await self._headers(),
+            headers=self._headers(),
         )
 
     async def containers_list(
@@ -59,7 +58,7 @@ class GoogleTagManagerIntegration(BaseIntegration):
             method="GET",
             url=f"{self.BASE_URL}/{account_path}/containers",
             params=params,
-            headers=await self._headers(),
+            headers=self._headers(),
         )
 
     async def container_snippet(self, *, container_path: str) -> IntegrationCallResult:
@@ -67,7 +66,7 @@ class GoogleTagManagerIntegration(BaseIntegration):
             op="accounts.containers.snippet",
             method="GET",
             url=f"{self.BASE_URL}/{container_path}:snippet",
-            headers=await self._headers(),
+            headers=self._headers(),
         )
 
     async def workspaces_list(
@@ -82,7 +81,7 @@ class GoogleTagManagerIntegration(BaseIntegration):
             method="GET",
             url=f"{self.BASE_URL}/{container_path}/workspaces",
             params=params,
-            headers=await self._headers(),
+            headers=self._headers(),
         )
 
     async def workspace_tags_list(
@@ -97,7 +96,7 @@ class GoogleTagManagerIntegration(BaseIntegration):
             method="GET",
             url=f"{self.BASE_URL}/{workspace_path}/tags",
             params=params,
-            headers=await self._headers(),
+            headers=self._headers(),
         )
 
     async def workspace_triggers_list(
@@ -112,7 +111,7 @@ class GoogleTagManagerIntegration(BaseIntegration):
             method="GET",
             url=f"{self.BASE_URL}/{workspace_path}/triggers",
             params=params,
-            headers=await self._headers(),
+            headers=self._headers(),
         )
 
     async def test_credentials(self) -> dict[str, Any]:

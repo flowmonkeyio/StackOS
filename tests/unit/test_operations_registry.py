@@ -8,7 +8,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 192
+    assert len(names) == 193
     assert {
         "action.execute",
         "actionCall.get",
@@ -270,6 +270,14 @@ def test_operation_registry_documents_core_operations() -> None:
         "/api/v1/projects/{project_id}/auth/{provider_key}/start"
     )
 
+    auth_callback = registry.get("auth.callback").describe_out()
+    assert auth_callback.surfaces["rest"].enabled is True
+    assert auth_callback.surfaces["rest"].path == "/api/v1/auth/oauth/callback"
+    assert auth_callback.surfaces["mcp"].enabled is False
+    assert auth_callback.surfaces["cli"].enabled is False
+    assert auth_callback.grant_policy == "public-oauth-callback"
+    assert auth_callback.secret_policy == "no-secret-output"
+
     browser_call = registry.get("browser.page.call").describe_out()
     assert browser_call.category == "browser"
     assert browser_call.mutating is True
@@ -434,7 +442,10 @@ def test_operation_registry_surface_filter() -> None:
     registry = build_operation_registry()
 
     cli_names = {item.name for item in registry.by_surface("cli")}
-    assert cli_names == {item.name for item in registry.all()} - {"secret.set"}
+    assert cli_names == {item.name for item in registry.all()} - {
+        "auth.callback",
+        "secret.set",
+    }
     assert {
         "workflowTemplate.describe",
         "resource.query",

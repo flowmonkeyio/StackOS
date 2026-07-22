@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+from datetime import timedelta
 from pathlib import Path
 from urllib.parse import parse_qs
 
@@ -19,11 +20,15 @@ from stackos.actions import (
     ActionRepository,
     ActionValidationIssue,
 )
+from stackos.auth_providers import AuthRepository
+from stackos.auth_providers.repository.utils import utcnow
 from stackos.db.models import (
     Action,
     ActionCall,
     Credential,
+    CredentialScope,
     CredentialUsageEvent,
+    IntegrationCredential,
     Plugin,
     PluginSource,
     Provider,
@@ -309,7 +314,45 @@ def _provider_credential_ref(session: Session, project_id: int, provider_key: st
     from stackos.auth_providers import AuthRepository
 
     status = AuthRepository(session).status(project_id=project_id, provider_key=provider_key)
-    return status.connections[0].credential_ref
+    credential_ref = status.connections[0].credential_ref
+    provider_scopes = {
+        "google-ads": ["https://www.googleapis.com/auth/adwords"],
+        "google-workspace": [
+            "https://www.googleapis.com/auth/gmail.send",
+            "https://www.googleapis.com/auth/calendar.events",
+        ],
+        "google-search-console": ["https://www.googleapis.com/auth/webmasters.readonly"],
+        "google-analytics": ["https://www.googleapis.com/auth/analytics.readonly"],
+        "google-tag-manager": ["https://www.googleapis.com/auth/tagmanager.readonly"],
+        "meta-ads": ["ads_management", "ads_read", "business_management"],
+        "salesforce": ["api", "refresh_token"],
+        "pipedrive": ["deals:read", "search:read"],
+        "outreach": ["sequenceStates.write"],
+        "salesloft": ["cadences:write"],
+        "microsoft-365": [
+            "https://graph.microsoft.com/Mail.Send",
+            "https://graph.microsoft.com/Calendars.ReadWrite",
+            "offline_access",
+        ],
+    }
+    if provider_key in provider_scopes:
+        credential = session.exec(
+            select(Credential).where(Credential.credential_ref == credential_ref)
+        ).one()
+        credential.config_json = {**(credential.config_json or {}), "scope_status": "known"}
+        session.add(credential)
+        assert credential.id is not None
+        existing = {
+            row.scope
+            for row in session.exec(
+                select(CredentialScope).where(CredentialScope.credential_id == credential.id)
+            ).all()
+        }
+        for scope in provider_scopes[provider_key]:
+            if scope not in existing:
+                session.add(CredentialScope(credential_id=credential.id, scope=scope))
+        session.commit()
+    return credential_ref
 
 
 def test_action_execute_resolves_secret_internally_and_redacts_audit(
@@ -358,6 +401,40 @@ def test_action_execute_resolves_secret_internally_and_redacts_audit(
     assert usage.operation == "action.test-actions.echo.run"
     assert "daemon-only-secret" not in json.dumps(call.request_json)
     assert "daemon-only-secret" not in json.dumps(call.response_json)
+
+
+def test_action_required_scopes_are_enforced_before_connector_execution(
+    session: Session,
+    project_id: int,
+) -> None:
+    _seed_action(session)
+    action = session.exec(select(Action).where(Action.key == "echo.run")).one()
+    action.config_json = {
+        **action.config_json,
+        "required_scopes": ["example.read"],
+    }
+    session.add(action)
+    session.commit()
+    credential_ref = _credential_ref(session, project_id)
+    fake = _FakeConnector()
+    registry = ActionConnectorRegistry()
+    registry.register(fake)
+    repo = ActionRepository(session, connectors=registry)
+
+    assert repo.describe(action_ref="test-actions.echo.run").manifest.required_scopes == [
+        "example.read"
+    ]
+    with pytest.raises(ConflictError, match="credential scopes are unknown"):
+        asyncio.run(
+            repo.execute(
+                project_id=project_id,
+                action_ref="test-actions.echo.run",
+                input_json={"name": "Ada"},
+                credential_ref=credential_ref,
+            )
+        )
+
+    assert fake.calls == 0
 
 
 def test_provider_context_is_manifest_typed_passed_to_connector_and_audited(
@@ -2849,17 +2926,7 @@ def test_meta_builtin_campaign_create_resolves_account_ref_and_sends_form_body(
         secret_payload=json.dumps({"access_token": "meta-secret"}).encode("utf-8"),
         config_json={"api_version": "v25.0", "accounts": {"primary": "act_123"}},
     )
-    from stackos.auth_providers import AuthRepository
-
-    credential_ref = (
-        AuthRepository(session)
-        .status(
-            project_id=project_id,
-            provider_key="meta-ads",
-        )
-        .connections[0]
-        .credential_ref
-    )
+    credential_ref = _provider_credential_ref(session, project_id, "meta-ads")
     httpx_mock.add_response(
         method="POST",
         url="https://graph.facebook.com/v25.0/act_123/campaigns",
@@ -2913,17 +2980,7 @@ def test_google_ads_builtin_report_search_sets_required_headers_and_body(
             "customers": {"main": "444-555-6666"},
         },
     )
-    from stackos.auth_providers import AuthRepository
-
-    credential_ref = (
-        AuthRepository(session)
-        .status(
-            project_id=project_id,
-            provider_key="google-ads",
-        )
-        .connections[0]
-        .credential_ref
-    )
+    credential_ref = _provider_credential_ref(session, project_id, "google-ads")
     httpx_mock.add_response(
         method="POST",
         url="https://googleads.googleapis.com/v22/customers/4445556666/googleAds:search",
@@ -2961,11 +3018,17 @@ def test_taboola_builtin_campaign_create_uses_backstage_account_endpoint(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
-        project_id=project_id,
-        kind="taboola",
-        secret_payload=json.dumps({"access_token": "taboola-access"}).encode("utf-8"),
-        config_json={"accounts": {"main": "demo-account"}},
+    stored = (
+        IntegrationCredentialRepository(session)
+        .set(
+            project_id=project_id,
+            kind="taboola",
+            secret_payload=json.dumps(
+                {"client_id": "taboola-client", "client_secret": "taboola-secret"}
+            ).encode("utf-8"),
+            config_json={"accounts": {"main": "demo-account"}},
+        )
+        .data
     )
     from stackos.auth_providers import AuthRepository
 
@@ -2977,6 +3040,11 @@ def test_taboola_builtin_campaign_create_uses_backstage_account_endpoint(
         )
         .connections[0]
         .credential_ref
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url="https://backstage.taboola.com/backstage/oauth/token",
+        json={"access_token": "taboola-access", "expires_in": 3600},
     )
     httpx_mock.add_response(
         method="POST",
@@ -3003,8 +3071,11 @@ def test_taboola_builtin_campaign_create_uses_backstage_account_endpoint(
         )
     ).data
 
-    request = httpx_mock.get_requests()[0]
+    token_request, request = httpx_mock.get_requests()
     rendered = json.dumps(out.model_dump(mode="json"))
+    token_form = parse_qs(token_request.content.decode("utf-8"))
+    assert token_form["grant_type"] == ["client_credentials"]
+    assert token_form["client_id"] == ["taboola-client"]
     assert request.headers["authorization"] == "Bearer taboola-access"
     assert json.loads(request.content.decode("utf-8"))["marketing_objective"] == (
         "DRIVE_WEBSITE_TRAFFIC"
@@ -3012,6 +3083,66 @@ def test_taboola_builtin_campaign_create_uses_backstage_account_endpoint(
     assert out.action_call.connector_key == "taboola"
     assert out.output_json["body"]["id"] == "campaign-1"
     assert "taboola-access" not in rendered
+    payload = json.loads(
+        IntegrationCredentialRepository(session).get_decrypted(stored.id).decode("utf-8")
+    )
+    assert payload["access_token"] == "taboola-access"
+    row = session.get(IntegrationCredential, stored.id)
+    assert row is not None and row.expires_at is not None
+
+
+def test_reddit_action_acquires_once_in_core_then_uses_bearer_token(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    stored = (
+        IntegrationCredentialRepository(session)
+        .set(
+            project_id=project_id,
+            kind="reddit",
+            secret_payload=json.dumps(
+                {
+                    "client_id": "reddit-client",
+                    "client_secret": "reddit-secret",
+                    "user_agent": "stackos-test/1.0",
+                }
+            ).encode("utf-8"),
+        )
+        .data
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "reddit")
+    httpx_mock.add_response(
+        method="POST",
+        url="https://www.reddit.com/api/v1/access_token",
+        json={"access_token": "reddit-access", "expires_in": 3600},
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=(
+            "https://oauth.reddit.com/r/python/search?q=oauth&restrict_sr=true"
+            "&sort=relevance&limit=25"
+        ),
+        json={"data": {"children": [{"data": {"title": "OAuth?"}}]}},
+    )
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="utils.reddit.search-subreddit",
+            input_json={"subreddit": "python", "query": "oauth"},
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    token_request, api_request = httpx_mock.get_requests()
+    assert token_request.headers["User-Agent"] == "stackos-test/1.0"
+    assert api_request.headers["Authorization"] == "Bearer reddit-access"
+    assert out.output_json["data"]["children"][0]["data"]["title"] == "OAuth?"
+    payload = json.loads(
+        IntegrationCredentialRepository(session).get_decrypted(stored.id).decode("utf-8")
+    )
+    assert payload["access_token"] == "reddit-access"
 
 
 def test_deferred_action_validation_reports_execution_mode(
@@ -3217,7 +3348,8 @@ def test_apollo_builtin_people_enrich_sends_single_record_params(
     request = httpx_mock.get_requests()[0]
     rendered = json.dumps(out.model_dump(mode="json"))
     assert str(request.url) == "https://api.apollo.io/api/v1/people/match?email=ada%40example.com"
-    assert request.headers["authorization"] == "Bearer apollo-secret"
+    assert request.headers["x-api-key"] == "apollo-secret"
+    assert "authorization" not in request.headers
     assert out.action_call.connector_key == "apollo"
     assert "apollo-secret" not in rendered
 
@@ -3319,13 +3451,21 @@ def test_clay_builtin_table_webhook_submits_configured_rows(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
-        project_id=project_id,
-        kind="clay",
-        secret_payload=json.dumps({}).encode("utf-8"),
-        config_json={"webhooks": {"leads": "https://hooks.clay.com/t/leads"}},
+    from stackos.auth_providers import AuthRepository
+
+    credential_ref = (
+        AuthRepository(session)
+        .store_credential(
+            project_id=project_id,
+            provider_key="clay",
+            auth_method_key="webhook",
+            fields={
+                "webhook_url": "https://hooks.clay.com/t/leads",
+                "webhook_token": "clay-secret",
+            },
+        )
+        .data.credential_ref
     )
-    credential_ref = _provider_credential_ref(session, project_id, "clay")
     httpx_mock.add_response(method="POST", json={"accepted": True})
 
     out = asyncio.run(
@@ -3339,6 +3479,7 @@ def test_clay_builtin_table_webhook_submits_configured_rows(
 
     request = httpx_mock.get_requests()[0]
     assert str(request.url) == "https://hooks.clay.com/t/leads"
+    assert request.headers["authorization"] == "Bearer clay-secret"
     assert json.loads(request.content.decode("utf-8")) == {"rows": [{"email": "ada@example.com"}]}
     assert out.action_call.connector_key == "clay"
 
@@ -3796,12 +3937,32 @@ def test_google_search_console_search_analytics_action_maps_google_contract(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
-        project_id=project_id,
-        kind="google-search-console",
-        secret_payload=json.dumps({"access_token": "gsc-token"}).encode("utf-8"),
+    stored = (
+        AuthRepository(session)
+        .store_credential(
+            project_id=project_id,
+            provider_key="google-search-console",
+            auth_method_key="oauth2_refresh_token",
+            profile_key="manual-refresh-action",
+            fields={
+                "client_id": "gsc-client-id",
+                "client_secret": "gsc-client-secret",
+                "refresh_token": "gsc-refresh-token",
+                "default_site_url": "https://example.com/",
+            },
+            expires_at=utcnow() - timedelta(minutes=5),
+        )
+        .data
     )
-    credential_ref = _provider_credential_ref(session, project_id, "google-search-console")
+    httpx_mock.add_response(
+        method="POST",
+        url="https://oauth2.googleapis.com/token",
+        json={
+            "access_token": "gsc-token",
+            "expires_in": 3600,
+            "scope": "https://www.googleapis.com/auth/webmasters.readonly",
+        },
+    )
     httpx_mock.add_response(
         method="POST",
         url=(
@@ -3824,13 +3985,16 @@ def test_google_search_console_search_analytics_action_maps_google_contract(
                 "start_row": 10,
                 "data_state": "final",
             },
-            credential_ref=credential_ref,
+            credential_ref=stored.credential_ref,
         )
     ).data
 
-    request = httpx_mock.get_requests()[0]
+    token_request, request = httpx_mock.get_requests()
+    token_form = parse_qs(token_request.content.decode())
     request_body = json.loads(request.content.decode("utf-8"))
     rendered = json.dumps(out.model_dump(mode="json"))
+    assert token_form["grant_type"] == ["refresh_token"]
+    assert token_form["refresh_token"] == ["gsc-refresh-token"]
     assert request.headers["Authorization"] == "Bearer gsc-token"
     assert request_body == {
         "startDate": "2026-06-01",
@@ -3894,7 +4058,7 @@ def test_google_search_console_provider_error_is_preserved_for_agent_repair(
     }
 
 
-def test_google_search_console_refresh_token_error_is_preserved_for_agent_repair(
+def test_google_search_console_refresh_failure_stops_before_connector_execution(
     session: Session,
     project_id: int,
     httpx_mock: HTTPXMock,
@@ -3932,21 +4096,13 @@ def test_google_search_console_refresh_token_error_is_preserved_for_agent_repair
         )
 
     data = excinfo.value.data
-    assert data["status"] == "failed"
-    assert data["provider_status_code"] == 400
-    assert data["provider_error"] == {
-        "error": "invalid_grant",
-        "error_description": "Token has been expired or revoked.",
-    }
+    assert data["status"] == "repair-required"
+    assert data["next_action"] == "Reconnect this provider credential."
     rendered = json.dumps(data)
     assert "client-secret" not in rendered
     assert "refresh-secret" not in rendered
-    call = session.exec(select(ActionCall).where(ActionCall.id == data["action_call_id"])).one()
-    assert call.response_json == {
-        "status": "failed",
-        "provider_status_code": 400,
-        "provider_error": data["provider_error"],
-    }
+    assert len(httpx_mock.get_requests()) == 1
+    assert session.exec(select(ActionCall)).all() == []
 
 
 def test_google_search_console_validation_rejects_malformed_google_requests(

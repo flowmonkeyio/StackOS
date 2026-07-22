@@ -60,6 +60,7 @@ WHITELIST_PREFIXES: tuple[str, ...] = (
     "/api/v1/ingress/telegram",
     "/api/v1/ingress/slack",
 )
+_OAUTH_CALLBACK_PATH = "/api/v1/auth/oauth/callback"
 
 _TOKEN_BYTES = 32
 _REQUIRED_MODE = 0o600
@@ -264,6 +265,10 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
         call_next: RequestResponseEndpoint,
     ) -> Response:
         """Compare the bearer token in constant time before forwarding."""
+        if request.method == "GET" and request.url.path == _OAUTH_CALLBACK_PATH:
+            # This exact route is authorized by the short-lived, bound,
+            # one-time OAuth transaction. No other method/path inherits it.
+            return await call_next(request)
         if not requires_auth(request.url.path):
             return await call_next(request)
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 import ipaddress
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -49,6 +50,8 @@ class Settings(BaseSettings):
     # Network
     host: str = "127.0.0.1"
     port: int = 5180
+    oauth_callback_base_url: str | None = None
+    oauth_state_ttl_seconds: int = 600
 
     # Logging
     log_level: str = "INFO"
@@ -88,6 +91,48 @@ class Settings(BaseSettings):
             raise ValueError(f"invalid log_level {v!r}")
         return upper
 
+    @field_validator("oauth_callback_base_url")
+    @classmethod
+    def _validate_oauth_callback_base_url(cls, value: str | None) -> str | None:
+        """Accept one origin-only callback base controlled by the operator.
+
+        Production callbacks must be HTTPS. Plain HTTP remains available only
+        for loopback development, matching provider callback exemptions.
+        """
+
+        if value is None or not value.strip():
+            return None
+        parsed = urlsplit(value.strip())
+        if (
+            not parsed.scheme
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+            or parsed.path not in {"", "/"}
+        ):
+            raise ValueError("oauth_callback_base_url must be an origin without path or query")
+        try:
+            is_loopback = (
+                parsed.hostname in _LOOPBACK_HOSTS
+                or ipaddress.ip_address(parsed.hostname).is_loopback
+            )
+        except ValueError:
+            is_loopback = parsed.hostname in _LOOPBACK_HOSTS
+        if parsed.scheme != "https" and not (parsed.scheme == "http" and is_loopback):
+            raise ValueError(
+                "oauth_callback_base_url must use HTTPS, except for a loopback HTTP origin"
+            )
+        return f"{parsed.scheme}://{parsed.netloc}"
+
+    @field_validator("oauth_state_ttl_seconds")
+    @classmethod
+    def _validate_oauth_state_ttl(cls, value: int) -> int:
+        if not 60 <= value <= 1800:
+            raise ValueError("oauth_state_ttl_seconds must be between 60 and 1800")
+        return value
+
     # ---- Derived paths --------------------------------------------------
 
     @property
@@ -119,6 +164,22 @@ class Settings(BaseSettings):
     def pid_path(self) -> Path:
         """PID file written by the daemon at startup (M9 launchd integration)."""
         return self.state_dir / "daemon.pid"
+
+    @property
+    def oauth_callback_base(self) -> str:
+        if self.oauth_callback_base_url is not None:
+            return self.oauth_callback_base_url
+        host = f"[{self.host}]" if ":" in self.host and not self.host.startswith("[") else self.host
+        return f"http://{host}:{self.port}"
+
+    @property
+    def oauth_callback_uri(self) -> str:
+        return f"{self.oauth_callback_base}/api/v1/auth/oauth/callback"
+
+    @property
+    def oauth_callback_host(self) -> str:
+        parsed = urlsplit(self.oauth_callback_base)
+        return parsed.hostname or self.host
 
     # ---- Side-effecting helpers ----------------------------------------
 

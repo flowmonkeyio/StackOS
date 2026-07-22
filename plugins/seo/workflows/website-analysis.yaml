@@ -242,7 +242,7 @@ auth_requirements:
     optional: true
   - key: dataforseo
     provider: dataforseo
-    auth_type: api-key
+    auth_type: basic
     optional: true
   - key: serper
     provider: serper

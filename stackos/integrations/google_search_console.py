@@ -23,11 +23,10 @@ class GoogleSearchConsoleIntegration(BaseIntegration):
         super().__init__(**kwargs)
         self._oauth_payload = parse_google_oauth_payload(self.payload, provider=self.vendor)
 
-    async def _headers(self) -> dict[str, str]:
-        return await google_bearer_headers(
+    def _headers(self) -> dict[str, str]:
+        return google_bearer_headers(
             self._oauth_payload,
             provider=self.vendor,
-            http=self._http,
         )
 
     async def sites_list(self) -> IntegrationCallResult:
@@ -35,7 +34,7 @@ class GoogleSearchConsoleIntegration(BaseIntegration):
             op="sites.list",
             method="GET",
             url=f"{self.WEBMASTERS_BASE_URL}/sites",
-            headers=await self._headers(),
+            headers=self._headers(),
         )
 
     async def search_analytics_query(
@@ -50,7 +49,7 @@ class GoogleSearchConsoleIntegration(BaseIntegration):
             method="POST",
             url=f"{self.WEBMASTERS_BASE_URL}/sites/{encoded_site}/searchAnalytics/query",
             json_body=request_body,
-            headers=await self._headers(),
+            headers=self._headers(),
         )
 
     async def sitemaps_list(
@@ -66,7 +65,7 @@ class GoogleSearchConsoleIntegration(BaseIntegration):
             method="GET",
             url=f"{self.WEBMASTERS_BASE_URL}/sites/{encoded_site}/sitemaps",
             params=params,
-            headers=await self._headers(),
+            headers=self._headers(),
         )
 
     async def url_inspect(
@@ -84,7 +83,7 @@ class GoogleSearchConsoleIntegration(BaseIntegration):
             method="POST",
             url=self.INSPECTION_URL,
             json_body=body,
-            headers=await self._headers(),
+            headers=self._headers(),
         )
 
     async def test_credentials(self) -> dict[str, Any]:

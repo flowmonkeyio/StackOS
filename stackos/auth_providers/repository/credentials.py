@@ -10,10 +10,11 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
-from sqlmodel import select
+from sqlalchemy import delete
+from sqlmodel import col, select
 
 from stackos.artifacts import redact_secrets
-from stackos.db.models import Credential, IntegrationCredential
+from stackos.db.models import Credential, CredentialScope, IntegrationCredential
 from stackos.repositories.base import ConflictError, Envelope, NotFoundError, ValidationError
 from stackos.repositories.projects import IntegrationCredentialRepository
 
@@ -52,6 +53,22 @@ class CredentialStorageMixin:
         method = self._get_auth_method(provider, auth_method_key)
         assert method is not None
         profile_key = self._normalize_profile_key(profile_key)
+        existing = self._s.exec(
+            select(IntegrationCredential).where(
+                IntegrationCredential.project_id == project_id,
+                IntegrationCredential.kind == provider.key,
+                IntegrationCredential.profile_key == profile_key,
+            )
+        ).first()
+        existing_credential = None
+        existing_secret_payload: bytes | None = None
+        if existing is not None and existing.id is not None:
+            existing_credential = self._s.exec(
+                select(Credential).where(col(Credential.integration_credential_id) == existing.id)
+            ).first()
+            existing_secret_payload = IntegrationCredentialRepository(self._s).get_decrypted(
+                existing.id
+            )
         fields = self._with_provider_field_defaults(provider=provider, method=method, fields=fields)
         secret_values, safe_config = self._split_credential_fields(method=method, fields=fields)
         if provider.key == "ftp":
@@ -61,6 +78,10 @@ class CredentialStorageMixin:
                 validate_ftp_credential_config(safe_config)
             except ValueError as exc:
                 raise ValidationError(str(exc), data={"provider_key": "ftp"}) from exc
+        existing_config = dict(existing.config_json or {}) if existing is not None else {}
+        previous_auth_method_key = existing_config.get("auth_method_key")
+        existing_config.update(safe_config)
+        safe_config = existing_config
         safe_config["auth_method_key"] = method.key
         safe_config["profile_key"] = profile_key
         if provider.key == "telegram-bot" and method.key == "bot-token":
@@ -79,6 +100,75 @@ class CredentialStorageMixin:
         if label is not None and label.strip():
             safe_config["label"] = label.strip()
         secret_payload = self._serialize_secret_payload(method=method, values=secret_values)
+        scoped_noninteractive_method = not method.interactive and method.auth_type in {
+            "oauth",
+            "oauth-client-credentials",
+        }
+        declared_material_matches = False
+        if (
+            scoped_noninteractive_method
+            and existing is not None
+            and existing_secret_payload is not None
+            and previous_auth_method_key == method.key
+        ):
+            try:
+                existing_declared_payload = self._serialize_secret_payload(
+                    method=method,
+                    values=self._deserialize_secret_payload(method=method, row=existing),
+                )
+            except ValidationError:
+                pass
+            else:
+                declared_material_matches = existing_declared_payload == secret_payload
+                if declared_material_matches:
+                    secret_payload = existing_secret_payload
+        scope_state_reset = False
+        if not method.interactive:
+            scope_state_reset = bool(
+                existing_credential is not None
+                and (
+                    previous_auth_method_key != method.key
+                    or (scoped_noninteractive_method and not declared_material_matches)
+                )
+            )
+            if scoped_noninteractive_method and (existing is None or scope_state_reset):
+                safe_config["scope_status"] = "unknown"
+            elif scope_state_reset:
+                safe_config.pop("scope_status", None)
+        resolved_status = "connected"
+        if method.interactive:
+            application_values = json.loads(secret_payload.decode("utf-8"))
+            if not isinstance(application_values, dict):
+                raise ValidationError("interactive OAuth application fields must use JSON")
+            existing_payload: dict[str, Any] = {}
+            if existing is not None and existing.id is not None:
+                try:
+                    assert existing_secret_payload is not None
+                    decoded = json.loads(existing_secret_payload.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise ValidationError(
+                        "existing OAuth credential payload must be JSON before reconnect"
+                    ) from exc
+                if not isinstance(decoded, dict):
+                    raise ValidationError(
+                        "existing OAuth credential payload must be an object before reconnect"
+                    )
+                existing_payload = decoded
+            existing_payload["_oauth_application_pending"] = application_values
+            existing_payload.pop("_oauth_pending", None)
+            secret_payload = json.dumps(existing_payload, separators=(",", ":")).encode()
+            has_active_credential = bool(
+                existing_credential is not None
+                and existing_credential.status == "connected"
+                and any(
+                    existing_payload.get(key) for key in ("access_token", "refresh_token", "value")
+                )
+            )
+            resolved_status = "connected" if has_active_credential else "pending"
+            safe_config["oauth_connection_status"] = resolved_status
+            safe_config["oauth_pending"] = True
+            if has_active_credential and expires_at is None and existing is not None:
+                expires_at = existing.expires_at
         env = IntegrationCredentialRepository(self._s).set(
             project_id=project_id,
             kind=provider.key,
@@ -91,13 +181,17 @@ class CredentialStorageMixin:
         row = self._s.get(IntegrationCredential, env.data.id)
         if row is None:
             raise NotFoundError("stored credential row not found")
-        credential = self._ensure_credential(row, status="connected", method=method)
+        credential = self._ensure_credential(row, status=resolved_status, method=method)
+        if scope_state_reset and credential.id is not None:
+            self._s.exec(
+                delete(CredentialScope).where(col(CredentialScope.credential_id) == credential.id)
+            )
         out = self._connection_out(credential, row)
         self.record_usage_event(
             credential=credential,
             provider_key=provider.key,
             operation="auth.credential.set",
-            status="connected",
+            status=resolved_status,
             metadata_json={
                 "source": "local-admin",
                 "auth_method_key": method.key,
@@ -420,14 +514,33 @@ class CredentialStorageMixin:
                 "stored credential payload is invalid",
                 data={"auth_method_key": method.key},
             ) from exc
-        if not isinstance(decoded, Mapping) or any(
-            not isinstance(key, str) or not isinstance(value, str) for key, value in decoded.items()
-        ):
+        if not isinstance(decoded, Mapping):
             raise ValidationError(
                 "stored credential payload does not match its auth method",
                 data={"auth_method_key": method.key},
             )
-        return {str(key): str(value) for key, value in decoded.items()}
+        pending_application = decoded.get("_oauth_application_pending")
+        sources = (
+            (pending_application, decoded)
+            if isinstance(pending_application, Mapping)
+            else (decoded,)
+        )
+        values: dict[str, str] = {}
+        for field in method.fields:
+            if not field.secret:
+                continue
+            for source in sources:
+                if field.key not in source:
+                    continue
+                value = source[field.key]
+                if not isinstance(value, str):
+                    raise ValidationError(
+                        "stored credential payload does not match its auth method",
+                        data={"auth_method_key": method.key, "field": field.key},
+                    )
+                values[field.key] = value
+                break
+        return values
 
     def _serialize_secret_payload(self, *, method: AuthMethodOut, values: dict[str, str]) -> bytes:
         if method.payload_format == "none":

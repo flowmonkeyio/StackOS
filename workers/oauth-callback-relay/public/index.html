@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en" data-state="working">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="no-referrer">
+    <meta name="robots" content="noindex, nofollow, noarchive">
+    <meta http-equiv="Cache-Control" content="no-store, max-age=0">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'sha256-1vvUxTpynv4OLD9/FLg0VwklCpz+OV9Asr+9Y49IfNE='; style-src 'unsafe-inline'; base-uri 'none'; connect-src 'none'; form-action 'none'; img-src 'none'; object-src 'none'"
+    >
+    <title>Returning to StackOS</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        background: #f4f7fb;
+        color: #172033;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background:
+          radial-gradient(circle at top, rgb(54 104 255 / 12%), transparent 42%),
+          #f4f7fb;
+      }
+
+      main {
+        width: min(100%, 440px);
+        padding: 40px;
+        border: 1px solid rgb(23 32 51 / 10%);
+        border-radius: 20px;
+        background: rgb(255 255 255 / 92%);
+        box-shadow: 0 24px 60px rgb(23 32 51 / 12%);
+        text-align: center;
+      }
+
+      .mark {
+        width: 52px;
+        height: 52px;
+        margin: 0 auto 24px;
+        display: grid;
+        place-items: center;
+        border-radius: 15px;
+        background: #3668ff;
+        color: #fff;
+        font-size: 24px;
+        font-weight: 750;
+        letter-spacing: -0.04em;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(24px, 6vw, 32px);
+        line-height: 1.15;
+        letter-spacing: -0.035em;
+      }
+
+      p {
+        margin: 14px 0 0;
+        color: #58647a;
+        line-height: 1.55;
+      }
+
+      .progress {
+        width: 32px;
+        height: 32px;
+        margin: 26px auto 0;
+        border: 3px solid rgb(54 104 255 / 20%);
+        border-top-color: #3668ff;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+
+      [data-state="error"] .progress {
+        display: none;
+      }
+
+      a {
+        display: inline-block;
+        margin-top: 22px;
+        color: #2d59db;
+        font-weight: 650;
+        text-underline-offset: 3px;
+      }
+
+      [hidden] {
+        display: none;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .progress {
+          animation: none;
+          border-top-color: rgb(54 104 255 / 20%);
+        }
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          background: #0f1420;
+          color: #f3f6ff;
+        }
+
+        body {
+          background:
+            radial-gradient(circle at top, rgb(91 127 255 / 18%), transparent 42%),
+            #0f1420;
+        }
+
+        main {
+          border-color: rgb(255 255 255 / 10%);
+          background: rgb(22 29 44 / 94%);
+          box-shadow: 0 24px 60px rgb(0 0 0 / 28%);
+        }
+
+        p {
+          color: #aeb8ca;
+        }
+
+        a {
+          color: #91a9ff;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main aria-labelledby="title">
+      <div class="mark" aria-hidden="true">S</div>
+      <h1 id="title">Returning to StackOS</h1>
+      <p id="status" role="status" aria-live="polite">
+        Finishing authorization&hellip;
+      </p>
+      <p id="detail" hidden></p>
+      <div class="progress" aria-hidden="true"></div>
+      <a id="local-home" href="http://127.0.0.1:5180/" hidden>Open StackOS</a>
+      <noscript>
+        <p>JavaScript is required to return this authorization response to StackOS.</p>
+      </noscript>
+    </main>
+
+    <script data-oauth-relay>
+(() => {
+  "use strict";
+
+  const PUBLIC_ORIGIN = "https://auth.stackos.flowmonkey.io";
+  const CALLBACK_PATH = "/api/v1/auth/oauth/callback";
+  const LOCAL_CALLBACK =
+    "http://127.0.0.1:5180/api/v1/auth/oauth/callback";
+  const FIELD_LIMITS = Object.freeze({
+    state: 512,
+    code: 4096,
+    error: 200,
+  });
+
+  const page = document.documentElement;
+  const status = document.getElementById("status");
+  const detail = document.getElementById("detail");
+  const localHome = document.getElementById("local-home");
+
+  const fail = () => {
+    page.dataset.state = "error";
+    status.textContent = "Could not return to StackOS";
+    detail.textContent =
+      "The authorization response was invalid. Open StackOS and try connecting again.";
+    detail.hidden = false;
+    localHome.hidden = false;
+  };
+
+  const readField = (params, key, required = false) => {
+    const values = params.getAll(key);
+    if (values.length > 1 || (required && values.length !== 1)) {
+      throw new Error("invalid callback field count");
+    }
+    if (values.length === 0) {
+      return null;
+    }
+
+    const value = values[0];
+    if (value.length === 0 || value.length > FIELD_LIMITS[key]) {
+      throw new Error("invalid callback field length");
+    }
+    return value;
+  };
+
+  let incoming;
+  try {
+    incoming = new URL(window.location.href);
+  } catch {
+    fail();
+    return;
+  }
+
+  const callbackSearch = incoming.search;
+  window.history.replaceState(null, "", incoming.pathname);
+
+  if (incoming.origin !== PUBLIC_ORIGIN || incoming.pathname !== CALLBACK_PATH) {
+    fail();
+    return;
+  }
+
+  try {
+    const params = new URLSearchParams(callbackSearch);
+    const state = readField(params, "state", true);
+    const code = readField(params, "code");
+    const providerError = readField(params, "error");
+
+    if ((code === null) === (providerError === null)) {
+      throw new Error("callback must contain exactly one outcome");
+    }
+
+    const destination = new URL(LOCAL_CALLBACK);
+    destination.searchParams.set("state", state);
+    if (code !== null) {
+      destination.searchParams.set("code", code);
+    } else {
+      destination.searchParams.set("error", providerError);
+    }
+
+    page.dataset.state = "redirecting";
+    status.textContent = "Returning to StackOS…";
+    window.location.replace(destination.href);
+  } catch {
+    fail();
+  }
+})();
+    </script>
+  </body>
+</html>

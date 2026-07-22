@@ -649,8 +649,9 @@ message for relay. It does not prove delivery, inbox placement, open, read,
 click, reply, or bounce unless additional systems provide those events.
 
 SMTP AUTH can use username/password or app-password style credentials. OAuth or
-XOAUTH2 must remain deferred until StackOS implements provider-specific token
-refresh and auth test behavior.
+XOAUTH2 remains deferred until the relevant mail provider contracts, scopes,
+auth methods, and safe auth tests are implemented on top of the shared OAuth
+core.
 
 ### IMAP
 
@@ -1319,8 +1320,8 @@ Credential tests:
 
 Deferred auth methods:
 
-- OAuth/XOAUTH2 until token refresh, scope diagnostics, and safe auth tests are
-  implemented.
+- OAuth/XOAUTH2 until the relevant mail provider contract, scope mapping, auth
+  method, and safe auth test are implemented.
 
 ### IMAP Auth
 
@@ -1350,7 +1351,8 @@ Credential tests:
 
 Deferred auth methods:
 
-- OAuth/XOAUTH2 until provider-specific refresh and scope handling exists.
+- OAuth/XOAUTH2 until the relevant mail provider contract, scope mapping, auth
+  method, and safe auth test exist.
 
 ## Action Contracts
 
@@ -2034,7 +2036,8 @@ for the next cleanup slice before adding more providers:
   loopback-only; production ingress needs secret-token verification and host
   allowlisting or a relay.
 - SMTP and IMAP passwords stay in encrypted credential payloads.
-- OAuth/XOAUTH2 stays deferred until refresh and safe diagnostics are real.
+- OAuth/XOAUTH2 stays deferred until mail-provider contracts, scope mappings,
+  auth methods, and safe diagnostics are real.
 - Allowlist Telegram numeric user/chat ids through safe refs; do not trust
   mutable usernames as the only authorization boundary.
 - Message bodies can include PII, customer data, confidential plans, or access

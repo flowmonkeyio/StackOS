@@ -94,9 +94,26 @@ export function interactiveMethod() {
       auth_type: 'oauth2',
       description: '',
       interactive: true,
-      payload_format: 'none',
+      payload_format: 'json',
       payload_field: null,
-      fields: [],
+      fields: [
+        {
+          key: 'client_id',
+          label: 'OAuth Client ID',
+          type: 'secret',
+          secret: true,
+          required: true,
+          placeholder: '',
+        },
+        {
+          key: 'client_secret',
+          label: 'OAuth Client Secret',
+          type: 'secret',
+          secret: true,
+          required: true,
+          placeholder: '',
+        },
+      ],
       config: null,
     },
   ]
@@ -171,7 +188,8 @@ export function slackBotMethod() {
           secret: true,
           required: true,
           placeholder: '',
-          description: 'Used by daemon-side Slack Events API and interaction signature verification.',
+          description:
+            'Used by daemon-side Slack Events API and interaction signature verification.',
         },
       ],
       config: null,
@@ -220,16 +238,15 @@ export function catalogJson(url: string): Response | null {
   return null
 }
 
-export async function clickButton(
-  wrapper: ReturnType<typeof mount>,
-  label: string,
-): Promise<void> {
+export async function clickButton(wrapper: ReturnType<typeof mount>, label: string): Promise<void> {
   const button = wrapper.findAll('button').find((candidate) => candidate.text().trim() === label)
   expect(button, `${label} button`).toBeDefined()
   await button?.trigger('click')
 }
 
-export function mountConnections(router: ReturnType<typeof createRouter>): ReturnType<typeof mount> {
+export function mountConnections(
+  router: ReturnType<typeof createRouter>,
+): ReturnType<typeof mount> {
   return mount(
     { template: '<RouterView />' },
     {

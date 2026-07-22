@@ -29,31 +29,53 @@ providers:
     name: Meta Ads
     auth_type: oauth
     description: Media-buying account and campaign operations.
+    auth_methods:
+      - key: oauth2_authorization_code
+        label: Connect with Meta
+        auth_type: oauth
+        interactive: true
+        payload_format: json
+        fields:
+          - { key: client_id, label: Meta App ID, type: secret, secret: true, required: true }
+          - { key: client_secret, label: Meta App Secret, type: secret, secret: true, required: true }
     config:
+      scopes: [ads_management, ads_read, business_management]
       setup:
-        credential_label: Meta Marketing API OAuth access token
-        setup_note: Create/select a Meta developer app and store the approved token in StackOS.
+        credential_label: Meta developer application
+        setup_note: Register the fixed StackOS callback, then use Connect with Meta.
         homepage_url: https://www.facebook.com/business/ads
         signup_url: https://www.facebook.com/business/tools/ads-manager
         console_url: https://developers.facebook.com/apps/
-        api_key_url: https://developers.facebook.com/apps/
+        credential_url: https://developers.facebook.com/apps/
         billing_url: https://business.facebook.com/billing_hub
         docs_url: https://developers.facebook.com/docs/marketing-api
         fallback_url: https://developers.facebook.com/docs/marketing-api
         fallback_reason: Token generation is app/business/account specific.
         verified_at: "2026-06-11"
         url_confidence:
-          api_key_url: directional
+          credential_url: directional
 ```
 
 Provider implementation belongs in daemon-side integration code. It should own:
 
-- auth resolution
+- provider transport and safe health probes
 - retries and rate limits
 - budget checks
 - request/response normalization
 - credential usage recording
 - safe error messages
+
+OAuth lifecycle does not belong in the connector. Add the provider's trusted
+protocol data to the central OAuth contract and set `interactive: true` only
+when start, fixed callback, exchange, and renewal are implemented. The core
+owns state, callback safety, encrypted token storage, refresh/client-credentials
+acquisition, concurrency, and action scope enforcement. Add dedicated provider
+code only for a real protocol variant, not to duplicate the generic flow.
+
+Keep auth classification semantic. An OAuth client id/secret pair is not an API
+key; a username plus application password is not an API key; and a provider
+with OAuth plus an API-token alternative should declare both methods rather
+than collapsing them into one label.
 
 Agents should pass provider/account references, not secrets.
 
@@ -79,7 +101,7 @@ Required setup fields:
 - `setup_note`
 - `verified_at`
 - at least one official URL such as `homepage_url`, `signup_url`,
-  `console_url`, `api_key_url`, `billing_url`, `docs_url`, or `fallback_url`
+  `console_url`, `credential_url`, `billing_url`, `docs_url`, or `fallback_url`
   when the provider is external
 - `fallback_reason` when the exact API-key, billing, or registration URL is
   not public or provider/account specific
@@ -105,11 +127,18 @@ actions:
         campaign: { type: object }
     output_schema:
       type: object
+    config:
+      schema_version: stackos.action.v1
+      connector: meta-ads
+      operation: campaign.create
+      requires_credential: true
+      required_scopes: [ads_management]
 ```
 
 The action validates shape and executes the requested operation. The agent
 decides campaign intent, structure, budget strategy, and variants before calling
-the action.
+the action. For OAuth-backed actions, `required_scopes` is checked by the shared
+credential resolver before the connector is called.
 
 For user-owned HTTP/Webhook tools, use the generic daemon connector instead of
 adding core code:

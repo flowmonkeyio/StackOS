@@ -13,7 +13,6 @@ const props = defineProps<{
   visibleAuthProviders: SchemaAuthProviderOut[]
   providerOptions: Array<{ value: string; label: string; group?: string }>
   providerMessages: MessageMap
-  providerSetupUrls: Record<string, string>
   fieldErrors: Record<string, string>
   busyAction: string | null
   editing: boolean
@@ -40,7 +39,7 @@ const props = defineProps<{
   ) => void
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
   (e: 'select-provider', value: string | number | null): void
   (e: 'select-method', providerKey: string, value: string | number | null): void
@@ -48,6 +47,13 @@ defineEmits<{
   (e: 'save-credential', provider: SchemaAuthProviderOut): void
   (e: 'go-plugins'): void
 }>()
+
+function submitConnection(): void {
+  const provider = props.selectedProvider
+  if (!provider) return
+  if (props.selectedMethod(provider)?.interactive) emit('start-provider', provider)
+  else emit('save-credential', provider)
+}
 
 function credentialFieldValues(provider: SchemaAuthProviderOut, method: AuthMethod) {
   return Object.fromEntries(
@@ -79,10 +85,7 @@ function updateCredentialField(
     size="lg"
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <form
-      id="connection-credential-form"
-      @submit.prevent="selectedProvider && $emit('save-credential', selectedProvider)"
-    >
+    <form id="connection-credential-form" @submit.prevent="submitConnection">
       <p class="mb-4 text-xs leading-5 text-fg-muted">
         Credentials stay in the local daemon. Connected agents receive only safe references.
       </p>
@@ -151,16 +154,6 @@ function updateCredentialField(
             :tone="providerMessages[selectedProvider.key].tone"
           >
             {{ providerMessages[selectedProvider.key].text }}
-            <template v-if="providerSetupUrls[selectedProvider.key]" #actions>
-              <a
-                class="focus-ring rounded-sm font-medium text-fg-link hover:underline"
-                :href="providerSetupUrls[selectedProvider.key]"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Continue setup →
-              </a>
-            </template>
           </UiCallout>
         </template>
 
@@ -181,22 +174,24 @@ function updateCredentialField(
       <UiButton variant="ghost" @click="$emit('update:modelValue', false)"> Cancel </UiButton>
       <UiButton
         v-if="selectedProvider && selectedMethod(selectedProvider)?.interactive"
-        variant="secondary"
+        variant="primary"
         icon-left="external-link"
+        type="submit"
+        form="connection-credential-form"
         :loading="busyAction === providerActionKey(selectedProvider.key, 'start')"
-        @click="$emit('start-provider', selectedProvider)"
+        @click.prevent="submitConnection"
       >
-        Start setup
+        {{ editing ? 'Reconnect' : 'Connect' }}
       </UiButton>
       <UiButton
-        v-if="selectedProvider"
+        v-else-if="selectedProvider"
         variant="primary"
         icon-left="save"
         type="submit"
         form="connection-credential-form"
         :loading="busyAction === providerActionKey(selectedProvider.key, 'save')"
         :disabled="selectedMethod(selectedProvider)?.payload_format === 'none'"
-        @click.prevent="$emit('save-credential', selectedProvider)"
+        @click.prevent="submitConnection"
       >
         {{ editing ? 'Save changes' : 'Save and verify' }}
       </UiButton>

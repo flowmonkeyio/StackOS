@@ -55,10 +55,13 @@ class RepositoryError(Exception):
         detail: str,
         *,
         data: dict[str, Any] | None = None,
+        retryable: bool | None = None,
     ) -> None:
         super().__init__(detail)
         self.detail = detail
         self.data: dict[str, Any] = dict(data or {})
+        if retryable is not None:
+            self.retryable = retryable
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise for tests + transport adapters."""

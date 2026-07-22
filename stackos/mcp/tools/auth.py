@@ -10,6 +10,7 @@ from stackos.auth_providers import (
     AuthStartOut,
     AuthStatusOut,
     AuthTestOut,
+    OAuthCallbackOut,
 )
 from stackos.config import Settings
 from stackos.mcp.context import MCPContext
@@ -37,7 +38,7 @@ class AuthStartInput(MCPInput):
     project_id: int
     provider_key: str
     auth_method_key: str | None = None
-    redirect_uri: str | None = None
+    credential_ref: str | None = None
 
 
 class AuthTestInput(MCPInput):
@@ -48,6 +49,16 @@ class AuthTestInput(MCPInput):
 
     project_id: int
     credential_ref: str
+
+
+class AuthCallbackInput(MCPInput):
+    """Transport-bound provider callback input; never exposed through MCP."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    state: str
+    code: str | None = None
+    provider_error: str | None = None
 
 
 class AuthRevokeInput(MCPInput):
@@ -88,12 +99,25 @@ async def _auth_start(
         provider_key=inp.provider_key,
         settings=_settings_from_context(ctx),
         auth_method_key=inp.auth_method_key,
-        redirect_uri=inp.redirect_uri,
+        credential_ref=inp.credential_ref,
     )
     return WriteEnvelope[AuthStartOut](
         data=env.data,
         run_id=ctx.run_id,
         project_id=env.project_id,
+    )
+
+
+async def _auth_callback(
+    inp: AuthCallbackInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> OAuthCallbackOut:
+    return await AuthRepository(ctx.session).complete_oauth_callback(
+        state=inp.state,
+        code=inp.code,
+        provider_error=inp.provider_error,
+        settings=_settings_from_context(ctx),
     )
 
 

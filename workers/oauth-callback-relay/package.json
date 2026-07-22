@@ -1,0 +1,9 @@
+{
+  "name": "@stackos/oauth-callback-relay",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bundle": "mkdir -p dist && zip -j -q -FS dist/stackos-oauth-callback-pages.zip public/index.html public/_headers",
+    "test": "node --test test/*.test.mjs"
+  }
+}

@@ -88,6 +88,9 @@ def serve(
             factory=True,
             log_level=log_level.lower(),
             reload=False,
+            # OAuth callbacks carry one-time values in the query string.
+            # RequestTimingMiddleware provides path-only request diagnostics.
+            access_log=False,
         )
     finally:
         daemon_processes._remove_pid_file(settings.pid_path, os.getpid())

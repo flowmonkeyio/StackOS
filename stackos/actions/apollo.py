@@ -18,8 +18,8 @@ from stackos.actions.connectors import (
     ActionValidationIssue,
 )
 from stackos.actions.provider_utils import (
-    bearer_headers,
     credential_config,
+    credential_value,
     dict_field,
     int_range,
     list_field,
@@ -34,9 +34,10 @@ _BASE_URL = "https://api.apollo.io/api/v1"
 
 
 def _headers(request: ActionConnectorRequest) -> dict[str, str]:
-    headers = bearer_headers(request, "api_key", "access_token", "token")
-    headers["Accept"] = "application/json"
-    return headers
+    return {
+        "Accept": "application/json",
+        "x-api-key": credential_value(request, "api_key"),
+    }
 
 
 def _params_from_filters(payload: dict[str, Any]) -> dict[str, Any]:

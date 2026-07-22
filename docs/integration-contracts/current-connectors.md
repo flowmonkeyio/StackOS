@@ -1,6 +1,6 @@
 # Current Executable Connector Contract Audit
 
-Audit date: 2026-07-15
+Audit date: 2026-07-21
 
 Scope: executable connector contracts for OpenAI Images, xAI Imagine, Reve,
 Google Gemini Image, Google Veo, Ideogram, BytePlus Seedream/Seedance,
@@ -9,7 +9,8 @@ DataForSEO, Serper.dev,
 Ahrefs, Google Search Console, Google Analytics 4, Google Tag Manager,
 WordPress, Ghost, sitemap, Trackbooth, Shopify, generic HTTP, and the internal Branding
 evidence connector, plus
-connection-only setup providers that intentionally do not expose actions yet.
+connection-only setup providers that intentionally do not expose actions yet,
+and the built-in OAuth/auth-protocol classification.
 This file is an
 integration-point audit only. It does not change manifests, tests, or runtime
 behavior.
@@ -18,7 +19,28 @@ behavior.
 
 Current code has the right architectural split: actions are static contracts, connectors are small execution adapters, agents choose strategy, and plaintext credentials stay inside daemon-side connector requests. The core contract lives in `stackos/actions/connectors.py:24`, `stackos/actions/connectors.py:46`, and `stackos/actions/connectors.py:56`; connector registration is explicit in `stackos/actions/__init__.py:40`. Manifest parsing rejects secret-looking static config in `stackos/actions/manifest.py:44` and derives executable fields in `stackos/actions/manifest.py:96`. Availability is static and project-aware in `stackos/action_availability.py:108`.
 
-Important consequence: provider docs should shape action schemas and connector comments, but provider-specific decisions should not move into connectors. Connectors should validate payload shape, resolve daemon-held credentials, call one documented provider operation, normalize safe output, surface rate-limit/error metadata, and record audit.
+Important consequence: provider docs should shape action schemas and connector comments, but provider-specific decisions should not move into connectors. Connectors should validate payload shape, receive an already-resolved daemon-held credential, call one documented provider operation, normalize safe output, and surface rate-limit/error metadata; the shared executor records audit.
+
+## OAuth and auth-protocol status
+
+The canonical provider-by-provider matrix is in
+[`../auth-providers.md`](../auth-providers.md#built-in-oauth-provider-matrix).
+The integration-contract summary is:
+
+| Runtime status | Providers |
+| --- | --- |
+| Interactive authorization code through the shared core | Google Ads, Google Workspace, Google Search Console, Google Analytics, Google Tag Manager, Meta Ads, Microsoft 365, Outreach, Pipedrive, Salesforce, Salesloft |
+| Core client-credentials token acquisition | Reddit, Taboola |
+| Mixed OAuth and non-OAuth alternatives | Pipedrive (API token), Salesloft (API key) |
+| Existing manual OAuth token only; excluded from this delivery | HubSpot |
+| Existing manual OAuth token; provider actions explicitly deferred | X API, LinkedIn |
+
+The root classification fix is complete for the affected built-in manifests:
+OAuth client credentials remain OAuth, Reddit and Taboola declare
+`oauth-client-credentials`, and WordPress declares `application-password`.
+Connectors no longer acquire or refresh OAuth access tokens. The shared auth
+resolver does that work and enforces each action's declared scopes before
+connector dispatch.
 
 ## Docs Ledger
 
@@ -68,16 +90,16 @@ Important consequence: provider docs should shape action schemas and connector c
 | `kling-video` (provider `kling`) | `utils.kling.video.generate` | `stackos/actions/kling_video.py`, `stackos/integrations/kling_video.py` | `stackos/plugins/manifest.py` built-in utils Kling action | JSON credential payload with `access_key` and `secret_key`; JWT signing happens inside the daemon. StackOS v1 exposes `kling-v3` only and explicitly defers Omni/O1 model ids; async task ids and generated video artifacts are preserved without returning provider URLs. |
 | `firecrawl` | `utils.web.scrape`, `utils.web.crawl`, `utils.web.map` | `stackos/actions/firecrawl.py`, `stackos/integrations/firecrawl.py:24` | `stackos/plugins/manifest.py` built-in utils actions | Bearer API key payload; budget enforced by `firecrawl`; `utils.web.extract` is deferred, not executable. |
 | `jina` | `utils.web.read` | `stackos/actions/jina.py`, `stackos/integrations/jina_reader.py:17` | `stackos/plugins/manifest.py:384`, `stackos/plugins/manifest.py:506` | Optional bearer key: action sets `requires_credential: false` and `allows_credential: true`. |
-| `reddit` | `utils.reddit.search-subreddit`, `utils.reddit.top-questions` | `stackos/actions/reddit.py`, `stackos/integrations/reddit.py:29` | `stackos/plugins/manifest.py:390`, `stackos/plugins/manifest.py:542`, `stackos/plugins/manifest.py:558` | Credential payload is JSON OAuth app data, not a plain API key. |
+| `reddit` | `utils.reddit.search-subreddit`, `utils.reddit.top-questions` | `stackos/actions/reddit.py`, `stackos/integrations/reddit.py` | `stackos/plugins/manifest.py` built-in utils actions | JSON OAuth application fields; the core resolver acquires and renews the application-only access token before the connector runs. |
 | `sitemap` | `utils.sitemap.fetch` | `stackos/actions/sitemap.py`, `stackos/integrations/sitemap.py:84` | `stackos/plugins/manifest.py:525` | No provider and no credential. |
 | `ftp` | `utils.ftp.directory.list`, `utils.ftp.file.upload`, `utils.ftp.file.download`, `utils.ftp.file.delete`, `utils.ftp.directory.create`, `utils.ftp.directory.delete`, `utils.ftp.path.rename` | `stackos/actions/ftp.py`, `stackos/integrations/ftp.py` | `stackos/plugins/manifest.py` built-in utils file-transfer actions | Password payload plus safe host/port/user/TLS/passive/timeout/encoding config; explicit FTPS protects data with `PROT P`; arbitrary agent-selected local and remote paths are supported without a generated-assets or FTP-only approval gate. |
 | `cloudflare` | `utils.cloudflare.zones.list`, `utils.cloudflare.dns.records.list`, `utils.cloudflare.dns.records.get`, `utils.cloudflare.dns.records.create`, `utils.cloudflare.dns.records.edit`, `utils.cloudflare.dns.records.replace`, `utils.cloudflare.dns.records.delete` | `stackos/actions/cloudflare.py`, `stackos/integrations/cloudflare.py` | `stackos/plugins/manifest.py` built-in utils DNS actions | Daemon-held bearer API token; DNS-only scope; exact agent-selected ids and record payloads; no hidden preflight read or connector-specific zone restriction. |
 | `dataforseo` | `seo.keyword.research`, `seo.serp.analyze`, `seo.paa.extract` | `stackos/actions/dataforseo.py`, `stackos/integrations/dataforseo.py:25` | `plugins/seo/plugin.yaml:20`, `plugins/seo/plugin.yaml:36`, `plugins/seo/plugin.yaml:66`, `plugins/seo/plugin.yaml:94` | Basic auth: `login` in credential config and password in encrypted payload. |
 | `serper` | `seo.serper.search` | `stackos/actions/serper.py`, `stackos/integrations/serper.py` | `plugins/seo/plugin.yaml` | API key payload sent through the provider header; provider credit metadata is surfaced when present. |
 | `ahrefs` | `seo.competitor.keywords`, `seo.backlink.research` | `stackos/actions/ahrefs.py`, `stackos/integrations/ahrefs.py:22` | `plugins/seo/plugin.yaml:31`, `plugins/seo/plugin.yaml:120`, `plugins/seo/plugin.yaml:148` | Bearer API key payload; requires eligible paid plan/API units. Connector reads the free subscription-info endpoint first, enforces documented row caps (Lite 100, Standard 250, Advanced 500, Enterprise action-bounded at 1000), and surfaces Ahrefs API-unit headers in metadata. |
-| `google-search-console` | `seo.search-console.sites.list`, `seo.search-console.search-analytics.query`, `seo.search-console.sitemaps.list`, `seo.search-console.url.inspect` | `stackos/actions/google_search_console.py`, `stackos/integrations/google_search_console.py` | `plugins/seo/plugin.yaml` | Google OAuth payload supports access token or client refresh token; first pass uses `webmasters.readonly`, returns sanitized site/search/sitemap/inspection data, and does not create legacy `gsc*` tools or metric tables. |
-| `google-analytics` | `seo.ga4.account_summaries.list`, `seo.ga4.properties.metadata.get`, `seo.ga4.properties.run_report`, `seo.ga4.properties.run_realtime_report` | `stackos/actions/google_analytics.py`, `stackos/integrations/google_analytics.py` | `plugins/seo/plugin.yaml` | Google OAuth payload supports access token or client refresh token; first pass uses `analytics.readonly`, resolves safe `property_ref` values from credential config, maps `page_cursor` to provider `pageToken`, and exposes returned report quota as safe `quota` output. |
-| `google-tag-manager` | `seo.google-tag-manager.accounts.list`, `seo.google-tag-manager.containers.list`, `seo.google-tag-manager.container.snippet.get`, `seo.google-tag-manager.workspaces.list`, `seo.google-tag-manager.workspace.tags.list`, `seo.google-tag-manager.workspace.triggers.list` | `stackos/actions/google_tag_manager.py`, `stackos/integrations/google_tag_manager.py` | `plugins/seo/plugin.yaml` | Google OAuth payload supports access token or client refresh token; first pass uses `tagmanager.readonly`, builds only API-relative account/container/workspace paths, and defers edit/publish/user-management scopes. |
+| `google-search-console` | `seo.search-console.sites.list`, `seo.search-console.search-analytics.query`, `seo.search-console.sitemaps.list`, `seo.search-console.url.inspect` | `stackos/actions/google_search_console.py`, `stackos/integrations/google_search_console.py` | `plugins/seo/plugin.yaml` | Interactive Google authorization code plus manual access/refresh-token compatibility; core renewal and `webmasters.readonly` enforcement happen before connector dispatch. |
+| `google-analytics` | `seo.ga4.account_summaries.list`, `seo.ga4.properties.metadata.get`, `seo.ga4.properties.run_report`, `seo.ga4.properties.run_realtime_report` | `stackos/actions/google_analytics.py`, `stackos/integrations/google_analytics.py` | `plugins/seo/plugin.yaml` | Interactive Google authorization code plus manual access/refresh-token compatibility; core renewal and `analytics.readonly` enforcement happen before connector dispatch. Safe `property_ref`, paging, and quota normalization remain connector concerns. |
+| `google-tag-manager` | `seo.google-tag-manager.accounts.list`, `seo.google-tag-manager.containers.list`, `seo.google-tag-manager.container.snippet.get`, `seo.google-tag-manager.workspaces.list`, `seo.google-tag-manager.workspace.tags.list`, `seo.google-tag-manager.workspace.triggers.list` | `stackos/actions/google_tag_manager.py`, `stackos/integrations/google_tag_manager.py` | `plugins/seo/plugin.yaml` | Interactive Google authorization code plus manual access/refresh-token compatibility; core renewal and `tagmanager.readonly` enforcement happen before connector dispatch. Edit/publish/user-management scopes remain deferred. |
 | `wordpress` | `publishing.wordpress.post.create` | `stackos/actions/wordpress.py`, `stackos/integrations/wordpress.py:17` | `plugins/publishing/plugin.yaml:12`, `plugins/publishing/plugin.yaml:40` | WordPress site URL in config; username/application password in encrypted payload. |
 | `ghost` | `publishing.ghost.post.create` | `stackos/actions/ghost.py`, `stackos/integrations/ghost.py:17` | `plugins/publishing/plugin.yaml:23`, `plugins/publishing/plugin.yaml:87` | Ghost URL and optional API version in config; Admin API key in encrypted payload. |
 | `branding` | `branding.evidence.capture`, `branding.evidence.sanitize-mark` | `stackos/actions/branding.py` | `plugins/branding/plugin.yaml` | Internal resource connector; no provider credentials. Capture writes raw evidence only, and public clearance is a separate sanitize-mark action with reviewer, reason, and decision ref. |
@@ -359,18 +381,24 @@ Recommended corrections:
 
 ### Reddit
 
-Current: `utils.reddit.search-subreddit` and `utils.reddit.top-questions` acquire an application-only OAuth token, then call OAuth Reddit listing endpoints.
+Current: `utils.reddit.search-subreddit` and `utils.reddit.top-questions` receive
+an application-only OAuth access token from the shared credential resolver and
+call Reddit listing endpoints. The resolver, not the connector, exchanges the
+stored client id/secret and renews the short-lived token.
 
 Gaps/mismatches:
 
-- Resolved in the manifest: Reddit now declares `auth_type="oauth-client-credentials"` with credential payload metadata for `client_id`, `client_secret`, and `user_agent`. The wrapper still needs richer pagination and enum validation.
+- Resolved in the manifest and runtime: Reddit declares
+  `auth_type="oauth-client-credentials"`; `client_secret` and the configured
+  `user_agent` remain in the encrypted application payload, and token
+  acquisition is core-owned. The wrapper still needs richer pagination and enum
+  validation.
 - Reddit listing pagination uses `after`/`before`, `limit`, `count`, and `show`; actions expose only `limit`, so callers cannot page beyond the first listing slice.
 - `sort` and `time_filter` are unbounded strings in `stackos/actions/reddit.py`, so invalid provider enum values reach Reddit.
 - Resolved in the manifest: `top_questions` is described as raw top Reddit posts, and the executing agent owns any question-shaped filtering.
 
 Recommended corrections:
 
-- Add safe auth method fields for `client_id` and `user_agent`, with `client_secret` in encrypted payload. Do not store the OAuth access token in agent-visible state.
 - Constrain `sort` and `time_filter` enums and add optional `after` pagination input/output.
 
 ### DataForSEO
@@ -465,8 +493,14 @@ container, snippet, workspace, tag, and trigger inventory.
 
 Gaps/mismatches:
 
-- Interactive OAuth start/callback is not part of this delivery. Operators
-  store an access token or OAuth refresh-token payload through Connections.
+- Resolved: all three providers use the shared interactive authorization-code
+  start/fixed-callback path. Manual access/refresh-token methods remain only for
+  compatibility, and the core resolver renews tokens before dispatch. Replacing
+  imported token material clears old grants; scope-gated actions require grants
+  returned by a trusted exchange and do not infer them from the provider
+  manifest.
+- Resolved: action manifests declare the exact read scope and scope failure
+  prevents connector execution.
 - Google write/admin scopes are intentionally not exposed: Search Console
   write, Analytics edit/Measurement Protocol ingestion, Tag Manager edit,
   publish, version, and user/account-management scopes all require separate
@@ -492,14 +526,14 @@ Current: `publishing.wordpress.post.create` sends a raw REST post payload to `/w
 
 Gaps/mismatches:
 
-- `auth_type: api-key` in `plugins/publishing/plugin.yaml:15` is semantically loose. The actual credential is username plus application password, parsed in `stackos/integrations/wordpress.py:33`.
-- WordPress docs require HTTPS for Application Passwords in normal remote use. The setup field is a URL but does not document HTTPS expectation.
+- Resolved: the manifest uses `auth_type: application-password`, renders
+  username/application-password fields, and labels the site field as an HTTPS
+  site URL.
 - Current credential test calls `users/me?context=edit`, but post creation also needs the user capability to create posts; roles are returned in `stackos/integrations/wordpress.py:87`, but availability does not reflect publish capability.
 - No media upload, post update, status transition, taxonomy lookup, or pagination actions exist. That is fine, but templates should not assume these are available.
 
 Recommended corrections:
 
-- Clarify provider auth method fields: site root URL over HTTPS, username, application password.
 - Add docs links in wrapper comments to Application Passwords and Posts.
 - Add capability warnings to manifest/template docs before offering publish flows beyond create-post.
 
@@ -555,7 +589,10 @@ Recommended corrections:
 ## Action Availability Implications
 
 - `missing_connector` is reliable because registry keys are explicit in `stackos/actions/__init__.py:40`.
-- `missing_credential` is reliable for required credentials, but setup semantics can still be misleading when manifests use `auth_type: api-key` for OAuth/client-secret pairs or username/application-password pairs.
+- `missing_credential` is reliable for required credentials. The known root
+  auth classifications are now semantic: OAuth/client-secret pairs remain
+  OAuth, Reddit/Taboola are OAuth client credentials, and WordPress is an
+  application password.
 - `missing_budget` is reliable as a gate, but not necessarily as a cost control. Ahrefs captures provider API-unit headers but still estimates zero monetary cost until StackOS models unit budgets. Reddit/Jina/WordPress/Ghost/sitemap/HTTP do not enforce budgets.
 - Optional credentials work for Jina because the manifest has `requires_credential: false` and `allows_credential: true` in `stackos/plugins/manifest.py:515`.
 - Provider-disabled/plugin-disabled statuses are generic and correct, but they do not express provider-specific plan eligibility, scopes, roles, or endpoint permissions.
@@ -563,7 +600,8 @@ Recommended corrections:
 ## Gaps Before Expanding Actions
 
 1. Add exact provider doc links near wrapper methods before adding options. This prevents “old docs by memory” drift.
-2. Tighten auth method fields for Reddit, WordPress, Ghost, and Ahrefs so operators know what credential shape is expected.
+2. Keep auth method fields and semantic `auth_type` labels synchronized when
+   adding providers; do not infer protocol from the presence of a secret field.
 3. Add pagination/status actions before expanding crawl, listing, backlinks, posts, or keyword inventories.
 4. Normalize provider errors into safe, structured action-call metadata without exposing secrets or raw stack traces.
 5. Make budget semantics honest: use actual costs/headers where available, or mark budget as call-count/approval-only instead of monetary.
@@ -578,13 +616,12 @@ Recommended corrections:
 - `stackos/plugins/manifest.py`: rename/describe `utils.web.crawl` as submit-only unless a crawl-status action is added.
 - `stackos/integrations/jina_reader.py`: link Reader API and validate absolute target URL shape before path concatenation.
 - `stackos/plugins/manifest.py`: add optional-auth setup copy for Jina.
-- `stackos/plugins/manifest.py`: add Reddit auth method fields for `client_id` and `user_agent`; keep `client_secret` daemon-side.
-- `stackos/integrations/reddit.py`: link OAuth2/Data API docs and document listing pagination headers/fields.
+- `stackos/integrations/reddit.py`: keep OAuth2/Data API links and document listing pagination headers/fields; token acquisition remains in the core resolver.
 - `stackos/integrations/dataforseo.py`: link exact endpoint docs above each method; note keyword volume 12 RPM and task-size limits.
 - `plugins/seo/plugin.yaml`: keep DataForSEO keyword count, SERP depth, provider-native locale keys, and locale enums synced with endpoint docs.
 - `stackos/integrations/ahrefs.py`: keep API v3 intro, API keys, limits consumption, subscription usage, organic keywords, and all backlinks links synced with unit-header capture.
 - `plugins/seo/plugin.yaml`: keep Ahrefs plan row caps, API-unit requirements, and budget meaning synced with pricing/API docs.
 - `stackos/integrations/wordpress.py`: link WordPress Authentication, Application Passwords, and Posts docs; mention HTTPS and post capability.
-- `plugins/publishing/plugin.yaml`: clarify WordPress credential shape and Ghost URL root/API version.
+- `plugins/publishing/plugin.yaml`: keep the WordPress application-password credential shape and Ghost URL root/API version explicit.
 - `stackos/integrations/ghost.py`: link Ghost Admin API auth/posts/images docs; document JWT `aud`, expiration, and `Accept-Version` target.
 - `stackos/actions/http.py`: link RFC 9110, RFC 7617, RFC 6750, and RFC 9457; document why static config cannot contain secret headers while injected auth headers can.

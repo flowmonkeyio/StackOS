@@ -44,7 +44,7 @@ providers:
         homepage_url: https://wordpress.com/
         signup_url: https://wordpress.com/start
         console_url: https://wordpress.com/me/security
-        api_key_url: https://wordpress.com/me/security
+        credential_url: https://wordpress.com/me/security
         billing_url: https://wordpress.com/me/purchases
         docs_url: https://developer.wordpress.com/docs/api/
         fallback_url: https://wordpress.org/documentation/article/application-passwords/
@@ -54,7 +54,7 @@ providers:
           homepage_url: verified
           signup_url: verified
           console_url: directional
-          api_key_url: directional
+          credential_url: directional
           billing_url: directional
           docs_url: verified
           fallback_url: verified
@@ -95,7 +95,7 @@ providers:
         homepage_url: https://ghost.org/
         signup_url: https://ghost.org/pricing/
         console_url: https://ghost.org/docs/admin-api/
-        api_key_url: https://ghost.org/docs/admin-api/
+        credential_url: https://ghost.org/docs/admin-api/
         billing_url: https://ghost.org/pricing/
         docs_url: https://ghost.org/docs/admin-api/
         fallback_url: https://ghost.org/docs/admin-api/
@@ -105,7 +105,7 @@ providers:
           homepage_url: verified
           signup_url: verified
           console_url: directional
-          api_key_url: verified
+          credential_url: verified
           billing_url: verified
           docs_url: verified
           fallback_url: verified

@@ -180,7 +180,7 @@ auth_requirements:
     optional: true
   - key: taboola
     provider: taboola
-    auth_type: oauth
+    auth_type: oauth-client-credentials
     optional: true
   - key: openai_images
     provider: openai-images

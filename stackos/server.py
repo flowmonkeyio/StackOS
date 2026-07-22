@@ -62,6 +62,7 @@ _PUBLIC_INGRESS_PREFIXES: tuple[str, ...] = (
     "/api/v1/ingress/telegram",
     "/api/v1/ingress/slack",
 )
+_OAUTH_CALLBACK_PATH = "/api/v1/auth/oauth/callback"
 _SLOW_REQUEST_MS = 100
 
 
@@ -122,6 +123,10 @@ class HostHeaderMiddleware(BaseHTTPMiddleware):
     refuses non-loopback `--host`, so this is the runtime backstop.
     """
 
+    def __init__(self, app: object, *, oauth_callback_host: str) -> None:
+        super().__init__(app)  # type: ignore[arg-type]
+        self._oauth_callback_host = oauth_callback_host.lower()
+
     async def dispatch(
         self,
         request: Request,
@@ -137,7 +142,16 @@ class HostHeaderMiddleware(BaseHTTPMiddleware):
         else:
             host_only = host_header.split(":", 1)[0] if host_header else ""
 
-        if host_only not in _ALLOWED_HOSTS and not _is_public_ingress_path(request.url.path):
+        oauth_callback_host = (
+            request.method == "GET"
+            and request.url.path == _OAUTH_CALLBACK_PATH
+            and host_only.lower() == self._oauth_callback_host
+        )
+        if (
+            host_only not in _ALLOWED_HOSTS
+            and not _is_public_ingress_path(request.url.path)
+            and not oauth_callback_host
+        ):
             return JSONResponse(
                 {"detail": f"Host header {host_header!r} is not loopback"},
                 status_code=421,
@@ -312,6 +326,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url="/api/openapi.json",
     )
     app.state.ui_token = ui_token
+    app.dependency_overrides[get_settings] = lambda: settings
 
     # Middleware order — Starlette runs the *last-added* first on the
     # request path, so we add inside-out: auth, then CORS, then host check.
@@ -324,7 +339,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["authorization", "content-type", "if-match", "x-request-id"],
     )
-    app.add_middleware(HostHeaderMiddleware)
+    app.add_middleware(
+        HostHeaderMiddleware,
+        oauth_callback_host=settings.oauth_callback_host,
+    )
     app.add_middleware(RequestTimingMiddleware)
 
     register_routers(app)

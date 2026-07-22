@@ -39,6 +39,9 @@ def test_serve_writes_and_removes_pid_file(
         assert pid_path.read_text(encoding="utf-8") == f"{os.getpid()}\n"
         assert kwargs["host"] == "127.0.0.1"
         assert kwargs["port"] == 5199
+        # Callback query values must never enter Uvicorn's access log. The
+        # application-owned timing logger records method/path only.
+        assert kwargs["access_log"] is False
 
     monkeypatch.setitem(sys.modules, "uvicorn", types.SimpleNamespace(run=fake_run))
 

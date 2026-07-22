@@ -12,6 +12,7 @@ import {
   connectionNeedsAttention,
   connectionStatusKey,
   credentialTestMessage,
+  providerLabel,
   providerActionKey,
   providerGroupLabel,
   serviceName,
@@ -22,6 +23,7 @@ import type {
   ConnectionRow,
   MessageMap,
   MessageTone,
+  OAuthReturnStatus,
   ServiceGroup,
 } from './types'
 
@@ -55,7 +57,7 @@ export function useConnectionCredentials(projectId: ComputedRef<number>) {
   const addPanelOpen = ref(false)
   const busyAction = ref<string | null>(null)
   const providerMessages = ref<MessageMap>({})
-  const providerSetupUrls = ref<Record<string, string>>({})
+  const oauthReturnMessage = ref<{ tone: MessageTone; text: string } | null>(null)
   const connectionMessages = ref<MessageMap>({})
   const fieldErrors = ref<Record<string, string>>({})
   const pendingRevoke = ref<ConnectionRow | null>(null)
@@ -279,18 +281,9 @@ export function useConnectionCredentials(projectId: ComputedRef<number>) {
   async function saveCredential(provider: SchemaAuthProviderOut): Promise<void> {
     const method = selectedMethod(provider)
     if (!method || method.payload_format === 'none') return
-    const fields = credentialFields(provider, method)
-    if (fields === null) return
-    const profileKey = profileValue(provider.key, method.key).trim() || 'default'
-    const label = labelValue(provider.key, method.key).trim()
-    if (
-      !editing.value &&
-      Object.keys(fields).length === 0 &&
-      (method.fields ?? []).some((field) => field.secret)
-    ) {
-      setProviderMessage(provider.key, 'danger', 'Credential fields are required.')
-      return
-    }
+    const draft = credentialDraft(provider, method)
+    if (!draft) return
+    const { fields, profileKey, label } = draft
     busyAction.value = providerActionKey(provider.key, 'save')
     try {
       if (editingCredentialRef.value) {
@@ -353,34 +346,104 @@ export function useConnectionCredentials(projectId: ComputedRef<number>) {
     }
   }
 
-  async function startProvider(provider: SchemaAuthProviderOut): Promise<void> {
+  async function startProvider(provider: SchemaAuthProviderOut): Promise<string | null> {
     const method = selectedMethod(provider)
-    if (!method) return
+    if (!method?.interactive) return null
+    const draft = credentialDraft(provider, method)
+    if (!draft) return null
+    const { fields, profileKey, label } = draft
     busyAction.value = providerActionKey(provider.key, 'start')
+    oauthReturnMessage.value = null
     try {
+      let credentialRef = editingCredentialRef.value
+      if (credentialRef) {
+        await catalogStore.updateCredential(projectId.value, credentialRef, {
+          label: label || null,
+          fields,
+        })
+      } else {
+        const stored = await catalogStore.storeCredential(projectId.value, provider.key, {
+          auth_method_key: method.key,
+          profile_key: profileKey,
+          label: label || null,
+          fields,
+        })
+        credentialRef = stored.data.credential_ref
+      }
       const response = await catalogStore.startCredential(projectId.value, provider.key, {
         auth_method_key: method.key,
-        redirect_uri: null,
+        credential_ref: credentialRef,
       })
-      const url = response.data.authorization_url ?? response.data.setup_url
-      const safeUrl = safeSetupUrl(url)
-      if (url && !safeUrl) {
+      const safeUrl = safeAuthorizationUrl(response.data.authorization_url)
+      if (
+        !safeUrl ||
+        response.data.provider_key !== provider.key ||
+        response.data.auth_method_key !== method.key ||
+        response.data.credential_ref !== credentialRef
+      ) {
         setProviderMessage(provider.key, 'danger', 'The provider returned an invalid setup URL.')
-        return
+        return null
       }
-      if (safeUrl) providerSetupUrls.value[provider.key] = safeUrl
-      setProviderMessage(
-        provider.key,
-        'info',
-        safeUrl
-          ? 'Setup is ready. Continue with the provider.'
-          : `Started ${response.data.status}.`,
-      )
+      clearForm(provider.key, method.key)
+      editingCredentialRef.value = null
+      editingSecretPresent.value = {}
+      fieldErrors.value = {}
+      addPanelOpen.value = false
+      return safeUrl
     } catch (err) {
       setProviderMessage(provider.key, 'danger', formatApiError(err, 'failed to start auth flow'))
+      return null
     } finally {
       busyAction.value = null
     }
+  }
+
+  function credentialDraft(
+    provider: SchemaAuthProviderOut,
+    method: AuthMethod,
+  ): { fields: Record<string, string>; profileKey: string; label: string } | null {
+    const fields = credentialFields(provider, method)
+    if (fields === null) return null
+    if (
+      !editing.value &&
+      Object.keys(fields).length === 0 &&
+      (method.fields ?? []).some((field) => field.secret)
+    ) {
+      setProviderMessage(provider.key, 'danger', 'Credential fields are required.')
+      return null
+    }
+    return {
+      fields,
+      profileKey: profileValue(provider.key, method.key).trim() || 'default',
+      label: labelValue(provider.key, method.key).trim(),
+    }
+  }
+
+  function applyOAuthReturn(status: OAuthReturnStatus, providerKey: string | null): void {
+    const name = providerKey
+      ? (providerByKey.value.get(providerKey)?.name ?? providerLabel(providerKey))
+      : 'OAuth'
+    const messages: Record<OAuthReturnStatus, { tone: MessageTone; text: string }> = {
+      connected: { tone: 'success', text: `${name} connected successfully.` },
+      denied: {
+        tone: 'warning',
+        text: `${name} authorization was denied. Start setup again when you are ready.`,
+      },
+      expired: {
+        tone: 'warning',
+        text: `${name} authorization expired. Start setup again.`,
+      },
+      'repair-required': {
+        tone: 'danger',
+        text: `${name} could not finish authorization. Review the connection settings and try again.`,
+      },
+      error: {
+        tone: 'danger',
+        text: `${name} could not finish authorization. Start setup again.`,
+      },
+    }
+    oauthReturnMessage.value = messages[status]
+    addPanelOpen.value = false
   }
 
   async function testConnection(connection: ConnectionRow): Promise<void> {
@@ -453,7 +516,7 @@ export function useConnectionCredentials(projectId: ComputedRef<number>) {
     addPanelOpen,
     busyAction,
     providerMessages,
-    providerSetupUrls,
+    oauthReturnMessage,
     connectionMessages,
     fieldErrors,
     pendingRevoke,
@@ -491,6 +554,7 @@ export function useConnectionCredentials(projectId: ComputedRef<number>) {
     openEditConnection,
     saveCredential,
     startProvider,
+    applyOAuthReturn,
     testConnection,
     requestRevoke,
     confirmRevoke,
@@ -498,11 +562,12 @@ export function useConnectionCredentials(projectId: ComputedRef<number>) {
   }
 }
 
-function safeSetupUrl(value: string | null | undefined): string | null {
+function safeAuthorizationUrl(value: string | null | undefined): string | null {
   if (!value) return null
   try {
-    const url = new URL(value, window.location.origin)
-    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null
+    const url = new URL(value)
+    if (url.protocol !== 'https:' || url.username || url.password || url.hash) return null
+    return url.href
   } catch {
     return null
   }

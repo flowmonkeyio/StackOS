@@ -45,12 +45,12 @@ providers:
         credential_label: Trackbooth API key
         setup_note: Trackbooth setup is account-specific. Store the account API key in StackOS; use the production API base URL unless local testing requires an override.
         homepage_url: https://trackbooth.com/
-        api_key_url: https://apis.trackbooth.com
+        credential_url: https://apis.trackbooth.com
         fallback_reason: No public self-service registration/API-key page is verified; use the Trackbooth account/API endpoint and StackOS local connection form.
         verified_at: "2026-06-11"
         url_confidence:
           homepage_url: verified
-          api_key_url: directional
+          credential_url: directional
 resources:
   - key: agent-api-operation
     name: Agent API Operation

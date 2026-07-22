@@ -157,7 +157,7 @@ auth_requirements:
     optional: true
   - key: pipedrive
     provider: pipedrive
-    auth_type: oauth
+    auth_type: oauth-or-api-token
     optional: true
 action_contracts:
   - key: hubspot_pipeline_fetch

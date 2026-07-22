@@ -10,9 +10,10 @@ rate-limit/budget behavior, provider documentation, auth shape, audit coverage,
 and remaining gaps.
 
 Agents are the primary users of these contracts. The agent chooses strategy,
-creates run plans, and passes explicit action inputs. StackOS connectors only
-validate the input, resolve daemon-held credentials, call the provider operation,
-return safe structured output, and write audit records.
+creates run plans, and passes explicit action inputs. The shared action runtime
+resolves daemon-held credentials and writes audit. Connectors only validate
+provider-specific input, receive the resolved credential, call the provider
+operation, and return safe structured output.
 
 ## Minimum Standard
 

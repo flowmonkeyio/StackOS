@@ -3,7 +3,8 @@ import type { SchemaAuthProviderOut, SchemaCredentialConnectionOut } from '@/api
 export type ConnectionRow = SchemaCredentialConnectionOut & { id: string }
 export type AuthMethod = NonNullable<SchemaAuthProviderOut['auth_methods']>[number]
 export type AuthField = NonNullable<AuthMethod['fields']>[number]
-export type MessageTone = 'success' | 'danger' | 'info'
+export type MessageTone = 'success' | 'danger' | 'warning' | 'info'
+export type OAuthReturnStatus = 'connected' | 'denied' | 'expired' | 'repair-required' | 'error'
 export type ConnectionSection =
   | 'services'
   | 'bots'

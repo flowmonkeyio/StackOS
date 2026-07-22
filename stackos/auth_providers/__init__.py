@@ -14,6 +14,7 @@ from stackos.auth_providers.repository import (
     AuthStatusOut,
     AuthTestOut,
     CredentialConnectionOut,
+    OAuthCallbackOut,
     ResolvedCredential,
 )
 
@@ -29,5 +30,6 @@ __all__ = [
     "AuthStatusOut",
     "AuthTestOut",
     "CredentialConnectionOut",
+    "OAuthCallbackOut",
     "ResolvedCredential",
 ]

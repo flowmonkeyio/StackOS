@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from urllib.parse import parse_qs
 
 import pytest
 from pytest_httpx import HTTPXMock
@@ -222,11 +223,13 @@ def test_thrown_auth_test_failure_is_sanitized_and_persisted(
     tested = asyncio.run(
         repo.test(project_id=project_id, credential_ref=stored.credential_ref)
     ).data
-    resolved = repo.resolve_for_execution(
-        project_id=project_id,
-        provider_key="firecrawl",
-        credential_ref=stored.credential_ref,
-        operation="test.after-failed-auth-test",
+    resolved = asyncio.run(
+        repo.resolve_for_execution(
+            project_id=project_id,
+            provider_key="firecrawl",
+            credential_ref=stored.credential_ref,
+            operation="test.after-failed-auth-test",
+        )
     )
     refreshed = repo.status(project_id=project_id, provider_key="firecrawl").connections[0]
     event = session.exec(
@@ -248,6 +251,162 @@ def test_thrown_auth_test_failure_is_sanitized_and_persisted(
         }
     )
     assert "do-not-store" not in rendered
+
+
+def test_reddit_auth_test_acquires_core_token_before_connector(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    repo = AuthRepository(session)
+    stored = repo.store_credential(
+        project_id=project_id,
+        provider_key="reddit",
+        auth_method_key="client_credentials",
+        profile_key="research",
+        fields={
+            "client_id": "reddit-client-id",
+            "client_secret": "reddit-client-secret",
+            "user_agent": "stackos:test-suite:v1",
+        },
+    ).data
+    httpx_mock.add_response(
+        method="POST",
+        url="https://www.reddit.com/api/v1/access_token",
+        json={
+            "access_token": "reddit-access-value",
+            "token_type": "bearer",
+            "expires_in": 3600,
+        },
+    )
+
+    tested = asyncio.run(
+        repo.test(project_id=project_id, credential_ref=stored.credential_ref)
+    ).data
+
+    request = httpx_mock.get_requests()[0]
+    form = parse_qs(request.content.decode())
+    assert tested.ok is True
+    assert tested.status == "ok"
+    assert request.headers["Authorization"].startswith("Basic ")
+    assert request.headers["User-Agent"] == "stackos:test-suite:v1"
+    assert form == {"grant_type": ["client_credentials"]}
+    row = session.exec(
+        select(IntegrationCredential).where(
+            IntegrationCredential.project_id == project_id,
+            IntegrationCredential.kind == "reddit",
+            IntegrationCredential.profile_key == "research",
+        )
+    ).one()
+    assert row.id is not None
+    payload = json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id))
+    assert payload["access_token"] == "reddit-access-value"
+    assert payload["client_secret"] == "reddit-client-secret"
+
+
+def test_acquired_client_credential_profile_can_be_edited_without_losing_token(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    repo = AuthRepository(session)
+    stored = repo.store_credential(
+        project_id=project_id,
+        provider_key="reddit",
+        auth_method_key="client_credentials",
+        profile_key="editable-research",
+        fields={
+            "client_id": "reddit-client-id",
+            "client_secret": "reddit-client-secret",
+            "user_agent": "stackos:editable-test:v1",
+        },
+    ).data
+    httpx_mock.add_response(
+        method="POST",
+        url="https://www.reddit.com/api/v1/access_token",
+        json={"access_token": "reddit-access-value", "expires_in": 3600},
+    )
+    asyncio.run(repo.test(project_id=project_id, credential_ref=stored.credential_ref))
+
+    edit = repo.get_credential_edit_state(
+        project_id=project_id,
+        credential_ref=stored.credential_ref,
+    )
+    assert edit.secret_present == {
+        "client_id": True,
+        "client_secret": True,
+        "user_agent": True,
+    }
+    updated = repo.update_credential(
+        project_id=project_id,
+        credential_ref=stored.credential_ref,
+        fields={},
+        label="Editable Reddit",
+    ).data
+
+    assert updated.status == "connected"
+    assert updated.label == "Editable Reddit"
+    assert len(httpx_mock.get_requests()) == 1
+    row = session.exec(
+        select(IntegrationCredential).where(
+            IntegrationCredential.project_id == project_id,
+            IntegrationCredential.kind == "reddit",
+            IntegrationCredential.profile_key == "editable-research",
+        )
+    ).one()
+    assert row.id is not None
+    payload = json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id))
+    assert payload["access_token"] == "reddit-access-value"
+    credential = session.exec(
+        select(Credential).where(Credential.credential_ref == stored.credential_ref)
+    ).one()
+    assert (credential.config_json or {}).get("scope_status") == "known"
+
+
+def test_pending_interactive_profile_can_be_edited_without_reentering_secrets(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = AuthRepository(session)
+    stored = repo.store_credential(
+        project_id=project_id,
+        provider_key="google-search-console",
+        auth_method_key="oauth2_authorization_code",
+        profile_key="editable-pending",
+        fields={
+            "client_id": "google-client-id",
+            "client_secret": "google-client-secret",
+            "default_site_url": "https://example.test/",
+        },
+    ).data
+
+    edit = repo.get_credential_edit_state(
+        project_id=project_id,
+        credential_ref=stored.credential_ref,
+    )
+    assert edit.secret_present == {"client_id": True, "client_secret": True}
+    updated = repo.update_credential(
+        project_id=project_id,
+        credential_ref=stored.credential_ref,
+        fields={"default_site_url": "https://updated.example.test/"},
+        label="Pending Google",
+    ).data
+
+    assert updated.status == "pending"
+    row = session.exec(
+        select(IntegrationCredential).where(
+            IntegrationCredential.project_id == project_id,
+            IntegrationCredential.kind == "google-search-console",
+            IntegrationCredential.profile_key == "editable-pending",
+        )
+    ).one()
+    assert row.id is not None
+    payload = json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id))
+    assert payload["_oauth_application_pending"] == {
+        "client_id": "google-client-id",
+        "client_secret": "google-client-secret",
+    }
+    assert (row.config_json or {})["default_site_url"] == "https://updated.example.test/"
 
 
 def test_telegram_bot_store_generates_webhook_secret(
@@ -654,28 +813,34 @@ def test_telegram_status_excludes_global_credentials(
 
     global_credential = repo.sync_credential_for_integration(global_telegram.id)
     with pytest.raises(NotFoundError):
-        repo.resolve_for_execution(
-            project_id=project_id,
-            provider_key="telegram-bot",
-            credential_ref=global_credential.credential_ref,
-            operation="communications.telegram-bot.message.send",
+        asyncio.run(
+            repo.resolve_for_execution(
+                project_id=project_id,
+                provider_key="telegram-bot",
+                credential_ref=global_credential.credential_ref,
+                operation="communications.telegram-bot.message.send",
+            )
         )
 
     project_credential = repo.sync_credential_for_integration(project_telegram.id)
-    resolved = repo.resolve_for_execution(
-        project_id=project_id,
-        provider_key="telegram-bot",
-        credential_ref=project_credential.credential_ref,
-        operation="communications.telegram-bot.message.send",
+    resolved = asyncio.run(
+        repo.resolve_for_execution(
+            project_id=project_id,
+            provider_key="telegram-bot",
+            credential_ref=project_credential.credential_ref,
+            operation="communications.telegram-bot.message.send",
+        )
     )
     assert resolved.integration.profile_key == "support"
 
     slack_credential = repo.sync_credential_for_integration(project_slack.id)
-    resolved_slack = repo.resolve_for_execution(
-        project_id=project_id,
-        provider_key="slack-bot",
-        credential_ref=slack_credential.credential_ref,
-        operation="communications.slack-bot.message.send",
+    resolved_slack = asyncio.run(
+        repo.resolve_for_execution(
+            project_id=project_id,
+            provider_key="slack-bot",
+            credential_ref=slack_credential.credential_ref,
+            operation="communications.slack-bot.message.send",
+        )
     )
     assert resolved_slack.integration.profile_key == "support-slack"
 

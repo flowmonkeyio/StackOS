@@ -10,7 +10,7 @@ Salesforce, and Pipedrive compatibility.
 
 | Area | Official docs | Contract notes |
 | --- | --- | --- |
-| Auth | [Working with OAuth](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/oauth/working-with-oauth), [Scopes](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/scopes) | OAuth install flow returns access and refresh tokens via `/oauth/v3/token`; scopes are endpoint-specific. StackOS should store tokens daemon-side and expose only `portal_ref`, granted scope names, install status, and safe account metadata. |
+| Auth | [Working with OAuth](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/oauth/working-with-oauth), [Scopes](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/scopes) | OAuth install flow returns access and refresh tokens via `/oauth/v3/token`; scopes are endpoint-specific. StackOS currently supports the existing manual token method only. HubSpot interactive OAuth is explicitly excluded from the current core/provider delivery. Tokens remain daemon-side. |
 | Object create/update/upsert | [Using object APIs](https://developers.hubspot.com/docs/api-reference/legacy/crm/using-object-apis), [latest 2026-03 API reference](https://developers.hubspot.com/docs/reference/api) | Create/update is property-bag based, but upsert is batch-only and requires a custom unique property or contact `email`. Do not model a provider-neutral single-record `upsert` without an `id_property`/match contract. |
 | Notes/tasks/activities | [Notes API](https://developers.hubspot.com/docs/guides/api/crm/engagements/notes), [Tasks API](https://developers.hubspot.com/docs/reference/api/crm/engagements/tasks), [Associations v4](https://developers.hubspot.com/docs/guides/api/crm/associations/associations-v4) | Notes and tasks are CRM objects with provider property names (`hs_note_body`, `hs_timestamp`, `hs_task_subject`, etc.) and association type IDs/labels. Safe refs must resolve to HubSpot IDs inside the daemon before calls. |
 | Pipeline/deals reads | [Search the CRM](https://developers.hubspot.com/docs/api-reference/latest/crm/search-the-crm), [Using object APIs](https://developers.hubspot.com/docs/api-reference/legacy/crm/using-object-apis) | Deals are object type `0-3`; pipeline reads should be `hubspot.crm.deals.search` or `hubspot.crm.deals.list`, not generic `hubspot.pipeline.fetch`. |
@@ -21,7 +21,7 @@ Salesforce, and Pipedrive compatibility.
 
 | Area | Official docs | Contract notes |
 | --- | --- | --- |
-| Auth | [OAuth 2.0 Web Server Flow](https://help.salesforce.com/s/articleView?id=xcloud.remoteaccess_oauth_web_server_flow_ca.htm&language=en_US&type=5), [OAuth endpoints](https://help.salesforce.com/s/articleView?id=sf.remoteaccess_oauth_endpoints.htm&language=en_US&type=5) | OAuth is appropriate, but setup must distinguish login host, instance/My Domain host, sandbox/production, API version, and granted scopes. Secrets and refresh tokens stay daemon-side. |
+| Auth | [OAuth 2.0 Web Server Flow](https://help.salesforce.com/s/articleView?id=xcloud.remoteaccess_oauth_web_server_flow_ca.htm&language=en_US&type=5), [OAuth endpoints](https://help.salesforce.com/s/articleView?id=sf.remoteaccess_oauth_endpoints.htm&language=en_US&type=5) | StackOS implements interactive authorization code with PKCE plus manual-token compatibility. Production, sandbox, and validated My Domain login hosts are supported; trusted `instance_url` metadata and refresh tokens stay daemon-side. |
 | Object create/update/upsert | [REST API Developer Guide](https://resources.docs.salesforce.com/latest/latest/en-us/sfdc/pdf/api_rest.pdf), especially sObject Rows and sObject Rows by External ID | CRUD is sObject-specific. Upsert is `PATCH /sobjects/{sObject}/{externalIdField}/{externalIdValue}` and can create unless `updateOnly=true` is used. Contracts must require `sobject`, `external_id_field`, `external_id_ref`/value source, and `update_only` intent. |
 | Notes/tasks/activities | [REST API Developer Guide](https://resources.docs.salesforce.com/latest/latest/en-us/sfdc/pdf/api_rest.pdf), [Object Reference](https://resources.docs.salesforce.com/latest/latest/en-us/sfdc/pdf/object_reference.pdf) | Tasks are sObjects; notes may be `Note`, `ContentNote`, or org-specific activity/feed patterns. A generic `salesforce.crm-note.create` is too vague until the connector chooses a supported object and linking model (`ParentId`, `ContentDocumentLink`, etc.). |
 | Pipeline/opportunity reads | [REST API Developer Guide Query resource](https://resources.docs.salesforce.com/latest/latest/en-us/sfdc/pdf/api_rest.pdf), [SOQL/SOSL Reference](https://resources.docs.salesforce.com/latest/latest/en-us/sfdc/pdf/salesforce_soql_sosl.pdf) | Salesforce pipeline reads are SOQL over `Opportunity` plus related `Account`, `Task`, and `Event` as needed. Rename `salesforce.pipeline.fetch` to an opportunity/query-specific read action with allowlisted query templates. |
@@ -32,7 +32,7 @@ Salesforce, and Pipedrive compatibility.
 
 | Area | Official docs | Contract notes |
 | --- | --- | --- |
-| Auth | [OAuth 2.0](https://developers.pipedrive.com/docs/api/v1/Oauth), [About the Pipedrive API](https://pipedrive.readme.io/docs/core-api-concepts-about-pipedrive-api) | Marketplace apps require OAuth; Pipedrive also validates API tokens. Current first-party provider metadata is OAuth-first. Keep any API-token support as an explicitly configured project-local connector mode. Store `api_domain` daemon-side or expose only a safe `company_ref`/`account_ref`. |
+| Auth | [OAuth 2.0](https://developers.pipedrive.com/docs/api/v1/Oauth), [About the Pipedrive API](https://pipedrive.readme.io/docs/core-api-concepts-about-pipedrive-api) | StackOS implements interactive authorization code with HTTP Basic token exchange, retains manual OAuth-token compatibility, and exposes API token as a separate built-in auth method. Provider-returned `api_domain` is accepted only through the trusted token response and stays in safe credential config. |
 | Object create/update/upsert | [Deals](https://developers.pipedrive.com/docs/api/v1/Deals), [Persons](https://developers.pipedrive.com/docs/api/v1/Persons), [Organizations](https://developers.pipedrive.com/docs/api/v1/Organizations) | Pipedrive has create/update endpoints, but no native provider-wide upsert. Upsert must be a StackOS two-step search/read plus create/update connector with explicit matching policy, duplicate handling, and approval. |
 | Notes/tasks/activities | [Notes](https://developers.pipedrive.com/docs/api/v1/Notes), [Activities](https://developers.pipedrive.com/docs/api/v1/Activities), [Tasks](https://developers.pipedrive.com/docs/api/v1/Tasks) | Pipedrive models notes and activities separately. Use `pipedrive.note.create` and `pipedrive.activity.create`; do not call these `task.create` unless the connector maps to the Tasks API intentionally. |
 | Pipeline/deals reads | [Deals](https://developers.pipedrive.com/docs/api/v1/Deals), [Pipelines](https://developers.pipedrive.com/docs/api/v1/Pipelines), [Stages](https://developers.pipedrive.com/docs/api/v1/Stages) | `pipedrive.deal.fetch` is acceptable only if narrowed to list/search/get semantics. Prefer `pipedrive.deals.list` and `pipedrive.deals.search` with filters for pipeline, stage, owner, status, and update window. |
@@ -43,9 +43,15 @@ Salesforce, and Pipedrive compatibility.
 
 ### Provider Auth Type
 
-- HubSpot: keep `auth_type: oauth`. Setup fields should include safe `portal_ref`, optional `app_distribution_ref`, and granted scope labels. Do not expose account ID, tokens, client secrets, or refresh token state beyond safe status.
-- Salesforce: keep `auth_type: oauth`, but add safe auth method fields for `org_ref`, `environment` (`production`/`sandbox`), `instance_ref` or `my_domain_ref`, and `api_version_ref`. The daemon must own token refresh and instance URL resolution.
-- Pipedrive: current first-party provider metadata is OAuth-first. If API-token support is ever added, make it a separate project-local connector mode with explicit `execution_mode` until the credential vault can represent token ownership, rotation, and scope limitations.
+- HubSpot: `auth_type: oauth` remains correct, but only the existing manual
+  OAuth token method is implemented. Interactive start/callback/refresh is not
+  claimed and remains outside this delivery.
+- Salesforce: `auth_type: oauth`; interactive and manual-compatible methods are
+  implemented. The core owns refresh, validates login-host variants, and stores
+  trusted instance URL metadata.
+- Pipedrive: `auth_type: oauth-or-api-token`; interactive OAuth, manual OAuth
+  token, and API token are separate built-in methods. The core owns OAuth
+  renewal and trusted `api_domain` handling.
 
 ### Safe Setup Fields
 
@@ -114,7 +120,8 @@ Agents receive provider keys, safe auth method refs, granted scope names, and sa
 
 ## Recommended Manifest And Template Corrections
 
-1. Keep Pipedrive OAuth-first; add API-token support only as a project-local connector mode with explicit ownership and rotation rules.
+1. Keep Pipedrive OAuth-first and preserve API token as the explicit separate
+   built-in auth method; do not merge their ownership or rotation semantics.
 2. Keep provider-native deal/opportunity list/search/query action names; do not reintroduce generic pipeline fetch abstractions.
 3. Keep HubSpot batch upsert contracts aligned with `id_property` and explicit input rows.
 4. Keep Salesforce note creation out of workflow action refs until the object/linking model is documented.

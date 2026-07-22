@@ -22,21 +22,25 @@ Three middlewares form the request gauntlet, applied in this order
    `localhost`, `127.0.0.1`, or `[::1]` with HTTP 421. Provider webhook ingress
    paths accept tunnel/deployed hosts because Telegram and Slack must call them
    from outside the machine; those paths still verify provider secrets or
-   signatures before any write.
+   signatures before any write. The only other host exception is an exact GET
+   to `/api/v1/auth/oauth/callback` whose host must equal the operator-configured
+   OAuth callback origin.
 2. **`CORSMiddleware`** is configured `same-origin` only — a cross-origin
    browser fetch can never read responses even if the request went out.
 3. **`BearerTokenMiddleware`** enforces the constant-time bearer check,
    minus an explicit whitelist (see below).
 
-## Whitelisted paths
+## Public auth exceptions
 
 `WHITELIST_PREFIXES` in `stackos/auth.py` lists paths that bypass
-the bearer-token check. Currently:
+the bearer-token check. OAuth callback handling is a separate exact-method and
+exact-path exception so no sibling route inherits it. Currently:
 
 | Path | Why it is whitelisted | Residual exposure |
 |---|---|---|
 | `/api/v1/health` | `doctor` probes liveness before it has resolved the token (when diagnosing token-related failures). | None worth caring about; the response carries only liveness booleans + version. |
 | `/api/v1/auth/ui-token` | The Vue SPA cannot read the on-disk daemon token file from the browser, so it fetches a derived console bearer token at app boot via this endpoint. | **See below.** |
+| `GET /api/v1/auth/oauth/callback` (exact route) | OAuth providers cannot carry the daemon bearer token when redirecting the browser. The short-lived, one-time state transaction authorizes only this callback. | The request host must equal the configured callback host; state is digested, bound, expiring, and atomically consumed. The response is an immediate sanitized 303 redirect. |
 | `/api/v1/ingress/telegram/*` | Telegram webhooks cannot carry the daemon bearer token. The route verifies `X-Telegram-Bot-Api-Secret-Token` against the encrypted Telegram credential before writing communication resources or agent requests. | A caller with the webhook secret can submit Telegram-shaped events for that profile. This path also bypasses loopback-only Host checks so deployed/tunnel hosts work; all non-ingress API paths remain loopback-host guarded. |
 | `/api/v1/ingress/slack/*` | Slack Events API and Interactivity requests cannot carry the daemon bearer token. The route verifies `X-Slack-Signature` against the encrypted Slack signing secret using the raw body and timestamp before writing communication resources or agent requests. | A caller with the Slack signing secret can submit Slack-shaped events for that profile. This path also bypasses loopback-only Host checks so deployed/tunnel hosts work; all non-ingress API paths remain loopback-host guarded. |
 
@@ -48,8 +52,9 @@ tokens, refresh tokens, encrypted payloads, or local setup secrets.
 
 `credentials` are the public, opaque profile records. `integration_credentials`
 is the encrypted backing store keyed by project, provider, and profile; it is
-not an agent-facing credential API. OAuth state rows remain generic
-infrastructure for provider flows, not a hard-coded product integration.
+not an agent-facing credential API. OAuth state rows are the provider-neutral
+transaction core; trusted provider contracts supply protocol data without
+turning OAuth into agent-visible or plugin-stored secret state.
 
 In normal agent sessions, the MCP bridge exposes `auth.status` and `auth.test`
 through `toolbox.call`; it does not advertise them as direct tools. Local
@@ -68,6 +73,41 @@ Every auth usage/refresh audit payload is passed through the shared redactor
 before persistence. Secret-like keys such as `api_key`, `access_token`,
 `refresh_token`, `authorization`, and nested equivalents are stored as
 `[redacted]`.
+
+## OAuth callback and renewal threat model
+
+StackOS owns one callback path: `/api/v1/auth/oauth/callback`. The callback
+origin defaults to the local daemon and can be changed with
+`STACKOS_OAUTH_CALLBACK_BASE_URL`; a configured value must be one origin with
+no path, query, credentials, or fragment, and must use HTTPS except for an HTTP
+loopback origin. `auth.start` never accepts a redirect URI from its caller, so a
+tool or UI request cannot turn the daemon into an open OAuth redirect target.
+
+Each start creates a random state value but persists only its SHA-256 digest,
+binds it to the project/provider/credential transaction, gives it a short TTL,
+and atomically consumes both earlier attempts and the callback attempt. PKCE
+S256 is generated when the provider contract marks it supported or required;
+the verifier and pending provider application values stay in the encrypted
+credential payload. Reconnect uses compare-and-swap semantics so a late or
+duplicate callback cannot overwrite newer credentials, and a denied or failed
+reconnect does not destroy a still-active prior token.
+
+The callback accepts only bounded `state`, `code`, and provider error fields.
+It never logs, persists, or forwards raw callback values to the UI. Success and
+failure both leave the callback URL through an HTTP 303 response with
+`Cache-Control: no-store`, `Pragma: no-cache`, `Referrer-Policy: no-referrer`,
+and a deny-all content security policy. The destination query contains only a
+sanitized status plus safe project/provider identity when known.
+
+At action time, refresh and client-credentials acquisition happen inside the
+daemon under a per-credential async lock. An `updated_at` compare-and-swap
+prevents a slow response from replacing a newer token. Known action-required
+scopes are checked before connector dispatch. Token endpoint failures and
+missing/unknown scope failures return repair guidance and persist only redacted
+audit data. Timeouts, network failures, rate limits, and provider 5xx responses
+remain retryable without poisoning the stored connection; terminal authorization
+failures such as `invalid_grant` mark it `repair-required`. Replacing manual
+token material clears the prior token's recorded grants.
 
 ## Write-only action payload transit
 

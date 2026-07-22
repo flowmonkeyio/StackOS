@@ -6,18 +6,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import or_
-from sqlmodel import col, select
-
 from stackos.artifacts import redact_secrets
 from stackos.db.models import (
     Credential,
     CredentialRefreshEvent,
     CredentialUsageEvent,
-    OAuthState,
 )
-
-from .utils import utcnow
 
 
 class CredentialEventMixin:
@@ -60,20 +54,3 @@ class CredentialEventMixin:
                 metadata_json=redact_secrets(metadata_json) if metadata_json is not None else None,
             )
         )
-
-    def consume_oauth_state(self, *, state: str, provider_key: str) -> OAuthState | None:
-        row = self._s.exec(
-            select(OAuthState).where(
-                OAuthState.provider_key == provider_key,
-                OAuthState.state == state,
-                col(OAuthState.consumed_at).is_(None),
-                or_(col(OAuthState.expires_at).is_(None), col(OAuthState.expires_at) > utcnow()),
-            )
-        ).first()
-        if row is None:
-            return None
-        row.consumed_at = utcnow()
-        self._s.add(row)
-        self._s.commit()
-        self._s.refresh(row)
-        return row

@@ -34,6 +34,11 @@ credential use. For most authenticated providers, `requires_credential` implies
 `allows_credential`; no-auth/local actions do not receive credentials by
 accident.
 
+`required_scopes` is an optional, normalized list of grants needed by that
+specific action. It is valid only when the action requires a credential. The
+OAuth resolver enforces the list before connector dispatch; connectors must not
+repeat scope policy or silently try a call with insufficient grants.
+
 ## Connector Boundary
 
 Connectors implement the tiny adapter contract in
@@ -46,6 +51,21 @@ Connectors implement the tiny adapter contract in
 Connectors receive plaintext secrets only inside the daemon process through
 `ResolvedCredential`. That object is not a Pydantic response model and must not
 be serialized into MCP, REST, run plans, resources, artifacts, or audit rows.
+
+Before constructing `ResolvedCredential`, the shared action runtime asks the
+auth repository for a fresh usable credential and passes the manifest's
+`required_scopes`. For authorization-code credentials, the repository refreshes
+an expired access token when a refresh token is available. For declared
+client-credentials providers, it acquires an access token when one is absent or
+expired. This lifecycle belongs to core auth code, not to the provider
+connector.
+
+Refresh/acquisition is serialized per credential in the daemon and committed
+with an `updated_at` compare-and-swap. Concurrent actions therefore reuse the
+winning token instead of racing token writes. A token or scope failure stops
+before connector execution, records redacted refresh/usage diagnostics, and
+returns repair context. Manual/static credentials continue through the same
+resolution boundary without being forced into an interactive flow.
 
 When a provider returns an HTTP failure body, connectors must raise
 `ActionConnectorError` with `provider_status_code` and `provider_error` instead

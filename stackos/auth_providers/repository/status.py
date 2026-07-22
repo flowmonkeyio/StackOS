@@ -199,8 +199,12 @@ class CredentialStatusMixin:
         return credential
 
     def _status_for_integration(self, row: IntegrationCredential) -> str:
-        if row.config_json and row.config_json.get("oauth_state"):
-            return "pending"
+        if row.config_json:
+            oauth_status = row.config_json.get("oauth_connection_status")
+            if isinstance(oauth_status, str) and oauth_status:
+                return oauth_status
+            if row.config_json.get("oauth_state") or row.config_json.get("oauth_pending"):
+                return "pending"
         if row.expires_at is not None and row.expires_at < utcnow():
             return "expired"
         return "connected"
@@ -262,4 +266,6 @@ class CredentialStatusMixin:
             return None
         safe = redact_secrets(config_json)
         safe.pop("oauth_state", None)
+        safe.pop("oauth_pending", None)
+        safe.pop("oauth_connection_status", None)
         return safe

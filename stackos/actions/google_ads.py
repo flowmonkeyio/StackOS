@@ -12,8 +12,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import httpx
-
 from stackos.actions.connectors import (
     ActionConnectorRequest,
     ActionConnectorResult,
@@ -35,7 +33,6 @@ from stackos.actions.provider_utils import (
 from stackos.repositories.base import ValidationError
 
 _BASE_URL = "https://googleads.googleapis.com"
-_TOKEN_URL = "https://www.googleapis.com/oauth2/v3/token"
 _DEFAULT_VERSION = "v24"
 
 _MUTATE_RESOURCE_BY_OPERATION = {
@@ -58,42 +55,23 @@ _PAYLOAD_KEY_BY_OPERATION = {
 }
 
 
-async def _access_token(request: ActionConnectorRequest) -> str:
+def _access_token(request: ActionConnectorRequest) -> str:
     payload = credential_payload(request)
     token = payload.get("access_token")
     if isinstance(token, str) and token.strip():
         return token.strip()
-    required = ("client_id", "client_secret", "refresh_token")
-    if not all(isinstance(payload.get(key), str) and str(payload[key]).strip() for key in required):
-        raise ValidationError(
-            "google-ads credential requires access_token or client_id/client_secret/refresh_token"
-        )
-    async with httpx.AsyncClient(timeout=30.0) as http:
-        response = await http.post(
-            _TOKEN_URL,
-            data={
-                "grant_type": "refresh_token",
-                "client_id": payload["client_id"],
-                "client_secret": payload["client_secret"],
-                "refresh_token": payload["refresh_token"],
-            },
-        )
-    if response.status_code >= 400:
-        raise ValidationError(f"google-ads token refresh failed with status {response.status_code}")
-    body = response.json()
-    access_token = body.get("access_token")
-    if not isinstance(access_token, str) or not access_token.strip():
-        raise ValidationError("google-ads token refresh response missing access_token")
-    return access_token.strip()
+    raise ValidationError(
+        "google-ads credential missing access_token; reconnect or renew the credential"
+    )
 
 
-async def _headers(request: ActionConnectorRequest) -> dict[str, str]:
+def _headers(request: ActionConnectorRequest) -> dict[str, str]:
     payload = credential_payload(request)
     developer_token = payload.get("developer_token")
     if not isinstance(developer_token, str) or not developer_token.strip():
         raise ValidationError("google-ads credential missing developer_token")
     headers = {
-        "Authorization": f"Bearer {await _access_token(request)}",
+        "Authorization": f"Bearer {_access_token(request)}",
         "developer-token": developer_token.strip(),
         "Content-Type": "application/json",
     }
@@ -216,7 +194,7 @@ class GoogleAdsActionConnector:
         return 0
 
     async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
-        headers = await _headers(request)
+        headers = _headers(request)
         version = _version(request)
         payload = request.input_json
         match request.operation:

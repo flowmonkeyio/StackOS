@@ -80,24 +80,36 @@ Clearbit/Clearbit by HubSpot:
 Outreach:
 
 - Auth: OAuth 2.0 authorization code for normal REST API access. Outreach production OAuth credentials require app publishing/review; development credentials are limited and should not be used for end users.
+- Current StackOS path: shared interactive authorization code plus the retained
+  manual-token compatibility method; the core owns callback and renewal.
 - Safe auth method fields: `instance_ref`, `oauth_app_ref`, `scopes_ref`, `sequence_ref`, `mailbox_policy_ref`, `throttle_policy_ref`.
 - Tokens and refresh tokens remain daemon-held. Templates should only carry safe refs.
 
 Salesloft:
 
 - Auth: OAuth authorization code is preferred/required for partners. API keys are customer-only and are not approved for partner apps. Salesloft also documents client credentials for private admin-enabled app use.
+- Current StackOS path: shared interactive authorization code plus separate
+  manual OAuth-token and API-key compatibility methods. Client credentials are
+  not claimed by the current provider contract.
 - Safe auth method fields: `team_ref`, `oauth_app_ref`, `scopes_ref`, `cadence_ref`, `user_ref`, `send_policy_ref`.
-- Store only safe refs. Note refresh-token rotation: a refresh response revokes old refresh tokens, so connector credential storage must be atomic.
+- Store only safe refs. The shared credential resolver commits refresh-token
+  rotation atomically; the connector does not refresh or persist tokens.
 
 Google Workspace:
 
 - Auth: OAuth with least-privilege scopes. Gmail send can use `gmail.send`; Calendar event insert can use `calendar.events` or narrower eligible scopes depending on the app model.
+- Current StackOS path: shared interactive Google authorization code plus the
+  retained manual-token compatibility method; both action scopes are enforced
+  before connector dispatch.
 - Safe auth method fields: `workspace_ref`, `user_ref`, `calendar_ref`, `send_as_ref`, `oauth_client_ref`, `domain_wide_delegation_ref`, `quota_project_ref`.
 - Domain-wide delegation is a separate admin-approved setup and must be explicit.
 
 Microsoft 365:
 
 - Auth: Microsoft Graph OAuth with delegated or application permissions. `Mail.Send` is least-privileged for `sendMail`; `Calendars.ReadWrite` is needed for user calendar event creation.
+- Current StackOS path: delegated interactive authorization code with required
+  PKCE plus the retained manual-token compatibility method. Application
+  credentials/permissions are not claimed by this provider contract.
 - Safe auth method fields: `tenant_ref`, `user_ref`, `mailbox_ref`, `calendar_ref`, `app_registration_ref`, `permission_mode`, `national_cloud_ref`.
 - Application permissions can send/create on behalf of users at much higher blast radius and should require explicit approval gates.
 

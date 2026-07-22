@@ -14,7 +14,6 @@ from sqlmodel import select
 from stackos.artifacts import redact_secret_text, redact_secrets
 from stackos.db.models import Credential, CredentialAccount, IntegrationCredential
 from stackos.repositories.base import Envelope, RepositoryError, ValidationError
-from stackos.repositories.projects import IntegrationCredentialRepository
 
 from .schema import AuthTestOut
 from .utils import utcnow
@@ -47,8 +46,16 @@ class CredentialTestingMixin:
                 f"auth provider {row.kind!r} has no test wrapper",
                 data={"provider_key": row.kind, "credential_ref": credential.credential_ref},
             )
-        assert row.id is not None
-        secret_payload = IntegrationCredentialRepository(self._s).get_decrypted(row.id)
+        resolved = await self.resolve_for_execution(
+            project_id=project_id,
+            provider_key=row.kind,
+            credential_ref=credential_ref,
+            operation="auth.test.resolve",
+            required_scopes=[],
+        )
+        credential = resolved.credential
+        row = resolved.integration
+        secret_payload = resolved.secret_payload
         extra = self._integration_extra(row)
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:

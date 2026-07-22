@@ -106,7 +106,7 @@ providers:
         homepage_url: https://developer.x.com/
         signup_url: https://developer.x.com/en/portal/petition/essential/basic-info
         console_url: https://developer.x.com/en/portal/dashboard
-        api_key_url: https://developer.x.com/en/portal/dashboard
+        credential_url: https://developer.x.com/en/portal/dashboard
         docs_url: https://docs.x.com/
         fallback_url: https://developer.x.com/en/portal/dashboard
         fallback_reason: X app access and posting permissions depend on the account plan and app review state.
@@ -115,7 +115,7 @@ providers:
           homepage_url: verified
           signup_url: directional
           console_url: directional
-          api_key_url: directional
+          credential_url: directional
           docs_url: verified
           fallback_url: directional
   - key: linkedin-api
@@ -151,7 +151,7 @@ providers:
         homepage_url: https://www.linkedin.com/developers/
         signup_url: https://www.linkedin.com/developers/
         console_url: https://www.linkedin.com/developers/apps
-        api_key_url: https://www.linkedin.com/developers/apps
+        credential_url: https://www.linkedin.com/developers/apps
         docs_url: https://learn.microsoft.com/linkedin/
         fallback_url: https://learn.microsoft.com/linkedin/marketing/
         fallback_reason: LinkedIn product access and posting permissions are app/account specific.
@@ -160,7 +160,7 @@ providers:
           homepage_url: verified
           signup_url: directional
           console_url: directional
-          api_key_url: directional
+          credential_url: directional
           docs_url: verified
           fallback_url: directional
   - key: esp

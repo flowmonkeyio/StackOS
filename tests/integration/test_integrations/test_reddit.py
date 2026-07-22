@@ -1,4 +1,4 @@
-"""Reddit wrapper tests — token grant + search/top calls."""
+"""Reddit wrapper tests for access tokens resolved by the auth core."""
 
 from __future__ import annotations
 
@@ -15,20 +15,16 @@ from stackos.integrations.reddit import RedditIntegration
 def _payload() -> bytes:
     return json.dumps(
         {
-            "client_id": "cid",
-            "client_secret": "csecret",
+            "access_token": "reddit-access",
             "user_agent": "tester/1.0",
         }
     ).encode("utf-8")
 
 
-def test_search_subreddit_grants_then_searches(httpx_mock: HTTPXMock, project_id: int) -> None:
-    """First request grants the app-only token; second hits the search endpoint."""
-    httpx_mock.add_response(
-        method="POST",
-        url="https://www.reddit.com/api/v1/access_token",
-        json={"access_token": "ya29.tok", "expires_in": 3600},
-    )
+def test_search_subreddit_uses_resolved_access_token(
+    httpx_mock: HTTPXMock,
+    project_id: int,
+) -> None:
     httpx_mock.add_response(
         method="GET",
         url=(
@@ -44,17 +40,16 @@ def test_search_subreddit_grants_then_searches(httpx_mock: HTTPXMock, project_id
             return await integ.search_subreddit(subreddit="python", query="async")
 
     result = asyncio.run(go())
+    request = httpx_mock.get_requests()[0]
     assert result.data["data"]["children"][0]["data"]["title"] == "ELI5 async"
+    assert request.headers["Authorization"] == "Bearer reddit-access"
+    assert request.headers["User-Agent"] == "tester/1.0"
 
 
-def test_test_credentials_grants_token(httpx_mock: HTTPXMock, project_id: int) -> None:
-    """``test_credentials`` succeeds once the token grant returns 200."""
-    httpx_mock.add_response(
-        method="POST",
-        url="https://www.reddit.com/api/v1/access_token",
-        json={"access_token": "ya29.tok", "expires_in": 3600},
-    )
-
+def test_test_credentials_uses_resolved_token_without_grant(
+    httpx_mock: HTTPXMock,
+    project_id: int,
+) -> None:
     async def go() -> Any:
         async with httpx.AsyncClient() as client:
             integ = RedditIntegration(payload=_payload(), project_id=project_id, http=client)
@@ -63,3 +58,4 @@ def test_test_credentials_grants_token(httpx_mock: HTTPXMock, project_id: int) -
     out = asyncio.run(go())
     assert out["ok"] is True
     assert out["vendor"] == "reddit"
+    assert httpx_mock.get_requests() == []

@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
-from stackos.auth_providers import AuthRevokeOut, AuthStartOut, AuthStatusOut, AuthTestOut
+from stackos.auth_providers import (
+    AuthRevokeOut,
+    AuthStartOut,
+    AuthStatusOut,
+    AuthTestOut,
+    OAuthCallbackOut,
+)
 from stackos.mcp.contract import WriteEnvelope
 from stackos.mcp.tools.auth import (
+    AuthCallbackInput,
     AuthRevokeInput,
     AuthStartInput,
     AuthStatusInput,
     AuthTestInput,
+    _auth_callback,
     _auth_revoke,
     _auth_start,
     _auth_status,
@@ -144,6 +152,38 @@ def operation_specs() -> list[OperationSpec]:
             ),
             mutating=True,
             grant_policy="local-admin-auth-write",
+            secret_policy="no-secret-output",
+        ),
+        OperationSpec(
+            name="auth.callback",
+            summary="Complete one provider callback through the fixed public REST boundary.",
+            input_model=AuthCallbackInput,
+            output_model=OAuthCallbackOut,
+            handler=_auth_callback,
+            surfaces=OperationSurfaces(
+                mcp=OperationSurface(
+                    enabled=False,
+                    notes="Provider callback values are accepted only by the fixed REST route.",
+                ),
+                rest=OperationSurface(
+                    enabled=True,
+                    path="/api/v1/auth/oauth/callback",
+                    notes="GET only; the route returns an immediate sanitized 303 redirect.",
+                ),
+                cli=OperationSurface(
+                    enabled=False,
+                    notes="Provider callback values must not cross the CLI surface.",
+                ),
+            ),
+            purpose=(
+                "Transport contract for the provider redirect. The repository consumes a "
+                "short-lived bound transaction, and the REST adapter returns only a safe "
+                "local redirect."
+            ),
+            when_to_use=("Only when invoked by a provider redirect to the fixed callback.",),
+            returns=("A sanitized callback outcome used to select the local Connections view.",),
+            mutating=True,
+            grant_policy="public-oauth-callback",
             secret_policy="no-secret-output",
         ),
         OperationSpec(

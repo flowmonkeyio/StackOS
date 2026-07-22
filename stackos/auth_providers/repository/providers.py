@@ -12,9 +12,9 @@ from stackos.artifacts import redact_secrets
 from stackos.config import Settings
 from stackos.db.models import AuthProvider, Plugin, Project, ProjectPlugin, Provider
 from stackos.provider_setup import sanitize_provider_setup_config
-from stackos.repositories.base import ConflictError, Envelope, NotFoundError, ValidationError
+from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 
-from .schema import AuthFieldOut, AuthMethodOut, AuthProviderOut, AuthStartOut
+from .schema import AuthFieldOut, AuthMethodOut, AuthProviderOut
 from .utils import utcnow
 
 
@@ -81,46 +81,6 @@ class ProviderMetadataMixin:
             stmt = stmt.where(col(AuthProvider.key) == provider_key)
         rows = self._s.exec(stmt.order_by(col(AuthProvider.key).asc())).all()
         return [self._provider_out(provider, plugin) for provider, plugin in rows]
-
-    def start(
-        self,
-        *,
-        project_id: int,
-        provider_key: str,
-        settings: Settings,
-        auth_method_key: str | None = None,
-        redirect_uri: str | None = None,
-    ) -> Envelope[AuthStartOut]:
-        self._require_project(project_id)
-        provider = self._get_provider(provider_key)
-        assert provider is not None
-        self._require_provider_enabled_for_project(project_id=project_id, provider=provider)
-        method = self._get_auth_method(provider, auth_method_key)
-        assert method is not None
-        _ = redirect_uri
-        setup_url = self._local_setup_url(
-            settings=settings,
-            project_id=project_id,
-            provider_key=provider_key,
-        )
-        setup_required = provider.auth_type not in {"none", "local"}
-        status = "not-required"
-        if setup_required and method.interactive:
-            status = "requires-oauth"
-        elif setup_required:
-            status = "requires-local-credential"
-        return Envelope(
-            data=AuthStartOut(
-                project_id=project_id,
-                provider_key=provider.key,
-                auth_type=method.auth_type,
-                auth_method_key=method.key,
-                status=status,
-                setup_url=setup_url if setup_required else None,
-                authorization_url=self._authorization_url(method),
-            ),
-            project_id=project_id,
-        )
 
     def _require_provider_enabled_for_project(self, *, project_id: int, provider: Any) -> None:
         """Reject setup for providers whose owning plugin is disabled in this project."""
@@ -236,11 +196,6 @@ class ProviderMetadataMixin:
                 data={"provider_key": provider.key, "auth_method_key": auth_method_key},
             )
         return None
-
-    def _authorization_url(self, method: AuthMethodOut) -> str | None:
-        config = method.config or {}
-        value = config.get("authorization_url") or config.get("authorize_url")
-        return str(value) if value is not None and str(value).strip() else None
 
     def _provider_out(self, row: AuthProvider, plugin: Plugin | None) -> AuthProviderOut:
         assert row.id is not None

@@ -21,7 +21,7 @@ providers:
   - key: dataforseo
     name: DataForSEO
     description: SERP, keyword volume, and competitor research provider.
-    auth_type: api-key
+    auth_type: basic
     auth_methods:
       - key: basic
         label: Login and password
@@ -48,7 +48,7 @@ providers:
         homepage_url: https://dataforseo.com/
         signup_url: https://app.dataforseo.com/register
         console_url: https://app.dataforseo.com/
-        api_key_url: https://app.dataforseo.com/api-access
+        credential_url: https://app.dataforseo.com/api-access
         billing_url: https://app.dataforseo.com/billing
         docs_url: https://docs.dataforseo.com/
         verified_at: "2026-06-11"
@@ -56,7 +56,7 @@ providers:
           homepage_url: verified
           signup_url: directional
           console_url: directional
-          api_key_url: directional
+          credential_url: directional
           billing_url: directional
           docs_url: verified
       docs:
@@ -86,7 +86,7 @@ providers:
         homepage_url: https://serper.dev/
         signup_url: https://serper.dev/signup
         console_url: https://serper.dev/
-        api_key_url: https://serper.dev/api-key
+        credential_url: https://serper.dev/api-key
         billing_url: https://serper.dev/pricing
         docs_url: https://serper.dev/api
         fallback_url: https://serper.dev/
@@ -96,7 +96,7 @@ providers:
           homepage_url: verified
           signup_url: directional
           console_url: directional
-          api_key_url: directional
+          credential_url: directional
           billing_url: verified
           docs_url: verified
           fallback_url: verified
@@ -126,7 +126,7 @@ providers:
         homepage_url: https://ahrefs.com/
         signup_url: https://app.ahrefs.com/user/sign-up
         console_url: https://app.ahrefs.com/
-        api_key_url: https://app.ahrefs.com/api
+        credential_url: https://app.ahrefs.com/api
         billing_url: https://app.ahrefs.com/account/subscription
         docs_url: https://docs.ahrefs.com/
         fallback_url: https://docs.ahrefs.com/
@@ -136,7 +136,7 @@ providers:
           homepage_url: verified
           signup_url: directional
           console_url: directional
-          api_key_url: directional
+          credential_url: directional
           billing_url: directional
           docs_url: verified
           fallback_url: verified
@@ -145,6 +145,27 @@ providers:
     description: Search Console site, sitemap, search analytics, and URL inspection evidence.
     auth_type: oauth
     auth_methods: &google_oauth_methods
+      - key: oauth2_authorization_code
+        label: Connect with Google
+        auth_type: oauth
+        interactive: true
+        payload_format: json
+        fields:
+        - key: client_id
+          label: OAuth Client ID
+          type: secret
+          secret: true
+          required: true
+        - key: client_secret
+          label: OAuth Client Secret
+          type: secret
+          secret: true
+          required: true
+        - key: default_site_url
+          label: Default Site URL
+          type: text
+          secret: false
+          required: false
       - key: oauth2_access_token
         label: OAuth2 access token
         auth_type: oauth
@@ -194,7 +215,7 @@ providers:
         setup_note: Create a Google Cloud OAuth client with Search Console API enabled, grant https://www.googleapis.com/auth/webmasters.readonly, and store either an access token or refresh-token credential in StackOS.
         homepage_url: https://search.google.com/search-console/about
         console_url: https://search.google.com/search-console
-        api_key_url: https://console.cloud.google.com/apis/credentials
+        credential_url: https://console.cloud.google.com/apis/credentials
         docs_url: https://developers.google.com/webmaster-tools/v1/how-tos/authorizing
         fallback_url: https://developers.google.com/webmaster-tools/v1/how-tos/authorizing
         fallback_reason: OAuth consent and verified properties are account-specific; the official auth docs are the stable setup reference.
@@ -202,7 +223,7 @@ providers:
         url_confidence:
           homepage_url: verified
           console_url: verified
-          api_key_url: directional
+          credential_url: directional
           docs_url: verified
           fallback_url: verified
       docs:
@@ -216,6 +237,27 @@ providers:
     description: GA4 account discovery, metadata, standard reports, and realtime report reads.
     auth_type: oauth
     auth_methods:
+      - key: oauth2_authorization_code
+        label: Connect with Google
+        auth_type: oauth
+        interactive: true
+        payload_format: json
+        fields:
+        - key: client_id
+          label: OAuth Client ID
+          type: secret
+          secret: true
+          required: true
+        - key: client_secret
+          label: OAuth Client Secret
+          type: secret
+          secret: true
+          required: true
+        - key: default_property_ref
+          label: Default GA4 Property
+          type: text
+          secret: false
+          required: false
       - key: oauth2_access_token
         label: OAuth2 access token
         auth_type: oauth
@@ -265,7 +307,7 @@ providers:
         setup_note: Create a Google Cloud OAuth client with Analytics Admin/Data APIs enabled, grant https://www.googleapis.com/auth/analytics.readonly, and store either an access token or refresh-token credential in StackOS.
         homepage_url: https://marketingplatform.google.com/about/analytics/
         console_url: https://analytics.google.com/analytics/web/
-        api_key_url: https://console.cloud.google.com/apis/credentials
+        credential_url: https://console.cloud.google.com/apis/credentials
         docs_url: https://developers.google.com/analytics/devguides/reporting/data/v1
         fallback_url: https://developers.google.com/analytics/devguides/reporting/data/v1
         fallback_reason: OAuth consent, account access, and GA4 property ids are account-specific; the official Data API docs are the stable setup reference.
@@ -273,7 +315,7 @@ providers:
         url_confidence:
           homepage_url: verified
           console_url: verified
-          api_key_url: directional
+          credential_url: directional
           docs_url: verified
           fallback_url: verified
       docs:
@@ -287,6 +329,27 @@ providers:
     description: Tag Manager account, container, workspace, tag, trigger, and install snippet reads.
     auth_type: oauth
     auth_methods:
+      - key: oauth2_authorization_code
+        label: Connect with Google
+        auth_type: oauth
+        interactive: true
+        payload_format: json
+        fields:
+        - key: client_id
+          label: OAuth Client ID
+          type: secret
+          secret: true
+          required: true
+        - key: client_secret
+          label: OAuth Client Secret
+          type: secret
+          secret: true
+          required: true
+        - key: default_account_ref
+          label: Default Account Ref
+          type: text
+          secret: false
+          required: false
       - key: oauth2_access_token
         label: OAuth2 access token
         auth_type: oauth
@@ -336,7 +399,7 @@ providers:
         setup_note: Create a Google Cloud OAuth client with Tag Manager API enabled, grant https://www.googleapis.com/auth/tagmanager.readonly, and store either an access token or refresh-token credential in StackOS.
         homepage_url: https://tagmanager.google.com/
         console_url: https://tagmanager.google.com/
-        api_key_url: https://console.cloud.google.com/apis/credentials
+        credential_url: https://console.cloud.google.com/apis/credentials
         docs_url: https://developers.google.com/tag-platform/tag-manager/api/v2
         fallback_url: https://developers.google.com/tag-platform/tag-manager/api/v2/authorization
         fallback_reason: OAuth consent, account access, and container refs are account-specific; the official API docs are the stable setup reference.
@@ -344,7 +407,7 @@ providers:
         url_confidence:
           homepage_url: verified
           console_url: verified
-          api_key_url: directional
+          credential_url: directional
           docs_url: verified
           fallback_url: verified
       docs:
@@ -922,6 +985,8 @@ actions:
       connector: google-search-console
       operation: sites.list
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/webmasters.readonly
       budget_kind: google-search-console
       enforce_budget: false
   - key: search-console.search-analytics.query
@@ -989,6 +1054,8 @@ actions:
       connector: google-search-console
       operation: search_analytics.query
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/webmasters.readonly
       budget_kind: google-search-console
       enforce_budget: false
   - key: search-console.sitemaps.list
@@ -1013,6 +1080,8 @@ actions:
       connector: google-search-console
       operation: sitemaps.list
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/webmasters.readonly
       budget_kind: google-search-console
       enforce_budget: false
   - key: search-console.url.inspect
@@ -1040,6 +1109,8 @@ actions:
       connector: google-search-console
       operation: url.inspect
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/webmasters.readonly
       budget_kind: google-search-console
       enforce_budget: false
   - key: ga4.account_summaries.list
@@ -1064,6 +1135,8 @@ actions:
       connector: google-analytics
       operation: account_summaries.list
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/analytics.readonly
       budget_kind: google-analytics
       enforce_budget: false
   - key: ga4.properties.metadata.get
@@ -1087,6 +1160,8 @@ actions:
       connector: google-analytics
       operation: properties.metadata.get
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/analytics.readonly
       budget_kind: google-analytics
       enforce_budget: false
   - key: ga4.properties.run_report
@@ -1138,6 +1213,8 @@ actions:
       connector: google-analytics
       operation: properties.run_report
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/analytics.readonly
       budget_kind: google-analytics
       enforce_budget: false
   - key: ga4.properties.run_realtime_report
@@ -1186,6 +1263,8 @@ actions:
       connector: google-analytics
       operation: properties.run_realtime_report
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/analytics.readonly
       budget_kind: google-analytics
       enforce_budget: false
   - key: google-tag-manager.accounts.list
@@ -1208,6 +1287,8 @@ actions:
       connector: google-tag-manager
       operation: accounts.list
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/tagmanager.readonly
       budget_kind: google-tag-manager
       enforce_budget: false
   - key: google-tag-manager.containers.list
@@ -1232,6 +1313,8 @@ actions:
       connector: google-tag-manager
       operation: accounts.containers.list
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/tagmanager.readonly
       budget_kind: google-tag-manager
       enforce_budget: false
   - key: google-tag-manager.container.snippet.get
@@ -1257,6 +1340,8 @@ actions:
       connector: google-tag-manager
       operation: accounts.containers.snippet
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/tagmanager.readonly
       budget_kind: google-tag-manager
       enforce_budget: false
   - key: google-tag-manager.workspaces.list
@@ -1284,6 +1369,8 @@ actions:
       connector: google-tag-manager
       operation: accounts.containers.workspaces.list
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/tagmanager.readonly
       budget_kind: google-tag-manager
       enforce_budget: false
   - key: google-tag-manager.workspace.tags.list
@@ -1314,6 +1401,8 @@ actions:
       connector: google-tag-manager
       operation: accounts.containers.workspaces.tags.list
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/tagmanager.readonly
       budget_kind: google-tag-manager
       enforce_budget: false
   - key: google-tag-manager.workspace.triggers.list
@@ -1344,6 +1433,8 @@ actions:
       connector: google-tag-manager
       operation: accounts.containers.workspaces.triggers.list
       requires_credential: true
+      required_scopes:
+        - https://www.googleapis.com/auth/tagmanager.readonly
       budget_kind: google-tag-manager
       enforce_budget: false
 resources:

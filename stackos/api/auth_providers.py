@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Body, Depends, Query, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session
 
@@ -22,6 +24,7 @@ from stackos.auth_providers import (
     AuthTestOut,
 )
 from stackos.config import Settings
+from stackos.repositories.base import RepositoryError
 
 router = APIRouter(prefix="/api/v1", tags=["auth-providers"])
 
@@ -31,11 +34,11 @@ class AuthStartRequest(BaseModel):
 
     model_config = ConfigDict(
         extra="forbid",
-        json_schema_extra={"example": {"auth_method_key": "oauth2", "redirect_uri": None}},
+        json_schema_extra={"example": {"auth_method_key": "oauth2", "credential_ref": "cred_..."}},
     )
 
     auth_method_key: str | None = None
-    redirect_uri: str | None = None
+    credential_ref: str | None = None
 
 
 class AuthTestRequest(BaseModel):
@@ -129,8 +132,76 @@ async def auth_start(
             provider_key=provider_key,
             settings=settings,
             auth_method_key=body.auth_method_key if body is not None else None,
-            redirect_uri=body.redirect_uri if body is not None else None,
+            credential_ref=body.credential_ref if body is not None else None,
         )
+    )
+
+
+@router.get(
+    "/auth/oauth/callback",
+    response_class=RedirectResponse,
+    status_code=status.HTTP_303_SEE_OTHER,
+)
+async def auth_oauth_callback(
+    state_value: str | None = Query(default=None, alias="state", max_length=512),
+    code: str | None = Query(default=None, max_length=4096),
+    provider_error: str | None = Query(default=None, alias="error", max_length=200),
+    _error_description: str | None = Query(
+        default=None,
+        alias="error_description",
+        max_length=4096,
+    ),
+    settings: Settings = Depends(get_settings),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Complete one bound OAuth transaction and immediately leave the callback URL."""
+
+    result = None
+    if state_value is not None:
+        try:
+            result = await AuthRepository(session).complete_oauth_callback(
+                state=state_value,
+                code=code,
+                provider_error=provider_error,
+                settings=settings,
+            )
+        except RepositoryError:
+            session.rollback()
+        except Exception:
+            # Provider/library exceptions are deliberately collapsed here.
+            session.rollback()
+    callback_status = result.status if result is not None else "error"
+    if callback_status not in {
+        "connected",
+        "authorization-denied",
+        "repair-required",
+        "stale-attempt",
+    }:
+        callback_status = "error"
+    status_label = {
+        "authorization-denied": "denied",
+        "repair-required": "repair-required",
+        "stale-attempt": "expired",
+    }.get(callback_status, callback_status)
+    query: dict[str, str] = {"oauth_status": status_label}
+    if result is not None and result.provider_key is not None:
+        query["provider_key"] = result.provider_key
+    if result is not None and result.project_id is not None:
+        destination = (
+            f"http://{settings.host}:{settings.port}/projects/"
+            f"{result.project_id}/connections?{urlencode(query)}"
+        )
+    else:
+        destination = f"http://{settings.host}:{settings.port}/?{urlencode(query)}"
+    return RedirectResponse(
+        destination,
+        status_code=status.HTTP_303_SEE_OTHER,
+        headers={
+            "Cache-Control": "no-store",
+            "Pragma": "no-cache",
+            "Referrer-Policy": "no-referrer",
+            "Content-Security-Policy": "default-src 'none'",
+        },
     )
 
 

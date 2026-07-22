@@ -22,7 +22,11 @@ import { useConnectionCredentials } from './connections/useConnectionCredentials
 import { useIngressEndpointEditor } from './connections/useIngressEndpointEditor'
 import { useSlackProfileEditor } from './connections/useSlackProfileEditor'
 import { useTelegramProfileEditor } from './connections/useTelegramProfileEditor'
-import type { CommunicationProfile, ConnectionSection } from './connections/types'
+import type {
+  CommunicationProfile,
+  ConnectionSection,
+  OAuthReturnStatus,
+} from './connections/types'
 
 const SECTION_KEYS: ConnectionSection[] = [
   'services',
@@ -33,6 +37,13 @@ const SECTION_KEYS: ConnectionSection[] = [
   'connectivity',
   'diagnostics',
 ]
+const OAUTH_RETURN_STATUSES = new Set<OAuthReturnStatus>([
+  'connected',
+  'denied',
+  'expired',
+  'repair-required',
+  'error',
+])
 
 const route = useRoute()
 const router = useRouter()
@@ -46,7 +57,7 @@ const {
   addPanelOpen,
   busyAction,
   providerMessages,
-  providerSetupUrls,
+  oauthReturnMessage,
   connectionMessages,
   fieldErrors,
   pendingRevoke,
@@ -82,7 +93,8 @@ const {
   openAddConnection,
   openEditConnection,
   saveCredential: saveCredentialAction,
-  startProvider,
+  startProvider: startProviderAction,
+  applyOAuthReturn,
   testConnection,
   requestRevoke,
   confirmRevoke,
@@ -229,7 +241,9 @@ async function load(): Promise<void> {
     applySectionFromQuery(route.query.section)
     await loadCredentials()
     await loadCommunicationSetup()
-    applyProviderSelection(route.query.provider_key)
+    if (!handleOAuthReturnQuery(route.query.oauth_status, route.query.provider_key)) {
+      applyProviderSelection(route.query.provider_key)
+    }
   } finally {
     initialLoadComplete.value = true
   }
@@ -260,6 +274,28 @@ function clearProviderQuery(): void {
   void router.replace({ query: nextQuery })
 }
 
+function oauthReturnStatus(value: unknown): OAuthReturnStatus | null {
+  if (value === 'stale-attempt') return 'expired'
+  return typeof value === 'string' && OAUTH_RETURN_STATUSES.has(value as OAuthReturnStatus)
+    ? (value as OAuthReturnStatus)
+    : null
+}
+
+function handleOAuthReturnQuery(statusValue: unknown, providerValue: unknown): boolean {
+  const status = oauthReturnStatus(statusValue)
+  if (!status) return false
+  applyOAuthReturn(status, typeof providerValue === 'string' ? providerValue : null)
+  clearOAuthReturnQuery()
+  return true
+}
+
+function clearOAuthReturnQuery(): void {
+  const nextQuery = { ...router.currentRoute.value.query }
+  delete nextQuery.oauth_status
+  delete nextQuery.provider_key
+  void router.replace({ query: nextQuery })
+}
+
 function setAddPanelOpen(open: boolean): void {
   addPanelOpen.value = open
   if (!open) clearProviderQuery()
@@ -268,6 +304,18 @@ function setAddPanelOpen(open: boolean): void {
 async function saveCredential(...args: Parameters<typeof saveCredentialAction>): Promise<void> {
   await saveCredentialAction(...args)
   if (!addPanelOpen.value) clearProviderQuery()
+}
+
+async function startProvider(...args: Parameters<typeof startProviderAction>): Promise<void> {
+  const authorizationUrl = await startProviderAction(...args)
+  if (authorizationUrl) {
+    window.open(authorizationUrl, '_self', 'noopener,noreferrer')
+  }
+}
+
+async function refreshOAuthReturn(statusValue: unknown, providerValue: unknown): Promise<void> {
+  await loadCredentials()
+  handleOAuthReturnQuery(statusValue, providerValue)
 }
 
 onMounted(load)
@@ -284,6 +332,10 @@ onBeforeRouteUpdate((to) => {
     return
   }
   applySectionFromQuery(to.query.section)
+  if (oauthReturnStatus(to.query.oauth_status)) {
+    setTimeout(() => void refreshOAuthReturn(to.query.oauth_status, to.query.provider_key), 0)
+    return
+  }
   applyProviderSelection(to.query.provider_key)
 })
 </script>
@@ -305,6 +357,10 @@ onBeforeRouteUpdate((to) => {
 
     <UiCallout v-if="error" tone="danger">
       {{ error }}
+    </UiCallout>
+
+    <UiCallout v-if="oauthReturnMessage" :tone="oauthReturnMessage.tone">
+      {{ oauthReturnMessage.text }}
     </UiCallout>
 
     <section
@@ -531,7 +587,6 @@ onBeforeRouteUpdate((to) => {
       :visible-auth-providers="visibleAuthProviders"
       :provider-options="providerOptions"
       :provider-messages="providerMessages"
-      :provider-setup-urls="providerSetupUrls"
       :field-errors="fieldErrors"
       :busy-action="busyAction"
       :editing="editing"
