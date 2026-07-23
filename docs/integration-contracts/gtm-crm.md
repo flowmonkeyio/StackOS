@@ -1,8 +1,9 @@
 # GTM CRM Contract Audit
 
-Status: first executable connector pass delivered on 2026-05-22. This review is
-kept as the provider-contract ledger and follow-up checklist for HubSpot,
-Salesforce, and Pipedrive compatibility.
+Status: first executable connector pass delivered on 2026-05-22 and HubSpot
+expanded on 2026-07-22. This historical cross-provider review remains useful
+for Salesforce and Pipedrive comparisons; the canonical current HubSpot ledger
+is [`hubspot.md`](hubspot.md).
 
 ## Official Docs Ledger
 
@@ -10,7 +11,7 @@ Salesforce, and Pipedrive compatibility.
 
 | Area | Official docs | Contract notes |
 | --- | --- | --- |
-| Auth | [Working with OAuth](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/oauth/working-with-oauth), [Scopes](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/scopes) | OAuth install flow returns access and refresh tokens via `/oauth/v3/token`; scopes are endpoint-specific. StackOS currently supports the existing manual token method only. HubSpot interactive OAuth is explicitly excluded from the current core/provider delivery. Tokens remain daemon-side. |
+| Auth | [Working with OAuth](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/oauth/working-with-oauth), [current token lifecycle](https://developers.hubspot.com/docs/api-reference/latest/authentication/manage-oauth-tokens), [Scopes](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/scopes) | StackOS implements interactive authorization code against the current `/oauth/2026-03/token` endpoint. CRM Core is required, selected feature scopes use optional consent, and returned `scopes`/`hub_id` are authoritative. Tokens remain daemon-side. |
 | Object create/update/upsert | [Using object APIs](https://developers.hubspot.com/docs/api-reference/legacy/crm/using-object-apis), [latest 2026-03 API reference](https://developers.hubspot.com/docs/reference/api) | Create/update is property-bag based, but upsert is batch-only and requires a custom unique property or contact `email`. Do not model a provider-neutral single-record `upsert` without an `id_property`/match contract. |
 | Notes/tasks/activities | [Notes API](https://developers.hubspot.com/docs/guides/api/crm/engagements/notes), [Tasks API](https://developers.hubspot.com/docs/reference/api/crm/engagements/tasks), [Associations v4](https://developers.hubspot.com/docs/guides/api/crm/associations/associations-v4) | Notes and tasks are CRM objects with provider property names (`hs_note_body`, `hs_timestamp`, `hs_task_subject`, etc.) and association type IDs/labels. Safe refs must resolve to HubSpot IDs inside the daemon before calls. |
 | Pipeline/deals reads | [Search the CRM](https://developers.hubspot.com/docs/api-reference/latest/crm/search-the-crm), [Using object APIs](https://developers.hubspot.com/docs/api-reference/legacy/crm/using-object-apis) | Deals are object type `0-3`; pipeline reads should be `hubspot.crm.deals.search` or `hubspot.crm.deals.list`, not generic `hubspot.pipeline.fetch`. |
@@ -43,9 +44,10 @@ Salesforce, and Pipedrive compatibility.
 
 ### Provider Auth Type
 
-- HubSpot: `auth_type: oauth` remains correct, but only the existing manual
-  OAuth token method is implemented. Interactive start/callback/refresh is not
-  claimed and remains outside this delivery.
+- HubSpot: `auth_type: oauth`; interactive start, fixed callback, exchange,
+  refresh, returned-scope enforcement, and account metadata are implemented by
+  the shared core. The public setup method is the provider-specific
+  authorization-code profile documented in [`hubspot.md`](hubspot.md).
 - Salesforce: `auth_type: oauth`; interactive and manual-compatible methods are
   implemented. The core owns refresh, validates login-host variants, and stores
   trusted instance URL metadata.

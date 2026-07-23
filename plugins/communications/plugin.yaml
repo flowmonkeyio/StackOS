@@ -1562,11 +1562,11 @@ actions:
 resources:
   - key: ingress-endpoint
     name: Ingress Endpoint
-    description: Project-level public ingress base URL and route map for provider webhooks such as Slack Events API and Telegram setWebhook.
+    description: Project-level public ingress base URL and route map for provider webhooks such as Slack Events API, Telegram setWebhook, and HubSpot CRM events.
     schema: *object_schema
   - key: communication-profile
     name: Communication Profile
-    description: Provider-neutral agent communication identity, guidance, policy, and provider facets for chat, email, and future transports.
+    description: Provider-neutral agent communication identity, guidance, policy, and provider facets for chat, email, HubSpot transactional delivery, and future transports.
     schema: *object_schema
   - key: communication-contact
     name: Communication Contact
@@ -1574,7 +1574,7 @@ resources:
     schema: *object_schema
   - key: communication-target
     name: Communication Target
-    description: Named, policy-checked destination alias that resolves to an explicit provider surface/thread/action target.
+    description: Named, policy-checked destination alias that resolves to an explicit provider surface/thread/action target, including safe HubSpot contact refs for approved transactional sends.
     schema: *object_schema
   - key: communication-route
     name: Communication Route
@@ -1602,7 +1602,7 @@ resources:
     schema: *object_schema
   - key: communication-event
     name: Communication Event
-    description: Provider event such as a Telegram edit, IMAP flag change, SMTP rejection, or future delivery webhook.
+    description: Provider event such as a Telegram edit, HubSpot CRM change, IMAP flag change, SMTP rejection, or future delivery webhook.
     schema: *object_schema
   - key: communication-cursor
     name: Communication Cursor

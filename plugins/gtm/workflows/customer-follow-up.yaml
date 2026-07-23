@@ -1,0 +1,412 @@
+schema_version: stackos.workflow-template.v1
+key: gtm.customer-follow-up
+name: GTM Customer Follow-Up
+version: 0.1.0
+description: Send one approved HubSpot transactional customer follow-up through communication.send and optionally record the related CRM activity.
+domain: gtm
+owner:
+  team: StackOS
+experience:
+  problem: "Customer follow-up is risky when recipient eligibility, transactional intent, target policy, template data, send idempotency, and CRM activity logging are implicit."
+  outcome: "One approved message delivered through an exact communication target, with full provider-safe evidence and separately approved CRM follow-up records."
+  why_ai: "AI can prepare the bounded message and activity context while StackOS resolves the named target, enforces policy, executes the provider action, and records audit."
+  operator_path:
+    - "Provide the follow-up goal, approved transactional template packet, and stable delivery key."
+    - "Review recipient eligibility, legal basis, target, content data, and desired CRM activity records."
+    - "Approve the one-to-one send and any CRM activity writes separately."
+  agent_path:
+    - "Validate that the message is transactional, one-to-one, and supported by the exact named target."
+    - "Send through communication.send with the workflow delivery key."
+    - "Optionally record approved note, task, call, or meeting activity and reconcile all evidence."
+  progress_signals:
+    - "Follow-up intent bounded"
+    - "Target and eligibility checked"
+    - "Send approved"
+    - "Delivery evidence recorded"
+    - "CRM activity reconciled"
+  recovery:
+    - "If the target, entitlement, consent, relationship, legal basis, or template ref is unresolved, stop before sending."
+    - "If send state is incomplete or uncertain, inspect the existing communication and action evidence before any retry."
+  safe_stopping_points:
+    - "Stop with the reviewed message packet when send approval is absent."
+    - "Stop after delivery when CRM activity recording is not authorized."
+public:
+  audience: "Sales, success, and support teams sending one approved HubSpot transactional follow-up"
+  setup: connection-required
+  prerequisites:
+    - "A HubSpot OAuth connection with CRM Core and Transactional Communications enabled"
+    - "The Transactional Email add-on confirmed for the connected portal"
+    - "A communication profile and exact target named hubspot-customer-follow-up"
+    - "A provider-verified transactional template ref and explicit recipient/legal policy"
+  proof:
+    - "Reviewed message and eligibility packet"
+    - "communication.send result with message, event, action-call, request, and idempotency evidence"
+    - "Approved CRM activity receipts or an explicit no-record decision"
+  featured: false
+when_to_use:
+  - One known customer or contact needs an approved transactional follow-up and optional CRM activity record.
+when_not_to_use:
+  - The request is marketing outreach, a recipient-list blast, or a sequence enrollment.
+  - The destination is not the configured communication-target:hubspot-customer-follow-up target.
+agent_requirements:
+  - role: gtm-customer-follow-up
+    requirement: required
+    agent_preset_ref: gtm.workflow.customer-follow-up
+    purpose: Validate one-to-one transactional eligibility, use the canonical communication path, and reconcile provider-safe evidence.
+    applies_to_steps:
+      - orient
+      - prepare_followup
+      - send_followup
+      - record_followup
+      - closeout
+  - role: delivery-reviewer
+    requirement: recommended
+    agent_preset_ref: stackos.sdlc.delivery-reviewer
+    purpose: Review recipient policy, consent/legal basis, target grants, idempotency, no-silent-degradation, and side-effect evidence.
+    applies_to_steps:
+      - prepare_followup
+      - send_followup
+      - record_followup
+      - closeout
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: recommended
+    purpose: Teach the main agent StackOS communication targets, run-plan grants, approvals, action evidence, and tracker mechanics.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Coordinate readiness, approvals, safe stopping, verification, and recovery.
+inputs:
+  - key: goal
+    name: Goal
+    type: string
+    required: true
+  - key: target_ref
+    name: Communication Target Ref
+    description: Exact project target authorized by the static run-plan side-effect grant.
+    type: string
+    required: false
+    default: communication-target:hubspot-customer-follow-up
+    schema:
+      type: string
+      const: communication-target:hubspot-customer-follow-up
+  - key: message_packet
+    name: Message Packet
+    description: Provider-verified transactional template ref, bounded scalar template data, and reviewed legal/recipient eligibility context.
+    type: object
+    required: true
+    schema:
+      type: object
+      additionalProperties: false
+      required: [template_ref, template_data, transactional_use_confirmed, consent_or_relationship_confirmed, legal_basis, legal_basis_explanation, marketing_contact_state]
+      properties:
+        template_ref: {type: string, pattern: '^provider-object:'}
+        template_data:
+          type: object
+          maxProperties: 100
+          additionalProperties:
+            anyOf:
+              - {type: string}
+              - {type: integer}
+              - {type: number}
+              - {type: boolean}
+        transactional_use_confirmed: {type: boolean, const: true}
+        consent_or_relationship_confirmed: {type: boolean, const: true}
+        legal_basis: {type: string, minLength: 1, maxLength: 200}
+        legal_basis_explanation: {type: string, minLength: 3, maxLength: 2000}
+        marketing_contact_state: {type: string, enum: [marketing, non-marketing]}
+  - key: delivery_key
+    name: Delivery Key
+    description: Stable non-secret identity used for StackOS and provider-safe send replay.
+    type: string
+    required: true
+    schema:
+      type: string
+      minLength: 3
+      maxLength: 100
+      pattern: '^[A-Za-z0-9._:-]+$'
+  - key: activity_plan
+    name: CRM Activity Plan
+    description: Optional safe-ref plan for an approved note, task, call, or meeting record related to this follow-up.
+    type: object
+    required: false
+context_requirements:
+  - id: customer_followup_context
+    source: resources
+    purpose: Retrieve bounded contact, account, deal, task, and touchpoint context before composing or recording follow-up.
+    filters:
+      plugin_slug: gtm
+      resource_keys:
+        - contact
+        - account
+        - company
+        - deal
+        - task
+        - touchpoint
+    fields:
+      - resource_key
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 20
+    return_mode: compact
+  - id: recent_followup_calls
+    source: action_calls
+    purpose: Reconcile recent HubSpot send and activity attempts before retrying a side effect.
+    filters:
+      plugin_slug: gtm
+    fields:
+      - action_key
+      - status
+      - response_json
+      - created_at
+    max_items: 10
+    return_mode: compact
+capability_requirements:
+  - key: outbound-operations
+    required: true
+    description: Deliver one explicit customer follow-up and optionally record CRM activity.
+    preferred_providers:
+      - hubspot
+auth_requirements:
+  - key: hubspot
+    provider: hubspot
+    auth_type: oauth
+    scopes:
+      - crm.objects.contacts.read
+      - crm.objects.contacts.write
+      - transactional-email
+    optional: false
+    description: Requires CRM Core plus the HubSpot Transactional Communications capability bundle.
+action_contracts:
+  - key: hubspot_note_create
+    action: hubspot.crm.notes.create
+    capability: outbound-operations
+    provider: hubspot
+    risk_level: write
+    auth_ref: hubspot
+    approval_ref: crm_activity_review
+    optional: true
+  - key: hubspot_task_create
+    action: hubspot.crm.tasks.create
+    capability: outbound-operations
+    provider: hubspot
+    risk_level: write
+    auth_ref: hubspot
+    approval_ref: crm_activity_review
+    optional: true
+  - key: hubspot_call_create
+    action: hubspot.crm.calls.create
+    capability: outbound-operations
+    provider: hubspot
+    risk_level: write
+    auth_ref: hubspot
+    approval_ref: crm_activity_review
+    optional: true
+  - key: hubspot_meeting_create
+    action: hubspot.crm.meetings.create
+    capability: outbound-operations
+    provider: hubspot
+    risk_level: write
+    auth_ref: hubspot
+    approval_ref: crm_activity_review
+    optional: true
+resource_contracts:
+  - key: touchpoints
+    resource: touchpoint
+    purpose: Store the provider-safe follow-up intent, send state, message/event refs, and evidence.
+  - key: tasks
+    resource: task
+    purpose: Store approved or recommended follow-up tasks and safe related-record refs.
+policies:
+  - key: exact_target_only
+    kind: safety
+    description: Delivery may target only communication-target:hubspot-customer-follow-up through the static run-plan grant.
+  - key: transactional_one_to_one_only
+    kind: safety
+    description: The send is one-to-one, template-based, transactional, recipient-eligible, and never a marketing blast or sequence enrollment.
+  - key: explicit_send_idempotency
+    kind: safety
+    description: communication.send uses delivery_key and prior evidence is inspected before retrying incomplete or uncertain state.
+  - key: no_silent_degradation
+    kind: boundary
+    description: Unsupported text, HTML, attachments, controls, template fields, privacy, or delivery semantics reject before side effects.
+  - key: provider_safe_evidence
+    kind: evidence
+    description: Closeout preserves message, event, action-call, provider request, idempotency, partial-state, and retry evidence without email addresses or raw provider ids.
+approval_gates:
+  - key: customer_followup_review
+    description: Review target, recipient eligibility, transactional purpose, template data, legal basis, marketing-contact state, and delivery key before send.
+    required_when: external_send
+  - key: crm_activity_review
+    description: Review each proposed CRM note, task, call, or meeting payload and safe association before provider write.
+    required_when: external_crm_activity_write
+steps:
+  - id: orient
+    title: Bound Customer Follow-Up
+    purpose: Read the exact goal, target, message packet, activity plan, recent evidence, and customer context.
+    input_refs:
+      - goal
+      - target_ref
+      - message_packet
+      - delivery_key
+      - activity_plan
+    context_refs:
+      - customer_followup_context
+      - recent_followup_calls
+    policy_refs:
+      - exact_target_only
+      - transactional_one_to_one_only
+    output_refs:
+      - followup_plan
+    instructions:
+      - Reject marketing, bulk, sequence, ambiguous-recipient, raw-id, or unsupported-content intent.
+      - Reconcile any prior attempt with the same delivery_key before preparing another send.
+    success_criteria:
+      - Target, transactional purpose, eligibility, legal context, template ref, activity intent, and prior-attempt state are explicit.
+  - id: prepare_followup
+    title: Prepare Follow-Up Packet
+    purpose: Produce the exact provider-neutral communication content and separately reviewable CRM activity payloads.
+    policy_refs:
+      - transactional_one_to_one_only
+      - explicit_send_idempotency
+      - no_silent_degradation
+    depends_on:
+      - orient
+    output_refs:
+      - followup_plan
+    instructions:
+      - Use template_ref and bounded scalar template_data only; do not approximate unsupported content.
+      - Keep send content and CRM activity payloads separate so either side effect can be declined independently.
+    success_criteria:
+      - The communication packet and each optional CRM activity are exact, safe-ref based, and approval-ready.
+  - id: send_followup
+    title: Send Approved Follow-Up
+    purpose: Deliver once through communication.send to the exact named target.
+    policy_refs:
+      - exact_target_only
+      - transactional_one_to_one_only
+      - explicit_send_idempotency
+      - no_silent_degradation
+      - provider_safe_evidence
+    approval_refs:
+      - customer_followup_review
+    depends_on:
+      - prepare_followup
+    output_refs:
+      - delivery_result
+    instructions:
+      - Call communication.send with to=communication-target:hubspot-customer-follow-up and delivery_key as the idempotency key.
+      - Preserve the full raw side-effect response; incomplete provider acceptance is not delivery completion.
+    success_criteria:
+      - One approved send is completed or rejected with structured repair context and no duplicate side effect.
+  - id: record_followup
+    title: Record Approved CRM Activity
+    purpose: Optionally create approved HubSpot note, task, call, or meeting records using safe associations.
+    action_refs:
+      - hubspot_note_create
+      - hubspot_task_create
+      - hubspot_call_create
+      - hubspot_meeting_create
+    policy_refs:
+      - explicit_send_idempotency
+      - provider_safe_evidence
+    approval_refs:
+      - crm_activity_review
+    depends_on:
+      - send_followup
+    output_refs:
+      - followup_summary
+    instructions:
+      - Execute only requested, approved activity types and derive stable action keys from delivery_key plus the activity kind.
+      - Use provider-object association refs; never copy an email address or raw HubSpot id into activity evidence.
+    success_criteria:
+      - Every requested activity is applied, replayed, skipped, partial, blocked, or failed with provider-safe evidence.
+  - id: closeout
+    title: Reconcile Follow-Up Evidence
+    purpose: Store durable touchpoint and task state and report the exact observed delivery and CRM outcomes.
+    resource_refs:
+      - touchpoints
+      - tasks
+    policy_refs:
+      - provider_safe_evidence
+    depends_on:
+      - record_followup
+    output_refs:
+      - followup_summary
+    instructions:
+      - Preserve message, event, action-call, provider request, approval, idempotency, partial-state, and retry evidence.
+      - Do not claim delivery, read, open, reply, or activity completion beyond the observed provider result.
+    success_criteria:
+      - Durable resources, run evidence, and provider state agree and any residual work has one safe next action.
+outputs:
+  - key: followup_plan
+    name: Customer Follow-Up Plan
+    type: object
+    required: true
+    description: Exact target, transactional content, eligibility, approvals, delivery key, CRM activity plan, and blockers.
+    schema:
+      type: object
+      required: [target_ref, message_packet, delivery_key, eligibility, approvals, activity_plan, blockers]
+      properties:
+        target_ref: {type: string, const: 'communication-target:hubspot-customer-follow-up'}
+        message_packet: {type: object}
+        delivery_key: {type: string}
+        eligibility: {type: object}
+        approvals: {type: array}
+        activity_plan: {type: object}
+        blockers: {type: array}
+  - key: delivery_result
+    name: Delivery Result
+    type: object
+    required: true
+    description: Full provider-safe communication side-effect result and replay guidance.
+    schema:
+      type: object
+      required: [status, target_ref, message_ref, event_ref, action_call_ref, provider_request_id, idempotency_status, partial_state, retry_guidance]
+      properties:
+        status: {type: string, enum: [accepted, processing, complete, canceled, blocked, failed, unknown]}
+        target_ref: {type: string, const: 'communication-target:hubspot-customer-follow-up'}
+        message_ref: {type: string}
+        event_ref: {type: string}
+        action_call_ref: {type: string}
+        provider_request_id: {type: string}
+        idempotency_status: {type: string}
+        partial_state: {type: object}
+        retry_guidance: {type: array, items: {type: string}}
+  - key: followup_summary
+    name: Customer Follow-Up Summary
+    type: object
+    required: true
+    description: Observed communication and CRM activity state with provider-safe receipts and next actions.
+    schema:
+      type: object
+      required: [delivery, crm_activities, action_call_refs, provider_request_ids, partial_failures, retry_guidance]
+      properties:
+        delivery: {type: object}
+        crm_activities: {type: array}
+        action_call_refs: {type: array, items: {type: string}}
+        provider_request_ids: {type: array, items: {type: string}}
+        partial_failures: {type: array}
+        retry_guidance: {type: array, items: {type: string}}
+        next_safe_actions: {type: array, items: {type: string}}
+learning_hooks:
+  - key: customer_followup_learning
+    prompt: Capture reusable transactional follow-up or provider recovery lessons only with durable evidence and no customer identifiers.
+    tags:
+      - gtm
+      - customer-follow-up
+failure_handling:
+  - If target, policy, entitlement, template, consent, relationship, or legal context is unresolved, stop before communication.send.
+  - If the send result is incomplete or uncertain, inspect existing communication and action evidence before retrying with the same delivery key.
+  - If CRM activity recording fails after send, preserve the successful delivery evidence and retry only the unresolved activity with its original key.
+  - Never substitute direct HubSpot send, bulk marketing send, or sequence enrollment for communication.send.
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan
+  mcp_tool_grants:
+    - step_id: send_followup
+      tool: communication.send
+      targets:
+        - communication-target:hubspot-customer-follow-up

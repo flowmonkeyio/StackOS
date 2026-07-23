@@ -115,6 +115,16 @@ export const connectionStatus = defineStatuses({
   'setup-required': { label: 'Setup needed', tone: 'warning', icon: 'wrench' },
 });
 
+// Provider capability readiness derived from explicit provider-manifest contracts.
+export const readinessStatus = defineStatuses({
+  ready: { label: 'Ready', tone: 'success', icon: 'check-circle' },
+  'not-enabled': { label: 'Not enabled', tone: 'neutral', icon: 'circle' },
+  'missing-scopes': { label: 'Missing scopes', tone: 'warning', icon: 'key-round' },
+  'operator-checklist': { label: 'Operator checklist', tone: 'warning', icon: 'list-checks' },
+  'connection-repair': { label: 'Connection repair', tone: 'danger', icon: 'wrench' },
+  pending: { label: 'Pending', tone: 'info', icon: 'clock', dot: true, inFlight: true },
+});
+
 // Agent-request lifecycle (the agent/human inbox).
 export const agentRequestStatus = defineStatuses({
   new: { label: 'New', tone: 'info', icon: 'inbox' },
@@ -166,6 +176,7 @@ export const statusRegistry = {
   integration: integrationHealth,
   budget: budgetState,
   connection: connectionStatus,
+  readiness: readinessStatus,
   agentRequest: agentRequestStatus,
   attention: attentionState,
   system: systemHealth,

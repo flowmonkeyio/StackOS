@@ -65,18 +65,24 @@ def _normalize_content(
     if (
         not _has_text(content.text)
         and not _has_text(content.html)
+        and not _has_text(content.template_ref)
         and not content.attachments
         and not content.controls
     ):
         _reject(
             code="COMM_CONTENT_REQUIRED",
             category="input",
-            message="Communication delivery requires text, html, an attachment, or controls.",
+            message=(
+                "Communication delivery requires text, html, a template_ref, an attachment, "
+                "or controls."
+            ),
             failed_paths=[{"path": "/content", "requested": "deliverable_content"}],
             repair_options=[
                 {
                     "id": "add_content",
-                    "description": "Retry with text, html, attachments, or controls.",
+                    "description": (
+                        "Retry with text, html, template_ref, attachments, or controls."
+                    ),
                 }
             ],
         )

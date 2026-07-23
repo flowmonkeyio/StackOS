@@ -1953,6 +1953,24 @@ Agent completes a run plan
 
 No delivery/read claim should be made from SMTP acceptance alone.
 
+### HubSpot One-to-One Transactional Email
+
+```text
+Agent chooses one named HubSpot contact target
+-> communication.send validates target allowlists and transactional/legal policy
+-> StackOS verifies the connection's add-on confirmation and exact OAuth scopes
+-> connector resolves the safe contact and transactional-template refs internally
+-> connector sends one template with a shared StackOS/HubSpot idempotency key
+-> StackOS stores provider-safe async status, message/event refs, and action audit
+```
+
+The call uses `content.template_ref` and optional scalar
+`content.template_data`. It does not accept raw recipient email, raw HubSpot
+IDs, arbitrary text/HTML overrides, contact-property updates, or a recipient
+list. `pending`/`processing` means provider acceptance only; it is not a
+delivery/read claim. The provider-specific action remains an explicit
+lower-level escape hatch, and bulk marketing send remains unavailable.
+
 ### IMAP Inbox Sweep
 
 ```text
@@ -1985,7 +2003,8 @@ choice and action refs.
 Keep UI generic and object-driven:
 
 - Plugin catalog shows `communications` with provider setup status.
-- Connections page renders typed Telegram, Slack, SMTP, and IMAP auth methods.
+- Connections page renders typed Telegram, Slack, SMTP, IMAP, and HubSpot auth
+  methods through provider manifests.
 - Connections page renders generic communication profiles, surfaces, named
   targets, and ingress readiness so operators can inspect whether agents have
   the right identity, intent, audience, and destination setup.

@@ -584,8 +584,11 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     ]
     assert [item.key for item in gtm_listing.templates] == [
         "gtm.account-research",
+        "gtm.crm-export-handoff",
         "gtm.crm-hygiene-pass",
+        "gtm.customer-follow-up",
         "gtm.lead-enrichment-scoring",
+        "gtm.marketing-program-lifecycle",
         "gtm.outbound-sequence-preparation",
         "gtm.pipeline-risk-review",
     ]

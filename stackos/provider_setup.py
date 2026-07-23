@@ -16,6 +16,7 @@ _URL_FIELDS = (
     ("billing_url", "Billing", "provider_billing"),
     ("docs_url", "Docs", "provider_docs"),
     ("support_url", "Support", "provider_support"),
+    ("callback_url", "OAuth callback", "provider_oauth_callback"),
 )
 _SETUP_TEXT_KEYS = frozenset(
     {
@@ -24,6 +25,8 @@ _SETUP_TEXT_KEYS = frozenset(
         "local_setup_label",
         "local_setup_note",
         "fallback_reason",
+        "callback_note",
+        "repair_note",
         "verified_at",
     }
 )
@@ -37,6 +40,7 @@ _SETUP_URL_KEYS = frozenset(
         "docs_url",
         "support_url",
         "fallback_url",
+        "callback_url",
     }
 )
 _SETUP_ALLOWED_KEYS = _SETUP_TEXT_KEYS | _SETUP_URL_KEYS | {"url_confidence"}
@@ -73,6 +77,9 @@ class ProviderSetupOut(BaseModel):
     billing_url: str | None = None
     docs_url: str | None = None
     support_url: str | None = None
+    callback_url: str | None = None
+    callback_note: str | None = None
+    repair_note: str | None = None
     fallback_url: str | None = None
     fallback_reason: str | None = None
     url_confidence: dict[str, str] = Field(default_factory=dict)
@@ -118,6 +125,9 @@ def build_provider_setup(
         "billing_url": _clean_url(setup.get("billing_url")),
         "docs_url": docs_url,
         "support_url": _clean_url(setup.get("support_url")),
+        "callback_url": _clean_url(setup.get("callback_url")),
+        "callback_note": _clean_text(setup.get("callback_note")),
+        "repair_note": _clean_text(setup.get("repair_note")),
         "fallback_url": _clean_url(setup.get("fallback_url")),
         "fallback_reason": _clean_text(setup.get("fallback_reason")),
         "url_confidence": {str(key): str(value) for key, value in confidence.items()},

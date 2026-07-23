@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { UiFormField, UiInput, UiSecretInput, UiSelect } from '@/components/ui'
+import { UiCheckbox, UiFormField, UiInput, UiSecretInput, UiSelect } from '@/components/ui'
 
 import { connectionFieldInputId } from './fieldIds'
 import type { AuthField } from './types'
 
-defineProps<{
+const props = defineProps<{
   field: AuthField
   modelValue: string
   inputType: 'text' | 'url' | 'number' | 'email'
@@ -16,9 +16,28 @@ defineProps<{
   secretPresent?: boolean
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   (event: 'update:modelValue', value: string | number | null): void
 }>()
+
+function selectedValues(): Set<string> {
+  return new Set(
+    props.modelValue
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean),
+  )
+}
+
+function updateMultiSelect(value: string, selected: boolean): void {
+  const values = selectedValues()
+  if (selected) values.add(value)
+  else values.delete(value)
+  const ordered = props.options
+    .map((option) => option.value)
+    .filter((optionValue) => values.has(optionValue))
+  emit('update:modelValue', ordered.join(','))
+}
 </script>
 
 <template>
@@ -35,15 +54,31 @@ defineEmits<{
     :error="error"
   >
     <template #default="{ id, describedBy, invalid }">
+      <div
+        v-if="field.type === 'multi-select' || field.type === 'multiselect'"
+        :id="id"
+        class="grid gap-2 rounded-sm border border-default bg-bg-surface p-3"
+        role="group"
+        :aria-describedby="describedBy"
+        :aria-invalid="invalid || undefined"
+      >
+        <UiCheckbox
+          v-for="option in options"
+          :key="option.value"
+          :model-value="selectedValues().has(option.value)"
+          :label="option.label"
+          @update:model-value="updateMultiSelect(option.value, $event)"
+        />
+      </div>
       <UiSelect
-        v-if="select"
+        v-else-if="select"
         :id="id"
         :model-value="modelValue"
         :options="options"
         :aria-describedby="describedBy"
         :invalid="invalid"
         :placeholder="field.placeholder ?? 'Select'"
-        @update:model-value="$emit('update:modelValue', $event)"
+        @update:model-value="emit('update:modelValue', $event)"
       />
       <UiSecretInput
         v-else-if="secret"
@@ -54,7 +89,7 @@ defineEmits<{
         no-copy
         no-reveal
         :placeholder="editing && secretPresent ? '••••••••' : (field.placeholder ?? '')"
-        @update:model-value="$emit('update:modelValue', $event)"
+        @update:model-value="emit('update:modelValue', $event)"
       />
       <UiInput
         v-else
@@ -64,7 +99,7 @@ defineEmits<{
         :aria-describedby="describedBy"
         :invalid="invalid"
         :placeholder="field.placeholder ?? undefined"
-        @update:model-value="$emit('update:modelValue', $event)"
+        @update:model-value="emit('update:modelValue', $event)"
       />
     </template>
   </UiFormField>

@@ -42,6 +42,8 @@ class CommunicationContentInput(BaseModel):
     text: str | None = None
     subject: str | None = None
     html: str | None = None
+    template_ref: str | None = None
+    template_data: dict[str, str | int | float | bool] = Field(default_factory=dict)
     format: Literal["auto", "plain", "markdown", "mrkdwn", "html"] = "auto"
     attachments: list[CommunicationAttachmentInput] = Field(default_factory=list)
     controls: list[CommunicationControlInput] = Field(default_factory=list)

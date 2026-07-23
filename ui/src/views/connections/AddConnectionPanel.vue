@@ -2,8 +2,9 @@
 import type { SchemaAuthProviderOut } from '@/api'
 import { UiButton, UiCallout, UiSidePanel } from '@/components/ui'
 
-import { providerSetupNote, providerActionKey } from './formatters'
+import { providerActionKey } from './formatters'
 import ConnectionCredentialFields from './ConnectionCredentialFields.vue'
+import ConnectionProviderSetupGuidance from './ConnectionProviderSetupGuidance.vue'
 import ConnectionServiceSelect from './ConnectionServiceSelect.vue'
 import type { AuthField, AuthMethod, MessageMap } from './types'
 
@@ -103,9 +104,7 @@ function updateCredentialField(
           @select="$emit('select-provider', $event)"
         />
 
-        <UiCallout v-if="providerSetupNote(selectedProvider)" tone="info" density="compact">
-          {{ providerSetupNote(selectedProvider) }}
-        </UiCallout>
+        <ConnectionProviderSetupGuidance :provider="selectedProvider" :editing="editing" />
 
         <template v-if="supportsCredential(selectedProvider) && selectedMethod(selectedProvider)">
           <ConnectionCredentialFields

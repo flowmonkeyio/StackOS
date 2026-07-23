@@ -4,6 +4,41 @@ import { mount } from '@vue/test-utils'
 import ConnectionCredentialField from './ConnectionCredentialField.vue'
 
 describe('ConnectionCredentialField', () => {
+  it('emits ordered comma-separated values for a multi-select auth field', async () => {
+    const wrapper = mount(ConnectionCredentialField, {
+      props: {
+        field: {
+          key: 'scope_bundles',
+          label: 'Optional capability bundles',
+          type: 'multi-select',
+          secret: false,
+          required: false,
+          options: [
+            { value: 'sales', label: 'Sales' },
+            { value: 'marketing', label: 'Marketing' },
+          ],
+        },
+        modelValue: 'sales',
+        inputType: 'text',
+        secret: false,
+        select: true,
+        options: [
+          { value: 'sales', label: 'Sales' },
+          { value: 'marketing', label: 'Marketing' },
+        ],
+      },
+    })
+
+    const inputs = wrapper.findAll<HTMLInputElement>('input[type="checkbox"]')
+    expect(inputs).toHaveLength(2)
+    expect(inputs[0].element.checked).toBe(true)
+    expect(inputs[1].element.checked).toBe(false)
+
+    await inputs[1].setValue(true)
+
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['sales,marketing'])
+  })
+
   it.each(['api_key', 'password', 'signing_secret'])(
     'shows a saved-secret placeholder for %s without populating the input',
     async (fieldKey) => {

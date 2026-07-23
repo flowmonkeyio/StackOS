@@ -26,6 +26,7 @@ from stackos.db.models import (
     Action,
     ActionCall,
     Credential,
+    CredentialAccount,
     CredentialScope,
     CredentialUsageEvent,
     IntegrationCredential,
@@ -329,6 +330,7 @@ def _provider_credential_ref(session: Session, project_id: int, provider_key: st
         "pipedrive": ["deals:read", "search:read"],
         "outreach": ["sequenceStates.write"],
         "salesloft": ["cadences:write"],
+        "hubspot": ["crm.objects.companies.write"],
         "microsoft-365": [
             "https://graph.microsoft.com/Mail.Send",
             "https://graph.microsoft.com/Calendars.ReadWrite",
@@ -351,6 +353,17 @@ def _provider_credential_ref(session: Session, project_id: int, provider_key: st
         for scope in provider_scopes[provider_key]:
             if scope not in existing:
                 session.add(CredentialScope(credential_id=credential.id, scope=scope))
+        if provider_key == "hubspot":
+            account = session.exec(
+                select(CredentialAccount).where(CredentialAccount.credential_id == credential.id)
+            ).first()
+            if account is None:
+                session.add(
+                    CredentialAccount(
+                        credential_id=credential.id,
+                        provider_account_id="1234567",
+                    )
+                )
         session.commit()
     return credential_ref
 
@@ -2862,17 +2875,25 @@ def test_hubspot_builtin_company_upsert_sends_documented_batch_body(
         kind="hubspot",
         secret_payload=json.dumps({"access_token": "hubspot-secret"}).encode("utf-8"),
     )
-    from stackos.auth_providers import AuthRepository
+    credential_ref = _provider_credential_ref(session, project_id, "hubspot")
+    credential = session.exec(
+        select(Credential).where(Credential.credential_ref == credential_ref)
+    ).one()
+    from stackos.repositories.provider_refs import ProviderObjectReferenceRepository
 
-    credential_ref = (
-        AuthRepository(session)
-        .status(
-            project_id=project_id,
-            provider_key="hubspot",
-        )
-        .connections[0]
-        .credential_ref
+    provider_refs = ProviderObjectReferenceRepository(session)
+    external_id_ref = provider_refs.upsert(
+        credential=credential,
+        object_type="company-property",
+        provider_object_id="external_company_id",
+        metadata_json={"has_unique_value": True},
     )
+    name_ref = provider_refs.upsert(
+        credential=credential,
+        object_type="company-property",
+        provider_object_id="name",
+    )
+    session.commit()
     httpx_mock.add_response(
         method="POST",
         url="https://api.hubapi.com/crm/objects/2026-03/companies/batch/upsert",
@@ -2884,13 +2905,16 @@ def test_hubspot_builtin_company_upsert_sends_documented_batch_body(
             project_id=project_id,
             action_ref="gtm.hubspot.crm.companies.batch_upsert",
             input_json={
-                "id_property": "domain",
+                "id_property_ref": external_id_ref,
                 "inputs": [
                     {
-                        "properties": {
-                            "domain": "example.com",
-                            "name": "Example",
-                        }
+                        "properties": [
+                            {
+                                "property_ref": external_id_ref,
+                                "value": "company-ext-123",
+                            },
+                            {"property_ref": name_ref, "value": "Example"},
+                        ]
                     }
                 ],
             },
@@ -2904,14 +2928,18 @@ def test_hubspot_builtin_company_upsert_sends_documented_batch_body(
     assert json.loads(request.content.decode("utf-8")) == {
         "inputs": [
             {
-                "id": "example.com",
-                "idProperty": "domain",
-                "properties": {"domain": "example.com", "name": "Example"},
+                "id": "company-ext-123",
+                "idProperty": "external_company_id",
+                "properties": {
+                    "external_company_id": "company-ext-123",
+                    "name": "Example",
+                },
             }
         ]
     }
     assert out.action_call.connector_key == "hubspot"
-    assert out.output_json["body"]["results"][0]["id"] == "123"
+    assert out.output_json["results"][0]["record_ref"].startswith("provider-object:")
+    assert "123" not in json.dumps(out.output_json)
     assert "hubspot-secret" not in rendered
 
 

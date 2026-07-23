@@ -44,7 +44,7 @@ from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.secrets import PayloadSecretRepository
 
-HEAD_REVISION = "0023_payload_secrets"
+HEAD_REVISION = "0024_provider_object_references"
 
 
 @pytest.fixture

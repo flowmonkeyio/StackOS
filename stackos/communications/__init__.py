@@ -16,6 +16,7 @@ from stackos.communications.policy import (
     config_policy,
     config_refs,
     config_string_list,
+    evaluate_inbound_event_allowlist,
     evaluate_inbound_policy,
 )
 from stackos.communications.processor import process_inbound_event
@@ -45,6 +46,7 @@ __all__ = [
     "config_policy",
     "config_refs",
     "config_string_list",
+    "evaluate_inbound_event_allowlist",
     "evaluate_inbound_policy",
     "merged_provider_profile",
     "process_inbound_event",

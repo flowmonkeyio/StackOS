@@ -45,12 +45,16 @@ def test_public_ingress_paths_allow_tunnel_host_but_still_verify_provider(
     client: TestClient,
 ) -> None:
     """Tunnel/deployed Hosts reach only provider-verified ingress paths."""
-    resp = client.post(
-        "/api/v1/ingress/telegram/1/support-bot",
-        headers={"host": "stackos-local.ngrok-free.app"},
-        json={"update_id": 1},
-    )
-    assert resp.status_code != 421
+    for path, payload in (
+        ("/api/v1/ingress/telegram/1/support-bot", {"update_id": 1}),
+        ("/api/v1/ingress/hubspot/1/primary", []),
+    ):
+        resp = client.post(
+            path,
+            headers={"host": "stackos-local.ngrok-free.app"},
+            json=payload,
+        )
+        assert resp.status_code != 421
 
 
 def test_tunnel_host_cannot_reach_non_ingress_api(client: TestClient) -> None:

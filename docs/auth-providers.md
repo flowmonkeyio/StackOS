@@ -106,9 +106,11 @@ provider. The shared lifecycle owns transaction state, callback handling, token
 storage, refresh/acquisition, scope enforcement, concurrency, audit, and safe
 failure behavior. A provider contract supplies only protocol facts such as its
 authorization/token endpoints, consent scopes, client-auth style, PKCE mode,
-fixed authorization parameters, trusted response metadata, and an exceptional
-post-exchange hook when the provider actually requires one. Connectors receive
-an already-usable credential; they do not implement OAuth.
+fixed authorization parameters, trusted response metadata, token-response
+lifecycle requirements for each grant stage, and an exceptional post-exchange
+hook when the provider actually requires one. The shared lifecycle validates
+those requirements before changing credential state. Connectors receive an
+already-usable credential; they do not implement OAuth.
 
 ### Operator OAuth Quick Guide
 
@@ -119,11 +121,12 @@ developer console and registers StackOS's exact callback URI.
 The provider-by-provider console walkthrough, scope ledger, and static
 Cloudflare Pages callback design live in
 [`oauth-provider-setup.md`](./oauth-provider-setup.md). Its upload-ready source
-exists under `workers/oauth-callback-relay/public`, but it is not deployed. The
-page uses browser navigation to reach this same existing callback route on
-loopback; it does not add a Worker, Pages Function, separate completion route,
-or OAuth lifecycle. The current callback behavior below remains the runtime
-truth.
+exists under `workers/oauth-callback-relay/public` and is live at the configured
+Pages custom domain. The deployed `index.html` matched the reviewed source
+byte-for-byte on 2026-07-22. The page uses browser navigation to reach this same
+existing callback route on loopback; it does not add a Worker, Pages Function,
+separate completion route, or OAuth lifecycle. The current callback behavior
+below remains the runtime truth.
 
 The default local callback URI is:
 
@@ -183,15 +186,19 @@ The authorization-code flow is:
    stored. Any PKCE verifier and pending application values remain encrypted.
    Starting again consumes earlier uncompleted transactions for that profile.
 4. The exact public callback route consumes the state atomically, handles denial
-   or expiry, exchanges the code once, applies any provider hook, and stores the
-   normalized token payload. A failed reconnect preserves a still-active prior
-   credential; otherwise the connection becomes `repair-required`.
+   or expiry, exchanges the code once, applies any provider hook, and validates
+   the provider contract's account, renewal, expiry, and scope evidence before
+   storing the normalized token payload. An incomplete first connection becomes
+   `repair-required`; a failed reconnect preserves a still-active prior
+   credential.
 5. Before an action runs, the resolver refreshes an expired authorization-code
-   token or acquires a client-credentials token when needed. A per-credential
-   async lock plus an `updated_at` compare-and-swap prevents concurrent requests
-   from overwriting newer token material. Generic profile editing exposes only
-   provider-declared setup fields; unchanged setup secrets retain the acquired
-   token and grants, while changed token/application material resets them.
+   token or acquires a client-credentials token when needed. The same
+   provider-declared response requirements are validated before rotated token,
+   expiry, or scope state is committed. A per-credential async lock plus an
+   `updated_at` compare-and-swap prevents concurrent requests from overwriting
+   newer token material. Generic profile editing exposes only provider-declared
+   setup fields; unchanged setup secrets retain the acquired token and grants,
+   while changed token/application material resets them.
 6. The resolver compares the action manifest's `required_scopes` with the
    credential's known grants before connector dispatch. Missing or unknown
    required scopes fail safely without calling the provider action.
@@ -239,7 +246,7 @@ that an imported token bypasses the known-scope gate.
 | Salesloft | Interactive authorization code; manual OAuth token or API-key alternative | Provider endpoints; body client authentication | `cadences:write` |
 | Taboola | Core client credentials | Body client authentication | No action-level scope declaration currently required |
 | Reddit | Core client credentials | HTTP Basic token acquisition; `user_agent` stays in the encrypted application payload | No action-level scope declaration currently required |
-| HubSpot | Manual OAuth token only | Existing actions remain available; interactive OAuth is explicitly outside this delivery | Existing action contracts |
+| HubSpot | Interactive authorization code with capability-scoped optional consent | Private- or Marketplace-distributed HubSpot app; body client authentication; current `2026-03` token endpoint; returned `scopes` and `hub_id` are authoritative | Per-action CRM Core, Sales, Marketing, Bulk, Automation, and Transactional scope gates |
 | X API | Manual OAuth token only | Provider actions are explicitly deferred | Not executable |
 | LinkedIn | Manual OAuth token only | Provider actions are explicitly deferred | Not executable |
 

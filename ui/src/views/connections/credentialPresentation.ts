@@ -1,6 +1,7 @@
 import type { SchemaAuthProviderOut, SchemaCredentialConnectionOut } from '@/api'
 
 import type { ConnectionRow, ServiceGroup } from './types'
+import { providerSetupGuidance } from './providerSetup'
 
 export { formatAuthType } from '@/lib/stackos/providerPresentation'
 
@@ -46,8 +47,7 @@ export function providerGroupLabel(provider: SchemaAuthProviderOut): string {
 }
 
 export function providerSetupNote(provider: SchemaAuthProviderOut): string | null {
-  const value = provider.config_json?.setup_note
-  return typeof value === 'string' && value.trim() ? value : null
+  return providerSetupGuidance(provider)?.setupNote ?? null
 }
 
 export function methodLabel(provider: SchemaAuthProviderOut, methodKey: string): string {

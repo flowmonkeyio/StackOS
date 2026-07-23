@@ -7,6 +7,7 @@ export function authProvider(
   name: string,
   authType: string,
   authMethods: unknown[] = apiKeyMethod(),
+  configJson: Record<string, unknown> = {},
 ) {
   return {
     id: key === 'firecrawl' ? 1 : 2,
@@ -18,7 +19,7 @@ export function authProvider(
     auth_type: authType,
     auth_methods: authMethods,
     scopes: [],
-    config_json: { auth_methods: authMethods },
+    config_json: { ...configJson, auth_methods: authMethods },
   }
 }
 
@@ -32,6 +33,9 @@ export function authConnection({
   profileKey = 'default',
   label = 'Primary Firecrawl',
   account = null,
+  scopes = [],
+  setupRequired,
+  expiresAt = null,
 }: {
   revokedAt: string | null
   status?: string
@@ -42,6 +46,9 @@ export function authConnection({
   profileKey?: string
   label?: string
   account?: Record<string, unknown> | null
+  scopes?: string[]
+  setupRequired?: boolean
+  expiresAt?: string | null
 }) {
   return {
     credential_ref: credentialRef,
@@ -52,12 +59,12 @@ export function authConnection({
     profile_key: profileKey,
     label,
     status: status ?? (revokedAt ? 'revoked' : 'connected'),
-    expires_at: null,
+    expires_at: expiresAt,
     last_tested_at: null,
     revoked_at: revokedAt,
-    scopes: [],
+    scopes,
     account,
-    setup_required: revokedAt !== null || status === 'failed',
+    setup_required: setupRequired ?? (revokedAt !== null || status === 'failed'),
   }
 }
 

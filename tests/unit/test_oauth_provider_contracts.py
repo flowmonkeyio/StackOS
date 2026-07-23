@@ -20,6 +20,7 @@ EXPECTED_CONTRACTS = {
     "outreach": ("authorization_code", "unavailable", "body"),
     "salesloft": ("authorization_code", "unavailable", "body"),
     "microsoft-365": ("authorization_code", "required", "body"),
+    "hubspot": ("authorization_code", "unavailable", "body"),
     "taboola": ("client_credentials", "unavailable", "body"),
     "reddit": ("client_credentials", "unavailable", "basic"),
 }
@@ -55,6 +56,29 @@ def test_oauth_provider_inventory_and_real_variants_are_explicit() -> None:
         "id",
     )
     assert oauth_contract_for("outreach").scopes == ("sequenceStates.write",)
+    hubspot = oauth_contract_for("hubspot")
+    assert hubspot.authorization_endpoint == "https://app.hubspot.com/oauth/authorize"
+    assert hubspot.token_endpoint == "https://api.hubspot.com/oauth/2026-03/token"
+    assert hubspot.optional_scope_parameter == "optional_scope"
+    assert hubspot.response_scope_fields == ("scopes", "scope")
+    assert hubspot.response_account_id_field == "hub_id"
+    assert hubspot.authorization_code_response_requirements == (
+        "refresh_token",
+        "expires_in",
+        "scope_evidence",
+    )
+    assert hubspot.refresh_token_response_requirements == (
+        "refresh_token",
+        "expires_in",
+    )
+    assert hubspot.response_metadata_fields == (
+        "hub_id",
+        "user_id",
+        "app_id",
+        "hub_domain",
+        "is_private_distribution",
+    )
+    assert oauth_contract_for("microsoft-365").authorization_code_response_requirements == ()
 
 
 def test_google_family_shares_endpoints_but_keeps_provider_scopes() -> None:
@@ -132,4 +156,4 @@ def test_microsoft_contract_validates_tenant_path_segment() -> None:
 
 def test_provider_without_core_oauth_contract_is_rejected() -> None:
     with pytest.raises(ValidationError, match="no daemon OAuth contract"):
-        oauth_contract_for("hubspot")
+        oauth_contract_for("unknown-provider")

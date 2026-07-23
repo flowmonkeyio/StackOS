@@ -18,6 +18,7 @@ from stackos.api.errors import (
     register_error_handlers,
 )
 from stackos.api.health import router as health_router
+from stackos.api.hubspot_ingress import router as hubspot_ingress_router
 from stackos.api.meta import router as meta_router
 from stackos.api.operations import router as operations_router
 from stackos.api.plugins import router as plugins_router
@@ -69,6 +70,7 @@ def register_routers(app: FastAPI) -> None:
     # Provider ingress that validates provider-signed/static secrets before writes.
     app.include_router(telegram_ingress_router)
     app.include_router(slack_ingress_router)
+    app.include_router(hubspot_ingress_router)
     # Project memory/context primitives.
     app.include_router(context_router)
     # Reusable workflow templates.

@@ -18,6 +18,7 @@ from stackos.actions.connectors import (
 from stackos.artifacts import redact_secret_text, redact_secrets
 from stackos.mcp.errors import IntegrationDownError, RateLimitedError
 from stackos.repositories.base import ValidationError
+from stackos.secret_refs import redact_secret_values
 
 JsonObject = dict[str, Any]
 
@@ -252,6 +253,7 @@ async def send_json(
     data: Mapping[str, Any] | None = None,
     auth: httpx.Auth | None = None,
     timeout_s: float = 60.0,
+    redact_values: tuple[str, ...] = (),
 ) -> tuple[int, Any, httpx.Headers]:
     kwargs: dict[str, Any] = {
         "method": method,
@@ -271,11 +273,38 @@ async def send_json(
             provider_error: Any = response.json()
         except ValueError:
             provider_error = {"message": response.text[:500]}
+        header_secrets: list[str] = []
+        for header_name, header_value in (headers or {}).items():
+            normalized_name = str(header_name).lower().replace("-", "_")
+            if any(
+                part in normalized_name for part in ("authorization", "api_key", "secret", "token")
+            ):
+                value = str(header_value).strip()
+                if value.lower().startswith("bearer "):
+                    value = value[7:].strip()
+                if value:
+                    header_secrets.append(value)
+        provider_error = redact_secret_values(
+            provider_error,
+            tuple(header_secrets) + tuple(value for value in redact_values if value),
+        )
+        metadata: JsonObject = {"status_code": response.status_code}
+        request_id = (
+            response.headers.get("x-hubspot-correlation-id")
+            or response.headers.get("request-id")
+            or response.headers.get("google-ads-request-id")
+            or response.headers.get("x-request-id")
+        )
+        if request_id:
+            metadata["request_id"] = request_id
+        retry_after = response.headers.get("retry-after")
+        if retry_after:
+            metadata["retry_after"] = retry_after
         raise ActionConnectorError(
             f"provider action returned status {response.status_code}",
             provider_status_code=response.status_code,
-            provider_error=provider_error,
-            metadata_json={"status_code": response.status_code},
+            provider_error=redact_secrets(provider_error),
+            metadata_json=metadata,
         )
     try:
         body: Any = response.json()
@@ -297,6 +326,7 @@ def result(
     if headers is not None:
         request_id = (
             headers.get("request-id")
+            or headers.get("x-hubspot-correlation-id")
             or headers.get("google-ads-request-id")
             or headers.get("x-request-id")
             or headers.get("fbtrace_id")

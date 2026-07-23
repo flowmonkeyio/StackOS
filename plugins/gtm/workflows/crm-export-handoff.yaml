@@ -1,0 +1,319 @@
+schema_version: stackos.workflow-template.v1
+key: gtm.crm-export-handoff
+name: GTM CRM Export Handoff
+version: 0.1.0
+description: Start one bounded HubSpot CRM export, reconcile its async state, and hand off a StackOS-managed artifact under an explicit retention policy.
+domain: gtm
+owner:
+  team: StackOS
+experience:
+  problem: "CRM exports can leak excessive customer data or create duplicate async jobs when scope, authority, polling, and retention are left implicit."
+  outcome: "One approved bounded export with a safe job ref, a retained StackOS artifact when complete, and truthful pending, partial, or failed evidence."
+  why_ai: "AI can validate and reconcile the export lifecycle while the provider action and StackOS artifact boundary own execution and data handling."
+  operator_path:
+    - "Choose one supported CRM object type, exact safe property refs, format, and retention policy."
+    - "Review data scope and approve creation of the provider export job."
+    - "Receive either the completed artifact or a safe pending/repair handoff."
+  agent_path:
+    - "Validate the bounded export plan and reject raw provider ids or unnecessary fields."
+    - "Start the job once with a stable export key."
+    - "Poll by safe job ref, consume the short-lived result internally, and reconcile artifact evidence."
+  progress_signals:
+    - "Export scope validated"
+    - "Authority recorded"
+    - "Job started"
+    - "Provider state reconciled"
+    - "Artifact and retention recorded"
+  recovery:
+    - "If provider state is pending, retain the safe job ref and next poll guidance without starting another export."
+    - "If result download is partial or fails, reuse the same job and action evidence rather than creating a replacement job."
+  safe_stopping_points:
+    - "Stop before provider creation when scope or export authority is incomplete."
+    - "Stop with a safe pending handoff when the provider job is not complete."
+public:
+  audience: "Revenue operations teams requesting bounded HubSpot CRM data exports"
+  setup: connection-required
+  prerequisites:
+    - "A HubSpot OAuth connection with the Bulk capability bundle"
+    - "A supported object type and provider-verified property refs"
+    - "Explicit export authority, a stable export key, and a retention policy"
+  proof:
+    - "Reviewed export plan"
+    - "Safe async job and action-call refs"
+    - "StackOS artifact ref or truthful pending/repair guidance"
+  featured: false
+when_to_use:
+  - One bounded HubSpot contacts, companies, deals, leads, products, or line-items dataset must be exported for an approved purpose.
+when_not_to_use:
+  - The request is a CRM import; imports remain deferred until the shared multipart artifact bridge exists.
+  - The request can be answered from bounded CRM search results without creating a customer-data file.
+agent_requirements:
+  - role: gtm-crm-export-handoff
+    requirement: required
+    agent_preset_ref: gtm.workflow.crm-export-handoff
+    purpose: Validate export scope, control async execution, and reconcile safe artifact and retention evidence.
+    applies_to_steps:
+      - orient
+      - start_export
+      - retrieve_export
+      - closeout
+  - role: delivery-reviewer
+    requirement: recommended
+    agent_preset_ref: stackos.sdlc.delivery-reviewer
+    purpose: Review customer-data minimization, authorization, idempotency, file handling, and retention boundaries.
+    applies_to_steps:
+      - start_export
+      - retrieve_export
+      - closeout
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: recommended
+    purpose: Teach the main agent StackOS run-plan grants, approvals, action evidence, artifacts, and tracker mechanics.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Coordinate readiness, approvals, safe polling, verification, and recovery.
+inputs:
+  - key: goal
+    name: Goal
+    type: string
+    required: true
+  - key: export_spec
+    name: Export Spec
+    description: Supported object type, exact provider-object property refs, selected associations, and format.
+    type: object
+    required: true
+  - key: export_key
+    name: Export Key
+    description: Stable non-secret identity for this intended provider export and all safe retries.
+    type: string
+    required: true
+    schema:
+      type: string
+      minLength: 3
+      maxLength: 160
+      pattern: '^[A-Za-z0-9._:-]+$'
+  - key: retention_policy
+    name: Retention Policy
+    description: Approved retention, access, and cleanup disposition for the customer-data artifact.
+    type: object
+    required: true
+context_requirements:
+  - id: recent_export_context
+    source: resources
+    purpose: Find prior export intent and safe job or artifact refs before creating another provider job.
+    filters:
+      plugin_slug: gtm
+      resource_keys:
+        - crm-export
+    fields:
+      - resource_key
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 15
+    return_mode: compact
+  - id: recent_export_calls
+    source: action_calls
+    purpose: Reconcile recent HubSpot export create, status, and result attempts before retry.
+    filters:
+      plugin_slug: gtm
+    fields:
+      - action_key
+      - status
+      - response_json
+      - created_at
+    max_items: 15
+    return_mode: compact
+capability_requirements:
+  - key: crm-operations
+    required: true
+    description: Create and reconcile one bounded CRM export.
+    preferred_providers:
+      - hubspot
+auth_requirements:
+  - key: hubspot
+    provider: hubspot
+    auth_type: oauth
+    scopes:
+      - crm.export
+    optional: false
+    description: Requires only the HubSpot Bulk capability bundle.
+action_contracts:
+  - key: hubspot_export_create
+    action: hubspot.bulk.exports.create
+    capability: crm-operations
+    provider: hubspot
+    risk_level: high
+    auth_ref: hubspot
+    approval_ref: export_review
+  - key: hubspot_export_status
+    action: hubspot.bulk.exports.status
+    capability: crm-operations
+    provider: hubspot
+    risk_level: read
+    auth_ref: hubspot
+  - key: hubspot_export_result
+    action: hubspot.bulk.exports.result
+    capability: crm-operations
+    provider: hubspot
+    risk_level: read
+    auth_ref: hubspot
+resource_contracts:
+  - key: crm_exports
+    resource: crm-export
+    purpose: Store the compact durable export index, safe job and artifact refs, evidence, retention, and repair state.
+policies:
+  - key: bounded_export
+    kind: safety
+    description: Export only the approved object, property refs, associations, format, and data minimization boundary.
+  - key: one_job_per_intent
+    kind: safety
+    description: Use export_key and prior action evidence to avoid duplicate provider jobs; pending and failed polling never authorizes replacement creation.
+  - key: managed_result_only
+    kind: data
+    description: Signed provider result URLs are consumed internally into a bounded StackOS artifact and never returned or stored.
+  - key: explicit_retention
+    kind: data
+    description: Closeout records the approved retention and cleanup disposition for the generated customer-data artifact.
+approval_gates:
+  - key: export_review
+    description: Review purpose, customer-data scope, safe property refs, associations, format, access, and retention before starting the export.
+    required_when: external_export_create
+steps:
+  - id: orient
+    title: Validate Export Intent
+    purpose: Read the bounded export request, prior export state, and recent action evidence before any provider call.
+    input_refs:
+      - goal
+      - export_spec
+      - export_key
+      - retention_policy
+    context_refs:
+      - recent_export_context
+      - recent_export_calls
+    policy_refs:
+      - bounded_export
+      - one_job_per_intent
+      - explicit_retention
+    output_refs:
+      - export_plan
+    instructions:
+      - Require provider-object property refs and reject raw provider ids, unbounded field sets, or unsupported object types.
+      - Reuse a matching safe job or artifact ref when prior evidence shows this export intent already started or completed.
+    success_criteria:
+      - Purpose, exact scope, export key, authority need, expected size, access, and retention are explicit.
+  - id: start_export
+    title: Start Approved Export
+    purpose: Start exactly one provider export after explicit data-scope approval.
+    action_refs:
+      - hubspot_export_create
+    policy_refs:
+      - bounded_export
+      - one_job_per_intent
+    approval_refs:
+      - export_review
+    depends_on:
+      - orient
+    output_refs:
+      - export_summary
+    instructions:
+      - Pass explicit export authorization and derive the action idempotency key from export_key.
+      - Preserve the returned safe job ref and action-call evidence before polling.
+    success_criteria:
+      - One job is created or an existing intent is safely replayed; no duplicate provider job is introduced.
+  - id: retrieve_export
+    title: Reconcile And Retrieve Export
+    purpose: Poll by safe job ref and, when complete, consume the provider result into the StackOS-managed artifact boundary.
+    action_refs:
+      - hubspot_export_status
+      - hubspot_export_result
+    policy_refs:
+      - one_job_per_intent
+      - managed_result_only
+    depends_on:
+      - start_export
+    output_refs:
+      - export_summary
+    instructions:
+      - Poll the existing safe job ref; never start a replacement job because status is pending, partial, rate-limited, or uncertain.
+      - Preserve pending state and next poll guidance when complete result evidence is not yet available.
+    success_criteria:
+      - Status, counts, partial state, artifact availability, action-call refs, provider request ids, and retry guidance are truthful.
+  - id: closeout
+    title: Record Export Handoff
+    purpose: Store the durable export index and retention disposition for completed, pending, partial, blocked, or failed outcomes.
+    resource_refs:
+      - crm_exports
+    policy_refs:
+      - managed_result_only
+      - explicit_retention
+    depends_on:
+      - retrieve_export
+    output_refs:
+      - export_summary
+    instructions:
+      - Link only safe job, artifact, action-call, and provider request refs; never persist a signed result URL.
+      - Record who owns the next poll or cleanup when the export is not at a terminal retained state.
+    success_criteria:
+      - Durable state, run evidence, retention disposition, and next safe action agree.
+outputs:
+  - key: export_plan
+    name: CRM Export Plan
+    type: object
+    required: true
+    description: Purpose, bounded selection, authority, stable key, size expectation, access, and retention review.
+    schema:
+      type: object
+      required: [purpose, object_type, property_refs, associations, format, export_key, authority_required, retention_policy, blockers]
+      properties:
+        purpose: {type: string}
+        object_type: {type: string}
+        property_refs: {type: array, items: {type: string, pattern: '^provider-object:'}}
+        associations: {type: array}
+        format: {type: string, enum: [CSV, XLS, XLSX]}
+        export_key: {type: string}
+        authority_required: {type: boolean}
+        retention_policy: {type: object}
+        blockers: {type: array}
+  - key: export_summary
+    name: CRM Export Summary
+    type: object
+    required: true
+    description: Provider-safe async state, job and artifact refs, evidence, retention, partial failures, and repair guidance.
+    schema:
+      type: object
+      required: [status, job_ref, action_call_refs, provider_request_ids, partial_failures, retry_guidance, retention_disposition]
+      properties:
+        status: {type: string, enum: [not_started, pending, complete, partial, blocked, failed]}
+        job_ref: {type: string}
+        artifact_ref: {type: string}
+        action_call_refs: {type: array, items: {type: string}}
+        provider_request_ids: {type: array, items: {type: string}}
+        record_count: {type: integer, minimum: 0}
+        partial_failures: {type: array}
+        retry_guidance: {type: array, items: {type: string}}
+        retention_disposition: {type: object}
+        next_safe_action: {type: string}
+      allOf:
+        - if:
+            properties:
+              status: {const: complete}
+            required: [status]
+          then:
+            required: [artifact_ref, record_count]
+learning_hooks:
+  - key: crm_export_learning
+    prompt: Capture reusable export scope, provider recovery, or retention lessons without customer data or provider object ids.
+    tags:
+      - gtm
+      - crm-export
+failure_handling:
+  - If export authority or scope is incomplete, stop before creating a provider job.
+  - If the provider job remains pending, record the safe job ref and next poll guidance without creating a replacement.
+  - If result retrieval fails after provider completion, retry result retrieval against the same job and original action identity.
+  - CRM imports remain unavailable and must not be approximated through an export or ad hoc file upload.
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan

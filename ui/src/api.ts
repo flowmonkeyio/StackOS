@@ -228,6 +228,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ingress/hubspot/{project_id}/{profile_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ingest Hubspot Payload
+         * @description Verify, normalize, store, and optionally enqueue one HubSpot request.
+         *
+         *     Webhook subscription batches and custom workflow-action invocations use
+         *     HubSpot signature v3. The route only writes provider-neutral resources and
+         *     agent requests; it never creates, selects, starts, or executes a run plan.
+         */
+        post: operations["ingest_hubspot_payload_api_v1_ingress_hubspot__project_id___profile_key__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ingress/slack/{project_id}/{profile_key}": {
         parameters: {
             query?: never;
@@ -3578,6 +3602,10 @@ export interface components {
         ProviderSetupOut: {
             /** Billing Url */
             billing_url?: string | null;
+            /** Callback Note */
+            callback_note?: string | null;
+            /** Callback Url */
+            callback_url?: string | null;
             /** Console Url */
             console_url?: string | null;
             /** Credential Label */
@@ -3605,6 +3633,8 @@ export interface components {
             provider_key: string;
             /** Provider Name */
             provider_name?: string | null;
+            /** Repair Note */
+            repair_note?: string | null;
             /** Setup Note */
             setup_note?: string | null;
             /** Signup Url */
@@ -5424,6 +5454,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    ingest_hubspot_payload_api_v1_ingress_hubspot__project_id___profile_key__post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-HubSpot-Signature-V3"?: string | null;
+                "X-HubSpot-Request-Timestamp"?: string | null;
+                "Content-Length"?: string | null;
+                "Content-Type"?: string | null;
+            };
+            path: {
+                project_id: number;
+                profile_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

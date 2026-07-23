@@ -742,6 +742,17 @@ If a requested rich feature cannot be delivered exactly, the operation rejects
 with `effect: none`, failed JSON paths, supported capabilities, and repair
 options. It does not silently convert buttons, attachments, private delivery,
 threads, or notification behavior.
+Template-backed providers use the same operation rather than a second messaging
+API. Pass `content.template_ref` plus optional scalar `content.template_data`.
+HubSpot accepts only that template form: the target resolves one opaque contact
+ref, its policy must record transactional-purpose, recipient-eligibility,
+legal-basis, and marketing-contact-state evidence, and the connection must have
+the Transactional Email add-on explicitly confirmed. StackOS resolves the
+contact's primary email inside the daemon, sends `contactProperties={}` so the
+send cannot mutate the CRM contact, derives a fixed safe HubSpot `sendId` from
+the same StackOS idempotency key, and returns provider status/event identifiers
+only as safe refs. Raw text/HTML, attachments, controls, and bulk-recipient
+approximation reject instead of changing semantics.
 For media-bearing sends, text/caption and files stay in the provider's native
 media message path: Slack resolves to file upload with `initial_comment`, and
 Telegram resolves to file/photo upload or media group rather than sending an
@@ -778,11 +789,15 @@ Invalid `fields` requests return both the rejected `fields` and the
 `allowed_fields` set so agents can repair the query without guessing.
 
 `ingressEndpoint.*` stores the project-level public webhook endpoint for
-communications. Configure stores the generic endpoint, refresh updates it from
-explicit input or driver discovery, routes derives provider webhook URLs, sync
-writes safe route metadata into profiles, and status reports readiness. `ngrok`
-is only a local tunnel provider configured under `driver_config`; production
-uses `driver=public-url` with a deployed HTTPS base URL.
+provider ingress. Configure stores the generic endpoint, refresh updates it
+from explicit input or driver discovery, routes derives provider webhook URLs,
+sync writes safe route metadata into communication profiles where applicable,
+and status reports readiness. Telegram webhook registration can be applied by
+sync; Slack and HubSpot app-level URLs remain explicit manual provider updates.
+HubSpot routes are derived only for credentials with signed ingress explicitly
+enabled. `ngrok` is only a local tunnel provider configured under
+`driver_config`; production uses `driver=public-url` with a deployed HTTPS base
+URL.
 
 ## Provider authentication operations
 

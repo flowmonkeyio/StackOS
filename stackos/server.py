@@ -61,6 +61,7 @@ _ALLOWED_HOSTS: frozenset[str] = frozenset({"localhost", "127.0.0.1", "[::1]", "
 _PUBLIC_INGRESS_PREFIXES: tuple[str, ...] = (
     "/api/v1/ingress/telegram",
     "/api/v1/ingress/slack",
+    "/api/v1/ingress/hubspot",
 )
 _OAUTH_CALLBACK_PATH = "/api/v1/auth/oauth/callback"
 _SLOW_REQUEST_MS = 100

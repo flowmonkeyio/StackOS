@@ -165,6 +165,46 @@ def evaluate_inbound_policy(
     )
 
 
+def evaluate_inbound_event_allowlist(
+    *,
+    enabled: bool,
+    event_key: str,
+    allowed_event_keys: set[str] | tuple[str, ...] | list[str],
+    store_unmatched: bool = True,
+    trigger_reason: str = "event_allowlist",
+) -> CommunicationDecision:
+    """Apply the shared fail-closed request gate for non-message ingress.
+
+    Provider adapters still verify transport authentication and normalize their
+    payloads. This helper owns the one generic decision that follows: only an
+    explicitly allowlisted event may create agent work. An authenticated but
+    unmatched event can be retained as audit context without selecting or
+    starting a workflow.
+    """
+
+    if not enabled:
+        return CommunicationDecision(
+            store=False,
+            create_request=False,
+            status="ingress_disabled",
+        )
+    normalized_key = event_key.strip()
+    allowed = {item.strip() for item in allowed_event_keys if item.strip()}
+    if not normalized_key or normalized_key not in allowed:
+        return CommunicationDecision(
+            store=store_unmatched,
+            create_request=False,
+            status="event_not_allowlisted",
+        )
+    return CommunicationDecision(
+        store=True,
+        create_request=True,
+        status="request_created",
+        trigger_reason=trigger_reason,
+        metadata={"allowlist_match": True},
+    )
+
+
 def config_policy(data: Mapping[str, Any], key: str) -> dict[str, Any]:
     value = data.get(key)
     return dict(value) if isinstance(value, Mapping) else {}

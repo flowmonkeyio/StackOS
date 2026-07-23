@@ -455,6 +455,29 @@ class CredentialStorageMixin:
         return raw
 
     def _safe_field_value(self, *, field: AuthFieldOut, raw: Any) -> Any:
+        if field.type in {"multi-select", "multiselect"}:
+            if isinstance(raw, str):
+                values = [item.strip() for item in raw.split(",") if item.strip()]
+            elif isinstance(raw, list):
+                values = [str(item).strip() for item in raw if str(item).strip()]
+            else:
+                raise ValidationError(
+                    f"credential field {field.key} must be a list or comma-separated string",
+                    data={"field": field.key},
+                )
+            values = list(dict.fromkeys(values))
+            allowed = {
+                str(option.get("value") or "").strip()
+                for option in field.options or []
+                if str(option.get("value") or "").strip()
+            }
+            unknown = sorted(set(values) - allowed) if allowed else []
+            if unknown:
+                raise ValidationError(
+                    f"OAuth scope bundle field {field.key} includes unknown selections",
+                    data={"field": field.key, "unknown": unknown},
+                )
+            return values
         if field.type == "number":
             if isinstance(raw, int | float) and not isinstance(raw, bool):
                 return raw

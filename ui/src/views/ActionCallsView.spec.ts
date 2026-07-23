@@ -82,6 +82,14 @@ describe('ActionCallsView', () => {
     expect(detailText).toContain('/tmp/provider-output.json')
     expect(detailText).toContain('Outcome')
     expect(detailText).toContain('Timeline')
+    expect(detailText).toContain('Provider evidence')
+    expect(detailText).toContain('COMPLETE_WITH_ERRORS')
+    expect(detailText).toContain('partial')
+    expect(detailText).toContain('hubspot-request-123')
+    expect(detailText).toContain('Review two rejected rows.')
+    expect(detailText).toContain('artifact_hubspot_export')
+    expect(detailText).toContain('hubspot-export.csv')
+    expect(detailText).toContain('30s')
     expect(detailText).toContain('[redacted]')
     expect(detailText).toContain('acct-managed')
     expect(detailText).not.toContain('sk-secret')
@@ -92,7 +100,10 @@ describe('ActionCallsView', () => {
       expect(requestedUrls.some((url) => url.includes('status=failed'))).toBe(true),
     )
     await vi.waitFor(() => expect(wrapper.text()).toContain('#2'))
-    await emitRowClick(wrapper, actionCall({ id: 2, status: 'failed', error: 'provider rejected request' }))
+    await emitRowClick(
+      wrapper,
+      actionCall({ id: 2, status: 'failed', error: 'provider rejected request' }),
+    )
     await vi.waitFor(() =>
       expect(document.body.textContent ?? '').toContain('provider rejected request'),
     )
@@ -168,7 +179,26 @@ function actionCall({
     credential_ref: 'cred_safe',
     request_json: { prompt: 'test', api_key: 'sk-secret' },
     provider_context_json: { acting_as_account: 'acct-managed', token: 'token-secret' },
-    response_json: status === 'success' ? { asset_url: '/asset.webp', token: 'token-secret' } : null,
+    response_json:
+      status === 'success'
+        ? {
+            status: 'partial',
+            provider_status: 'COMPLETE_WITH_ERRORS',
+            request_id: 'hubspot-request-123',
+            failure_count: 2,
+            result_available: true,
+            response_complete: false,
+            retryable: true,
+            retry_after: 30,
+            next_action: { label: 'Review two rejected rows.' },
+            artifact_ref: 'artifact_hubspot_export',
+            filename: 'hubspot-export.csv',
+            mime_type: 'text/csv',
+            size_bytes: 4096,
+            asset_url: '/asset.webp',
+            token: 'token-secret',
+          }
+        : null,
     metadata_json: {
       credential_ref: 'cred_safe',
       execution_context: {
@@ -200,9 +230,7 @@ function page(items: unknown[] = []) {
 }
 
 async function clickButton(wrapper: ReturnType<typeof mount>, label: string): Promise<void> {
-  const button = wrapper
-    .findAll('button')
-    .find((candidate) => candidate.text().trim() === label)
+  const button = wrapper.findAll('button').find((candidate) => candidate.text().trim() === label)
   expect(button, `${label} button`).toBeDefined()
   await button?.trigger('click')
 }

@@ -213,7 +213,7 @@ async def ingress_endpoint_status(
     if not endpoint_out.public_base_url:
         notes.append("Set or refresh public_base_url before syncing provider webhooks.")
     if not routes:
-        notes.append("No Slack or Telegram communication profiles currently expose ingress routes.")
+        notes.append("No enabled provider profiles currently expose ingress routes.")
     return IngressEndpointStatusOut(
         endpoint=endpoint_out,
         routes=routes,
@@ -455,6 +455,27 @@ def _ingress_routes(session: Session, *, endpoint: IngressEndpointOut) -> list[I
                 )
             )
             seen.add(key)
+    hubspot_credentials = session.exec(
+        select(Credential).where(
+            col(Credential.project_id) == endpoint.project_id,
+            col(Credential.provider_key) == "hubspot",
+            col(Credential.revoked_at).is_(None),
+        )
+    ).all()
+    for credential in sorted(hubspot_credentials, key=lambda item: item.profile_key):
+        config = dict(credential.config_json or {})
+        if config.get("webhook_enabled") is not True:
+            continue
+        routes.append(
+            _route_out(
+                endpoint=endpoint,
+                provider_key="hubspot",
+                profile_key=credential.profile_key,
+                profile_ref=credential.credential_ref,
+                profile_resource_key="credential",
+                remote_status="manual_provider_update_required",
+            )
+        )
     return routes
 
 
@@ -502,6 +523,11 @@ def _route_notes(*, endpoint: IngressEndpointOut, provider_key: str) -> list[str
         notes.append("Slack Events API and Interactivity URLs must be set in the Slack app.")
     if provider_key == "telegram-bot":
         notes.append("Telegram setWebhook can be applied by ingressEndpoint.sync.")
+    if provider_key == "hubspot":
+        notes.append(
+            "HubSpot webhook Target URL and any custom workflow action URL must be set "
+            "in the HubSpot app configuration."
+        )
     return notes
 
 
@@ -529,6 +555,21 @@ def _route_next_action(
                 "Interactivity Request URL",
             ],
         )
+    if provider_key == "hubspot":
+        return IngressRouteNextActionOut(
+            kind="manual-provider-update",
+            label="Copy webhook URL",
+            title=f"Update HubSpot ingress for {profile_key}",
+            instructions=(
+                "Copy this URL into the HubSpot app Webhooks Target URL. Use the same "
+                "URL as actionUrl only for explicitly allowlisted custom workflow actions."
+            ),
+            url=ingress_url,
+            provider_fields=[
+                "Webhooks Target URL",
+                "Custom workflow action actionUrl",
+            ],
+        )
     return IngressRouteNextActionOut(
         kind="manual-provider-update",
         label="Copy webhook URL",
@@ -545,6 +586,8 @@ def _provider_ingress_path(*, project_id: int, provider_key: str, profile_key: s
         return f"/api/v1/ingress/slack/{project_id}/{encoded}"
     if provider_key == "telegram-bot":
         return f"/api/v1/ingress/telegram/{project_id}/{encoded}"
+    if provider_key == "hubspot":
+        return f"/api/v1/ingress/hubspot/{project_id}/{encoded}"
     raise ValidationError(f"provider {provider_key!r} does not support webhook ingress")
 
 
@@ -595,13 +638,13 @@ async def _sync_ingress_endpoint(
                     dry_run_provider_webhooks=dry_run_provider_webhooks,
                 )
             )
-        elif route.provider_key == "slack-bot":
+        elif route.provider_key in {"slack-bot", "hubspot"}:
             next_action = (
                 route.next_action.model_dump(mode="json") if route.next_action is not None else {}
             )
             provider_results.append(
                 {
-                    "provider_key": "slack-bot",
+                    "provider_key": route.provider_key,
                     "profile_key": route.profile_key,
                     "status": "manual_provider_update_required",
                     "request_url": route.ingress_url,

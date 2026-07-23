@@ -30,6 +30,90 @@ const description = computed(() => (props.call ? callTitle(props.call) : undefin
 const executionContext = computed(() => recordValue(props.call?.metadata_json?.execution_context))
 const fileBackedOutput = computed(() => recordValue(props.call?.metadata_json?.file_backed_output))
 
+const providerEvidenceGroups = computed<UiFactGroup[]>(() => {
+  const call = props.call
+  if (!call) return []
+  const response = recordValue(call.response_json)
+  const metadata = recordValue(call.metadata_json)
+  const resultState = stringValue(response?.status)
+  const partialFailure =
+    booleanValue(metadata?.partial_failure) ?? (resultState === 'partial' ? true : null)
+  const retryAfter = scalarValue(
+    firstValue([response, metadata], ['retry_after', 'retry_after_seconds']),
+  )
+  const items: UiFactGroup['items'] = [
+    {
+      label: 'Provider state',
+      value: scalarValue(firstValue([response, metadata], ['provider_status', 'provider_state'])),
+    },
+    { label: 'Result state', value: resultState },
+    {
+      label: 'Request ID',
+      value: stringValue(firstValue([response, metadata], ['request_id', 'provider_request_id'])),
+      mono: true,
+      wide: true,
+    },
+    {
+      label: 'Provider status code',
+      value: scalarValue(firstValue([response, metadata], ['status_code'])),
+    },
+    { label: 'Partial result', value: partialFailure },
+    {
+      label: 'Errors',
+      value: scalarValue(
+        firstValue([response, metadata], ['error_count', 'failure_count', 'missing_count']),
+      ),
+    },
+    {
+      label: 'Result available',
+      value: booleanValue(firstValue([response, metadata], ['result_available'])),
+    },
+    {
+      label: 'Response complete',
+      value: booleanValue(firstValue([response, metadata], ['response_complete'])),
+    },
+    {
+      label: 'Retryable',
+      value: booleanValue(firstValue([response, metadata], ['retryable'])),
+    },
+    { label: 'Retry after', value: retryAfter === null ? null : `${retryAfter}s` },
+    {
+      label: 'Next action',
+      value: nextActionValue(firstValue([response, metadata], ['next_action'])),
+      wide: true,
+    },
+    {
+      label: 'Artifact ref',
+      value: stringValue(firstValue([response, metadata], ['artifact_ref'])),
+      mono: true,
+      wide: true,
+    },
+    {
+      label: 'Filename',
+      value: stringValue(firstValue([response, metadata], ['filename'])),
+      wide: true,
+    },
+    {
+      label: 'MIME type',
+      value: stringValue(firstValue([response, metadata], ['mime_type', 'content_type'])),
+      mono: true,
+    },
+    {
+      label: 'Artifact bytes',
+      value: scalarValue(firstValue([response, metadata], ['size_bytes'])),
+    },
+  ].filter((item) => item.value !== null && item.value !== undefined && item.value !== '')
+
+  if (items.length === 0) return []
+  return [
+    {
+      title: 'Provider evidence',
+      description: 'Safe provider state, repair context, and result pointers from this call.',
+      items,
+    },
+  ]
+})
+
 const headerFacts = computed<UiMetadataStripItem[]>(() => {
   const call = props.call
   if (!call) return []
@@ -85,7 +169,9 @@ const advancedGroups = computed<UiFactGroup[]>(() => {
     },
     {
       title: 'Outcome',
-      description: call.dry_run ? 'Validation-only execution.' : 'Recorded provider execution result.',
+      description: call.dry_run
+        ? 'Validation-only execution.'
+        : 'Recorded provider execution result.',
       items: [
         { label: 'Cost', value: `${call.cost_cents} cents` },
         { label: 'Duration', value: formatDuration(call.duration_ms) },
@@ -118,7 +204,12 @@ const advancedGroups = computed<UiFactGroup[]>(() => {
         { label: 'Output mode', value: stringValue(outputPolicy?.mode) },
         { label: 'Max parallel', value: numberValue(requestBudget?.max_parallel) },
         { label: 'Max calls', value: numberValue(requestBudget?.max_calls) },
-        { label: 'Artifact namespace', value: stringValue(context.artifact_namespace), mono: true, wide: true },
+        {
+          label: 'Artifact namespace',
+          value: stringValue(context.artifact_namespace),
+          mono: true,
+          wide: true,
+        },
       ],
     })
   }
@@ -127,9 +218,19 @@ const advancedGroups = computed<UiFactGroup[]>(() => {
       title: 'File Output',
       description: 'Sanitized request and response stored in a response file.',
       items: [
-        { label: 'Schema version', value: stringValue(fileOutput.schema_version), mono: true, wide: true },
+        {
+          label: 'Schema version',
+          value: stringValue(fileOutput.schema_version),
+          mono: true,
+          wide: true,
+        },
         { label: 'Schema ref', value: stringValue(fileOutput.schema_ref), mono: true, wide: true },
-        { label: 'Schema operation', value: stringValue(fileOutput.schema_operation), mono: true, wide: true },
+        {
+          label: 'Schema operation',
+          value: stringValue(fileOutput.schema_operation),
+          mono: true,
+          wide: true,
+        },
         { label: 'Content type', value: stringValue(fileOutput.content_type), mono: true },
         { label: 'Bytes', value: numberValue(fileOutput.bytes) },
         { label: 'SHA-256', value: stringValue(fileOutput.sha256), mono: true, wide: true },
@@ -159,6 +260,40 @@ function stringValue(value: unknown): string | null {
 
 function numberValue(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function scalarValue(value: unknown): string | number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  return stringValue(value)
+}
+
+function booleanValue(value: unknown): boolean | null {
+  return typeof value === 'boolean' ? value : null
+}
+
+function firstValue(records: Array<Record<string, unknown> | null>, keys: string[]): unknown {
+  for (const record of records) {
+    if (!record) continue
+    for (const key of keys) {
+      if (record[key] !== null && record[key] !== undefined && record[key] !== '') {
+        return record[key]
+      }
+    }
+  }
+  return null
+}
+
+function nextActionValue(value: unknown): string | null {
+  const direct = stringValue(value)
+  if (direct) return direct
+  const action = recordValue(value)
+  if (!action) return null
+  return (
+    stringValue(action.label) ??
+    stringValue(action.summary) ??
+    stringValue(action.hint) ??
+    stringValue(action.kind)
+  )
 }
 </script>
 
@@ -215,6 +350,13 @@ function numberValue(value: unknown): number | null {
       <UiMetadataStrip
         :items="headerFacts"
         aria-label="Action call facts"
+      />
+
+      <UiFactGroups
+        v-if="providerEvidenceGroups.length > 0"
+        :groups="providerEvidenceGroups"
+        density="compact"
+        aria-label="Provider action evidence"
       />
 
       <details class="group rounded-lg border border-subtle bg-bg-sunken">

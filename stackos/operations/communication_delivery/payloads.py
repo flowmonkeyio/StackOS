@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from stackos.artifacts import redact_secrets
+from stackos.db.models import Credential
 from stackos.operations.communication_platform import (
     CommunicationTargetOut,
     _target_action_defaults,
@@ -40,6 +41,7 @@ def _build_provider_payload(
     source: dict[str, Any],
     surface: dict[str, Any],
     operation: str,
+    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
     if action_ref is None:
         _reject(
@@ -268,6 +270,63 @@ def _build_provider_payload(
             )
         return {"action_ref": action_ref, "input_json": input_json}
 
+    if provider_key == "hubspot":
+        if not idempotency_key:
+            raise AssertionError("HubSpot communication payload requires an idempotency key")
+        _ensure_provider_action_ref(
+            operation=operation,
+            provider_key=provider_key,
+            action_ref=action_ref,
+            allowed={"gtm.hubspot.transactional.single_email.send"},
+            target=target,
+        )
+        _require_hubspot_transactional_entitlement(
+            session,
+            credential_ref=actor["credential_ref"],
+            operation=operation,
+            target=target,
+        )
+        policy = _hubspot_transactional_policy(
+            operation=operation,
+            target=target,
+        )
+        contact_ref = defaults.get("contact_ref") or target.surface_ref
+        if contact_ref != target.surface_ref or not str(contact_ref).startswith("provider-object:"):
+            _reject(
+                code="COMM_HUBSPOT_CONTACT_TARGET_REQUIRED",
+                category="routing",
+                message=(
+                    "HubSpot transactional targets must resolve one opaque contact ref and "
+                    "cannot override it in action defaults."
+                ),
+                resolved={
+                    "operation": operation,
+                    "provider": provider_key,
+                    "target_ref": target.target_ref,
+                },
+                failed_paths=[
+                    {
+                        "path": "/to",
+                        "requested": target.target_ref,
+                        "required": "provider-object contact ref",
+                    }
+                ],
+            )
+        assert content.template_ref is not None
+        input_json = {
+            "contact_ref": contact_ref,
+            "email_ref": content.template_ref,
+            "send_id": f"stackos:{_stable_digest({'idempotency_key': idempotency_key})}",
+            "custom_properties": dict(content.template_data),
+            "communication_target_ref": target.target_ref,
+            "profile_ref": actor["profile_ref"],
+            "entitlement_confirmed": True,
+            **policy,
+        }
+        if source_request_id is not None:
+            input_json["source_agent_request_id"] = source_request_id
+        return {"action_ref": action_ref, "input_json": input_json}
+
     _reject(
         code="COMM_UNSUPPORTED_PROVIDER",
         category="provider",
@@ -385,6 +444,137 @@ def _validate_delivery_options(
         )
 
 
+def _require_hubspot_transactional_entitlement(
+    session: Session,
+    *,
+    credential_ref: str,
+    operation: str,
+    target: CommunicationTargetOut,
+) -> None:
+    credential = session.exec(
+        select(Credential).where(Credential.credential_ref == credential_ref)
+    ).first()
+    config = dict(credential.config_json or {}) if credential is not None else {}
+    if config.get("transactional_email_entitlement_confirmed") is True:
+        return
+    _reject(
+        code="COMM_PROVIDER_ENTITLEMENT_REQUIRED",
+        category="setup",
+        message=(
+            "HubSpot transactional delivery requires an operator-confirmed Transactional "
+            "Email add-on on the connected portal."
+        ),
+        resolved={
+            "operation": operation,
+            "provider": "hubspot",
+            "target_ref": target.target_ref,
+            "entitlement": "transactional-email-addon",
+        },
+        failed_paths=[
+            {
+                "path": "/from",
+                "requested": "hubspot transactional delivery",
+                "missing_prerequisite": "transactional_email_entitlement_confirmed",
+            }
+        ],
+        repair_options=[
+            {
+                "id": "confirm_hubspot_transactional_addon",
+                "description": (
+                    "Verify the add-on on the connected HubSpot portal, then enable the "
+                    "transactional-email entitlement confirmation on that connection."
+                ),
+            }
+        ],
+    )
+
+
+def _hubspot_transactional_policy(
+    *,
+    operation: str,
+    target: CommunicationTargetOut,
+) -> dict[str, Any]:
+    policy = dict(target.send_policy or {})
+    failed: list[dict[str, Any]] = []
+    if policy.get("transactional_use_confirmed") is not True:
+        failed.append(
+            {
+                "path": "/to",
+                "policy_field": "transactional_use_confirmed",
+                "required": True,
+            }
+        )
+    if policy.get("consent_or_relationship_confirmed") is not True:
+        failed.append(
+            {
+                "path": "/to",
+                "policy_field": "consent_or_relationship_confirmed",
+                "required": True,
+            }
+        )
+    legal_basis = policy.get("legal_basis")
+    if not isinstance(legal_basis, str) or not legal_basis.strip() or len(legal_basis) > 200:
+        failed.append(
+            {
+                "path": "/to",
+                "policy_field": "legal_basis",
+                "required": "non-empty string up to 200 characters",
+            }
+        )
+    explanation = policy.get("legal_basis_explanation")
+    if not isinstance(explanation, str) or not explanation.strip() or len(explanation) > 2000:
+        failed.append(
+            {
+                "path": "/to",
+                "policy_field": "legal_basis_explanation",
+                "required": "non-empty string up to 2000 characters",
+            }
+        )
+    marketing_contact_state = policy.get("marketing_contact_state")
+    if marketing_contact_state not in {"marketing", "non-marketing"}:
+        failed.append(
+            {
+                "path": "/to",
+                "policy_field": "marketing_contact_state",
+                "required": ["marketing", "non-marketing"],
+            }
+        )
+    if failed:
+        _reject(
+            code="COMM_HUBSPOT_TRANSACTIONAL_POLICY_REQUIRED",
+            category="policy",
+            message=(
+                "HubSpot transactional targets require explicit transactional purpose, "
+                "recipient eligibility, legal basis, and known marketing-contact state."
+            ),
+            resolved={
+                "operation": operation,
+                "provider": "hubspot",
+                "target_ref": target.target_ref,
+            },
+            failed_paths=failed,
+            repair_options=[
+                {
+                    "id": "configure_transactional_target_policy",
+                    "description": (
+                        "Update the named communication target with the required HubSpot "
+                        "transactional policy evidence."
+                    ),
+                }
+            ],
+        )
+    assert isinstance(legal_basis, str)
+    assert isinstance(explanation, str)
+    assert isinstance(marketing_contact_state, str)
+    return {
+        "transactional_use_confirmed": True,
+        "consent_or_relationship_confirmed": True,
+        "legal_basis": legal_basis.strip(),
+        "legal_basis_explanation": explanation.strip(),
+        "marketing_contact_state": marketing_contact_state,
+    }
+
+
 def _validate_content_shape(
     *,
     operation: str,
@@ -392,6 +582,87 @@ def _validate_content_shape(
     target: CommunicationTargetOut,
     content: CommunicationContentInput,
 ) -> None:
+    if provider_key == "hubspot":
+        failed: list[dict[str, Any]] = []
+        if not _has_text(content.template_ref):
+            failed.append(
+                {
+                    "path": "/content/template_ref",
+                    "requested": "missing",
+                    "required_capability": "template",
+                }
+            )
+        for path, present in (
+            ("/content/text", _has_text(content.text)),
+            ("/content/subject", _has_text(content.subject)),
+            ("/content/html", _has_text(content.html)),
+            ("/content/attachments", bool(content.attachments)),
+            ("/content/controls", bool(content.controls)),
+        ):
+            if present:
+                failed.append(
+                    {
+                        "path": path,
+                        "requested": "provider-rendered-content-override",
+                        "required_capability": "template-only",
+                    }
+                )
+        if content.format != "auto":
+            failed.append(
+                {
+                    "path": "/content/format",
+                    "requested": content.format,
+                    "required_capability": "template-only",
+                }
+            )
+        if len(content.template_data) > 100:
+            failed.append(
+                {
+                    "path": "/content/template_data",
+                    "requested": "more-than-100-properties",
+                    "required_capability": "template.data.max_100",
+                }
+            )
+        invalid_keys = [
+            key
+            for key in content.template_data
+            if not isinstance(key, str) or not key.strip() or len(key) > 200
+        ]
+        if invalid_keys:
+            failed.append(
+                {
+                    "path": "/content/template_data",
+                    "requested": "invalid-property-name",
+                    "required_capability": "template.data.scalar-map",
+                }
+            )
+        if failed:
+            _reject(
+                code="COMM_HUBSPOT_TEMPLATE_CONTENT_REQUIRED",
+                category="capability",
+                message=(
+                    "HubSpot transactional delivery accepts one provider template ref and "
+                    "bounded scalar template data; it does not approximate raw message content."
+                ),
+                resolved={
+                    "operation": operation,
+                    "provider": provider_key,
+                    "target_ref": target.target_ref,
+                },
+                failed_paths=failed,
+                repair_options=[
+                    {
+                        "id": "use_transactional_template",
+                        "description": (
+                            "Provide content.template_ref and optional scalar template_data, "
+                            "with no text, subject, html, attachments, controls, or "
+                            "format override."
+                        ),
+                        "requires_agent_decision": True,
+                    }
+                ],
+            )
+        return
     if provider_key == "telegram-bot":
         if content.controls and not _has_text(content.text) and not content.attachments:
             _reject(
@@ -524,6 +795,8 @@ def _provider_capabilities(provider_key: str) -> set[str]:
         }
     if provider_key == "smtp":
         return {"text", "html"}
+    if provider_key == "hubspot":
+        return {"template", "template.data"}
     return set()
 
 
@@ -548,6 +821,10 @@ def _required_capabilities(
 
     if _has_text(content.text):
         add("text", "/content/text")
+    if _has_text(content.template_ref):
+        add("template", "/content/template_ref")
+    if content.template_data:
+        add("template.data", "/content/template_data")
     if _has_text(content.html) or content.format == "html":
         add("html", "/content/html")
     if content.format in {"markdown", "mrkdwn"}:

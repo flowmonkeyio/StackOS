@@ -1,0 +1,482 @@
+schema_version: stackos.workflow-template.v1
+key: gtm.marketing-program-lifecycle
+name: GTM Marketing Program Lifecycle
+version: 0.1.0
+description: Review and optionally apply one bounded HubSpot audience, campaign, draft-email, and consent program without publishing or bulk sending.
+domain: gtm
+owner:
+  team: StackOS
+experience:
+  problem: "Marketing program setup becomes unsafe when audience membership, campaign metadata, draft assets, consent state, and delivery are changed as one opaque operation."
+  outcome: "A reviewed marketing-program plan with narrowly approved HubSpot changes, consent decisions isolated behind their own gate, and provider-safe execution evidence."
+  why_ai: "AI can reconcile program context and prepare bounded changes while StackOS keeps provider execution, approvals, idempotency, and evidence explicit."
+  operator_path:
+    - "Choose one program scope, audience boundary, and review-only or apply mode."
+    - "Review campaign, draft-email, segment, and consent changes separately."
+    - "Approve ordinary program mutations and legal consent changes through distinct gates."
+  agent_path:
+    - "Inspect only the HubSpot state needed for the bounded program."
+    - "Prepare safe-ref changes and isolate conflicts, missing consent, and unavailable capabilities."
+    - "Execute only approved actions with stable mutation keys and reconcile provider-safe evidence."
+  progress_signals:
+    - "Program scope bounded"
+    - "Current state inspected"
+    - "Changes prepared"
+    - "Approvals recorded"
+    - "Provider evidence reconciled"
+  recovery:
+    - "If a safe ref, scope, or consent fact is missing, keep the program in review-only state."
+    - "After a partial provider result, inspect the existing action-call evidence and retry only unresolved mutations with the same keys."
+  safe_stopping_points:
+    - "Stop after the reviewed plan when writes are not authorized."
+    - "Stop before consent mutation when legal basis or affirmative consent evidence is incomplete."
+public:
+  audience: "Marketing operations teams managing HubSpot campaign programs"
+  setup: connection-required
+  prerequisites:
+    - "A HubSpot OAuth connection with the Marketing capability bundle"
+    - "A bounded program scope and safe campaign, email, segment, contact, and subscription refs where applicable"
+    - "Audience policy, legal-basis policy, and separate approval authority for consent changes"
+  proof:
+    - "Current-state evidence and safe refs"
+    - "Reviewed program and consent change sets"
+    - "Action-call refs, provider request ids, partial failures, and retry guidance"
+  featured: false
+when_to_use:
+  - A HubSpot marketing program needs coordinated audience, campaign, draft-email, or consent review and approved updates.
+when_not_to_use:
+  - The request is to publish or bulk-send a marketing email; those operations are unavailable in this phase.
+  - The request is only to send one approved transactional customer message; use gtm.customer-follow-up.
+agent_requirements:
+  - role: gtm-marketing-program-lifecycle
+    requirement: required
+    agent_preset_ref: gtm.workflow.marketing-program-lifecycle
+    purpose: Reconcile program state, prepare safe changes, and enforce distinct program and consent gates.
+    applies_to_steps:
+      - orient
+      - inspect_program
+      - prepare_changes
+      - apply_program_changes
+      - apply_consent_changes
+      - closeout
+  - role: delivery-reviewer
+    requirement: recommended
+    agent_preset_ref: stackos.sdlc.delivery-reviewer
+    purpose: Review customer-data boundaries, legal consent evidence, idempotency, provider writes, and partial-result recovery.
+    applies_to_steps:
+      - prepare_changes
+      - apply_program_changes
+      - apply_consent_changes
+      - closeout
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: recommended
+    purpose: Teach the main agent StackOS workflow, run-plan, tracker, approval, grant, and evidence mechanics.
+    setup_notes:
+      - Use this skill before setup or execution when the host supports skills.
+      - Keep workflow state in the active run plan and tracker rather than only in chat.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Coordinate readiness, specialist handoffs, approvals, safe stopping, verification, and recovery.
+inputs:
+  - key: goal
+    name: Goal
+    type: string
+    required: true
+  - key: program_scope
+    name: Program Scope
+    description: Bounded program, audience, and safe object refs that this run may inspect or change.
+    type: object
+    required: true
+  - key: execution_mode
+    name: Execution Mode
+    type: string
+    required: false
+    default: review_only
+    schema:
+      type: string
+      enum: [review_only, apply_program, apply_program_and_consent]
+  - key: program_change_key
+    name: Program Change Key
+    description: Stable non-secret key required before ordinary program mutations.
+    type: string
+    required: false
+    schema:
+      type: string
+      minLength: 3
+      maxLength: 160
+      pattern: '^[A-Za-z0-9._:-]+$'
+  - key: consent_change_key
+    name: Consent Change Key
+    description: Separate stable non-secret key required before a consent mutation.
+    type: string
+    required: false
+    schema:
+      type: string
+      minLength: 3
+      maxLength: 160
+      pattern: '^[A-Za-z0-9._:-]+$'
+context_requirements:
+  - id: marketing_program_context
+    source: resources
+    purpose: Retrieve prior program, contact, lead, and touchpoint state before inspecting HubSpot.
+    filters:
+      plugin_slug: gtm
+      resource_keys:
+        - marketing-program
+        - contact
+        - lead
+        - touchpoint
+    fields:
+      - resource_key
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 30
+    return_mode: compact
+  - id: marketing_program_learnings
+    source: learnings
+    purpose: Read durable program, audience, and consent lessons with evidence.
+    filters:
+      tags:
+        - gtm
+        - marketing-program
+      statuses:
+        - active
+    fields:
+      - statement
+      - confidence
+      - evidence_json
+      - tags
+    max_items: 15
+    return_mode: compact
+capability_requirements:
+  - key: lead-management
+    required: true
+    description: Inspect and update bounded marketing program and audience state.
+    preferred_providers:
+      - hubspot
+auth_requirements:
+  - key: hubspot
+    provider: hubspot
+    auth_type: oauth
+    scopes:
+      - marketing.campaigns.read
+      - marketing.campaigns.write
+      - marketing-email
+      - crm.lists.read
+      - crm.lists.write
+      - subscriptions-definition-read
+      - subscriptions-status-read
+      - subscriptions-status-write
+    optional: false
+    description: Requires only the HubSpot Marketing bundle used by this workflow.
+action_contracts:
+  - key: hubspot_campaigns_list
+    action: hubspot.marketing.campaigns.list
+    capability: lead-management
+    provider: hubspot
+    risk_level: read
+    auth_ref: hubspot
+  - key: hubspot_emails_list
+    action: hubspot.marketing.emails.list
+    capability: lead-management
+    provider: hubspot
+    risk_level: read
+    auth_ref: hubspot
+  - key: hubspot_segments_list
+    action: hubspot.marketing.segments.list
+    capability: lead-management
+    provider: hubspot
+    risk_level: read
+    auth_ref: hubspot
+  - key: hubspot_subscription_types_list
+    action: hubspot.marketing.subscription_types.list
+    capability: lead-management
+    provider: hubspot
+    risk_level: read
+    auth_ref: hubspot
+  - key: hubspot_contact_preference_get
+    action: hubspot.marketing.contact_preferences.get
+    capability: lead-management
+    provider: hubspot
+    risk_level: read
+    auth_ref: hubspot
+    optional: true
+  - key: hubspot_campaign_create
+    action: hubspot.marketing.campaigns.create
+    capability: lead-management
+    provider: hubspot
+    risk_level: write
+    auth_ref: hubspot
+    approval_ref: program_change_review
+    optional: true
+  - key: hubspot_campaign_update
+    action: hubspot.marketing.campaigns.update
+    capability: lead-management
+    provider: hubspot
+    risk_level: write
+    auth_ref: hubspot
+    approval_ref: program_change_review
+    optional: true
+  - key: hubspot_email_create
+    action: hubspot.marketing.emails.create
+    capability: lead-management
+    provider: hubspot
+    risk_level: write
+    auth_ref: hubspot
+    approval_ref: program_change_review
+    optional: true
+  - key: hubspot_email_update
+    action: hubspot.marketing.emails.update
+    capability: lead-management
+    provider: hubspot
+    risk_level: write
+    auth_ref: hubspot
+    approval_ref: program_change_review
+    optional: true
+  - key: hubspot_segment_memberships_add
+    action: hubspot.marketing.segments.memberships.add
+    capability: lead-management
+    provider: hubspot
+    risk_level: write
+    auth_ref: hubspot
+    approval_ref: program_change_review
+    optional: true
+  - key: hubspot_segment_memberships_remove
+    action: hubspot.marketing.segments.memberships.remove
+    capability: lead-management
+    provider: hubspot
+    risk_level: write
+    auth_ref: hubspot
+    approval_ref: program_change_review
+    optional: true
+  - key: hubspot_contact_preference_update
+    action: hubspot.marketing.contact_preferences.update
+    capability: lead-management
+    provider: hubspot
+    risk_level: high
+    auth_ref: hubspot
+    approval_ref: consent_change_review
+    optional: true
+resource_contracts:
+  - key: marketing_programs
+    resource: marketing-program
+    purpose: Store the durable program index, safe refs, approval state, evidence, and follow-up hooks.
+  - key: contacts
+    resource: contact
+    purpose: Store reviewed consent notes and safe contact context without subscriber email output.
+policies:
+  - key: bounded_program_scope
+    kind: safety
+    description: Every read and mutation stays inside program_scope and uses safe provider-object refs.
+  - key: no_publish_or_bulk_send
+    kind: boundary
+    description: This workflow may manage draft assets but never publishes or bulk-sends a marketing email.
+  - key: independent_consent_gate
+    kind: approval
+    description: Consent changes require explicit legal basis, affirmative evidence where needed, a separate mutation key, and their own approval.
+  - key: idempotent_provider_writes
+    kind: safety
+    description: Provider mutations use stable per-change idempotency keys and existing action-call evidence is reconciled before retry.
+  - key: provider_safe_evidence
+    kind: evidence
+    description: Results preserve safe refs, action-call refs, provider request ids, partial failures, and retry guidance without raw provider ids or subscriber addresses.
+approval_gates:
+  - key: program_change_review
+    description: Review campaign, draft-email, and segment membership changes before external writes.
+    required_when: execution_mode_includes_apply_program
+  - key: consent_change_review
+    description: Review contact, subscription type, requested state, legal basis, evidence, and expected effect before consent mutation.
+    required_when: execution_mode_includes_consent_change
+steps:
+  - id: orient
+    title: Bound Marketing Program
+    purpose: Read the goal, bounded scope, execution mode, durable context, and prior learnings.
+    input_refs:
+      - goal
+      - program_scope
+      - execution_mode
+      - program_change_key
+      - consent_change_key
+    context_refs:
+      - marketing_program_context
+      - marketing_program_learnings
+    policy_refs:
+      - bounded_program_scope
+      - no_publish_or_bulk_send
+    output_refs:
+      - program_plan
+    instructions:
+      - Reject an unbounded audience or a scope containing raw HubSpot object ids.
+      - Keep ordinary program changes and legal consent changes as separate reviewed sets.
+    success_criteria:
+      - The program scope, safe refs, execution mode, capability needs, and approval boundaries are explicit.
+  - id: inspect_program
+    title: Inspect Current Program State
+    purpose: Read only the campaigns, draft emails, segments, subscription definitions, and selected contact preferences needed by the plan.
+    action_refs:
+      - hubspot_campaigns_list
+      - hubspot_emails_list
+      - hubspot_segments_list
+      - hubspot_subscription_types_list
+      - hubspot_contact_preference_get
+    policy_refs:
+      - bounded_program_scope
+      - provider_safe_evidence
+    depends_on:
+      - orient
+    output_refs:
+      - evidence_summary
+    instructions:
+      - Do not enumerate unrelated portal state; fetch only evidence tied to program_scope.
+      - Treat missing consent evidence as a blocker, never as implied consent.
+    success_criteria:
+      - Current state and gaps are source-linked using safe refs and no subscriber addresses or raw provider ids.
+  - id: prepare_changes
+    title: Prepare Reviewed Change Sets
+    purpose: Produce atomic program and consent change sets, expected effects, idempotency inputs, and explicit skips.
+    resource_refs:
+      - marketing_programs
+    policy_refs:
+      - bounded_program_scope
+      - independent_consent_gate
+      - idempotent_provider_writes
+    depends_on:
+      - inspect_program
+    output_refs:
+      - program_plan
+    instructions:
+      - Require program_change_key before apply_program and consent_change_key before apply_program_and_consent.
+      - Use one atomic action payload per intended provider mutation and identify its expected side effect.
+    success_criteria:
+      - Each executable change has safe refs, evidence, an approval ref, a stable key, and a rollback or repair note.
+  - id: apply_program_changes
+    title: Apply Approved Program Changes
+    purpose: Optionally create or update campaign and draft-email assets and change bounded segment membership.
+    action_refs:
+      - hubspot_campaign_create
+      - hubspot_campaign_update
+      - hubspot_email_create
+      - hubspot_email_update
+      - hubspot_segment_memberships_add
+      - hubspot_segment_memberships_remove
+    policy_refs:
+      - no_publish_or_bulk_send
+      - idempotent_provider_writes
+      - provider_safe_evidence
+    approval_refs:
+      - program_change_review
+    depends_on:
+      - prepare_changes
+    output_refs:
+      - program_summary
+    instructions:
+      - Execute only the approved change set and derive stable action idempotency keys from program_change_key.
+      - After partial success, reconcile receipts and retry only unresolved changes with their original keys.
+    success_criteria:
+      - Applied, skipped, replayed, partial, failed, and blocked changes are distinguishable with provider-safe evidence.
+  - id: apply_consent_changes
+    title: Apply Separately Approved Consent Changes
+    purpose: Optionally apply explicit contact preference changes after independent legal and evidence review.
+    action_refs:
+      - hubspot_contact_preference_update
+    policy_refs:
+      - independent_consent_gate
+      - idempotent_provider_writes
+      - provider_safe_evidence
+    approval_refs:
+      - consent_change_review
+    depends_on:
+      - apply_program_changes
+    output_refs:
+      - program_summary
+    instructions:
+      - Require exact contact and subscription safe refs, legal basis, explanation, confirmation, and affirmative consent evidence when subscribing.
+      - Never infer consent, expose the resolved subscriber address, or combine this retry identity with ordinary program mutations.
+    success_criteria:
+      - Every consent change or refusal is explicit, independently approved, auditable, and provider-safe.
+  - id: closeout
+    title: Reconcile Program Evidence
+    purpose: Store the durable program index and final status without claiming publication, bulk delivery, or unobserved outcomes.
+    resource_refs:
+      - marketing_programs
+      - contacts
+    policy_refs:
+      - provider_safe_evidence
+      - no_publish_or_bulk_send
+    depends_on:
+      - apply_consent_changes
+    output_refs:
+      - program_summary
+    instructions:
+      - Preserve action-call refs, provider request ids, partial failures, retry guidance, approvals, and next safe actions.
+      - Record draft asset state truthfully; do not claim publish, send, delivery, open, click, or conversion.
+    success_criteria:
+      - The durable record and run evidence agree on completed, partial, blocked, skipped, and follow-up work.
+outputs:
+  - key: program_plan
+    name: Marketing Program Plan
+    type: object
+    required: true
+    description: Bounded program scope, current state, atomic changes, approval boundaries, stable-key requirements, and safe stopping plan.
+    schema:
+      type: object
+      required: [scope, execution_mode, safe_refs, program_changes, consent_changes, approvals, blockers]
+      properties:
+        scope: {type: object}
+        execution_mode: {type: string, enum: [review_only, apply_program, apply_program_and_consent]}
+        safe_refs: {type: array, items: {type: string}}
+        program_changes: {type: array}
+        consent_changes: {type: array}
+        approvals: {type: array}
+        blockers: {type: array}
+  - key: evidence_summary
+    name: Program Evidence Summary
+    type: object
+    required: true
+    description: Source-linked current state and gaps gathered for the bounded program.
+    schema:
+      type: object
+      required: [campaigns, draft_emails, segments, subscription_types, consent_checks, source_refs, limitations]
+      properties:
+        campaigns: {type: array}
+        draft_emails: {type: array}
+        segments: {type: array}
+        subscription_types: {type: array}
+        consent_checks: {type: array}
+        source_refs: {type: array, items: {type: string}}
+        limitations: {type: array, items: {type: string}}
+  - key: program_summary
+    name: Marketing Program Summary
+    type: object
+    required: true
+    description: Final program state, applied or skipped changes, approvals, provider-safe evidence, failures, and repair guidance.
+    schema:
+      type: object
+      required: [status, program_changes, consent_changes, action_call_refs, provider_request_ids, partial_failures, retry_guidance]
+      properties:
+        status: {type: string, enum: [reviewed, applied, partial, blocked, failed]}
+        program_changes: {type: array}
+        consent_changes: {type: array}
+        action_call_refs: {type: array, items: {type: string}}
+        provider_request_ids: {type: array, items: {type: string}}
+        partial_failures: {type: array}
+        retry_guidance: {type: array, items: {type: string}}
+        next_safe_actions: {type: array, items: {type: string}}
+learning_hooks:
+  - key: marketing_program_learning
+    prompt: Capture reusable audience, campaign, consent, or provider-recovery lessons only with durable evidence and no customer identifiers.
+    tags:
+      - gtm
+      - marketing-program
+failure_handling:
+  - If the Marketing bundle or an exact action scope is missing, return capability-specific reconnect guidance and keep the plan read-only.
+  - If legal basis or consent evidence is incomplete, do not mutate contact preferences.
+  - If any provider mutation is partial or uncertain, inspect prior action-call evidence before retry and preserve the original stable key.
+  - Never fall back to publish, bulk send, direct transactional send, or an ingress-triggered workflow.
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan

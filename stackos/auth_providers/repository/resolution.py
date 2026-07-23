@@ -136,6 +136,15 @@ class CredentialResolutionMixin:
                     contract=contract,
                     payload=payload,
                 )
+                self._validate_token_response(
+                    contract=contract,
+                    response_body=response_body,
+                    grant_type=(
+                        "client_credentials"
+                        if contract.flow == "client_credentials"
+                        else "refresh_token"
+                    ),
+                )
             except OAuthTokenRequestError as exc:
                 if not exc.repair_required:
                     self._record_retryable_renewal_failure(
@@ -207,7 +216,10 @@ class CredentialResolutionMixin:
                 expires_at = utcnow() + timedelta(seconds=float(raw_expires_in))
             safe_config = dict(row.config_json or {})
             safe_config["oauth_connection_status"] = "connected"
-            response_declares_scopes = isinstance(response_body.get("scope"), str | list)
+            response_declares_scopes = any(
+                isinstance(response_body.get(field), str | list)
+                for field in contract.response_scope_fields
+            )
             if response_declares_scopes or contract.flow == "client_credentials":
                 safe_config["scope_status"] = "known"
             safe_config.update(
@@ -249,6 +261,7 @@ class CredentialResolutionMixin:
                 fallback_scopes=(
                     contract.scopes if contract.flow == "client_credentials" else None
                 ),
+                contract=contract,
             )
             self.record_refresh_event(
                 credential=credential,

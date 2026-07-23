@@ -309,6 +309,8 @@ def _default_action_ref(provider_key: str) -> str | None:
             return "communications.slack-bot.message.send"
         case "smtp":
             return "communications.smtp.email.send"
+        case "hubspot":
+            return "gtm.hubspot.transactional.single_email.send"
         case "local-agent-chat":
             return "localAgentChat.createMessage"
         case _:
@@ -333,6 +335,8 @@ def _target_action_defaults(
             defaults.setdefault("profile_key", profile_key)
         if target.thread_ref:
             defaults.setdefault("thread_ref", target.thread_ref)
+    elif target.provider_key == "hubspot":
+        defaults.setdefault("contact_ref", target.surface_ref)
     return defaults
 
 

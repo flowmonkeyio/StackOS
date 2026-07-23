@@ -32,31 +32,106 @@ capabilities:
 providers:
   - key: hubspot
     name: HubSpot
-    description: HubSpot CRM provider contract for companies, contacts, notes, tasks, and pipeline reads.
+    description: HubSpot sales and marketing customer-lifecycle provider with capability-scoped OAuth readiness.
     auth_type: oauth
     auth_methods:
-      - key: oauth2_token
-        label: OAuth2 access token
+      - key: oauth2_authorization_code
+        label: Connect with HubSpot
         auth_type: oauth
+        description: Register a HubSpot OAuth app with the fixed StackOS callback. CRM Core is required; select only the optional feature bundles this connection needs.
+        interactive: true
         payload_format: json
         fields:
-        - key: access_token
-          label: Access Token
+        - key: client_id
+          label: OAuth Client ID
           type: secret
           secret: true
           required: true
-        - key: portal_ref
-          label: Portal Ref
+        - key: client_secret
+          label: OAuth Client Secret
+          type: secret
+          secret: true
+          required: true
+        - key: scope_bundles
+          label: Optional capability bundles
+          type: multi-select
+          secret: false
+          required: false
+          description: Reconnect after selecting a bundle that adds OAuth scopes. Scope-free operator checklists such as Webhooks do not require new consent. Actual returned scopes determine scope state.
+          options:
+          - label: Sales
+            value: sales
+          - label: Marketing
+            value: marketing
+          - label: Bulk jobs
+            value: bulk
+          - label: Webhooks
+            value: webhooks
+          - label: Custom workflow automation
+            value: automation
+          - label: Transactional communications
+            value: transactional-communications
+        - key: transactional_email_entitlement_confirmed
+          label: Transactional Email add-on confirmed
+          type: boolean
+          secret: false
+          required: false
+          description: Enable only after verifying that this exact HubSpot portal has the Transactional Email add-on. This is an operator confirmation; provider errors remain authoritative.
+          options:
+          - label: Not confirmed
+            value: "false"
+          - label: Confirmed
+            value: "true"
+        - key: app_id
+          label: HubSpot App ID
+          type: number
+          secret: false
+          required: false
+          description: Required when signed ingress is enabled. Copy the numeric app ID from the HubSpot developer project so incoming events can be bound to the exact app.
+        - key: webhook_enabled
+          label: Signed ingress
+          type: boolean
+          secret: false
+          required: false
+          description: Enable only after the generic StackOS public ingress URL and exact event allowlist are configured.
+          options:
+          - label: Disabled
+            value: "false"
+          - label: Enabled
+            value: "true"
+        - key: webhook_event_allowlist
+          label: Events that may create agent requests
+          type: multi-select
+          secret: false
+          required: false
+          description: Signed events outside this exact allowlist are retained as non-triggering audit context and never start a workflow.
+          options:
+          - {label: Contact created, value: contact.creation}
+          - {label: Contact deleted, value: contact.deletion}
+          - {label: Contact merged, value: contact.merge}
+          - {label: Contact association changed, value: contact.associationChange}
+          - {label: Contact restored, value: contact.restore}
+          - {label: Contact privacy-deleted, value: contact.privacyDeletion}
+          - {label: Contact property changed, value: contact.propertyChange}
+          - {label: Company created, value: company.creation}
+          - {label: Company deleted, value: company.deletion}
+          - {label: Company merged, value: company.merge}
+          - {label: Company association changed, value: company.associationChange}
+          - {label: Company restored, value: company.restore}
+          - {label: Company property changed, value: company.propertyChange}
+          - {label: Deal created, value: deal.creation}
+          - {label: Deal deleted, value: deal.deletion}
+          - {label: Deal merged, value: deal.merge}
+          - {label: Deal association changed, value: deal.associationChange}
+          - {label: Deal restored, value: deal.restore}
+          - {label: Deal property changed, value: deal.propertyChange}
+        - key: workflow_action_allowlist
+          label: Custom workflow action definition IDs
           type: text
           secret: false
           required: false
-          placeholder: safe portal reference
-        - key: scope_policy_ref
-          label: Scope Policy Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe scope policy reference
+          placeholder: comma-separated numeric definition IDs
+          description: Optional exact allowlist for manually registered HubSpot custom workflow actions. Invocations create agent requests only; they never select or start a StackOS workflow.
         - key: field_mapping_ref
           label: Field Mapping Ref
           type: text
@@ -64,16 +139,130 @@ providers:
           required: false
           placeholder: safe CRM property mapping reference
     config:
+      scopes:
+        - crm.objects.contacts.read
+        - crm.objects.contacts.write
+        - crm.objects.companies.read
+        - crm.objects.companies.write
+        - crm.objects.deals.read
+        - crm.objects.deals.write
+        - crm.objects.owners.read
+        - crm.schemas.contacts.read
+        - crm.schemas.companies.read
+        - crm.schemas.deals.read
+      scope_bundles:
+        sales:
+          label: Sales
+          readiness_group: sales
+          optional_scopes:
+            - crm.objects.leads.read
+            - crm.objects.leads.write
+            - crm.objects.products.read
+            - crm.objects.products.write
+            - crm.objects.line_items.read
+            - crm.objects.line_items.write
+            - crm.objects.quotes.read
+            - crm.objects.goals.read
+        marketing:
+          label: Marketing
+          readiness_group: marketing
+          optional_scopes:
+            - forms
+            - crm.lists.read
+            - crm.lists.write
+            - marketing.campaigns.read
+            - marketing.campaigns.write
+            - marketing-email
+            - subscriptions-definition-read
+            - subscriptions-status-read
+            - subscriptions-status-write
+            - crm.objects.marketing_events.read
+            - crm.objects.marketing_events.write
+            - analytics.behavioral_events.send
+            - behavioral_events.event_definitions.read_write
+        bulk:
+          label: Bulk jobs
+          readiness_group: bulk
+          optional_scopes:
+            - crm.export
+        webhooks:
+          label: Webhooks
+          readiness_group: webhooks
+          optional_scopes: []
+        automation:
+          label: Custom workflow automation
+          readiness_group: automation
+          optional_scopes:
+            - automation
+        transactional-communications:
+          label: Transactional communications
+          readiness_group: transactional-communications
+          optional_scopes:
+            - transactional-email
+      readiness_groups:
+        crm-core:
+          label: CRM Core
+          required_scopes:
+            - crm.objects.contacts.read
+            - crm.objects.contacts.write
+            - crm.objects.companies.read
+            - crm.objects.companies.write
+            - crm.objects.deals.read
+            - crm.objects.deals.write
+            - crm.objects.owners.read
+            - crm.schemas.contacts.read
+            - crm.schemas.companies.read
+            - crm.schemas.deals.read
+        sales:
+          label: Sales
+          source_bundle: sales
+        marketing:
+          label: Marketing
+          source_bundle: marketing
+        bulk:
+          label: Bulk
+          source_bundle: bulk
+        webhooks:
+          label: Webhooks
+          source_bundle: webhooks
+          prerequisites:
+            - oauth-app
+            - public-ingress
+            - signature-validation
+        automation:
+          label: Custom Workflow Automation
+          source_bundle: automation
+          prerequisites:
+            - oauth-app
+            - public-ingress
+            - signature-validation
+            - workflow-action-registration
+        transactional-communications:
+          label: Transactional Communications
+          source_bundle: transactional-communications
+          prerequisites:
+            - transactional-email-addon
+            - communication-profile
+            - communication-target
+            - consent-policy
       setup:
-        credential_label: HubSpot OAuth/private app access token
-        setup_note: Create a HubSpot private app or OAuth app with the CRM scopes needed by the workflow, then store the access token in StackOS.
+        credential_label: HubSpot OAuth app
+        setup_note: Create a project-based HubSpot OAuth app, register the fixed StackOS callback, configure CRM Core as required scopes and the selected capability bundles as optional scopes, then use Connect with HubSpot. Service keys remain deferred because HubSpot does not document scope introspection for them and they cannot support webhooks.
+        local_setup_label: Connect HubSpot in StackOS
+        local_setup_note: Choose optional capability bundles before connecting. Reconnect after adding a bundle; the last working credential remains active if the upgrade fails.
         homepage_url: https://www.hubspot.com/
         signup_url: https://app.hubspot.com/signup-hubspot/crm
-        console_url: https://app.hubspot.com/
-        credential_url: https://developers.hubspot.com/docs/apps/legacy-apps/private-apps/overview
+        console_url: https://app.hubspot.com/developer-projects
+        credential_url: https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/oauth/working-with-oauth
         billing_url: https://www.hubspot.com/pricing
         docs_url: https://developers.hubspot.com/docs/api-reference/latest/overview
-        verified_at: "2026-06-11"
+        support_url: https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/scopes
+        callback_url: https://auth.stackos.flowmonkey.io/api/v1/auth/oauth/callback
+        callback_note: The public HTTPS relay forwards the unchanged callback query to http://127.0.0.1:5180/api/v1/auth/oauth/callback and returns the browser to the generic StackOS Connections view.
+        repair_note: Reconnect for missing scopes; verify the selected portal, HubSpot tier or seat, add-on entitlement, public ingress health, and callback URL. Deferred actions remain unavailable by design.
+        fallback_url: https://developers.hubspot.com/docs/apps/developer-platform/build-apps/manage-apps-in-hubspot
+        fallback_reason: HubSpot app screens are account-gated; use the official app-management guide when the direct development console route changes.
+        verified_at: "2026-07-22"
         url_confidence:
           homepage_url: verified
           signup_url: verified
@@ -81,6 +270,9 @@ providers:
           credential_url: verified
           billing_url: verified
           docs_url: verified
+          support_url: verified
+          callback_url: verified
+          fallback_url: verified
   - key: salesforce
     name: Salesforce
     description: Salesforce provider contract for accounts, leads, contacts, opportunities, notes, tasks, and pipeline reads.
@@ -763,63 +955,504 @@ providers:
         url_confidence:
           fallback_url: verified
 actions:
-  - key: hubspot.crm.companies.batch_upsert
-    name: Batch Upsert HubSpot Companies
-    description: Batch upsert HubSpot companies using an approved id_property and explicit input rows.
+  - key: hubspot.crm.contacts.properties.list
+    name: List HubSpot Contact Properties
+    description: List portal-aware contact fields, custom fields, lifecycle stages, and safe metadata refs.
+    provider: hubspot
+    capability: crm-operations
+    risk_level: read
+    input_schema: &hubspot_empty_input
+      type: object
+      additionalProperties: false
+      properties: {}
+    output_schema: &hubspot_safe_ref_output
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: crm.contacts.properties.list
+      requires_credential: true
+      required_scopes:
+        - crm.schemas.contacts.read
+      readiness_group: crm-core
+      api_version: "2026-03"
+      endpoint: /crm/properties/2026-03/contacts
+      method: GET
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.crm.companies.properties.list
+    name: List HubSpot Company Properties
+    description: List portal-aware company fields and custom fields as safe metadata refs.
+    provider: hubspot
+    capability: crm-operations
+    risk_level: read
+    input_schema: *hubspot_empty_input
+    output_schema: *hubspot_safe_ref_output
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: crm.companies.properties.list
+      requires_credential: true
+      required_scopes:
+        - crm.schemas.companies.read
+      readiness_group: crm-core
+      api_version: "2026-03"
+      endpoint: /crm/properties/2026-03/companies
+      method: GET
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.crm.deals.properties.list
+    name: List HubSpot Deal Properties
+    description: List portal-aware deal fields and custom fields as safe metadata refs.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: read
+    input_schema: *hubspot_empty_input
+    output_schema: *hubspot_safe_ref_output
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: crm.deals.properties.list
+      requires_credential: true
+      required_scopes:
+        - crm.schemas.deals.read
+      readiness_group: crm-core
+      api_version: "2026-03"
+      endpoint: /crm/properties/2026-03/deals
+      method: GET
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.crm.owners.list
+    name: List HubSpot Owners And Teams
+    description: List owners and their team memberships using account-scoped safe refs.
+    provider: hubspot
+    capability: crm-operations
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        after:
+          type: string
+        archived:
+          type: boolean
+    output_schema: *hubspot_safe_ref_output
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: crm.owners.list
+      requires_credential: true
+      required_scopes:
+        - crm.objects.owners.read
+      readiness_group: crm-core
+      api_version: "2026-03"
+      endpoint: /crm/owners/2026-03
+      method: GET
+      paging: after
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.crm.deals.pipelines.list
+    name: List HubSpot Deal Pipelines
+    description: List deal pipelines and stages using portal-aware safe refs.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: read
+    input_schema: *hubspot_empty_input
+    output_schema: *hubspot_safe_ref_output
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: crm.deals.pipelines.list
+      requires_credential: true
+      required_scopes:
+        - crm.objects.deals.read
+      readiness_group: crm-core
+      api_version: "2026-03"
+      endpoint: /crm/pipelines/2026-03/deals
+      method: GET
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.crm.contact_company.labels.list
+    name: List HubSpot Contact To Company Labels
+    description: List the fixed contact-to-company association labels as typed safe refs.
+    provider: hubspot
+    capability: crm-operations
+    risk_level: read
+    input_schema: *hubspot_empty_input
+    output_schema: *hubspot_safe_ref_output
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: crm.contact_company.labels.list
+      requires_credential: true
+      required_scopes:
+        - crm.objects.contacts.read
+        - crm.objects.companies.read
+      readiness_group: crm-core
+      api_version: "2026-03"
+      endpoint: /crm/associations/2026-03/contacts/companies/labels
+      method: GET
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.crm.contact_deal.labels.list
+    name: List HubSpot Contact To Deal Labels
+    description: List the fixed contact-to-deal association labels as typed safe refs.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: read
+    input_schema: *hubspot_empty_input
+    output_schema: *hubspot_safe_ref_output
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: crm.contact_deal.labels.list
+      requires_credential: true
+      required_scopes:
+        - crm.objects.contacts.read
+        - crm.objects.deals.read
+      readiness_group: crm-core
+      api_version: "2026-03"
+      endpoint: /crm/associations/2026-03/contacts/deals/labels
+      method: GET
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.crm.company_deal.labels.list
+    name: List HubSpot Company To Deal Labels
+    description: List the fixed company-to-deal association labels as typed safe refs.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: read
+    input_schema: *hubspot_empty_input
+    output_schema: *hubspot_safe_ref_output
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: crm.company_deal.labels.list
+      requires_credential: true
+      required_scopes:
+        - crm.objects.companies.read
+        - crm.objects.deals.read
+      readiness_group: crm-core
+      api_version: "2026-03"
+      endpoint: /crm/associations/2026-03/companies/deals/labels
+      method: GET
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.crm.contact_company.associate
+    name: Associate HubSpot Contact To Company
+    description: Add one verified contact-to-company association label using typed safe refs.
     provider: hubspot
     capability: crm-operations
     risk_level: write
-    input_schema: &company_upsert_input
+    input_schema: &hubspot_association_input
       type: object
       additionalProperties: false
       required:
-        - id_property
-        - inputs
+        - from_ref
+        - to_ref
+        - association_label_ref
       properties:
-        id_property:
+        from_ref:
           type: string
-        inputs:
+          pattern: "^provider-object:"
+        to_ref:
+          type: string
+          pattern: "^provider-object:"
+        association_label_ref:
+          type: string
+          pattern: "^provider-object:"
+    output_schema: *hubspot_safe_ref_output
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: crm.contact_company.associate
+      requires_credential: true
+      required_scopes:
+        - crm.objects.contacts.write
+        - crm.objects.companies.write
+      readiness_group: crm-core
+      api_version: "2026-03"
+      method: PUT
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: workflow-grant-or-direct-operator-intent
+  - key: hubspot.crm.contact_company.dissociate
+    name: Remove HubSpot Contact To Company Label
+    description: Remove one verified contact-to-company label while preserving other relationship labels.
+    provider: hubspot
+    capability: crm-operations
+    risk_level: write
+    input_schema: *hubspot_association_input
+    output_schema: *hubspot_safe_ref_output
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: crm.contact_company.dissociate
+      requires_credential: true
+      required_scopes:
+        - crm.objects.contacts.write
+        - crm.objects.companies.write
+      readiness_group: crm-core
+      api_version: "2026-03"
+      endpoint: /crm/associations/2026-03/contacts/companies/batch/labels/archive
+      method: POST
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: workflow-grant-or-direct-operator-intent
+  - key: hubspot.crm.contact_deal.associate
+    name: Associate HubSpot Contact To Deal
+    description: Add one verified contact-to-deal association label using typed safe refs.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: write
+    input_schema: *hubspot_association_input
+    output_schema: *hubspot_safe_ref_output
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: crm.contact_deal.associate
+      requires_credential: true
+      required_scopes:
+        - crm.objects.contacts.write
+        - crm.objects.deals.write
+      readiness_group: crm-core
+      api_version: "2026-03"
+      method: PUT
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: workflow-grant-or-direct-operator-intent
+  - key: hubspot.crm.contact_deal.dissociate
+    name: Remove HubSpot Contact To Deal Label
+    description: Remove one verified contact-to-deal label while preserving other relationship labels.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: write
+    input_schema: *hubspot_association_input
+    output_schema: *hubspot_safe_ref_output
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: crm.contact_deal.dissociate
+      requires_credential: true
+      required_scopes:
+        - crm.objects.contacts.write
+        - crm.objects.deals.write
+      readiness_group: crm-core
+      api_version: "2026-03"
+      endpoint: /crm/associations/2026-03/contacts/deals/batch/labels/archive
+      method: POST
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: workflow-grant-or-direct-operator-intent
+  - key: hubspot.crm.company_deal.associate
+    name: Associate HubSpot Company To Deal
+    description: Add one verified company-to-deal association label using typed safe refs.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: write
+    input_schema: *hubspot_association_input
+    output_schema: *hubspot_safe_ref_output
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: crm.company_deal.associate
+      requires_credential: true
+      required_scopes:
+        - crm.objects.companies.write
+        - crm.objects.deals.write
+      readiness_group: crm-core
+      api_version: "2026-03"
+      method: PUT
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: workflow-grant-or-direct-operator-intent
+  - key: hubspot.crm.company_deal.dissociate
+    name: Remove HubSpot Company To Deal Label
+    description: Remove one verified company-to-deal label while preserving other relationship labels.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: write
+    input_schema: *hubspot_association_input
+    output_schema: *hubspot_safe_ref_output
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: crm.company_deal.dissociate
+      requires_credential: true
+      required_scopes:
+        - crm.objects.companies.write
+        - crm.objects.deals.write
+      readiness_group: crm-core
+      api_version: "2026-03"
+      endpoint: /crm/associations/2026-03/companies/deals/batch/labels/archive
+      method: POST
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: workflow-grant-or-direct-operator-intent
+  - key: hubspot.crm.leads.properties.list
+    name: List HubSpot Lead Properties
+    description: List portal-aware lead fields as safe metadata refs when the Sales capability is granted.
+    provider: hubspot
+    capability: lead-management
+    risk_level: read
+    input_schema: *hubspot_empty_input
+    output_schema: *hubspot_safe_ref_output
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: crm.leads.properties.list
+      requires_credential: true
+      required_scopes:
+        - crm.objects.leads.read
+      readiness_group: sales
+      api_version: "2026-03"
+      endpoint: /crm/properties/2026-03/leads
+      method: GET
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.crm.contacts.search
+    name: Search HubSpot Contacts
+    description: Search contacts with typed property refs and bounded filters, sorting, and paging.
+    provider: hubspot
+    capability: crm-operations
+    risk_level: read
+    input_schema: &hubspot_record_search_input
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          maxLength: 3000
+        filter_groups:
           type: array
-          minItems: 1
+          maxItems: 5
           items:
             type: object
             additionalProperties: false
             required:
-              - properties
+              - filters
             properties:
-              properties:
-                type: object
-                additionalProperties: true
-              id:
-                type: string
-              objectWriteTraceId:
-                type: string
+              filters:
+                type: array
+                minItems: 1
+                maxItems: 6
+                items:
+                  type: object
+                  additionalProperties: false
+                  required:
+                    - property_ref
+                    - operator
+                  properties:
+                    property_ref:
+                      type: string
+                      pattern: "^provider-object:"
+                    operator:
+                      type: string
+                      enum:
+                        - LT
+                        - LTE
+                        - GT
+                        - GTE
+                        - EQ
+                        - NEQ
+                        - BETWEEN
+                        - IN
+                        - NOT_IN
+                        - HAS_PROPERTY
+                        - NOT_HAS_PROPERTY
+                        - CONTAINS_TOKEN
+                        - NOT_CONTAINS_TOKEN
+                    value:
+                      type: string
+                    high_value:
+                      type: string
+                    values:
+                      type: array
+                      minItems: 1
+                      maxItems: 100
+                      items:
+                        type: string
+        sort:
+          type: object
+          additionalProperties: false
+          required:
+            - property_ref
+            - direction
+          properties:
+            property_ref:
+              type: string
+              pattern: "^provider-object:"
+            direction:
+              type: string
+              enum:
+                - ASCENDING
+                - DESCENDING
+        property_refs:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+            pattern: "^provider-object:"
+        after:
+          type: string
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
     output_schema: &object_schema
       type: object
       additionalProperties: true
     config:
       schema_version: stackos.action.v1
       connector: hubspot
-      operation: crm.companies.batch_upsert
+      operation: crm.contacts.search
       requires_credential: true
-  - key: hubspot.crm.contacts.batch_upsert
-    name: Batch Upsert HubSpot Contacts
-    description: Batch upsert HubSpot contacts using email or an approved unique property.
+      required_scopes:
+        - crm.objects.contacts.read
+      readiness_group: crm-core
+      api_version: "2026-03"
+      endpoint: /crm/objects/2026-03/contacts/search
+      method: POST
+      paging: after
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.crm.companies.search
+    name: Search HubSpot Companies
+    description: Search companies with typed property refs and bounded filters, sorting, and paging.
+    provider: hubspot
+    capability: crm-operations
+    risk_level: read
+    input_schema: *hubspot_record_search_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: crm.companies.search
+      requires_credential: true
+      required_scopes:
+        - crm.objects.companies.read
+      readiness_group: crm-core
+      api_version: "2026-03"
+      endpoint: /crm/objects/2026-03/companies/search
+      method: POST
+      paging: after
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.crm.companies.batch_upsert
+    name: Batch Upsert HubSpot Companies
+    description: Batch upsert companies using a verified unique-property ref and explicit safe property values.
     provider: hubspot
     capability: crm-operations
     risk_level: write
-    input_schema: &contact_upsert_input
+    input_schema: &hubspot_batch_upsert_input
       type: object
       additionalProperties: false
       required:
-        - id_property
+        - id_property_ref
         - inputs
       properties:
-        id_property:
+        id_property_ref:
           type: string
+          pattern: "^provider-object:"
         inputs:
           type: array
           minItems: 1
+          maxItems: 100
           items:
             type: object
             additionalProperties: false
@@ -827,130 +1460,358 @@ actions:
               - properties
             properties:
               properties:
-                type: object
-                additionalProperties: true
+                type: array
+                minItems: 1
+                maxItems: 100
+                items:
+                  type: object
+                  additionalProperties: false
+                  required:
+                    - property_ref
+                    - value
+                  properties:
+                    property_ref:
+                      type: string
+                      pattern: "^provider-object:"
+                    value: {}
               id:
                 type: string
-              objectWriteTraceId:
+              trace_id:
                 type: string
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: crm.companies.batch_upsert
+      requires_credential: true
+      required_scopes:
+        - crm.objects.companies.write
+      readiness_group: crm-core
+      api_version: "2026-03"
+      endpoint: /crm/objects/2026-03/companies/batch/upsert
+      method: POST
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: workflow-grant-or-direct-operator-intent
+  - key: hubspot.crm.contacts.batch_upsert
+    name: Batch Upsert HubSpot Contacts
+    description: Batch upsert HubSpot contacts using email or an approved unique property.
+    provider: hubspot
+    capability: crm-operations
+    risk_level: write
+    input_schema: *hubspot_batch_upsert_input
     output_schema: *object_schema
     config:
       schema_version: stackos.action.v1
       connector: hubspot
       operation: crm.contacts.batch_upsert
       requires_credential: true
+      required_scopes:
+        - crm.objects.contacts.write
+      readiness_group: crm-core
+      api_version: "2026-03"
+      endpoint: /crm/objects/2026-03/contacts/batch/upsert
+      method: POST
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: workflow-grant-or-direct-operator-intent
   - key: hubspot.crm.notes.create
     name: Create HubSpot CRM Note
-    description: Create a HubSpot note from explicit note content and safe record refs.
+    description: Create a timeline note with explicit content, owner, and safe CRM associations.
     provider: hubspot
     capability: crm-operations
     risk_level: write
-    input_schema: &note_input
+    input_schema:
       type: object
       additionalProperties: false
       required:
-        - note
+        - timestamp
+        - body
       properties:
-        note:
-          type: object
-          additionalProperties: false
-          properties:
-            properties:
-              type: object
-              additionalProperties: true
-            body:
-              type: string
-            hs_timestamp:
-              type: string
-            timestamp:
-              type: string
-            associations:
-              type: array
-              items:
-                type: object
-                additionalProperties: true
+        timestamp:
+          oneOf:
+            - type: string
+            - type: integer
+        body:
+          type: string
+          minLength: 1
+          maxLength: 65536
+        owner_ref:
+          type: string
+          pattern: "^provider-object:"
+        associations: &hubspot_activity_associations
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items:
+            type: string
+            pattern: "^provider-object:"
     output_schema: *object_schema
     config:
       schema_version: stackos.action.v1
       connector: hubspot
       operation: crm.notes.create
       requires_credential: true
+      required_scopes:
+        - crm.objects.contacts.write
+      readiness_group: crm-core
+      api_version: "2026-03"
+      endpoint: /crm/objects/2026-03/notes
+      method: POST
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: workflow-grant-or-direct-operator-intent
   - key: hubspot.crm.tasks.create
     name: Create HubSpot Task
-    description: Create a HubSpot task from explicit task input.
+    description: Create an assigned sales task with safe CRM associations.
     provider: hubspot
     capability: crm-operations
     risk_level: write
-    input_schema: &hubspot_task_input
+    input_schema:
       type: object
       additionalProperties: false
       required:
-        - task
+        - due_at
+        - title
       properties:
-        task:
-          type: object
-          additionalProperties: false
-          properties:
-            properties:
-              type: object
-              additionalProperties: true
-            title:
-              type: string
-            body:
-              type: string
-            due_at:
-              type: string
-            hs_timestamp:
-              type: string
-            instructions:
-              type: string
-            associations:
-              type: array
-              items:
-                type: object
-                additionalProperties: true
+        due_at:
+          oneOf:
+            - type: string
+            - type: integer
+        title:
+          type: string
+          minLength: 1
+          maxLength: 500
+        body:
+          type: string
+          maxLength: 65536
+        status:
+          type: string
+          enum:
+            - NOT_STARTED
+            - COMPLETED
+        priority:
+          type: string
+          enum:
+            - LOW
+            - MEDIUM
+            - HIGH
+        owner_ref:
+          type: string
+          pattern: "^provider-object:"
+        associations: *hubspot_activity_associations
     output_schema: *object_schema
     config:
       schema_version: stackos.action.v1
       connector: hubspot
       operation: crm.tasks.create
       requires_credential: true
+      required_scopes:
+        - crm.objects.contacts.write
+      readiness_group: crm-core
+      api_version: "2026-03"
+      endpoint: /crm/objects/2026-03/tasks
+      method: POST
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: workflow-grant-or-direct-operator-intent
+  - key: hubspot.crm.calls.create
+    name: Create HubSpot Call
+    description: Log an inbound or outbound call with safe owner and CRM associations.
+    provider: hubspot
+    capability: outbound-operations
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - timestamp
+        - direction
+      properties:
+        timestamp:
+          oneOf:
+            - type: string
+            - type: integer
+        title:
+          type: string
+          maxLength: 500
+        body:
+          type: string
+          maxLength: 65536
+        direction:
+          type: string
+          enum:
+            - INBOUND
+            - OUTBOUND
+        status:
+          type: string
+          enum:
+            - BUSY
+            - CALLING_CRM_USER
+            - CANCELED
+            - COMPLETED
+            - CONNECTING
+            - FAILED
+            - IN_PROGRESS
+            - NO_ANSWER
+            - QUEUED
+            - RINGING
+        duration_ms:
+          type: integer
+          minimum: 0
+        owner_ref:
+          type: string
+          pattern: "^provider-object:"
+        associations: *hubspot_activity_associations
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: crm.calls.create
+      requires_credential: true
+      required_scopes:
+        - crm.objects.contacts.write
+      readiness_group: crm-core
+      api_version: "2026-03"
+      endpoint: /crm/objects/2026-03/calls
+      method: POST
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: workflow-grant-or-direct-operator-intent
+  - key: hubspot.crm.meetings.create
+    name: Create HubSpot Meeting
+    description: Log a meeting with explicit timing, owner, and safe CRM associations.
+    provider: hubspot
+    capability: outbound-operations
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - timestamp
+        - title
+      properties:
+        timestamp:
+          oneOf:
+            - type: string
+            - type: integer
+        title:
+          type: string
+          minLength: 1
+          maxLength: 500
+        body:
+          type: string
+          maxLength: 65536
+        start_time:
+          oneOf:
+            - type: string
+            - type: integer
+        end_time:
+          oneOf:
+            - type: string
+            - type: integer
+        outcome:
+          type: string
+          enum:
+            - SCHEDULED
+            - COMPLETED
+            - RESCHEDULED
+            - NO_SHOW
+            - CANCELED
+        owner_ref:
+          type: string
+          pattern: "^provider-object:"
+        associations: *hubspot_activity_associations
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: crm.meetings.create
+      requires_credential: true
+      required_scopes:
+        - crm.objects.contacts.write
+      readiness_group: crm-core
+      api_version: "2026-03"
+      endpoint: /crm/objects/2026-03/meetings
+      method: POST
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: workflow-grant-or-direct-operator-intent
+  - key: hubspot.sales.sequences.list
+    name: List HubSpot Sequences
+    description: Deferred until seat-qualified live contract proof is available.
+    provider: hubspot
+    capability: outbound-operations
+    risk_level: read
+    input_schema: *hubspot_empty_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      operation: sales.sequences.list
+      execution_mode: deferred
+      deferred_reason: deferred-sequence-live-contract
+      requires_credential: true
+      required_scopes:
+        - automation.sequences.read
+      readiness_group: sales
+      response_contract: unavailable-v1
+  - key: hubspot.sales.sequences.enroll
+    name: Enroll Contact In HubSpot Sequence
+    description: Deferred until seat, conflict, and enrollment lifecycle behavior has live proof.
+    provider: hubspot
+    capability: outbound-operations
+    risk_level: high
+    input_schema: *hubspot_empty_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      operation: sales.sequences.enroll
+      execution_mode: deferred
+      deferred_reason: deferred-sequence-live-contract
+      requires_credential: true
+      required_scopes:
+        - automation.sequences.enrollments.write
+      readiness_group: sales
+      response_contract: unavailable-v1
+  - key: hubspot.sales.sequences.unenroll
+    name: Unenroll Contact From HubSpot Sequence
+    description: Deferred until seat, conflict, and enrollment lifecycle behavior has live proof.
+    provider: hubspot
+    capability: outbound-operations
+    risk_level: high
+    input_schema: *hubspot_empty_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      operation: sales.sequences.unenroll
+      execution_mode: deferred
+      deferred_reason: deferred-sequence-live-contract
+      requires_credential: true
+      required_scopes:
+        - automation.sequences.enrollments.write
+      readiness_group: sales
+      response_contract: unavailable-v1
   - key: hubspot.crm.deals.search
     name: Search HubSpot Deals
     description: Search bounded HubSpot deal records for an agent-selected scope.
     provider: hubspot
     capability: pipeline-management
     risk_level: read
-    input_schema: &hubspot_deal_search_input
-      type: object
-      additionalProperties: false
-      properties:
-        query:
-          type: string
-        filterGroups:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
-        sorts:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
-        properties:
-          type: array
-          items:
-            type: string
-        after:
-          type: string
-        limit:
-          type: integer
+    input_schema: *hubspot_record_search_input
     output_schema: *object_schema
     config:
       schema_version: stackos.action.v1
       connector: hubspot
       operation: crm.deals.search
       requires_credential: true
+      required_scopes:
+        - crm.objects.deals.read
+      readiness_group: crm-core
+      api_version: "2026-03"
+      endpoint: /crm/objects/2026-03/deals/search
+      method: POST
+      paging: after
+      response_contract: safe-provider-refs-v1
   - key: hubspot.crm.deals.list
     name: List HubSpot Deals
     description: List bounded HubSpot deal records for an agent-selected scope.
@@ -961,20 +1822,1968 @@ actions:
       type: object
       additionalProperties: false
       properties:
-        properties:
+        property_refs:
           type: array
+          maxItems: 100
+          uniqueItems: true
           items:
             type: string
+            pattern: "^provider-object:"
+        property_history_refs:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          items:
+            type: string
+            pattern: "^provider-object:"
         after:
           type: string
         limit:
           type: integer
+          minimum: 1
+          maximum: 100
+        archived:
+          type: boolean
     output_schema: *object_schema
     config:
       schema_version: stackos.action.v1
       connector: hubspot
       operation: crm.deals.list
       requires_credential: true
+      required_scopes:
+        - crm.objects.deals.read
+      readiness_group: crm-core
+      api_version: "2026-03"
+      endpoint: /crm/objects/2026-03/deals
+      method: GET
+      paging: after
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.crm.deals.batch_upsert
+    name: Batch Upsert HubSpot Deals
+    description: Batch upsert deals using a verified unique-property ref and explicit safe property values.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: write
+    input_schema: *hubspot_batch_upsert_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: crm.deals.batch_upsert
+      requires_credential: true
+      required_scopes:
+        - crm.objects.deals.write
+      readiness_group: crm-core
+      api_version: "2026-03"
+      endpoint: /crm/objects/2026-03/deals/batch/upsert
+      method: POST
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: workflow-grant-or-direct-operator-intent
+  - key: hubspot.crm.leads.search
+    name: Search HubSpot Leads
+    description: Search leads with typed property refs when the Sales capability is granted.
+    provider: hubspot
+    capability: lead-management
+    risk_level: read
+    input_schema: *hubspot_record_search_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: crm.leads.search
+      requires_credential: true
+      required_scopes:
+        - crm.objects.leads.read
+      readiness_group: sales
+      api_version: "2026-03"
+      endpoint: /crm/objects/2026-03/leads/search
+      method: POST
+      paging: after
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.crm.leads.batch_upsert
+    name: Batch Upsert HubSpot Leads
+    description: Batch upsert leads using a verified unique-property ref when Sales write scope is granted.
+    provider: hubspot
+    capability: lead-management
+    risk_level: write
+    input_schema: *hubspot_batch_upsert_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: crm.leads.batch_upsert
+      requires_credential: true
+      required_scopes:
+        - crm.objects.leads.write
+      readiness_group: sales
+      api_version: "2026-03"
+      endpoint: /crm/objects/2026-03/leads/batch/upsert
+      method: POST
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: workflow-grant-or-direct-operator-intent
+  - key: hubspot.crm.custom_objects.search
+    name: Search HubSpot Custom Objects
+    description: Deferred until an operator-approved custom-object schema contract exists.
+    provider: hubspot
+    capability: crm-operations
+    risk_level: read
+    input_schema: *hubspot_empty_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      operation: crm.custom_objects.search
+      execution_mode: deferred
+      deferred_reason: deferred-custom-object-schema
+      requires_credential: true
+      required_scopes:
+        - crm.objects.custom.read
+        - crm.schemas.custom.read
+      readiness_group: crm-core
+      response_contract: unavailable-v1
+  - key: hubspot.crm.custom_objects.batch_upsert
+    name: Batch Upsert HubSpot Custom Objects
+    description: Deferred until an operator-approved custom-object schema contract exists.
+    provider: hubspot
+    capability: crm-operations
+    risk_level: write
+    input_schema: *hubspot_empty_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      operation: crm.custom_objects.batch_upsert
+      execution_mode: deferred
+      deferred_reason: deferred-custom-object-schema
+      requires_credential: true
+      required_scopes:
+        - crm.objects.custom.write
+        - crm.schemas.custom.read
+      readiness_group: crm-core
+      response_contract: unavailable-v1
+  - key: hubspot.sales.products.properties.list
+    name: List HubSpot Product Properties
+    description: List verified product properties and issue typed property and option refs.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: read
+    input_schema: *hubspot_empty_input
+    output_schema: *hubspot_safe_ref_output
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: sales.products.properties.list
+      requires_credential: true
+      required_scopes:
+        - crm.objects.products.write
+      readiness_group: sales
+      api_version: "2026-03"
+      endpoint: /crm/properties/2026-03/products
+      method: GET
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.sales.line_items.properties.list
+    name: List HubSpot Line Item Properties
+    description: List verified line-item properties and issue typed property and option refs.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: read
+    input_schema: *hubspot_empty_input
+    output_schema: *hubspot_safe_ref_output
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: sales.line_items.properties.list
+      requires_credential: true
+      required_scopes:
+        - crm.objects.line_items.read
+      readiness_group: sales
+      api_version: "2026-03"
+      endpoint: /crm/properties/2026-03/line_items
+      method: GET
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.sales.quotes.properties.list
+    name: List HubSpot Quote Properties
+    description: List verified quote properties and issue typed property and option refs.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: read
+    input_schema: *hubspot_empty_input
+    output_schema: *hubspot_safe_ref_output
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: sales.quotes.properties.list
+      requires_credential: true
+      required_scopes:
+        - crm.objects.quotes.read
+      readiness_group: sales
+      api_version: "2026-03"
+      endpoint: /crm/properties/2026-03/quotes
+      method: GET
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.sales.goal_targets.properties.list
+    name: List HubSpot Goal Target Properties
+    description: List verified goal-target properties for bounded sales-goal reads.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: read
+    input_schema: *hubspot_empty_input
+    output_schema: *hubspot_safe_ref_output
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: sales.goal_targets.properties.list
+      requires_credential: true
+      required_scopes:
+        - crm.objects.goals.read
+      readiness_group: sales
+      api_version: "2026-03"
+      endpoint: /crm/properties/2026-03/goal_targets
+      method: GET
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.sales.products.search
+    name: Search HubSpot Products
+    description: Search bounded product catalog records using verified property refs.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: read
+    input_schema: *hubspot_record_search_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: sales.products.search
+      requires_credential: true
+      required_scopes:
+        - crm.objects.products.read
+      readiness_group: sales
+      api_version: "2026-03"
+      endpoint: /crm/objects/2026-03/products/search
+      method: POST
+      paging: after
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.sales.products.batch_upsert
+    name: Batch Upsert HubSpot Products
+    description: Batch upsert products using a provider-verified unique property ref.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: write
+    input_schema: *hubspot_batch_upsert_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: sales.products.batch_upsert
+      requires_credential: true
+      required_scopes:
+        - crm.objects.products.write
+      readiness_group: sales
+      api_version: "2026-03"
+      endpoint: /crm/objects/2026-03/products/batch/upsert
+      method: POST
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: workflow-grant-or-direct-operator-intent
+  - key: hubspot.sales.line_items.search
+    name: Search HubSpot Line Items
+    description: Search bounded line-item records using verified property refs.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: read
+    input_schema: *hubspot_record_search_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: sales.line_items.search
+      requires_credential: true
+      required_scopes:
+        - crm.objects.line_items.read
+      readiness_group: sales
+      api_version: "2026-03"
+      endpoint: /crm/objects/2026-03/line_items/search
+      method: POST
+      paging: after
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.sales.line_items.batch_upsert
+    name: Batch Upsert HubSpot Line Items
+    description: Batch upsert standalone or existing line items using a provider-verified unique property ref.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: write
+    input_schema: *hubspot_batch_upsert_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: sales.line_items.batch_upsert
+      requires_credential: true
+      required_scopes:
+        - crm.objects.line_items.write
+      readiness_group: sales
+      api_version: "2026-03"
+      endpoint: /crm/objects/2026-03/line_items/batch/upsert
+      method: POST
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: workflow-grant-or-direct-operator-intent
+  - key: hubspot.sales.line_items.associate_deal
+    name: Associate HubSpot Line Item With Deal
+    description: Attach one existing line item to one deal using typed account-bound refs.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: write
+    input_schema: &hubspot_line_item_deal_input
+      type: object
+      additionalProperties: false
+      required:
+        - line_item_ref
+        - deal_ref
+      properties:
+        line_item_ref:
+          type: string
+          pattern: "^provider-object:"
+        deal_ref:
+          type: string
+          pattern: "^provider-object:"
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: sales.line_items.associate_deal
+      requires_credential: true
+      required_scopes:
+        - crm.objects.line_items.write
+        - crm.objects.deals.write
+      readiness_group: sales
+      api_version: "2026-03"
+      endpoint: /crm/objects/2026-03/line_items/{lineItemId}/associations/default/deals/{dealId}
+      method: PUT
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: workflow-grant-or-direct-operator-intent
+  - key: hubspot.sales.line_items.dissociate_deal
+    name: Dissociate HubSpot Line Item From Deal
+    description: Remove the deal relationship for one existing line item using typed refs.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: write
+    input_schema: *hubspot_line_item_deal_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: sales.line_items.dissociate_deal
+      requires_credential: true
+      required_scopes:
+        - crm.objects.line_items.write
+        - crm.objects.deals.write
+      readiness_group: sales
+      api_version: "2026-03"
+      endpoint: /crm/objects/2026-03/line_items/{lineItemId}/associations/deals/{dealId}
+      method: DELETE
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: workflow-grant-or-direct-operator-intent
+  - key: hubspot.sales.quotes.search
+    name: Search HubSpot Quotes
+    description: Search bounded quote records using verified property refs.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: read
+    input_schema: *hubspot_record_search_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: sales.quotes.search
+      requires_credential: true
+      required_scopes:
+        - crm.objects.quotes.read
+      readiness_group: sales
+      api_version: "2026-03"
+      endpoint: /crm/objects/2026-03/quotes/search
+      method: POST
+      paging: after
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.sales.goal_targets.list
+    name: List HubSpot Goal Targets
+    description: List bounded goal time-slices with verified properties and safe owner refs.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: read
+    input_schema: &hubspot_goal_target_list_input
+      type: object
+      additionalProperties: false
+      properties:
+        property_refs:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+            pattern: "^provider-object:"
+        after:
+          type: string
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        archived:
+          type: boolean
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: sales.goal_targets.list
+      requires_credential: true
+      required_scopes:
+        - crm.objects.goals.read
+      readiness_group: sales
+      api_version: "2026-03"
+      endpoint: /crm/objects/2026-03/goal_targets
+      method: GET
+      paging: after
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.sales.forecasts.list
+    name: List HubSpot Forecasts
+    description: Deferred while the provider API remains public beta.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: read
+    input_schema: *hubspot_empty_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      operation: sales.forecasts.list
+      execution_mode: deferred
+      deferred_reason: deferred-provider-beta
+      requires_credential: true
+      required_scopes:
+        - crm.objects.forecasts.read
+      readiness_group: sales
+      response_contract: unavailable-v1
+  - key: hubspot.sales.deal_splits.list
+    name: List HubSpot Deal Splits
+    description: Deferred until Sales Enterprise entitlement and live contract behavior are proven.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: read
+    input_schema: *hubspot_empty_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      operation: sales.deal_splits.list
+      execution_mode: deferred
+      deferred_reason: deferred-enterprise-mutation
+      requires_credential: true
+      required_scopes:
+        - crm.dealsplits.read_write
+      readiness_group: sales
+      response_contract: unavailable-v1
+  - key: hubspot.sales.deal_splits.upsert
+    name: Upsert HubSpot Deal Splits
+    description: Deferred until Sales Enterprise entitlement and partial-state behavior are proven.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: high
+    input_schema: *hubspot_empty_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      operation: sales.deal_splits.upsert
+      execution_mode: deferred
+      deferred_reason: deferred-enterprise-mutation
+      requires_credential: true
+      required_scopes:
+        - crm.dealsplits.read_write
+      readiness_group: sales
+      response_contract: unavailable-v1
+  - key: hubspot.marketing.forms.list
+    name: List HubSpot Forms
+    description: List bounded HubSpot forms with safe form and form-field refs.
+    provider: hubspot
+    capability: lead-management
+    risk_level: read
+    input_schema: &hubspot_forms_list_input
+      type: object
+      additionalProperties: false
+      properties:
+        form_types:
+          type: array
+          maxItems: 4
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - hubspot
+              - captured
+              - flow
+              - blog_comment
+              - all
+        after:
+          type: string
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        archived:
+          type: boolean
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: marketing.forms.list
+      requires_credential: true
+      required_scopes:
+        - forms
+      readiness_group: marketing
+      api_version: v3
+      endpoint: /marketing/v3/forms
+      method: GET
+      paging: after
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.marketing.forms.submissions.list
+    name: List HubSpot Form Submissions
+    description: List bounded form submissions through a safe form ref; submitted values are marked sensitive.
+    provider: hubspot
+    capability: lead-management
+    risk_level: read
+    input_schema: &hubspot_form_submissions_list_input
+      type: object
+      additionalProperties: false
+      required:
+        - form_ref
+      properties:
+        form_ref:
+          type: string
+          pattern: "^provider-object:"
+        after:
+          type: string
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: marketing.forms.submissions.list
+      requires_credential: true
+      required_scopes:
+        - forms
+      readiness_group: marketing
+      api_version: v1
+      endpoint: /form-integrations/v1/submissions/forms/{formId}
+      method: GET
+      paging: after
+      response_contract: safe-provider-refs-v1
+      data_classification: sensitive-customer-submission
+  - key: hubspot.marketing.segments.list
+    name: Search HubSpot Contact Segments
+    description: Search bounded contact segments using HubSpot's current Lists API and return safe segment refs.
+    provider: hubspot
+    capability: lead-management
+    risk_level: read
+    input_schema: &hubspot_segments_list_input
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          maxLength: 3000
+        processing_types:
+          type: array
+          maxItems: 3
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - MANUAL
+              - DYNAMIC
+              - SNAPSHOT
+        offset:
+          type: integer
+          minimum: 0
+        count:
+          type: integer
+          minimum: 1
+          maximum: 500
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: marketing.segments.list
+      requires_credential: true
+      required_scopes:
+        - crm.lists.read
+      readiness_group: marketing
+      api_version: "2026-03"
+      endpoint: /crm/lists/2026-03/search
+      method: POST
+      paging: offset
+      object_type_id: "0-1"
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.marketing.segments.memberships.list
+    name: List HubSpot Contact Segment Memberships
+    description: List bounded membership rows for a safe contact segment ref.
+    provider: hubspot
+    capability: lead-management
+    risk_level: read
+    input_schema: &hubspot_segment_memberships_list_input
+      type: object
+      additionalProperties: false
+      required:
+        - segment_ref
+      properties:
+        segment_ref:
+          type: string
+          pattern: "^provider-object:"
+        after:
+          type: string
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: marketing.segments.memberships.list
+      requires_credential: true
+      required_scopes:
+        - crm.lists.read
+      readiness_group: marketing
+      api_version: "2026-03"
+      endpoint: /crm/lists/2026-03/{listId}/memberships
+      method: GET
+      paging: after
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.marketing.segments.memberships.add
+    name: Add HubSpot Contact Segment Memberships
+    description: Add safe contact refs to a verified MANUAL or SNAPSHOT segment.
+    provider: hubspot
+    capability: lead-management
+    risk_level: write
+    input_schema: &hubspot_segment_membership_mutation_input
+      type: object
+      additionalProperties: false
+      required:
+        - segment_ref
+        - contact_refs
+      properties:
+        segment_ref:
+          type: string
+          pattern: "^provider-object:"
+        contact_refs:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+            pattern: "^provider-object:"
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: marketing.segments.memberships.add
+      requires_credential: true
+      required_scopes:
+        - crm.lists.write
+      readiness_group: marketing
+      api_version: "2026-03"
+      endpoint: /crm/lists/2026-03/{listId}/memberships/add
+      method: PUT
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: workflow-grant-or-direct-operator-intent
+      mutable_processing_types:
+        - MANUAL
+        - SNAPSHOT
+  - key: hubspot.marketing.segments.memberships.remove
+    name: Remove HubSpot Contact Segment Memberships
+    description: Remove safe contact refs from a verified MANUAL or SNAPSHOT segment.
+    provider: hubspot
+    capability: lead-management
+    risk_level: write
+    input_schema: *hubspot_segment_membership_mutation_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: marketing.segments.memberships.remove
+      requires_credential: true
+      required_scopes:
+        - crm.lists.write
+      readiness_group: marketing
+      api_version: "2026-03"
+      endpoint: /crm/lists/2026-03/{listId}/memberships/remove
+      method: PUT
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: workflow-grant-or-direct-operator-intent
+      mutable_processing_types:
+        - MANUAL
+        - SNAPSHOT
+  - key: hubspot.marketing.contacts.status.update
+    name: Update HubSpot Marketing Contact Status
+    description: Deferred because changing marketing-contact status can affect billable contact totals and requires live entitlement and cost-impact proof.
+    provider: hubspot
+    capability: lead-management
+    risk_level: high
+    input_schema: &hubspot_marketing_contact_status_input
+      type: object
+      additionalProperties: false
+      required:
+        - contact_refs
+        - target_status
+        - acknowledge_billing_impact
+      properties:
+        contact_refs:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+            pattern: "^provider-object:"
+        target_status:
+          type: string
+          enum:
+            - marketing-contact
+            - non-marketing-contact
+        acknowledge_billing_impact:
+          type: boolean
+          const: true
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      operation: marketing.contacts.status.update
+      execution_mode: deferred
+      deferred_reason: deferred-marketing-contact-cost
+      requires_credential: true
+      required_scopes:
+        - crm.objects.contacts.write
+      readiness_group: marketing
+      response_contract: unavailable-v1
+      cost_warning: Promoting contacts to marketing status can change billing through billable marketing-contact usage; no execution is allowed without explicit impact acknowledgement and provider entitlement proof.
+  - key: hubspot.marketing.campaigns.list
+    name: List HubSpot Campaigns
+    description: List bounded Marketing Hub campaigns with approved fields and safe campaign, owner, and brand refs.
+    provider: hubspot
+    capability: lead-management
+    risk_level: read
+    input_schema: &hubspot_campaign_list_input
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          maxLength: 256
+        after:
+          type: string
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: marketing.campaigns.list
+      requires_credential: true
+      required_scopes:
+        - marketing.campaigns.read
+      readiness_group: marketing
+      entitlement: Marketing Hub Professional or Enterprise
+      api_version: "2026-03"
+      endpoint: /marketing/campaigns/2026-03
+      method: GET
+      paging: after
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.marketing.campaigns.get
+    name: Get HubSpot Campaign
+    description: Read one campaign and optional bounded asset metrics using a safe campaign ref.
+    provider: hubspot
+    capability: lead-management
+    risk_level: read
+    input_schema: &hubspot_campaign_get_input
+      type: object
+      additionalProperties: false
+      required:
+        - campaign_ref
+      dependentRequired:
+        start_date:
+          - end_date
+        end_date:
+          - start_date
+      properties:
+        campaign_ref:
+          type: string
+          pattern: "^provider-object:"
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: marketing.campaigns.get
+      requires_credential: true
+      required_scopes:
+        - marketing.campaigns.read
+      readiness_group: marketing
+      entitlement: Marketing Hub Professional or Enterprise
+      api_version: "2026-03"
+      endpoint: /marketing/campaigns/2026-03/{campaignGuid}
+      method: GET
+      metrics_window: start_date-and-end_date-required-together
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.marketing.campaigns.create
+    name: Create HubSpot Campaign
+    description: Create a campaign from the bounded public campaign fields.
+    provider: hubspot
+    capability: lead-management
+    risk_level: write
+    input_schema: &hubspot_campaign_create_input
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 256
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        notes:
+          type: string
+          maxLength: 5000
+        audience:
+          type: string
+          maxLength: 1000
+        currency_code:
+          type: string
+          pattern: '^[A-Za-z]{3}$'
+        status:
+          type: string
+          enum:
+            - planned
+            - in_progress
+            - active
+            - paused
+            - completed
+        utm:
+          type: string
+          maxLength: 256
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: marketing.campaigns.create
+      requires_credential: true
+      required_scopes:
+        - marketing.campaigns.write
+      readiness_group: marketing
+      entitlement: Marketing Hub Professional or Enterprise
+      api_version: "2026-03"
+      endpoint: /marketing/campaigns/2026-03
+      method: POST
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: workflow-grant-or-direct-operator-intent
+  - key: hubspot.marketing.campaigns.update
+    name: Update HubSpot Campaign
+    description: Partially update approved campaign fields through a safe campaign ref.
+    provider: hubspot
+    capability: lead-management
+    risk_level: write
+    input_schema: &hubspot_campaign_update_input
+      type: object
+      additionalProperties: false
+      required:
+        - campaign_ref
+      anyOf:
+        - required: [name]
+        - required: [start_date]
+        - required: [end_date]
+        - required: [notes]
+        - required: [audience]
+        - required: [currency_code]
+        - required: [status]
+        - required: [utm]
+      properties:
+        campaign_ref:
+          type: string
+          pattern: "^provider-object:"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 256
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        notes:
+          type: string
+          maxLength: 5000
+        audience:
+          type: string
+          maxLength: 1000
+        currency_code:
+          type: string
+          pattern: '^[A-Za-z]{3}$'
+        status:
+          type: string
+          enum:
+            - planned
+            - in_progress
+            - active
+            - paused
+            - completed
+        utm:
+          type: string
+          maxLength: 256
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: marketing.campaigns.update
+      requires_credential: true
+      required_scopes:
+        - marketing.campaigns.write
+      readiness_group: marketing
+      entitlement: Marketing Hub Professional or Enterprise
+      api_version: "2026-03"
+      endpoint: /marketing/campaigns/2026-03/{campaignGuid}
+      method: PATCH
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: workflow-grant-or-direct-operator-intent
+  - key: hubspot.marketing.emails.list
+    name: List HubSpot Marketing Email Assets
+    description: List bounded marketing-email assets and optional post-send statistics without recipient data.
+    provider: hubspot
+    capability: lead-management
+    risk_level: read
+    input_schema: &hubspot_email_list_input
+      type: object
+      additionalProperties: false
+      properties:
+        after:
+          type: string
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        archived:
+          type: boolean
+        is_published:
+          type: boolean
+        include_stats:
+          type: boolean
+        email_type:
+          type: string
+          enum:
+            - AB_EMAIL
+            - AUTOMATED_AB_EMAIL
+            - AUTOMATED_EMAIL
+            - BATCH_EMAIL
+            - BLOG_EMAIL
+            - MARKETING_SINGLE_SEND_API
+            - RSS_EMAIL
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: marketing.emails.list
+      requires_credential: true
+      required_scopes:
+        - marketing-email
+      readiness_group: marketing
+      api_version: "2026-03"
+      endpoint: /marketing/emails/2026-03
+      method: GET
+      paging: after
+      response_contract: safe-provider-refs-v1
+      recipient_data: omitted
+  - key: hubspot.marketing.emails.get
+    name: Get HubSpot Marketing Email Asset
+    description: Read one marketing-email asset and its available post-send statistics through a safe ref.
+    provider: hubspot
+    capability: lead-management
+    risk_level: read
+    input_schema: &hubspot_email_get_input
+      type: object
+      additionalProperties: false
+      required:
+        - email_ref
+      properties:
+        email_ref:
+          type: string
+          pattern: "^provider-object:"
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: marketing.emails.get
+      requires_credential: true
+      required_scopes:
+        - marketing-email
+      readiness_group: marketing
+      api_version: "2026-03"
+      endpoint: /marketing/emails/2026-03/{emailId}
+      method: GET
+      response_contract: safe-provider-refs-v1
+      recipient_data: omitted
+  - key: hubspot.marketing.emails.create
+    name: Create HubSpot Marketing Email Draft
+    description: Create a draft marketing-email asset from a safe template ref or validated stable template path; no recipients or publish state are accepted.
+    provider: hubspot
+    capability: lead-management
+    risk_level: write
+    input_schema: &hubspot_email_create_input
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - subject
+      oneOf:
+        - required: [template_ref]
+          not:
+            required: [template_path]
+        - required: [template_path]
+          not:
+            required: [template_ref]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 256
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 998
+        template_ref:
+          type: string
+          pattern: "^provider-object:"
+        template_path:
+          type: string
+          minLength: 1
+          maxLength: 500
+          pattern: '^(?!/)(?!.*(?:^|/)\.\.(?:/|$))(?!.*://).+\.html$'
+        campaign_ref:
+          type: string
+          pattern: "^provider-object:"
+        brand_ref:
+          type: string
+          pattern: "^provider-object:"
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: marketing.emails.create
+      requires_credential: true
+      required_scopes:
+        - marketing-email
+      readiness_group: marketing
+      api_version: "2026-03"
+      endpoint: /marketing/emails/2026-03
+      method: POST
+      lifecycle_boundary: draft-only-no-recipients-no-publish
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: workflow-grant-or-direct-operator-intent
+  - key: hubspot.marketing.emails.update
+    name: Update HubSpot Marketing Email Draft
+    description: Update bounded metadata on a provider-verified draft; published assets, recipients, scheduling, and publishing fail closed.
+    provider: hubspot
+    capability: lead-management
+    risk_level: write
+    input_schema: &hubspot_email_update_input
+      type: object
+      additionalProperties: false
+      required:
+        - email_ref
+      anyOf:
+        - required: [name]
+        - required: [subject]
+        - required: [campaign_ref]
+        - required: [brand_ref]
+      properties:
+        email_ref:
+          type: string
+          pattern: "^provider-object:"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 256
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 998
+        campaign_ref:
+          type: string
+          pattern: "^provider-object:"
+        brand_ref:
+          type: string
+          pattern: "^provider-object:"
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: marketing.emails.update
+      requires_credential: true
+      required_scopes:
+        - marketing-email
+      readiness_group: marketing
+      api_version: "2026-03"
+      endpoint: /marketing/emails/2026-03/{emailId}
+      method: PATCH
+      lifecycle_boundary: provider-verified-draft-only-no-recipients-no-scheduling
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: workflow-grant-or-direct-operator-intent
+  - key: hubspot.marketing.emails.publish
+    name: Publish HubSpot Marketing Email
+    description: Deferred until Enterprise or transactional-email entitlement and live publish/send-state behavior are proven.
+    provider: hubspot
+    capability: lead-management
+    risk_level: high
+    input_schema: *hubspot_email_get_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      operation: marketing.emails.publish
+      execution_mode: deferred
+      deferred_reason: deferred-publish-live-proof
+      requires_credential: true
+      required_scopes:
+        - marketing-email
+      readiness_group: marketing
+      entitlement: Marketing Hub Enterprise or Transactional Email add-on
+      response_contract: unavailable-v1
+  - key: hubspot.marketing.emails.bulk_send
+    name: Send HubSpot Bulk Marketing Email
+    description: Intentionally unavailable; this phase does not expose recipient-list blast delivery.
+    provider: hubspot
+    capability: lead-management
+    risk_level: high
+    input_schema: *hubspot_empty_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      operation: marketing.emails.bulk_send
+      execution_mode: deferred
+      deferred_reason: deferred-bulk-marketing-send
+      requires_credential: true
+      required_scopes:
+        - marketing-email
+      readiness_group: marketing
+      normal_transactional_delivery: communication.send
+      response_contract: unavailable-v1
+  - key: hubspot.transactional.single_email.send
+    name: Send One HubSpot Transactional Email
+    description: Lower-level provider escape hatch for one approved transactional template send; normal delivery uses communication.send.
+    provider: hubspot
+    capability: outbound-operations
+    risk_level: high
+    input_schema: &hubspot_transactional_email_send_input
+      type: object
+      additionalProperties: false
+      required:
+        - contact_ref
+        - email_ref
+        - send_id
+        - custom_properties
+        - entitlement_confirmed
+        - transactional_use_confirmed
+        - consent_or_relationship_confirmed
+        - legal_basis
+        - legal_basis_explanation
+        - marketing_contact_state
+      properties:
+        contact_ref:
+          type: string
+          pattern: "^provider-object:"
+        email_ref:
+          type: string
+          pattern: "^provider-object:"
+        send_id:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: '^[A-Za-z0-9._:-]+$'
+        custom_properties:
+          type: object
+          maxProperties: 100
+          propertyNames:
+            minLength: 1
+            maxLength: 200
+          additionalProperties:
+            anyOf:
+              - {type: string}
+              - {type: integer}
+              - {type: number}
+              - {type: boolean}
+        entitlement_confirmed:
+          type: boolean
+          const: true
+        transactional_use_confirmed:
+          type: boolean
+          const: true
+        consent_or_relationship_confirmed:
+          type: boolean
+          const: true
+        legal_basis:
+          type: string
+          minLength: 1
+          maxLength: 200
+        legal_basis_explanation:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        marketing_contact_state:
+          type: string
+          enum:
+            - marketing
+            - non-marketing
+        communication_target_ref:
+          type: string
+          pattern: "^communication-target:"
+        profile_ref:
+          type: string
+          pattern: "^communication-profile:"
+        source_agent_request_id:
+          type: integer
+          minimum: 1
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: transactional.single_email.send
+      requires_credential: true
+      required_scopes:
+        - crm.objects.contacts.read
+        - transactional-email
+      readiness_group: transactional-communications
+      entitlement: Marketing Hub Professional or Enterprise plus Transactional Email add-on
+      api_version: "2026-03"
+      endpoint: /marketing/transactional/2026-03/single-email/send
+      method: POST
+      normal_delivery_owner: communication.send
+      direct_use: explicit-provider-escape-hatch
+      template_contract: provider-verified-transactional-email-ref
+      contact_properties: immutable-empty
+      marketing_contact_state: explicit-no-mutation
+      response_contract: safe-transactional-send-v1
+      async_response: true
+      idempotency_policy: stackos-key-and-provider-send-id-required
+      confirmation_policy: explicit-transactional-legal-and-recipient-eligibility
+  - key: hubspot.marketing.subscription_types.list
+    name: List HubSpot Email Subscription Types
+    description: List email subscription definitions with safe subscription and brand refs.
+    provider: hubspot
+    capability: lead-management
+    risk_level: read
+    input_schema: &hubspot_subscription_type_list_input
+      type: object
+      additionalProperties: false
+      properties:
+        brand_ref:
+          type: string
+          pattern: "^provider-object:"
+        include_translations:
+          type: boolean
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: marketing.subscription_types.list
+      requires_credential: true
+      required_scopes:
+        - subscriptions-definition-read
+      readiness_group: marketing
+      api_version: "2026-03"
+      endpoint: /communication-preferences/2026-03/definitions
+      method: GET
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.marketing.contact_preferences.get
+    name: Get HubSpot Contact Email Preferences
+    description: Resolve a safe contact ref internally and read its email subscription states without returning the subscriber email.
+    provider: hubspot
+    capability: lead-management
+    risk_level: read
+    input_schema: &hubspot_contact_preferences_get_input
+      type: object
+      additionalProperties: false
+      required:
+        - contact_ref
+      properties:
+        contact_ref:
+          type: string
+          pattern: "^provider-object:"
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: marketing.contact_preferences.get
+      requires_credential: true
+      required_scopes:
+        - crm.objects.contacts.read
+        - subscriptions-status-read
+      readiness_group: marketing
+      api_version: "2026-03"
+      endpoint: /communication-preferences/2026-03/statuses/{subscriberIdString}
+      method: GET
+      data_classification: sensitive-consent-state
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.marketing.contact_preferences.update
+    name: Update HubSpot Contact Email Preference
+    description: Apply one explicit subscription-state change with safe refs, legal-basis context, confirmation, and no subscriber-email output.
+    provider: hubspot
+    capability: lead-management
+    risk_level: high
+    input_schema: &hubspot_contact_preferences_update_input
+      type: object
+      additionalProperties: false
+      required:
+        - contact_ref
+        - subscription_type_ref
+        - status
+        - legal_basis
+        - legal_basis_explanation
+        - legal_change_confirmed
+      allOf:
+        - if:
+            properties:
+              status:
+                const: SUBSCRIBED
+          then:
+            required:
+              - consent_obtained
+            properties:
+              consent_obtained:
+                const: true
+      properties:
+        contact_ref:
+          type: string
+          pattern: "^provider-object:"
+        subscription_type_ref:
+          type: string
+          pattern: "^provider-object:"
+        status:
+          type: string
+          enum:
+            - SUBSCRIBED
+            - UNSUBSCRIBED
+            - NOT_SPECIFIED
+        legal_basis:
+          type: string
+          minLength: 2
+          maxLength: 100
+          pattern: '^[A-Z][A-Z0-9_]+$'
+        legal_basis_explanation:
+          type: string
+          minLength: 3
+          maxLength: 1000
+        legal_change_confirmed:
+          type: boolean
+          const: true
+        consent_obtained:
+          type: boolean
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: marketing.contact_preferences.update
+      requires_credential: true
+      required_scopes:
+        - crm.objects.contacts.read
+        - subscriptions-status-write
+      readiness_group: marketing
+      api_version: "2026-03"
+      endpoint: /communication-preferences/2026-03/statuses/{subscriberIdString}
+      method: POST
+      data_classification: sensitive-consent-state
+      legal_basis_required: true
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: explicit-legal-change-and-workflow-grant-or-direct-operator-intent
+  - key: hubspot.marketing.events.list
+    name: List HubSpot Marketing Events
+    description: List bounded marketing-event metadata with opaque event and app refs.
+    provider: hubspot
+    capability: lead-management
+    risk_level: read
+    input_schema: &hubspot_marketing_event_list_input
+      type: object
+      additionalProperties: false
+      properties:
+        after:
+          type: string
+          minLength: 1
+          maxLength: 500
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: marketing.events.list
+      requires_credential: true
+      required_scopes:
+        - crm.objects.marketing_events.read
+      readiness_group: marketing
+      api_version: "2026-03"
+      endpoint: /marketing/marketing-events/2026-03
+      method: GET
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.marketing.events.upsert
+    name: Upsert One HubSpot Marketing Event
+    description: Create or update one app-owned marketing event by stable external account and event keys.
+    provider: hubspot
+    capability: lead-management
+    risk_level: write
+    input_schema: &hubspot_marketing_event_upsert_input
+      type: object
+      additionalProperties: false
+      required:
+        - external_account_key
+        - external_event_key
+        - name
+        - organizer
+      properties:
+        external_account_key:
+          type: string
+          minLength: 1
+          maxLength: 200
+        external_event_key:
+          type: string
+          minLength: 1
+          maxLength: 200
+        name:
+          type: string
+          minLength: 1
+          maxLength: 500
+        organizer:
+          type: string
+          minLength: 1
+          maxLength: 500
+        event_type:
+          type: string
+          minLength: 1
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 5000
+        event_url:
+          type: string
+          format: uri
+          maxLength: 2000
+        start_at:
+          type: string
+          format: date-time
+        end_at:
+          type: string
+          format: date-time
+        event_cancelled:
+          type: boolean
+        event_completed:
+          type: boolean
+        custom_properties:
+          type: object
+          maxProperties: 50
+          propertyNames:
+            pattern: '^[a-z][a-z0-9_]{0,49}$'
+          additionalProperties:
+            type: string
+            maxLength: 1024
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: marketing.events.upsert
+      requires_credential: true
+      required_scopes:
+        - crm.objects.marketing_events.write
+      readiness_group: marketing
+      api_version: "2026-03"
+      endpoint: /marketing/marketing-events/2026-03/events/upsert
+      method: POST
+      batch_size: 1
+      ownership_boundary: same-hubspot-app-external-identifiers
+      response_contract: safe-provider-refs-v1
+      idempotency_policy: caller-key-plus-external-identifiers
+      confirmation_policy: workflow-grant-or-direct-operator-intent
+  - key: hubspot.marketing.behavioral_events.definitions.list
+    name: List HubSpot Behavioral Event Definitions
+    description: List custom event definitions and optional property metadata with opaque definition and property refs.
+    provider: hubspot
+    capability: lead-management
+    risk_level: read
+    input_schema: &hubspot_behavioral_event_definition_list_input
+      type: object
+      additionalProperties: false
+      properties:
+        search_string:
+          type: string
+          minLength: 1
+          maxLength: 200
+        after:
+          type: string
+          minLength: 1
+          maxLength: 500
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        include_properties:
+          type: boolean
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: marketing.behavioral_events.definitions.list
+      requires_credential: true
+      required_scopes:
+        - behavioral_events.event_definitions.read_write
+      readiness_group: marketing
+      entitlement: Marketing, Sales, Service, Content, or Data Hub Enterprise
+      api_version: "2026-03"
+      endpoint: /events/2026-03/event-definitions
+      method: GET
+      response_contract: safe-provider-refs-v1
+  - key: hubspot.marketing.behavioral_events.send
+    name: Send One HubSpot Behavioral Event Occurrence
+    description: Record one authorized customer behavior against provider-verified definition, contact, and property refs with deterministic provider deduplication.
+    provider: hubspot
+    capability: lead-management
+    risk_level: high
+    input_schema: &hubspot_behavioral_event_send_input
+      type: object
+      additionalProperties: false
+      required:
+        - definition_ref
+        - contact_ref
+        - occurrence_key
+        - occurred_at
+        - property_values
+        - tracking_authority_confirmed
+        - legal_basis
+        - legal_basis_explanation
+      properties:
+        definition_ref:
+          type: string
+          pattern: "^provider-object:"
+        contact_ref:
+          type: string
+          pattern: "^provider-object:"
+        occurrence_key:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: '^[A-Za-z0-9._:-]+$'
+        occurred_at:
+          type: string
+          format: date-time
+        property_values:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - property_ref
+              - value
+            properties:
+              property_ref:
+                type: string
+                pattern: "^provider-object:"
+              value:
+                anyOf:
+                  - type: string
+                    maxLength: 1024
+                  - type: integer
+                  - type: number
+                  - type: boolean
+        tracking_authority_confirmed:
+          type: boolean
+          const: true
+        legal_basis:
+          type: string
+          minLength: 1
+          maxLength: 200
+        legal_basis_explanation:
+          type: string
+          minLength: 3
+          maxLength: 2000
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: marketing.behavioral_events.send
+      requires_credential: true
+      required_scopes:
+        - analytics.behavioral_events.send
+      readiness_group: marketing
+      entitlement: Supported Professional or Enterprise Hub
+      api_version: "2026-03"
+      endpoint: /events/2026-03/send
+      method: POST
+      identity_contract: provider-verified-contact-and-definition-refs
+      property_contract: provider-verified-definition-property-refs
+      data_classification: customer-behavior
+      response_contract: safe-event-occurrence-v1
+      idempotency_policy: stackos-key-and-provider-uuid-required
+      deduplication_policy: caller-occurrence-key-to-provider-uuid
+      confirmation_policy: explicit-tracking-authority-and-legal-basis
+  - key: hubspot.bulk.exports.create
+    name: Start HubSpot CRM Export
+    description: Start one bounded CRM object export using provider-verified property refs and an explicit data-export confirmation.
+    provider: hubspot
+    capability: crm-operations
+    risk_level: high
+    input_schema: &hubspot_bulk_export_create_input
+      type: object
+      additionalProperties: false
+      required:
+        - export_name
+        - object_type
+        - property_refs
+        - format
+        - export_authorized
+      properties:
+        export_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        object_type:
+          type: string
+          enum:
+            - contacts
+            - companies
+            - deals
+            - leads
+            - products
+            - line_items
+        property_refs:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+            pattern: "^provider-object:"
+        associated_object_types:
+          type: array
+          maxItems: 4
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - contacts
+              - companies
+              - deals
+              - leads
+        format:
+          type: string
+          enum:
+            - CSV
+            - XLS
+            - XLSX
+        language:
+          type: string
+          enum:
+            - AF_ZA
+            - AR_EG
+            - BG
+            - BN
+            - CA_ES
+            - CS
+            - DA_DK
+            - DE
+            - EL_GR
+            - EN
+            - EN_GB
+            - ES
+            - ES_MX
+            - ET_EE
+            - FI
+            - FR
+            - FR_CA
+            - HE_IL
+            - HI_IN
+            - HR
+            - HU
+            - ID
+            - IT
+            - JA
+            - KO_KR
+            - LT_LT
+            - MS
+            - NL
+            - NO
+            - PL
+            - PT_BR
+            - PT_PT
+            - RO
+            - RU
+            - SK_SK
+            - SL
+            - SV
+            - TH
+            - TL
+            - TR
+            - UK
+            - VI_VN
+            - ZH_CN
+            - ZH_HK
+            - ZH_TW
+          default: EN
+        include_internal_property_names:
+          type: boolean
+          default: false
+        include_internal_property_values:
+          type: boolean
+          default: false
+        include_primary_display_properties:
+          type: boolean
+          default: false
+        include_labeled_associations:
+          type: boolean
+          default: false
+        override_association_limit:
+          type: boolean
+          default: false
+        export_authorized:
+          type: boolean
+          const: true
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: bulk.exports.create
+      requires_credential: true
+      required_scopes:
+        - crm.export
+      readiness_group: bulk
+      api_version: "2026-03"
+      endpoint: /crm/exports/2026-03/export/async
+      method: POST
+      export_type: VIEW
+      execution_model: provider-async-no-stackos-job-framework
+      data_classification: customer-data-export
+      response_contract: safe-async-export-job-v1
+      idempotency_policy: caller-required-for-safe-retry
+      confirmation_policy: explicit-export-authority-and-workflow-grant-or-direct-operator-intent
+  - key: hubspot.bulk.exports.status
+    name: Get HubSpot CRM Export Status
+    description: Read the current provider state, record count, and selected safe refs for one HubSpot export job.
+    provider: hubspot
+    capability: crm-operations
+    risk_level: read
+    input_schema: &hubspot_bulk_export_job_input
+      type: object
+      additionalProperties: false
+      required:
+        - job_ref
+      properties:
+        job_ref:
+          type: string
+          pattern: "^provider-object:"
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: bulk.exports.status
+      requires_credential: true
+      required_scopes:
+        - crm.export
+      readiness_group: bulk
+      api_version: "2026-03"
+      endpoint: /crm/exports/2026-03/export/{exportId}
+      method: GET
+      execution_model: provider-poll-by-safe-job-ref
+      response_contract: safe-async-export-status-v1
+  - key: hubspot.bulk.exports.result
+    name: Retrieve HubSpot CRM Export Result
+    description: Poll one export and, when complete, consume its short-lived signed URL into a bounded StackOS-managed artifact.
+    provider: hubspot
+    capability: crm-operations
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - job_ref
+      properties:
+        job_ref:
+          type: string
+          pattern: "^provider-object:"
+        max_bytes:
+          type: integer
+          minimum: 1
+          maximum: 1073741824
+          default: 262144000
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: hubspot
+      operation: bulk.exports.result
+      requires_credential: true
+      required_scopes:
+        - crm.export
+      readiness_group: bulk
+      api_version: "2026-03"
+      endpoint: /crm/exports/2026-03/export/async/tasks/{taskId}/status
+      method: GET
+      execution_model: provider-poll-then-bounded-artifact-download
+      response_contract: safe-async-export-result-v1
+      artifact_contract: generated-asset-and-artifact-record-v1
+      signed_url_policy: consume-never-return-or-store
+      idempotency_policy: caller-key-prevents-duplicate-download
+  - key: hubspot.bulk.imports.create
+    name: Start HubSpot CRM Import
+    description: Intentionally unavailable until the generic action executor owns bounded multipart artifact streaming.
+    provider: hubspot
+    capability: crm-operations
+    risk_level: high
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - artifact_ref
+      properties:
+        artifact_ref:
+          type: string
+          pattern: "^/generated-assets/"
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      operation: bulk.imports.create
+      execution_mode: deferred
+      deferred_reason: deferred-multipart-artifact-bridge
+      requires_credential: true
+      required_scopes:
+        - crm.import
+      readiness_group: bulk
+      api_version: "2026-03"
+      endpoint: /crm/imports/2026-03
+      method: POST
+      response_contract: unavailable-v1
+  - key: hubspot.webhooks.subscriptions.configure
+    name: Configure HubSpot Webhook Subscriptions
+    description: App-level webhook Target URL and subscription administration contract; operator-owned because HubSpot requires developer-app authority rather than an installed portal OAuth token.
+    provider: hubspot
+    capability: automation
+    risk_level: high
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - app_ref
+        - event_types
+      properties:
+        app_ref:
+          type: string
+          pattern: "^provider-object:"
+        event_types:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+        property_refs:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+            pattern: "^provider-object:"
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      execution_mode: deferred-app-configuration
+      deferred_reason: HubSpot webhook URL and subscriptions apply to the developer app across installed accounts and require developer-app authority; configure them manually and use ingressEndpoint.routes for the exact HTTPS URL.
+      readiness_group: webhooks
+      provider_authority: hubspot-developer-app
+      api_version: "2026-03"
+      endpoint_family: /webhooks/2026-3/{appId}
+      deployment_prerequisites:
+        - public-https-ingress
+        - app-client-secret
+        - exact-event-allowlist
+      response_contract: deferred-no-provider-call
+  - key: hubspot.automation.workflow_actions.register
+    name: Register HubSpot Custom Workflow Action
+    description: App-level custom workflow action definition contract; inbound execution can create an allowlisted StackOS agent request but never starts a workflow directly.
+    provider: hubspot
+    capability: automation
+    risk_level: high
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - app_ref
+        - action_key
+        - object_types
+      properties:
+        app_ref:
+          type: string
+          pattern: "^provider-object:"
+        action_key:
+          type: string
+          minLength: 1
+          maxLength: 200
+        object_types:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum: [CONTACT, COMPANY, DEAL]
+        input_fields:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            additionalProperties: true
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      execution_mode: deferred-app-configuration
+      deferred_reason: Registration and publication alter the HubSpot developer app globally. StackOS accepts only manually registered definition IDs explicitly allowlisted on the connection in this phase.
+      readiness_group: automation
+      provider_authority: hubspot-developer-app
+      required_scope_facts:
+        - automation
+      api_version: "2026-03"
+      endpoint: /automation/actions/2026-03/{appId}
+      method: POST
+      deployment_prerequisites:
+        - public-https-action-url
+        - app-client-secret
+        - exact-definition-allowlist
+      invocation_signature: v3
+      invocation_response:
+        outputFields:
+          hs_execution_state: SUCCESS-or-FAIL_CONTINUE
+      response_contract: deferred-no-provider-call
   - key: salesforce.account.upsert_by_external_id
     name: Upsert Salesforce Account By External ID
     description: Upsert a Salesforce Account using an approved external ID field and safe refs.
@@ -1727,6 +4536,195 @@ resources:
     name: Pipeline Snapshot
     description: Imported or summarized pipeline metrics, stage movement, risk, and forecast notes.
     schema: *object_schema
+  - key: marketing-program
+    name: Marketing Program
+    description: Reviewed campaign, audience, draft asset, consent, approval, and provider-safe execution evidence.
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+        - status
+        - scope
+        - safe_refs
+        - approval_refs
+        - action_call_refs
+        - provider_request_ids
+        - partial_failures
+        - retry_guidance
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 300
+        status:
+          type: string
+          enum:
+            - reviewed
+            - applied
+            - partial
+            - blocked
+            - failed
+        scope:
+          type: object
+        safe_refs:
+          type: array
+          items:
+            type: string
+        approval_refs:
+          type: array
+          items:
+            type: string
+        action_call_refs:
+          type: array
+          items:
+            type: string
+        provider_request_ids:
+          type: array
+          items:
+            type: string
+        partial_failures:
+          type: array
+        retry_guidance:
+          type: array
+          items:
+            type: string
+        next_safe_actions:
+          type: array
+          items:
+            type: string
+        updated_at:
+          type: string
+          format: date-time
+    ui_schema:
+      table_columns:
+        - title
+        - status
+        - updated_at
+      summary_fields:
+        - scope
+        - next_safe_actions
+      detail_sections:
+        - title: Program
+          fields:
+            - title
+            - status
+            - scope
+            - safe_refs
+        - title: Approval And Evidence
+          fields:
+            - approval_refs
+            - action_call_refs
+            - provider_request_ids
+            - partial_failures
+            - retry_guidance
+    config:
+      schema_version: stackos.resource.v1
+      record_kind: marketing-program
+      agent_guidance: Keep one compact durable index per program run. Store only safe refs, approval and action evidence, partial state, and next actions; never store subscriber addresses, raw HubSpot ids, or bulky provider payloads.
+  - key: crm-export
+    name: CRM Export
+    description: Bounded export plan, safe async job and artifact refs, retention disposition, and provider-safe execution evidence.
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+        - status
+        - purpose
+        - object_type
+        - action_call_refs
+        - provider_request_ids
+        - retention_disposition
+        - retry_guidance
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 300
+        status:
+          type: string
+          enum:
+            - not-started
+            - pending
+            - complete
+            - partial
+            - blocked
+            - failed
+        purpose:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        object_type:
+          type: string
+          enum:
+            - contacts
+            - companies
+            - deals
+            - leads
+            - products
+            - line_items
+        job_ref:
+          type: string
+          pattern: '^provider-object:'
+        artifact_ref:
+          type: string
+          pattern: '^/generated-assets/'
+        action_call_refs:
+          type: array
+          items:
+            type: string
+        provider_request_ids:
+          type: array
+          items:
+            type: string
+        record_count:
+          type: integer
+          minimum: 0
+        partial_failures:
+          type: array
+        retry_guidance:
+          type: array
+          items:
+            type: string
+        retention_disposition:
+          type: object
+        next_safe_action:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+    ui_schema:
+      table_columns:
+        - title
+        - status
+        - object_type
+        - updated_at
+      summary_fields:
+        - purpose
+        - artifact_ref
+        - next_safe_action
+      detail_sections:
+        - title: Export
+          fields:
+            - title
+            - status
+            - purpose
+            - object_type
+            - job_ref
+            - artifact_ref
+            - record_count
+        - title: Evidence And Retention
+          fields:
+            - action_call_refs
+            - provider_request_ids
+            - partial_failures
+            - retry_guidance
+            - retention_disposition
+    config:
+      schema_version: stackos.resource.v1
+      record_kind: crm-export
+      agent_guidance: Keep one compact index per export intent. Store safe job and generated-asset refs, action evidence, retention, and repair state; never store signed download URLs, raw HubSpot ids, or exported customer rows.
 ui:
   nav:
     section: GTM

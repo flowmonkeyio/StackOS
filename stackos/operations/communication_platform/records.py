@@ -360,6 +360,12 @@ async def communication_target_resolve(
         )
     if target.provider_key in {"slack-bot", "smtp", "imap"}:
         notes.append("Provider connector execution depends on the installed provider action.")
+    if target.provider_key == "hubspot":
+        notes.append(
+            "HubSpot execution requires a provider-verified transactional template ref, "
+            "the transactional-email OAuth scope, operator-confirmed add-on entitlement, "
+            "and complete transactional/legal target policy."
+        )
     return CommunicationTargetResolveOut(
         project_id=inp.project_id,
         target=target,

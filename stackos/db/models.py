@@ -77,6 +77,7 @@ from stackos.db.model_execution_contexts import (
     ExecutionContextArtifact,
     ExecutionContextLink,
 )
+from stackos.db.model_provider_refs import ProviderObjectReference
 from stackos.db.model_resources import (
     Artifact,
     ProjectEvent,
@@ -168,6 +169,7 @@ __all__ = [
     "ProjectPlugin",
     "ProjectWorkflowTemplate",
     "Provider",
+    "ProviderObjectReference",
     "Resource",
     "ResourceRecord",
     "Run",

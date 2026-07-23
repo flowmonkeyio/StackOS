@@ -72,11 +72,25 @@ async def communication_send(
         },
     )
     surface = _surface_data(ctx.session, project_id=project_id, surface_ref=target.surface_ref)
+    action_ref = target.action_ref or _default_action_ref(target.provider_key)
+    if action_ref is None:
+        action_ref = ""
+    idempotency_key = inp.idempotency_key or _derive_idempotency_key(
+        project_id=project_id,
+        operation="communication.send",
+        action_ref=action_ref,
+        actor_ref=actor["profile_ref"],
+        destination_ref=target.target_ref,
+        content=content,
+        source_request_id=source.get("source_request_id"),
+        intent_id=inp.intent_id,
+        request_id=ctx.request_id,
+    )
     payload = _build_provider_payload(
         session=ctx.session,
         project_id=project_id,
         provider_key=target.provider_key,
-        action_ref=target.action_ref or _default_action_ref(target.provider_key),
+        action_ref=action_ref or None,
         actor=actor,
         target=target,
         content=content,
@@ -85,6 +99,7 @@ async def communication_send(
         source=source,
         surface=surface,
         operation="communication.send",
+        idempotency_key=idempotency_key,
     )
     return await _execute_delivery(
         ctx,
@@ -93,18 +108,7 @@ async def communication_send(
         action_ref=payload["action_ref"],
         input_json=payload["input_json"],
         credential_ref=actor["credential_ref"],
-        idempotency_key=inp.idempotency_key
-        or _derive_idempotency_key(
-            project_id=project_id,
-            operation="communication.send",
-            action_ref=payload["action_ref"],
-            actor_ref=actor["profile_ref"],
-            destination_ref=target.target_ref,
-            content=content,
-            source_request_id=source.get("source_request_id"),
-            intent_id=inp.intent_id,
-            request_id=ctx.request_id,
-        ),
+        idempotency_key=idempotency_key,
         dry_run=inp.dry_run,
         metadata_json={
             "operation": "communication.send",

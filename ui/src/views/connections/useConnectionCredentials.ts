@@ -201,7 +201,9 @@ export function useConnectionCredentials(projectId: ComputedRef<number>) {
       setRawSelectedMethod(provider.key, method.key)
       const values: Record<string, string> = {}
       for (const [key, value] of Object.entries(state.values)) {
-        if (value !== null && ['string', 'number', 'boolean'].includes(typeof value)) {
+        if (Array.isArray(value)) {
+          values[key] = value.map((item) => String(item)).join(',')
+        } else if (value !== null && ['string', 'number', 'boolean'].includes(typeof value)) {
           values[key] = String(value)
         }
       }

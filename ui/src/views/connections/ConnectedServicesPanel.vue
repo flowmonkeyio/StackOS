@@ -30,6 +30,7 @@ import {
   providerGroupLabel,
   serviceName,
 } from './formatters'
+import ConnectionCapabilityReadiness from './ConnectionCapabilityReadiness.vue'
 import type { ConnectionRow, MessageMap, ServiceGroup } from './types'
 
 const props = defineProps<{
@@ -284,6 +285,12 @@ function statusLabel(connection: ConnectionRow): string {
                 </UiButton>
               </div>
             </div>
+
+            <ConnectionCapabilityReadiness
+              v-if="group.provider"
+              :provider="group.provider"
+              :connection="connection"
+            />
 
             <UiCallout
               v-if="connectionMessages[connection.credential_ref]"

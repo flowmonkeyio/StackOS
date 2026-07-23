@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: gtm.pipeline-risk-review
 name: GTM Pipeline Risk Review
-version: 0.1.0
+version: 0.2.0
 description: Reusable template for reviewing pipeline snapshots, opportunity risks, tasks, and follow-up recommendations.
 domain: gtm
 owner:
@@ -55,6 +55,7 @@ agent_requirements:
     applies_to_steps:
       - orient
       - fetch_metric_gaps
+      - fetch_revenue_evidence
       - diagnose_risks
   - role: delivery-reviewer
     requirement: recommended
@@ -169,6 +170,34 @@ action_contracts:
     optional: true
     route_group: pipeline_source
     route_key: hubspot
+  - key: hubspot_product_evidence
+    action: hubspot.sales.products.search
+    capability: pipeline-management
+    provider: hubspot
+    risk_level: read
+    auth_ref: hubspot
+    optional: true
+  - key: hubspot_line_item_evidence
+    action: hubspot.sales.line_items.search
+    capability: pipeline-management
+    provider: hubspot
+    risk_level: read
+    auth_ref: hubspot
+    optional: true
+  - key: hubspot_quote_evidence
+    action: hubspot.sales.quotes.search
+    capability: pipeline-management
+    provider: hubspot
+    risk_level: read
+    auth_ref: hubspot
+    optional: true
+  - key: hubspot_goal_target_evidence
+    action: hubspot.sales.goal_targets.list
+    capability: pipeline-management
+    provider: hubspot
+    risk_level: read
+    auth_ref: hubspot
+    optional: true
   - key: salesforce_pipeline_fetch
     action: salesforce.opportunities.query
     capability: pipeline-management
@@ -238,6 +267,10 @@ steps:
       - read_only_by_default
     output_refs:
       - risk_review
+    instructions:
+      - Bound the opportunity set and use only project-defined stage, value, freshness, and risk semantics.
+    success_criteria:
+      - The review scope, source freshness, and confidence limits are explicit.
   - id: fetch_metric_gaps
     title: Fetch Metric Gaps
     purpose: Use granted read actions only when stored pipeline evidence is insufficient.
@@ -254,6 +287,30 @@ steps:
       - orient
     output_refs:
       - metric_gap_report
+    instructions:
+      - Fetch only the missing bounded evidence and preserve safe deal refs instead of raw provider ids.
+    success_criteria:
+      - Every provider read is necessary for a named evidence gap and its source is recorded.
+  - id: fetch_revenue_evidence
+    title: Fetch Optional Revenue Evidence
+    purpose: Use HubSpot Sales reads only when product, line-item, quote, or goal-target context materially changes a deal-risk conclusion.
+    action_refs:
+      - hubspot_product_evidence
+      - hubspot_line_item_evidence
+      - hubspot_quote_evidence
+      - hubspot_goal_target_evidence
+    policy_refs:
+      - read_only_by_default
+      - no_secret_exposure
+    depends_on:
+      - fetch_metric_gaps
+    output_refs:
+      - metric_gap_report
+    instructions:
+      - Skip this branch unless the concrete review needs Sales-bundle revenue evidence.
+      - Do not infer missing product, line-item, quote, or goal data when the Sales bundle is unavailable.
+    success_criteria:
+      - Sales-bundle reads are either source-linked to a risk finding or reported as deliberately skipped.
   - id: diagnose_risks
     title: Diagnose Risks
     purpose: Separate likely stage, activity, account, deal, ownership, and timing risks.
@@ -264,10 +321,14 @@ steps:
       - tasks
       - touchpoints
     depends_on:
-      - fetch_metric_gaps
+      - fetch_revenue_evidence
     output_refs:
       - risk_review
       - followup_plan
+    instructions:
+      - Keep recommendations read-only and route any later mutation to a separately approved workflow.
+    success_criteria:
+      - Each prioritized risk has evidence, confidence, an owner-ready next action, and explicit uncertainty.
 outputs:
   - key: risk_review
     name: Risk Review

@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import re
 
-from sqlmodel import Session
+from pytest_httpx import HTTPXMock
+from sqlmodel import Session, select
 
-from stackos.db.models import ActionCall
+from stackos.actions import ActionRepository
+from stackos.auth_providers import AuthRepository
+from stackos.db.models import ActionCall, Credential, CredentialAccount, CredentialScope
 from stackos.operations import communication_platform
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.projects import IntegrationCredentialRepository
+from stackos.repositories.provider_refs import ProviderObjectReferenceRepository
 from stackos.repositories.resources import ResourceRepository
 
 from .conftest import MCPClient
@@ -66,6 +72,76 @@ def _seed_slack_credential(
             secret_payload=json.dumps({"bot_token": "xoxb-test-token"}).encode("utf-8"),
             config_json={"auth_method_key": "bot-token", "profile_key": profile_key},
         )
+
+
+def _seed_hubspot_transactional_credential(
+    mcp: MCPClient,
+    project_id: int,
+    *,
+    entitlement_confirmed: bool,
+    profile_key: str = "default",
+    email_verified: bool = True,
+) -> tuple[str, str, str]:
+    engine = mcp.test_client.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        IntegrationCredentialRepository(session).set(
+            project_id=project_id,
+            kind="hubspot",
+            profile_key=profile_key,
+            secret_payload=json.dumps({"access_token": "hubspot-communication-secret"}).encode(),
+            config_json={
+                "auth_method_key": "oauth2_authorization_code",
+                "profile_key": profile_key,
+                "scope_status": "known",
+                "transactional_email_entitlement_confirmed": entitlement_confirmed,
+            },
+        )
+        AuthRepository(session).status(project_id=project_id, provider_key="hubspot")
+        credential = session.exec(
+            select(Credential).where(
+                Credential.project_id == project_id,
+                Credential.provider_key == "hubspot",
+                Credential.profile_key == profile_key,
+            )
+        ).one()
+        credential.auth_type = "oauth"
+        credential.auth_method_key = "oauth2_authorization_code"
+        credential.config_json = {
+            **(credential.config_json or {}),
+            "scope_status": "known",
+            "transactional_email_entitlement_confirmed": entitlement_confirmed,
+        }
+        session.add(credential)
+        assert credential.id is not None
+        session.add(
+            CredentialAccount(
+                credential_id=credential.id,
+                provider_account_id="1234567",
+                metadata_json={"hub_id": 1234567},
+            )
+        )
+        for scope in (
+            "crm.objects.contacts.read",
+            "marketing-email",
+            "transactional-email",
+        ):
+            session.add(CredentialScope(credential_id=credential.id, scope=scope))
+        refs = ProviderObjectReferenceRepository(session)
+        contact_ref = refs.upsert(
+            credential=credential,
+            object_type="contact",
+            provider_object_id="8501",
+            display_name="Transactional recipient",
+        )
+        email_ref = refs.upsert(
+            credential=credential,
+            object_type="marketing-email",
+            provider_object_id="8701",
+            display_name="Order status template",
+            metadata_json={"is_transactional": True} if email_verified else {},
+        )
+        session.commit()
+        return credential.credential_ref, contact_ref, email_ref
 
 
 def _credential_ref(
@@ -722,6 +798,298 @@ def test_communication_send_executes_raw_dry_run_through_target(
     assert sent["data"]["output_json"]["dry_run"] is True
     assert sent["data"]["credential_ref"].startswith("cred_")
     assert "token-roadmap" not in json.dumps(sent)
+
+
+def test_communication_send_hubspot_transactional_resolves_target_and_replays_safely(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    credential_ref, contact_ref, email_ref = _seed_hubspot_transactional_credential(
+        mcp_client,
+        project_id,
+        entitlement_confirmed=True,
+        email_verified=False,
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=re.compile(r"^https://api\.hubapi\.com/marketing/emails/2026-03\?.+$"),
+        json={
+            "results": [
+                {
+                    "id": "8701",
+                    "name": "Order status template",
+                    "isPublished": False,
+                    "isTransactional": True,
+                    "state": "DRAFT",
+                }
+            ],
+            "total": 1,
+        },
+    )
+    engine = mcp_client.test_client.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        email_ref = asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="gtm.hubspot.marketing.emails.list",
+                input_json={"limit": 1, "is_published": False},
+                credential_ref=credential_ref,
+            )
+        ).data.output_json["results"][0]["email_ref"]
+    httpx_mock.add_response(
+        method="GET",
+        url=(
+            "https://api.hubapi.com/crm/objects/2026-03/contacts/8501"
+            "?properties=email&archived=false"
+        ),
+        json={
+            "id": "8501",
+            "properties": {"email": "customer@example.test"},
+            "archived": False,
+        },
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.hubapi.com/marketing/transactional/2026-03/single-email/send",
+        headers={"x-hubspot-correlation-id": "corr-communication-send"},
+        json={
+            "status": "PENDING",
+            "statusId": "provider-status-9901",
+            "eventId": {
+                "id": "provider-event-8801",
+                "created": "2026-07-22T23:30:00Z",
+            },
+            "requestedAt": "2026-07-22T23:30:00Z",
+        },
+    )
+    mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "order-mailer",
+            "identity": {
+                "display_name": "Order Mailer",
+                "purpose": "Send approved customer transaction updates.",
+            },
+            "provider_facets": {"hubspot": {"auth_profile_key": "default"}},
+        },
+    )
+    mcp_client.call_tool_structured(
+        "communicationSurface.upsert",
+        {
+            "project_id": project_id,
+            "surface_ref": contact_ref,
+            "provider_key": "hubspot",
+            "kind": "hubspot-contact",
+            "display_name": "Order recipient",
+            "capabilities": {"supported": ["template", "template.data"]},
+            "audience": "customer",
+            "intent": {"category": "transactional-order-status"},
+        },
+    )
+    mcp_client.call_tool_structured(
+        "communicationTarget.upsert",
+        {
+            "project_id": project_id,
+            "key": "customer-order",
+            "provider_key": "hubspot",
+            "surface_ref": contact_ref,
+            "profile_ref": "communication-profile:order-mailer",
+            "send_policy": {
+                "mode": "explicit-target",
+                "allowed_profile_refs": ["communication-profile:order-mailer"],
+                "allowed_target_refs": ["communication-target:customer-order"],
+                "transactional_use_confirmed": True,
+                "consent_or_relationship_confirmed": True,
+                "legal_basis": "contract",
+                "legal_basis_explanation": "Customer requested order status updates.",
+                "marketing_contact_state": "non-marketing",
+            },
+        },
+    )
+    resolved = mcp_client.call_tool_structured(
+        "communicationTarget.resolve",
+        {
+            "project_id": project_id,
+            "key": "customer-order",
+            "profile_ref": "communication-profile:order-mailer",
+            "response_mode": "raw",
+        },
+    )
+    assert resolved["allowed"] is True
+    assert resolved["action_ref"] == "gtm.hubspot.transactional.single_email.send"
+    assert resolved["surface_ref"] == contact_ref
+    arguments = {
+        "project_id": project_id,
+        "to": "customer-order",
+        "content": {
+            "template_ref": email_ref,
+            "template_data": {"order_number": "SO-202", "item_count": 3},
+        },
+        "intent_id": "customer-order-SO-202-status",
+    }
+
+    first = mcp_client.call_tool_structured("communication.send", arguments)
+    replay = mcp_client.call_tool_structured("communication.send", arguments)
+
+    assert "status" in first["data"], first
+    assert first["data"]["status"] == "pending"
+    assert first["data"]["action_ref"] == ("gtm.hubspot.transactional.single_email.send")
+    assert first["data"]["provider_key"] == "hubspot"
+    assert first["data"]["target_ref"] == "communication-target:customer-order"
+    assert first["data"]["actor_ref"] == "communication-profile:order-mailer"
+    assert first["data"]["surface_ref"] == contact_ref
+    assert first["data"]["message_ref"].startswith("provider-object:")
+    assert first["data"]["output_json"]["contact_ref"] == contact_ref
+    assert first["data"]["output_json"]["email_ref"] == email_ref
+    assert first["data"]["output_json"]["provider_status"] == "PENDING"
+    assert first["data"]["output_json"]["contact_properties_updated"] is False
+    assert first["data"]["output_json"]["marketing_contact_state_changed"] is False
+    assert first["data"]["output_json"] == replay["data"]["output_json"]
+    assert first["data"]["credential_ref"] == credential_ref
+    post = httpx_mock.get_request(
+        method="POST",
+        url="https://api.hubapi.com/marketing/transactional/2026-03/single-email/send",
+    )
+    assert post is not None
+    provider_payload = json.loads(post.content)
+    assert provider_payload["message"]["to"] == "customer@example.test"
+    assert provider_payload["message"]["sendId"].startswith("stackos:")
+    assert provider_payload["contactProperties"] == {}
+    assert provider_payload["customProperties"] == {
+        "order_number": "SO-202",
+        "item_count": 3,
+    }
+    assert len(httpx_mock.get_requests()) == 3
+    rendered = json.dumps({"first": first, "replay": replay})
+    for sensitive in (
+        "hubspot-communication-secret",
+        "customer@example.test",
+        "provider-status-9901",
+        "provider-event-8801",
+        '"8501"',
+        '"8701"',
+    ):
+        assert sensitive not in rendered
+
+
+def test_communication_send_hubspot_denies_unconfirmed_entitlement(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    _credential_ref_value, contact_ref, email_ref = _seed_hubspot_transactional_credential(
+        mcp_client,
+        project_id,
+        entitlement_confirmed=False,
+    )
+    mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "order-mailer",
+            "identity": {"display_name": "Order Mailer"},
+            "provider_facets": {"hubspot": {"auth_profile_key": "default"}},
+        },
+    )
+    mcp_client.call_tool_structured(
+        "communicationTarget.upsert",
+        {
+            "project_id": project_id,
+            "key": "customer-order",
+            "provider_key": "hubspot",
+            "surface_ref": contact_ref,
+            "profile_ref": "communication-profile:order-mailer",
+            "send_policy": {
+                "mode": "explicit-target",
+                "allowed_profile_refs": ["communication-profile:order-mailer"],
+                "allowed_target_refs": ["communication-target:customer-order"],
+                "transactional_use_confirmed": True,
+                "consent_or_relationship_confirmed": True,
+                "legal_basis": "contract",
+                "legal_basis_explanation": "Customer requested order status updates.",
+                "marketing_contact_state": "non-marketing",
+            },
+        },
+    )
+
+    err = mcp_client.call_tool_error(
+        "communication.send",
+        {
+            "project_id": project_id,
+            "to": "customer-order",
+            "content": {"template_ref": email_ref},
+            "intent_id": "entitlement-denied",
+        },
+    )
+
+    detail = err["data"]["error"]
+    assert detail["code"] == "COMM_PROVIDER_ENTITLEMENT_REQUIRED"
+    assert detail["effect"] == "none"
+    assert detail["resolved"]["entitlement"] == "transactional-email-addon"
+    assert httpx_mock.get_requests() == []
+
+
+def test_communication_send_hubspot_denies_incomplete_transactional_policy(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    _credential_ref_value, contact_ref, email_ref = _seed_hubspot_transactional_credential(
+        mcp_client,
+        project_id,
+        entitlement_confirmed=True,
+    )
+    mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "order-mailer",
+            "identity": {"display_name": "Order Mailer"},
+            "provider_facets": {"hubspot": {"auth_profile_key": "default"}},
+        },
+    )
+    mcp_client.call_tool_structured(
+        "communicationTarget.upsert",
+        {
+            "project_id": project_id,
+            "key": "customer-order",
+            "provider_key": "hubspot",
+            "surface_ref": contact_ref,
+            "profile_ref": "communication-profile:order-mailer",
+            "send_policy": {
+                "mode": "explicit-target",
+                "allowed_profile_refs": ["communication-profile:order-mailer"],
+                "allowed_target_refs": ["communication-target:customer-order"],
+                "transactional_use_confirmed": True,
+                "consent_or_relationship_confirmed": False,
+                "legal_basis": "contract",
+                "legal_basis_explanation": "Customer relationship is not verified.",
+                "marketing_contact_state": "unknown",
+            },
+        },
+    )
+
+    err = mcp_client.call_tool_error(
+        "communication.send",
+        {
+            "project_id": project_id,
+            "to": "customer-order",
+            "content": {"template_ref": email_ref},
+            "intent_id": "policy-denied",
+        },
+    )
+
+    detail = err["data"]["error"]
+    assert detail["code"] == "COMM_HUBSPOT_TRANSACTIONAL_POLICY_REQUIRED"
+    assert detail["effect"] == "none"
+    fields = {item["policy_field"] for item in detail["failed_paths"]}
+    assert fields == {"consent_or_relationship_confirmed", "marketing_contact_state"}
+    assert httpx_mock.get_requests() == []
 
 
 def test_communication_send_uses_single_slack_file_upload_for_text_and_files(

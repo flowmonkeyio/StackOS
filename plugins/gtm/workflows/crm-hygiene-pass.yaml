@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: gtm.crm-hygiene-pass
 name: GTM CRM Hygiene Pass
-version: 0.1.0
+version: 0.2.0
 description: Reusable template for reviewing CRM records, identifying hygiene issues, and optionally applying approved CRM updates.
 domain: gtm
 owner:
@@ -84,6 +84,16 @@ inputs:
     name: Hygiene Policy
     type: object
     required: false
+  - key: write_batch_key
+    name: Write Batch Key
+    description: Stable non-secret key required when approved CRM writes are executed so retries reuse the same intended mutation identity.
+    type: string
+    required: false
+    schema:
+      type: string
+      minLength: 3
+      maxLength: 160
+      pattern: '^[A-Za-z0-9._:-]+$'
 context_requirements:
   - id: crm_records
     source: resources
@@ -230,6 +240,12 @@ policies:
   - key: no_secret_exposure
     kind: auth
     description: CRM credentials stay daemon-side.
+  - key: idempotent_crm_writes
+    kind: safety
+    description: Every applied provider mutation uses the stable write batch key and reconciles existing action-call evidence before retry.
+  - key: provider_safe_evidence
+    kind: evidence
+    description: Closeout preserves StackOS action-call refs, provider request ids, partial failures, and retry guidance without raw provider object ids.
 approval_gates:
   - key: crm_update_review
     description: Review CRM updates before any external write.
@@ -242,11 +258,17 @@ steps:
       - goal
       - crm_scope
       - hygiene_policy
+      - write_batch_key
     context_refs:
       - crm_records
       - hygiene_learnings
     output_refs:
       - hygiene_plan
+    instructions:
+      - Bound the record set and field allowlist before proposing any write.
+      - Treat write_batch_key as required only when write_mode is apply; never fabricate one during a read-only review.
+    success_criteria:
+      - The scope, field authority, duplicate policy, route, and write boundary are explicit.
   - id: prepare_cleanup
     title: Prepare Cleanup
     purpose: Identify field updates, notes, tasks, duplicates, and records requiring human review.
@@ -260,6 +282,11 @@ steps:
       - orient
     output_refs:
       - hygiene_plan
+    instructions:
+      - Use provider-object refs and field-level patches; never place raw HubSpot ids in the plan.
+      - Separate conflicts and ambiguous identities from the executable correction set.
+    success_criteria:
+      - Every proposed correction has provenance, expected effect, and a safe record ref.
   - id: optional_apply_cleanup
     title: Optional Apply Cleanup
     purpose: Execute approved CRM write actions only when granted by the concrete run plan.
@@ -274,12 +301,20 @@ steps:
     policy_refs:
       - review_before_crm_mutation
       - no_secret_exposure
+      - idempotent_crm_writes
+      - provider_safe_evidence
     approval_refs:
       - crm_update_review
     depends_on:
       - prepare_cleanup
     output_refs:
       - hygiene_summary
+    instructions:
+      - Require a recorded approval and non-empty write_batch_key before the first external write.
+      - Derive stable per-action idempotency keys from write_batch_key and the intended record/field patch.
+      - Inspect prior action-call evidence before retrying and retry only unresolved records after a partial result.
+    success_criteria:
+      - Applied, skipped, partial, failed, and replayed writes are distinguishable with provider-safe evidence.
 outputs:
   - key: hygiene_plan
     name: Hygiene Plan
@@ -303,7 +338,7 @@ outputs:
     description: Reviewed records, proposed or applied changes, conflicts, skips, errors, and provider receipts.
     schema:
       type: object
-      required: [records_reviewed, changes, conflicts, skipped, errors, write_status, receipt_refs]
+      required: [records_reviewed, changes, conflicts, skipped, errors, write_status, receipt_refs, action_call_refs, provider_request_ids, partial_failures, retry_guidance]
       properties:
         records_reviewed: {type: integer, minimum: 0}
         changes: {type: array}
@@ -312,6 +347,10 @@ outputs:
         errors: {type: array}
         write_status: {type: string, enum: [not_requested, prepared, applied, partial, blocked, failed]}
         receipt_refs: {type: array, items: {type: string}}
+        action_call_refs: {type: array, items: {type: string}}
+        provider_request_ids: {type: array, items: {type: string}}
+        partial_failures: {type: array}
+        retry_guidance: {type: array, items: {type: string}}
 learning_hooks:
   - key: crm_hygiene_learning
     prompt: Capture reusable CRM hygiene lessons only with explicit field evidence and provenance.

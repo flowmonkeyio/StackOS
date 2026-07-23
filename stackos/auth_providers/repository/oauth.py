@@ -158,6 +158,20 @@ class OAuthLifecycleMixin:
         scopes = tuple(provider.scopes_json or ()) or contract.scopes
         if scopes:
             query["scope"] = contract.scope_separator.join(scopes)
+        optional_scopes = self._selected_optional_scopes(
+            provider_key=provider_key,
+            provider_config=provider.config_json,
+            credential_config=row.config_json,
+        )
+        if optional_scopes:
+            if contract.optional_scope_parameter is None:
+                raise ValidationError(
+                    "provider OAuth contract does not support optional scope bundles",
+                    data={"provider_key": provider_key},
+                )
+            query[contract.optional_scope_parameter] = contract.scope_separator.join(
+                optional_scopes
+            )
         query.update(dict(contract.authorization_params))
         if contract.pkce_mode != "unavailable":
             verifier = secrets.token_urlsafe(64)
@@ -166,6 +180,7 @@ class OAuthLifecycleMixin:
 
         payload["_oauth_pending"] = {
             "code_verifier": verifier,
+            "required_scopes": list(scopes),
         }
         safe_config = dict(row.config_json or {})
         safe_config["oauth_pending"] = True
@@ -227,6 +242,53 @@ class OAuthLifecycleMixin:
             project_id=project_id,
         )
 
+    @staticmethod
+    def _selected_optional_scopes(
+        *,
+        provider_key: str,
+        provider_config: dict[str, Any] | None,
+        credential_config: dict[str, Any] | None,
+    ) -> tuple[str, ...]:
+        """Resolve operator-selected provider bundles from safe manifest facts."""
+
+        raw_selected = (credential_config or {}).get("scope_bundles")
+        if raw_selected is None or raw_selected == "":
+            return ()
+        if isinstance(raw_selected, str):
+            selected = [item.strip() for item in raw_selected.split(",") if item.strip()]
+        elif isinstance(raw_selected, list):
+            selected = [str(item).strip() for item in raw_selected if str(item).strip()]
+        else:
+            raise ValidationError(
+                "OAuth scope bundle selection must be a list or comma-separated string",
+                data={"provider_key": provider_key, "field": "scope_bundles"},
+            )
+        raw_bundles = (provider_config or {}).get("scope_bundles")
+        if not isinstance(raw_bundles, dict):
+            raise ValidationError(
+                "provider does not declare OAuth scope bundles",
+                data={"provider_key": provider_key},
+            )
+        unknown = sorted(set(selected) - set(raw_bundles))
+        if unknown:
+            raise ValidationError(
+                "OAuth scope bundle selection includes unknown bundles",
+                data={"provider_key": provider_key, "unknown_scope_bundles": unknown},
+            )
+        scopes: list[str] = []
+        for bundle_key in dict.fromkeys(selected):
+            bundle = raw_bundles[bundle_key]
+            raw_scopes = bundle.get("optional_scopes") if isinstance(bundle, dict) else None
+            if not isinstance(raw_scopes, list) or not all(
+                isinstance(scope, str) and scope.strip() for scope in raw_scopes
+            ):
+                raise ValidationError(
+                    "provider OAuth scope bundle is invalid",
+                    data={"provider_key": provider_key, "scope_bundle": bundle_key},
+                )
+            scopes.extend(scope.strip() for scope in raw_scopes)
+        return tuple(dict.fromkeys(scopes))
+
     async def complete_oauth_callback(
         self,
         *,
@@ -287,6 +349,11 @@ class OAuthLifecycleMixin:
                 code=code.strip(),
                 redirect_uri=state_row.redirect_uri or "",
                 code_verifier=pending.get("code_verifier"),
+            )
+            self._validate_token_response(
+                contract=contract,
+                response_body=response_body,
+                grant_type="authorization_code",
             )
         except (httpx.HTTPError, ValueError, ValidationError):
             status = self._finish_failed_attempt(
@@ -481,6 +548,61 @@ class OAuthLifecycleMixin:
             ) from exc
         return body
 
+    def _validate_token_response(
+        self,
+        *,
+        contract: OAuthProviderContract,
+        response_body: dict[str, Any],
+        grant_type: str,
+    ) -> None:
+        """Enforce provider-declared lifecycle evidence before credential mutation."""
+
+        if grant_type == "authorization_code":
+            self._require_response_account_identity(
+                contract=contract,
+                response_body=response_body,
+            )
+            requirements = contract.authorization_code_response_requirements
+        elif grant_type == "refresh_token":
+            requirements = contract.refresh_token_response_requirements
+        else:
+            requirements = ()
+
+        invalid_fields: list[str] = []
+        for requirement in requirements:
+            if requirement == "refresh_token":
+                value = response_body.get("refresh_token")
+                if not isinstance(value, str) or not value.strip():
+                    invalid_fields.append(requirement)
+            elif requirement == "expires_in":
+                value = response_body.get("expires_in")
+                if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
+                    invalid_fields.append(requirement)
+            elif requirement == "scope_evidence":
+                if not self._response_scopes(
+                    contract=contract,
+                    response_body=response_body,
+                ):
+                    invalid_fields.append(requirement)
+            else:
+                raise ValidationError(
+                    "OAuth provider contract has an unsupported token response requirement",
+                    data={
+                        "provider_key": contract.provider_key,
+                        "grant_type": grant_type,
+                        "requirement": requirement,
+                    },
+                )
+        if invalid_fields:
+            raise ValidationError(
+                "provider token response violates its OAuth lifecycle contract",
+                data={
+                    "provider_key": contract.provider_key,
+                    "grant_type": grant_type,
+                    "fields": invalid_fields,
+                },
+            )
+
     def _finish_successful_exchange(
         self,
         *,
@@ -504,6 +626,7 @@ class OAuthLifecycleMixin:
                 "refresh_token",
                 "expires_in",
                 "scope",
+                "scopes",
                 "token_type",
             }
         }
@@ -545,7 +668,11 @@ class OAuthLifecycleMixin:
         self._replace_scopes(
             credential=credential,
             response_body=response_body,
-            fallback_scopes=contract.scopes,
+            fallback_scopes=self._required_scopes_from_pending(
+                payload=payload,
+                default=contract.scopes,
+            ),
+            contract=contract,
         )
         self._replace_account_metadata(
             credential=credential,
@@ -686,15 +813,14 @@ class OAuthLifecycleMixin:
         credential: Credential,
         response_body: dict[str, Any],
         fallback_scopes: tuple[str, ...] | None,
+        contract: OAuthProviderContract,
     ) -> None:
         assert credential.id is not None
-        raw_scopes = response_body.get("scope")
-        if isinstance(raw_scopes, str):
-            decoded_scopes = unquote_plus(raw_scopes.replace(",", " "))
-            scopes = [scope for scope in decoded_scopes.split() if scope]
-        elif isinstance(raw_scopes, list):
-            scopes = [str(scope).strip() for scope in raw_scopes if str(scope).strip()]
-        else:
+        scopes = self._response_scopes(
+            contract=contract,
+            response_body=response_body,
+        )
+        if scopes is None:
             if fallback_scopes is None:
                 return
             scopes = list(fallback_scopes)
@@ -703,6 +829,39 @@ class OAuthLifecycleMixin:
         )
         for scope in sorted(set(scopes)):
             self._s.add(CredentialScope(credential_id=credential.id, scope=scope))
+
+    @staticmethod
+    def _response_scopes(
+        *,
+        contract: OAuthProviderContract,
+        response_body: dict[str, Any],
+    ) -> list[str] | None:
+        raw_scopes = next(
+            (
+                response_body[field]
+                for field in contract.response_scope_fields
+                if field in response_body
+            ),
+            None,
+        )
+        if isinstance(raw_scopes, str):
+            decoded_scopes = unquote_plus(raw_scopes.replace(",", " "))
+            return [scope for scope in decoded_scopes.split() if scope]
+        if isinstance(raw_scopes, list):
+            return [str(scope).strip() for scope in raw_scopes if str(scope).strip()]
+        return None
+
+    @staticmethod
+    def _required_scopes_from_pending(
+        *,
+        payload: dict[str, Any],
+        default: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        pending = payload.get("_oauth_pending")
+        raw = pending.get("required_scopes") if isinstance(pending, dict) else None
+        if isinstance(raw, list) and all(isinstance(scope, str) for scope in raw):
+            return tuple(scope for scope in raw if scope)
+        return default
 
     def _provider_response_config(
         self,
@@ -729,6 +888,27 @@ class OAuthLifecycleMixin:
                 )
             }
         return {}
+
+    @staticmethod
+    def _require_response_account_identity(
+        *,
+        contract: OAuthProviderContract,
+        response_body: dict[str, Any],
+    ) -> None:
+        """Require the account identity a provider contract promises at authorization."""
+
+        field = contract.response_account_id_field
+        if field is None or field not in contract.response_metadata_fields:
+            return
+        value = response_body.get(field)
+        if (isinstance(value, str) and value.strip()) or (
+            isinstance(value, int) and not isinstance(value, bool)
+        ):
+            return
+        raise ValidationError(
+            "provider authorization response is missing account identity",
+            data={"provider_key": contract.provider_key, "field": field},
+        )
 
     @staticmethod
     def _trusted_provider_base_url(
@@ -777,7 +957,11 @@ class OAuthLifecycleMixin:
         self._s.exec(
             delete(CredentialAccount).where(col(CredentialAccount.credential_id) == credential.id)
         )
-        provider_account_id = metadata.get("id")
+        provider_account_id = (
+            metadata.get(contract.response_account_id_field)
+            if contract.response_account_id_field is not None
+            else None
+        )
         self._s.add(
             CredentialAccount(
                 credential_id=credential.id,

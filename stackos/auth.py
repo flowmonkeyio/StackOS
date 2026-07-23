@@ -54,11 +54,16 @@ PROTECTED_PREFIXES: tuple[str, ...] = ("/api/v1", "/mcp")
 #   or agent requests. HostHeaderMiddleware permits tunnel/deployed Host headers
 #   only on provider ingress paths; every non-ingress API path remains
 #   loopback-host guarded.
+# - ``/api/v1/ingress/hubspot``: HubSpot webhooks and custom workflow-action
+#   requests cannot carry the daemon token. The route validates HubSpot's v3
+#   timestamped HMAC or documented workflow-action v2 signature against the
+#   encrypted OAuth app secret before writing events or agent requests.
 WHITELIST_PREFIXES: tuple[str, ...] = (
     "/api/v1/health",
     "/api/v1/auth/ui-token",
     "/api/v1/ingress/telegram",
     "/api/v1/ingress/slack",
+    "/api/v1/ingress/hubspot",
 )
 _OAUTH_CALLBACK_PATH = "/api/v1/auth/oauth/callback"
 

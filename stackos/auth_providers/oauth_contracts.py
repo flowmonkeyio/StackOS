@@ -11,6 +11,7 @@ from stackos.repositories.base import ValidationError
 OAuthFlow = Literal["authorization_code", "client_credentials"]
 ClientAuthStyle = Literal["body", "basic"]
 PKCEMode = Literal["required", "supported", "unavailable"]
+OAuthTokenResponseRequirement = Literal["refresh_token", "expires_in", "scope_evidence"]
 
 
 @dataclass(frozen=True)
@@ -22,11 +23,16 @@ class OAuthProviderContract:
     include_response_type: bool = True
     scopes: tuple[str, ...] = ()
     scope_separator: str = " "
+    optional_scope_parameter: str | None = None
     client_auth_style: ClientAuthStyle = "body"
     pkce_mode: PKCEMode = "unavailable"
     authorization_params: tuple[tuple[str, str], ...] = ()
     token_params: tuple[tuple[str, str], ...] = ()
     response_metadata_fields: tuple[str, ...] = ()
+    response_scope_fields: tuple[str, ...] = ("scope",)
+    response_account_id_field: str | None = "id"
+    authorization_code_response_requirements: tuple[OAuthTokenResponseRequirement, ...] = ()
+    refresh_token_response_requirements: tuple[OAuthTokenResponseRequirement, ...] = ()
     hook: str | None = None
 
 
@@ -157,6 +163,33 @@ _CONTRACTS: dict[str, OAuthProviderContract] = {
         ),
         pkce_mode="required",
         authorization_params=(("response_mode", "query"),),
+    ),
+    "hubspot": OAuthProviderContract(
+        provider_key="hubspot",
+        flow="authorization_code",
+        authorization_endpoint="https://app.hubspot.com/oauth/authorize",
+        token_endpoint="https://api.hubspot.com/oauth/2026-03/token",
+        optional_scope_parameter="optional_scope",
+        client_auth_style="body",
+        pkce_mode="unavailable",
+        response_metadata_fields=(
+            "hub_id",
+            "user_id",
+            "app_id",
+            "hub_domain",
+            "is_private_distribution",
+        ),
+        response_scope_fields=("scopes", "scope"),
+        response_account_id_field="hub_id",
+        authorization_code_response_requirements=(
+            "refresh_token",
+            "expires_in",
+            "scope_evidence",
+        ),
+        refresh_token_response_requirements=(
+            "refresh_token",
+            "expires_in",
+        ),
     ),
     "taboola": OAuthProviderContract(
         provider_key="taboola",

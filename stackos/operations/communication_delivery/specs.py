@@ -32,10 +32,10 @@ def operation_specs() -> list[OperationSpec]:
             handler=communication_send,
             surfaces=_surfaces("communication.send", "ops call communication.send"),
             purpose=(
-                "Use this as the normal agent path for Slack, Telegram, email, and future "
-                "communication sends. The agent provides actor/destination/content/context; "
-                "StackOS resolves profile, target, provider action, credential, policy, "
-                "capabilities, idempotency, and audit."
+                "Use this as the normal agent path for Slack, Telegram, SMTP, HubSpot "
+                "transactional templates, and future communication sends. The agent provides "
+                "actor/destination/content/context; StackOS resolves profile, target, provider "
+                "action, credential, policy, capabilities, idempotency, and audit."
             ),
             when_to_use=(
                 "An agent needs to send one provider-neutral message to a named target.",
@@ -50,6 +50,8 @@ def operation_specs() -> list[OperationSpec]:
                 "Set dry_run=true to validate payload and write a dry-run "
                 "action_call audit row without calling the provider connector.",
                 "Unsupported rich features reject by default with model-readable repair context.",
+                "Template providers use content.template_ref and bounded scalar template_data; "
+                "the configured target owns provider-specific eligibility policy.",
             ),
             returns=(
                 "A raw redacted sent/validated result with message refs, file refs, "

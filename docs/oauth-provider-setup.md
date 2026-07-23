@@ -6,14 +6,15 @@ technical lifecycle in [`auth-providers.md`](./auth-providers.md) and the threat
 model in [`security.md`](./security.md).
 
 > **Current status:** the OAuth core changes in this repository have not been
-> released. The upload-ready static callback page now exists at
-> [`workers/oauth-callback-relay/public`](../workers/oauth-callback-relay/public),
-> but it has not been uploaded or deployed. It reuses the existing local
-> callback route; it does not add a Worker, Pages Function, daemon route, or
-> OAuth lifecycle. Do not register the permanent callback with providers until
-> the Pages custom domain is live and verified.
+> released. The static callback page at
+> [`workers/oauth-callback-relay/public`](../workers/oauth-callback-relay/public)
+> is live at `auth.stackos.flowmonkey.io`. On 2026-07-22, the deployed page was
+> verified byte-for-byte against the reviewed local `index.html` and returned
+> the required no-store and browser-security headers. It reuses the existing
+> local callback route; it does not add a Worker, Pages Function, daemon route,
+> or OAuth lifecycle. A provider connection still requires a local StackOS
+> build containing the unreleased OAuth core.
 
-HubSpot is intentionally outside this runbook's interactive-OAuth delivery.
 Do not paste client secrets, authorization codes, access tokens, refresh tokens,
 or API keys into chat, tickets, documentation, source files, or Pages settings.
 Provider application secrets belong only in the local StackOS Connections UI.
@@ -89,7 +90,7 @@ arbitrary local services.
 | --- | --- | --- |
 | Direct loopback callback | Implemented for providers that accept it | Retained as a local-development option |
 | Named reverse tunnel to port `5180` | Compatible with the current direct callback design | Temporary testing only; one tunnel/hostname maps to one machine |
-| Static Cloudflare Pages callback to loopback | Implemented in source, not uploaded | Yes; one public callback works for same-machine installations on canonical port `5180` |
+| Static Cloudflare Pages callback to loopback | Live; deployed page matches the reviewed source as of 2026-07-22 | Yes; one public callback works for same-machine installations on canonical port `5180` |
 | Stateful hosted OAuth/token broker | Not implemented | No; unnecessary unless cross-device authorization becomes a demonstrated requirement |
 
 ## Cloudflare Pages Static Callback
@@ -233,7 +234,7 @@ credentials and from providers with a supported non-OAuth alternative.
 | Salesloft | Authorization code | Only when choosing OAuth | Yes for OAuth | Customer API key |
 | Taboola | Client credentials | Credentials are issued by Taboola | No | Not applicable |
 | Reddit | Client credentials | Approval and a confidential client are required | No StackOS callback | Not applicable |
-| HubSpot | Manual token in this delivery | Not for interactive StackOS OAuth | No | Private-app/manual token; interactive OAuth is deferred |
+| HubSpot | Authorization code with capability-scoped optional consent | Yes; use a privately distributed OAuth app for the initial phase | Yes | HubSpot static auth is single-account only and is not an execution-ready StackOS method |
 | X API | Manual/deferred | Do not register for this delivery | No implemented callback | Deferred |
 | LinkedIn | Manual/deferred | Do not register for this delivery | No implemented callback | Deferred |
 
@@ -526,14 +527,215 @@ Official references:
 Reddit approval and use-policy compliance are prerequisites, not post-release
 paperwork.
 
+## HubSpot
+
+Use one project-based HubSpot app with `private` distribution and `oauth`
+authentication for the initial StackOS delivery. This is the streamlined
+multi-account path: it supports up to 10 allowlisted production accounts plus
+developer test accounts without taking on Marketplace publication. Choose a
+Marketplace app only when broader distribution is actually required. Do not
+choose static authentication for StackOS: HubSpot limits that method to one
+standard account, and the current StackOS connector requires provider-returned
+OAuth grants for action readiness.
+
+Official references:
+
+- [Create a new app using the CLI](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/create-an-app)
+- [App configuration](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/app-configuration)
+- [Manage app credentials and distribution](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/manage-apps-in-hubspot)
+- [Working with OAuth](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/oauth/working-with-oauth)
+- [OAuth 2026-03 token lifecycle](https://developers.hubspot.com/docs/api-reference/latest/authentication/manage-oauth-tokens)
+- [HubSpot scopes](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/scopes)
+- [Configure webhooks](https://developers.hubspot.com/docs/apps/developer-platform/add-features/configure-webhooks)
+
+### Create and configure the app
+
+1. Install the current HubSpot CLI and authenticate it with the developer
+   account using `hs account auth`. Keep the resulting personal access key in
+   the CLI's local credential store; it is not a StackOS runtime credential.
+2. Run `hs project create` and select:
+   - base contents: **App**;
+   - distribution: **Private**;
+   - authentication: **OAuth**;
+   - features: no feature is required for ordinary CRM, Sales, Marketing,
+     Bulk, or transactional API actions. Select **Webhooks** only if signed
+     ingress will be configured now. Select **Custom Workflow Action** only
+     when a specific definition will be registered and allowlisted.
+3. In `src/app/app-hsmeta.json`, keep the generated support metadata and set
+   the app contract to this shape. `requiredScopes` is the CRM Core baseline;
+   `optionalScopes` is the union of feature scopes StackOS may request through
+   optional consent. HubSpot adds its base `oauth` scope automatically.
+
+   ```json
+   {
+     "distribution": "private",
+     "auth": {
+       "type": "oauth",
+       "redirectUrls": [
+         "https://auth.stackos.flowmonkey.io/api/v1/auth/oauth/callback"
+       ],
+       "requiredScopes": [
+         "crm.objects.contacts.read",
+         "crm.objects.contacts.write",
+         "crm.objects.companies.read",
+         "crm.objects.companies.write",
+         "crm.objects.deals.read",
+         "crm.objects.deals.write",
+         "crm.objects.owners.read",
+         "crm.schemas.contacts.read",
+         "crm.schemas.companies.read",
+         "crm.schemas.deals.read"
+       ],
+       "optionalScopes": [
+         "crm.objects.leads.read",
+         "crm.objects.leads.write",
+         "crm.objects.products.read",
+         "crm.objects.products.write",
+         "crm.objects.line_items.read",
+         "crm.objects.line_items.write",
+         "crm.objects.quotes.read",
+         "crm.objects.goals.read",
+         "forms",
+         "crm.lists.read",
+         "crm.lists.write",
+         "marketing.campaigns.read",
+         "marketing.campaigns.write",
+         "marketing-email",
+         "subscriptions-definition-read",
+         "subscriptions-status-read",
+         "subscriptions-status-write",
+         "crm.objects.marketing_events.read",
+         "crm.objects.marketing_events.write",
+         "analytics.behavioral_events.send",
+         "behavioral_events.event_definitions.read_write",
+         "crm.export",
+         "automation",
+         "transactional-email"
+       ],
+       "conditionallyRequiredScopes": []
+     }
+   }
+   ```
+
+4. Run `hs project upload` and wait for a successful build/deploy inside
+   HubSpot. This uploads the HubSpot developer project; it does not release or
+   deploy StackOS.
+5. Run `hs project open`. Under **Project Components**, select the top-level
+   app, open **Auth**, and verify the exact redirect plus the required and
+   optional scopes. Copy the **Client ID** and **Client secret** only when the
+   local StackOS Connections form is ready; never place them in this repository
+   or the callback page.
+6. For a production account, open the app's **Distribution** tab, select
+   **Add approved account(s)**, choose the intended account, and save. This
+   allowlists the account. Do not use the copied HubSpot install link for the
+   StackOS flow, because StackOS must create the one-use `state` transaction.
+   Start installation from StackOS instead.
+
+### Choose only the capabilities you need
+
+The exact scope-to-action contract is canonical in
+[`integration-contracts/hubspot.md`](./integration-contracts/hubspot.md#oauth-capability-bundles).
+In StackOS, CRM Core is always requested; optional bundles are selected before
+the first connection or before a reconnect.
+
+| StackOS bundle | What it enables | External prerequisite |
+| --- | --- | --- |
+| CRM Core | Contacts, companies, deals, owners, schemas, typed relationships, and sales activities | Required baseline; no optional selection |
+| Sales | Leads, products, line items, quote reads, and goal-target reads | Relevant HubSpot product, tier, and seat |
+| Marketing | Forms, segments, campaigns, draft email assets, consent, marketing events, and behavioral events | Feature-specific Marketing Hub tier; some event definitions require Enterprise |
+| Bulk | Bounded CRM exports | Super Admin installer and HubSpot export limits |
+| Webhooks | Signed inbound CRM events; no extra OAuth scope beyond the matching CRM object read scopes | Public HTTPS ingress, app ID/client secret, configured subscriptions, exact event allowlist |
+| Custom workflow automation | Custom workflow-action handoffs with `automation` consent | Eligible HubSpot tier, public action URL, app ID/client secret, registered action, exact definition allowlist |
+| Transactional communications | One-to-one template delivery through `communication.send` | Marketing Professional/Enterprise, Transactional Email add-on, target/profile, and consent policy |
+
+Adding a bundle with OAuth scopes is an incremental-consent operation: edit the
+connection, select the bundle, and reconnect. The Webhooks bundle adds operator
+setup checks but no OAuth scope, so selecting it alone does not require new
+consent. StackOS keeps the prior working credential if an upgrade fails and
+computes scope state from the scopes HubSpot actually returns. Never treat a
+selected checkbox or an account tier as proof that a scope was granted.
+
+### Connect from StackOS
+
+1. Open `/projects/{project_id}/connections` on the local StackOS UI.
+2. Select **Add connection** -> **HubSpot** -> **Connect with HubSpot**.
+3. Select only the optional capability bundles needed now. If transactional
+   email will be used, confirm the add-on only after checking this exact portal.
+   Leave signed ingress disabled until its public endpoint exists.
+4. Enter the Client ID and Client secret, then select **Connect**.
+5. In HubSpot, choose the intended allowlisted account, review the requested
+   permissions, and select **Connect app**. The browser returns through the
+   public callback page to the StackOS daemon on the same machine and finishes
+   on the Connections screen.
+6. Confirm the connection shows the expected HubSpot account, connected status,
+   granted bundles/scopes, and capability readiness. Run the safe connection
+   test before using actions.
+
+HubSpot's general OAuth guide still mentions the legacy `/oauth/v3/token`
+path. The current versioned authentication reference documents
+`https://api.hubspot.com/oauth/2026-03/token` for both code exchange and
+refresh; that versioned endpoint is the StackOS runtime contract.
+
+### Optional signed ingress
+
+Ordinary outbound/read API actions do not require ingress. Configure it only
+for explicit event or workflow-action use:
+
+1. Configure a project-level HTTPS `ingressEndpoint`, then inspect
+   `ingressEndpoint.routes` and copy the exact HubSpot URL. It has the shape
+   `https://<public-host>/api/v1/ingress/hubspot/{project_id}/{profile_key}`.
+   The OAuth callback hostname is a static page and is not an ingress host.
+2. In the HubSpot connection, enter the numeric app ID, enable signed ingress,
+   and select the exact event types that may create agent requests. Add custom
+   workflow-action definition IDs only after those definitions exist.
+3. If the app was created with the Webhooks feature, place the exact StackOS
+   route in the webhook feature's `settings.targetUrl`, define only matching
+   subscriptions, upload the HubSpot project, then refresh and verify the
+   StackOS ingress route.
+4. HubSpot owns subscriptions at the app level across installed accounts.
+   StackOS therefore leaves webhook subscription and custom-action definition
+   administration operator-owned. A valid inbound request creates at most one
+   agent request; it never selects, creates, starts, or executes a run plan.
+
+### Transactional target
+
+One-to-one transactional email uses the provider-neutral delivery path, not a
+workflow loop over the raw HubSpot send action. Configure a HubSpot
+communication profile and the exact target key
+`hubspot-customer-follow-up`, bind it to the approved template and consent
+policy, then use `communication.send`. The recipient is an opaque HubSpot
+contact ref; the provider connector resolves the email daemon-side. Bulk
+marketing send remains deferred.
+
+### Live proof, repair, and cleanup
+
+For the first authorized test account:
+
+1. Prove callback success, account identity, returned scopes, and refresh with
+   a read-only CRM action before approving any write.
+2. Exercise one bounded action per selected bundle. Use test records/templates;
+   retain safe correlation IDs and StackOS action-call evidence, never raw
+   tokens or contact emails.
+3. If consent fails, inspect **Development** -> **Monitoring** -> **Logs** ->
+   the app -> **OAuth**. Fix exact redirect mismatch, missing required scopes,
+   installer permissions, or account allowlisting; do not weaken state or
+   callback validation.
+4. If an action is unavailable after connection, compare the returned scopes
+   with the canonical bundle table, confirm the account tier/seat/add-on, then
+   reconnect for incremental consent.
+5. If ingress fails, verify public HTTPS reachability, app/profile/account
+   binding, the numeric app ID, v3 signature inputs, clock skew, and the exact
+   event/definition allowlist.
+6. After test writes, remove the test records, drafts, tasks, notes, exports,
+   subscriptions, and communication targets that the proof created. Revoke the
+   StackOS connection and uninstall the HubSpot app only when the test account
+   should no longer authorize it.
+
+Live provider proof requires operator-supplied HubSpot credentials and an
+eligible test portal. Mocked and local verification must never be reported as a
+successful HubSpot installation or mutation.
+
 ## Deferred Or Separate Providers
-
-### HubSpot
-
-HubSpot remains manual-token/private-app compatible in this delivery and was
-explicitly excluded from interactive OAuth work. Keep it aside until a separate
-provider investigation defines its app type, scopes, actions, verification,
-and callback contract.
 
 ### X and LinkedIn
 

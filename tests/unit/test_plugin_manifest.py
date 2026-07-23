@@ -770,7 +770,9 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
             f"{plugin_slug}:{provider.key} missing setup note"
         )
         expected_verified_at = (
-            "2026-07-15"
+            "2026-07-22"
+            if plugin_slug == "gtm" and provider.key == "hubspot"
+            else "2026-07-15"
             if plugin_slug == "utils" and provider.key in {"ftp", "cloudflare"}
             else "2026-06-17"
             if plugin_slug == "seo" and provider.key in google_seo_providers
@@ -818,6 +820,29 @@ def test_provider_credential_setup_url_is_auth_method_neutral() -> None:
     credential_url = next(item for item in setup.urls if item.key == "credential_url")
     assert credential_url.label == "Credentials"
     assert credential_url.purpose == "provider_credential"
+
+
+def test_provider_setup_exposes_oauth_callback_and_safe_repair_guidance() -> None:
+    setup = build_provider_setup(
+        project_id=1,
+        provider_key="hubspot",
+        provider_config_json={
+            "setup": {
+                "callback_url": ("https://auth.stackos.flowmonkey.io/api/v1/auth/oauth/callback"),
+                "callback_note": "Relay the unchanged query to the local daemon.",
+                "repair_note": "Reconnect after adding scopes.",
+                "url_confidence": {"callback_url": "verified"},
+            }
+        },
+    )
+
+    assert setup is not None
+    assert setup.callback_url == ("https://auth.stackos.flowmonkey.io/api/v1/auth/oauth/callback")
+    assert setup.callback_note == "Relay the unchanged query to the local daemon."
+    assert setup.repair_note == "Reconnect after adding scopes."
+    callback = next(item for item in setup.urls if item.key == "callback_url")
+    assert callback.purpose == "provider_oauth_callback"
+    assert callback.confidence == "verified"
 
 
 def test_communications_plugin_yaml_facade_validates() -> None:
@@ -1174,7 +1199,85 @@ def test_gtm_plugin_yaml_facade_validates() -> None:
         "custom-gtm-tool",
     }
     providers = {provider.key: provider for provider in manifest.providers}
-    assert _auth_field_keys(providers["hubspot"])[:2] == ["access_token", "portal_ref"]
+    hubspot = providers["hubspot"]
+    assert {method.key for method in hubspot.auth_methods} == {"oauth2_authorization_code"}
+    assert hubspot.auth_methods[0].interactive is True
+    assert _auth_field_keys(hubspot) == [
+        "client_id",
+        "client_secret",
+        "scope_bundles",
+        "transactional_email_entitlement_confirmed",
+        "app_id",
+        "webhook_enabled",
+        "webhook_event_allowlist",
+        "workflow_action_allowlist",
+        "field_mapping_ref",
+    ]
+    hubspot_auth_fields = {field.key: field for field in hubspot.auth_methods[0].fields}
+    assert hubspot_auth_fields["transactional_email_entitlement_confirmed"].type == "boolean"
+    assert hubspot_auth_fields["transactional_email_entitlement_confirmed"].secret is False
+    assert hubspot_auth_fields["app_id"].type == "number"
+    assert hubspot_auth_fields["app_id"].secret is False
+    assert hubspot_auth_fields["webhook_enabled"].type == "boolean"
+    assert hubspot_auth_fields["webhook_enabled"].secret is False
+    assert {
+        option["value"] for option in hubspot_auth_fields["webhook_event_allowlist"].options or []
+    } >= {
+        "contact.creation",
+        "contact.propertyChange",
+        "company.creation",
+        "company.propertyChange",
+        "deal.creation",
+        "deal.propertyChange",
+    }
+    assert hubspot_auth_fields["workflow_action_allowlist"].type == "text"
+    assert hubspot_auth_fields["workflow_action_allowlist"].secret is False
+    assert hubspot.config["scopes"] == [
+        "crm.objects.contacts.read",
+        "crm.objects.contacts.write",
+        "crm.objects.companies.read",
+        "crm.objects.companies.write",
+        "crm.objects.deals.read",
+        "crm.objects.deals.write",
+        "crm.objects.owners.read",
+        "crm.schemas.contacts.read",
+        "crm.schemas.companies.read",
+        "crm.schemas.deals.read",
+    ]
+    assert set(hubspot.config["scope_bundles"]) == {
+        "sales",
+        "marketing",
+        "bulk",
+        "webhooks",
+        "automation",
+        "transactional-communications",
+    }
+    assert {
+        "crm.objects.products.read",
+        "crm.objects.products.write",
+    } <= set(hubspot.config["scope_bundles"]["sales"]["optional_scopes"])
+    assert not {
+        "crm.objects.quotes.write",
+        "automation.sequences.read",
+        "automation.sequences.enrollments.write",
+        "sales-email-read",
+    } & set(hubspot.config["scope_bundles"]["sales"]["optional_scopes"])
+    assert hubspot.config["scope_bundles"]["bulk"]["optional_scopes"] == ["crm.export"]
+    assert hubspot.config["scope_bundles"]["webhooks"]["optional_scopes"] == []
+    assert hubspot.config["scope_bundles"]["automation"]["optional_scopes"] == ["automation"]
+    assert set(hubspot.config["readiness_groups"]) == {
+        "crm-core",
+        "sales",
+        "marketing",
+        "bulk",
+        "webhooks",
+        "automation",
+        "transactional-communications",
+    }
+    assert hubspot.config["setup"]["callback_url"] == (
+        "https://auth.stackos.flowmonkey.io/api/v1/auth/oauth/callback"
+    )
+    assert hubspot.config["setup"]["verified_at"] == "2026-07-22"
     assert providers["apollo"].auth_type == "api-key"
     assert providers["pipedrive"].auth_type == "oauth-or-api-token"
     assert providers["salesloft"].auth_type == "oauth-or-api-key"
@@ -1214,7 +1317,7 @@ def test_gtm_plugin_yaml_facade_validates() -> None:
     assert actions["hubspot.crm.companies.batch_upsert"].provider == "hubspot"
     assert actions["hubspot.crm.companies.batch_upsert"].risk_level == "write"
     assert actions["hubspot.crm.companies.batch_upsert"].input_schema["required"] == [
-        "id_property",
+        "id_property_ref",
         "inputs",
     ]
     assert actions["salesforce.lead.upsert_by_external_id"].provider == "salesforce"
@@ -1227,6 +1330,431 @@ def test_gtm_plugin_yaml_facade_validates() -> None:
     assert actions["outreach.sequence_state.create"].provider == "outreach"
     assert actions["custom_gtm.pipeline.fetch"].provider == "custom-gtm-tool"
     assert actions["hubspot.crm.companies.batch_upsert"].config["connector"] == "hubspot"
+    assert actions["hubspot.crm.companies.batch_upsert"].config["required_scopes"] == [
+        "crm.objects.companies.write"
+    ]
+    assert actions["hubspot.crm.contacts.batch_upsert"].config["required_scopes"] == [
+        "crm.objects.contacts.write"
+    ]
+    assert actions["hubspot.crm.deals.search"].config["required_scopes"] == [
+        "crm.objects.deals.read"
+    ]
+    hubspot_metadata = {
+        "hubspot.crm.contacts.properties.list": ["crm.schemas.contacts.read"],
+        "hubspot.crm.companies.properties.list": ["crm.schemas.companies.read"],
+        "hubspot.crm.deals.properties.list": ["crm.schemas.deals.read"],
+        "hubspot.crm.owners.list": ["crm.objects.owners.read"],
+        "hubspot.crm.deals.pipelines.list": ["crm.objects.deals.read"],
+        "hubspot.crm.contact_company.labels.list": [
+            "crm.objects.contacts.read",
+            "crm.objects.companies.read",
+        ],
+        "hubspot.crm.contact_deal.labels.list": [
+            "crm.objects.contacts.read",
+            "crm.objects.deals.read",
+        ],
+        "hubspot.crm.company_deal.labels.list": [
+            "crm.objects.companies.read",
+            "crm.objects.deals.read",
+        ],
+    }
+    for action_key, required_scopes in hubspot_metadata.items():
+        action = actions[action_key]
+        assert action.provider == "hubspot"
+        assert action.risk_level == "read"
+        assert action.config["connector"] == "hubspot"
+        assert action.config["required_scopes"] == required_scopes
+        assert action.config["readiness_group"] == "crm-core"
+        assert action.config["response_contract"] == "safe-provider-refs-v1"
+    hubspot_records = {
+        "hubspot.crm.contacts.search": ["crm.objects.contacts.read"],
+        "hubspot.crm.companies.search": ["crm.objects.companies.read"],
+        "hubspot.crm.deals.search": ["crm.objects.deals.read"],
+        "hubspot.crm.leads.search": ["crm.objects.leads.read"],
+        "hubspot.crm.contacts.batch_upsert": ["crm.objects.contacts.write"],
+        "hubspot.crm.companies.batch_upsert": ["crm.objects.companies.write"],
+        "hubspot.crm.deals.batch_upsert": ["crm.objects.deals.write"],
+        "hubspot.crm.leads.batch_upsert": ["crm.objects.leads.write"],
+    }
+    for action_key, required_scopes in hubspot_records.items():
+        action = actions[action_key]
+        assert action.config["required_scopes"] == required_scopes
+        assert action.config["connector"] == "hubspot"
+        assert action.config["api_version"] == "2026-03"
+        assert action.config["response_contract"] == "safe-provider-refs-v1"
+        if action.risk_level == "write":
+            assert action.config["idempotency_policy"] == ("caller-required-for-safe-retry")
+            assert action.config["confirmation_policy"] == (
+                "workflow-grant-or-direct-operator-intent"
+            )
+    assert actions["hubspot.crm.leads.properties.list"].config["required_scopes"] == [
+        "crm.objects.leads.read"
+    ]
+    search_schema = actions["hubspot.crm.contacts.search"].input_schema["properties"]
+    assert "filter_groups" in search_schema
+    assert "filterGroups" not in search_schema
+    assert "property_refs" in search_schema
+    assert "properties" not in search_schema
+    for action_key in (
+        "hubspot.crm.custom_objects.search",
+        "hubspot.crm.custom_objects.batch_upsert",
+    ):
+        assert "connector" not in actions[action_key].config
+        assert actions[action_key].config["execution_mode"] == "deferred"
+        assert actions[action_key].config["deferred_reason"] == ("deferred-custom-object-schema")
+    hubspot_associations = {
+        "hubspot.crm.contact_company.associate": [
+            "crm.objects.contacts.write",
+            "crm.objects.companies.write",
+        ],
+        "hubspot.crm.contact_company.dissociate": [
+            "crm.objects.contacts.write",
+            "crm.objects.companies.write",
+        ],
+        "hubspot.crm.contact_deal.associate": [
+            "crm.objects.contacts.write",
+            "crm.objects.deals.write",
+        ],
+        "hubspot.crm.contact_deal.dissociate": [
+            "crm.objects.contacts.write",
+            "crm.objects.deals.write",
+        ],
+        "hubspot.crm.company_deal.associate": [
+            "crm.objects.companies.write",
+            "crm.objects.deals.write",
+        ],
+        "hubspot.crm.company_deal.dissociate": [
+            "crm.objects.companies.write",
+            "crm.objects.deals.write",
+        ],
+    }
+    for action_key, required_scopes in hubspot_associations.items():
+        action = actions[action_key]
+        assert action.risk_level == "write"
+        assert action.config["required_scopes"] == required_scopes
+        assert action.config["idempotency_policy"] == "caller-required-for-safe-retry"
+        assert action.config["confirmation_policy"] == ("workflow-grant-or-direct-operator-intent")
+    for action_key in (
+        "hubspot.crm.notes.create",
+        "hubspot.crm.tasks.create",
+        "hubspot.crm.calls.create",
+        "hubspot.crm.meetings.create",
+    ):
+        action = actions[action_key]
+        assert action.provider == "hubspot"
+        assert action.risk_level == "write"
+        assert action.config["connector"] == "hubspot"
+        assert action.config["required_scopes"] == ["crm.objects.contacts.write"]
+        assert action.config["api_version"] == "2026-03"
+        assert action.config["response_contract"] == "safe-provider-refs-v1"
+        assert action.config["idempotency_policy"] == ("caller-required-for-safe-retry")
+        assert action.config["confirmation_policy"] == ("workflow-grant-or-direct-operator-intent")
+        assert "properties" not in action.input_schema["properties"]
+        assert "associations" in action.input_schema["properties"]
+    for action_key in (
+        "hubspot.sales.sequences.list",
+        "hubspot.sales.sequences.enroll",
+        "hubspot.sales.sequences.unenroll",
+    ):
+        action = actions[action_key]
+        assert "connector" not in action.config
+        assert action.config["execution_mode"] == "deferred"
+        assert action.config["deferred_reason"] == "deferred-sequence-live-contract"
+    hubspot_revenue_metadata = {
+        "hubspot.sales.products.properties.list": ["crm.objects.products.write"],
+        "hubspot.sales.line_items.properties.list": ["crm.objects.line_items.read"],
+        "hubspot.sales.quotes.properties.list": ["crm.objects.quotes.read"],
+        "hubspot.sales.goal_targets.properties.list": ["crm.objects.goals.read"],
+    }
+    for action_key, required_scopes in hubspot_revenue_metadata.items():
+        action = actions[action_key]
+        assert action.config["connector"] == "hubspot"
+        assert action.config["required_scopes"] == required_scopes
+        assert action.config["readiness_group"] == "sales"
+        assert action.config["response_contract"] == "safe-provider-refs-v1"
+    hubspot_revenue_records = {
+        "hubspot.sales.products.search": ("read", ["crm.objects.products.read"]),
+        "hubspot.sales.products.batch_upsert": (
+            "write",
+            ["crm.objects.products.write"],
+        ),
+        "hubspot.sales.line_items.search": (
+            "read",
+            ["crm.objects.line_items.read"],
+        ),
+        "hubspot.sales.line_items.batch_upsert": (
+            "write",
+            ["crm.objects.line_items.write"],
+        ),
+        "hubspot.sales.quotes.search": ("read", ["crm.objects.quotes.read"]),
+        "hubspot.sales.goal_targets.list": ("read", ["crm.objects.goals.read"]),
+    }
+    for action_key, (risk_level, required_scopes) in hubspot_revenue_records.items():
+        action = actions[action_key]
+        assert action.risk_level == risk_level
+        assert action.config["connector"] == "hubspot"
+        assert action.config["required_scopes"] == required_scopes
+        assert action.config["api_version"] == "2026-03"
+        assert action.config["response_contract"] == "safe-provider-refs-v1"
+        if risk_level == "write":
+            assert action.config["idempotency_policy"] == ("caller-required-for-safe-retry")
+            assert action.config["confirmation_policy"] == (
+                "workflow-grant-or-direct-operator-intent"
+            )
+    assert actions["hubspot.sales.goal_targets.list"].config["endpoint"] == (
+        "/crm/objects/2026-03/goal_targets"
+    )
+    for action_key in (
+        "hubspot.sales.line_items.associate_deal",
+        "hubspot.sales.line_items.dissociate_deal",
+    ):
+        action = actions[action_key]
+        assert action.risk_level == "write"
+        assert action.config["required_scopes"] == [
+            "crm.objects.line_items.write",
+            "crm.objects.deals.write",
+        ]
+        assert action.config["idempotency_policy"] == ("caller-required-for-safe-retry")
+        assert action.input_schema["required"] == ["line_item_ref", "deal_ref"]
+    for action_key, deferred_reason in (
+        ("hubspot.sales.forecasts.list", "deferred-provider-beta"),
+        ("hubspot.sales.deal_splits.list", "deferred-enterprise-mutation"),
+        ("hubspot.sales.deal_splits.upsert", "deferred-enterprise-mutation"),
+    ):
+        action = actions[action_key]
+        assert "connector" not in action.config
+        assert action.config["execution_mode"] == "deferred"
+        assert action.config["deferred_reason"] == deferred_reason
+    hubspot_marketing_reads = {
+        "hubspot.marketing.forms.list": ("forms", "/marketing/v3/forms"),
+        "hubspot.marketing.forms.submissions.list": (
+            "forms",
+            "/form-integrations/v1/submissions/forms/{formId}",
+        ),
+        "hubspot.marketing.segments.list": (
+            "crm.lists.read",
+            "/crm/lists/2026-03/search",
+        ),
+        "hubspot.marketing.segments.memberships.list": (
+            "crm.lists.read",
+            "/crm/lists/2026-03/{listId}/memberships",
+        ),
+    }
+    for action_key, (required_scope, endpoint) in hubspot_marketing_reads.items():
+        action = actions[action_key]
+        assert action.risk_level == "read"
+        assert action.config["connector"] == "hubspot"
+        assert action.config["required_scopes"] == [required_scope]
+        assert action.config["readiness_group"] == "marketing"
+        assert action.config["endpoint"] == endpoint
+        assert action.config["response_contract"] == "safe-provider-refs-v1"
+    for action_key in (
+        "hubspot.marketing.segments.memberships.add",
+        "hubspot.marketing.segments.memberships.remove",
+    ):
+        action = actions[action_key]
+        assert action.risk_level == "write"
+        assert action.config["connector"] == "hubspot"
+        assert action.config["required_scopes"] == ["crm.lists.write"]
+        assert action.config["mutable_processing_types"] == ["MANUAL", "SNAPSHOT"]
+        assert action.config["idempotency_policy"] == ("caller-required-for-safe-retry")
+        assert action.config["confirmation_policy"] == ("workflow-grant-or-direct-operator-intent")
+    marketing_contact_status = actions["hubspot.marketing.contacts.status.update"]
+    assert marketing_contact_status.risk_level == "high"
+    assert "connector" not in marketing_contact_status.config
+    assert marketing_contact_status.config["execution_mode"] == "deferred"
+    assert marketing_contact_status.config["deferred_reason"] == ("deferred-marketing-contact-cost")
+    assert "billing" in marketing_contact_status.config["cost_warning"].lower()
+    assert marketing_contact_status.input_schema["properties"]["acknowledge_billing_impact"] == {
+        "type": "boolean",
+        "const": True,
+    }
+    for action_key in (
+        "hubspot.marketing.campaigns.list",
+        "hubspot.marketing.campaigns.get",
+    ):
+        action = actions[action_key]
+        assert action.risk_level == "read"
+        assert action.config["connector"] == "hubspot"
+        assert action.config["required_scopes"] == ["marketing.campaigns.read"]
+        assert action.config["readiness_group"] == "marketing"
+        assert action.config["api_version"] == "2026-03"
+        assert action.config["response_contract"] == "safe-provider-refs-v1"
+    for action_key in (
+        "hubspot.marketing.campaigns.create",
+        "hubspot.marketing.campaigns.update",
+    ):
+        action = actions[action_key]
+        assert action.risk_level == "write"
+        assert action.config["connector"] == "hubspot"
+        assert action.config["required_scopes"] == ["marketing.campaigns.write"]
+        assert action.config["idempotency_policy"] == ("caller-required-for-safe-retry")
+        assert action.config["confirmation_policy"] == ("workflow-grant-or-direct-operator-intent")
+    for action_key in (
+        "hubspot.marketing.emails.list",
+        "hubspot.marketing.emails.get",
+    ):
+        action = actions[action_key]
+        assert action.risk_level == "read"
+        assert action.config["connector"] == "hubspot"
+        assert action.config["required_scopes"] == ["marketing-email"]
+        assert action.config["recipient_data"] == "omitted"
+    for action_key in (
+        "hubspot.marketing.emails.create",
+        "hubspot.marketing.emails.update",
+    ):
+        action = actions[action_key]
+        assert action.risk_level == "write"
+        assert action.config["connector"] == "hubspot"
+        assert action.config["required_scopes"] == ["marketing-email"]
+        assert "draft" in action.config["lifecycle_boundary"]
+        assert action.config["idempotency_policy"] == ("caller-required-for-safe-retry")
+    for action_key, reason in (
+        ("hubspot.marketing.emails.publish", "deferred-publish-live-proof"),
+        ("hubspot.marketing.emails.bulk_send", "deferred-bulk-marketing-send"),
+    ):
+        action = actions[action_key]
+        assert "connector" not in action.config
+        assert action.config["execution_mode"] == "deferred"
+        assert action.config["deferred_reason"] == reason
+    assert (
+        actions["hubspot.marketing.emails.bulk_send"].config["normal_transactional_delivery"]
+        == "communication.send"
+    )
+    transactional_send = actions["hubspot.transactional.single_email.send"]
+    assert transactional_send.risk_level == "high"
+    assert transactional_send.config["connector"] == "hubspot"
+    assert transactional_send.config["operation"] == "transactional.single_email.send"
+    assert transactional_send.config["required_scopes"] == [
+        "crm.objects.contacts.read",
+        "transactional-email",
+    ]
+    assert transactional_send.config["readiness_group"] == "transactional-communications"
+    assert transactional_send.config["normal_delivery_owner"] == "communication.send"
+    assert transactional_send.config["direct_use"] == "explicit-provider-escape-hatch"
+    assert transactional_send.config["contact_properties"] == "immutable-empty"
+    assert transactional_send.config["response_contract"] == "safe-transactional-send-v1"
+    assert transactional_send.input_schema["properties"]["entitlement_confirmed"] == {
+        "type": "boolean",
+        "const": True,
+    }
+    assert "recipients" not in transactional_send.input_schema["properties"]
+    assert "contact_properties" not in transactional_send.input_schema["properties"]
+    subscription_types = actions["hubspot.marketing.subscription_types.list"]
+    assert subscription_types.config["required_scopes"] == ["subscriptions-definition-read"]
+    preference_get = actions["hubspot.marketing.contact_preferences.get"]
+    assert preference_get.config["required_scopes"] == [
+        "crm.objects.contacts.read",
+        "subscriptions-status-read",
+    ]
+    preference_update = actions["hubspot.marketing.contact_preferences.update"]
+    assert preference_update.risk_level == "high"
+    assert preference_update.config["connector"] == "hubspot"
+    assert preference_update.config["required_scopes"] == [
+        "crm.objects.contacts.read",
+        "subscriptions-status-write",
+    ]
+    assert preference_update.input_schema["properties"]["legal_change_confirmed"] == {
+        "type": "boolean",
+        "const": True,
+    }
+    assert preference_update.config["legal_basis_required"] is True
+    marketing_events = actions["hubspot.marketing.events.list"]
+    assert marketing_events.risk_level == "read"
+    assert marketing_events.config["connector"] == "hubspot"
+    assert marketing_events.config["operation"] == "marketing.events.list"
+    assert marketing_events.config["required_scopes"] == ["crm.objects.marketing_events.read"]
+    assert marketing_events.config["endpoint"] == "/marketing/marketing-events/2026-03"
+    marketing_event_upsert = actions["hubspot.marketing.events.upsert"]
+    assert marketing_event_upsert.risk_level == "write"
+    assert marketing_event_upsert.config["connector"] == "hubspot"
+    assert marketing_event_upsert.config["required_scopes"] == [
+        "crm.objects.marketing_events.write"
+    ]
+    assert marketing_event_upsert.config["endpoint"] == (
+        "/marketing/marketing-events/2026-03/events/upsert"
+    )
+    assert marketing_event_upsert.input_schema["required"] == [
+        "external_account_key",
+        "external_event_key",
+        "name",
+        "organizer",
+    ]
+    behavioral_definitions = actions["hubspot.marketing.behavioral_events.definitions.list"]
+    assert behavioral_definitions.risk_level == "read"
+    assert behavioral_definitions.config["connector"] == "hubspot"
+    assert behavioral_definitions.config["required_scopes"] == [
+        "behavioral_events.event_definitions.read_write"
+    ]
+    behavioral_send = actions["hubspot.marketing.behavioral_events.send"]
+    assert behavioral_send.risk_level == "high"
+    assert behavioral_send.config["connector"] == "hubspot"
+    assert behavioral_send.config["required_scopes"] == ["analytics.behavioral_events.send"]
+    assert behavioral_send.config["endpoint"] == "/events/2026-03/send"
+    assert behavioral_send.config["identity_contract"] == (
+        "provider-verified-contact-and-definition-refs"
+    )
+    assert behavioral_send.config["deduplication_policy"] == (
+        "caller-occurrence-key-to-provider-uuid"
+    )
+    behavioral_send_properties = behavioral_send.input_schema["properties"]
+    assert behavioral_send_properties["tracking_authority_confirmed"] == {
+        "type": "boolean",
+        "const": True,
+    }
+    assert behavioral_send_properties["definition_ref"]["pattern"] == "^provider-object:"
+    assert behavioral_send_properties["contact_ref"]["pattern"] == "^provider-object:"
+    assert "email" not in behavioral_send_properties
+    assert "object_id" not in behavioral_send_properties
+    export_create = actions["hubspot.bulk.exports.create"]
+    assert export_create.risk_level == "high"
+    assert export_create.config["connector"] == "hubspot"
+    assert export_create.config["operation"] == "bulk.exports.create"
+    assert export_create.config["required_scopes"] == ["crm.export"]
+    assert export_create.config["readiness_group"] == "bulk"
+    assert export_create.config["api_version"] == "2026-03"
+    assert export_create.config["endpoint"] == "/crm/exports/2026-03/export/async"
+    assert export_create.config["response_contract"] == "safe-async-export-job-v1"
+    assert export_create.input_schema["properties"]["export_authorized"] == {
+        "type": "boolean",
+        "const": True,
+    }
+    assert export_create.input_schema["properties"]["property_refs"]["items"]["pattern"] == (
+        "^provider-object:"
+    )
+    export_status = actions["hubspot.bulk.exports.status"]
+    assert export_status.risk_level == "read"
+    assert export_status.config["endpoint"] == "/crm/exports/2026-03/export/{exportId}"
+    assert export_status.config["response_contract"] == "safe-async-export-status-v1"
+    export_result = actions["hubspot.bulk.exports.result"]
+    assert export_result.risk_level == "read"
+    assert export_result.config["endpoint"] == (
+        "/crm/exports/2026-03/export/async/tasks/{taskId}/status"
+    )
+    assert export_result.config["artifact_contract"] == "generated-asset-and-artifact-record-v1"
+    assert export_result.config["signed_url_policy"] == "consume-never-return-or-store"
+    import_create = actions["hubspot.bulk.imports.create"]
+    assert import_create.risk_level == "high"
+    assert "connector" not in import_create.config
+    assert import_create.config["execution_mode"] == "deferred"
+    assert import_create.config["deferred_reason"] == "deferred-multipart-artifact-bridge"
+    webhook_admin = actions["hubspot.webhooks.subscriptions.configure"]
+    workflow_action_admin = actions["hubspot.automation.workflow_actions.register"]
+    for action in (webhook_admin, workflow_action_admin):
+        assert action.risk_level == "high"
+        assert "connector" not in action.config
+        assert action.config["execution_mode"] == "deferred-app-configuration"
+        assert action.config["provider_authority"] == "hubspot-developer-app"
+        assert action.config["response_contract"] == "deferred-no-provider-call"
+    assert webhook_admin.config["deployment_prerequisites"] == [
+        "public-https-ingress",
+        "app-client-secret",
+        "exact-event-allowlist",
+    ]
+    assert workflow_action_admin.config["invocation_signature"] == "v3"
+    assert workflow_action_admin.config["invocation_response"] == {
+        "outputFields": {"hs_execution_state": "SUCCESS-or-FAIL_CONTINUE"}
+    }
     assert actions["salesforce.lead.upsert_by_external_id"].config["connector"] == "salesforce"
     assert actions["apollo.people.enrich"].config["connector"] == "apollo"
     assert actions["outreach.sequence_state.create"].config["connector"] == "outreach"
