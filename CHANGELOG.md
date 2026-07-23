@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## 2.1.8 - 2026-07-22
+
+- Added a provider-neutral OAuth authorization-code lifecycle with encrypted
+  credential storage, refresh handling, state validation, connection readiness,
+  and the fixed `https://auth.stackos.flowmonkey.io/oauth/callback` relay for
+  local StackOS installations.
+- Added the HubSpot customer-lifecycle integration across CRM core, sales,
+  marketing, bulk import/export, signed webhook ingress, and custom workflow
+  actions, with capability-scoped OAuth readiness and typed safe provider
+  references.
+- Refreshed the public integration catalog and shared app/website provider
+  presentation so HubSpot exposes its complete delivered action inventory and
+  uses the reviewed HubSpot wordmark in both surfaces.
+- Made FTP transfers durable background work and preserved canonical Trackbooth
+  catalog schemas through runtime synchronization and validation.
+- Expanded the reviewed integration logo family used by the website and
+  operational app while keeping one shared provider-presentation source.
+
 ## 2.1.6 - 2026-07-18
 
 - Split oversized action, run-plan, tracker, operation, and CLI modules into

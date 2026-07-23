@@ -1,0 +1,15 @@
+{
+  "key": "gtm.workflow.marketing-program-lifecycle",
+  "slug": "gtm-workflow-marketing-program-lifecycle",
+  "name": "GTM Marketing Program Lifecycle Agent",
+  "description": "Reviews and applies bounded HubSpot audience, campaign, draft-email, and consent changes with separate risk gates.",
+  "domain": "gtm",
+  "audience": "Sales and go-to-market teams",
+  "color": "#ff9f73",
+  "featured": false,
+  "role": "Gtm Marketing Program Lifecycle",
+  "roleClass": "reasoning",
+  "workflowKeys": [
+    "gtm.marketing-program-lifecycle"
+  ]
+}

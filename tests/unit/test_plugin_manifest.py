@@ -2031,6 +2031,38 @@ def test_manifest_rejects_unknown_fields() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("reference_field", "reference_value", "message"),
+    [
+        ("provider", "missing-provider", 'unknown provider "missing-provider"'),
+        ("capability", "missing-capability", 'unknown capability "missing-capability"'),
+    ],
+)
+def test_manifest_rejects_unknown_action_references(
+    reference_field: str,
+    reference_value: str,
+    message: str,
+) -> None:
+    action = {
+        "key": "example.run",
+        "name": "Run Example",
+        "provider": "example-provider",
+        "capability": "example-capability",
+    }
+    action[reference_field] = reference_value
+
+    with pytest.raises(ValidationError, match=message):
+        PluginManifest.model_validate(
+            {
+                "slug": "example",
+                "name": "Example",
+                "providers": [{"key": "example-provider", "name": "Example Provider"}],
+                "capabilities": [{"key": "example-capability", "name": "Example Capability"}],
+                "actions": [action],
+            }
+        )
+
+
 def test_manifest_rejects_secret_like_provider_setup_metadata() -> None:
     with pytest.raises(ValidationError):
         PluginManifest.model_validate(
@@ -2088,6 +2120,8 @@ def test_manifest_accepts_provider_native_snake_segments() -> None:
         {
             "slug": "media-buying",
             "name": "Media Buying",
+            "providers": [{"key": "meta-ads", "name": "Meta Ads"}],
+            "capabilities": [{"key": "campaign-management", "name": "Campaign Management"}],
             "actions": [
                 {
                     "key": "meta.ad_set.create",

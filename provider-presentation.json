@@ -22,7 +22,7 @@
   "seo.google-search-console": { "src": "/images/integrations/google-search-console.png", "kind": "icon" },
   "seo.google-tag-manager": { "src": "/images/integrations/google-tag-manager.png", "kind": "icon" },
   "gtm.google-workspace": { "src": "/images/integrations/google-workspace.png", "kind": "wordmark" },
-  "gtm.hubspot": { "src": "/images/integrations/hubspot-icon.png", "kind": "icon" },
+  "gtm.hubspot": { "src": "/images/integrations/hubspot.png", "kind": "wordmark" },
   "communications.imap": { "src": "/images/integrations/imap.svg", "kind": "wordmark-dark" },
   "utils.ideogram": { "src": "/images/integrations/ideogram-icon.png", "kind": "icon" },
   "utils.jina": { "src": "/images/integrations/jina-ai-icon.png", "kind": "icon" },

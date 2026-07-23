@@ -1,0 +1,100 @@
+{
+  "key": "gtm.customer-follow-up",
+  "slug": "gtm-customer-follow-up",
+  "name": "GTM Customer Follow-Up",
+  "description": "One approved message delivered through an exact communication target, with full provider-safe evidence and separately approved CRM follow-up records.",
+  "domain": "gtm",
+  "audience": "Sales, success, and support teams sending one approved HubSpot transactional follow-up",
+  "color": "#ff9f73",
+  "featured": false,
+  "problem": "Customer follow-up is risky when recipient eligibility, transactional intent, target policy, template data, send idempotency, and CRM activity logging are implicit.",
+  "outcome": "One approved message delivered through an exact communication target, with full provider-safe evidence and separately approved CRM follow-up records.",
+  "whyAi": "AI can prepare the bounded message and activity context while StackOS resolves the named target, enforces policy, executes the provider action, and records audit.",
+  "operatorPath": [
+    "Provide the follow-up goal, approved transactional template packet, and stable delivery key.",
+    "Review recipient eligibility, legal basis, target, content data, and desired CRM activity records.",
+    "Approve the one-to-one send and any CRM activity writes separately."
+  ],
+  "agentPath": [
+    "Validate that the message is transactional, one-to-one, and supported by the exact named target.",
+    "Send through communication.send with the workflow delivery key.",
+    "Optionally record approved note, task, call, or meeting activity and reconcile all evidence."
+  ],
+  "progressSignals": [
+    "Follow-up intent bounded",
+    "Target and eligibility checked",
+    "Send approved",
+    "Delivery evidence recorded",
+    "CRM activity reconciled"
+  ],
+  "recovery": [
+    "If the target, entitlement, consent, relationship, legal basis, or template ref is unresolved, stop before sending.",
+    "If send state is incomplete or uncertain, inspect the existing communication and action evidence before any retry."
+  ],
+  "safeStoppingPoints": [
+    "Stop with the reviewed message packet when send approval is absent.",
+    "Stop after delivery when CRM activity recording is not authorized."
+  ],
+  "handoffs": [],
+  "setup": "connection-required",
+  "prerequisites": [
+    "A HubSpot OAuth connection with CRM Core and Transactional Communications enabled",
+    "The Transactional Email add-on confirmed for the connected portal",
+    "A communication profile and exact target named hubspot-customer-follow-up",
+    "A provider-verified transactional template ref and explicit recipient/legal policy"
+  ],
+  "proof": [
+    "Reviewed message and eligibility packet",
+    "communication.send result with message, event, action-call, request, and idempotency evidence",
+    "Approved CRM activity receipts or an explicit no-record decision"
+  ],
+  "whenToUse": [
+    "One known customer or contact needs an approved transactional follow-up and optional CRM activity record."
+  ],
+  "stages": [
+    {
+      "id": "orient",
+      "title": "Bound Customer Follow-Up",
+      "summary": "Read the exact goal, target, message packet, activity plan, recent evidence, and customer context."
+    },
+    {
+      "id": "prepare_followup",
+      "title": "Prepare Follow-Up Packet",
+      "summary": "Produce the exact provider-neutral communication content and separately reviewable CRM activity payloads."
+    },
+    {
+      "id": "send_followup",
+      "title": "Send Approved Follow-Up",
+      "summary": "Deliver once through communication.send to the exact named target."
+    },
+    {
+      "id": "record_followup",
+      "title": "Record Approved CRM Activity",
+      "summary": "Optionally create approved HubSpot note, task, call, or meeting records using safe associations."
+    },
+    {
+      "id": "closeout",
+      "title": "Reconcile Follow-Up Evidence",
+      "summary": "Store durable touchpoint and task state and report the exact observed delivery and CRM outcomes."
+    }
+  ],
+  "agentNames": [
+    "GTM Customer Follow-Up Agent",
+    "Review Agent"
+  ],
+  "agentRefs": [
+    {
+      "key": "gtm.workflow.customer-follow-up",
+      "slug": "gtm-workflow-customer-follow-up",
+      "name": "GTM Customer Follow-Up Agent"
+    },
+    {
+      "key": "stackos.sdlc.delivery-reviewer",
+      "slug": "stackos-sdlc-delivery-reviewer",
+      "name": "Review Agent"
+    }
+  ],
+  "integrations": [
+    "Hubspot"
+  ]
+}

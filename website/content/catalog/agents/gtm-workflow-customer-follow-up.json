@@ -1,0 +1,15 @@
+{
+  "key": "gtm.workflow.customer-follow-up",
+  "slug": "gtm-workflow-customer-follow-up",
+  "name": "GTM Customer Follow-Up Agent",
+  "description": "Sends one approved HubSpot transactional follow-up through the canonical communication target and optionally records CRM activity.",
+  "domain": "gtm",
+  "audience": "Sales and go-to-market teams",
+  "color": "#ff9f73",
+  "featured": false,
+  "role": "Gtm Customer Follow Up",
+  "roleClass": "reasoning",
+  "workflowKeys": [
+    "gtm.customer-follow-up"
+  ]
+}

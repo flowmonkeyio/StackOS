@@ -946,6 +946,100 @@
       ]
     },
     {
+      "key": "gtm.crm-export-handoff",
+      "slug": "gtm-crm-export-handoff",
+      "name": "GTM CRM Export Handoff",
+      "description": "One approved bounded export with a safe job ref, a retained StackOS artifact when complete, and truthful pending, partial, or failed evidence.",
+      "domain": "gtm",
+      "audience": "Revenue operations teams requesting bounded HubSpot CRM data exports",
+      "color": "#ff9f73",
+      "featured": false,
+      "problem": "CRM exports can leak excessive customer data or create duplicate async jobs when scope, authority, polling, and retention are left implicit.",
+      "outcome": "One approved bounded export with a safe job ref, a retained StackOS artifact when complete, and truthful pending, partial, or failed evidence.",
+      "whyAi": "AI can validate and reconcile the export lifecycle while the provider action and StackOS artifact boundary own execution and data handling.",
+      "operatorPath": [
+        "Choose one supported CRM object type, exact safe property refs, format, and retention policy.",
+        "Review data scope and approve creation of the provider export job.",
+        "Receive either the completed artifact or a safe pending/repair handoff."
+      ],
+      "agentPath": [
+        "Validate the bounded export plan and reject raw provider ids or unnecessary fields.",
+        "Start the job once with a stable export key.",
+        "Poll by safe job ref, consume the short-lived result internally, and reconcile artifact evidence."
+      ],
+      "progressSignals": [
+        "Export scope validated",
+        "Authority recorded",
+        "Job started",
+        "Provider state reconciled",
+        "Artifact and retention recorded"
+      ],
+      "recovery": [
+        "If provider state is pending, retain the safe job ref and next poll guidance without starting another export.",
+        "If result download is partial or fails, reuse the same job and action evidence rather than creating a replacement job."
+      ],
+      "safeStoppingPoints": [
+        "Stop before provider creation when scope or export authority is incomplete.",
+        "Stop with a safe pending handoff when the provider job is not complete."
+      ],
+      "handoffs": [],
+      "setup": "connection-required",
+      "prerequisites": [
+        "A HubSpot OAuth connection with the Bulk capability bundle",
+        "A supported object type and provider-verified property refs",
+        "Explicit export authority, a stable export key, and a retention policy"
+      ],
+      "proof": [
+        "Reviewed export plan",
+        "Safe async job and action-call refs",
+        "StackOS artifact ref or truthful pending/repair guidance"
+      ],
+      "whenToUse": [
+        "One bounded HubSpot contacts, companies, deals, leads, products, or line-items dataset must be exported for an approved purpose."
+      ],
+      "stages": [
+        {
+          "id": "orient",
+          "title": "Validate Export Intent",
+          "summary": "Read the bounded export request, prior export state, and recent action evidence before any provider call."
+        },
+        {
+          "id": "start_export",
+          "title": "Start Approved Export",
+          "summary": "Start exactly one provider export after explicit data-scope approval."
+        },
+        {
+          "id": "retrieve_export",
+          "title": "Reconcile And Retrieve Export",
+          "summary": "Poll by safe job ref and, when complete, consume the provider result into the StackOS-managed artifact boundary."
+        },
+        {
+          "id": "closeout",
+          "title": "Record Export Handoff",
+          "summary": "Store the durable export index and retention disposition for completed, pending, partial, blocked, or failed outcomes."
+        }
+      ],
+      "agentNames": [
+        "GTM CRM Export Handoff Agent",
+        "Review Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "gtm.workflow.crm-export-handoff",
+          "slug": "gtm-workflow-crm-export-handoff",
+          "name": "GTM CRM Export Handoff Agent"
+        },
+        {
+          "key": "stackos.sdlc.delivery-reviewer",
+          "slug": "stackos-sdlc-delivery-reviewer",
+          "name": "Review Agent"
+        }
+      ],
+      "integrations": [
+        "Hubspot"
+      ]
+    },
+    {
       "key": "gtm.crm-hygiene-pass",
       "slug": "gtm-crm-hygiene-pass",
       "name": "GTM CRM Hygiene Pass",
@@ -1032,6 +1126,106 @@
       "integrations": [
         "Hubspot",
         "Salesforce"
+      ]
+    },
+    {
+      "key": "gtm.customer-follow-up",
+      "slug": "gtm-customer-follow-up",
+      "name": "GTM Customer Follow-Up",
+      "description": "One approved message delivered through an exact communication target, with full provider-safe evidence and separately approved CRM follow-up records.",
+      "domain": "gtm",
+      "audience": "Sales, success, and support teams sending one approved HubSpot transactional follow-up",
+      "color": "#ff9f73",
+      "featured": false,
+      "problem": "Customer follow-up is risky when recipient eligibility, transactional intent, target policy, template data, send idempotency, and CRM activity logging are implicit.",
+      "outcome": "One approved message delivered through an exact communication target, with full provider-safe evidence and separately approved CRM follow-up records.",
+      "whyAi": "AI can prepare the bounded message and activity context while StackOS resolves the named target, enforces policy, executes the provider action, and records audit.",
+      "operatorPath": [
+        "Provide the follow-up goal, approved transactional template packet, and stable delivery key.",
+        "Review recipient eligibility, legal basis, target, content data, and desired CRM activity records.",
+        "Approve the one-to-one send and any CRM activity writes separately."
+      ],
+      "agentPath": [
+        "Validate that the message is transactional, one-to-one, and supported by the exact named target.",
+        "Send through communication.send with the workflow delivery key.",
+        "Optionally record approved note, task, call, or meeting activity and reconcile all evidence."
+      ],
+      "progressSignals": [
+        "Follow-up intent bounded",
+        "Target and eligibility checked",
+        "Send approved",
+        "Delivery evidence recorded",
+        "CRM activity reconciled"
+      ],
+      "recovery": [
+        "If the target, entitlement, consent, relationship, legal basis, or template ref is unresolved, stop before sending.",
+        "If send state is incomplete or uncertain, inspect the existing communication and action evidence before any retry."
+      ],
+      "safeStoppingPoints": [
+        "Stop with the reviewed message packet when send approval is absent.",
+        "Stop after delivery when CRM activity recording is not authorized."
+      ],
+      "handoffs": [],
+      "setup": "connection-required",
+      "prerequisites": [
+        "A HubSpot OAuth connection with CRM Core and Transactional Communications enabled",
+        "The Transactional Email add-on confirmed for the connected portal",
+        "A communication profile and exact target named hubspot-customer-follow-up",
+        "A provider-verified transactional template ref and explicit recipient/legal policy"
+      ],
+      "proof": [
+        "Reviewed message and eligibility packet",
+        "communication.send result with message, event, action-call, request, and idempotency evidence",
+        "Approved CRM activity receipts or an explicit no-record decision"
+      ],
+      "whenToUse": [
+        "One known customer or contact needs an approved transactional follow-up and optional CRM activity record."
+      ],
+      "stages": [
+        {
+          "id": "orient",
+          "title": "Bound Customer Follow-Up",
+          "summary": "Read the exact goal, target, message packet, activity plan, recent evidence, and customer context."
+        },
+        {
+          "id": "prepare_followup",
+          "title": "Prepare Follow-Up Packet",
+          "summary": "Produce the exact provider-neutral communication content and separately reviewable CRM activity payloads."
+        },
+        {
+          "id": "send_followup",
+          "title": "Send Approved Follow-Up",
+          "summary": "Deliver once through communication.send to the exact named target."
+        },
+        {
+          "id": "record_followup",
+          "title": "Record Approved CRM Activity",
+          "summary": "Optionally create approved HubSpot note, task, call, or meeting records using safe associations."
+        },
+        {
+          "id": "closeout",
+          "title": "Reconcile Follow-Up Evidence",
+          "summary": "Store durable touchpoint and task state and report the exact observed delivery and CRM outcomes."
+        }
+      ],
+      "agentNames": [
+        "GTM Customer Follow-Up Agent",
+        "Review Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "gtm.workflow.customer-follow-up",
+          "slug": "gtm-workflow-customer-follow-up",
+          "name": "GTM Customer Follow-Up Agent"
+        },
+        {
+          "key": "stackos.sdlc.delivery-reviewer",
+          "slug": "stackos-sdlc-delivery-reviewer",
+          "name": "Review Agent"
+        }
+      ],
+      "integrations": [
+        "Hubspot"
       ]
     },
     {
@@ -1128,6 +1322,110 @@
         "Clay",
         "Clearbit By Hubspot",
         "Custom Gtm Tool"
+      ]
+    },
+    {
+      "key": "gtm.marketing-program-lifecycle",
+      "slug": "gtm-marketing-program-lifecycle",
+      "name": "GTM Marketing Program Lifecycle",
+      "description": "A reviewed marketing-program plan with narrowly approved HubSpot changes, consent decisions isolated behind their own gate, and provider-safe execution evidence.",
+      "domain": "gtm",
+      "audience": "Marketing operations teams managing HubSpot campaign programs",
+      "color": "#ff9f73",
+      "featured": false,
+      "problem": "Marketing program setup becomes unsafe when audience membership, campaign metadata, draft assets, consent state, and delivery are changed as one opaque operation.",
+      "outcome": "A reviewed marketing-program plan with narrowly approved HubSpot changes, consent decisions isolated behind their own gate, and provider-safe execution evidence.",
+      "whyAi": "AI can reconcile program context and prepare bounded changes while StackOS keeps provider execution, approvals, idempotency, and evidence explicit.",
+      "operatorPath": [
+        "Choose one program scope, audience boundary, and review-only or apply mode.",
+        "Review campaign, draft-email, segment, and consent changes separately.",
+        "Approve ordinary program mutations and legal consent changes through distinct gates."
+      ],
+      "agentPath": [
+        "Inspect only the HubSpot state needed for the bounded program.",
+        "Prepare safe-ref changes and isolate conflicts, missing consent, and unavailable capabilities.",
+        "Execute only approved actions with stable mutation keys and reconcile provider-safe evidence."
+      ],
+      "progressSignals": [
+        "Program scope bounded",
+        "Current state inspected",
+        "Changes prepared",
+        "Approvals recorded",
+        "Provider evidence reconciled"
+      ],
+      "recovery": [
+        "If a safe ref, scope, or consent fact is missing, keep the program in review-only state.",
+        "After a partial provider result, inspect the existing action-call evidence and retry only unresolved mutations with the same keys."
+      ],
+      "safeStoppingPoints": [
+        "Stop after the reviewed plan when writes are not authorized.",
+        "Stop before consent mutation when legal basis or affirmative consent evidence is incomplete."
+      ],
+      "handoffs": [],
+      "setup": "connection-required",
+      "prerequisites": [
+        "A HubSpot OAuth connection with the Marketing capability bundle",
+        "A bounded program scope and safe campaign, email, segment, contact, and subscription refs where applicable",
+        "Audience policy, legal-basis policy, and separate approval authority for consent changes"
+      ],
+      "proof": [
+        "Current-state evidence and safe refs",
+        "Reviewed program and consent change sets",
+        "Action-call refs, provider request ids, partial failures, and retry guidance"
+      ],
+      "whenToUse": [
+        "A HubSpot marketing program needs coordinated audience, campaign, draft-email, or consent review and approved updates."
+      ],
+      "stages": [
+        {
+          "id": "orient",
+          "title": "Bound Marketing Program",
+          "summary": "Read the goal, bounded scope, execution mode, durable context, and prior learnings."
+        },
+        {
+          "id": "inspect_program",
+          "title": "Inspect Current Program State",
+          "summary": "Read only the campaigns, draft emails, segments, subscription definitions, and selected contact preferences needed by the plan."
+        },
+        {
+          "id": "prepare_changes",
+          "title": "Prepare Reviewed Change Sets",
+          "summary": "Produce atomic program and consent change sets, expected effects, idempotency inputs, and explicit skips."
+        },
+        {
+          "id": "apply_program_changes",
+          "title": "Apply Approved Program Changes",
+          "summary": "Optionally create or update campaign and draft-email assets and change bounded segment membership."
+        },
+        {
+          "id": "apply_consent_changes",
+          "title": "Apply Separately Approved Consent Changes",
+          "summary": "Optionally apply explicit contact preference changes after independent legal and evidence review."
+        },
+        {
+          "id": "closeout",
+          "title": "Reconcile Program Evidence",
+          "summary": "Store the durable program index and final status without claiming publication, bulk delivery, or unobserved outcomes."
+        }
+      ],
+      "agentNames": [
+        "GTM Marketing Program Lifecycle Agent",
+        "Review Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "gtm.workflow.marketing-program-lifecycle",
+          "slug": "gtm-workflow-marketing-program-lifecycle",
+          "name": "GTM Marketing Program Lifecycle Agent"
+        },
+        {
+          "key": "stackos.sdlc.delivery-reviewer",
+          "slug": "stackos-sdlc-delivery-reviewer",
+          "name": "Review Agent"
+        }
+      ],
+      "integrations": [
+        "Hubspot"
       ]
     },
     {
@@ -1289,6 +1587,11 @@
           "id": "fetch_metric_gaps",
           "title": "Fetch Metric Gaps",
           "summary": "Use granted read actions only when stored pipeline evidence is insufficient."
+        },
+        {
+          "id": "fetch_revenue_evidence",
+          "title": "Fetch Optional Revenue Evidence",
+          "summary": "Use HubSpot Sales reads only when product, line-item, quote, or goal-target context materially changes a deal-risk conclusion."
         },
         {
           "id": "diagnose_risks",
@@ -3032,6 +3335,21 @@
       ]
     },
     {
+      "key": "gtm.workflow.crm-export-handoff",
+      "slug": "gtm-workflow-crm-export-handoff",
+      "name": "GTM CRM Export Handoff Agent",
+      "description": "Validates one bounded HubSpot export and reconciles its async job, managed artifact, and retention evidence.",
+      "domain": "gtm",
+      "audience": "Sales and go-to-market teams",
+      "color": "#ff9f73",
+      "featured": false,
+      "role": "Gtm Crm Export Handoff",
+      "roleClass": "mechanical",
+      "workflowKeys": [
+        "gtm.crm-export-handoff"
+      ]
+    },
+    {
       "key": "gtm.workflow.crm-hygiene-pass",
       "slug": "gtm-workflow-crm-hygiene-pass",
       "name": "GTM CRM Hygiene Agent",
@@ -3047,6 +3365,21 @@
       ]
     },
     {
+      "key": "gtm.workflow.customer-follow-up",
+      "slug": "gtm-workflow-customer-follow-up",
+      "name": "GTM Customer Follow-Up Agent",
+      "description": "Sends one approved HubSpot transactional follow-up through the canonical communication target and optionally records CRM activity.",
+      "domain": "gtm",
+      "audience": "Sales and go-to-market teams",
+      "color": "#ff9f73",
+      "featured": false,
+      "role": "Gtm Customer Follow Up",
+      "roleClass": "reasoning",
+      "workflowKeys": [
+        "gtm.customer-follow-up"
+      ]
+    },
+    {
       "key": "gtm.workflow.lead-enrichment-scoring",
       "slug": "gtm-workflow-lead-enrichment-scoring",
       "name": "GTM Lead Enrichment Scoring Agent",
@@ -3059,6 +3392,21 @@
       "roleClass": "reasoning",
       "workflowKeys": [
         "gtm.lead-enrichment-scoring"
+      ]
+    },
+    {
+      "key": "gtm.workflow.marketing-program-lifecycle",
+      "slug": "gtm-workflow-marketing-program-lifecycle",
+      "name": "GTM Marketing Program Lifecycle Agent",
+      "description": "Reviews and applies bounded HubSpot audience, campaign, draft-email, and consent changes with separate risk gates.",
+      "domain": "gtm",
+      "audience": "Sales and go-to-market teams",
+      "color": "#ff9f73",
+      "featured": false,
+      "role": "Gtm Marketing Program Lifecycle",
+      "roleClass": "reasoning",
+      "workflowKeys": [
+        "gtm.marketing-program-lifecycle"
       ]
     },
     {

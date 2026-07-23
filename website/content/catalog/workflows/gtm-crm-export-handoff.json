@@ -1,0 +1,94 @@
+{
+  "key": "gtm.crm-export-handoff",
+  "slug": "gtm-crm-export-handoff",
+  "name": "GTM CRM Export Handoff",
+  "description": "One approved bounded export with a safe job ref, a retained StackOS artifact when complete, and truthful pending, partial, or failed evidence.",
+  "domain": "gtm",
+  "audience": "Revenue operations teams requesting bounded HubSpot CRM data exports",
+  "color": "#ff9f73",
+  "featured": false,
+  "problem": "CRM exports can leak excessive customer data or create duplicate async jobs when scope, authority, polling, and retention are left implicit.",
+  "outcome": "One approved bounded export with a safe job ref, a retained StackOS artifact when complete, and truthful pending, partial, or failed evidence.",
+  "whyAi": "AI can validate and reconcile the export lifecycle while the provider action and StackOS artifact boundary own execution and data handling.",
+  "operatorPath": [
+    "Choose one supported CRM object type, exact safe property refs, format, and retention policy.",
+    "Review data scope and approve creation of the provider export job.",
+    "Receive either the completed artifact or a safe pending/repair handoff."
+  ],
+  "agentPath": [
+    "Validate the bounded export plan and reject raw provider ids or unnecessary fields.",
+    "Start the job once with a stable export key.",
+    "Poll by safe job ref, consume the short-lived result internally, and reconcile artifact evidence."
+  ],
+  "progressSignals": [
+    "Export scope validated",
+    "Authority recorded",
+    "Job started",
+    "Provider state reconciled",
+    "Artifact and retention recorded"
+  ],
+  "recovery": [
+    "If provider state is pending, retain the safe job ref and next poll guidance without starting another export.",
+    "If result download is partial or fails, reuse the same job and action evidence rather than creating a replacement job."
+  ],
+  "safeStoppingPoints": [
+    "Stop before provider creation when scope or export authority is incomplete.",
+    "Stop with a safe pending handoff when the provider job is not complete."
+  ],
+  "handoffs": [],
+  "setup": "connection-required",
+  "prerequisites": [
+    "A HubSpot OAuth connection with the Bulk capability bundle",
+    "A supported object type and provider-verified property refs",
+    "Explicit export authority, a stable export key, and a retention policy"
+  ],
+  "proof": [
+    "Reviewed export plan",
+    "Safe async job and action-call refs",
+    "StackOS artifact ref or truthful pending/repair guidance"
+  ],
+  "whenToUse": [
+    "One bounded HubSpot contacts, companies, deals, leads, products, or line-items dataset must be exported for an approved purpose."
+  ],
+  "stages": [
+    {
+      "id": "orient",
+      "title": "Validate Export Intent",
+      "summary": "Read the bounded export request, prior export state, and recent action evidence before any provider call."
+    },
+    {
+      "id": "start_export",
+      "title": "Start Approved Export",
+      "summary": "Start exactly one provider export after explicit data-scope approval."
+    },
+    {
+      "id": "retrieve_export",
+      "title": "Reconcile And Retrieve Export",
+      "summary": "Poll by safe job ref and, when complete, consume the provider result into the StackOS-managed artifact boundary."
+    },
+    {
+      "id": "closeout",
+      "title": "Record Export Handoff",
+      "summary": "Store the durable export index and retention disposition for completed, pending, partial, blocked, or failed outcomes."
+    }
+  ],
+  "agentNames": [
+    "GTM CRM Export Handoff Agent",
+    "Review Agent"
+  ],
+  "agentRefs": [
+    {
+      "key": "gtm.workflow.crm-export-handoff",
+      "slug": "gtm-workflow-crm-export-handoff",
+      "name": "GTM CRM Export Handoff Agent"
+    },
+    {
+      "key": "stackos.sdlc.delivery-reviewer",
+      "slug": "stackos-sdlc-delivery-reviewer",
+      "name": "Review Agent"
+    }
+  ],
+  "integrations": [
+    "Hubspot"
+  ]
+}

@@ -1,0 +1,104 @@
+{
+  "key": "gtm.marketing-program-lifecycle",
+  "slug": "gtm-marketing-program-lifecycle",
+  "name": "GTM Marketing Program Lifecycle",
+  "description": "A reviewed marketing-program plan with narrowly approved HubSpot changes, consent decisions isolated behind their own gate, and provider-safe execution evidence.",
+  "domain": "gtm",
+  "audience": "Marketing operations teams managing HubSpot campaign programs",
+  "color": "#ff9f73",
+  "featured": false,
+  "problem": "Marketing program setup becomes unsafe when audience membership, campaign metadata, draft assets, consent state, and delivery are changed as one opaque operation.",
+  "outcome": "A reviewed marketing-program plan with narrowly approved HubSpot changes, consent decisions isolated behind their own gate, and provider-safe execution evidence.",
+  "whyAi": "AI can reconcile program context and prepare bounded changes while StackOS keeps provider execution, approvals, idempotency, and evidence explicit.",
+  "operatorPath": [
+    "Choose one program scope, audience boundary, and review-only or apply mode.",
+    "Review campaign, draft-email, segment, and consent changes separately.",
+    "Approve ordinary program mutations and legal consent changes through distinct gates."
+  ],
+  "agentPath": [
+    "Inspect only the HubSpot state needed for the bounded program.",
+    "Prepare safe-ref changes and isolate conflicts, missing consent, and unavailable capabilities.",
+    "Execute only approved actions with stable mutation keys and reconcile provider-safe evidence."
+  ],
+  "progressSignals": [
+    "Program scope bounded",
+    "Current state inspected",
+    "Changes prepared",
+    "Approvals recorded",
+    "Provider evidence reconciled"
+  ],
+  "recovery": [
+    "If a safe ref, scope, or consent fact is missing, keep the program in review-only state.",
+    "After a partial provider result, inspect the existing action-call evidence and retry only unresolved mutations with the same keys."
+  ],
+  "safeStoppingPoints": [
+    "Stop after the reviewed plan when writes are not authorized.",
+    "Stop before consent mutation when legal basis or affirmative consent evidence is incomplete."
+  ],
+  "handoffs": [],
+  "setup": "connection-required",
+  "prerequisites": [
+    "A HubSpot OAuth connection with the Marketing capability bundle",
+    "A bounded program scope and safe campaign, email, segment, contact, and subscription refs where applicable",
+    "Audience policy, legal-basis policy, and separate approval authority for consent changes"
+  ],
+  "proof": [
+    "Current-state evidence and safe refs",
+    "Reviewed program and consent change sets",
+    "Action-call refs, provider request ids, partial failures, and retry guidance"
+  ],
+  "whenToUse": [
+    "A HubSpot marketing program needs coordinated audience, campaign, draft-email, or consent review and approved updates."
+  ],
+  "stages": [
+    {
+      "id": "orient",
+      "title": "Bound Marketing Program",
+      "summary": "Read the goal, bounded scope, execution mode, durable context, and prior learnings."
+    },
+    {
+      "id": "inspect_program",
+      "title": "Inspect Current Program State",
+      "summary": "Read only the campaigns, draft emails, segments, subscription definitions, and selected contact preferences needed by the plan."
+    },
+    {
+      "id": "prepare_changes",
+      "title": "Prepare Reviewed Change Sets",
+      "summary": "Produce atomic program and consent change sets, expected effects, idempotency inputs, and explicit skips."
+    },
+    {
+      "id": "apply_program_changes",
+      "title": "Apply Approved Program Changes",
+      "summary": "Optionally create or update campaign and draft-email assets and change bounded segment membership."
+    },
+    {
+      "id": "apply_consent_changes",
+      "title": "Apply Separately Approved Consent Changes",
+      "summary": "Optionally apply explicit contact preference changes after independent legal and evidence review."
+    },
+    {
+      "id": "closeout",
+      "title": "Reconcile Program Evidence",
+      "summary": "Store the durable program index and final status without claiming publication, bulk delivery, or unobserved outcomes."
+    }
+  ],
+  "agentNames": [
+    "GTM Marketing Program Lifecycle Agent",
+    "Review Agent"
+  ],
+  "agentRefs": [
+    {
+      "key": "gtm.workflow.marketing-program-lifecycle",
+      "slug": "gtm-workflow-marketing-program-lifecycle",
+      "name": "GTM Marketing Program Lifecycle Agent"
+    },
+    {
+      "key": "stackos.sdlc.delivery-reviewer",
+      "slug": "stackos-sdlc-delivery-reviewer",
+      "name": "Review Agent"
+    }
+  ],
+  "integrations": [
+    "Hubspot"
+  ]
+}

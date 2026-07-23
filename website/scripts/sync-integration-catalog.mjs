@@ -242,7 +242,7 @@ if (!trackboothProvider) throw new Error('The synced Trackbooth provider is requ
 
 const generated = {
   generatedAt: new Date().toISOString(),
-  source: 'StackOS catalog.list after Trackbooth catalog sync',
+  source: 'StackOS catalog.list after provider catalog synchronization',
   counts: {
     providers: providers.length,
     plugins: plugins.length,

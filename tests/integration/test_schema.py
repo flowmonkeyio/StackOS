@@ -51,6 +51,7 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
         "project_plugins",
         "project_workflow_templates",
         "projects",
+        "provider_object_references",
         "providers",
         "resource_records",
         "resources",

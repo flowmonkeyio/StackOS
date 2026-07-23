@@ -25,6 +25,10 @@ capabilities:
     name: Pipeline Management
     description: Read and store pipeline snapshots, deal risks, and follow-up recommendations.
     kind: domain
+  - key: automation
+    name: Revenue Automation
+    description: Represent provider webhook and workflow-action contracts without moving business decisions into tools.
+    kind: domain
   - key: enrichment
     name: Enrichment
     description: Run enrichment contracts through configured providers and store normalized records.

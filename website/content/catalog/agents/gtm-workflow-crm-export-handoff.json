@@ -1,0 +1,15 @@
+{
+  "key": "gtm.workflow.crm-export-handoff",
+  "slug": "gtm-workflow-crm-export-handoff",
+  "name": "GTM CRM Export Handoff Agent",
+  "description": "Validates one bounded HubSpot export and reconciles its async job, managed artifact, and retention evidence.",
+  "domain": "gtm",
+  "audience": "Sales and go-to-market teams",
+  "color": "#ff9f73",
+  "featured": false,
+  "role": "Gtm Crm Export Handoff",
+  "roleClass": "mechanical",
+  "workflowKeys": [
+    "gtm.crm-export-handoff"
+  ]
+}

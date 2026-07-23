@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from stackos.plugins.builtin_utils_ftp import ftp_action_kwargs, ftp_provider_kwargs
 from stackos.provider_setup import find_provider_setup_secret_paths
@@ -198,6 +198,21 @@ class PluginManifest(BaseModel):
     @classmethod
     def _slug(cls, value: str) -> str:
         return _validate_key(value)
+
+    @model_validator(mode="after")
+    def _action_references(self) -> PluginManifest:
+        provider_keys = {provider.key for provider in self.providers}
+        capability_keys = {capability.key for capability in self.capabilities}
+        for action in self.actions:
+            if action.provider is not None and action.provider not in provider_keys:
+                raise ValueError(
+                    f'action "{action.key}" references unknown provider "{action.provider}"'
+                )
+            if action.capability is not None and action.capability not in capability_keys:
+                raise ValueError(
+                    f'action "{action.key}" references unknown capability "{action.capability}"'
+                )
+        return self
 
 
 def _repo_root() -> Path:

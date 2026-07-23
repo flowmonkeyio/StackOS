@@ -3,11 +3,15 @@ import { expect, test } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 
 test('communicates the product and completes the core evaluation flow', async ({ page }) => {
+  const libraryCatalog = JSON.parse(
+    await readFile(new URL('../app/data/library-catalog.generated.json', import.meta.url), 'utf8'),
+  ) as { workflows: unknown[] }
+
   await page.goto('/')
 
   await expect(page.getByRole('heading', { level: 1 })).toContainText('StackOS keeps it on track')
   await expect(page.getByLabel('StackOS local workflow execution preview')).toBeVisible()
-  await expect(page.getByText('25', { exact: true })).toBeVisible()
+  await expect(page.getByText(String(libraryCatalog.workflows.length), { exact: true })).toBeVisible()
   await expect(page.getByText('Claude Code connected', { exact: true })).toBeAttached()
 
   const downloadUrl = 'https://stackos.flowmonkey.io/StackOS/stackos-latest-mac-arm64.dmg'
@@ -322,10 +326,14 @@ test('library exposes workflows, articles, cross-links, and production metadata'
 })
 
 test('catalog indexes render every generated definition on first navigation', async ({ page }) => {
+  const libraryCatalog = JSON.parse(
+    await readFile(new URL('../app/data/library-catalog.generated.json', import.meta.url), 'utf8'),
+  ) as { workflows: unknown[]; agents: unknown[]; orchestrators: unknown[] }
+
   for (const [path, count, answer, titleTerm] of [
-    ['/library/workflows', 25, 'What is AI workflow automation?', 'AI workflow automation'],
-    ['/library/agents', 43, 'What are AI agents for business?', 'AI agents for business'],
-    ['/library/orchestrators', 4, 'What is AI agent orchestration?', 'AI agent orchestration'],
+    ['/library/workflows', libraryCatalog.workflows.length, 'What is AI workflow automation?', 'AI workflow automation'],
+    ['/library/agents', libraryCatalog.agents.length, 'What are AI agents for business?', 'AI agents for business'],
+    ['/library/orchestrators', libraryCatalog.orchestrators.length, 'What is AI agent orchestration?', 'AI agent orchestration'],
   ] as const) {
     await page.goto(path)
     await expect(page.locator('.catalog-card')).toHaveCount(count)
@@ -595,6 +603,12 @@ test('GA4 remains unloaded until analytics consent is granted', async ({ page, c
 })
 
 test('integrations open plugin-first with a custom sort and exact brand assets', async ({ page }) => {
+  const integrationCatalog = JSON.parse(
+    await readFile(new URL('../app/data/integration-catalog.generated.json', import.meta.url), 'utf8'),
+  ) as { providers: Array<{ logo?: { src?: string } }> }
+  const providerCount = integrationCatalog.providers.length
+  const providerLogoCount = integrationCatalog.providers.filter((provider) => provider.logo?.src).length
+
   await page.context().addCookies([{
     name: 'stackos-analytics-consent',
     value: 'denied',
@@ -615,8 +629,8 @@ test('integrations open plugin-first with a custom sort and exact brand assets',
   await expect(page.locator('.integration-plugin h2').first()).toHaveText('Trackbooth')
 
   await page.getByRole('button', { name: 'Providers' }).click()
-  await expect(page.locator('.integration-card')).toHaveCount(52)
-  await expect(page.locator('.integration-card .integration-mark img')).toHaveCount(51)
+  await expect(page.locator('.integration-card')).toHaveCount(providerCount)
+  await expect(page.locator('.integration-card .integration-mark img')).toHaveCount(providerLogoCount)
   await page.waitForFunction(() => Array.from(
     document.querySelectorAll<HTMLImageElement>('.integration-card .integration-mark img'),
   ).every((image) => image.complete && image.naturalWidth > 0))
@@ -634,7 +648,7 @@ test('integrations open plugin-first with a custom sort and exact brand assets',
   expect(logoState.sources).toContain('/images/integrations/clay.png')
   expect(logoState.sources).toContain('/images/integrations/dataforseo.jpeg')
   expect(logoState.sources).toContain('/images/integrations/google-g.png')
-  expect(logoState.sources).toContain('/images/integrations/hubspot-icon.png')
+  expect(logoState.sources).toContain('/images/integrations/hubspot.png')
   expect(logoState.sources).toContain('/images/integrations/microsoft-365.png')
   expect(logoState.sources).toContain('/images/integrations/trackbooth.png')
   expect(logoState.sources).toContain('/images/integrations/salesloft.jpeg')

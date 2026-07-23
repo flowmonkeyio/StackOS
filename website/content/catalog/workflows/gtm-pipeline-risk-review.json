@@ -66,6 +66,11 @@
       "summary": "Use granted read actions only when stored pipeline evidence is insufficient."
     },
     {
+      "id": "fetch_revenue_evidence",
+      "title": "Fetch Optional Revenue Evidence",
+      "summary": "Use HubSpot Sales reads only when product, line-item, quote, or goal-target context materially changes a deal-risk conclusion."
+    },
+    {
       "id": "diagnose_risks",
       "title": "Diagnose Risks",
       "summary": "Separate likely stage, activity, account, deal, ownership, and timing risks."

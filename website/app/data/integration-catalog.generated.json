@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-07-20T07:43:18.522Z",
-  "source": "StackOS catalog.list after Trackbooth catalog sync",
+  "generatedAt": "2026-07-23T06:09:57.811Z",
+  "source": "StackOS catalog.list after provider catalog synchronization",
   "counts": {
     "providers": 54,
     "plugins": 10,
-    "actions": 571,
+    "actions": 644,
     "trackboothActions": 337
   },
   "plugins": [
@@ -60,8 +60,8 @@
       "description": "Research accounts, enrich leads, update CRM records, and prepare sales follow-up across your revenue tools.",
       "color": "#ff9f73",
       "providerCount": 11,
-      "actionCount": 31,
-      "capabilityCount": 6,
+      "actionCount": 104,
+      "capabilityCount": 7,
       "providerSlugs": [
         "apollo",
         "clay",
@@ -586,7 +586,7 @@
       "providerKey": "clay",
       "name": "Clay",
       "description": "Clay enrichment and workflow provider contract.",
-      "authType": "api-key",
+      "authType": "webhook",
       "pluginSlug": "gtm",
       "pluginName": "GTM And RevOps",
       "pluginDescription": "Research accounts, enrich leads, update CRM records, and prepare sales follow-up across your revenue tools.",
@@ -647,7 +647,7 @@
       ],
       "primaryUrl": "https://www.clay.com/",
       "docsUrl": "https://university.clay.com/",
-      "setupNote": "Clay setup is workspace-specific; use the Clay workspace/API or webhook configuration, then store only the token in StackOS."
+      "setupNote": "Create a Clay table webhook, then store its URL and optional authentication token in a dedicated StackOS connection profile."
     },
     {
       "key": "gtm.clearbit-by-hubspot",
@@ -957,7 +957,7 @@
       "providerKey": "dataforseo",
       "name": "DataForSEO",
       "description": "SERP, keyword volume, and competitor research provider.",
-      "authType": "api-key",
+      "authType": "basic",
       "pluginSlug": "seo",
       "pluginName": "SEO",
       "pluginDescription": "Research demand and measure search performance with specialist SEO data sources.",
@@ -1945,27 +1945,75 @@
       "slug": "hubspot",
       "providerKey": "hubspot",
       "name": "HubSpot",
-      "description": "HubSpot CRM provider contract for companies, contacts, notes, tasks, and pipeline reads.",
+      "description": "HubSpot sales and marketing customer-lifecycle provider with capability-scoped OAuth readiness.",
       "authType": "oauth",
       "pluginSlug": "gtm",
       "pluginName": "GTM And RevOps",
       "pluginDescription": "Research accounts, enrich leads, update CRM records, and prepare sales follow-up across your revenue tools.",
       "color": "#ff9f73",
       "logo": {
-        "src": "/images/integrations/hubspot-icon.png",
-        "kind": "icon"
+        "src": "/images/integrations/hubspot.png",
+        "kind": "wordmark"
       },
-      "actionCount": 6,
+      "actionCount": 79,
       "capabilities": [
         "CRM Operations",
-        "Pipeline Management"
+        "Lead Management",
+        "Outbound Operations",
+        "Pipeline Management",
+        "Revenue Automation"
       ],
       "actions": [
         {
+          "key": "gtm.hubspot.marketing.segments.memberships.add",
+          "name": "Add HubSpot Contact Segment Memberships",
+          "description": "Add safe contact refs to a verified MANUAL or SNAPSHOT segment.",
+          "keywords": "Add safe contact refs to a verified MANUAL or SNAPSHOT segment.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "write"
+        },
+        {
+          "key": "gtm.hubspot.crm.company_deal.associate",
+          "name": "Associate HubSpot Company To Deal",
+          "description": "Add one verified company-to-deal association label using typed safe refs.",
+          "keywords": "Add one verified company-to-deal association label using typed safe refs.",
+          "capability": "pipeline-management",
+          "capabilityName": "Pipeline Management",
+          "risk": "write"
+        },
+        {
+          "key": "gtm.hubspot.crm.contact_company.associate",
+          "name": "Associate HubSpot Contact To Company",
+          "description": "Add one verified contact-to-company association label using typed safe refs.",
+          "keywords": "Add one verified contact-to-company association label using typed safe refs.",
+          "capability": "crm-operations",
+          "capabilityName": "CRM Operations",
+          "risk": "write"
+        },
+        {
+          "key": "gtm.hubspot.crm.contact_deal.associate",
+          "name": "Associate HubSpot Contact To Deal",
+          "description": "Add one verified contact-to-deal association label using typed safe refs.",
+          "keywords": "Add one verified contact-to-deal association label using typed safe refs.",
+          "capability": "pipeline-management",
+          "capabilityName": "Pipeline Management",
+          "risk": "write"
+        },
+        {
+          "key": "gtm.hubspot.sales.line_items.associate_deal",
+          "name": "Associate HubSpot Line Item With Deal",
+          "description": "Attach one existing line item to one deal using typed account-bound refs.",
+          "keywords": "Attach one existing line item to one deal using typed account-bound refs.",
+          "capability": "pipeline-management",
+          "capabilityName": "Pipeline Management",
+          "risk": "write"
+        },
+        {
           "key": "gtm.hubspot.crm.companies.batch_upsert",
           "name": "Batch Upsert HubSpot Companies",
-          "description": "Batch upsert HubSpot companies using an approved id_property and explicit input rows.",
-          "keywords": "Batch upsert HubSpot companies using an approved id_property and explicit input rows.",
+          "description": "Batch upsert companies using a verified unique-property ref and explicit safe property values.",
+          "keywords": "Batch upsert companies using a verified unique-property ref and explicit safe property values.",
           "capability": "crm-operations",
           "capabilityName": "CRM Operations",
           "risk": "write"
@@ -1980,22 +2028,265 @@
           "risk": "write"
         },
         {
-          "key": "gtm.hubspot.crm.notes.create",
-          "name": "Create HubSpot CRM Note",
-          "description": "Create a HubSpot note from explicit note content and safe record refs.",
-          "keywords": "Create a HubSpot note from explicit note content and safe record refs.",
+          "key": "gtm.hubspot.crm.custom_objects.batch_upsert",
+          "name": "Batch Upsert HubSpot Custom Objects",
+          "description": "Deferred until an operator-approved custom-object schema contract exists.",
+          "keywords": "Deferred until an operator-approved custom-object schema contract exists.",
           "capability": "crm-operations",
           "capabilityName": "CRM Operations",
           "risk": "write"
         },
         {
-          "key": "gtm.hubspot.crm.tasks.create",
-          "name": "Create HubSpot Task",
-          "description": "Create a HubSpot task from explicit task input.",
-          "keywords": "Create a HubSpot task from explicit task input.",
+          "key": "gtm.hubspot.crm.deals.batch_upsert",
+          "name": "Batch Upsert HubSpot Deals",
+          "description": "Batch upsert deals using a verified unique-property ref and explicit safe property values.",
+          "keywords": "Batch upsert deals using a verified unique-property ref and explicit safe property values.",
+          "capability": "pipeline-management",
+          "capabilityName": "Pipeline Management",
+          "risk": "write"
+        },
+        {
+          "key": "gtm.hubspot.crm.leads.batch_upsert",
+          "name": "Batch Upsert HubSpot Leads",
+          "description": "Batch upsert leads using a verified unique-property ref when Sales write scope is granted.",
+          "keywords": "Batch upsert leads using a verified unique-property ref when Sales write scope is granted.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "write"
+        },
+        {
+          "key": "gtm.hubspot.sales.line_items.batch_upsert",
+          "name": "Batch Upsert HubSpot Line Items",
+          "description": "Batch upsert standalone or existing line items using a provider-verified unique property ref.",
+          "keywords": "Batch upsert standalone or existing line items using a provider-verified unique property ref.",
+          "capability": "pipeline-management",
+          "capabilityName": "Pipeline Management",
+          "risk": "write"
+        },
+        {
+          "key": "gtm.hubspot.sales.products.batch_upsert",
+          "name": "Batch Upsert HubSpot Products",
+          "description": "Batch upsert products using a provider-verified unique property ref.",
+          "keywords": "Batch upsert products using a provider-verified unique property ref.",
+          "capability": "pipeline-management",
+          "capabilityName": "Pipeline Management",
+          "risk": "write"
+        },
+        {
+          "key": "gtm.hubspot.webhooks.subscriptions.configure",
+          "name": "Configure HubSpot Webhook Subscriptions",
+          "description": "App-level webhook Target URL and subscription administration contract; operator-owned because HubSpot requires developer-app authority rather than an installed portal OAuth token.",
+          "keywords": "App-level webhook Target URL and subscription administration contract; operator-owned because HubSpot requires developer-app authority rather than an installed portal OAuth token.",
+          "capability": "automation",
+          "capabilityName": "Revenue Automation",
+          "risk": "high"
+        },
+        {
+          "key": "gtm.hubspot.crm.calls.create",
+          "name": "Create HubSpot Call",
+          "description": "Log an inbound or outbound call with safe owner and CRM associations.",
+          "keywords": "Log an inbound or outbound call with safe owner and CRM associations.",
+          "capability": "outbound-operations",
+          "capabilityName": "Outbound Operations",
+          "risk": "write"
+        },
+        {
+          "key": "gtm.hubspot.marketing.campaigns.create",
+          "name": "Create HubSpot Campaign",
+          "description": "Create a campaign from the bounded public campaign fields.",
+          "keywords": "Create a campaign from the bounded public campaign fields.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "write"
+        },
+        {
+          "key": "gtm.hubspot.crm.notes.create",
+          "name": "Create HubSpot CRM Note",
+          "description": "Create a timeline note with explicit content, owner, and safe CRM associations.",
+          "keywords": "Create a timeline note with explicit content, owner, and safe CRM associations.",
           "capability": "crm-operations",
           "capabilityName": "CRM Operations",
           "risk": "write"
+        },
+        {
+          "key": "gtm.hubspot.marketing.emails.create",
+          "name": "Create HubSpot Marketing Email Draft",
+          "description": "Create a draft marketing-email asset from a safe template ref or validated stable template path; no recipients or publish state are accepted.",
+          "keywords": "Create a draft marketing-email asset from a safe template ref or validated stable template path; no recipients or publish state are accepted.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "write"
+        },
+        {
+          "key": "gtm.hubspot.crm.meetings.create",
+          "name": "Create HubSpot Meeting",
+          "description": "Log a meeting with explicit timing, owner, and safe CRM associations.",
+          "keywords": "Log a meeting with explicit timing, owner, and safe CRM associations.",
+          "capability": "outbound-operations",
+          "capabilityName": "Outbound Operations",
+          "risk": "write"
+        },
+        {
+          "key": "gtm.hubspot.crm.tasks.create",
+          "name": "Create HubSpot Task",
+          "description": "Create an assigned sales task with safe CRM associations.",
+          "keywords": "Create an assigned sales task with safe CRM associations.",
+          "capability": "crm-operations",
+          "capabilityName": "CRM Operations",
+          "risk": "write"
+        },
+        {
+          "key": "gtm.hubspot.sales.line_items.dissociate_deal",
+          "name": "Dissociate HubSpot Line Item From Deal",
+          "description": "Remove the deal relationship for one existing line item using typed refs.",
+          "keywords": "Remove the deal relationship for one existing line item using typed refs.",
+          "capability": "pipeline-management",
+          "capabilityName": "Pipeline Management",
+          "risk": "write"
+        },
+        {
+          "key": "gtm.hubspot.sales.sequences.enroll",
+          "name": "Enroll Contact In HubSpot Sequence",
+          "description": "Deferred until seat, conflict, and enrollment lifecycle behavior has live proof.",
+          "keywords": "Deferred until seat, conflict, and enrollment lifecycle behavior has live proof.",
+          "capability": "outbound-operations",
+          "capabilityName": "Outbound Operations",
+          "risk": "high"
+        },
+        {
+          "key": "gtm.hubspot.marketing.campaigns.get",
+          "name": "Get HubSpot Campaign",
+          "description": "Read one campaign and optional bounded asset metrics using a safe campaign ref.",
+          "keywords": "Read one campaign and optional bounded asset metrics using a safe campaign ref.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.marketing.contact_preferences.get",
+          "name": "Get HubSpot Contact Email Preferences",
+          "description": "Resolve a safe contact ref internally and read its email subscription states without returning the subscriber email.",
+          "keywords": "Resolve a safe contact ref internally and read its email subscription states without returning the subscriber email.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.bulk.exports.status",
+          "name": "Get HubSpot CRM Export Status",
+          "description": "Read the current provider state, record count, and selected safe refs for one HubSpot export job.",
+          "keywords": "Read the current provider state, record count, and selected safe refs for one HubSpot export job.",
+          "capability": "crm-operations",
+          "capabilityName": "CRM Operations",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.marketing.emails.get",
+          "name": "Get HubSpot Marketing Email Asset",
+          "description": "Read one marketing-email asset and its available post-send statistics through a safe ref.",
+          "keywords": "Read one marketing-email asset and its available post-send statistics through a safe ref.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.marketing.behavioral_events.definitions.list",
+          "name": "List HubSpot Behavioral Event Definitions",
+          "description": "List custom event definitions and optional property metadata with opaque definition and property refs.",
+          "keywords": "List custom event definitions and optional property metadata with opaque definition and property refs.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.marketing.campaigns.list",
+          "name": "List HubSpot Campaigns",
+          "description": "List bounded Marketing Hub campaigns with approved fields and safe campaign, owner, and brand refs.",
+          "keywords": "List bounded Marketing Hub campaigns with approved fields and safe campaign, owner, and brand refs.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.crm.companies.properties.list",
+          "name": "List HubSpot Company Properties",
+          "description": "List portal-aware company fields and custom fields as safe metadata refs.",
+          "keywords": "List portal-aware company fields and custom fields as safe metadata refs.",
+          "capability": "crm-operations",
+          "capabilityName": "CRM Operations",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.crm.company_deal.labels.list",
+          "name": "List HubSpot Company To Deal Labels",
+          "description": "List the fixed company-to-deal association labels as typed safe refs.",
+          "keywords": "List the fixed company-to-deal association labels as typed safe refs.",
+          "capability": "pipeline-management",
+          "capabilityName": "Pipeline Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.crm.contacts.properties.list",
+          "name": "List HubSpot Contact Properties",
+          "description": "List portal-aware contact fields, custom fields, lifecycle stages, and safe metadata refs.",
+          "keywords": "List portal-aware contact fields, custom fields, lifecycle stages, and safe metadata refs.",
+          "capability": "crm-operations",
+          "capabilityName": "CRM Operations",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.marketing.segments.memberships.list",
+          "name": "List HubSpot Contact Segment Memberships",
+          "description": "List bounded membership rows for a safe contact segment ref.",
+          "keywords": "List bounded membership rows for a safe contact segment ref.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.crm.contact_company.labels.list",
+          "name": "List HubSpot Contact To Company Labels",
+          "description": "List the fixed contact-to-company association labels as typed safe refs.",
+          "keywords": "List the fixed contact-to-company association labels as typed safe refs.",
+          "capability": "crm-operations",
+          "capabilityName": "CRM Operations",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.crm.contact_deal.labels.list",
+          "name": "List HubSpot Contact To Deal Labels",
+          "description": "List the fixed contact-to-deal association labels as typed safe refs.",
+          "keywords": "List the fixed contact-to-deal association labels as typed safe refs.",
+          "capability": "pipeline-management",
+          "capabilityName": "Pipeline Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.crm.deals.pipelines.list",
+          "name": "List HubSpot Deal Pipelines",
+          "description": "List deal pipelines and stages using portal-aware safe refs.",
+          "keywords": "List deal pipelines and stages using portal-aware safe refs.",
+          "capability": "pipeline-management",
+          "capabilityName": "Pipeline Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.crm.deals.properties.list",
+          "name": "List HubSpot Deal Properties",
+          "description": "List portal-aware deal fields and custom fields as safe metadata refs.",
+          "keywords": "List portal-aware deal fields and custom fields as safe metadata refs.",
+          "capability": "pipeline-management",
+          "capabilityName": "Pipeline Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.sales.deal_splits.list",
+          "name": "List HubSpot Deal Splits",
+          "description": "Deferred until Sales Enterprise entitlement and live contract behavior are proven.",
+          "keywords": "Deferred until Sales Enterprise entitlement and live contract behavior are proven.",
+          "capability": "pipeline-management",
+          "capabilityName": "Pipeline Management",
+          "risk": "read"
         },
         {
           "key": "gtm.hubspot.crm.deals.list",
@@ -2007,6 +2298,231 @@
           "risk": "read"
         },
         {
+          "key": "gtm.hubspot.marketing.subscription_types.list",
+          "name": "List HubSpot Email Subscription Types",
+          "description": "List email subscription definitions with safe subscription and brand refs.",
+          "keywords": "List email subscription definitions with safe subscription and brand refs.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.sales.forecasts.list",
+          "name": "List HubSpot Forecasts",
+          "description": "Deferred while the provider API remains public beta.",
+          "keywords": "Deferred while the provider API remains public beta.",
+          "capability": "pipeline-management",
+          "capabilityName": "Pipeline Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.marketing.forms.submissions.list",
+          "name": "List HubSpot Form Submissions",
+          "description": "List bounded form submissions through a safe form ref; submitted values are marked sensitive.",
+          "keywords": "List bounded form submissions through a safe form ref; submitted values are marked sensitive.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.marketing.forms.list",
+          "name": "List HubSpot Forms",
+          "description": "List bounded HubSpot forms with safe form and form-field refs.",
+          "keywords": "List bounded HubSpot forms with safe form and form-field refs.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.sales.goal_targets.properties.list",
+          "name": "List HubSpot Goal Target Properties",
+          "description": "List verified goal-target properties for bounded sales-goal reads.",
+          "keywords": "List verified goal-target properties for bounded sales-goal reads.",
+          "capability": "pipeline-management",
+          "capabilityName": "Pipeline Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.sales.goal_targets.list",
+          "name": "List HubSpot Goal Targets",
+          "description": "List bounded goal time-slices with verified properties and safe owner refs.",
+          "keywords": "List bounded goal time-slices with verified properties and safe owner refs.",
+          "capability": "pipeline-management",
+          "capabilityName": "Pipeline Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.crm.leads.properties.list",
+          "name": "List HubSpot Lead Properties",
+          "description": "List portal-aware lead fields as safe metadata refs when the Sales capability is granted.",
+          "keywords": "List portal-aware lead fields as safe metadata refs when the Sales capability is granted.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.sales.line_items.properties.list",
+          "name": "List HubSpot Line Item Properties",
+          "description": "List verified line-item properties and issue typed property and option refs.",
+          "keywords": "List verified line-item properties and issue typed property and option refs.",
+          "capability": "pipeline-management",
+          "capabilityName": "Pipeline Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.marketing.emails.list",
+          "name": "List HubSpot Marketing Email Assets",
+          "description": "List bounded marketing-email assets and optional post-send statistics without recipient data.",
+          "keywords": "List bounded marketing-email assets and optional post-send statistics without recipient data.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.marketing.events.list",
+          "name": "List HubSpot Marketing Events",
+          "description": "List bounded marketing-event metadata with opaque event and app refs.",
+          "keywords": "List bounded marketing-event metadata with opaque event and app refs.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.crm.owners.list",
+          "name": "List HubSpot Owners And Teams",
+          "description": "List owners and their team memberships using account-scoped safe refs.",
+          "keywords": "List owners and their team memberships using account-scoped safe refs.",
+          "capability": "crm-operations",
+          "capabilityName": "CRM Operations",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.sales.products.properties.list",
+          "name": "List HubSpot Product Properties",
+          "description": "List verified product properties and issue typed property and option refs.",
+          "keywords": "List verified product properties and issue typed property and option refs.",
+          "capability": "pipeline-management",
+          "capabilityName": "Pipeline Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.sales.quotes.properties.list",
+          "name": "List HubSpot Quote Properties",
+          "description": "List verified quote properties and issue typed property and option refs.",
+          "keywords": "List verified quote properties and issue typed property and option refs.",
+          "capability": "pipeline-management",
+          "capabilityName": "Pipeline Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.sales.sequences.list",
+          "name": "List HubSpot Sequences",
+          "description": "Deferred until seat-qualified live contract proof is available.",
+          "keywords": "Deferred until seat-qualified live contract proof is available.",
+          "capability": "outbound-operations",
+          "capabilityName": "Outbound Operations",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.marketing.emails.publish",
+          "name": "Publish HubSpot Marketing Email",
+          "description": "Deferred until Enterprise or transactional-email entitlement and live publish/send-state behavior are proven.",
+          "keywords": "Deferred until Enterprise or transactional-email entitlement and live publish/send-state behavior are proven.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "high"
+        },
+        {
+          "key": "gtm.hubspot.automation.workflow_actions.register",
+          "name": "Register HubSpot Custom Workflow Action",
+          "description": "App-level custom workflow action definition contract; inbound execution can create an allowlisted StackOS agent request but never starts a workflow directly.",
+          "keywords": "App-level custom workflow action definition contract; inbound execution can create an allowlisted StackOS agent request but never starts a workflow directly.",
+          "capability": "automation",
+          "capabilityName": "Revenue Automation",
+          "risk": "high"
+        },
+        {
+          "key": "gtm.hubspot.crm.company_deal.dissociate",
+          "name": "Remove HubSpot Company To Deal Label",
+          "description": "Remove one verified company-to-deal label while preserving other relationship labels.",
+          "keywords": "Remove one verified company-to-deal label while preserving other relationship labels.",
+          "capability": "pipeline-management",
+          "capabilityName": "Pipeline Management",
+          "risk": "write"
+        },
+        {
+          "key": "gtm.hubspot.marketing.segments.memberships.remove",
+          "name": "Remove HubSpot Contact Segment Memberships",
+          "description": "Remove safe contact refs from a verified MANUAL or SNAPSHOT segment.",
+          "keywords": "Remove safe contact refs from a verified MANUAL or SNAPSHOT segment.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "write"
+        },
+        {
+          "key": "gtm.hubspot.crm.contact_company.dissociate",
+          "name": "Remove HubSpot Contact To Company Label",
+          "description": "Remove one verified contact-to-company label while preserving other relationship labels.",
+          "keywords": "Remove one verified contact-to-company label while preserving other relationship labels.",
+          "capability": "crm-operations",
+          "capabilityName": "CRM Operations",
+          "risk": "write"
+        },
+        {
+          "key": "gtm.hubspot.crm.contact_deal.dissociate",
+          "name": "Remove HubSpot Contact To Deal Label",
+          "description": "Remove one verified contact-to-deal label while preserving other relationship labels.",
+          "keywords": "Remove one verified contact-to-deal label while preserving other relationship labels.",
+          "capability": "pipeline-management",
+          "capabilityName": "Pipeline Management",
+          "risk": "write"
+        },
+        {
+          "key": "gtm.hubspot.bulk.exports.result",
+          "name": "Retrieve HubSpot CRM Export Result",
+          "description": "Poll one export and, when complete, consume its short-lived signed URL into a bounded StackOS-managed artifact.",
+          "keywords": "Poll one export and, when complete, consume its short-lived signed URL into a bounded StackOS-managed artifact.",
+          "capability": "crm-operations",
+          "capabilityName": "CRM Operations",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.crm.companies.search",
+          "name": "Search HubSpot Companies",
+          "description": "Search companies with typed property refs and bounded filters, sorting, and paging.",
+          "keywords": "Search companies with typed property refs and bounded filters, sorting, and paging.",
+          "capability": "crm-operations",
+          "capabilityName": "CRM Operations",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.marketing.segments.list",
+          "name": "Search HubSpot Contact Segments",
+          "description": "Search bounded contact segments using HubSpot's current Lists API and return safe segment refs.",
+          "keywords": "Search bounded contact segments using HubSpot's current Lists API and return safe segment refs.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.crm.contacts.search",
+          "name": "Search HubSpot Contacts",
+          "description": "Search contacts with typed property refs and bounded filters, sorting, and paging.",
+          "keywords": "Search contacts with typed property refs and bounded filters, sorting, and paging.",
+          "capability": "crm-operations",
+          "capabilityName": "CRM Operations",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.crm.custom_objects.search",
+          "name": "Search HubSpot Custom Objects",
+          "description": "Deferred until an operator-approved custom-object schema contract exists.",
+          "keywords": "Deferred until an operator-approved custom-object schema contract exists.",
+          "capability": "crm-operations",
+          "capabilityName": "CRM Operations",
+          "risk": "read"
+        },
+        {
           "key": "gtm.hubspot.crm.deals.search",
           "name": "Search HubSpot Deals",
           "description": "Search bounded HubSpot deal records for an agent-selected scope.",
@@ -2014,6 +2530,150 @@
           "capability": "pipeline-management",
           "capabilityName": "Pipeline Management",
           "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.crm.leads.search",
+          "name": "Search HubSpot Leads",
+          "description": "Search leads with typed property refs when the Sales capability is granted.",
+          "keywords": "Search leads with typed property refs when the Sales capability is granted.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.sales.line_items.search",
+          "name": "Search HubSpot Line Items",
+          "description": "Search bounded line-item records using verified property refs.",
+          "keywords": "Search bounded line-item records using verified property refs.",
+          "capability": "pipeline-management",
+          "capabilityName": "Pipeline Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.sales.products.search",
+          "name": "Search HubSpot Products",
+          "description": "Search bounded product catalog records using verified property refs.",
+          "keywords": "Search bounded product catalog records using verified property refs.",
+          "capability": "pipeline-management",
+          "capabilityName": "Pipeline Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.sales.quotes.search",
+          "name": "Search HubSpot Quotes",
+          "description": "Search bounded quote records using verified property refs.",
+          "keywords": "Search bounded quote records using verified property refs.",
+          "capability": "pipeline-management",
+          "capabilityName": "Pipeline Management",
+          "risk": "read"
+        },
+        {
+          "key": "gtm.hubspot.marketing.emails.bulk_send",
+          "name": "Send HubSpot Bulk Marketing Email",
+          "description": "Intentionally unavailable; this phase does not expose recipient-list blast delivery.",
+          "keywords": "Intentionally unavailable; this phase does not expose recipient-list blast delivery.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "high"
+        },
+        {
+          "key": "gtm.hubspot.marketing.behavioral_events.send",
+          "name": "Send One HubSpot Behavioral Event Occurrence",
+          "description": "Record one authorized customer behavior against provider-verified definition, contact, and property refs with deterministic provider deduplication.",
+          "keywords": "Record one authorized customer behavior against provider-verified definition, contact, and property refs with deterministic provider deduplication.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "high"
+        },
+        {
+          "key": "gtm.hubspot.transactional.single_email.send",
+          "name": "Send One HubSpot Transactional Email",
+          "description": "Lower-level provider escape hatch for one approved transactional template send; normal delivery uses communication.send.",
+          "keywords": "Lower-level provider escape hatch for one approved transactional template send; normal delivery uses communication.send.",
+          "capability": "outbound-operations",
+          "capabilityName": "Outbound Operations",
+          "risk": "high"
+        },
+        {
+          "key": "gtm.hubspot.bulk.exports.create",
+          "name": "Start HubSpot CRM Export",
+          "description": "Start one bounded CRM object export using provider-verified property refs and an explicit data-export confirmation.",
+          "keywords": "Start one bounded CRM object export using provider-verified property refs and an explicit data-export confirmation.",
+          "capability": "crm-operations",
+          "capabilityName": "CRM Operations",
+          "risk": "high"
+        },
+        {
+          "key": "gtm.hubspot.bulk.imports.create",
+          "name": "Start HubSpot CRM Import",
+          "description": "Intentionally unavailable until the generic action executor owns bounded multipart artifact streaming.",
+          "keywords": "Intentionally unavailable until the generic action executor owns bounded multipart artifact streaming.",
+          "capability": "crm-operations",
+          "capabilityName": "CRM Operations",
+          "risk": "high"
+        },
+        {
+          "key": "gtm.hubspot.sales.sequences.unenroll",
+          "name": "Unenroll Contact From HubSpot Sequence",
+          "description": "Deferred until seat, conflict, and enrollment lifecycle behavior has live proof.",
+          "keywords": "Deferred until seat, conflict, and enrollment lifecycle behavior has live proof.",
+          "capability": "outbound-operations",
+          "capabilityName": "Outbound Operations",
+          "risk": "high"
+        },
+        {
+          "key": "gtm.hubspot.marketing.campaigns.update",
+          "name": "Update HubSpot Campaign",
+          "description": "Partially update approved campaign fields through a safe campaign ref.",
+          "keywords": "Partially update approved campaign fields through a safe campaign ref.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "write"
+        },
+        {
+          "key": "gtm.hubspot.marketing.contact_preferences.update",
+          "name": "Update HubSpot Contact Email Preference",
+          "description": "Apply one explicit subscription-state change with safe refs, legal-basis context, confirmation, and no subscriber-email output.",
+          "keywords": "Apply one explicit subscription-state change with safe refs, legal-basis context, confirmation, and no subscriber-email output.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "high"
+        },
+        {
+          "key": "gtm.hubspot.marketing.contacts.status.update",
+          "name": "Update HubSpot Marketing Contact Status",
+          "description": "Deferred because changing marketing-contact status can affect billable contact totals and requires live entitlement and cost-impact proof.",
+          "keywords": "Deferred because changing marketing-contact status can affect billable contact totals and requires live entitlement and cost-impact proof.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "high"
+        },
+        {
+          "key": "gtm.hubspot.marketing.emails.update",
+          "name": "Update HubSpot Marketing Email Draft",
+          "description": "Update bounded metadata on a provider-verified draft; published assets, recipients, scheduling, and publishing fail closed.",
+          "keywords": "Update bounded metadata on a provider-verified draft; published assets, recipients, scheduling, and publishing fail closed.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "write"
+        },
+        {
+          "key": "gtm.hubspot.sales.deal_splits.upsert",
+          "name": "Upsert HubSpot Deal Splits",
+          "description": "Deferred until Sales Enterprise entitlement and partial-state behavior are proven.",
+          "keywords": "Deferred until Sales Enterprise entitlement and partial-state behavior are proven.",
+          "capability": "pipeline-management",
+          "capabilityName": "Pipeline Management",
+          "risk": "high"
+        },
+        {
+          "key": "gtm.hubspot.marketing.events.upsert",
+          "name": "Upsert One HubSpot Marketing Event",
+          "description": "Create or update one app-owned marketing event by stable external account and event keys.",
+          "keywords": "Create or update one app-owned marketing event by stable external account and event keys.",
+          "capability": "lead-management",
+          "capabilityName": "Lead Management",
+          "risk": "write"
         }
       ],
       "links": [
@@ -2038,13 +2698,19 @@
         {
           "key": "console_url",
           "label": "Open console",
-          "url": "https://app.hubspot.com/",
+          "url": "https://app.hubspot.com/developer-projects",
           "confidence": "directional"
+        },
+        {
+          "key": "support_url",
+          "label": "Support",
+          "url": "https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/scopes",
+          "confidence": "verified"
         }
       ],
       "primaryUrl": "https://www.hubspot.com/",
       "docsUrl": "https://developers.hubspot.com/docs/api-reference/latest/overview",
-      "setupNote": "Create a HubSpot private app or OAuth app with the CRM scopes needed by the workflow, then store the access token in StackOS."
+      "setupNote": "Create a project-based HubSpot OAuth app, register the fixed StackOS callback, configure CRM Core as required scopes and the selected capability bundles as optional scopes, then use Connect with HubSpot. Service keys remain deferred because HubSpot does not document scope introspection for them and they cannot support webhooks."
     },
     {
       "key": "utils.ideogram",
@@ -2593,7 +3259,7 @@
       ],
       "primaryUrl": "https://www.facebook.com/business/ads",
       "docsUrl": "https://developers.facebook.com/docs/marketing-api",
-      "setupNote": "Create/select a Meta developer app and Business portfolio, grant Marketing API permissions, then store the access token and safe account refs in StackOS."
+      "setupNote": "Create/select a Meta developer app and Business portfolio, register the fixed StackOS callback, grant the declared Marketing API permissions, then use Connect with Meta. StackOS exchanges the short-lived login token for a long-lived user token."
     },
     {
       "key": "gtm.microsoft-365",
@@ -2662,7 +3328,7 @@
       ],
       "primaryUrl": "https://www.microsoft.com/en-us/microsoft-365",
       "docsUrl": "https://learn.microsoft.com/en-us/graph/overview",
-      "setupNote": "Register an app in Microsoft Entra ID, grant Graph mail/calendar permissions, authorize it, then store the OAuth token in StackOS."
+      "setupNote": "Register a confidential web app in Microsoft Entra ID with the fixed StackOS callback and delegated Mail.Send, Calendars.ReadWrite, and offline_access permissions, then use Connect with Microsoft."
     },
     {
       "key": "utils.mock-provider",
@@ -2822,7 +3488,7 @@
       "providerKey": "outbrain",
       "name": "Outbrain",
       "description": "Outbrain Amplify provider contract. OB-TOKEN-V1 generation, storage, expiry checks, and rotation stay daemon-side.",
-      "authType": "api-key",
+      "authType": "ob-token-v1",
       "pluginSlug": "media-buying",
       "pluginName": "Media Buying",
       "pluginDescription": "Plan, launch, measure, and improve paid campaigns across advertising platforms.",
@@ -2996,7 +3662,7 @@
       ],
       "primaryUrl": "https://www.outreach.ai/",
       "docsUrl": "https://developers.outreach.io/",
-      "setupNote": "Create or use an Outreach app/OAuth integration, approve the required scopes, then store the access token in StackOS."
+      "setupNote": "Create or use an Outreach OAuth app with the fixed StackOS callback and sequenceStates.write scope, then use Connect with Outreach."
     },
     {
       "key": "gtm.pipedrive",
@@ -3004,7 +3670,7 @@
       "providerKey": "pipedrive",
       "name": "Pipedrive",
       "description": "Pipedrive CRM provider contract for organizations, people, deals, activities, and notes.",
-      "authType": "oauth",
+      "authType": "oauth-or-api-token",
       "pluginSlug": "gtm",
       "pluginName": "GTM And RevOps",
       "pluginDescription": "Research accounts, enrich leads, update CRM records, and prepare sales follow-up across your revenue tools.",
@@ -3065,7 +3731,7 @@
       ],
       "primaryUrl": "https://www.pipedrive.com/",
       "docsUrl": "https://developers.pipedrive.com/docs/api/v1",
-      "setupNote": "Use a Pipedrive app/OAuth credential when available; for personal-key setups, copy the API key from personal preferences and store it in StackOS."
+      "setupNote": "Register a Pipedrive app with the fixed StackOS callback and deals:read plus search:read app scopes, then use Connect with Pipedrive. For private personal integrations, the supported personal API token method remains available."
     },
     {
       "key": "utils.reddit",
@@ -3298,7 +3964,7 @@
       ],
       "primaryUrl": "https://www.salesforce.com/",
       "docsUrl": "https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/intro_rest.htm",
-      "setupNote": "Create or use a Salesforce connected app, authorize the required REST API scopes, then store the OAuth token details in StackOS."
+      "setupNote": "Create or use a Salesforce connected app with the fixed StackOS callback, then use Connect with Salesforce. A manually supplied access token remains available for legacy profiles."
     },
     {
       "key": "gtm.salesloft",
@@ -3306,7 +3972,7 @@
       "providerKey": "salesloft",
       "name": "Salesloft",
       "description": "Salesloft cadence provider contract.",
-      "authType": "oauth",
+      "authType": "oauth-or-api-key",
       "pluginSlug": "gtm",
       "pluginName": "GTM And RevOps",
       "pluginDescription": "Research accounts, enrich leads, update CRM records, and prepare sales follow-up across your revenue tools.",
@@ -3358,7 +4024,7 @@
       ],
       "primaryUrl": "https://www.salesloft.com/",
       "docsUrl": "https://developers.salesloft.com/",
-      "setupNote": "Create or use a Salesloft OAuth application, approve the required scopes, then store the OAuth token in StackOS."
+      "setupNote": "Register a Salesloft OAuth app with the fixed StackOS callback and cadences:write scope, then use Connect with Salesloft. Customer API keys remain an explicit supported alternative."
     },
     {
       "key": "seo.serper",
@@ -4180,7 +4846,7 @@
       "providerKey": "taboola",
       "name": "Taboola",
       "description": "Taboola Backstage API provider contract for account-scoped campaigns, items, reports, and conversion rules.",
-      "authType": "oauth",
+      "authType": "oauth-client-credentials",
       "pluginSlug": "media-buying",
       "pluginName": "Media Buying",
       "pluginDescription": "Plan, launch, measure, and improve paid campaigns across advertising platforms.",
