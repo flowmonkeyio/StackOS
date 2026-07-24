@@ -33,6 +33,8 @@ class OAuthProviderContract:
     response_account_id_field: str | None = "id"
     authorization_code_response_requirements: tuple[OAuthTokenResponseRequirement, ...] = ()
     refresh_token_response_requirements: tuple[OAuthTokenResponseRequirement, ...] = ()
+    required_token_type: str | None = None
+    required_scope_subset: tuple[str, ...] = ()
     hook: str | None = None
 
 
@@ -190,6 +192,31 @@ _CONTRACTS: dict[str, OAuthProviderContract] = {
             "refresh_token",
             "expires_in",
         ),
+    ),
+    "linear": OAuthProviderContract(
+        provider_key="linear",
+        flow="authorization_code",
+        authorization_endpoint="https://linear.app/oauth/authorize",
+        token_endpoint="https://api.linear.app/oauth/token",
+        scopes=("read", "write"),
+        scope_separator=",",
+        client_auth_style="body",
+        pkce_mode="required",
+        authorization_params=(("actor", "user"),),
+        response_scope_fields=("scope",),
+        response_account_id_field=None,
+        authorization_code_response_requirements=(
+            "refresh_token",
+            "expires_in",
+            "scope_evidence",
+        ),
+        refresh_token_response_requirements=(
+            "refresh_token",
+            "expires_in",
+            "scope_evidence",
+        ),
+        required_token_type="Bearer",
+        required_scope_subset=("read", "write"),
     ),
     "taboola": OAuthProviderContract(
         provider_key="taboola",

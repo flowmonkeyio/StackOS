@@ -51,12 +51,14 @@ const emit = defineEmits<{
 
 function submitConnection(): void {
   const provider = props.selectedProvider
-  if (!provider) return
-  if (props.selectedMethod(provider)?.interactive) emit('start-provider', provider)
+  const method = provider ? props.selectedMethod(provider) : null
+  if (!provider || !method) return
+  if (method.interactive) emit('start-provider', provider)
   else emit('save-credential', provider)
 }
 
-function credentialFieldValues(provider: SchemaAuthProviderOut, method: AuthMethod) {
+function credentialFieldValues(provider: SchemaAuthProviderOut, method: AuthMethod | null) {
+  if (!method) return {}
   return Object.fromEntries(
     (method.fields ?? []).map((field) => [
       field.key,
@@ -106,11 +108,11 @@ function updateCredentialField(
 
         <ConnectionProviderSetupGuidance :provider="selectedProvider" :editing="editing" />
 
-        <template v-if="supportsCredential(selectedProvider) && selectedMethod(selectedProvider)">
+        <template v-if="supportsCredential(selectedProvider)">
           <ConnectionCredentialFields
             :auth-methods="authMethods(selectedProvider)"
             :selected-method-key="selectedMethodKey(selectedProvider)"
-            :selected-method="selectedMethod(selectedProvider)!"
+            :selected-method="selectedMethod(selectedProvider)"
             :profile-value="
               profileValue(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '')
             "
@@ -123,7 +125,7 @@ function updateCredentialField(
             :has-field-options="hasFieldOptions"
             :field-options="fieldOptions"
             :field-values="
-              credentialFieldValues(selectedProvider, selectedMethod(selectedProvider)!)
+              credentialFieldValues(selectedProvider, selectedMethod(selectedProvider))
             "
             :field-errors="fieldErrors"
             :editing="editing"
@@ -144,6 +146,7 @@ function updateCredentialField(
               )
             "
             @update:field="
+              selectedMethod(selectedProvider) &&
               updateCredentialField(selectedProvider, selectedMethod(selectedProvider)!, $event)
             "
           />
@@ -189,7 +192,10 @@ function updateCredentialField(
         type="submit"
         form="connection-credential-form"
         :loading="busyAction === providerActionKey(selectedProvider.key, 'save')"
-        :disabled="selectedMethod(selectedProvider)?.payload_format === 'none'"
+        :disabled="
+          !selectedMethod(selectedProvider) ||
+          selectedMethod(selectedProvider)?.payload_format === 'none'
+        "
         @click.prevent="submitConnection"
       >
         {{ editing ? 'Save changes' : 'Save and verify' }}

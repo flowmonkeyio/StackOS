@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import subprocess
@@ -202,3 +203,62 @@ def test_workflow_extension_migration_recovers_partial_table(
 
     columns = _table_columns(isolated_alembic, "workflow_template_extensions")
     assert "template_overrides_json" in columns
+
+
+def test_visible_chromium_migration_scrubs_options_without_touching_session_history(
+    isolated_alembic: Path,
+    tmp_path: Path,
+) -> None:
+    _run_alembic(["upgrade", "0024_provider_object_references"])
+    external_cookie = tmp_path / "main-account-cookie-sentinel"
+    external_cookie.write_text("do-not-touch", encoding="utf-8")
+
+    conn = sqlite3.connect(isolated_alembic)
+    try:
+        now = "2026-07-24 00:00:00"
+        conn.execute(
+            """
+            INSERT INTO projects (id, slug, name, domain, locale, is_active, created_at, updated_at)
+            VALUES (1, 'browser-migration', 'Browser Migration', 'example.com', 'en-US', 1, ?, ?)
+            """,
+            (now, now),
+        )
+        conn.execute(
+            """
+            INSERT INTO browser_profiles
+            (id, project_id, profile_key, name, provider, status, profile_ref,
+             launch_options_json, created_at, updated_at)
+            VALUES (1, 1, 'stable', 'Stable', 'playwright', 'ready',
+                    'browser-profile:project-1:stable', ?, ?, ?)
+            """,
+            ('{"locale":"en-US","args":["--user-data-dir=/private/main"]}', now, now),
+        )
+        conn.execute(
+            """
+            INSERT INTO browser_sessions
+            (id, project_id, profile_id, session_ref, provider, status, headless,
+             started_at, updated_at)
+            VALUES (1, 1, 1, 'browser-session:project-1:stable:historic',
+                    'playwright', 'stopped', 1, ?, ?)
+            """,
+            (now, now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    _run_alembic(["upgrade", "head"])
+    _run_alembic(["upgrade", "head"])
+
+    conn = sqlite3.connect(isolated_alembic)
+    try:
+        options = conn.execute(
+            "SELECT launch_options_json FROM browser_profiles WHERE id = 1"
+        ).fetchone()
+        historic = conn.execute("SELECT headless FROM browser_sessions WHERE id = 1").fetchone()
+    finally:
+        conn.close()
+    assert options is not None
+    assert json.loads(options[0]) == {"locale": "en-US"}
+    assert historic == (1,)
+    assert external_cookie.read_text(encoding="utf-8") == "do-not-touch"

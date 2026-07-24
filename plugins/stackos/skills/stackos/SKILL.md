@@ -92,8 +92,8 @@ run token.
    should enter the context window.
 10. For browser automation, use the direct `browser.*` tools when mounted, or
     `toolbox.call` for the same operation names before the current Codex session
-    is restarted. `browser.session.start` opens a persistent Playwright Chromium session
-    (`headless=false` by default for operator login/inspection). Use
+    is restarted. `browser.session.start` opens a persistent visible Chromium session;
+    it has no headless input, so operators can always inspect login and posting. Use
     `browser.page.call` and `browser.context.call` for public Playwright
     methods with raw args/kwargs or named `arguments`; prefer named
     `arguments` for manifest convenience methods such as `goto`, `click`, and
@@ -106,7 +106,8 @@ run token.
     this is local trusted-admin browser automation, not an externally exposed
     sandbox. StackOS records redacted receipts, but it does not maintain a
     restrictive browser-method allowlist. The daemon owns executable/profile
-    paths and rejects launch options that try to override those controls. Treat
+    paths and visible mode, and accepts only locale, timezone_id, user_agent,
+    and viewport launch preferences. Treat
     immediate browser tool output as sensitive raw browser data.
 
 ## Common Flows

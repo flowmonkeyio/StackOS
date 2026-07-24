@@ -42,6 +42,7 @@ from stackos.actions.ideogram_images import IdeogramImagesActionConnector
 from stackos.actions.imap import ImapActionConnector
 from stackos.actions.jina import JinaActionConnector
 from stackos.actions.kling_video import KlingVideoActionConnector
+from stackos.actions.linear import LinearActionConnector
 from stackos.actions.manifest import (
     ACTION_MANIFEST_SCHEMA_VERSION,
     ExecutableActionManifest,
@@ -84,6 +85,7 @@ DEFAULT_ACTION_CONNECTORS.register(GoogleGeminiImageActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(GoogleVeoVideoActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(IdeogramImagesActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(KlingVideoActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(LinearActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(BytePlusSeedreamImageActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(BytePlusSeedanceVideoActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(FirecrawlActionConnector())
@@ -165,6 +167,7 @@ __all__ = [
     "ImapActionConnector",
     "JinaActionConnector",
     "KlingVideoActionConnector",
+    "LinearActionConnector",
     "MetaAdsActionConnector",
     "MicrosoftGraphActionConnector",
     "MockProviderActionConnector",

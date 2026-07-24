@@ -17,7 +17,7 @@ from stackos.actions.connectors import (
 )
 from stackos.actions.provider_utils import (
     config_str,
-    credential_payload,
+    credential_config,
     credential_value,
     int_range,
     optional_str,
@@ -26,23 +26,35 @@ from stackos.actions.provider_utils import (
     send_json,
     unknown_operation,
 )
+from stackos.integrations.pipedrive import (
+    PipedriveCredentialConfigurationError,
+    normalize_pipedrive_api_domain,
+)
 from stackos.repositories.base import ValidationError
 
 
 def _base_url(request: ActionConnectorRequest) -> str:
-    base = config_str(request, "base_url")
-    if base:
-        return base.rstrip("/")
-    domain = config_str(request, "company_domain", required=True)
-    assert domain is not None
-    return f"https://{domain}.pipedrive.com"
+    base = config_str(request, "api_domain") or config_str(request, "base_url")
+    try:
+        if base:
+            return normalize_pipedrive_api_domain(base)
+        domain = config_str(request, "company_domain", required=True)
+        assert domain is not None
+        return normalize_pipedrive_api_domain(domain)
+    except PipedriveCredentialConfigurationError as exc:
+        raise ValidationError(str(exc)) from exc
 
 
 def _headers(request: ActionConnectorRequest) -> dict[str, str]:
-    payload = credential_payload(request)
-    if isinstance(payload.get("access_token"), str) and str(payload["access_token"]).strip():
-        return {"Authorization": f"Bearer {payload['access_token']}"}
-    return {"x-api-token": credential_value(request, "api_token", "token")}
+    auth_method_key = credential_config(request).get("auth_method_key")
+    if auth_method_key == "api_token":
+        return {"x-api-token": credential_value(request, "api_token")}
+    if auth_method_key in {"oauth2_authorization_code", "oauth2_token"}:
+        return {"Authorization": f"Bearer {credential_value(request, 'access_token')}"}
+    raise ValidationError(
+        "Pipedrive action requires a recognized saved auth method",
+        data={"auth_method_key": auth_method_key},
+    )
 
 
 def _list_params(request: ActionConnectorRequest) -> dict[str, Any]:

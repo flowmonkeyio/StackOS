@@ -59,6 +59,8 @@ provider/profile they need; `auth.status` is still available for diagnostics.
    explicitly disabled plugin.
 5. The operator chooses the provider auth method and enters the fields required
    by that method, or starts the provider OAuth flow when one is configured.
+   A provider with multiple methods requires an explicit choice. A provider
+   with one method may select it automatically.
    Local UI setup stores the credential and immediately attempts the same
    provider-neutral credential test. A failed or unavailable test remains a
    repairable connection; it is never reported as verified.
@@ -98,6 +100,157 @@ deep link.
 Non-secret method fields are persisted only as safe credential config. Secret
 method fields are serialized into the encrypted backing payload. The old
 untyped secret blob route is not part of the public contract.
+
+## One-Brain Auth-Method Contract
+
+StackOS has one credential lifecycle for OAuth, API keys, private-app tokens,
+and other provider-declared methods. A provider method changes how a credential
+is acquired, verified, renewed, and placed on a provider request; it does not
+create a second storage, readiness, UI, or audit system.
+
+### Choosing A Method
+
+Use this decision order:
+
+1. If StackOS has a reviewed managed OAuth-application contract for the
+   provider, use it. StackOS does **not** currently operate a shared managed
+   OAuth application for the providers in this guide; that would be a separate
+   product, distribution, security-review, support, and tenant-isolation
+   decision.
+2. Choose a configured bring-your-own OAuth application when the connection
+   needs provider consent, user/admin account selection, returned grant
+   evidence, renewable access, multi-user distribution, or provider-side
+   revocation semantics.
+3. Choose a personal API key or private-app token only when the provider
+   officially supports it and its single-user/single-account ownership matches
+   the intended connection. Prefer the static method for local/private
+   automation when its operator burden and provider-enforced permissions are
+   acceptable.
+4. Use client credentials only when the provider documents a non-user
+   service-to-service grant and the provider contract validates its returned
+   lifecycle and permission evidence.
+5. If no official credential can satisfy the account model, grant evidence,
+   and safe transport requirements, publish no alternative. Do not relabel an
+   OAuth access token as an API key or weaken local scope checks to make it run.
+
+| Choice | Account/distribution fit | Renewal | Permission evidence | Operator responsibility |
+| --- | --- | --- | --- | --- |
+| Managed StackOS OAuth app | Future product option for centrally operated multi-tenant distribution | StackOS-managed | Provider OAuth response | Consent and account selection; StackOS would own app operations and review |
+| Configured/BYO OAuth app | Project/operator owns the provider application and callback registration | Shared OAuth lifecycle | Provider OAuth response | Create the app, configure fields, consent, and reconnect when authorization is lost |
+| Personal/private credential | One user, workspace, portal, or private app with provider-documented static authentication | Usually manual rotation | Trusted read-only probe when available; otherwise provider-enforced or fail-closed | Create, scope, rotate, and remotely revoke the value at the provider |
+| No supported alternative | Provider/account model or evidence contract is unsafe or undocumented | Not applicable | Not available | Use the supported OAuth/service method or defer the integration |
+
+The operator flow is:
+
+1. Choose a provider in Connections.
+2. When the provider offers multiple methods, choose one explicit method card.
+   StackOS does not preselect the first method or enable Connect/Save before
+   this choice.
+3. For interactive OAuth, enter the operator-owned provider application's
+   fields and continue to provider consent. StackOS does not currently supply a
+   shared managed OAuth application.
+4. For a static method, create the key or token in the provider's official
+   console, then enter it locally. Agents never ask for the value in chat.
+5. Give the connection a profile name that identifies its purpose or account.
+   Each profile has one immutable `auth_method_key`.
+6. Verify the connection. StackOS reports whether permission evidence is known
+   locally, enforced by the provider, or unavailable and therefore blocked.
+7. To change methods, create and verify a separate named profile, reassign work
+   to its exact `credential_ref`, and only then revoke the old local profile.
+   Editing a profile never converts it in place.
+
+The complete ownership and execution path is:
+
+```text
+Connections method choice
+  -> manifest auth_method_key + verification posture
+  -> encrypted credential profile
+  -> shared auth.test + normalized safe evidence
+  -> CredentialResolver renewal/readiness/exact-profile gate
+  -> existing provider action connector transport
+  -> provider
+```
+
+The daemon flow is:
+
+1. The plugin manifest declares each method once with its stable key, fields,
+   payload format, interactivity, and `permission_verification` posture.
+2. The auth repository validates the method, encrypts only secret material,
+   stores safe config plus the saved method key, and rejects an in-place method
+   change before decrypting, merging, or writing credential state.
+3. `auth.start` invokes the shared OAuth lifecycle only for an interactive
+   method. Static methods use the same credential record and test lifecycle but
+   do not create OAuth state.
+4. `auth.test` resolves the saved method and passes only a non-secret probe
+   context to the provider wrapper. A wrapper may perform a documented,
+   read-only provider probe and return normalized safe account/grant evidence;
+   it does not decide readiness or write credential state.
+5. The credential resolver owns renewal, exact-profile selection, local grant
+   enforcement, and denial before action dispatch. The action connector receives
+   the already selected credential and may only apply method-specific request
+   transport using the saved method key.
+6. Provider responses, tests, actions, and local revocation use the shared
+   redaction and audit paths. No layer infers a method from token shape, field
+   presence, or a provider-specific UI branch.
+
+`permission_verification` has four reviewed postures:
+
+| Evidence source | Enforcement | Meaning |
+| --- | --- | --- |
+| `oauth_response` | `local_required` | The shared OAuth exchange/refresh contract records provider-returned grants; missing or unknown required grants block before provider action HTTP. |
+| `provider_probe` | `local_required` | A documented read-only probe returns authoritative grants; the core validates and persists them before locally gated actions can run. |
+| `unavailable` | `provider_enforced` | StackOS can verify reachability/account identity when a safe probe exists, but does not invent grants; the provider enforces permissions during the action. |
+| `unavailable` | `local_required` | No trusted permission evidence exists for a locally gated method, so scoped actions fail closed before provider HTTP. |
+
+A stored connection is not automatically authorized for every action.
+`oauth_response/local_required` is verified only after the OAuth lifecycle
+records the required grants. `provider_probe/local_required` is
+**awaiting-probe** until a successful trusted probe records them.
+`unavailable/provider_enforced` is usable with an explicit
+**provider-enforced/unverifiable** readiness state, while
+`unavailable/local_required` is **fail-closed** for scope-requiring actions.
+Tests, status, and UI must preserve these distinctions.
+
+When adding or changing a provider method, update the same contract surfaces
+together:
+
+1. Record the official provider auth and permission-evidence sources in the
+   provider integration contract.
+2. Add the method and one reviewed verification posture to the manifest.
+3. Reuse encrypted credential storage, exact profile selection, test/audit, and
+   resolver enforcement. Do not add a provider-owned lifecycle.
+4. Add a read-only test wrapper only when an official safe endpoint and
+   response shape are known. Return normalized safe evidence; never raw secret
+   values or arbitrary provider responses.
+5. Make action transport branch only on the saved `auth_method_key`; reject
+   missing, unknown, or mismatched method/payload combinations before HTTP.
+6. Let the generic Connections UI render the method. Provider-specific UI
+   selection or readiness rules are not allowed.
+7. Test method isolation, redaction, evidence handling, resolver behavior, and
+   provider transport, then link the provider contract back to this section.
+
+### Rotation, Repair, And Revocation
+
+- Editing a profile may rotate secret material only within its saved method.
+  Leaving an existing secret field blank preserves it. Supplying replacement
+  material clears stale grant evidence when the method requires local grants,
+  and the connection must be tested or reauthorized again.
+- OAuth expiry uses the shared renewal path when the provider contract supports
+  refresh/acquisition. Terminal authorization failure moves the connection to
+  repair-required; reconnect uses the same profile and method. A transient test
+  failure is diagnostic and does not silently disable an otherwise stored
+  credential.
+- Static credentials do not enter OAuth renewal. A provider rejection means
+  the operator must correct permissions or rotate the value at the provider,
+  update the same-method profile, and test again.
+- `auth.revoke` is local cleanup: it removes daemon-held material and prevents
+  future StackOS use. It does not claim to invalidate the credential at the
+  provider. Remote revocation/rotation remains operator-owned unless a
+  separately reviewed provider action explicitly implements it.
+- Changing methods is migration, not rotation. Create a second profile, verify
+  it, deliberately rebind consumers to its exact `credential_ref`, then revoke
+  the old local profile and remotely invalidate its provider credential when
+  required.
 
 ## OAuth Providers
 
@@ -238,21 +391,34 @@ that an imported token bypasses the known-scope gate.
 | Google Search Console | Interactive authorization code; manual access/refresh-token compatible | Shared Google endpoints; PKCE supported; offline consent | `webmasters.readonly` |
 | Google Analytics | Interactive authorization code; manual access/refresh-token compatible | Shared Google endpoints; PKCE supported; offline consent | `analytics.readonly` |
 | Google Tag Manager | Interactive authorization code; manual access/refresh-token compatible | Shared Google endpoints; PKCE supported; offline consent | `tagmanager.readonly` |
-| Meta Ads | Interactive authorization code; manual token compatible | Meta login exchange plus the required short-to-long-lived token exchange | Per-action `ads_read` / `ads_management` |
+| Meta Ads | Interactive authorization code; existing user/system-user token compatible | Meta login exchange plus the required short-to-long-lived token exchange; imported-token permission evidence is unavailable | Interactive OAuth uses returned grants; imported tokens fail closed for scoped actions |
 | Microsoft 365 | Interactive authorization code; manual token compatible | Tenant-validated endpoints; PKCE required | Graph `Mail.Send` / `Calendars.ReadWrite` |
 | Outreach | Interactive authorization code; manual token compatible | Provider endpoints and consent scope | `sequenceStates.write` |
-| Pipedrive | Interactive authorization code; manual OAuth token or API-token alternative | HTTP Basic token exchange; trusted `api_domain` metadata | `deals:read` / `search:read` |
+| Pipedrive | Interactive authorization code; manual OAuth token; personal API-token alternative | HTTP Basic token exchange; trusted `api_domain`; read-only current-user probe | OAuth uses returned grants; manual OAuth fails closed; API token is provider-enforced |
 | Salesforce | Interactive authorization code; manual token compatible | Production, sandbox, or validated My Domain; PKCE required; trusted `instance_url` | `api` |
-| Salesloft | Interactive authorization code; manual OAuth token or API-key alternative | Provider endpoints; body client authentication | `cadences:write` |
+| Salesloft | Interactive authorization code; manual OAuth token; customer API-key alternative | Provider endpoints; body client authentication; read-only `/v2/me` probe | OAuth uses returned grants; manual OAuth fails closed; API key is provider-enforced |
 | Taboola | Core client credentials | Body client authentication | No action-level scope declaration currently required |
 | Reddit | Core client credentials | HTTP Basic token acquisition; `user_agent` stays in the encrypted application payload | No action-level scope declaration currently required |
-| HubSpot | Interactive authorization code with capability-scoped optional consent | Private- or Marketplace-distributed HubSpot app; body client authentication; current `2026-03` token endpoint; returned `scopes` and `hub_id` are authoritative | Per-action CRM Core, Sales, Marketing, Bulk, Automation, and Transactional scope gates |
+| HubSpot | Interactive authorization code with capability-scoped optional consent; single-account private-app token | OAuth response owns OAuth grants; the documented private-app token-information probe returns authoritative scopes and account evidence | Both methods use the same per-action CRM Core, Sales, Marketing, Bulk, Automation, and Transactional local scope gates |
+| Linear | Interactive authorization code; personal API-key alternative | OAuth requires PKCE `S256`, fixed `actor=user`, renewal evidence, and returned `read,write`; both methods use the same safe viewer/organization probe | OAuth is locally gated by returned grants; personal-key permissions are provider-enforced |
 | X API | Manual OAuth token only | Provider actions are explicitly deferred | Not executable |
 | LinkedIn | Manual OAuth token only | Provider actions are explicitly deferred | Not executable |
 
 Do not add a provider subclass merely to repeat the generic flow. Add a trusted
 contract row for protocol data, and add dedicated code only for a real variant
 such as Meta's second exchange or trusted provider-specific response metadata.
+
+Linear personal keys use the same Connection and action catalog as OAuth but
+remain a separate profile with `auth_method_key=personal_api_key`. The saved
+method selects raw `Authorization: <key>` transport; StackOS does not infer it
+from payload shape. Linear enforces personal-key permissions at action time,
+while the shared read-only Test records only safe viewer/workspace identity.
+
+Local disconnect uses the existing `auth.revoke` path. Linear's documented
+OAuth revoke endpoint remains unsupported/deferred in this delivery, and local
+revocation of any static credential removes daemon-held material without
+invalidating the value at the provider. An operator who needs immediate remote
+invalidation must revoke or rotate it in Linear before local cleanup.
 
 ## Connections UI Contract
 
@@ -263,9 +429,13 @@ The local Connections screen is service/account first:
   connections per service; revoked history is excluded
 - connection rows: safe label, account metadata, profile key, status, last
   tested time, expiry, and opaque `credential_ref`
-- edit action: reuse the selected provider auth method and the same credential
-  form used for create; prefill safe fields, leave secrets blank, and preserve
-  an existing secret unless the operator supplies a replacement
+- method choice: a one-method provider may select automatically; a
+  multi-method provider renders accessible method cards and requires an
+  explicit choice before credential fields or submit actions become active
+- edit action: pin the saved provider auth method and reuse its credential form;
+  prefill safe fields, leave secrets blank, and preserve an existing secret
+  unless the operator supplies a replacement; changing methods requires a
+  separate named profile
 - setup panel: enabled-plugin providers only, rendered from `auth_methods`
 - interactive setup: one `Connect` action validates and stores the application
   fields, calls `auth.start` with only the auth method and opaque

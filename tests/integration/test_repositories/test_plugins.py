@@ -38,6 +38,7 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
         "media-buying",
         "trackbooth",
         "shopify",
+        "linear",
         "publishing",
         "seo",
         "core",
@@ -59,6 +60,17 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
     assert trackbooth.manifest_json["config"]["default_api_base_url"] == (
         "https://apis.trackbooth.com"
     )
+    linear = repo.get_plugin("linear")
+    assert linear.name == "Linear"
+    assert linear.manifest_json["ui"]["nav"]["section"] == "Linear"
+    assert linear.manifest_json["providers"][0]["auth_type"] == "oauth"
+    linear_methods = linear.manifest_json["providers"][0]["auth_methods"]
+    assert [method["key"] for method in linear_methods] == [
+        "oauth2_authorization_code",
+        "personal_api_key",
+    ]
+    assert linear_methods[1]["payload_field"] == "api_key"
+    assert len(linear.manifest_json["actions"]) == 34
     publishing = repo.get_plugin("publishing")
     assert publishing.name == "Publishing"
     assert publishing.manifest_json["ui"]["nav"]["section"] == "Publishing"

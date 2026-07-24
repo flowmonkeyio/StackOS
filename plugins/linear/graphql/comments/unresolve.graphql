@@ -1,0 +1,11 @@
+mutation LinearCommentUnresolve($id: String!) {
+  commentUnresolve(id: $id) {
+    success
+    comment {
+      id
+      body
+      resolvedAt
+      updatedAt
+    }
+  }
+}

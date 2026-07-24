@@ -25,7 +25,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -34,6 +34,9 @@ from stackos.logging import get_logger
 from stackos.mcp.errors import IntegrationDownError, RateLimitedError
 from stackos.repositories.projects import IntegrationBudgetRepository
 from stackos.repositories.runs import RunStepCallRepository
+
+if TYPE_CHECKING:
+    from stackos.auth_providers.repository.schema import AuthMethodProbeContext
 
 _log = get_logger(__name__)
 
@@ -86,6 +89,7 @@ class BaseIntegration:
         payload: bytes,
         project_id: int,
         http: httpx.AsyncClient,
+        probe_context: AuthMethodProbeContext | None = None,
         budget_repo: IntegrationBudgetRepository | None = None,
         run_step_call_repo: RunStepCallRepository | None = None,
         run_step_id: int | None = None,
@@ -95,6 +99,7 @@ class BaseIntegration:
         self.payload = payload
         self.project_id = project_id
         self._http = http
+        self.probe_context = probe_context
         self._budget_repo = budget_repo
         self._run_step_call_repo = run_step_call_repo
         self._run_step_id = run_step_id
@@ -173,7 +178,15 @@ class BaseIntegration:
                 cls._sanitize_request(item) if isinstance(item, dict | list) else item
                 for item in request_json
             ]
-        sensitive = {"api_key", "apikey", "password", "secret", "client_secret", "authorization"}
+        sensitive = {
+            "api_key",
+            "apikey",
+            "password",
+            "secret",
+            "client_secret",
+            "authorization",
+            "tokenkey",
+        }
         clean: dict[str, Any] = {}
         for key, value in request_json.items():
             if key.lower() in sensitive:

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import importlib
+import sys
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import pytest
@@ -12,12 +14,16 @@ from sqlmodel import Session, SQLModel, select
 import stackos.operations.browser as browser_ops
 from stackos.browser.manifest import browser_method_manifest, get_method_spec
 from stackos.browser.runtime import (
+    ALLOWED_LAUNCH_OPTION_KEYS,
     BrowserCallResult,
     BrowserRuntime,
     LiveBrowserSession,
     RuntimeStatus,
     browser_profile_dir,
+    chromium_executable_path,
     get_browser_runtime,
+    managed_chromium_app_path,
+    packaged_stackos_root,
     sanitize_launch_options,
 )
 from stackos.db.connection import make_memory_engine
@@ -38,6 +44,10 @@ from stackos.operations.browser import (
 from stackos.operations.registry import build_operation_registry
 from stackos.repositories.base import RepositoryError, ValidationError
 from stackos.repositories.browser import BrowserRepository
+
+browser_migration = importlib.import_module(
+    "stackos.db.migrations.versions.0025_visible_chromium_profiles"
+)
 
 
 class FakeBrowserRuntime:
@@ -158,9 +168,8 @@ class FakeBrowserRuntime:
         profile_ref: str,
         profile_dir: Path,
         launch_options: dict[str, Any] | None,
-        headless: bool,
     ) -> Any:
-        _ = profile_ref, profile_dir, headless
+        _ = profile_ref, profile_dir
         if launch_options and launch_options.get("fail"):
             raise RuntimeError("start /private/profile secret-token")
         return SimpleNamespace(
@@ -270,7 +279,6 @@ def browser_operation_context(tmp_path: Path):
             project_id=project.id,
             profile=profile,
             session_ref=session_ref,
-            headless=True,
             page_refs=[f"{session_ref}:page-1"],
             current_url="https://example.com/start?token=old#frag",
             metadata_json=None,
@@ -371,24 +379,162 @@ def test_browser_runtime_status_redacts_paths_and_filters_sessions() -> None:
     assert status.to_dict()["live_session_refs"] == []
 
 
-def test_sanitize_launch_options_rejects_daemon_owned_controls() -> None:
+def test_sanitize_launch_options_allows_only_non_sensitive_preferences() -> None:
     with pytest.raises(ValidationError) as exc:
         sanitize_launch_options(
             {
+                "args": ["--user-data-dir=/private/main-account"],
                 "channel": "chrome",
+                "executable_path": "/Applications/Google Chrome.app",
                 "headless": False,
                 "humanize": True,
+                "ignore_default_args": True,
+                "proxy": {"server": "http://localhost"},
                 "user_data_dir": "/tmp/profile",
             }
         )
 
     assert exc.value.data["blocked_keys"] == [
+        "args",
         "channel",
+        "executable_path",
         "headless",
         "humanize",
+        "ignore_default_args",
+        "proxy",
         "user_data_dir",
     ]
-    assert sanitize_launch_options({"locale": "en-US"}) == {"locale": "en-US"}
+    assert (
+        frozenset({"locale", "timezone_id", "user_agent", "viewport"}) == ALLOWED_LAUNCH_OPTION_KEYS
+    )
+    assert sanitize_launch_options(
+        {
+            "locale": "en-US",
+            "timezone_id": "UTC",
+            "user_agent": "StackOS",
+            "viewport": {"width": 1280, "height": 720},
+        }
+    ) == {
+        "locale": "en-US",
+        "timezone_id": "UTC",
+        "user_agent": "StackOS",
+        "viewport": {"width": 1280, "height": 720},
+    }
+
+
+def test_browser_session_start_contract_rejects_headless() -> None:
+    with pytest.raises(ValueError):
+        BrowserSessionStartInput(project_id=1, headless=False)
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (None, None),
+        ("not-json", None),
+        ("[]", None),
+        ("true", None),
+        ("{}", None),
+        (
+            '{"locale":"en-US","args":["--user-data-dir=/private/main"],"viewport":{"width":1}}',
+            '{"locale":"en-US","viewport":{"width":1}}',
+        ),
+        ('{"timezone_id":"UTC"}', '{"timezone_id":"UTC"}'),
+    ],
+)
+def test_browser_profile_migration_scrubs_only_unsafe_options(
+    raw: str | None,
+    expected: str | None,
+) -> None:
+    assert browser_migration._serialized_safe_options(raw) == expected
+    assert browser_migration._serialized_safe_options(expected) == expected
+
+
+def test_runtime_resolves_only_packaged_or_managed_chromium(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executable = (
+        tmp_path / "StackOS.app" / "Contents" / "Resources" / "stackos" / ".venv" / "bin" / "python"
+    )
+    executable.parent.mkdir(parents=True)
+    executable.write_text("", encoding="utf-8")
+    app = executable.parents[2] / "Chromium.app"
+    browser = app / "Contents" / "MacOS" / "Chromium"
+    browser.parent.mkdir(parents=True)
+    browser.write_text("", encoding="utf-8")
+    browser.chmod(0o755)
+    monkeypatch.setattr("stackos.browser.runtime.sys.executable", str(executable))
+
+    assert packaged_stackos_root() == executable.parents[2]
+    assert chromium_executable_path(tmp_path / "ignored-data-dir") == browser
+
+    clone_python = tmp_path / "clone" / ".venv" / "bin" / "python"
+    clone_python.parent.mkdir(parents=True)
+    clone_python.write_text("", encoding="utf-8")
+    monkeypatch.setattr("stackos.browser.runtime.sys.executable", str(clone_python))
+    managed = managed_chromium_app_path(tmp_path / "managed")
+    managed_executable = managed / "Contents" / "MacOS" / "Chromium"
+    managed_executable.parent.mkdir(parents=True)
+    managed_executable.write_text("", encoding="utf-8")
+    managed_executable.chmod(0o755)
+    assert packaged_stackos_root() is None
+    assert chromium_executable_path(tmp_path / "managed") == managed_executable
+
+
+def test_runtime_forces_visible_canonical_chromium(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakePage:
+        url = "about:blank"
+
+    class FakeContext:
+        def __init__(self) -> None:
+            self.pages: list[FakePage] = []
+
+        async def new_page(self) -> FakePage:
+            page = FakePage()
+            self.pages.append(page)
+            return page
+
+    class FakeChromium:
+        async def launch_persistent_context(self, **kwargs: Any) -> FakeContext:
+            captured.update(kwargs)
+            return FakeContext()
+
+    class FakeManager:
+        async def __aenter__(self) -> SimpleNamespace:
+            return SimpleNamespace(chromium=FakeChromium())
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    fake_async_api = ModuleType("playwright.async_api")
+    fake_async_api.async_playwright = lambda: FakeManager()
+    monkeypatch.setitem(sys.modules, "playwright.async_api", fake_async_api)
+    monkeypatch.setattr("stackos.browser.runtime.playwright_driver_is_compatible", lambda: True)
+    chromium = tmp_path / "Chromium.app" / "Contents" / "MacOS" / "Chromium"
+    monkeypatch.setattr("stackos.browser.runtime.chromium_executable_path", lambda: chromium)
+
+    live = asyncio.run(
+        BrowserRuntime().start_session(
+            session_ref="browser-session:project-1:visible:default",
+            profile_ref="browser-profile:project-1:visible",
+            profile_dir=tmp_path / "profile",
+            launch_options={"locale": "en-US"},
+        )
+    )
+
+    assert live.page_ref.endswith(":page-1")
+    assert captured == {
+        "user_data_dir": str(tmp_path / "profile"),
+        "executable_path": str(chromium),
+        "headless": False,
+        "locale": "en-US",
+    }
 
 
 def test_browser_profile_dir_is_provider_engine_scoped() -> None:
@@ -594,7 +740,6 @@ def test_browser_session_start_uses_profile_launch_options(
                 profile_ref=profile.data.profile_ref,
                 session_key="profile-launch",
                 launch_options_json={"timezone_id": "UTC"},
-                headless=True,
             ),
             ctx,
             _emit=None,
@@ -1062,7 +1207,12 @@ def test_failed_session_start_records_failed_receipt_without_raw_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project_id, _session_ref, ctx, session = browser_operation_context
-    monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: FakeBrowserRuntime())
+
+    class FailingStartRuntime(FakeBrowserRuntime):
+        async def start_session(self, **_kwargs: Any) -> Any:
+            raise RuntimeError("start /private/profile secret-token")
+
+    monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: FailingStartRuntime())
 
     with pytest.raises(RepositoryError) as exc:
         asyncio.run(
@@ -1071,7 +1221,6 @@ def test_failed_session_start_records_failed_receipt_without_raw_error(
                     project_id=project_id,
                     profile_key="start-failure",
                     session_key="start-failure",
-                    launch_options_json={"fail": True},
                 ),
                 ctx,
                 _emit=None,

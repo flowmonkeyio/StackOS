@@ -5,6 +5,12 @@ HubSpot provider ledger for StackOS. The executable source remains the GTM
 plugin manifest and connector; this document explains and constrains that
 contract rather than creating a second runtime registry.
 
+The shared credential lifecycle, method selection, readiness semantics, and
+Connections UI contract are canonical in
+[`auth-providers.md`](../auth-providers.md#one-brain-auth-method-contract).
+This ledger records only HubSpot-specific protocol, account, scope, and action
+facts.
+
 ## Delivery Boundary
 
 StackOS integrates the customer lifecycle that sales and marketing teams need:
@@ -33,7 +39,7 @@ They remain explicit deferred rows when their future boundary is useful.
 | OAuth and token lifecycle | [Manage OAuth tokens](https://developers.hubspot.com/docs/api-reference/latest/authentication/manage-oauth-tokens) | 2026-07-22 | verified |
 | OAuth install and optional scopes | [Working with OAuth](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/oauth/working-with-oauth) | 2026-07-22 | verified |
 | Scopes and entitlements | [Scopes](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/scopes) | 2026-07-22 | verified |
-| Static account credentials | [Service keys](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/account-service-keys) | 2026-07-22 | verified; public beta |
+| Private-app credentials and token information | [Private apps overview](https://developers.hubspot.com/docs/apps/legacy-apps/private-apps/overview) | 2026-07-24 | verified |
 | CRM objects and search | [Contacts](https://developers.hubspot.com/docs/api-reference/latest/crm/objects/contacts/guide), [CRM search](https://developers.hubspot.com/docs/api-reference/latest/crm/search/guide) | 2026-07-22 | verified |
 | Properties and owners | [Properties](https://developers.hubspot.com/docs/api-reference/latest/crm/properties/guide), [Owners](https://developers.hubspot.com/docs/api-reference/latest/crm/owners/guide) | 2026-07-22 | verified |
 | Pipelines and associations | [Pipelines](https://developers.hubspot.com/docs/api-reference/latest/crm/pipelines/guide), [Associations](https://developers.hubspot.com/docs/api-reference/latest/crm/associations/associate-records/guide) | 2026-07-22 | verified |
@@ -48,36 +54,34 @@ They remain explicit deferred rows when their future boundary is useful.
 | Webhooks and workflow actions | [Configure webhooks](https://developers.hubspot.com/docs/apps/developer-platform/add-features/configure-webhooks), [Webhooks API](https://developers.hubspot.com/docs/api-reference/latest/webhooks/guide), [Validate requests](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/request-validation), [Custom workflow actions](https://developers.hubspot.com/docs/api-reference/latest/automation/workflow-actions/custom-action-guide) | 2026-07-22 | verified |
 | Limits and errors | [Platform usage guidelines](https://developers.hubspot.com/docs/developer-tooling/platform/usage-guidelines) | 2026-07-22 | verified |
 
-## Authentication And Callback
+## Provider Methods And OAuth Protocol
 
-The production/multi-account path is OAuth authorization code through the
-central StackOS lifecycle:
+HubSpot exposes these StackOS methods. Their common lifecycle and presentation
+are defined by the [canonical auth-method contract](../auth-providers.md#one-brain-auth-method-contract).
 
-- Authorization endpoint: `https://app.hubspot.com/oauth/authorize`.
-- Token, refresh, introspection, and revoke family:
-  `https://api.hubspot.com/oauth/2026-03/*`.
-- Client authentication: form body.
-- PKCE: unavailable in the currently documented HubSpot flow; StackOS still
-  owns state, one-time callback consumption, concurrency, refresh, and failed
-  reconnect preservation.
-- Callback registered in HubSpot:
-  `https://auth.stackos.flowmonkey.io/api/v1/auth/oauth/callback`.
-- The public callback relay forwards the unchanged query to the local daemon
-  callback at `http://127.0.0.1:5180/api/v1/auth/oauth/callback`; the browser
-  then returns to the generic StackOS Connections view.
-- The public page was live over HTTPS and matched the reviewed local
-  `index.html` byte-for-byte on 2026-07-22. That proves callback transport, not
-  a released StackOS OAuth runtime or a completed HubSpot installation.
-- Token responses use the plural `scopes` array and `hub_id`; the central
-  lifecycle persists granted scopes and safe account metadata daemon-side.
+- `oauth2_authorization_code` is the multi-account OAuth route. Its provider
+  facts are:
+  - Authorization endpoint: `https://app.hubspot.com/oauth/authorize`.
+  - Token, refresh, introspection, and revoke family:
+    `https://api.hubspot.com/oauth/2026-03/*`.
+  - Client authentication: form body; PKCE is unavailable in the documented
+    HubSpot flow.
+  - Callback registered in HubSpot:
+    `https://auth.stackos.flowmonkey.io/api/v1/auth/oauth/callback`.
+  - Token responses use the plural `scopes` array and `hub_id`; these are the
+    authoritative OAuth scope and account facts for this method.
+- `private_app_token` is the single-account private-app route. Its credential
+  probe is `POST https://api.hubapi.com/oauth/v2/private-apps/get/access-token-info`.
+  The token is sent only in the documented request body, never in a URL. The
+  response's scopes and account data are authoritative; StackOS retains only
+  normalized safe evidence. The method declares
+  `provider_probe`/`local_required`, so a scope-gated action needs this probe
+  evidence rather than an operator assertion.
 
-HubSpot service keys are valid bearer credentials for a single account and
-REST APIs, but they are public beta, do not support webhooks, and do not have a
-documented scope-introspection contract. StackOS therefore does not advertise
-them as execution-ready in this phase: action scope checks must remain
-provider-verified rather than operator-asserted. The legacy manual OAuth-token
-form is removed from the public setup contract because a short-lived access
-token without its refresh lifecycle is not a working connection.
+The public callback relay forwards the unchanged query to the local daemon
+callback at `http://127.0.0.1:5180/api/v1/auth/oauth/callback`. A legacy manual
+OAuth access-token form remains outside the public HubSpot setup contract
+because it lacks the provider's refresh lifecycle.
 
 ### Operator setup path
 
@@ -103,8 +107,10 @@ initial registration is one privately distributed HubSpot app with OAuth:
 
 Private OAuth distribution supports up to 10 allowlisted production accounts,
 excluding developer test accounts. Marketplace publication is a later product
-decision, not a prerequisite for this delivery. HubSpot static authentication
-is single-account and remains outside the execution-ready StackOS methods.
+decision, not a prerequisite for this delivery. For a single account, an
+operator may instead create a HubSpot private app and connect its
+`private_app_token`; it is not an OAuth callback, refresh, webhook, or custom
+workflow-action route.
 
 The HubSpot OAuth contract requires a non-empty refresh token, positive
 `expires_in`, returned scope evidence, and `hub_id` before an authorization-code
@@ -398,14 +404,11 @@ agent request after verification and allowlisting, but it never selects,
 creates, starts, or executes a run plan. Sequence enrollment remains deferred
 and is not approximated by customer follow-up.
 
-## Capability Readiness
+## HubSpot Capability Facts
 
-Readiness is not a provider-wide boolean. The generic view computes connection
-and OAuth-scope state from the credential and returned scopes. External app,
-ingress, entitlement, target, consent, and registration prerequisites are shown
-as an **operator checklist**; StackOS does not claim those items are
-automatically verified or turn the group green from static manifest entries.
-Provider action results and explicit operator evidence remain authoritative.
+The generic readiness and UI policy is in the
+[canonical auth-method contract](../auth-providers.md#one-brain-auth-method-contract).
+These are HubSpot-specific OAuth scope groups and non-scope provider facts.
 
 | Group | Computed scope state / operator checklist | Partial / repair examples |
 | --- | --- | --- |
@@ -480,9 +483,10 @@ Provider action results and explicit operator evidence remain authoritative.
 
 The GTM manifest must expose:
 
-- credential label: `HubSpot OAuth app`;
-- setup note covering a HubSpot project-based OAuth app, selected capability
-  bundles, and the fixed callback;
+- credential label: `HubSpot OAuth app or private app access token`;
+- setup note covering a HubSpot project-based OAuth app with selected
+  capability bundles and fixed callback, plus the single-account private-app
+  token route and its token-information probe;
 - official homepage, signup, development console, app/auth configuration,
   billing, scopes, and API documentation URLs with `verified_at=2026-07-22`
   and per-URL confidence;

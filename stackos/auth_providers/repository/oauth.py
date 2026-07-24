@@ -593,6 +593,23 @@ class OAuthLifecycleMixin:
                         "requirement": requirement,
                     },
                 )
+        if contract.required_token_type is not None:
+            token_type = response_body.get("token_type")
+            if (
+                not isinstance(token_type, str)
+                or token_type.strip().casefold() != contract.required_token_type.casefold()
+            ):
+                invalid_fields.append("token_type")
+        if contract.required_scope_subset:
+            returned_scopes = set(
+                self._response_scopes(
+                    contract=contract,
+                    response_body=response_body,
+                )
+                or ()
+            )
+            if not set(contract.required_scope_subset).issubset(returned_scopes):
+                invalid_fields.append("scope")
         if invalid_fields:
             raise ValidationError(
                 "provider token response violates its OAuth lifecycle contract",

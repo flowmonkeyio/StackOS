@@ -99,6 +99,36 @@ function bundledMachOFiles(stackosRoot) {
     .sort((a, b) => b.length - a.length);
 }
 
+function nestedBundleDirectories(root, outerBundle) {
+  const bundles = [];
+  for (const filePath of walkFiles(root)) {
+    let candidate = path.dirname(filePath);
+    while (candidate.startsWith(root) && candidate !== outerBundle) {
+      if (/\.(app|framework|xpc|appex)$/i.test(candidate)) {
+        bundles.push(candidate);
+      }
+      const parent = path.dirname(candidate);
+      if (parent === candidate) {
+        break;
+      }
+      candidate = parent;
+    }
+  }
+  return [...new Set(bundles)].sort((a, b) => b.length - a.length);
+}
+
+function chromiumSigningTargets(stackosRoot) {
+  const chromiumApp = path.join(stackosRoot, "Chromium.app");
+  if (!fs.existsSync(chromiumApp)) {
+    return [];
+  }
+  return [
+    ...bundledMachOFiles(chromiumApp),
+    ...nestedBundleDirectories(chromiumApp, chromiumApp),
+    chromiumApp
+  ];
+}
+
 module.exports = async function signStackosRuntime(context) {
   if (context.electronPlatformName !== "darwin") {
     return;
@@ -129,7 +159,11 @@ module.exports = async function signStackosRuntime(context) {
     return;
   }
 
-  for (const filePath of bundledMachOFiles(stackosRoot)) {
+  const chromiumApp = path.join(stackosRoot, "Chromium.app");
+  for (const filePath of bundledMachOFiles(stackosRoot).filter((filePath) => !filePath.startsWith(chromiumApp))) {
     run("codesign", ["--force", "--sign", identity, "--timestamp", "--options", "runtime", filePath]);
+  }
+  for (const target of chromiumSigningTargets(stackosRoot)) {
+    run("codesign", ["--force", "--sign", identity, "--timestamp", "--options", "runtime", target]);
   }
 };

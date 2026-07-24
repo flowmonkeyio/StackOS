@@ -132,6 +132,34 @@ def test_hubspot_contract_freezes_auth_bundles_callback_and_readiness_groups() -
         assert f"| {bundle} |" in contract
 
 
+def test_hubspot_manifest_keeps_oauth_and_private_app_scope_evidence_distinct() -> None:
+    provider = _hubspot_provider()
+    methods = {method["key"]: method for method in provider["auth_methods"]}
+
+    oauth = methods["oauth2_authorization_code"]
+    private_app = methods["private_app_token"]
+    assert "multi-account" in oauth["description"]
+    assert oauth["permission_verification"] == {
+        "evidence_source": "oauth_response",
+        "enforcement": "local_required",
+    }
+    assert "single-account" in private_app["description"]
+    assert private_app["auth_type"] == "api-key"
+    assert private_app["permission_verification"] == {
+        "evidence_source": "provider_probe",
+        "enforcement": "local_required",
+    }
+    assert private_app["fields"] == [
+        {
+            "key": "access_token",
+            "label": "Private App Access Token",
+            "type": "secret",
+            "secret": True,
+            "required": True,
+        }
+    ]
+
+
 def test_hubspot_contract_deferred_rows_name_execution_reason_and_no_connector() -> None:
     contract = _contract_text()
     table_lines = contract.splitlines()
@@ -147,7 +175,7 @@ def test_hubspot_contract_records_setup_and_safe_reference_invariants() -> None:
     contract = _contract_text()
 
     for required in (
-        "credential label: `HubSpot OAuth app`",
+        "credential label: `HubSpot OAuth app or private app access token`",
         "verified_at=2026-07-22",
         "provider-object:*",
         "project, provider, verified HubSpot `hub_id`, object type",

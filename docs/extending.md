@@ -140,6 +140,26 @@ decides campaign intent, structure, budget strategy, and variants before calling
 the action. For OAuth-backed actions, `required_scopes` is checked by the shared
 credential resolver before the connector is called.
 
+For a GraphQL provider, do not expose a raw query action. Use the Linear plugin
+as the fixed-document reference:
+
+- pin a dated introspection snapshot and its checksum;
+- define an exhaustive allowed/excluded root policy;
+- store one reviewed document per action under the plugin;
+- make public input schemas strict and construct provider filters/inputs in the
+  connector;
+- keep one hard-coded action/document/root/scope table that manifest config
+  must match but cannot override;
+- validate all variables, arguments, enums, and projections against the pinned
+  schema and reject deprecated selections;
+- convert reusable provider ids into account-bound opaque refs;
+- disable automatic mutation retries and preserve ambiguous outcomes;
+- update the provider contract ledger, connector matrix, UI presentation, MCP
+  visibility/grant tests, and run-plan audit tests in the same change.
+
+Runtime introspection, caller-selected roots, caller-selected field sets, raw
+provider ids, and provider-specific direct MCP tools are outside this pattern.
+
 For user-owned HTTP/Webhook tools, use the generic daemon connector instead of
 adding core code:
 

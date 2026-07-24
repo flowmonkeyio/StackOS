@@ -768,7 +768,7 @@ def test_oauth_callback_exchanges_once_and_persists_normalized_credential(
     assert len(httpx_mock.get_requests()) == 1
 
 
-def test_failed_reconnect_preserves_the_active_credential(
+def test_failed_alternative_oauth_profile_preserves_the_active_credential(
     session: Session,
     project_id: int,
     settings: Settings,
@@ -790,19 +790,19 @@ def test_failed_reconnect_preserves_the_active_credential(
         project_id=project_id,
         provider_key="google-search-console",
         auth_method_key="oauth2_authorization_code",
-        profile_key="primary",
+        profile_key="replacement",
         fields={
             "client_id": "replacement-client-id",
             "client_secret": "replacement-client-secret",
             "default_site_url": "https://example.test/",
         },
     ).data
-    assert pending.credential_ref == active.credential_ref
-    assert pending.status == "connected"
+    assert pending.credential_ref != active.credential_ref
+    assert pending.status == "pending"
     _started, state, _query = _start_google(
         repo,
         project_id=project_id,
-        credential_ref=active.credential_ref,
+        credential_ref=pending.credential_ref,
         settings=settings,
     )
 
@@ -816,11 +816,13 @@ def test_failed_reconnect_preserves_the_active_credential(
     )
 
     assert denied.status == "authorization-denied"
-    connection = repo.status(
+    connections = repo.status(
         project_id=project_id,
         provider_key="google-search-console",
-    ).connections[0]
-    assert connection.status == "connected"
+    ).connections
+    connection_by_profile = {connection.profile_key: connection for connection in connections}
+    assert connection_by_profile["primary"].status == "connected"
+    assert connection_by_profile["replacement"].status == "repair-required"
     row = session.exec(
         select(IntegrationCredential).where(
             IntegrationCredential.project_id == project_id,

@@ -1977,6 +1977,7 @@ export interface components {
              * @default json
              */
             payload_format: string;
+            permission_verification?: components["schemas"]["PermissionVerificationOut"] | null;
         };
         /** AuthProviderOut */
         AuthProviderOut: {
@@ -3351,6 +3352,22 @@ export interface components {
              * @default 0
              */
             total_estimate: number;
+        };
+        /**
+         * PermissionVerificationOut
+         * @description Safe, manifest-owned grant evidence posture exposed to callers.
+         */
+        PermissionVerificationOut: {
+            /**
+             * Enforcement
+             * @enum {string}
+             */
+            enforcement: PermissionVerificationOutEnforcement;
+            /**
+             * Evidence Source
+             * @enum {string}
+             */
+            evidence_source: PermissionVerificationOutEvidence_source;
         };
         /** PluginCatalogOut */
         PluginCatalogOut: {
@@ -5060,6 +5077,7 @@ export type SchemaPageResponseProjectOut = components['schemas']['PageResponse_P
 export type SchemaPageResponseResourceRecordOut = components['schemas']['PageResponse_ResourceRecordOut_'];
 export type SchemaPageResponseRunOut = components['schemas']['PageResponse_RunOut_'];
 export type SchemaPageResponseRunPlanSummaryOut = components['schemas']['PageResponse_RunPlanSummaryOut_'];
+export type SchemaPermissionVerificationOut = components['schemas']['PermissionVerificationOut'];
 export type SchemaPluginCatalogOut = components['schemas']['PluginCatalogOut'];
 export type SchemaPluginEnableRequest = components['schemas']['PluginEnableRequest'];
 export type SchemaPluginOut = components['schemas']['PluginOut'];
@@ -8001,6 +8019,15 @@ export enum OperationResponsePolicyOutDefault_mode {
     compact = "compact",
     raw = "raw",
     ack = "ack"
+}
+export enum PermissionVerificationOutEnforcement {
+    local_required = "local_required",
+    provider_enforced = "provider_enforced"
+}
+export enum PermissionVerificationOutEvidence_source {
+    oauth_response = "oauth_response",
+    provider_probe = "provider_probe",
+    unavailable = "unavailable"
 }
 export enum PluginSource {
     builtin = "builtin",

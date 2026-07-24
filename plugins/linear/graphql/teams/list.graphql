@@ -1,0 +1,30 @@
+query LinearTeamsList(
+  $first: Int!
+  $after: String
+  $includeArchived: Boolean
+  $orderBy: PaginationOrderBy
+) {
+  teams(
+    first: $first
+    after: $after
+    includeArchived: $includeArchived
+    orderBy: $orderBy
+  ) {
+    nodes {
+      id
+      name
+      displayName
+      key
+      description
+      color
+      visibility
+      archivedAt
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+  }
+}

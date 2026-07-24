@@ -36,6 +36,7 @@ export function authConnection({
   scopes = [],
   setupRequired,
   expiresAt = null,
+  lastTestedAt = null,
 }: {
   revokedAt: string | null
   status?: string
@@ -49,6 +50,7 @@ export function authConnection({
   scopes?: string[]
   setupRequired?: boolean
   expiresAt?: string | null
+  lastTestedAt?: string | null
 }) {
   return {
     credential_ref: credentialRef,
@@ -60,7 +62,7 @@ export function authConnection({
     label,
     status: status ?? (revokedAt ? 'revoked' : 'connected'),
     expires_at: expiresAt,
-    last_tested_at: null,
+    last_tested_at: lastTestedAt,
     revoked_at: revokedAt,
     scopes,
     account,

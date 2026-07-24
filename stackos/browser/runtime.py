@@ -7,7 +7,6 @@ import importlib.metadata
 import importlib.util
 import os
 import re
-import subprocess
 import sys
 from dataclasses import dataclass, field
 from inspect import isawaitable
@@ -21,31 +20,14 @@ _SAFE_KEY_RE = re.compile(r"[^a-zA-Z0-9_.-]+")
 BROWSER_PROVIDER = "playwright"
 BROWSER_ENGINE = "chromium"
 BROWSER_PROFILE_DIRNAME = f"{BROWSER_PROVIDER}-{BROWSER_ENGINE}"
-PLAYWRIGHT_INSTALL_REPAIR = (
-    "Install StackOS dependencies, then run `python3 -m playwright install chromium`."
-)
-_PROTECTED_LAUNCH_OPTION_KEYS = frozenset(
-    {
-        "channel",
-        "executable_path",
-        "headless",
-        "humanize",
-        "persistent_context",
-        "user_data_dir",
-    }
-)
-
-_CHROMIUM_PATH_PROBE = (
-    "from pathlib import Path\n"
-    "from playwright.sync_api import sync_playwright\n"
-    "pw = sync_playwright().start()\n"
-    "try:\n"
-    "    raw = pw.chromium.executable_path\n"
-    "    path = Path(raw).expanduser()\n"
-    "    print(path if path.exists() else '')\n"
-    "finally:\n"
-    "    pw.stop()\n"
-)
+PLAYWRIGHT_DRIVER_VERSION = "1.60.0"
+PLAYWRIGHT_EXPECTED_BROWSER_VERSION = "148.0.7778.96"
+CHROMIUM_APP_NAME = "Chromium.app"
+CHROMIUM_EXECUTABLE_RELATIVE_PATH = Path("Contents") / "MacOS" / "Chromium"
+CHROMIUM_LICENSE_FILENAME = "CHROMIUM-LICENSE"
+CHROMIUM_RUNTIME_DIRNAME = "browser-runtime"
+CHROMIUM_RUNTIME_REPAIR = "Run `stackos install` to install StackOS Chromium."
+ALLOWED_LAUNCH_OPTION_KEYS = frozenset({"locale", "timezone_id", "user_agent", "viewport"})
 
 
 def _merge_manifest_call_arguments(
@@ -127,40 +109,84 @@ def browser_profile_dir(root: Path, *, project_id: int, profile_key: str) -> Pat
     )
 
 
-def playwright_chromium_executable_path(*, timeout_seconds: int = 4) -> str | None:
-    """Return the installed Playwright Chromium executable path, if present."""
+def packaged_stackos_root() -> Path | None:
+    """Return the embedded StackOS payload root for a running desktop app only.
+
+    This deliberately derives containment from ``sys.executable``. Environment
+    variables, Playwright caches, system browsers, and caller-provided paths are
+    never considered browser-runtime candidates.
+    """
+    executable = Path(sys.executable).resolve()
+    if executable.parent.name != "bin" or executable.parent.parent.name != ".venv":
+        return None
+    root = executable.parent.parent.parent
+    if (
+        root.name != "stackos"
+        or root.parent.name != "Resources"
+        or root.parent.parent.name != "Contents"
+        or root.parent.parent.parent.suffix != ".app"
+    ):
+        return None
+    return root
+
+
+def managed_chromium_app_path(data_dir: Path) -> Path:
+    """Return the only non-packaged Chromium bundle location StackOS manages."""
+    return data_dir / CHROMIUM_RUNTIME_DIRNAME / BROWSER_ENGINE / CHROMIUM_APP_NAME
+
+
+def chromium_app_path(data_dir: Path | None = None) -> Path:
+    """Return the canonical bundled or managed Chromium application path."""
+    packaged_root = packaged_stackos_root()
+    if packaged_root is not None:
+        return packaged_root / CHROMIUM_APP_NAME
+    if data_dir is None:
+        from stackos.config import get_settings
+
+        data_dir = Path(get_settings().data_dir)
+    return managed_chromium_app_path(Path(data_dir))
+
+
+def chromium_executable_path(data_dir: Path | None = None) -> Path | None:
+    """Return StackOS's canonical Chromium executable when its bundle is valid."""
+    executable = chromium_app_path(data_dir) / CHROMIUM_EXECUTABLE_RELATIVE_PATH
+    return executable if executable.is_file() and os.access(executable, os.X_OK) else None
+
+
+def chromium_license_path(data_dir: Path | None = None) -> Path:
+    """Return the notice shipped beside StackOS's canonical Chromium bundle."""
+    return chromium_app_path(data_dir).parent / CHROMIUM_LICENSE_FILENAME
+
+
+def playwright_driver_version() -> str | None:
+    """Return the installed Playwright driver version without probing browser caches."""
     if importlib.util.find_spec("playwright") is None:
         return None
     try:
-        result = subprocess.run(
-            [sys.executable, "-c", _CHROMIUM_PATH_PROBE],
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
-            check=False,
-        )
-    except Exception:
+        return importlib.metadata.version("playwright")
+    except importlib.metadata.PackageNotFoundError:
         return None
-    candidate = result.stdout.strip()
-    if result.returncode == 0 and candidate:
-        return candidate
-    return None
+
+
+def playwright_driver_is_compatible() -> bool:
+    """Return whether the driver matches the Chromium compatibility pin."""
+    return playwright_driver_version() == PLAYWRIGHT_DRIVER_VERSION
 
 
 def sanitize_launch_options(raw: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Validate agent launch options without exposing daemon-owned controls."""
+    """Permit only non-sensitive browser preferences chosen by an agent."""
     if raw is None:
         return None
-    blocked = sorted(set(raw) & _PROTECTED_LAUNCH_OPTION_KEYS)
+    blocked = sorted(set(raw) - ALLOWED_LAUNCH_OPTION_KEYS)
     if blocked:
         raise ValidationError(
-            "browser launch options include daemon-owned controls",
+            "browser launch options contain unsupported controls",
             data={
                 "blocked_keys": blocked,
                 "repair": (
-                    "Remove daemon-owned launch options. StackOS owns the "
-                    "browser executable/channel, persistent context mode, "
-                    "profile directory, and runtime-specific launch behavior."
+                    "Only locale, timezone_id, user_agent, and viewport are allowed. "
+                    "StackOS owns the browser executable, visibility, profile directory, "
+                    "and all runtime launch behavior."
                 ),
             },
         )
@@ -268,24 +294,24 @@ class BrowserRuntime:
 
     def status(self) -> RuntimeStatus:
         installed = importlib.util.find_spec("playwright") is not None
-        version: str | None = None
-        if installed:
-            try:
-                version = importlib.metadata.version("playwright")
-            except importlib.metadata.PackageNotFoundError:
-                version = None
+        version = playwright_driver_version() if installed else None
         repair: str | None = None
-        executable_path = playwright_chromium_executable_path() if installed else None
+        executable_path = chromium_executable_path() if installed else None
         if not installed:
-            repair = PLAYWRIGHT_INSTALL_REPAIR
+            repair = "Install/sync StackOS Python dependencies, then run `stackos install`."
+        elif version != PLAYWRIGHT_DRIVER_VERSION:
+            repair = (
+                "Install the StackOS-pinned Playwright driver "
+                f"({PLAYWRIGHT_DRIVER_VERSION}) before starting Chromium."
+            )
         elif executable_path is None:
-            repair = "Run `python3 -m playwright install chromium` to download Chromium."
+            repair = CHROMIUM_RUNTIME_REPAIR
         return RuntimeStatus(
             provider=BROWSER_PROVIDER,
             package_installed=installed,
             package_version=version,
             browser_downloaded=executable_path is not None,
-            executable_path=executable_path,
+            executable_path=str(executable_path) if executable_path is not None else None,
             live_session_refs=sorted(self._sessions),
             repair=repair,
         )
@@ -297,7 +323,6 @@ class BrowserRuntime:
         profile_ref: str,
         profile_dir: Path,
         launch_options: dict[str, Any] | None,
-        headless: bool,
     ) -> LiveBrowserSession:
         if session_ref in self._sessions:
             return self._sessions[session_ref]
@@ -306,8 +331,25 @@ class BrowserRuntime:
                 "Playwright package is not installed",
                 data={
                     "provider": BROWSER_PROVIDER,
-                    "repair": PLAYWRIGHT_INSTALL_REPAIR,
+                    "repair": (
+                        "Install/sync StackOS Python dependencies, then run `stackos install`."
+                    ),
                 },
+            )
+        if not playwright_driver_is_compatible():
+            raise ValidationError(
+                "Playwright driver is incompatible with StackOS Chromium",
+                data={
+                    "expected_playwright_version": PLAYWRIGHT_DRIVER_VERSION,
+                    "expected_browser_version": PLAYWRIGHT_EXPECTED_BROWSER_VERSION,
+                    "repair": "Install/sync StackOS Python dependencies, then retry.",
+                },
+            )
+        executable_path = chromium_executable_path()
+        if executable_path is None:
+            raise ValidationError(
+                "StackOS Chromium runtime is not installed",
+                data={"provider": BROWSER_PROVIDER, "repair": CHROMIUM_RUNTIME_REPAIR},
             )
         from playwright.async_api import async_playwright
 
@@ -319,7 +361,8 @@ class BrowserRuntime:
         try:
             context = await playwright.chromium.launch_persistent_context(
                 user_data_dir=str(profile_dir),
-                headless=headless,
+                executable_path=str(executable_path),
+                headless=False,
                 **options,
             )
         except Exception:
@@ -916,11 +959,25 @@ def get_browser_runtime() -> BrowserRuntime:
 
 
 __all__ = [
+    "ALLOWED_LAUNCH_OPTION_KEYS",
+    "CHROMIUM_APP_NAME",
+    "CHROMIUM_EXECUTABLE_RELATIVE_PATH",
+    "CHROMIUM_LICENSE_FILENAME",
+    "CHROMIUM_RUNTIME_DIRNAME",
+    "PLAYWRIGHT_DRIVER_VERSION",
+    "PLAYWRIGHT_EXPECTED_BROWSER_VERSION",
     "BrowserCallResult",
     "BrowserRuntime",
     "RuntimeStatus",
     "browser_profile_dir",
+    "chromium_app_path",
+    "chromium_executable_path",
+    "chromium_license_path",
     "get_browser_runtime",
+    "managed_chromium_app_path",
+    "packaged_stackos_root",
+    "playwright_driver_is_compatible",
+    "playwright_driver_version",
     "safe_browser_key",
     "sanitize_launch_options",
 ]

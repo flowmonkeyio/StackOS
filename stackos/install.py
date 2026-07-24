@@ -30,22 +30,50 @@ import hashlib
 import importlib.util
 import json
 import os
+import platform
+import plistlib
 import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.request
+import uuid
 from collections.abc import Iterable
 from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Literal
 
-from stackos.browser.runtime import playwright_chromium_executable_path
+from stackos.browser.runtime import (
+    CHROMIUM_APP_NAME,
+    CHROMIUM_EXECUTABLE_RELATIVE_PATH,
+    CHROMIUM_LICENSE_FILENAME,
+    PLAYWRIGHT_DRIVER_VERSION,
+    PLAYWRIGHT_EXPECTED_BROWSER_VERSION,
+    chromium_app_path,
+    chromium_license_path,
+    managed_chromium_app_path,
+    packaged_stackos_root,
+    playwright_driver_version,
+)
 
 InstallMode = Literal["clone", "pipx"]
 """How the daemon was installed: from a checked-out git repo or via pipx."""
 
 MCP_SERVER_NAME = "stackos"
+CHROMIUM_SNAPSHOT_REVISION = "1610473"
+CHROMIUM_BROWSER_VERSION = "148.0.7778.0"
+CHROMIUM_COMPATIBILITY_NOTE = (
+    "Chromium snapshot 1610473 (148.0.7778.0) is the closest snapshot before the "
+    "148.0.7778 branch point and was visibly verified with Playwright 1.60.0 "
+    "(declared browserVersion 148.0.7778.96)."
+)
+CHROMIUM_SNAPSHOT_URL = (
+    "https://commondatastorage.googleapis.com/chromium-browser-snapshots/"
+    f"Mac_Arm/{CHROMIUM_SNAPSHOT_REVISION}/chrome-mac.zip"
+)
+CHROMIUM_SNAPSHOT_SHA256 = "3961cef2b608396de21aec027ffaadd7e9a65ff025391fba64ae0023ffefc80a"
+CHROMIUM_ARCHIVE_APP_RELATIVE_PATH = Path("chrome-mac") / CHROMIUM_APP_NAME
 
 
 # ---------------------------------------------------------------------------
@@ -90,38 +118,242 @@ def detect_mode() -> InstallMode:
     return "clone" if _repo_root_if_clone() is not None else "pipx"
 
 
-def ensure_playwright_browser(*, timeout_seconds: int = 180) -> tuple[bool, str]:
-    """Ensure the packaged Playwright Chromium browser binary is installed.
+def _browser_license_source() -> Path:
+    return Path(__file__).resolve().parent / "browser" / CHROMIUM_LICENSE_FILENAME
 
-    The Python dependency is declared in ``pyproject.toml``. This helper owns the
-    second Playwright setup step (`python -m playwright install chromium`) so
-    clone-mode and package-mode installs converge on the same ready-to-run
-    browser state.
-    """
-    if importlib.util.find_spec("playwright") is None:
-        return (
-            False,
-            "Playwright package is not importable; install/sync Python dependencies first.",
-        )
-    if playwright_chromium_executable_path(timeout_seconds=10):
-        return True, "Playwright Chromium browser present."
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _verify_chromium_bundle(app_path: Path, *, timeout_seconds: int) -> tuple[bool, str]:
+    executable = app_path / CHROMIUM_EXECUTABLE_RELATIVE_PATH
+    info_path = app_path / "Contents" / "Info.plist"
+    if not executable.is_file() or not os.access(executable, os.X_OK) or not info_path.is_file():
+        return False, "Chromium bundle layout is incomplete."
     try:
-        install = subprocess.run(
-            [sys.executable, "-m", "playwright", "install", "chromium"],
+        info = plistlib.loads(info_path.read_bytes())
+    except (OSError, ValueError):
+        return False, "Chromium bundle metadata is invalid."
+    if (
+        info.get("CFBundleName") != "Chromium"
+        or info.get("CFBundleShortVersionString") != CHROMIUM_BROWSER_VERSION
+    ):
+        return False, "Chromium bundle version does not match StackOS's pinned runtime."
+    if platform.system() != "Darwin" or platform.machine() != "arm64":
+        return False, "StackOS Chromium is available only for macOS arm64."
+    try:
+        arch = subprocess.run(
+            ["lipo", "-archs", str(executable)],
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+        if arch.returncode != 0 or "arm64" not in arch.stdout.split():
+            return False, "Chromium bundle is not arm64."
+        version = subprocess.run(
+            [str(executable), "--version"],
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except Exception:
+        return False, "Chromium bundle launch verification failed."
+    if version.returncode != 0 or CHROMIUM_BROWSER_VERSION not in version.stdout:
+        return False, "Chromium bundle launch verification failed."
+    return True, "Chromium bundle verified."
+
+
+def _copy_chromium_license(destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(_browser_license_source(), destination)
+
+
+def _remove_path(path: Path) -> None:
+    if path.is_dir():
+        shutil.rmtree(path)
+    elif path.exists():
+        path.unlink()
+
+
+def _install_chromium_runtime_atomically(
+    source_app: Path,
+    source_license: Path,
+    target_app: Path,
+    target_license: Path,
+) -> None:
+    """Replace the Chromium bundle and its notice as one recoverable transaction."""
+    app_backup = target_app.with_name(f".{target_app.name}.previous-{uuid.uuid4().hex}")
+    license_backup = target_license.with_name(f".{target_license.name}.previous-{uuid.uuid4().hex}")
+    moved_app = False
+    moved_license = False
+    try:
+        if target_app.exists():
+            target_app.replace(app_backup)
+            moved_app = True
+        if target_license.exists():
+            target_license.replace(license_backup)
+            moved_license = True
+        source_app.replace(target_app)
+        source_license.replace(target_license)
+    except Exception:
+        _remove_path(target_app)
+        _remove_path(target_license)
+        if moved_app and app_backup.exists():
+            app_backup.replace(target_app)
+        if moved_license and license_backup.exists():
+            license_backup.replace(target_license)
+        raise
+    finally:
+        _remove_path(app_backup)
+        _remove_path(license_backup)
+
+
+def _download_chromium_archive(destination: Path, *, timeout_seconds: int) -> None:
+    request = urllib.request.Request(
+        CHROMIUM_SNAPSHOT_URL,
+        headers={"User-Agent": "StackOS Chromium runtime installer"},
+    )
+    with (
+        urllib.request.urlopen(request, timeout=timeout_seconds) as response,
+        destination.open("wb") as out,
+    ):
+        shutil.copyfileobj(response, out)
+
+
+def _extract_chromium_archive(
+    archive: Path,
+    destination: Path,
+    *,
+    timeout_seconds: int,
+) -> None:
+    """Extract Chromium with macOS tooling so the app bundle stays executable."""
+    try:
+        result = subprocess.run(
+            ["/usr/bin/ditto", "-x", "-k", str(archive), str(destination)],
             capture_output=True,
             text=True,
             timeout=timeout_seconds,
             check=False,
         )
     except Exception as exc:
-        return False, f"Playwright Chromium install failed: {_safe_process_error(exc)}"
-    if install.returncode != 0:
-        detail = (install.stderr or install.stdout).strip()
-        return False, (
-            f"Playwright Chromium install failed: exit_code={install.returncode}; "
-            f"{_safe_process_output(detail)}"
+        raise RuntimeError(
+            f"Chromium archive extraction failed: {_safe_process_error(exc)}"
+        ) from exc
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        raise RuntimeError(
+            "Chromium archive extraction failed: "
+            f"exit_code={result.returncode}; {_safe_process_output(detail)}"
         )
-    return True, "Playwright Chromium browser installed."
+
+
+def verify_chromium_runtime(
+    *,
+    data_dir: Path | None = None,
+    timeout_seconds: int = 10,
+) -> tuple[bool, str]:
+    """Verify StackOS's canonical Chromium bundle without downloading or changing it."""
+    app_path = chromium_app_path(data_dir)
+    if not app_path.exists():
+        return False, "Chromium bundle is missing."
+    valid, reason = _verify_chromium_bundle(app_path, timeout_seconds=timeout_seconds)
+    if not valid:
+        return False, reason
+    if not chromium_license_path(data_dir).is_file():
+        return False, "Chromium license notice is missing."
+    return True, "Chromium runtime verified."
+
+
+def ensure_chromium_runtime(
+    *,
+    data_dir: Path | None = None,
+    runtime_root: Path | None = None,
+    timeout_seconds: int = 180,
+) -> tuple[bool, str]:
+    """Ensure one pinned normal Chromium.app exists at StackOS's owned location.
+
+    Playwright remains the driver. It never installs, selects, or falls back to
+    a browser executable; this helper is the sole acquisition and repair owner.
+    ``runtime_root`` is build-pipeline-only and writes a desktop payload, not a
+    runtime-selected browser path.
+    """
+    if importlib.util.find_spec("playwright") is None:
+        return (
+            False,
+            "Playwright package is not importable; install/sync Python dependencies first.",
+        )
+    if playwright_driver_version() != PLAYWRIGHT_DRIVER_VERSION:
+        return (
+            False,
+            "Playwright driver is incompatible with StackOS Chromium; "
+            f"expected version {PLAYWRIGHT_DRIVER_VERSION} "
+            f"(declared browserVersion {PLAYWRIGHT_EXPECTED_BROWSER_VERSION}).",
+        )
+
+    if runtime_root is not None:
+        app_path = Path(runtime_root) / CHROMIUM_APP_NAME
+        license_path = Path(runtime_root) / CHROMIUM_LICENSE_FILENAME
+    elif packaged_stackos_root() is not None:
+        app_path = chromium_app_path(data_dir)
+        license_path = chromium_license_path(data_dir)
+        runtime_ok, _reason = verify_chromium_runtime(data_dir=data_dir)
+        if runtime_ok:
+            return True, "Bundled Chromium runtime present."
+        return False, "Bundled Chromium runtime is missing; repair the StackOS app installation."
+    else:
+        if data_dir is None:
+            from stackos.config import get_settings
+
+            data_dir = Path(get_settings().data_dir)
+        app_path = managed_chromium_app_path(Path(data_dir))
+        license_path = app_path.parent / CHROMIUM_LICENSE_FILENAME
+
+    if runtime_root is None:
+        runtime_ok, _reason = verify_chromium_runtime(data_dir=data_dir)
+        if runtime_ok:
+            return True, "Managed Chromium runtime present."
+    elif app_path.exists():
+        valid, _reason = _verify_chromium_bundle(app_path, timeout_seconds=10)
+        if valid and license_path.is_file():
+            return True, "Bundled Chromium runtime present."
+
+    app_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix="stackos-chromium-", dir=app_path.parent
+        ) as stage_name:
+            stage = Path(stage_name)
+            archive = stage / "chromium.zip"
+            _download_chromium_archive(archive, timeout_seconds=timeout_seconds)
+            if _sha256(archive) != CHROMIUM_SNAPSHOT_SHA256:
+                return False, "Chromium archive checksum did not match StackOS's pinned runtime."
+            extracted = stage / "extracted"
+            _extract_chromium_archive(archive, extracted, timeout_seconds=timeout_seconds)
+            candidate = extracted / CHROMIUM_ARCHIVE_APP_RELATIVE_PATH
+            valid, reason = _verify_chromium_bundle(candidate, timeout_seconds=10)
+            if not valid:
+                return False, reason
+            runtime_stage = stage / "runtime"
+            runtime_stage.mkdir()
+            candidate = candidate.replace(runtime_stage / CHROMIUM_APP_NAME)
+            staged_license = runtime_stage / CHROMIUM_LICENSE_FILENAME
+            _copy_chromium_license(staged_license)
+            _install_chromium_runtime_atomically(
+                candidate,
+                staged_license,
+                app_path,
+                license_path,
+            )
+    except Exception as exc:
+        return False, f"Chromium runtime install failed: {_safe_process_error(exc)}"
+    return True, "Managed Chromium runtime installed."
 
 
 def _safe_process_error(exc: Exception) -> str:
@@ -555,6 +787,7 @@ __all__ = [
     "copy_plugins",
     "copy_skills",
     "detect_mode",
+    "ensure_chromium_runtime",
     "register_mcp_claude",
     "register_mcp_codex",
     "register_plugin_marketplace",
@@ -562,4 +795,5 @@ __all__ = [
     "remove_plugins",
     "remove_skills",
     "repair_mcp_hosts",
+    "verify_chromium_runtime",
 ]

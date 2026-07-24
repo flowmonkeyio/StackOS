@@ -142,6 +142,7 @@ for (const relativePath of [
   "scripts/release-preflight.mjs",
   "scripts/test-updates.cjs",
   "scripts/test-build-mac-config.cjs",
+  "scripts/test-browser-runtime.cjs",
   "update-config.example.json"
 ]) {
   mustExist(relativePath);
@@ -165,7 +166,6 @@ mustContain("src/service.js", "installKey");
 mustContain("src/service.js", "build-info.json");
 mustContain("src/service.js", "packaged-missing");
 mustContain("src/service.js", "PYTHONNOUSERSITE");
-mustContain("src/service.js", "PLAYWRIGHT_BROWSERS_PATH");
 mustContain("src/service.js", "mcp-host-status");
 mustContain("src/updates.js", "provider: \"generic\"");
 mustContain("src/updates.js", "update endpoint must use HTTPS unless it is localhost for local testing");
@@ -174,7 +174,7 @@ mustContain("scripts/build-icons.mjs", "iconutil");
 mustContain("scripts/build-stackos-payload.sh", "build-info.json");
 mustContain("scripts/build-stackos-payload.sh", "rsync -a");
 mustContain("scripts/build-stackos-payload.sh", "PYTHONHOME");
-mustContain("scripts/build-stackos-payload.sh", "PLAYWRIGHT_BROWSERS_PATH");
+mustContain("scripts/build-stackos-payload.sh", "ensure_chromium_runtime");
 mustContain("scripts/build-stackos-payload.sh", "direct_url.json");
 mustContain("scripts/build-stackos-payload.sh", "thin_payload_to_arm64");
 mustContain("scripts/build-stackos-payload.sh", "PYTHONDONTWRITEBYTECODE");

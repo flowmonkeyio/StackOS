@@ -29,7 +29,7 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 
 | Token group | Examples |
 |---|---|
-| Color · surface | `bg.app`, `bg.surface`, `bg.surfaceAlt`, `bg.sunken`, `bg.inverse`, `bg.overlay` |
+| Color · surface | `bg.app`, `bg.surface`, `bg.surfaceAlt`, `bg.sunken`, `bg.inverse`, `bg.providerInverse`, `bg.overlay` |
 | Color · foreground | `fg.strong`, `fg.default`, `fg.muted`, `fg.subtle`, `fg.disabled`, `fg.inverse`, `fg.link`, `fg.onAccent` |
 | Color · border | `border.subtle`, `border.default`, `border.strong`, `border.focus` |
 | Color · accent | `accent.primary`, `accent.primaryHover`, `accent.primarySubtle`, `accent.primaryFg` |

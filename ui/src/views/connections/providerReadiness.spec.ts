@@ -72,6 +72,68 @@ function connection(
 }
 
 describe('provider capability readiness', () => {
+  it('uses the saved method posture instead of locally inferring provider-enforced permissions', () => {
+    const enforced = {
+      ...provider,
+      auth_methods: [
+        {
+          key: 'provider-enforced',
+          label: 'Provider-enforced token',
+          auth_type: 'token',
+          description: '',
+          interactive: false,
+          payload_format: 'json',
+          permission_verification: {
+            evidence_source: 'unavailable',
+            enforcement: 'provider_enforced',
+          },
+        },
+      ],
+    } as SchemaAuthProviderOut
+
+    const rows = providerCapabilityReadiness(
+      enforced,
+      connection([], { auth_method_key: 'provider-enforced' }),
+    )
+
+    expect(rows.every((row) => row.state === 'provider-enforced')).toBe(true)
+    expect(rows.every((row) => row.missingScopes.length === 0)).toBe(true)
+    expect(rows[0]?.summary).toContain('provider enforces')
+  })
+
+  it('fails closed when the saved method cannot provide local permission evidence', () => {
+    const failClosed = {
+      ...provider,
+      auth_methods: [
+        {
+          key: 'unverified-token',
+          label: 'Unverified token',
+          auth_type: 'token',
+          description: '',
+          interactive: false,
+          payload_format: 'json',
+          permission_verification: {
+            evidence_source: 'unavailable',
+            enforcement: 'local_required',
+          },
+        },
+      ],
+    } as SchemaAuthProviderOut
+
+    const rows = providerCapabilityReadiness(
+      failClosed,
+      connection(coreScopes, { auth_method_key: 'unverified-token' }),
+    )
+
+    expect(
+      rows
+        .filter((row) => row.requiredScopes.length > 0)
+        .every((row) => row.state === 'permission-unverified'),
+    ).toBe(true)
+    expect(rows.find((row) => row.key === 'webhooks')?.state).toBe('operator-checklist')
+    expect(rows[0]?.summary).toContain('stay blocked')
+  })
+
   it('derives all declared groups from actual granted scopes', () => {
     const rows = providerCapabilityReadiness(provider, connection(coreScopes))
 

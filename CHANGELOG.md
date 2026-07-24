@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 2.1.9 - 2026-07-23
+
+- Added the OAuth-only Linear integration with reviewed GraphQL read/write
+  actions, account binding, scope enforcement, shared lifecycle handling, and
+  no API-key, admin, webhook, or provider-specific authentication path.
+- Added Linear to the public integration catalog and operational Connections
+  experience with the reviewed white wordmark on theme-safe inverse surfaces.
+- Expanded integration-contract, connector, generated-surface, and release
+  verification coverage for the new provider.
+
 ## 2.1.8 - 2026-07-22
 
 - Added a provider-neutral OAuth authorization-code lifecycle with encrypted

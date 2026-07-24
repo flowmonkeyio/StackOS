@@ -1,0 +1,62 @@
+query LinearIssuesSearch(
+  $term: String!
+  $filter: IssueFilter
+  $first: Int!
+  $after: String
+  $includeArchived: Boolean
+  $orderBy: PaginationOrderBy
+) {
+  searchIssues(
+    term: $term
+    filter: $filter
+    first: $first
+    after: $after
+    includeArchived: $includeArchived
+    orderBy: $orderBy
+  ) {
+    nodes {
+      id
+      identifier
+      title
+      description
+      priority
+      estimate
+      dueDate
+      url
+      createdAt
+      updatedAt
+      archivedAt
+      team {
+        id
+        name
+        key
+      }
+      state {
+        id
+        name
+        type
+      }
+      assignee {
+        id
+        name
+        displayName
+      }
+      project {
+        id
+        name
+      }
+      cycle {
+        id
+        number
+        name
+      }
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+    totalCount
+  }
+}

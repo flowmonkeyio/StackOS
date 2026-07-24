@@ -51,6 +51,7 @@ export function useConnectionCredentials(projectId: ComputedRef<number>) {
     setLabelValue,
     setSelectedProvider: setRawSelectedProvider,
     clearForm,
+    clearProviderForms,
     populateForm,
   } = useConnectionForm()
 
@@ -179,7 +180,14 @@ export function useConnectionCredentials(projectId: ComputedRef<number>) {
     ensureSelectableProvider()
     const provider = selectedProvider.value
     const method = provider ? selectedMethod(provider) : null
-    if (provider && method) clearForm(provider.key, method.key)
+    if (provider) {
+      clearProviderForms(provider.key)
+      if (authMethods(provider).length > 1) {
+        setRawSelectedMethod(provider.key, '')
+      } else if (method) {
+        clearForm(provider.key, method.key)
+      }
+    }
     addPanelOpen.value = true
   }
 
@@ -232,11 +240,22 @@ export function useConnectionCredentials(projectId: ComputedRef<number>) {
   function selectProvider(value: string | number | null): void {
     fieldErrors.value = {}
     setRawSelectedProvider(value)
+    const provider = visibleProviderByKey.value.get(String(value ?? ''))
+    if (!provider) return
+    clearProviderForms(provider.key)
+    if (authMethods(provider).length > 1) setRawSelectedMethod(provider.key, '')
   }
 
   function setSelectedMethod(providerKey: string, value: string | number | null): void {
+    const provider = visibleProviderByKey.value.get(providerKey)
+    const methodKey = String(value ?? '')
+    if (!provider || !authMethods(provider).some((method) => method.key === methodKey)) return
     fieldErrors.value = {}
-    setRawSelectedMethod(providerKey, value)
+    clearProviderForms(providerKey)
+    const nextMessages = { ...providerMessages.value }
+    delete nextMessages[providerKey]
+    providerMessages.value = nextMessages
+    setRawSelectedMethod(providerKey, methodKey)
   }
 
   function setFieldValue(

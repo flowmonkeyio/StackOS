@@ -1,0 +1,12 @@
+query LinearTeamGet($id: String!) {
+  team(id: $id) {
+    id
+    name
+    displayName
+    key
+    description
+    color
+    visibility
+    archivedAt
+  }
+}

@@ -1,6 +1,6 @@
 # Browser Automation
 
-StackOS includes a daemon-owned Playwright Chromium browser runtime for agent-driven web
+StackOS includes a daemon-owned Chromium browser runtime driven by Playwright for agent-driven web
 work such as platform posting, admin UI publishing, QA, and operator-assisted
 login.
 
@@ -8,12 +8,15 @@ login.
 
 - Browser automation is a core StackOS capability, not a branding-only plugin
   action.
-- Setup installs the Python `playwright` package and installs the Playwright
-  Chromium browser binary during `make install` or `stackos install`.
-- Keep the Playwright dependency current through the normal Python dependency
-  resolver and install the matching Chromium browser with
-  `python3 -m playwright install chromium`. Do not patch Playwright driver
-  bundles by hand.
+- Setup installs the Python `playwright` driver and one pinned normal arm64
+  `Chromium.app` during `make install` or `stackos install`. StackOS never
+  installs Chrome for Testing, a Playwright browser cache, or a headless shell.
+- StackOS owns the Chromium pin, checksum, architecture, bundle layout, and
+  launch verification. The pin is snapshot `1610473` (`148.0.7778.0`),
+  visibly verified with Playwright `1.60.0` (declared browser version
+  `148.0.7778.96`) before the branch point; StackOS rejects driver drift.
+  Keep Playwright current through the normal Python dependency resolver; do
+  not install or select a browser through Playwright.
 - Profiles, sessions, pages, screenshots, and action receipts are
   project-scoped. Profile directories stay inside the daemon data directory and
   are never returned to agents.
@@ -22,10 +25,12 @@ login.
   operator log in once, and reuse that same profile key for future sessions so
   cookies and storage carry forward. A different profile key is a separate
   browser profile and will not share the authenticated session.
-- The daemon owns the browser executable/channel, persistent-context mode, and
-  profile directory. Agent-provided launch options are passed through except
-  those daemon-owned controls and runtime-specific options from removed browser
-  wrappers.
+- The daemon owns the browser executable, visible mode, persistent-context
+  mode, and profile directory. Every agent browser session is visible.
+  `browser.session.start` has no `headless` input. Agent launch options may use
+  only `locale`, `timezone_id`, `user_agent`, and `viewport`; paths, channels,
+  raw arguments, default-argument bypasses, proxies, and all other launch
+  controls are rejected.
 - Agents get full public browser control, in the same capability class as a
   normal Playwright/test browser session. `browser.page.call` and
   `browser.context.call` accept a method name plus raw `args`, `kwargs`, or
@@ -56,8 +61,8 @@ login.
 
 1. Call `browser.runtime.status`.
 2. Call `browser.session.start` with a stable `profile_key` for platform work
-   that should keep cookies/session state. Use `headless=false` when the
-   operator may need to log in or observe posting.
+   that should keep cookies/session state. The browser always opens visibly so
+   the operator can log in and observe posting.
 3. Use `browser.page.call` for page operations such as `goto`, `click`, `fill`,
    `press`, `set_input_files`, or any other public page method. Pass `page_ref`
    to target a known tab/page. For manifest methods, prefer named `arguments`
@@ -87,7 +92,7 @@ tools appear. Until then, agents can call the same operations through
 Use these payloads when direct `browser.*` MCP tools are not mounted yet:
 
 ```json
-{"tool_name":"browser.session.start","arguments":{"project_id":1,"profile_key":"default","session_key":"linkedin","headless":false,"response_mode":"raw"}}
+{"tool_name":"browser.session.start","arguments":{"project_id":1,"profile_key":"default","session_key":"linkedin","response_mode":"raw"}}
 ```
 
 ```json

@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-07-23T06:09:57.811Z",
+  "generatedAt": "2026-07-24T04:40:10.440Z",
   "source": "StackOS catalog.list after provider catalog synchronization",
   "counts": {
-    "providers": 54,
-    "plugins": 10,
-    "actions": 644,
+    "providers": 55,
+    "plugins": 11,
+    "actions": 678,
     "trackboothActions": 337
   },
   "plugins": [
@@ -87,6 +87,21 @@
         "Pipedrive",
         "Salesforce",
         "Salesloft"
+      ]
+    },
+    {
+      "slug": "linear",
+      "name": "Linear",
+      "description": "Plan and track product work through Linear issues, projects, cycles, teams, comments, and workflow states.",
+      "color": "#5e6ad2",
+      "providerCount": 1,
+      "actionCount": 34,
+      "capabilityCount": 1,
+      "providerSlugs": [
+        "linear"
+      ],
+      "providerNames": [
+        "Linear"
       ]
     },
     {
@@ -2960,6 +2975,363 @@
       "primaryUrl": "https://klingai.com/",
       "docsUrl": "https://kling.ai/document-api",
       "setupNote": "Use the official Kling AI/API console and documentation to obtain access keys, then store both AccessKey and SecretKey in StackOS."
+    },
+    {
+      "key": "linear.linear",
+      "slug": "linear",
+      "providerKey": "linear",
+      "name": "Linear",
+      "description": "Linear GraphQL provider using daemon-owned OAuth authorization code with PKCE. Tokens stay daemon-held and only curated issue-work actions are executable.",
+      "authType": "oauth",
+      "pluginSlug": "linear",
+      "pluginName": "Linear",
+      "pluginDescription": "Plan and track product work through Linear issues, projects, cycles, teams, comments, and workflow states.",
+      "color": "#5e6ad2",
+      "logo": {
+        "src": "/images/integrations/linear-logo-white.png",
+        "kind": "wordmark-inverse"
+      },
+      "actionCount": 34,
+      "capabilities": [
+        "Issue Work"
+      ],
+      "actions": [
+        {
+          "key": "linear.issues.labels.add",
+          "name": "Add Linear Issue Label",
+          "description": "Add an account-bound issue label ref to an account-bound issue ref.",
+          "keywords": "Add an account-bound issue label ref to an account-bound issue ref.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "write"
+        },
+        {
+          "key": "linear.issues.archive",
+          "name": "Archive Linear Issue",
+          "description": "Archive one issue by an account-bound issue ref.",
+          "keywords": "Archive one issue by an account-bound issue ref.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "write"
+        },
+        {
+          "key": "linear.issues.create",
+          "name": "Create Linear Issue",
+          "description": "Create an issue from reviewed fields and account-bound refs.",
+          "keywords": "Create an issue from reviewed fields and account-bound refs.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "write"
+        },
+        {
+          "key": "linear.comments.create",
+          "name": "Create Linear Issue Comment",
+          "description": "Create a comment on one account-bound issue with an optional parent comment ref.",
+          "keywords": "Create a comment on one account-bound issue with an optional parent comment ref.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "write"
+        },
+        {
+          "key": "linear.issue_relations.create",
+          "name": "Create Linear Issue Relation",
+          "description": "Create a reviewed relation between two account-bound issue refs.",
+          "keywords": "Create a reviewed relation between two account-bound issue refs.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "write"
+        },
+        {
+          "key": "linear.comments.delete",
+          "name": "Delete Linear Comment",
+          "description": "Delete one account-bound issue comment; permanent issue deletion is not exposed.",
+          "keywords": "Delete one account-bound issue comment; permanent issue deletion is not exposed.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "write"
+        },
+        {
+          "key": "linear.issue_relations.delete",
+          "name": "Delete Linear Issue Relation",
+          "description": "Delete one account-bound issue relation.",
+          "keywords": "Delete one account-bound issue relation.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "write"
+        },
+        {
+          "key": "linear.comments.get",
+          "name": "Get Linear Comment",
+          "description": "Get one issue comment by an account-bound comment ref.",
+          "keywords": "Get one issue comment by an account-bound comment ref.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "read"
+        },
+        {
+          "key": "linear.cycles.get",
+          "name": "Get Linear Cycle",
+          "description": "Get one cycle by an account-bound cycle ref.",
+          "keywords": "Get one cycle by an account-bound cycle ref.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "read"
+        },
+        {
+          "key": "linear.issues.get",
+          "name": "Get Linear Issue",
+          "description": "Get one issue and its reviewed nested context by an account-bound issue ref.",
+          "keywords": "Get one issue and its reviewed nested context by an account-bound issue ref.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "read"
+        },
+        {
+          "key": "linear.issue_labels.get",
+          "name": "Get Linear Issue Label",
+          "description": "Get one issue label by an account-bound label ref.",
+          "keywords": "Get one issue label by an account-bound label ref.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "read"
+        },
+        {
+          "key": "linear.issue_relations.get",
+          "name": "Get Linear Issue Relation",
+          "description": "Get one issue relation by an account-bound relation ref.",
+          "keywords": "Get one issue relation by an account-bound relation ref.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "read"
+        },
+        {
+          "key": "linear.projects.get",
+          "name": "Get Linear Project",
+          "description": "Get one project by an account-bound project ref.",
+          "keywords": "Get one project by an account-bound project ref.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "read"
+        },
+        {
+          "key": "linear.teams.get",
+          "name": "Get Linear Team",
+          "description": "Get one Linear team by an account-bound team ref.",
+          "keywords": "Get one Linear team by an account-bound team ref.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "read"
+        },
+        {
+          "key": "linear.users.get",
+          "name": "Get Linear User",
+          "description": "Get one Linear user by an account-bound user ref.",
+          "keywords": "Get one Linear user by an account-bound user ref.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "read"
+        },
+        {
+          "key": "linear.viewer.get",
+          "name": "Get Linear Viewer",
+          "description": "Return the authenticated Linear user and workspace as account-bound safe refs.",
+          "keywords": "Return the authenticated Linear user and workspace as account-bound safe refs.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "read"
+        },
+        {
+          "key": "linear.workflow_states.get",
+          "name": "Get Linear Workflow State",
+          "description": "Get one workflow state by an account-bound ref.",
+          "keywords": "Get one workflow state by an account-bound ref.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "read"
+        },
+        {
+          "key": "linear.cycles.list",
+          "name": "List Linear Cycles",
+          "description": "List cycles with bounded pagination and reviewed team/timestamp filters.",
+          "keywords": "List cycles with bounded pagination and reviewed team/timestamp filters.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "read"
+        },
+        {
+          "key": "linear.comments.list",
+          "name": "List Linear Issue Comments",
+          "description": "List comments for one account-bound issue with bounded pagination.",
+          "keywords": "List comments for one account-bound issue with bounded pagination.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "read"
+        },
+        {
+          "key": "linear.issue_labels.list",
+          "name": "List Linear Issue Labels",
+          "description": "List issue labels with bounded pagination and reviewed team/timestamp filters.",
+          "keywords": "List issue labels with bounded pagination and reviewed team/timestamp filters.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "read"
+        },
+        {
+          "key": "linear.issue_relations.list",
+          "name": "List Linear Issue Relations",
+          "description": "List relations from one issue; the workspace-wide relation root is not exposed.",
+          "keywords": "List relations from one issue; the workspace-wide relation root is not exposed.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "read"
+        },
+        {
+          "key": "linear.issues.list",
+          "name": "List Linear Issues",
+          "description": "List issues using only bounded pagination and reviewed safe-ref/timestamp filters.",
+          "keywords": "List issues using only bounded pagination and reviewed safe-ref/timestamp filters.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "read"
+        },
+        {
+          "key": "linear.projects.list",
+          "name": "List Linear Projects",
+          "description": "List projects with bounded pagination and reviewed team/timestamp filters.",
+          "keywords": "List projects with bounded pagination and reviewed team/timestamp filters.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "read"
+        },
+        {
+          "key": "linear.teams.list",
+          "name": "List Linear Teams",
+          "description": "List Linear teams with bounded cursor pagination and account-bound refs.",
+          "keywords": "List Linear teams with bounded cursor pagination and account-bound refs.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "read"
+        },
+        {
+          "key": "linear.users.list",
+          "name": "List Linear Users",
+          "description": "List Linear workspace users with bounded pagination.",
+          "keywords": "List Linear workspace users with bounded pagination.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "read"
+        },
+        {
+          "key": "linear.workflow_states.list",
+          "name": "List Linear Workflow States",
+          "description": "List workflow states using reviewed team and timestamp filters.",
+          "keywords": "List workflow states using reviewed team and timestamp filters.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "read"
+        },
+        {
+          "key": "linear.issues.labels.remove",
+          "name": "Remove Linear Issue Label",
+          "description": "Remove an account-bound issue label ref from an account-bound issue ref.",
+          "keywords": "Remove an account-bound issue label ref from an account-bound issue ref.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "write"
+        },
+        {
+          "key": "linear.comments.resolve",
+          "name": "Resolve Linear Comment",
+          "description": "Resolve one account-bound issue comment.",
+          "keywords": "Resolve one account-bound issue comment.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "write"
+        },
+        {
+          "key": "linear.issues.search",
+          "name": "Search Linear Issues",
+          "description": "Search issues through Linear searchIssues with a required term and reviewed filters.",
+          "keywords": "Search issues through Linear searchIssues with a required term and reviewed filters.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "read"
+        },
+        {
+          "key": "linear.issues.unarchive",
+          "name": "Unarchive Linear Issue",
+          "description": "Restore one archived issue by an account-bound issue ref.",
+          "keywords": "Restore one archived issue by an account-bound issue ref.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "write"
+        },
+        {
+          "key": "linear.comments.unresolve",
+          "name": "Unresolve Linear Comment",
+          "description": "Reopen one account-bound issue comment.",
+          "keywords": "Reopen one account-bound issue comment.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "write"
+        },
+        {
+          "key": "linear.comments.update",
+          "name": "Update Linear Comment",
+          "description": "Replace the body of one account-bound issue comment.",
+          "keywords": "Replace the body of one account-bound issue comment.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "write"
+        },
+        {
+          "key": "linear.issues.update",
+          "name": "Update Linear Issue",
+          "description": "Patch one issue with reviewed fields while preserving omitted-versus-null semantics.",
+          "keywords": "Patch one issue with reviewed fields while preserving omitted-versus-null semantics.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "write"
+        },
+        {
+          "key": "linear.issue_relations.update",
+          "name": "Update Linear Issue Relation",
+          "description": "Change one account-bound relation to a reviewed relation type.",
+          "keywords": "Change one account-bound relation to a reviewed relation type.",
+          "capability": "issue-work",
+          "capabilityName": "Issue Work",
+          "risk": "write"
+        }
+      ],
+      "links": [
+        {
+          "key": "homepage_url",
+          "label": "Visit tool",
+          "url": "https://linear.app/",
+          "confidence": "verified"
+        },
+        {
+          "key": "docs_url",
+          "label": "Documentation",
+          "url": "https://linear.app/developers/oauth-2-0-authentication",
+          "confidence": "verified"
+        },
+        {
+          "key": "console_url",
+          "label": "Open console",
+          "url": "https://linear.app/settings/api/applications",
+          "confidence": "verified"
+        },
+        {
+          "key": "support_url",
+          "label": "Support",
+          "url": "https://linear.app/contact",
+          "confidence": "verified"
+        }
+      ],
+      "primaryUrl": "https://linear.app/",
+      "docsUrl": "https://linear.app/developers/oauth-2-0-authentication",
+      "setupNote": "Create a Linear OAuth application, copy its client id and secret into the local StackOS connection form, and register the exact callback URL shown there."
     },
     {
       "key": "branding.linkedin-api",

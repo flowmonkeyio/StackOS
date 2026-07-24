@@ -2,7 +2,7 @@ import providerPresentation from '../../../../provider-presentation.json'
 
 export interface ProviderLogo {
   src: string
-  kind: 'icon' | 'wordmark' | 'wordmark-dark'
+  kind: 'icon' | 'wordmark' | 'wordmark-dark' | 'wordmark-inverse'
 }
 
 const PROVIDER_LOGOS = providerPresentation as Record<string, ProviderLogo>

@@ -1,0 +1,30 @@
+query LinearUsersList(
+  $first: Int!
+  $after: String
+  $includeArchived: Boolean
+  $includeDisabled: Boolean
+  $orderBy: PaginationOrderBy
+) {
+  users(
+    first: $first
+    after: $after
+    includeArchived: $includeArchived
+    includeDisabled: $includeDisabled
+    orderBy: $orderBy
+  ) {
+    nodes {
+      id
+      name
+      displayName
+      active
+      avatarUrl
+      archivedAt
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+  }
+}

@@ -15,6 +15,7 @@ from stackos.actions.connectors import (
 )
 from stackos.actions.provider_utils import (
     config_str,
+    credential_config,
     credential_value,
     required_str,
     resolve_ref,
@@ -30,8 +31,18 @@ def _base_url(request: ActionConnectorRequest) -> str:
 
 
 def _headers(request: ActionConnectorRequest) -> dict[str, str]:
+    auth_method_key = credential_config(request).get("auth_method_key")
+    if auth_method_key == "api_key":
+        token = credential_value(request, "api_key")
+    elif auth_method_key in {"oauth2_authorization_code", "oauth2_token"}:
+        token = credential_value(request, "access_token")
+    else:
+        raise ValidationError(
+            "Salesloft action requires a recognized saved auth method",
+            data={"auth_method_key": auth_method_key},
+        )
     return {
-        "Authorization": f"Bearer {credential_value(request, 'access_token', 'api_key', 'token')}",
+        "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
 

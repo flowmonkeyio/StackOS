@@ -19,7 +19,7 @@ export interface IntegrationAction {
 
 export interface IntegrationLogo {
   src: string
-  kind: 'icon' | 'wordmark' | 'wordmark-dark'
+  kind: 'icon' | 'wordmark' | 'wordmark-dark' | 'wordmark-inverse'
 }
 
 export interface IntegrationProvider {

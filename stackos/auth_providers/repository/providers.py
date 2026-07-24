@@ -14,7 +14,7 @@ from stackos.db.models import AuthProvider, Plugin, Project, ProjectPlugin, Prov
 from stackos.provider_setup import sanitize_provider_setup_config
 from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 
-from .schema import AuthFieldOut, AuthMethodOut, AuthProviderOut
+from .schema import AuthFieldOut, AuthMethodOut, AuthProviderOut, PermissionVerificationOut
 from .utils import utcnow
 
 
@@ -146,6 +146,11 @@ class ProviderMetadataMixin:
                         auth_type=str(raw_method.get("auth_type") or provider.auth_type),
                         description=str(raw_method.get("description") or ""),
                         interactive=bool(raw_method.get("interactive")),
+                        permission_verification=(
+                            PermissionVerificationOut(**raw_method["permission_verification"])
+                            if isinstance(raw_method.get("permission_verification"), dict)
+                            else None
+                        ),
                         payload_format=str(raw_method.get("payload_format") or "json"),
                         payload_field=(
                             str(raw_method["payload_field"])
@@ -196,6 +201,17 @@ class ProviderMetadataMixin:
                 data={"provider_key": provider.key, "auth_method_key": auth_method_key},
             )
         return None
+
+    @staticmethod
+    def _method_requires_local_scope_gate(method: AuthMethodOut) -> bool:
+        """Return the one canonical readiness decision for an auth method."""
+
+        posture = method.permission_verification
+        if posture is not None:
+            return posture.enforcement == "local_required"
+        # Compatibility: legacy manifests retain the prior OAuth-only gate until
+        # they opt into an explicit permission-verification posture.
+        return method.auth_type in {"oauth", "oauth-client-credentials"}
 
     def _provider_out(self, row: AuthProvider, plugin: Plugin | None) -> AuthProviderOut:
         assert row.id is not None

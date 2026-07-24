@@ -70,6 +70,12 @@ directly, so an API-key system, SMTP system, OAuth2 system, and custom webhook
 system each get the right fields without exposing secrets to agents or storing
 credential material in plugin config.
 
+All methods use the ownership, evidence, profile-isolation, migration, and
+local-versus-provider revocation rules in the
+[one-brain auth-method contract](./auth-providers.md#one-brain-auth-method-contract).
+One credential profile is bound to one saved method; changing methods requires
+a separately verified profile and deliberate exact-credential reassignment.
+
 Every auth usage/refresh audit payload is passed through the shared redactor
 before persistence. Secret-like keys such as `api_key`, `access_token`,
 `refresh_token`, `authorization`, and nested equivalents are stored as
@@ -162,7 +168,7 @@ local administrator authority, not as a normal agent credential.
 
 ## Daemon-Owned Browser Automation
 
-StackOS browser automation uses a daemon-owned Playwright Chromium runtime. Agents can
+StackOS browser automation uses a daemon-owned visible Chromium runtime driven by Playwright. Agents can
 open persistent sessions, call public page/context methods, run arbitrary page
 JavaScript, inject scripts, and capture screenshots. This is intentionally a
 full-control automation surface, similar to a normal browser automation test
@@ -185,11 +191,13 @@ the requested full-control browser surface. Persisted receipts and transport
 errors are the redacted surfaces; callers must treat raw browser outputs as
 sensitive working data.
 
-Agents may pass normal Playwright launch options, but StackOS rejects launch
-options that would override daemon-owned controls such as the executable path,
-browser channel, persistent-context mode, or profile directory. Runtime status
-exposes readiness booleans and same-project live session refs; it does not
-expose local browser executable paths or profile paths.
+Every session is visible and `browser.session.start` accepts no `headless`
+input. Agents may pass only `locale`, `timezone_id`, `user_agent`, and
+`viewport`; StackOS rejects executable paths, browser channels, profile paths,
+raw arguments, default-argument bypasses, proxies, and every other launch
+control. Runtime status exposes readiness booleans and same-project live
+session refs; it does not expose local browser executable paths or profile
+paths.
 
 ## UI Token Bootstrap Trade-Off
 

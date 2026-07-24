@@ -60,6 +60,24 @@ class CredentialStorageMixin:
                 IntegrationCredential.profile_key == profile_key,
             )
         ).first()
+        existing_config = dict(existing.config_json or {}) if existing is not None else {}
+        previous_auth_method_key = existing_config.get("auth_method_key")
+        if (
+            existing is not None
+            and isinstance(previous_auth_method_key, str)
+            and previous_auth_method_key
+            and previous_auth_method_key != method.key
+        ):
+            raise ConflictError(
+                "credential profile is already configured for a different auth method",
+                data={
+                    "provider_key": provider.key,
+                    "profile_key": profile_key,
+                    "existing_auth_method_key": previous_auth_method_key,
+                    "auth_method_key": method.key,
+                    "next_action": "Create a separate profile before changing auth methods.",
+                },
+            )
         existing_credential = None
         existing_secret_payload: bytes | None = None
         if existing is not None and existing.id is not None:
@@ -78,8 +96,6 @@ class CredentialStorageMixin:
                 validate_ftp_credential_config(safe_config)
             except ValueError as exc:
                 raise ValidationError(str(exc), data={"provider_key": "ftp"}) from exc
-        existing_config = dict(existing.config_json or {}) if existing is not None else {}
-        previous_auth_method_key = existing_config.get("auth_method_key")
         existing_config.update(safe_config)
         safe_config = existing_config
         safe_config["auth_method_key"] = method.key
@@ -104,37 +120,30 @@ class CredentialStorageMixin:
             "oauth",
             "oauth-client-credentials",
         }
+        local_scope_gate = self._method_requires_local_scope_gate(method)
         declared_material_matches = False
-        if (
-            scoped_noninteractive_method
-            and existing is not None
-            and existing_secret_payload is not None
-            and previous_auth_method_key == method.key
-        ):
-            try:
-                existing_declared_payload = self._serialize_secret_payload(
-                    method=method,
-                    values=self._deserialize_secret_payload(method=method, row=existing),
-                )
-            except ValidationError:
-                pass
+        if local_scope_gate and existing is not None and existing_secret_payload is not None:
+            if scoped_noninteractive_method:
+                try:
+                    existing_declared_payload = self._serialize_secret_payload(
+                        method=method,
+                        values=self._deserialize_secret_payload(method=method, row=existing),
+                    )
+                except ValidationError:
+                    pass
+                else:
+                    declared_material_matches = existing_declared_payload == secret_payload
+                    if declared_material_matches:
+                        secret_payload = existing_secret_payload
             else:
-                declared_material_matches = existing_declared_payload == secret_payload
-                if declared_material_matches:
-                    secret_payload = existing_secret_payload
+                declared_material_matches = existing_secret_payload == secret_payload
         scope_state_reset = False
-        if not method.interactive:
+        if not method.interactive and local_scope_gate:
             scope_state_reset = bool(
-                existing_credential is not None
-                and (
-                    previous_auth_method_key != method.key
-                    or (scoped_noninteractive_method and not declared_material_matches)
-                )
+                existing_credential is not None and not declared_material_matches
             )
-            if scoped_noninteractive_method and (existing is None or scope_state_reset):
+            if existing is None or scope_state_reset:
                 safe_config["scope_status"] = "unknown"
-            elif scope_state_reset:
-                safe_config.pop("scope_status", None)
         resolved_status = "connected"
         if method.interactive:
             application_values = json.loads(secret_payload.decode("utf-8"))

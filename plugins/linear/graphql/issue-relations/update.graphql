@@ -1,0 +1,21 @@
+mutation LinearIssueRelationUpdate($id: String!, $input: IssueRelationUpdateInput!) {
+  issueRelationUpdate(id: $id, input: $input) {
+    success
+    issueRelation {
+      id
+      type
+      createdAt
+      updatedAt
+      issue {
+        id
+        identifier
+        title
+      }
+      relatedIssue {
+        id
+        identifier
+        title
+      }
+    }
+  }
+}

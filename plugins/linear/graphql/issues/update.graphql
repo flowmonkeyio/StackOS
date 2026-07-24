@@ -1,0 +1,23 @@
+mutation LinearIssueUpdate($id: String!, $input: IssueUpdateInput!) {
+  issueUpdate(id: $id, input: $input) {
+    success
+    issue {
+      id
+      identifier
+      title
+      description
+      priority
+      estimate
+      dueDate
+      url
+      createdAt
+      updatedAt
+      archivedAt
+      state {
+        id
+        name
+        type
+      }
+    }
+  }
+}

@@ -1,0 +1,17 @@
+query LinearCycleGet($id: String!) {
+  cycle(id: $id) {
+    id
+    number
+    name
+    description
+    startsAt
+    endsAt
+    completedAt
+    archivedAt
+    team {
+      id
+      name
+      key
+    }
+  }
+}

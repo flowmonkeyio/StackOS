@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -73,6 +73,30 @@ class AuthFieldManifest(BaseModel):
         return _validate_key(value)
 
 
+class PermissionVerificationManifest(BaseModel):
+    """Reviewed source and enforcement posture for an auth method's grants."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_source: Literal["oauth_response", "provider_probe", "unavailable"]
+    enforcement: Literal["local_required", "provider_enforced"]
+
+    @model_validator(mode="after")
+    def _reviewed_combination(self) -> PermissionVerificationManifest:
+        allowed = {
+            ("oauth_response", "local_required"),
+            ("provider_probe", "local_required"),
+            ("unavailable", "provider_enforced"),
+            ("unavailable", "local_required"),
+        }
+        if (self.evidence_source, self.enforcement) not in allowed:
+            raise ValueError(
+                "permission_verification must use one of the reviewed evidence/enforcement "
+                "combinations"
+            )
+        return self
+
+
 class AuthMethodManifest(BaseModel):
     """Credential setup method contributed by a provider."""
 
@@ -83,6 +107,7 @@ class AuthMethodManifest(BaseModel):
     auth_type: str = Field(default="none", max_length=80)
     description: str = ""
     interactive: bool = False
+    permission_verification: PermissionVerificationManifest | None = None
     payload_format: str = Field(default="json", max_length=40)
     payload_field: str | None = Field(default=None, max_length=160)
     fields: list[AuthFieldManifest] = Field(default_factory=list)

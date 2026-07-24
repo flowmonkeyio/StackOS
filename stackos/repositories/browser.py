@@ -8,7 +8,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session, col, select
 
-from stackos.browser.runtime import BROWSER_PROVIDER
+from stackos.browser.runtime import BROWSER_PROVIDER, sanitize_launch_options
 from stackos.db.models import (
     Artifact,
     BrowserActionReceipt,
@@ -134,6 +134,7 @@ class BrowserRepository:
         metadata_json: dict[str, Any] | None,
     ) -> Envelope[BrowserProfileOut]:
         self.require_project(project_id)
+        launch_options_json = sanitize_launch_options(launch_options_json)
         ref = self.profile_ref(project_id=project_id, profile_key=profile_key)
         existing = self._s.exec(
             select(BrowserProfile).where(
@@ -204,7 +205,6 @@ class BrowserRepository:
         project_id: int,
         profile: BrowserProfile,
         session_ref: str,
-        headless: bool,
         page_refs: list[str],
         current_url: str | None,
         metadata_json: dict[str, Any] | None,
@@ -224,7 +224,7 @@ class BrowserRepository:
                 session_ref=session_ref,
                 provider=BROWSER_PROVIDER,
                 status="running",
-                headless=headless,
+                headless=False,
                 page_refs_json=page_refs,
                 current_url=current_url,
                 metadata_json=metadata_json,
@@ -234,7 +234,7 @@ class BrowserRepository:
             row.profile_id = _required_id(profile.id)
             row.provider = BROWSER_PROVIDER
             row.status = "running"
-            row.headless = headless
+            row.headless = False
             row.page_refs_json = page_refs
             row.current_url = current_url
             row.metadata_json = metadata_json

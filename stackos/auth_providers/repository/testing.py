@@ -9,13 +9,15 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
-from sqlmodel import select
+from pydantic import ValidationError as PydanticValidationError
+from sqlalchemy import delete
+from sqlmodel import col, select
 
 from stackos.artifacts import redact_secret_text, redact_secrets
-from stackos.db.models import Credential, CredentialAccount, IntegrationCredential
+from stackos.db.models import Credential, CredentialAccount, CredentialScope, IntegrationCredential
 from stackos.repositories.base import Envelope, RepositoryError, ValidationError
 
-from .schema import AuthTestOut
+from .schema import AuthMethodOut, AuthMethodProbeContext, AuthProbeEvidence, AuthTestOut
 from .utils import utcnow
 
 
@@ -56,6 +58,19 @@ class CredentialTestingMixin:
         credential = resolved.credential
         row = resolved.integration
         secret_payload = resolved.secret_payload
+        provider = self._get_provider(row.kind, required=False, sync=False)
+        method: AuthMethodOut | None = None
+        probe_context: AuthMethodProbeContext | None = None
+        if provider is not None:
+            method = self._get_auth_method(
+                provider,
+                (row.config_json or {}).get("auth_method_key"),
+            )
+            assert method is not None
+            probe_context = AuthMethodProbeContext(
+                auth_method_key=method.key,
+                permission_verification=method.permission_verification,
+            )
         extra = self._integration_extra(row)
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
@@ -63,6 +78,7 @@ class CredentialTestingMixin:
                     payload=secret_payload,
                     project_id=project_id,
                     http=client,
+                    probe_context=probe_context,
                     **extra,
                 )
                 raw_result = await integration.test_credentials()
@@ -101,6 +117,14 @@ class CredentialTestingMixin:
             ok=out.ok,
             metadata=out.metadata,
         )
+        if method is not None:
+            self._sync_probe_evidence_from_test_result(
+                credential=credential,
+                row=row,
+                method=method,
+                ok=out.ok,
+                metadata=out.metadata,
+            )
         self.record_usage_event(
             credential=credential,
             provider_key=row.kind,
@@ -110,6 +134,57 @@ class CredentialTestingMixin:
         )
         self._s.commit()
         return Envelope(data=out, project_id=project_id)
+
+    def _sync_probe_evidence_from_test_result(
+        self,
+        *,
+        credential: Credential,
+        row: IntegrationCredential,
+        method: AuthMethodOut,
+        ok: bool,
+        metadata: Mapping[str, Any],
+    ) -> None:
+        """Persist normalized account and grant evidence under the saved method posture."""
+
+        posture = method.permission_verification
+        if not ok or posture is None or credential.id is None:
+            return
+        raw_evidence = metadata.get("evidence")
+        try:
+            evidence = AuthProbeEvidence.model_validate(raw_evidence)
+        except PydanticValidationError:
+            evidence = None
+        if evidence is not None and evidence.account is not None:
+            account = self._s.exec(
+                select(CredentialAccount).where(CredentialAccount.credential_id == credential.id)
+            ).first()
+            if account is None:
+                account = CredentialAccount(credential_id=credential.id)
+            account.provider_account_id = evidence.account.provider_account_id
+            account.display_name = evidence.account.display_name
+            account.metadata_json = redact_secrets(evidence.account.metadata)
+            account.updated_at = utcnow()
+            self._s.add(account)
+        if posture.evidence_source != "provider_probe" or posture.enforcement != "local_required":
+            return
+        safe_config = dict(row.config_json or {})
+        if evidence is None or evidence.grants is None:
+            safe_config["scope_status"] = "unknown"
+            self._s.exec(
+                delete(CredentialScope).where(col(CredentialScope.credential_id) == credential.id)
+            )
+        else:
+            grants = sorted({grant.strip() for grant in evidence.grants if grant.strip()})
+            safe_config["scope_status"] = "known"
+            self._s.exec(
+                delete(CredentialScope).where(col(CredentialScope.credential_id) == credential.id)
+            )
+            for grant in grants:
+                self._s.add(CredentialScope(credential_id=credential.id, scope=grant))
+        row.config_json = safe_config
+        credential.config_json = self._safe_config(safe_config)
+        self._s.add(row)
+        self._s.add(credential)
 
     def _sync_account_from_test_result(
         self,
@@ -223,6 +298,18 @@ class CredentialTestingMixin:
                 value = config.get(key)
                 if isinstance(value, str) and value.strip():
                     extra[key] = value.strip()
+        elif row.kind == "pipedrive":
+            api_domain = (
+                config.get("api_domain") or config.get("base_url") or config.get("company_domain")
+            )
+            if not isinstance(api_domain, str) or not api_domain.strip():
+                raise ValidationError(
+                    "pipedrive credential missing a trusted API domain",
+                    data={"credential_id": row.id},
+                )
+            # The provider wrapper owns strict normalization and the
+            # ``.pipedrive.com`` host allowlist before it performs HTTP.
+            extra["api_domain"] = api_domain.strip()
         elif row.kind in {"telegram-bot", "slack-bot", "trackbooth"} and config.get("api_base_url"):
             extra["api_base_url"] = str(config["api_base_url"])
         elif row.kind == "shopify":

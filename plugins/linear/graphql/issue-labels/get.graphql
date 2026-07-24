@@ -1,0 +1,15 @@
+query LinearIssueLabelGet($id: String!) {
+  issueLabel(id: $id) {
+    id
+    name
+    description
+    color
+    isGroup
+    archivedAt
+    team {
+      id
+      name
+      key
+    }
+  }
+}

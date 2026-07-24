@@ -1,0 +1,17 @@
+mutation LinearIssueAddLabel($id: String!, $labelId: String!) {
+  issueAddLabel(id: $id, labelId: $labelId) {
+    success
+    issue {
+      id
+      identifier
+      title
+      labels {
+        nodes {
+          id
+          name
+          color
+        }
+      }
+    }
+  }
+}

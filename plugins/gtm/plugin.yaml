@@ -36,14 +36,17 @@ capabilities:
 providers:
   - key: hubspot
     name: HubSpot
-    description: HubSpot sales and marketing customer-lifecycle provider with capability-scoped OAuth readiness.
-    auth_type: oauth
+    description: HubSpot sales and marketing customer-lifecycle provider with capability-scoped OAuth or private-app token readiness.
+    auth_type: oauth-or-api-key
     auth_methods:
       - key: oauth2_authorization_code
         label: Connect with HubSpot
         auth_type: oauth
-        description: Register a HubSpot OAuth app with the fixed StackOS callback. CRM Core is required; select only the optional feature bundles this connection needs.
+        description: Connect a multi-account HubSpot OAuth app with the fixed StackOS callback. CRM Core is required; select only the optional feature bundles this connection needs.
         interactive: true
+        permission_verification:
+          evidence_source: oauth_response
+          enforcement: local_required
         payload_format: json
         fields:
         - key: client_id
@@ -142,6 +145,20 @@ providers:
           secret: false
           required: false
           placeholder: safe CRM property mapping reference
+      - key: private_app_token
+        label: Private app access token
+        auth_type: api-key
+        description: Store one single-account HubSpot private-app token. StackOS verifies its returned scopes and account through HubSpot's token-information endpoint before local scope-gated actions run.
+        payload_format: json
+        permission_verification:
+          evidence_source: provider_probe
+          enforcement: local_required
+        fields:
+        - key: access_token
+          label: Private App Access Token
+          type: secret
+          secret: true
+          required: true
     config:
       scopes:
         - crm.objects.contacts.read
@@ -382,7 +399,11 @@ providers:
       - key: oauth2_authorization_code
         label: Connect with Pipedrive
         auth_type: oauth
+        description: Connect a Pipedrive OAuth app; returned OAuth scopes remain the only local grant evidence.
         interactive: true
+        permission_verification:
+          evidence_source: oauth_response
+          enforcement: local_required
         payload_format: json
         fields:
         - key: client_id
@@ -404,6 +425,10 @@ providers:
       - key: oauth2_token
         label: OAuth2 access token
         auth_type: oauth
+        description: Compatibility-only manual OAuth token. It remains locally scope-gated and fails closed until provider-returned OAuth scope evidence exists.
+        permission_verification:
+          evidence_source: unavailable
+          enforcement: local_required
         payload_format: json
         fields:
         - key: access_token
@@ -432,6 +457,10 @@ providers:
       - key: api_token
         label: Personal API token
         auth_type: api-token
+        description: Personal Pipedrive API token for a user-owned account. Pipedrive enforces permissions because its documented current-user probe does not return grants.
+        permission_verification:
+          evidence_source: unavailable
+          enforcement: provider_enforced
         payload_format: json
         fields:
         - key: api_token
@@ -718,7 +747,11 @@ providers:
       - key: oauth2_authorization_code
         label: Connect with Salesloft
         auth_type: oauth
+        description: Connect a Salesloft OAuth app; returned OAuth scopes remain the only local grant evidence.
         interactive: true
+        permission_verification:
+          evidence_source: oauth_response
+          enforcement: local_required
         payload_format: json
         fields:
         - key: client_id
@@ -740,6 +773,10 @@ providers:
       - key: oauth2_token
         label: OAuth2 access token
         auth_type: oauth
+        description: Compatibility-only manual OAuth token. It remains locally scope-gated and fails closed until provider-returned OAuth scope evidence exists.
+        permission_verification:
+          evidence_source: unavailable
+          enforcement: local_required
         payload_format: json
         fields:
         - key: access_token
@@ -774,6 +811,10 @@ providers:
       - key: api_key
         label: API key
         auth_type: api-key
+        description: Customer API key. Salesloft enforces permissions because its documented current-user probe does not return grants.
+        permission_verification:
+          evidence_source: unavailable
+          enforcement: provider_enforced
         payload_format: json
         fields:
         - key: api_key

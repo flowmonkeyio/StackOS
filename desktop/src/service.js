@@ -214,7 +214,6 @@ function runStackos(args, options = {}) {
   if (resolved.mode === "packaged") {
     const root = packagedStackosRoot();
     env.PYTHONHOME = path.join(root, ".venv");
-    env.PLAYWRIGHT_BROWSERS_PATH = path.join(root, "ms-playwright");
     env.STACKOS_PACKAGED_CLI = packagedStackosPath();
     delete env.PYTHONPATH;
     delete env.VIRTUAL_ENV;
@@ -520,8 +519,7 @@ function packagedLaunchdIsCurrent(status) {
     status.parsed.launchd_loaded === true &&
     message.includes(path.join(root, ".venv", "bin", "python")) &&
     message.includes("STACKOS_PACKAGED_CLI") &&
-    message.includes("PYTHONHOME") &&
-    message.includes("PLAYWRIGHT_BROWSERS_PATH")
+    message.includes("PYTHONHOME")
   );
 }
 

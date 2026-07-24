@@ -18,6 +18,7 @@ const pluginPresentation = {
   core: { color: '#8ea6ff', description: 'Use the built-in StackOS services that keep local work, context, and browser tasks connected.' },
   engineering: { color: '#7892ff', description: 'Connect delivery work to code, browsers, tests, and the tools that help teams ship reliably.' },
   gtm: { color: '#ff9f73', description: 'Research accounts, enrich leads, update CRM records, and prepare sales follow-up across your revenue tools.' },
+  linear: { color: '#5e6ad2', description: 'Plan and track product work through Linear issues, projects, cycles, teams, comments, and workflow states.' },
   marketing: { color: '#ff78ac', description: 'Plan and produce campaigns across creative, landing pages, messaging, and distribution tools.' },
   'media-buying': { color: '#ffbd5c', description: 'Plan, launch, measure, and improve paid campaigns across advertising platforms.' },
   publishing: { color: '#b99cff', description: 'Move reviewed content into websites, newsletters, and social channels.' },

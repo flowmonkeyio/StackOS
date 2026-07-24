@@ -10,6 +10,11 @@ Salesloft, Gmail/Google Workspace, and Microsoft Graph for Microsoft 365
 mail/calendar. Current executable actions use one provider-specific connector
 file per provider under `stackos/actions`.
 
+The shared credential lifecycle, method selection, readiness, and Connections
+UI are defined once in
+[`auth-providers.md`](../auth-providers.md#one-brain-auth-method-contract).
+This audit records provider-specific setup, probes, and request facts only.
+
 ## Provider Docs Ledger
 
 Official sources used:
@@ -30,6 +35,7 @@ Official sources used:
 - Salesloft API basics: https://developers.salesloft.com/docs/platform/api-basics/
 - Salesloft OAuth authorization code: https://developers.salesloft.com/docs/platform/api-basics/oauth-authentication/
 - Salesloft API key authentication: https://developers.salesloft.com/docs/platform/api-basics/api-key-authentication/
+- Salesloft current user: https://developers.salesloft.com/docs/api/me-index/
 - Salesloft filtering, paging, sorting: https://developers.salesloft.com/docs/platform/api-basics/filtering-paging-sorting/
 - Salesloft rate limits: https://developers.salesloft.com/docs/platform/api-basics/rate-limits/
 - Salesloft create cadence membership: https://developers.salesloft.com/docs/api/cadence-memberships-create/
@@ -88,12 +94,16 @@ Outreach:
 Salesloft:
 
 - Auth: OAuth authorization code is preferred/required for partners. API keys are customer-only and are not approved for partner apps. Salesloft also documents client credentials for private admin-enabled app use.
-- Current StackOS path: shared interactive authorization code plus separate
-  manual OAuth-token and API-key compatibility methods. Client credentials are
-  not claimed by the current provider contract.
+- StackOS supports interactive OAuth, a manual OAuth-token compatibility
+  method, and a customer API key. All saved methods use `Authorization:
+  Bearer ...` transport. The current-user probe is `GET /v2/me`; it can return
+  safe account identity but not scope grants. The manual OAuth-token method is
+  therefore `unavailable`/`local_required`, while the static API key is
+  `unavailable`/`provider_enforced`. Client credentials are not claimed by the
+  current provider contract.
 - Safe auth method fields: `team_ref`, `oauth_app_ref`, `scopes_ref`, `cadence_ref`, `user_ref`, `send_policy_ref`.
-- Store only safe refs. The shared credential resolver commits refresh-token
-  rotation atomically; the connector does not refresh or persist tokens.
+- Store only safe refs; no raw token, API key, or current-user payload is a
+  reusable workflow value.
 
 Google Workspace:
 

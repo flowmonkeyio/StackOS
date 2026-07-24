@@ -44,6 +44,7 @@ touches committed UI assets.
 | Setup/package smoke | Install, daemon start/doctor, MCP registration, assets, and docs match the release shape. | `make install && make doctor` |
 | Local daemon lifecycle | Restart ignores stale pid files and zombie/defunct children, refuses non-StackOS port blockers, and does not leave launchd booted out. | `uv run pytest tests/unit/test_cli_daemon.py -q` |
 | macOS desktop app | Electron metadata, service bridge, update endpoint config, packaged install/repair, and desktop docs stay aligned with the installer contract. | `make desktop-doctor` |
+| Visible Chromium runtime | The app ships one signed arm64 `Chromium.app`, no Chrome for Testing/headless shell, and a stable StackOS profile persists a nonce cookie across a visible restart. | `pnpm --dir desktop check` plus installed-app proof |
 
 For a faster local check while iterating on action execution, run the mock
 provider and connector-contract slice directly:

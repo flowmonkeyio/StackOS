@@ -27,6 +27,7 @@
   "utils.ideogram": { "src": "/images/integrations/ideogram-icon.png", "kind": "icon" },
   "utils.jina": { "src": "/images/integrations/jina-ai-icon.png", "kind": "icon" },
   "utils.kling": { "src": "/images/integrations/kling-ai-icon.png", "kind": "icon" },
+  "linear.linear": { "src": "/images/integrations/linear-logo-white.png", "kind": "wordmark-inverse" },
   "branding.linkedin-api": { "src": "/images/integrations/linkedin-icon.png", "kind": "icon" },
   "communications.local-agent-chat": { "src": "/images/stackos-icon.png", "kind": "icon" },
   "core.local-daemon": { "src": "/images/stackos-icon.png", "kind": "icon" },

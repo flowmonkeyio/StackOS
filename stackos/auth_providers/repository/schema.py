@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from stackos.db.models import Credential, IntegrationCredential
 
@@ -23,16 +23,60 @@ class AuthFieldOut(BaseModel):
     options: list[dict[str, str]] | None = None
 
 
+class PermissionVerificationOut(BaseModel):
+    """Safe, manifest-owned grant evidence posture exposed to callers."""
+
+    evidence_source: Literal["oauth_response", "provider_probe", "unavailable"]
+    enforcement: Literal["local_required", "provider_enforced"]
+
+    @model_validator(mode="after")
+    def _reviewed_combination(self) -> PermissionVerificationOut:
+        if (self.evidence_source, self.enforcement) not in {
+            ("oauth_response", "local_required"),
+            ("provider_probe", "local_required"),
+            ("unavailable", "provider_enforced"),
+            ("unavailable", "local_required"),
+        }:
+            raise ValueError(
+                "permission_verification must use one of the reviewed evidence/enforcement "
+                "combinations"
+            )
+        return self
+
+
 class AuthMethodOut(BaseModel):
     key: str
     label: str
     auth_type: str
     description: str = ""
     interactive: bool = False
+    permission_verification: PermissionVerificationOut | None = None
     payload_format: str = "json"
     payload_field: str | None = None
     fields: list[AuthFieldOut] = Field(default_factory=list)
     config: dict[str, Any] | None = None
+
+
+class AuthMethodProbeContext(BaseModel):
+    """Non-secret test context selected from the saved auth method."""
+
+    auth_method_key: str
+    permission_verification: PermissionVerificationOut | None = None
+
+
+class AuthProbeAccountEvidence(BaseModel):
+    """Safe account facts a documented provider probe may return."""
+
+    provider_account_id: str | None = None
+    display_name: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AuthProbeEvidence(BaseModel):
+    """Normalized safe evidence returned by a provider credential probe."""
+
+    grants: list[str] | None = None
+    account: AuthProbeAccountEvidence | None = None
 
 
 class AuthProviderOut(BaseModel):

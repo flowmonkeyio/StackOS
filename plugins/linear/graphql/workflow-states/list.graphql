@@ -1,0 +1,36 @@
+query LinearWorkflowStatesList(
+  $filter: WorkflowStateFilter
+  $first: Int!
+  $after: String
+  $includeArchived: Boolean
+  $orderBy: PaginationOrderBy
+) {
+  workflowStates(
+    filter: $filter
+    first: $first
+    after: $after
+    includeArchived: $includeArchived
+    orderBy: $orderBy
+  ) {
+    nodes {
+      id
+      name
+      description
+      color
+      type
+      position
+      archivedAt
+      team {
+        id
+        name
+        key
+      }
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+  }
+}

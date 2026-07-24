@@ -15,14 +15,15 @@ export function useConnectionForm() {
   }
 
   function selectedMethodKey(provider: SchemaAuthProviderOut): string {
-    return selectedMethodByProvider.value[provider.key] ?? authMethods(provider)[0]?.key ?? ''
+    const methods = authMethods(provider)
+    const selectedKey = selectedMethodByProvider.value[provider.key]
+    if (selectedKey && methods.some((method) => method.key === selectedKey)) return selectedKey
+    return methods.length === 1 ? methods[0]?.key ?? '' : ''
   }
 
   function selectedMethod(provider: SchemaAuthProviderOut): AuthMethod | null {
     const key = selectedMethodKey(provider)
-    return (
-      authMethods(provider).find((method) => method.key === key) ?? authMethods(provider)[0] ?? null
-    )
+    return authMethods(provider).find((method) => method.key === key) ?? null
   }
 
   function setSelectedMethod(providerKey: string, value: string | number | null): void {
@@ -129,6 +130,19 @@ export function useConnectionForm() {
     labelByForm.value = { ...labelByForm.value, [key]: '' }
   }
 
+  function clearProviderForms(providerKey: string): void {
+    const prefix = `${providerKey}:`
+    fieldsByForm.value = Object.fromEntries(
+      Object.entries(fieldsByForm.value).filter(([key]) => !key.startsWith(prefix)),
+    )
+    profileByForm.value = Object.fromEntries(
+      Object.entries(profileByForm.value).filter(([key]) => !key.startsWith(prefix)),
+    )
+    labelByForm.value = Object.fromEntries(
+      Object.entries(labelByForm.value).filter(([key]) => !key.startsWith(prefix)),
+    )
+  }
+
   function populateForm(
     providerKey: string,
     methodKey: string,
@@ -168,6 +182,7 @@ export function useConnectionForm() {
     setLabelValue,
     setSelectedProvider,
     clearForm,
+    clearProviderForms,
     populateForm,
   }
 }

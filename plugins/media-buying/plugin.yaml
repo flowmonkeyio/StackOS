@@ -34,7 +34,11 @@ providers:
       - key: oauth2_authorization_code
         label: Connect with Meta
         auth_type: oauth
+        description: Authorize through Meta and record the permissions returned by the OAuth exchange.
         interactive: true
+        permission_verification:
+          evidence_source: oauth_response
+          enforcement: local_required
         payload_format: json
         fields:
         - key: client_id
@@ -60,8 +64,12 @@ providers:
           required: false
           placeholder: v25.0
       - key: oauth2_token
-        label: OAuth2 access token
+        label: Existing OAuth access token
         auth_type: oauth
+        description: Store an existing Meta user or system-user OAuth token. StackOS cannot verify its permissions locally, so scoped actions remain blocked until trusted grant evidence is available.
+        permission_verification:
+          evidence_source: unavailable
+          enforcement: local_required
         payload_format: json
         fields:
         - key: access_token

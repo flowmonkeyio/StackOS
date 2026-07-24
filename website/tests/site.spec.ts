@@ -85,6 +85,10 @@ test('unknown routes return a branded, useful, and accessible 404 page', async (
   const htaccess = await readFile(new URL('../public/.htaccess', import.meta.url), 'utf8')
   expect(htaccess).toContain('ErrorDocument 404 /404.html')
   expect(htaccess).toContain('AddType application/x-apple-diskimage .dmg')
+  expect(htaccess).toContain(
+    'Header set Link "<https://stackos.flowmonkey.io/getting-started>; rel=canonical"',
+  )
+  expect(htaccess).not.toContain('rel=\\\"canonical\\\"')
 
   await page.getByRole('link', { name: 'Go to StackOS home' }).click()
   await expect(page).toHaveURL(/\/$/)
@@ -135,7 +139,9 @@ test('getting-started is a designed, user-first guide with one canonical Markdow
   expect(markdownResponse.status()).toBe(200)
   expect(markdownResponse.headers()['content-type']).toContain('text/markdown')
   expect(markdownResponse.headers()['x-robots-tag']).toBe('noindex')
-  expect(markdownResponse.headers().link).toContain('https://stackos.flowmonkey.io/getting-started')
+  expect(markdownResponse.headers().link).toBe(
+    '<https://stackos.flowmonkey.io/getting-started>; rel="canonical"',
+  )
   const markdown = await markdownResponse.text()
   expect(markdown).toContain('title: StackOS is installed. What happens next?')
   expect(markdown).toContain('::guide-start-path')
@@ -605,7 +611,8 @@ test('GA4 remains unloaded until analytics consent is granted', async ({ page, c
 test('integrations open plugin-first with a custom sort and exact brand assets', async ({ page }) => {
   const integrationCatalog = JSON.parse(
     await readFile(new URL('../app/data/integration-catalog.generated.json', import.meta.url), 'utf8'),
-  ) as { providers: Array<{ logo?: { src?: string } }> }
+  ) as { plugins: unknown[]; providers: Array<{ logo?: { src?: string } }> }
+  const pluginCount = integrationCatalog.plugins.length
   const providerCount = integrationCatalog.providers.length
   const providerLogoCount = integrationCatalog.providers.filter((provider) => provider.logo?.src).length
 
@@ -618,7 +625,7 @@ test('integrations open plugin-first with a custom sort and exact brand assets',
   await page.goto('/library/integrations')
 
   await expect(page.locator('.integration-search__view .is-active')).toHaveText('Plugins')
-  await expect(page.locator('.integration-plugin')).toHaveCount(10)
+  await expect(page.locator('.integration-plugin')).toHaveCount(pluginCount)
   await expect(page.locator('.integrations-hero__map .integration-mark img')).toHaveCount(8)
   await expect(page.locator('.integrations-hero__map .integration-mark b')).toHaveCount(0)
 
@@ -649,6 +656,7 @@ test('integrations open plugin-first with a custom sort and exact brand assets',
   expect(logoState.sources).toContain('/images/integrations/dataforseo.jpeg')
   expect(logoState.sources).toContain('/images/integrations/google-g.png')
   expect(logoState.sources).toContain('/images/integrations/hubspot.png')
+  expect(logoState.sources).toContain('/images/integrations/linear-logo-white.png')
   expect(logoState.sources).toContain('/images/integrations/microsoft-365.png')
   expect(logoState.sources).toContain('/images/integrations/trackbooth.png')
   expect(logoState.sources).toContain('/images/integrations/salesloft.jpeg')
@@ -657,11 +665,19 @@ test('integrations open plugin-first with a custom sort and exact brand assets',
   expect(logoState.sources).toContain('/images/openai.webp')
   expect(logoState.sources).toContain('/images/gemini.webp')
 
-  await page.locator('#integration-query').fill('Ghost')
+  await page.locator('#integration-query').fill('Linear')
   await expect(page.locator('.integration-card')).toHaveCount(1)
-  await expect(page.locator('.integration-card h2')).toHaveText('Ghost')
-  const wordmarkWidth = await page.locator('.integration-card .integration-mark.is-wordmark').evaluate((mark) => mark.getBoundingClientRect().width)
-  expect(wordmarkWidth).toBeGreaterThanOrEqual(100)
+  await expect(page.locator('.integration-card h2')).toHaveText('Linear')
+  const linearMark = page.locator('.integration-card .integration-mark')
+  await expect(linearMark).toHaveClass(/is-wordmark/)
+  await expect(linearMark).toHaveClass(/is-dark-logo/)
+  await expect(linearMark.locator('img')).toHaveAttribute('src', '/images/integrations/linear-logo-white.png')
+  const linearMarkState = await linearMark.evaluate((mark) => ({
+    width: mark.getBoundingClientRect().width,
+    background: getComputedStyle(mark).backgroundColor,
+  }))
+  expect(linearMarkState.width).toBeGreaterThanOrEqual(100)
+  expect(linearMarkState.background).toBe('rgb(9, 11, 16)')
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   expect(overflow).toBeLessThanOrEqual(1)

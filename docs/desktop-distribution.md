@@ -307,7 +307,7 @@ the app-managed launchd plist repair path, so replacing an older clone-mode
 plist with the packaged-app plist does not interrupt first launch. `stackos
 install` remains idempotent and
 creates or repairs local state, migrations, plugin and skill mirrors, MCP
-registration, Playwright Chromium runtime setup, and launchd autostart. It does not rotate
+registration, visible Chromium runtime setup, and launchd autostart. It does not rotate
 `auth.token` or `seed.bin`.
 
 Generated payloads are ignored by git. `desktop/scripts/build-stackos-payload.sh`
@@ -315,12 +315,16 @@ builds a wheel, installs it into `desktop/payload/stackos/.venv`, writes
 `build-info.json`, and writes a small `bin/stackos` wrapper that the packaged
 Electron app can run. The payload vendors a standalone CPython runtime under
 `.venv`, including the standard library, `lib-dynload`, `site-packages`,
-`bin/python`, and `libpython*.dylib`. Desktop payload builds also install
-Playwright Chromium into `ms-playwright` by default. The wrapper sets the
-packaged `PYTHONHOME` and `PLAYWRIGHT_BROWSERS_PATH`, disables bytecode writes,
+`bin/python`, and `libpython*.dylib`. Desktop payload builds use the same
+Chromium installer helper as normal installs and place its one pinned
+`Chromium.app` beside the payload. The snapshot is verified against the pinned
+Playwright driver before packaging, while the visible Playwright compatibility
+launch is release verification evidence rather than an installer-time action.
+The wrapper sets the
+packaged `PYTHONHOME`, disables bytecode writes,
 ignores user site packages, and clears ambient Python environment variables so
 another Mac does not need uv, Python, Homebrew, the source checkout, or a
-first-run browser download. The app records a composite install key from its
+first-run browser download. The app carries one pinned normal Chromium.app and records a composite install key from its
 app version plus packaged payload build info, so replacing a locally built app
 with the same public version still reruns install/repair once.
 

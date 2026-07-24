@@ -1,0 +1,45 @@
+query LinearCommentsList(
+  $issueId: ID!
+  $first: Int!
+  $after: String
+  $includeArchived: Boolean
+  $orderBy: PaginationOrderBy
+) {
+  comments(
+    filter: { issue: { id: { eq: $issueId } } }
+    first: $first
+    after: $after
+    includeArchived: $includeArchived
+    orderBy: $orderBy
+  ) {
+    nodes {
+      id
+      body
+      url
+      createdAt
+      updatedAt
+      editedAt
+      resolvedAt
+      archivedAt
+      issue {
+        id
+        identifier
+        title
+      }
+      user {
+        id
+        name
+        displayName
+      }
+      parent {
+        id
+      }
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+  }
+}

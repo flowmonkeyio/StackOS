@@ -13,6 +13,12 @@ const props = defineProps<{
 }>()
 
 const capabilities = computed(() => providerCapabilityReadiness(props.provider, props.connection))
+
+function readinessTone(state: string): 'info' | 'danger' | undefined {
+  if (state === 'provider-enforced') return 'info'
+  if (state === 'permission-unverified') return 'danger'
+  return undefined
+}
 </script>
 
 <template>
@@ -26,7 +32,8 @@ const capabilities = computed(() => providerCapabilityReadiness(props.provider, 
         Capability readiness
       </h5>
       <p class="mt-0.5 text-2xs text-fg-muted">
-        Based on the scopes returned by the provider and explicit setup prerequisites.
+        Based on the saved method's verification posture, provider grant evidence, and explicit
+        setup prerequisites.
       </p>
     </div>
     <ul
@@ -42,6 +49,7 @@ const capabilities = computed(() => providerCapabilityReadiness(props.provider, 
           <StatusBadge
             domain="readiness"
             :status="capability.state"
+            :tone="readinessTone(capability.state)"
           />
         </div>
         <p class="mt-1 text-xs leading-5 text-fg-muted">

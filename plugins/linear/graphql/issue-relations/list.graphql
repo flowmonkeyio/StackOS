@@ -1,0 +1,42 @@
+query LinearIssueRelationsList(
+  $issueId: String!
+  $first: Int!
+  $after: String
+  $includeArchived: Boolean
+  $orderBy: PaginationOrderBy
+) {
+  issue(id: $issueId) {
+    id
+    identifier
+    relations(
+      first: $first
+      after: $after
+      includeArchived: $includeArchived
+      orderBy: $orderBy
+    ) {
+      nodes {
+        id
+        type
+        createdAt
+        updatedAt
+        archivedAt
+        issue {
+          id
+          identifier
+          title
+        }
+        relatedIssue {
+          id
+          identifier
+          title
+        }
+      }
+      pageInfo {
+        hasNextPage
+        hasPreviousPage
+        startCursor
+        endCursor
+      }
+    }
+  }
+}

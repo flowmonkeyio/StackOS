@@ -1,0 +1,18 @@
+query LinearProjectGet($id: String!) {
+  project(id: $id) {
+    id
+    name
+    slugId
+    description
+    status {
+      id
+      name
+      type
+    }
+    priority
+    startDate
+    targetDate
+    url
+    archivedAt
+  }
+}

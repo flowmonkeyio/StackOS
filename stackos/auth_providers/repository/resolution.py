@@ -412,7 +412,7 @@ class CredentialResolutionMixin:
         method = self._configured_auth_method(row)
         if method is None:
             return True
-        return method.auth_type in {"oauth", "oauth-client-credentials"}
+        return self._method_requires_local_scope_gate(method)
 
     def _configured_auth_method(self, row: IntegrationCredential) -> Any | None:
         method_key = (row.config_json or {}).get("auth_method_key")

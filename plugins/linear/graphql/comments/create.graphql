@@ -1,0 +1,25 @@
+mutation LinearCommentCreate($input: CommentCreateInput!) {
+  commentCreate(input: $input) {
+    success
+    comment {
+      id
+      body
+      url
+      createdAt
+      updatedAt
+      issue {
+        id
+        identifier
+        title
+      }
+      user {
+        id
+        name
+        displayName
+      }
+      parent {
+        id
+      }
+    }
+  }
+}

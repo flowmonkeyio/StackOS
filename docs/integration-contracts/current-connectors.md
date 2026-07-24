@@ -1,13 +1,13 @@
 # Current Executable Connector Contract Audit
 
-Audit date: 2026-07-22
+Audit date: 2026-07-23
 
 Scope: executable connector contracts for OpenAI Images, xAI Imagine, Reve,
 Google Gemini Image, Google Veo, Ideogram, BytePlus Seedream/Seedance,
 Alibaba Wan, Kling, Firecrawl, Jina Reader, FTP/FTPS, Cloudflare DNS, Reddit,
 DataForSEO, Serper.dev,
 Ahrefs, Google Search Console, Google Analytics 4, Google Tag Manager,
-HubSpot, WordPress, Ghost, sitemap, Trackbooth, Shopify, generic HTTP, and the internal Branding
+HubSpot, Linear, WordPress, Ghost, sitemap, Trackbooth, Shopify, generic HTTP, and the internal Branding
 evidence connector, plus
 connection-only setup providers that intentionally do not expose actions yet,
 and the built-in OAuth/auth-protocol classification.
@@ -25,22 +25,35 @@ Important consequence: provider docs should shape action schemas and connector c
 
 The canonical provider-by-provider matrix is in
 [`../auth-providers.md`](../auth-providers.md#built-in-oauth-provider-matrix).
+Credential lifecycle, method selection, readiness, and Connections UI policy
+are defined once in the
+[one-brain auth-method contract](../auth-providers.md#one-brain-auth-method-contract).
 The integration-contract summary is:
 
 | Runtime status | Providers |
 | --- | --- |
 | Interactive authorization code through the shared core | Google Ads, Google Workspace, Google Search Console, Google Analytics, Google Tag Manager, Meta Ads, Microsoft 365, Outreach, Pipedrive, Salesforce, Salesloft |
 | Core client-credentials token acquisition | Reddit, Taboola |
-| Mixed OAuth and non-OAuth alternatives | Pipedrive (API token), Salesloft (API key) |
+| Mixed OAuth and non-OAuth alternatives | Pipedrive (manual OAuth token and API token), Salesloft (manual OAuth token and API key), HubSpot (private-app token) |
 | Interactive authorization code with capability-scoped optional consent | HubSpot |
+| Interactive authorization code with fixed user actor, PKCE, and full issue-work consent | Linear |
 | Existing manual OAuth token; provider actions explicitly deferred | X API, LinkedIn |
 
 The root classification fix is complete for the affected built-in manifests:
 OAuth client credentials remain OAuth, Reddit and Taboola declare
 `oauth-client-credentials`, and WordPress declares `application-password`.
-Connectors no longer acquire or refresh OAuth access tokens. The shared auth
-resolver does that work and enforces each action's declared scopes before
-connector dispatch.
+The shared resolver boundary is defined by the
+[canonical auth-method contract](../auth-providers.md#one-brain-auth-method-contract);
+this audit does not restate its lifecycle or readiness rules.
+
+### Method-aware provider facts
+
+| Provider | Methods, probe, and request facts |
+| --- | --- |
+| HubSpot | OAuth token responses return authoritative `scopes` and `hub_id`. The supported single-account `private_app_token` calls `POST /oauth/v2/private-apps/get/access-token-info`; normalized returned scopes/account evidence is authoritative for its `provider_probe`/`local_required` posture. |
+| Pipedrive | OAuth and manual OAuth-token profiles send `Authorization: Bearer`; personal API-token profiles send `x-api-token`. `GET /api/v1/users/me` returns safe account identity but no scope grants, so the static API-token method is `unavailable`/`provider_enforced`; manual OAuth-token compatibility is `unavailable`/`local_required`. |
+| Salesloft | OAuth, manual OAuth-token, and customer API-key profiles send `Authorization: Bearer`. `GET /v2/me` returns safe account identity but no scope grants, so manual OAuth-token compatibility is `unavailable`/`local_required` and the static API key is `unavailable`/`provider_enforced`. |
+| Meta Ads | The existing user or system-user `oauth2_token` method is not an API key. Without trusted grant evidence it remains `unavailable`/`local_required`, so scope-gated actions fail before connector HTTP. |
 
 ## Docs Ledger
 
@@ -64,7 +77,8 @@ connector dispatch.
 | Google Search Console | [authorization/scopes](https://developers.google.com/webmaster-tools/v1/how-tos/authorizing), [sites.list](https://developers.google.com/webmaster-tools/v1/sites/list), [searchAnalytics.query](https://developers.google.com/webmaster-tools/v1/searchanalytics/query), [sitemaps.list](https://developers.google.com/webmaster-tools/v1/sitemaps/list), [urlInspection.index.inspect](https://developers.google.com/webmaster-tools/v1/urlInspection.index/inspect) | Google OAuth with `webmasters.readonly` for this first pass | Search Analytics uses `startRow`/`rowLimit` and returns top rows; URL Inspection is indexed-version only with provider-enforced quotas |
 | Google Analytics 4 | [Data API overview](https://developers.google.com/analytics/devguides/reporting/data/v1), [runReport](https://developers.google.com/analytics/devguides/reporting/data/v1/rest/v1beta/properties/runReport), [getMetadata](https://developers.google.com/analytics/devguides/reporting/data/v1/rest/v1beta/properties/getMetadata), [runRealtimeReport](https://developers.google.com/analytics/devguides/reporting/data/v1/rest/v1beta/properties/runRealtimeReport), [account summaries](https://developers.google.com/analytics/devguides/config/admin/v1/rest/v1beta/accountSummaries/list) | Google OAuth with `analytics.readonly` for this first pass | Google account summaries use `pageToken`; StackOS exposes public `page_cursor`/`next_page_cursor`. Report quotas are request-complexity based and `propertyQuota` is returned as redaction-safe `quota` output |
 | Google Tag Manager | [API v2 overview](https://developers.google.com/tag-platform/tag-manager/api/v2), [authorization/scopes](https://developers.google.com/tag-platform/tag-manager/api/v2/authorization), [accounts.list](https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/list), [containers.list](https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/list), [containers.snippet](https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/snippet), [workspaces.list](https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/workspaces/list), [tags.list](https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/workspaces/tags/list), [triggers.list](https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/workspaces/triggers/list) | Google OAuth with `tagmanager.readonly` for this first pass | Google list operations return `nextPageToken`; StackOS exposes public `page_cursor`/`next_page_cursor`. Wrapper defaults to conservative QPS because GTM daily/QPS quotas are low |
-| HubSpot | [Canonical StackOS contract and official source ledger](hubspot.md) | Project-based HubSpot app; private OAuth distribution for the initial phase; CRM Core required plus selected optional capability bundles; fixed public callback | Bounded provider cursors, multi-status batches, opaque async refs, safe correlation/retry evidence, and explicit readiness/entitlement/ingress prerequisites |
+| HubSpot | [Canonical StackOS contract and official source ledger](hubspot.md), [private apps overview](https://developers.hubspot.com/docs/apps/legacy-apps/private-apps/overview) | Project-based OAuth app for multi-account access, or a single-account private-app access token probed through `POST /oauth/v2/private-apps/get/access-token-info`; CRM Core and optional capability bundles remain OAuth facts | Bounded provider cursors, multi-status batches, opaque async refs, and safe correlation/retry evidence |
+| Linear | [Canonical StackOS contract and official source ledger](linear.md) | Authorization code with required PKCE `S256`, fixed `actor=user`, fixed `read,write` scopes, body client authentication, and the shared callback/refresh lifecycle | Fixed GraphQL endpoint and 34 documents; bounded Relay pagination; safe rate/complexity metadata; HTTP 400 `RATELIMITED`; zero automatic write retries |
 | OpenRouter | [authentication](https://openrouter.ai/docs/api/reference/authentication), [models](https://openrouter.ai/docs/api/api-reference/models/get-models) | OpenRouter requests use a bearer token and optional attribution headers | The normal setup probe uses the read-only models endpoint; no text-generation action is exposed yet |
 | WordPress | [REST API authentication](https://developer.wordpress.org/rest-api/using-the-rest-api/authentication/), [Posts endpoint](https://developer.wordpress.org/rest-api/reference/posts/), [Application Passwords](https://developer.wordpress.org/rest-api/reference/application-passwords/) | Authentication and Application Passwords pages | [Pagination](https://developer.wordpress.org/rest-api/using-the-rest-api/pagination/), [global parameters](https://developer.wordpress.org/rest-api/using-the-rest-api/global-parameters/) |
 | Ghost | [Admin API overview](https://docs.ghost.org/admin-api/), [Admin posts overview](https://docs.ghost.org/admin-api/posts/overview), [creating a post](https://docs.ghost.org/admin-api/posts/creating-a-post), [uploading an image](https://docs.ghost.org/admin-api/images/uploading-an-image) | Admin API token authentication/JWT section | Admin API overview covers JSON shape, pagination, parameters, filtering, and errors |
@@ -101,7 +115,8 @@ connector dispatch.
 | `google-search-console` | `seo.search-console.sites.list`, `seo.search-console.search-analytics.query`, `seo.search-console.sitemaps.list`, `seo.search-console.url.inspect` | `stackos/actions/google_search_console.py`, `stackos/integrations/google_search_console.py` | `plugins/seo/plugin.yaml` | Interactive Google authorization code plus manual access/refresh-token compatibility; core renewal and `webmasters.readonly` enforcement happen before connector dispatch. |
 | `google-analytics` | `seo.ga4.account_summaries.list`, `seo.ga4.properties.metadata.get`, `seo.ga4.properties.run_report`, `seo.ga4.properties.run_realtime_report` | `stackos/actions/google_analytics.py`, `stackos/integrations/google_analytics.py` | `plugins/seo/plugin.yaml` | Interactive Google authorization code plus manual access/refresh-token compatibility; core renewal and `analytics.readonly` enforcement happen before connector dispatch. Safe `property_ref`, paging, and quota normalization remain connector concerns. |
 | `google-tag-manager` | `seo.google-tag-manager.accounts.list`, `seo.google-tag-manager.containers.list`, `seo.google-tag-manager.container.snippet.get`, `seo.google-tag-manager.workspaces.list`, `seo.google-tag-manager.workspace.tags.list`, `seo.google-tag-manager.workspace.triggers.list` | `stackos/actions/google_tag_manager.py`, `stackos/integrations/google_tag_manager.py` | `plugins/seo/plugin.yaml` | Interactive Google authorization code plus manual access/refresh-token compatibility; core renewal and `tagmanager.readonly` enforcement happen before connector dispatch. Edit/publish/user-management scopes remain deferred. |
-| `hubspot` | Provider-specific `gtm.hubspot.*` CRM Core, Sales, Marketing, and Bulk actions; HubSpot delivery through `communication.send`; signed webhook/workflow ingress | `stackos/actions/hubspot.py`, `stackos/api/hubspot_ingress.py`, shared communication delivery and ingress operations | `plugins/gtm/plugin.yaml`, focused `plugins/gtm/workflows/*.yaml`, [`hubspot.md`](hubspot.md) | Interactive authorization code; CRM Core is required, optional bundles are incrementally authorized, and returned scopes/account metadata determine readiness. App-level webhook/custom-action administration, imports, publish/bulk send, sequences, and beta revenue mutations remain explicit non-executable boundaries. |
+| `hubspot` | Provider-specific `gtm.hubspot.*` CRM Core, Sales, Marketing, and Bulk actions; HubSpot delivery through `communication.send`; signed webhook/workflow ingress | `stackos/actions/hubspot.py`, `stackos/api/hubspot_ingress.py`, shared communication delivery and ingress operations | `plugins/gtm/plugin.yaml`, focused `plugins/gtm/workflows/*.yaml`, [`hubspot.md`](hubspot.md) | OAuth uses returned scope/account facts. The supported single-account `private_app_token` uses the token-information probe and its returned scope/account evidence. App-level webhook/custom-action administration, imports, publish/bulk send, sequences, and beta revenue mutations remain explicit non-executable boundaries. |
+| `linear` | 34 provider-specific refs under `linear.*` for viewer, teams, users, workflow states, projects, cycles, labels, issues, comments, and issue relations | `stackos/actions/linear.py`, `stackos/integrations/linear.py` | `plugins/linear/plugin.yaml`, `plugins/linear/graphql/*`, [`linear.md`](linear.md) | OAuth-only authorization code with PKCE and fixed `read,write` consent; all raw ids become account-bound opaque refs. No API-key, admin, webhook, raw GraphQL, app actor, or provider-specific MCP surface. |
 | `wordpress` | `publishing.wordpress.post.create` | `stackos/actions/wordpress.py`, `stackos/integrations/wordpress.py:17` | `plugins/publishing/plugin.yaml:12`, `plugins/publishing/plugin.yaml:40` | WordPress site URL in config; username/application password in encrypted payload. |
 | `ghost` | `publishing.ghost.post.create` | `stackos/actions/ghost.py`, `stackos/integrations/ghost.py:17` | `plugins/publishing/plugin.yaml:23`, `plugins/publishing/plugin.yaml:87` | Ghost URL and optional API version in config; Admin API key in encrypted payload. |
 | `branding` | `branding.evidence.capture`, `branding.evidence.sanitize-mark` | `stackos/actions/branding.py` | `plugins/branding/plugin.yaml` | Internal resource connector; no provider credentials. Capture writes raw evidence only, and public clearance is a separate sanitize-mark action with reviewer, reason, and decision ref. |

@@ -1,0 +1,18 @@
+{
+  "format": "graphql-introspection-data-v1",
+  "endpoint": "https://api.linear.app/graphql",
+  "retrieved_at": "2026-07-23T18:35:54-07:00",
+  "retrieval_timezone": "America/Los_Angeles",
+  "introspection": {
+    "descriptions": false,
+    "directive_is_repeatable": true,
+    "input_value_deprecation": true,
+    "schema_description": false,
+    "specified_by_url": true
+  },
+  "query_root_count": 163,
+  "mutation_root_count": 371,
+  "sha256": "e3ed66bdf20c08167ba614c0b54f7b281038e2c6c83c6dddff24d050260ff8c1",
+  "source": "Linear public GraphQL introspection",
+  "validator": "graphql-core 3.2"
+}

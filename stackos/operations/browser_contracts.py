@@ -64,7 +64,6 @@ class BrowserSessionStartInput(MCPInput):
                 "project_id": 1,
                 "profile_key": "personal-brand",
                 "session_key": "linkedin",
-                "headless": False,
             }
         },
     )
@@ -74,7 +73,6 @@ class BrowserSessionStartInput(MCPInput):
     profile_ref: str | None = None
     session_key: str = "default"
     name: str | None = None
-    headless: bool = False
     launch_options_json: dict[str, Any] | None = None
     metadata_json: dict[str, Any] | None = None
 

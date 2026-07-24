@@ -18,6 +18,7 @@ export const lightTheme = {
     surfaceAlt: '#fafafa',
     sunken: '#f1f1f3',
     inverse: '#18181b',
+    providerInverse: '#18181b',
     overlay: 'rgba(24, 24, 27, 0.48)',
   },
   fg: {
@@ -69,6 +70,7 @@ export const darkTheme = {
     surfaceAlt: '#212128',
     sunken: '#0e0e12',
     inverse: '#fafafa',
+    providerInverse: '#18181b',
     overlay: 'rgba(0, 0, 0, 0.66)',
   },
   fg: {

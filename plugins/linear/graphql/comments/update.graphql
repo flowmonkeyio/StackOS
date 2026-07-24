@@ -1,0 +1,14 @@
+mutation LinearCommentUpdate($id: String!, $input: CommentUpdateInput!) {
+  commentUpdate(id: $id, input: $input) {
+    success
+    comment {
+      id
+      body
+      url
+      createdAt
+      updatedAt
+      editedAt
+      resolvedAt
+    }
+  }
+}

@@ -1,0 +1,11 @@
+mutation LinearIssueArchive($id: String!) {
+  issueArchive(id: $id) {
+    success
+    entity {
+      id
+      identifier
+      title
+      archivedAt
+    }
+  }
+}

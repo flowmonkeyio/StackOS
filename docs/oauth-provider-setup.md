@@ -5,6 +5,10 @@ StackOS and for configuring the public callback transport. It complements the
 technical lifecycle in [`auth-providers.md`](./auth-providers.md) and the threat
 model in [`security.md`](./security.md).
 
+Method choice, lifecycle, readiness, and Connections UI behavior are canonical
+in the [one-brain auth-method contract](./auth-providers.md#one-brain-auth-method-contract).
+This runbook records only provider registration and callback facts.
+
 > **Current status:** the OAuth core changes in this repository have not been
 > released. The static callback page at
 > [`workers/oauth-callback-relay/public`](../workers/oauth-callback-relay/public)
@@ -226,15 +230,15 @@ credentials and from providers with a supported non-OAuth alternative.
 | Google Search Console | Authorization code | Yes | Yes | No |
 | Google Analytics 4 | Authorization code | Yes | Yes | No |
 | Google Tag Manager | Authorization code | Yes | Yes | No |
-| Meta Ads | Authorization code | Yes | Yes | No API-key alternative; manual OAuth token import remains compatible |
+| Meta Ads | Authorization code | Yes | Yes | No API-key alternative; existing user/system-user OAuth token input is fail-closed without trusted grant evidence |
 | Microsoft 365 | Authorization code | Yes | Yes | No |
 | Salesforce | Authorization code | Yes | Yes | No API-key alternative; manual OAuth token import remains compatible |
 | Outreach | Authorization code | Yes | Yes | No |
-| Pipedrive | Authorization code | Only when choosing OAuth | Yes for OAuth | Personal API token |
-| Salesloft | Authorization code | Only when choosing OAuth | Yes for OAuth | Customer API key |
+| Pipedrive | Authorization code | Only when choosing OAuth | Yes for OAuth | Manual OAuth token compatibility; personal API token |
+| Salesloft | Authorization code | Only when choosing OAuth | Yes for OAuth | Manual OAuth token compatibility; customer API key |
 | Taboola | Client credentials | Credentials are issued by Taboola | No | Not applicable |
 | Reddit | Client credentials | Approval and a confidential client are required | No StackOS callback | Not applicable |
-| HubSpot | Authorization code with capability-scoped optional consent | Yes; use a privately distributed OAuth app for the initial phase | Yes | HubSpot static auth is single-account only and is not an execution-ready StackOS method |
+| HubSpot | Authorization code with capability-scoped optional consent | Yes for multi-account OAuth; no for a single-account private-app token | Yes for OAuth only | Private-app access token; StackOS probes returned scope/account facts before local scope-gated use |
 | X API | Manual/deferred | Do not register for this delivery | No implemented callback | Deferred |
 | LinkedIn | Manual/deferred | Do not register for this delivery | No implemented callback | Deferred |
 
@@ -329,6 +333,11 @@ StackOS performs Meta's required long-lived-token exchange after the normal
 authorization-code exchange. The static page contains no Meta-specific
 behavior.
 
+The existing `oauth2_token` method accepts a user or system-user OAuth token;
+it is not an API-key alternative. Because StackOS has no trusted grant evidence
+for that manual method, it is `unavailable`/`local_required` and scope-gated
+actions fail closed before connector HTTP.
+
 ## Microsoft 365
 
 Official references:
@@ -420,10 +429,18 @@ Pipedrive supports either OAuth or a personal API token in StackOS. Use OAuth
 when several users/accounts should authorize the application; use the personal
 token only for an explicitly private personal integration.
 
+StackOS also retains a manual OAuth access-token compatibility method. The
+OAuth and manual OAuth methods use saved-method bearer transport; the personal
+API-token method uses `x-api-token`. Its documented safe identity probe is
+`GET /api/v1/users/me`, which returns account identity but not scope grants;
+the API token is therefore `unavailable`/`provider_enforced`, while the manual
+OAuth-token method is `unavailable`/`local_required`.
+
 Official references:
 
 - [Register a private app](https://pipedrive.readme.io/docs/marketplace-registering-a-private-app)
 - [OAuth scopes](https://pipedrive.readme.io/docs/marketplace-scopes-and-permissions-explanations)
+- [Users](https://developers.pipedrive.com/docs/api/v1/Users)
 
 1. Create or use a Pipedrive developer sandbox account.
 2. Open **Developer Hub** -> **Create an app** -> **Private app**.
@@ -451,10 +468,17 @@ Salesloft supports OAuth and customer API keys. OAuth is the preferred path for
 partner applications; a customer API key remains a supported private
 alternative in StackOS.
 
+StackOS also retains a manual OAuth access-token compatibility method. OAuth,
+manual OAuth-token, and customer API-key profiles use saved-method bearer
+transport. `GET /v2/me` returns safe account identity but not scope grants, so
+the manual OAuth-token method is `unavailable`/`local_required` and the API key
+is `unavailable`/`provider_enforced`.
+
 Official references:
 
 - [Salesloft OAuth authorization code](https://developers.salesloft.com/docs/platform/api-basics/oauth-authentication/)
 - [Salesloft API keys](https://developers.salesloft.com/docs/platform/api-basics/api-key-authentication/)
+- [Salesloft current user](https://developers.salesloft.com/docs/api/me-index/)
 
 1. In Salesloft, go to **Your Applications** -> **OAuth Applications** ->
    **Create New**.
@@ -533,10 +557,9 @@ Use one project-based HubSpot app with `private` distribution and `oauth`
 authentication for the initial StackOS delivery. This is the streamlined
 multi-account path: it supports up to 10 allowlisted production accounts plus
 developer test accounts without taking on Marketplace publication. Choose a
-Marketplace app only when broader distribution is actually required. Do not
-choose static authentication for StackOS: HubSpot limits that method to one
-standard account, and the current StackOS connector requires provider-returned
-OAuth grants for action readiness.
+Marketplace app only when broader distribution is actually required. For a
+single HubSpot account, StackOS also supports a `private_app_token`; it does
+not use the OAuth callback, refresh, webhook, or custom-workflow-action path.
 
 Official references:
 
@@ -546,6 +569,7 @@ Official references:
 - [Working with OAuth](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/oauth/working-with-oauth)
 - [OAuth 2026-03 token lifecycle](https://developers.hubspot.com/docs/api-reference/latest/authentication/manage-oauth-tokens)
 - [HubSpot scopes](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/scopes)
+- [HubSpot private apps overview](https://developers.hubspot.com/docs/apps/legacy-apps/private-apps/overview)
 - [Configure webhooks](https://developers.hubspot.com/docs/apps/developer-platform/add-features/configure-webhooks)
 
 ### Create and configure the app
@@ -675,6 +699,17 @@ HubSpot's general OAuth guide still mentions the legacy `/oauth/v3/token`
 path. The current versioned authentication reference documents
 `https://api.hubspot.com/oauth/2026-03/token` for both code exchange and
 refresh; that versioned endpoint is the StackOS runtime contract.
+
+### Connect a single-account private app
+
+For a private integration, create a private app in the target HubSpot account
+using the [private-app overview](https://developers.hubspot.com/docs/apps/legacy-apps/private-apps/overview), select only the needed scopes, and enter its
+access token through the **Private app access token** method in Connections.
+The connection test calls
+`POST /oauth/v2/private-apps/get/access-token-info`; the returned scopes and
+account facts, not operator-entered metadata, are the evidence used for this
+method's `provider_probe`/`local_required` posture. Do not use this route for
+OAuth callback, refresh, signed ingress, or custom workflow actions.
 
 ### Optional signed ingress
 

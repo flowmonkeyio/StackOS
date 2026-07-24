@@ -1,0 +1,11 @@
+mutation LinearIssueUnarchive($id: String!) {
+  issueUnarchive(id: $id) {
+    success
+    entity {
+      id
+      identifier
+      title
+      archivedAt
+    }
+  }
+}

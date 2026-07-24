@@ -1,0 +1,10 @@
+query LinearUserGet($id: String!) {
+  user(id: $id) {
+    id
+    name
+    displayName
+    active
+    avatarUrl
+    archivedAt
+  }
+}

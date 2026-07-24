@@ -14,7 +14,7 @@ const initials = computed(() => {
 </script>
 
 <template>
-  <span class="integration-mark" :class="[`is-${size}`, { 'has-logo': logo, 'is-wordmark': logo?.kind === 'wordmark' || logo?.kind === 'wordmark-dark', 'is-dark-logo': logo?.kind === 'wordmark-dark' }]" :style="{ '--mark-color': color }" aria-hidden="true">
+  <span class="integration-mark" :class="[`is-${size}`, { 'has-logo': logo, 'is-wordmark': logo?.kind.includes('wordmark'), 'is-dark-logo': logo?.kind === 'wordmark-dark' || logo?.kind === 'wordmark-inverse' }]" :style="{ '--mark-color': color }" aria-hidden="true">
     <template v-if="logo"><img :src="logo.src" alt=""></template>
     <template v-else><i /><b>{{ initials }}</b></template>
   </span>

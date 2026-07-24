@@ -312,6 +312,117 @@ describe('ConnectionsView credentials and services', () => {
     expect(wrapper.text()).not.toContain('app pass')
   })
 
+  it('requires a method choice before rendering fields or enabling setup, then clears the previous method draft', async () => {
+    const apiKey = apiKeyMethod('key-...')[0]
+    const oauth = {
+      ...interactiveMethod()[0],
+      key: 'oauth2_authorization_code',
+      label: 'Connect with provider',
+      description: 'Authorize a provider account in this browser.',
+      permission_verification: {
+        evidence_source: 'oauth_response',
+        enforcement: 'local_required',
+      },
+    }
+
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      const catalogResponse = catalogJson(url)
+      if (catalogResponse) return catalogResponse
+      if (url === '/api/v1/auth/providers') {
+        return json([authProvider('choice-provider', 'Choice provider', 'oauth', [apiKey, oauth])])
+      }
+      if (url === '/api/v1/projects/1/auth/status') {
+        return json({ project_id: 1, provider_key: null, providers: [], connections: [] })
+      }
+      return json({})
+    }) as typeof fetch
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/connections', component: ConnectionsView }],
+    })
+    await router.push('/projects/1/connections')
+    await router.isReady()
+
+    const wrapper = mountConnections(router)
+    await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected'))
+    await clickButton(wrapper, 'Add connection')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Choice provider'))
+
+    const saveButton = wrapper.get('button[type="submit"]')
+    expect(saveButton.attributes('disabled')).toBeDefined()
+    expect(wrapper.find('#connection-field-api_key').exists()).toBe(false)
+    expect(wrapper.findAll('input[type="radio"]')).toHaveLength(2)
+    expect(wrapper.text()).toContain('Audience:')
+    expect(wrapper.text()).toContain('Lifecycle:')
+    expect(wrapper.text()).toContain('Permission verification:')
+
+    const apiKeyChoice = wrapper.get<HTMLInputElement>('input[type="radio"][value="api_key"]')
+    await apiKeyChoice.setValue()
+    const apiKeyInput = wrapper.get<HTMLInputElement>('#connection-field-api_key')
+    await apiKeyInput.setValue('draft-only-key')
+
+    const oauthChoice = wrapper.get<HTMLInputElement>(
+      'input[type="radio"][value="oauth2_authorization_code"]',
+    )
+    await oauthChoice.setValue()
+    expect(wrapper.find('#connection-field-api_key').exists()).toBe(false)
+    expect(wrapper.find('#connection-field-client_id').exists()).toBe(true)
+
+    await apiKeyChoice.setValue()
+    expect(wrapper.get<HTMLInputElement>('#connection-field-api_key').element.value).toBe('')
+  })
+
+  it('pins the saved method in edit mode and explains the separate-profile migration path', async () => {
+    const apiKey = apiKeyMethod('key-...')[0]
+    const oauth = interactiveMethod()[0]
+    oauth.key = 'oauth2_authorization_code'
+    oauth.label = 'Connect with provider'
+
+    const saved = {
+      ...authConnection({
+        revokedAt: null,
+        providerKey: 'choice-provider',
+        credentialRef: 'cred_choice',
+        authType: 'api-key',
+        authMethodKey: 'api_key',
+      }),
+    }
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      const catalogResponse = catalogJson(url)
+      if (catalogResponse) return catalogResponse
+      if (url === '/api/v1/auth/providers') {
+        return json([authProvider('choice-provider', 'Choice provider', 'oauth', [apiKey, oauth])])
+      }
+      if (url === '/api/v1/projects/1/auth/status') {
+        return json({ project_id: 1, provider_key: null, providers: [], connections: [saved] })
+      }
+      if (url === '/api/v1/projects/1/auth/credentials/cred_choice') {
+        return json({ connection: saved, values: {}, secret_present: { api_key: true } })
+      }
+      return json({})
+    }) as typeof fetch
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/connections', component: ConnectionsView }],
+    })
+    await router.push('/projects/1/connections')
+    await router.isReady()
+
+    const wrapper = mountConnections(router)
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Choice provider'))
+    await clickButton(wrapper, 'Edit')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Authentication method is locked to API key.'))
+    expect(wrapper.text()).toContain('create a separate named profile')
+    expect(wrapper.text()).toContain('test it')
+    expect(wrapper.text()).toContain('reassign exact consumers')
+    expect(wrapper.text()).toContain('locally revoke the old profile')
+    expect(wrapper.get<HTMLInputElement>('input[type="radio"][value="api_key"]').attributes('disabled')).toBeDefined()
+  })
+
   it('shows required credential errors inline and focuses the first invalid field', async () => {
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input)

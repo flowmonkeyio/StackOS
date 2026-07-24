@@ -1,0 +1,17 @@
+mutation LinearIssueRemoveLabel($id: String!, $labelId: String!) {
+  issueRemoveLabel(id: $id, labelId: $labelId) {
+    success
+    issue {
+      id
+      identifier
+      title
+      labels {
+        nodes {
+          id
+          name
+          color
+        }
+      }
+    }
+  }
+}

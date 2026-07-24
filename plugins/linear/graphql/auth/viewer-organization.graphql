@@ -1,0 +1,10 @@
+query StackOSLinearAuthProbe {
+  viewer {
+    id
+    name
+    organization {
+      id
+      name
+    }
+  }
+}

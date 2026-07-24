@@ -21,7 +21,7 @@ Every supported setup path should land at the same state:
 1. Create local data and state directories.
 2. Create `seed.bin` and `auth.token` with mode `0600`.
 3. Run database migrations.
-4. Install the packaged Playwright Chromium runtime for daemon-owned browser
+4. Install the packaged visible Chromium runtime for daemon-owned browser
    automation.
 5. Hydrate the `stackos` skill mirrors for Codex and Claude from the canonical
    package-managed skill.
@@ -53,7 +53,7 @@ make serve
 ```
 
 `make install` syncs Python dependencies, initializes state, runs migrations,
-installs the Playwright Chromium browser runtime, checks the committed UI bundle, installs
+installs the visible Chromium browser runtime, checks the committed UI bundle, installs
 Codex and Claude skill mirrors, installs plugin assets, refreshes any existing
 Codex plugin cache copy, registers MCP bridge entries, and runs `doctor`. It is
 normal for the final doctor check to report `daemon_up: False` before
@@ -90,7 +90,7 @@ stackos start
 
 `stackos install` initializes local state, runs database migrations, hydrates
 Codex and Claude skill mirrors from the package-managed `stackos:stackos`
-skill, installs the Playwright Chromium browser runtime, hydrates plugin assets, refreshes
+skill, installs the visible Chromium browser runtime, hydrates plugin assets, refreshes
 any existing Codex plugin cache copy, registers MCP bridge entries, and runs
 `doctor`. Operators and customers should
 not edit the managed StackOS skill by hand. Project-specific agent guidance

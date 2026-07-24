@@ -1,0 +1,51 @@
+query LinearIssueGet($id: String!) {
+  issue(id: $id) {
+    id
+    identifier
+    title
+    description
+    priority
+    estimate
+    dueDate
+    url
+    createdAt
+    updatedAt
+    archivedAt
+    team {
+      id
+      name
+      key
+    }
+    state {
+      id
+      name
+      type
+    }
+    assignee {
+      id
+      name
+      displayName
+    }
+    project {
+      id
+      name
+    }
+    cycle {
+      id
+      number
+      name
+    }
+    parent {
+      id
+      identifier
+      title
+    }
+    labels(first: 50) {
+      nodes {
+        id
+        name
+        color
+      }
+    }
+  }
+}

@@ -210,7 +210,6 @@ async def _browser_session_start(
                 profile_key=profile_key,
             ),
             launch_options=launch_options,
-            headless=inp.headless,
         )
     except Exception as exc:
         repo.record_receipt(
@@ -244,7 +243,6 @@ async def _browser_session_start(
         project_id=inp.project_id,
         profile=profile,
         session_ref=session_ref,
-        headless=inp.headless,
         page_refs=live.page_refs,
         current_url=getattr(live.page, "url", None),
         metadata_json=inp.metadata_json,
@@ -856,7 +854,7 @@ def operation_specs():
     return [
         operation_spec(
             name="browser.runtime.status",
-            summary="Inspect local Playwright browser runtime readiness.",
+            summary="Inspect local visible Chromium runtime readiness.",
             input_model=BrowserRuntimeStatusInput,
             output_model=BrowserRuntimeStatusOut,
             handler=_browser_runtime_status,
@@ -865,7 +863,7 @@ def operation_specs():
                 "browser binary are installed."
             ),
             returns=(
-                "Playwright package status, Chromium install status, live session refs, "
+                "Playwright driver status, managed Chromium install status, live session refs, "
                 "and repair guidance.",
             ),
             mutating=False,
@@ -912,7 +910,7 @@ def operation_specs():
         ),
         operation_spec(
             name="browser.session.start",
-            summary="Start a visible or headless Playwright browser session.",
+            summary="Start a visible persistent Chromium browser session.",
             input_model=BrowserSessionStartInput,
             output_model=WriteEnvelope[BrowserSessionOut],
             handler=_browser_session_start,

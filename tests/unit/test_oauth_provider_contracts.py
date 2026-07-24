@@ -21,6 +21,7 @@ EXPECTED_CONTRACTS = {
     "salesloft": ("authorization_code", "unavailable", "body"),
     "microsoft-365": ("authorization_code", "required", "body"),
     "hubspot": ("authorization_code", "unavailable", "body"),
+    "linear": ("authorization_code", "required", "body"),
     "taboola": ("client_credentials", "unavailable", "body"),
     "reddit": ("client_credentials", "unavailable", "basic"),
 }
@@ -78,6 +79,26 @@ def test_oauth_provider_inventory_and_real_variants_are_explicit() -> None:
         "hub_domain",
         "is_private_distribution",
     )
+    linear = oauth_contract_for("linear")
+    assert linear.authorization_endpoint == "https://linear.app/oauth/authorize"
+    assert linear.token_endpoint == "https://api.linear.app/oauth/token"
+    assert linear.scopes == ("read", "write")
+    assert linear.scope_separator == ","
+    assert linear.authorization_params == (("actor", "user"),)
+    assert linear.response_scope_fields == ("scope",)
+    assert linear.response_account_id_field is None
+    assert linear.authorization_code_response_requirements == (
+        "refresh_token",
+        "expires_in",
+        "scope_evidence",
+    )
+    assert linear.refresh_token_response_requirements == (
+        "refresh_token",
+        "expires_in",
+        "scope_evidence",
+    )
+    assert linear.required_token_type == "Bearer"
+    assert linear.required_scope_subset == ("read", "write")
     assert oauth_contract_for("microsoft-365").authorization_code_response_requirements == ()
 
 

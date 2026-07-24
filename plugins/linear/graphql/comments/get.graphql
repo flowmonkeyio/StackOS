@@ -1,0 +1,25 @@
+query LinearCommentGet($id: String!) {
+  comment(id: $id) {
+    id
+    body
+    url
+    createdAt
+    updatedAt
+    editedAt
+    resolvedAt
+    archivedAt
+    issue {
+      id
+      identifier
+      title
+    }
+    user {
+      id
+      name
+      displayName
+    }
+    parent {
+      id
+    }
+  }
+}

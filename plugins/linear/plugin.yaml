@@ -1,0 +1,1012 @@
+slug: linear
+name: Linear
+version: 0.1.0
+description: Linear GraphQL issue-work provider with daemon-owned OAuth and a curated fixed-document action catalog.
+display_order: 47
+source: builtin
+ui:
+  nav:
+    section: Linear
+capabilities:
+  - key: issue-work
+    name: Issue Work
+    description: Read and update Linear issues, comments, labels, and issue relations through fixed GraphQL documents.
+    kind: integration
+providers:
+  - key: linear
+    name: Linear
+    description: Linear GraphQL provider using daemon-owned OAuth or a personal API key. Credentials stay daemon-held and only curated issue-work actions are executable.
+    auth_type: oauth-or-api-key
+    auth_methods:
+      - key: oauth2_authorization_code
+        label: Connect with Linear
+        auth_type: oauth
+        description: Register a Linear OAuth application with the fixed StackOS callback. StackOS requests user-actor read and write access with PKCE.
+        interactive: true
+        permission_verification:
+          evidence_source: oauth_response
+          enforcement: local_required
+        payload_format: json
+        fields:
+          - key: client_id
+            label: OAuth Client ID
+            type: secret
+            secret: true
+            required: true
+          - key: client_secret
+            label: OAuth Client Secret
+            type: secret
+            secret: true
+            required: true
+      - key: personal_api_key
+        label: Personal API key
+        auth_type: api-key
+        description: Store a Linear personal API key for this operator. Linear enforces the key's workspace and action permissions at request time.
+        permission_verification:
+          evidence_source: unavailable
+          enforcement: provider_enforced
+        payload_format: raw
+        payload_field: api_key
+        fields:
+          - key: api_key
+            label: Personal API Key
+            type: secret
+            secret: true
+            required: true
+    config:
+      scopes:
+        - read
+        - write
+      readiness_groups:
+        issue-work:
+          label: Issue Work
+          required_scopes:
+            - read
+            - write
+      endpoint: https://api.linear.app/graphql
+      connection_category: Project Management
+      setup_note: Create a Linear OAuth application using the StackOS callback URL, or store a personal API key created in Linear account settings. App actors, webhooks, and admin operations are outside this provider contract.
+      setup:
+        credential_label: Linear OAuth application or personal API key
+        setup_note: Create a Linear OAuth application and register the exact callback URL shown in StackOS, or create a personal API key in Linear account settings. Personal-key permissions are enforced by Linear at request time.
+        local_setup_label: Connect Linear in StackOS
+        local_setup_note: Complete the user authorization, then run Test separately so StackOS can bind the safe workspace and account identity.
+        homepage_url: https://linear.app/
+        console_url: https://linear.app/settings/api/applications
+        credential_url: https://linear.app/settings/api
+        docs_url: https://linear.app/developers/oauth-2-0-authentication
+        support_url: https://linear.app/contact
+        callback_url: https://auth.stackos.flowmonkey.io/api/v1/auth/oauth/callback
+        callback_note: The public HTTPS relay forwards the unchanged OAuth callback to the local daemon and returns the browser to the generic StackOS Connections view.
+        repair_note: Reconnect OAuth if the authorization is expired or missing read or write scope. Replace or adjust a personal API key in Linear when a request is rejected, then run Test again to refresh the safe Linear workspace binding.
+        fallback_url: https://linear.app/developers/oauth-2-0-authentication
+        fallback_reason: OAuth application creation and callback registration require an authenticated Linear workspace administrator.
+        verified_at: "2026-07-23"
+        url_confidence:
+          homepage_url: verified
+          console_url: verified
+          credential_url: directional
+          docs_url: verified
+          support_url: verified
+          fallback_url: verified
+resources:
+  - key: issue-work-action
+    name: Linear Issue-Work Action
+    description: Contract metadata for one curated Linear fixed-document action.
+    schema:
+      type: object
+      additionalProperties: false
+      required: [action_key, document, root, scope]
+      properties:
+        action_key:
+          type: string
+        document:
+          type: string
+          pattern: "^graphql/.+\\.graphql$"
+        root:
+          type: string
+        scope:
+          type: string
+          enum: [read, write]
+actions:
+  - key: viewer.get
+    name: Get Linear Viewer
+    description: Return the authenticated Linear user and workspace as account-bound safe refs.
+    provider: linear
+    capability: issue-work
+    risk_level: read
+    input_schema: &linear_empty_input
+      type: object
+      additionalProperties: false
+      properties: {}
+    output_schema: &linear_safe_output
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [read]
+      linear:
+        document: graphql/viewer/get.graphql
+        root: viewer
+        scope: read
+  - key: teams.list
+    name: List Linear Teams
+    description: List Linear teams with bounded cursor pagination and account-bound refs.
+    provider: linear
+    capability: issue-work
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        first: &linear_first
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+        after: &linear_after
+          type: string
+          minLength: 1
+          maxLength: 2000
+        include_archived: &linear_include_archived
+          type: boolean
+        order_by: &linear_order_by
+          type: string
+          enum: [createdAt, updatedAt]
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [read]
+      linear:
+        document: graphql/teams/list.graphql
+        root: teams
+        scope: read
+  - key: teams.get
+    name: Get Linear Team
+    description: Get one Linear team by an account-bound team ref.
+    provider: linear
+    capability: issue-work
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [team_ref]
+      properties:
+        team_ref: &linear_ref
+          type: string
+          pattern: "^provider-object:[A-Za-z0-9_-]+$"
+          maxLength: 120
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [read]
+      linear:
+        document: graphql/teams/get.graphql
+        root: team
+        scope: read
+  - key: users.list
+    name: List Linear Users
+    description: List Linear workspace users with bounded pagination.
+    provider: linear
+    capability: issue-work
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        first: *linear_first
+        after: *linear_after
+        include_archived: *linear_include_archived
+        include_disabled:
+          type: boolean
+        order_by: *linear_order_by
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [read]
+      linear:
+        document: graphql/users/list.graphql
+        root: users
+        scope: read
+  - key: users.get
+    name: Get Linear User
+    description: Get one Linear user by an account-bound user ref.
+    provider: linear
+    capability: issue-work
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [user_ref]
+      properties:
+        user_ref: *linear_ref
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [read]
+      linear:
+        document: graphql/users/get.graphql
+        root: user
+        scope: read
+  - key: workflow_states.list
+    name: List Linear Workflow States
+    description: List workflow states using reviewed team and timestamp filters.
+    provider: linear
+    capability: issue-work
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        first: *linear_first
+        after: *linear_after
+        include_archived: *linear_include_archived
+        order_by: *linear_order_by
+        team_ref: *linear_ref
+        created_after: &linear_datetime
+          type: string
+          format: date-time
+        created_before: *linear_datetime
+        updated_after: *linear_datetime
+        updated_before: *linear_datetime
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [read]
+      linear:
+        document: graphql/workflow-states/list.graphql
+        root: workflowStates
+        scope: read
+  - key: workflow_states.get
+    name: Get Linear Workflow State
+    description: Get one workflow state by an account-bound ref.
+    provider: linear
+    capability: issue-work
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [workflow_state_ref]
+      properties:
+        workflow_state_ref: *linear_ref
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [read]
+      linear:
+        document: graphql/workflow-states/get.graphql
+        root: workflowState
+        scope: read
+  - key: projects.list
+    name: List Linear Projects
+    description: List projects with bounded pagination and reviewed team/timestamp filters.
+    provider: linear
+    capability: issue-work
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        first: *linear_first
+        after: *linear_after
+        include_archived: *linear_include_archived
+        order_by: *linear_order_by
+        team_ref: *linear_ref
+        created_after: *linear_datetime
+        created_before: *linear_datetime
+        updated_after: *linear_datetime
+        updated_before: *linear_datetime
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [read]
+      linear:
+        document: graphql/projects/list.graphql
+        root: projects
+        scope: read
+  - key: projects.get
+    name: Get Linear Project
+    description: Get one project by an account-bound project ref.
+    provider: linear
+    capability: issue-work
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [project_ref]
+      properties:
+        project_ref: *linear_ref
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [read]
+      linear:
+        document: graphql/projects/get.graphql
+        root: project
+        scope: read
+  - key: cycles.list
+    name: List Linear Cycles
+    description: List cycles with bounded pagination and reviewed team/timestamp filters.
+    provider: linear
+    capability: issue-work
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        first: *linear_first
+        after: *linear_after
+        include_archived: *linear_include_archived
+        order_by: *linear_order_by
+        team_ref: *linear_ref
+        created_after: *linear_datetime
+        created_before: *linear_datetime
+        updated_after: *linear_datetime
+        updated_before: *linear_datetime
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [read]
+      linear:
+        document: graphql/cycles/list.graphql
+        root: cycles
+        scope: read
+  - key: cycles.get
+    name: Get Linear Cycle
+    description: Get one cycle by an account-bound cycle ref.
+    provider: linear
+    capability: issue-work
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [cycle_ref]
+      properties:
+        cycle_ref: *linear_ref
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [read]
+      linear:
+        document: graphql/cycles/get.graphql
+        root: cycle
+        scope: read
+  - key: issue_labels.list
+    name: List Linear Issue Labels
+    description: List issue labels with bounded pagination and reviewed team/timestamp filters.
+    provider: linear
+    capability: issue-work
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        first: *linear_first
+        after: *linear_after
+        include_archived: *linear_include_archived
+        order_by: *linear_order_by
+        team_ref: *linear_ref
+        created_after: *linear_datetime
+        created_before: *linear_datetime
+        updated_after: *linear_datetime
+        updated_before: *linear_datetime
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [read]
+      linear:
+        document: graphql/issue-labels/list.graphql
+        root: issueLabels
+        scope: read
+  - key: issue_labels.get
+    name: Get Linear Issue Label
+    description: Get one issue label by an account-bound label ref.
+    provider: linear
+    capability: issue-work
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [issue_label_ref]
+      properties:
+        issue_label_ref: *linear_ref
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [read]
+      linear:
+        document: graphql/issue-labels/get.graphql
+        root: issueLabel
+        scope: read
+  - key: issues.list
+    name: List Linear Issues
+    description: List issues using only bounded pagination and reviewed safe-ref/timestamp filters.
+    provider: linear
+    capability: issue-work
+    risk_level: read
+    input_schema: &linear_issue_list_input
+      type: object
+      additionalProperties: false
+      properties:
+        first: *linear_first
+        after: *linear_after
+        include_archived: *linear_include_archived
+        order_by: *linear_order_by
+        team_ref: *linear_ref
+        assignee_ref: *linear_ref
+        workflow_state_ref: *linear_ref
+        project_ref: *linear_ref
+        cycle_ref: *linear_ref
+        issue_label_ref: *linear_ref
+        created_after: *linear_datetime
+        created_before: *linear_datetime
+        updated_after: *linear_datetime
+        updated_before: *linear_datetime
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [read]
+      linear:
+        document: graphql/issues/list.graphql
+        root: issues
+        scope: read
+  - key: issues.get
+    name: Get Linear Issue
+    description: Get one issue and its reviewed nested context by an account-bound issue ref.
+    provider: linear
+    capability: issue-work
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [issue_ref]
+      properties:
+        issue_ref: *linear_ref
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [read]
+      linear:
+        document: graphql/issues/get.graphql
+        root: issue
+        scope: read
+  - key: issues.search
+    name: Search Linear Issues
+    description: Search issues through Linear searchIssues with a required term and reviewed filters.
+    provider: linear
+    capability: issue-work
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [term]
+      properties:
+        term:
+          type: string
+          minLength: 1
+          maxLength: 500
+        first: *linear_first
+        after: *linear_after
+        include_archived: *linear_include_archived
+        order_by: *linear_order_by
+        team_ref: *linear_ref
+        assignee_ref: *linear_ref
+        workflow_state_ref: *linear_ref
+        project_ref: *linear_ref
+        cycle_ref: *linear_ref
+        issue_label_ref: *linear_ref
+        created_after: *linear_datetime
+        created_before: *linear_datetime
+        updated_after: *linear_datetime
+        updated_before: *linear_datetime
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [read]
+      linear:
+        document: graphql/issues/search.graphql
+        root: searchIssues
+        scope: read
+  - key: comments.list
+    name: List Linear Issue Comments
+    description: List comments for one account-bound issue with bounded pagination.
+    provider: linear
+    capability: issue-work
+    risk_level: read
+    input_schema: &linear_issue_scoped_list_input
+      type: object
+      additionalProperties: false
+      required: [issue_ref]
+      properties:
+        issue_ref: *linear_ref
+        first: *linear_first
+        after: *linear_after
+        include_archived: *linear_include_archived
+        order_by: *linear_order_by
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [read]
+      linear:
+        document: graphql/comments/list.graphql
+        root: comments
+        scope: read
+  - key: comments.get
+    name: Get Linear Comment
+    description: Get one issue comment by an account-bound comment ref.
+    provider: linear
+    capability: issue-work
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [comment_ref]
+      properties:
+        comment_ref: *linear_ref
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [read]
+      linear:
+        document: graphql/comments/get.graphql
+        root: comment
+        scope: read
+  - key: issue_relations.list
+    name: List Linear Issue Relations
+    description: List relations from one issue; the workspace-wide relation root is not exposed.
+    provider: linear
+    capability: issue-work
+    risk_level: read
+    input_schema: *linear_issue_scoped_list_input
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [read]
+      linear:
+        document: graphql/issue-relations/list.graphql
+        root: issue
+        scope: read
+  - key: issue_relations.get
+    name: Get Linear Issue Relation
+    description: Get one issue relation by an account-bound relation ref.
+    provider: linear
+    capability: issue-work
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [relation_ref]
+      properties:
+        relation_ref: *linear_ref
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [read]
+      linear:
+        document: graphql/issue-relations/get.graphql
+        root: issueRelation
+        scope: read
+  - key: issues.create
+    name: Create Linear Issue
+    description: Create an issue from reviewed fields and account-bound refs.
+    provider: linear
+    capability: issue-work
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [team_ref, title]
+      properties:
+        team_ref: *linear_ref
+        title: &linear_issue_title
+          type: string
+          minLength: 1
+          maxLength: 1000
+        description: &linear_description
+          type: string
+          maxLength: 100000
+        assignee_ref: *linear_ref
+        parent_issue_ref: *linear_ref
+        cycle_ref: *linear_ref
+        project_ref: *linear_ref
+        workflow_state_ref: *linear_ref
+        issue_label_refs:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: *linear_ref
+        priority: &linear_priority
+          type: integer
+          minimum: 0
+          maximum: 4
+        estimate: &linear_estimate
+          type: number
+          minimum: 0
+          maximum: 1000000
+        due_date: &linear_date
+          type: string
+          format: date
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [write]
+      linear:
+        document: graphql/issues/create.graphql
+        root: issueCreate
+        scope: write
+  - key: issues.update
+    name: Update Linear Issue
+    description: Patch one issue with reviewed fields while preserving omitted-versus-null semantics.
+    provider: linear
+    capability: issue-work
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [issue_ref]
+      properties:
+        issue_ref: *linear_ref
+        title: *linear_issue_title
+        description:
+          anyOf:
+            - *linear_description
+            - type: "null"
+        assignee_ref: &linear_nullable_ref
+          anyOf:
+            - *linear_ref
+            - type: "null"
+        parent_issue_ref: *linear_nullable_ref
+        cycle_ref: *linear_nullable_ref
+        project_ref: *linear_nullable_ref
+        workflow_state_ref: *linear_nullable_ref
+        priority: *linear_priority
+        estimate:
+          anyOf:
+            - *linear_estimate
+            - type: "null"
+        due_date:
+          anyOf:
+            - *linear_date
+            - type: "null"
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [write]
+      linear:
+        document: graphql/issues/update.graphql
+        root: issueUpdate
+        scope: write
+  - key: issues.archive
+    name: Archive Linear Issue
+    description: Archive one issue by an account-bound issue ref.
+    provider: linear
+    capability: issue-work
+    risk_level: write
+    input_schema: &linear_issue_ref_input
+      type: object
+      additionalProperties: false
+      required: [issue_ref]
+      properties:
+        issue_ref: *linear_ref
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [write]
+      linear:
+        document: graphql/issues/archive.graphql
+        root: issueArchive
+        scope: write
+  - key: issues.unarchive
+    name: Unarchive Linear Issue
+    description: Restore one archived issue by an account-bound issue ref.
+    provider: linear
+    capability: issue-work
+    risk_level: write
+    input_schema: *linear_issue_ref_input
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [write]
+      linear:
+        document: graphql/issues/unarchive.graphql
+        root: issueUnarchive
+        scope: write
+  - key: issues.labels.add
+    name: Add Linear Issue Label
+    description: Add an account-bound issue label ref to an account-bound issue ref.
+    provider: linear
+    capability: issue-work
+    risk_level: write
+    input_schema: &linear_issue_label_input
+      type: object
+      additionalProperties: false
+      required: [issue_ref, issue_label_ref]
+      properties:
+        issue_ref: *linear_ref
+        issue_label_ref: *linear_ref
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [write]
+      linear:
+        document: graphql/issues/add-label.graphql
+        root: issueAddLabel
+        scope: write
+  - key: issues.labels.remove
+    name: Remove Linear Issue Label
+    description: Remove an account-bound issue label ref from an account-bound issue ref.
+    provider: linear
+    capability: issue-work
+    risk_level: write
+    input_schema: *linear_issue_label_input
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [write]
+      linear:
+        document: graphql/issues/remove-label.graphql
+        root: issueRemoveLabel
+        scope: write
+  - key: comments.create
+    name: Create Linear Issue Comment
+    description: Create a comment on one account-bound issue with an optional parent comment ref.
+    provider: linear
+    capability: issue-work
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [issue_ref, body]
+      properties:
+        issue_ref: *linear_ref
+        body: &linear_comment_body
+          type: string
+          minLength: 1
+          maxLength: 100000
+        parent_comment_ref: *linear_nullable_ref
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [write]
+      linear:
+        document: graphql/comments/create.graphql
+        root: commentCreate
+        scope: write
+  - key: comments.update
+    name: Update Linear Comment
+    description: Replace the body of one account-bound issue comment.
+    provider: linear
+    capability: issue-work
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [comment_ref, body]
+      properties:
+        comment_ref: *linear_ref
+        body: *linear_comment_body
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [write]
+      linear:
+        document: graphql/comments/update.graphql
+        root: commentUpdate
+        scope: write
+  - key: comments.resolve
+    name: Resolve Linear Comment
+    description: Resolve one account-bound issue comment.
+    provider: linear
+    capability: issue-work
+    risk_level: write
+    input_schema: &linear_comment_ref_input
+      type: object
+      additionalProperties: false
+      required: [comment_ref]
+      properties:
+        comment_ref: *linear_ref
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [write]
+      linear:
+        document: graphql/comments/resolve.graphql
+        root: commentResolve
+        scope: write
+  - key: comments.unresolve
+    name: Unresolve Linear Comment
+    description: Reopen one account-bound issue comment.
+    provider: linear
+    capability: issue-work
+    risk_level: write
+    input_schema: *linear_comment_ref_input
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [write]
+      linear:
+        document: graphql/comments/unresolve.graphql
+        root: commentUnresolve
+        scope: write
+  - key: comments.delete
+    name: Delete Linear Comment
+    description: Delete one account-bound issue comment; permanent issue deletion is not exposed.
+    provider: linear
+    capability: issue-work
+    risk_level: write
+    input_schema: *linear_comment_ref_input
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [write]
+      linear:
+        document: graphql/comments/delete.graphql
+        root: commentDelete
+        scope: write
+  - key: issue_relations.create
+    name: Create Linear Issue Relation
+    description: Create a reviewed relation between two account-bound issue refs.
+    provider: linear
+    capability: issue-work
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [issue_ref, related_issue_ref, relation_type]
+      properties:
+        issue_ref: *linear_ref
+        related_issue_ref: *linear_ref
+        relation_type: &linear_relation_type
+          type: string
+          enum: [blocks, duplicate, related, similar]
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [write]
+      linear:
+        document: graphql/issue-relations/create.graphql
+        root: issueRelationCreate
+        scope: write
+  - key: issue_relations.update
+    name: Update Linear Issue Relation
+    description: Change one account-bound relation to a reviewed relation type.
+    provider: linear
+    capability: issue-work
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [relation_ref, relation_type]
+      properties:
+        relation_ref: *linear_ref
+        relation_type: *linear_relation_type
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [write]
+      linear:
+        document: graphql/issue-relations/update.graphql
+        root: issueRelationUpdate
+        scope: write
+  - key: issue_relations.delete
+    name: Delete Linear Issue Relation
+    description: Delete one account-bound issue relation.
+    provider: linear
+    capability: issue-work
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [relation_ref]
+      properties:
+        relation_ref: *linear_ref
+    output_schema: *linear_safe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: linear
+      operation: graphql.fixed
+      requires_credential: true
+      required_scopes: [write]
+      linear:
+        document: graphql/issue-relations/delete.graphql
+        root: issueRelationDelete
+        scope: write

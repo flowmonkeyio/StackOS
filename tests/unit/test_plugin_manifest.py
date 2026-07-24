@@ -11,6 +11,7 @@ import stackos.plugins.manifest as manifest_module
 from stackos.plugins.builtin_utils_ftp import ftp_action_kwargs, ftp_provider_kwargs
 from stackos.plugins.manifest import (
     BUILTIN_PLUGIN_MANIFESTS,
+    AuthMethodManifest,
     PluginManifest,
     ProviderManifest,
     load_plugin_manifest_file,
@@ -25,6 +26,57 @@ def _auth_field_keys(provider: ProviderManifest, method_key: str | None = None) 
         methods = [method for method in methods if method.key == method_key]
     assert methods
     return [field.key for field in methods[0].fields]
+
+
+@pytest.mark.parametrize(
+    ("evidence_source", "enforcement"),
+    [
+        ("oauth_response", "local_required"),
+        ("provider_probe", "local_required"),
+        ("unavailable", "provider_enforced"),
+        ("unavailable", "local_required"),
+    ],
+)
+def test_auth_method_accepts_the_reviewed_permission_verification_contracts(
+    evidence_source: str,
+    enforcement: str,
+) -> None:
+    method = AuthMethodManifest(
+        key="test-method",
+        label="Test method",
+        permission_verification={
+            "evidence_source": evidence_source,
+            "enforcement": enforcement,
+        },
+    )
+
+    assert method.permission_verification is not None
+    assert method.permission_verification.evidence_source == evidence_source
+    assert method.permission_verification.enforcement == enforcement
+
+
+@pytest.mark.parametrize(
+    ("evidence_source", "enforcement"),
+    [
+        ("oauth_response", "provider_enforced"),
+        ("provider_probe", "provider_enforced"),
+        ("oauth_response", "unsupported"),
+        ("unsupported", "local_required"),
+    ],
+)
+def test_auth_method_rejects_unreviewed_permission_verification_contracts(
+    evidence_source: str,
+    enforcement: str,
+) -> None:
+    with pytest.raises(ValidationError):
+        AuthMethodManifest(
+            key="test-method",
+            label="Test method",
+            permission_verification={
+                "evidence_source": evidence_source,
+                "enforcement": enforcement,
+            },
+        )
 
 
 def test_ftp_fragments_return_fresh_plain_data() -> None:
@@ -124,6 +176,7 @@ def test_builtin_plugin_manifests_validate() -> None:
         "media-buying",
         "trackbooth",
         "shopify",
+        "linear",
         "publishing",
         "seo",
         "core",
@@ -756,7 +809,7 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
         for provider in plugin.providers
     ]
 
-    assert len(providers) == 54
+    assert len(providers) == 55
     google_seo_providers = {
         "google-search-console",
         "google-analytics",
@@ -778,6 +831,8 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
             if plugin_slug == "seo" and provider.key in google_seo_providers
             else "2026-07-08"
             if plugin_slug == "shopify" and provider.key == "shopify"
+            else "2026-07-23"
+            if plugin_slug == "linear" and provider.key == "linear"
             else "2026-06-11"
         )
         assert setup.get("verified_at") == expected_verified_at
@@ -1200,8 +1255,21 @@ def test_gtm_plugin_yaml_facade_validates() -> None:
     }
     providers = {provider.key: provider for provider in manifest.providers}
     hubspot = providers["hubspot"]
-    assert {method.key for method in hubspot.auth_methods} == {"oauth2_authorization_code"}
-    assert hubspot.auth_methods[0].interactive is True
+    assert hubspot.auth_type == "oauth-or-api-key"
+    hubspot_methods = {method.key: method for method in hubspot.auth_methods}
+    assert set(hubspot_methods) == {"oauth2_authorization_code", "private_app_token"}
+    assert hubspot_methods["oauth2_authorization_code"].interactive is True
+    assert hubspot_methods["oauth2_authorization_code"].permission_verification is not None
+    assert hubspot_methods["oauth2_authorization_code"].permission_verification.model_dump() == {
+        "evidence_source": "oauth_response",
+        "enforcement": "local_required",
+    }
+    assert hubspot_methods["private_app_token"].permission_verification is not None
+    assert hubspot_methods["private_app_token"].permission_verification.model_dump() == {
+        "evidence_source": "provider_probe",
+        "enforcement": "local_required",
+    }
+    assert _auth_field_keys(hubspot, "private_app_token") == ["access_token"]
     assert _auth_field_keys(hubspot) == [
         "client_id",
         "client_secret",
@@ -1302,6 +1370,23 @@ def test_gtm_plugin_yaml_facade_validates() -> None:
         "oauth2_token",
         "api_key",
     }
+    for provider_key, static_key in (("pipedrive", "api_token"), ("salesloft", "api_key")):
+        methods = {method.key: method for method in providers[provider_key].auth_methods}
+        assert methods["oauth2_authorization_code"].permission_verification is not None
+        assert methods["oauth2_authorization_code"].permission_verification.model_dump() == {
+            "evidence_source": "oauth_response",
+            "enforcement": "local_required",
+        }
+        assert methods["oauth2_token"].permission_verification is not None
+        assert methods["oauth2_token"].permission_verification.model_dump() == {
+            "evidence_source": "unavailable",
+            "enforcement": "local_required",
+        }
+        assert methods[static_key].permission_verification is not None
+        assert methods[static_key].permission_verification.model_dump() == {
+            "evidence_source": "unavailable",
+            "enforcement": "provider_enforced",
+        }
     assert providers["salesforce"].config["scopes"] == ["api", "refresh_token"]
     assert providers["outreach"].config["scopes"] == ["sequenceStates.write"]
     assert providers["microsoft-365"].config["scopes"] == [
@@ -1828,18 +1913,29 @@ def test_media_buying_plugin_yaml_facade_validates() -> None:
         "client_id",
         "client_secret",
     ]
-    assert (
-        next(
-            method
-            for method in providers["meta-ads"].auth_methods
-            if method.key == "oauth2_authorization_code"
-        ).interactive
-        is True
+    meta_interactive = next(
+        method
+        for method in providers["meta-ads"].auth_methods
+        if method.key == "oauth2_authorization_code"
     )
+    assert meta_interactive.interactive is True
+    assert meta_interactive.permission_verification is not None
+    assert meta_interactive.permission_verification.model_dump() == {
+        "evidence_source": "oauth_response",
+        "enforcement": "local_required",
+    }
     assert _auth_field_keys(providers["meta-ads"], "oauth2_token")[:2] == [
         "access_token",
         "business_ref",
     ]
+    meta_manual = next(
+        method for method in providers["meta-ads"].auth_methods if method.key == "oauth2_token"
+    )
+    assert meta_manual.permission_verification is not None
+    assert meta_manual.permission_verification.model_dump() == {
+        "evidence_source": "unavailable",
+        "enforcement": "local_required",
+    }
     assert providers["meta-ads"].config["scopes"] == [
         "ads_management",
         "ads_read",
@@ -2134,3 +2230,46 @@ def test_manifest_accepts_provider_native_snake_segments() -> None:
     )
 
     assert manifest.actions[0].key == "meta.ad_set.create"
+
+
+def test_linear_manifest_uses_the_shared_oauth_and_connections_contract() -> None:
+    manifest = next(item for item in BUILTIN_PLUGIN_MANIFESTS if item.slug == "linear")
+    provider = manifest.providers[0]
+
+    assert provider.key == "linear"
+    assert provider.auth_type == "oauth-or-api-key"
+    methods = {method.key: method for method in provider.auth_methods}
+    assert set(methods) == {"oauth2_authorization_code", "personal_api_key"}
+    assert methods["oauth2_authorization_code"].interactive is True
+    assert methods["oauth2_authorization_code"].permission_verification is not None
+    assert methods["oauth2_authorization_code"].permission_verification.model_dump() == {
+        "evidence_source": "oauth_response",
+        "enforcement": "local_required",
+    }
+    assert [field.key for field in methods["oauth2_authorization_code"].fields] == [
+        "client_id",
+        "client_secret",
+    ]
+    personal = methods["personal_api_key"]
+    assert personal.auth_type == "api-key"
+    assert personal.payload_format == "raw"
+    assert personal.payload_field == "api_key"
+    assert personal.permission_verification is not None
+    assert personal.permission_verification.model_dump() == {
+        "evidence_source": "unavailable",
+        "enforcement": "provider_enforced",
+    }
+    assert [field.key for field in personal.fields] == ["api_key"]
+    assert provider.config["scopes"] == ["read", "write"]
+    assert provider.config["readiness_groups"] == {
+        "issue-work": {
+            "label": "Issue Work",
+            "required_scopes": ["read", "write"],
+        }
+    }
+    assert provider.config["setup"]["callback_url"] == (
+        "https://auth.stackos.flowmonkey.io/api/v1/auth/oauth/callback"
+    )
+    assert "run Test separately" in provider.config["setup"]["local_setup_note"]
+    assert "run Test again" in provider.config["setup"]["repair_note"]
+    assert provider.config["setup"]["verified_at"] == "2026-07-23"

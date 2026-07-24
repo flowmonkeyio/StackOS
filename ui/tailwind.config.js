@@ -26,6 +26,7 @@ export default {
           'surface-alt':'var(--color-bg-surface-alt)',
           sunken:     'var(--color-bg-sunken)',
           inverse:    'var(--color-bg-inverse)',
+          'provider-inverse': 'var(--color-bg-provider-inverse)',
           overlay:    'var(--color-bg-overlay)',
         },
         fg: {

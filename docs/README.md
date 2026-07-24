@@ -19,7 +19,7 @@ obvious without loading every document.
 | Passing a tenant/customer secret in an action payload | [`action-executor.md`](./action-executor.md), [`security.md`](./security.md) |
 | Adding or using browser automation | [`browser-automation.md`](./browser-automation.md), [`operations.md`](./operations.md), [`setup.md`](./setup.md), [`security.md`](./security.md) |
 | Adding or changing task/ticket tracking | [`task-tracker.md`](./task-tracker.md), [`run-plans.md`](./run-plans.md), [`operations.md`](./operations.md) |
-| Adding providers, auth, or credentials | [`auth-providers.md`](./auth-providers.md), [`oauth-provider-setup.md`](./oauth-provider-setup.md), [`security.md`](./security.md), [`integration-contracts/AGENTS.md`](./integration-contracts/AGENTS.md) |
+| Choosing OAuth versus a static key/token, or adding providers, auth methods, or credentials | [`auth-providers.md`](./auth-providers.md), [`oauth-provider-setup.md`](./oauth-provider-setup.md), [`security.md`](./security.md), [`integration-contracts/AGENTS.md`](./integration-contracts/AGENTS.md) |
 | Adding or changing communications, chat, email, targets, or memberships | [`integration-contracts/communications.md`](./integration-contracts/communications.md), [`operations.md`](./operations.md), [`resources-and-artifacts.md`](./resources-and-artifacts.md) |
 | Adding or changing plugins | [`plugins.md`](./plugins.md), [`extending.md`](./extending.md), [`workflow-templates.md`](./workflow-templates.md) |
 | Building or changing workflow packages or templates | [`workflow-templates.md`](./workflow-templates.md), [`plugins.md`](./plugins.md), [`run-plans.md`](./run-plans.md), [`agent-presets.md`](./agent-presets.md), [`project-memory.md`](./project-memory.md) |
@@ -54,6 +54,10 @@ obvious without loading every document.
   `credential_ref` values. Authorized non-auth string payload values use the
   write-only MCP `secret.set` operation and exact `$secret_ref` action markers,
   never a second provider Connection.
+- OAuth, API keys, private-app tokens, and other provider-declared auth methods
+  use the one-brain lifecycle in [`auth-providers.md`](./auth-providers.md):
+  manifests declare method/evidence facts, the auth repository owns encrypted
+  lifecycle and readiness, and connectors apply only saved-method transport.
 - Agents should resolve known provider targets with `toolProfile.resolve`
   before broad auth/profile discovery.
 - Communications are provider-neutral state plus explicit provider actions. Use

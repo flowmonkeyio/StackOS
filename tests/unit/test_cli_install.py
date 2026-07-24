@@ -44,7 +44,7 @@ from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.secrets import PayloadSecretRepository
 
-HEAD_REVISION = "0024_provider_object_references"
+HEAD_REVISION = "0025_visible_chromium_profiles"
 
 
 @pytest.fixture
@@ -292,104 +292,239 @@ def test_doctor_reports_stale_stackos_plugin_skill_cache(sandbox: Path) -> None:
     assert "stackos install" in skill["repair"]
 
 
-def test_ensure_playwright_browser_reports_missing_package(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ensure_chromium_runtime_reports_missing_driver(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: None)
 
-    ok, message = installer.ensure_playwright_browser()
+    ok, message = installer.ensure_chromium_runtime()
 
     assert ok is False
     assert "not importable" in message
 
 
-def test_ensure_playwright_browser_hides_existing_browser_path(
+def test_ensure_chromium_runtime_rejects_driver_drift(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(installer, "playwright_driver_version", lambda: "1.59.0")
+
+    ok, message = installer.ensure_chromium_runtime()
+
+    assert ok is False
+    assert "expected version 1.60.0" in message
+    assert "148.0.7778.96" in message
+
+
+def test_ensure_chromium_runtime_hides_managed_browser_path(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(installer, "packaged_stackos_root", lambda: None)
+    app = installer.managed_chromium_app_path(tmp_path)
+    app.mkdir(parents=True)
+    (app.parent / installer.CHROMIUM_LICENSE_FILENAME).write_text("license", encoding="utf-8")
     monkeypatch.setattr(
         installer,
-        "playwright_chromium_executable_path",
-        lambda **_kwargs: "/private/playwright/chromium",
+        "_verify_chromium_bundle",
+        lambda *_args, **_kwargs: (True, "ok"),
     )
 
-    ok, message = installer.ensure_playwright_browser()
+    ok, message = installer.ensure_chromium_runtime(data_dir=tmp_path)
 
     assert ok is True
-    assert message == "Playwright Chromium browser present."
+    assert message == "Managed Chromium runtime present."
     assert "/private" not in message
 
 
-def test_ensure_playwright_browser_installs_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[list[str]] = []
+def test_verify_chromium_runtime_rejects_wrong_arch_without_repairing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(installer, "packaged_stackos_root", lambda: None)
+    app = installer.managed_chromium_app_path(tmp_path)
+    app.mkdir(parents=True)
+    (app.parent / installer.CHROMIUM_LICENSE_FILENAME).write_text("license", encoding="utf-8")
+    monkeypatch.setattr(
+        installer,
+        "_verify_chromium_bundle",
+        lambda *_args, **_kwargs: (False, "Chromium bundle is not arm64."),
+    )
+
+    ok, message = installer.verify_chromium_runtime(data_dir=tmp_path)
+
+    assert ok is False
+    assert message == "Chromium bundle is not arm64."
+    assert app.is_dir()
+
+
+def test_ensure_chromium_runtime_installs_pinned_normal_bundle(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[Path, Path]] = []
+    monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(installer, "packaged_stackos_root", lambda: None)
+    monkeypatch.setattr(
+        installer,
+        "_download_chromium_archive",
+        lambda destination, **_kwargs: destination.write_bytes(b"pinned-archive"),
+    )
+    monkeypatch.setattr(installer, "_sha256", lambda _path: installer.CHROMIUM_SNAPSHOT_SHA256)
+
+    monkeypatch.setattr(
+        installer,
+        "_extract_chromium_archive",
+        lambda _archive, destination, **_kwargs: (
+            destination / installer.CHROMIUM_ARCHIVE_APP_RELATIVE_PATH
+        ).mkdir(parents=True),
+    )
+    monkeypatch.setattr(
+        installer,
+        "_verify_chromium_bundle",
+        lambda *_args, **_kwargs: (True, "ok"),
+    )
+    monkeypatch.setattr(
+        installer,
+        "_install_chromium_runtime_atomically",
+        lambda source_app, source_license, target_app, target_license: calls.append(
+            (source_app, target_app)
+        ),
+    )
+    monkeypatch.setattr(
+        installer,
+        "_copy_chromium_license",
+        lambda destination: destination.write_text("license", encoding="utf-8"),
+    )
+
+    ok, message = installer.ensure_chromium_runtime(data_dir=tmp_path)
+
+    assert ok is True
+    assert message == "Managed Chromium runtime installed."
+    assert installer.CHROMIUM_SNAPSHOT_URL.endswith("Mac_Arm/1610473/chrome-mac.zip")
+    assert installer.CHROMIUM_SNAPSHOT_SHA256 == (
+        "3961cef2b608396de21aec027ffaadd7e9a65ff025391fba64ae0023ffefc80a"
+    )
+    assert len(calls) == 1
+    assert calls[0][0].name == "Chromium.app"
+    assert calls[0][1] == installer.managed_chromium_app_path(tmp_path)
+
+
+def test_ensure_chromium_runtime_rejects_bad_checksum_without_raw_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(installer, "packaged_stackos_root", lambda: None)
+    monkeypatch.setattr(
+        installer,
+        "_download_chromium_archive",
+        lambda destination, **_kwargs: destination.write_bytes(b"secret /private/main-account"),
+    )
+    monkeypatch.setattr(installer, "_sha256", lambda _path: "not-the-pin")
+
+    ok, message = installer.ensure_chromium_runtime(data_dir=tmp_path)
+
+    assert ok is False
+    assert message == "Chromium archive checksum did not match StackOS's pinned runtime."
+    assert "/private" not in message
+
+
+def test_ensure_chromium_runtime_preserves_existing_bundle_when_candidate_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(installer, "packaged_stackos_root", lambda: None)
+    app = installer.managed_chromium_app_path(tmp_path)
+    app.mkdir(parents=True)
+    sentinel = app / "previous-runtime"
+    sentinel.write_text("keep", encoding="utf-8")
+    monkeypatch.setattr(
+        installer,
+        "_download_chromium_archive",
+        lambda destination, **_kwargs: destination.write_bytes(b"archive"),
+    )
+    monkeypatch.setattr(installer, "_sha256", lambda _path: installer.CHROMIUM_SNAPSHOT_SHA256)
+    monkeypatch.setattr(
+        installer,
+        "_verify_chromium_bundle",
+        lambda *_args, **_kwargs: (False, "candidate failed"),
+    )
+
+    monkeypatch.setattr(
+        installer,
+        "_extract_chromium_archive",
+        lambda _archive, destination, **_kwargs: (
+            destination / installer.CHROMIUM_ARCHIVE_APP_RELATIVE_PATH
+        ).mkdir(parents=True),
+    )
+
+    ok, message = installer.ensure_chromium_runtime(data_dir=tmp_path)
+
+    assert ok is False
+    assert message == "candidate failed"
+    assert sentinel.read_text(encoding="utf-8") == "keep"
+
+
+def test_extract_chromium_archive_uses_fixed_macos_ditto(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[list[str], dict[str, object]]] = []
 
     def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        _ = kwargs
-        calls.append(args)
+        calls.append((args, kwargs))
         return subprocess.CompletedProcess(args, 0, "", "")
 
-    monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: object())
-    monkeypatch.setattr(installer, "playwright_chromium_executable_path", lambda **_kwargs: None)
     monkeypatch.setattr(installer.subprocess, "run", fake_run)
+    archive = tmp_path / "chromium.zip"
+    destination = tmp_path / "extracted"
 
-    ok, message = installer.ensure_playwright_browser()
+    installer._extract_chromium_archive(archive, destination, timeout_seconds=42)
 
-    assert ok is True
-    assert message == "Playwright Chromium browser installed."
-    assert calls == [[sys.executable, "-m", "playwright", "install", "chromium"]]
+    assert calls == [
+        (
+            ["/usr/bin/ditto", "-x", "-k", str(archive), str(destination)],
+            {"capture_output": True, "text": True, "timeout": 42, "check": False},
+        )
+    ]
 
 
-def test_ensure_playwright_browser_reports_install_failure_without_raw_output(
+def test_extract_chromium_archive_redacts_ditto_failure(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         _ = kwargs
-        return subprocess.CompletedProcess(
-            args,
-            2,
-            "",
-            "failed at /private/playwright secret-token",
+        return subprocess.CompletedProcess(args, 2, "", "failed /private/main-account secret-token")
+
+    monkeypatch.setattr(installer.subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError) as exc:
+        installer._extract_chromium_archive(
+            tmp_path / "chromium.zip",
+            tmp_path / "extracted",
+            timeout_seconds=42,
         )
 
-    monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: object())
-    monkeypatch.setattr(installer, "playwright_chromium_executable_path", lambda **_kwargs: None)
-    monkeypatch.setattr(installer.subprocess, "run", fake_run)
-
-    ok, message = installer.ensure_playwright_browser()
-
-    assert ok is False
-    assert "Playwright Chromium install failed: exit_code=2" in message
-    assert "output_sha256=" in message
-    assert "/private" not in message
-    assert "secret-token" not in message
-
-
-def test_ensure_playwright_browser_reports_install_timeout_without_raw_output(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        _ = kwargs
-        raise subprocess.TimeoutExpired(args, timeout=1, output="secret")
-
-    monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: object())
-    monkeypatch.setattr(installer, "playwright_chromium_executable_path", lambda **_kwargs: None)
-    monkeypatch.setattr(installer.subprocess, "run", fake_run)
-
-    ok, message = installer.ensure_playwright_browser()
-
-    assert ok is False
-    assert "Playwright Chromium install failed: error_type=TimeoutExpired" in message
-    assert "message_sha256=" in message
-    assert "secret" not in message
+    assert "exit_code=2" in str(exc.value)
+    assert "output_sha256=" in str(exc.value)
+    assert "/private" not in str(exc.value)
+    assert "secret-token" not in str(exc.value)
 
 
 def test_doctor_browser_runtime_hides_existing_browser_path(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(doctor_cli.importlib.util, "find_spec", lambda name: object())
     monkeypatch.setattr(
         doctor_cli,
-        "playwright_chromium_executable_path",
-        lambda **_kwargs: "/private/playwright/chromium",
+        "chromium_executable_path",
+        lambda **_kwargs: Path("/private/stackos/Chromium.app/Contents/MacOS/Chromium"),
     )
+    license_path = tmp_path / "CHROMIUM-LICENSE"
+    license_path.write_text("license", encoding="utf-8")
+    monkeypatch.setattr(doctor_cli, "chromium_license_path", lambda: license_path)
+    monkeypatch.setattr(doctor_cli, "verify_chromium_runtime", lambda: (True, "verified"))
 
     ok, details = doctor_cli._check_browser_runtime()
 
@@ -397,6 +532,50 @@ def test_doctor_browser_runtime_hides_existing_browser_path(
     assert details["browser_downloaded"] is True
     assert details["browser_path_present"] is True
     assert "executable_path" not in details
+
+
+def test_doctor_browser_runtime_reports_driver_drift(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(doctor_cli.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(doctor_cli, "playwright_driver_version", lambda: "1.59.0")
+    monkeypatch.setattr(doctor_cli, "chromium_executable_path", lambda **_kwargs: None)
+    monkeypatch.setattr(doctor_cli, "chromium_license_path", lambda: Path("/missing/license"))
+    monkeypatch.setattr(doctor_cli, "verify_chromium_runtime", lambda: (False, "bundle missing"))
+
+    ok, details = doctor_cli._check_browser_runtime()
+
+    assert ok is False
+    assert details["driver_compatible"] is False
+    assert "1.60.0" in str(details["repair"])
+
+
+def test_doctor_browser_runtime_rejects_wrong_version_or_arch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(doctor_cli.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(doctor_cli, "playwright_driver_version", lambda: "1.60.0")
+    monkeypatch.setattr(
+        doctor_cli,
+        "chromium_executable_path",
+        lambda **_kwargs: Path("/private/stackos/Chromium.app/Contents/MacOS/Chromium"),
+    )
+    license_path = tmp_path / "CHROMIUM-LICENSE"
+    license_path.write_text("license", encoding="utf-8")
+    monkeypatch.setattr(doctor_cli, "chromium_license_path", lambda: license_path)
+    monkeypatch.setattr(
+        doctor_cli,
+        "verify_chromium_runtime",
+        lambda: (False, "Chromium bundle version does not match StackOS's pinned runtime."),
+    )
+
+    ok, details = doctor_cli._check_browser_runtime()
+
+    assert ok is False
+    assert details["driver_compatible"] is True
+    assert details["browser_path_present"] is True
+    assert details["browser_downloaded"] is False
+    assert "version does not match" in str(details["repair"])
+    assert "/private" not in str(details)
 
 
 def test_doctor_exits_9_for_stale_stackos_plugin_skill_cache(sandbox: Path) -> None:
@@ -725,7 +904,11 @@ def test_cli_install_default_installs_plugin_and_skill_mirrors(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(installer, "ensure_playwright_browser", lambda: (True, "browser ok"))
+    monkeypatch.setattr(
+        installer,
+        "ensure_chromium_runtime",
+        lambda **_kwargs: (True, "browser ok"),
+    )
     monkeypatch.setattr(
         installer,
         "repair_mcp_hosts",
@@ -749,7 +932,11 @@ def test_cli_install_preserves_seed_and_token_on_rerun(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(installer, "ensure_playwright_browser", lambda: (True, "browser ok"))
+    monkeypatch.setattr(
+        installer,
+        "ensure_chromium_runtime",
+        lambda **_kwargs: (True, "browser ok"),
+    )
     monkeypatch.setattr(
         installer,
         "repair_mcp_hosts",
@@ -1029,7 +1216,11 @@ def test_cli_install_tolerates_daemon_down_doctor(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(installer, "ensure_playwright_browser", lambda: (True, "browser ok"))
+    monkeypatch.setattr(
+        installer,
+        "ensure_chromium_runtime",
+        lambda **_kwargs: (True, "browser ok"),
+    )
     monkeypatch.setattr(
         installer,
         "repair_mcp_hosts",
@@ -1053,7 +1244,11 @@ def test_cli_install_preserves_blocking_doctor_failures(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(installer, "ensure_playwright_browser", lambda: (True, "browser ok"))
+    monkeypatch.setattr(
+        installer,
+        "ensure_chromium_runtime",
+        lambda **_kwargs: (True, "browser ok"),
+    )
     monkeypatch.setattr(
         installer,
         "repair_mcp_hosts",
@@ -1096,7 +1291,11 @@ def test_cli_install_launchd_force_overwrites_plist(
     launchd_calls: list[bool] = []
 
     monkeypatch.setattr(installer, "detect_mode", lambda: "package")
-    monkeypatch.setattr(installer, "ensure_playwright_browser", lambda: (True, "browser ok"))
+    monkeypatch.setattr(
+        installer,
+        "ensure_chromium_runtime",
+        lambda **_kwargs: (True, "browser ok"),
+    )
     monkeypatch.setattr(installer, "copy_skills", lambda runtime, home: (home / runtime, 1))
     monkeypatch.setattr(
         installer,

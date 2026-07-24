@@ -12,6 +12,17 @@ describe('ProviderMark', () => {
     expect(wrapper.get('img').attributes('src')).toBe('/images/integrations/firecrawl-icon.png')
   })
 
+  it('renders the official white Linear wordmark on a contrast-safe tile', () => {
+    const wrapper = mount(ProviderMark, {
+      props: { name: 'Linear', providerKey: 'linear', pluginSlug: 'linear', size: 'xs' },
+    })
+
+    expect(wrapper.get('img').attributes('src')).toBe('/images/integrations/linear-logo-white.png')
+    expect(wrapper.classes()).toContain('provider-mark--wordmark')
+    expect(wrapper.classes()).toContain('provider-mark--inverse')
+    expect(wrapper.classes()).toContain('provider-mark--xs')
+  })
+
   it('renders stable initials when no logo is mapped', () => {
     const wrapper = mount(ProviderMark, {
       props: { name: 'Example Provider', providerKey: 'example-provider' },

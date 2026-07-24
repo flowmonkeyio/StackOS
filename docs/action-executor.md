@@ -36,8 +36,15 @@ accident.
 
 `required_scopes` is an optional, normalized list of grants needed by that
 specific action. It is valid only when the action requires a credential. The
-OAuth resolver enforces the list before connector dispatch; connectors must not
-repeat scope policy or silently try a call with insufficient grants.
+shared credential resolver applies the saved method's reviewed verification
+posture before connector dispatch. Locally enforced methods fail before HTTP
+when grants are missing or unknown; provider-enforced methods do not invent
+local grants. Connectors must not repeat scope policy or silently change that
+decision.
+
+Method selection, evidence posture, profile isolation, and migration are
+canonical in the
+[one-brain auth-method contract](./auth-providers.md#one-brain-auth-method-contract).
 
 ## Connector Boundary
 
@@ -66,6 +73,20 @@ winning token instead of racing token writes. A token or scope failure stops
 before connector execution, records redacted refresh/usage diagnostics, and
 returns repair context. Manual/static credentials continue through the same
 resolution boundary without being forced into an interactive flow.
+When a provider supports more than one method, the connector may select request
+transport only from the resolved credential's saved `auth_method_key`; it must
+not infer the method from decrypted field presence or token shape.
+
+GraphQL providers follow the same connector boundary. The Linear connector is
+the reference fixed-document pattern: the manifest names a reviewed document,
+root, and scope; a hard-coded connector table must match those values exactly;
+the integration loads only repository-owned documents below the provider's
+plugin directory; and callers can never supply a query, root, selection set, or
+provider-native filter tree. Pinned-schema tests validate every variable,
+argument, enum value, and projection and prove manifest/connector/document
+parity. Mutations use zero automatic transport retries, and ambiguous
+post-dispatch failures retain `outcome_unknown` instead of inventing success or
+retry safety.
 
 When a provider returns an HTTP failure body, connectors must raise
 `ActionConnectorError` with `provider_status_code` and `provider_error` instead

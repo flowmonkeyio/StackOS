@@ -208,6 +208,11 @@ agents. Browser side-effect operations are raw-only; persisted receipts store
 redacted summaries and artifact refs rather than raw scripts, returned values,
 or daemon-local paths.
 
+Browser sessions always use StackOS's visible Chromium runtime. The session
+start contract has no headless field, and launch preferences are limited to
+`locale`, `timezone_id`, `user_agent`, and `viewport`; executable paths,
+channels, raw arguments, and profile controls are daemon-owned.
+
 Browser side-effect operations advertise `secret_policy=raw-browser-output`.
 That means the immediate operation payload can contain page, cookie, storage,
 or JavaScript-returned data. Browser session state and generated artifacts are

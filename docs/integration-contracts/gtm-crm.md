@@ -5,13 +5,18 @@ expanded on 2026-07-22. This historical cross-provider review remains useful
 for Salesforce and Pipedrive comparisons; the canonical current HubSpot ledger
 is [`hubspot.md`](hubspot.md).
 
+The shared credential lifecycle, selection, readiness, and Connections UI are
+defined once in
+[`auth-providers.md`](../auth-providers.md#one-brain-auth-method-contract).
+The entries below retain only CRM-provider protocol and transport facts.
+
 ## Official Docs Ledger
 
 ### HubSpot
 
 | Area | Official docs | Contract notes |
 | --- | --- | --- |
-| Auth | [Working with OAuth](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/oauth/working-with-oauth), [current token lifecycle](https://developers.hubspot.com/docs/api-reference/latest/authentication/manage-oauth-tokens), [Scopes](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/scopes) | StackOS implements interactive authorization code against the current `/oauth/2026-03/token` endpoint. CRM Core is required, selected feature scopes use optional consent, and returned `scopes`/`hub_id` are authoritative. Tokens remain daemon-side. |
+| Auth | [Working with OAuth](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/oauth/working-with-oauth), [current token lifecycle](https://developers.hubspot.com/docs/api-reference/latest/authentication/manage-oauth-tokens), [Scopes](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/scopes), [private apps overview](https://developers.hubspot.com/docs/apps/legacy-apps/private-apps/overview) | OAuth uses `/oauth/2026-03/token`; returned `scopes`/`hub_id` are authoritative. The single-account `private_app_token` route probes `POST /oauth/v2/private-apps/get/access-token-info`; its returned scopes/account evidence is authoritative and supports `provider_probe`/`local_required`. |
 | Object create/update/upsert | [Using object APIs](https://developers.hubspot.com/docs/api-reference/legacy/crm/using-object-apis), [latest 2026-03 API reference](https://developers.hubspot.com/docs/reference/api) | Create/update is property-bag based, but upsert is batch-only and requires a custom unique property or contact `email`. Do not model a provider-neutral single-record `upsert` without an `id_property`/match contract. |
 | Notes/tasks/activities | [Notes API](https://developers.hubspot.com/docs/guides/api/crm/engagements/notes), [Tasks API](https://developers.hubspot.com/docs/reference/api/crm/engagements/tasks), [Associations v4](https://developers.hubspot.com/docs/guides/api/crm/associations/associations-v4) | Notes and tasks are CRM objects with provider property names (`hs_note_body`, `hs_timestamp`, `hs_task_subject`, etc.) and association type IDs/labels. Safe refs must resolve to HubSpot IDs inside the daemon before calls. |
 | Pipeline/deals reads | [Search the CRM](https://developers.hubspot.com/docs/api-reference/latest/crm/search-the-crm), [Using object APIs](https://developers.hubspot.com/docs/api-reference/legacy/crm/using-object-apis) | Deals are object type `0-3`; pipeline reads should be `hubspot.crm.deals.search` or `hubspot.crm.deals.list`, not generic `hubspot.pipeline.fetch`. |
@@ -33,7 +38,7 @@ is [`hubspot.md`](hubspot.md).
 
 | Area | Official docs | Contract notes |
 | --- | --- | --- |
-| Auth | [OAuth 2.0](https://developers.pipedrive.com/docs/api/v1/Oauth), [About the Pipedrive API](https://pipedrive.readme.io/docs/core-api-concepts-about-pipedrive-api) | StackOS implements interactive authorization code with HTTP Basic token exchange, retains manual OAuth-token compatibility, and exposes API token as a separate built-in auth method. Provider-returned `api_domain` is accepted only through the trusted token response and stays in safe credential config. |
+| Auth | [OAuth 2.0](https://developers.pipedrive.com/docs/api/v1/Oauth), [Users](https://developers.pipedrive.com/docs/api/v1/Users), [About the Pipedrive API](https://pipedrive.readme.io/docs/core-api-concepts-about-pipedrive-api) | StackOS supports OAuth, a manual OAuth-token compatibility method, and a personal API token. The safe current-user probe is `GET /api/v1/users/me`; saved OAuth methods use `Authorization: Bearer`, while the API-token method uses `x-api-token`. The probe supplies safe account identity, not grants, so the static API-token method is `unavailable`/`provider_enforced`. Provider-returned `api_domain` is accepted only through the trusted token response and stays in safe credential config. |
 | Object create/update/upsert | [Deals](https://developers.pipedrive.com/docs/api/v1/Deals), [Persons](https://developers.pipedrive.com/docs/api/v1/Persons), [Organizations](https://developers.pipedrive.com/docs/api/v1/Organizations) | Pipedrive has create/update endpoints, but no native provider-wide upsert. Upsert must be a StackOS two-step search/read plus create/update connector with explicit matching policy, duplicate handling, and approval. |
 | Notes/tasks/activities | [Notes](https://developers.pipedrive.com/docs/api/v1/Notes), [Activities](https://developers.pipedrive.com/docs/api/v1/Activities), [Tasks](https://developers.pipedrive.com/docs/api/v1/Tasks) | Pipedrive models notes and activities separately. Use `pipedrive.note.create` and `pipedrive.activity.create`; do not call these `task.create` unless the connector maps to the Tasks API intentionally. |
 | Pipeline/deals reads | [Deals](https://developers.pipedrive.com/docs/api/v1/Deals), [Pipelines](https://developers.pipedrive.com/docs/api/v1/Pipelines), [Stages](https://developers.pipedrive.com/docs/api/v1/Stages) | `pipedrive.deal.fetch` is acceptable only if narrowed to list/search/get semantics. Prefer `pipedrive.deals.list` and `pipedrive.deals.search` with filters for pipeline, stage, owner, status, and update window. |
@@ -42,18 +47,21 @@ is [`hubspot.md`](hubspot.md).
 
 ## StackOS Implications
 
-### Provider Auth Type
+### Provider Method Facts
 
-- HubSpot: `auth_type: oauth`; interactive start, fixed callback, exchange,
-  refresh, returned-scope enforcement, and account metadata are implemented by
-  the shared core. The public setup method is the provider-specific
-  authorization-code profile documented in [`hubspot.md`](hubspot.md).
-- Salesforce: `auth_type: oauth`; interactive and manual-compatible methods are
-  implemented. The core owns refresh, validates login-host variants, and stores
-  trusted instance URL metadata.
-- Pipedrive: `auth_type: oauth-or-api-token`; interactive OAuth, manual OAuth
-  token, and API token are separate built-in methods. The core owns OAuth
-  renewal and trusted `api_domain` handling.
+The method contract itself is canonical in
+[`auth-providers.md`](../auth-providers.md#one-brain-auth-method-contract).
+
+- HubSpot: `oauth2_authorization_code` is the multi-account OAuth route;
+  `private_app_token` is the supported single-account route and is documented
+  in [`hubspot.md`](hubspot.md#provider-methods-and-oauth-protocol).
+- Salesforce: `auth_type: oauth`; the provider-specific login-host and trusted
+  instance-URL rules remain in this CRM contract.
+- Pipedrive: `auth_type: oauth-or-api-token`; `oauth2_authorization_code` and
+  manual `oauth2_token` use bearer transport. The latter remains
+  `unavailable`/`local_required`; `api_token` uses `x-api-token` and is
+  `unavailable`/`provider_enforced` because `GET /api/v1/users/me` does not
+  return scope grants.
 
 ### Safe Setup Fields
 

@@ -14,6 +14,19 @@ can read the StackOS plugin catalog:
 pnpm --dir website generate
 ```
 
+When the release changes a public integration, refresh the generated integration
+catalog from the current source-backed StackOS daemon before generating:
+
+```bash
+STACKOS_PROJECT_ID=<bound-project-id> pnpm --dir website integrations:sync
+pnpm --dir website generate
+```
+
+Do not generate an integration release from an older installed daemon that
+does not contain the candidate plugin manifests. Preserve any synced provider
+inventory needed by the public catalog, then verify the changed integration
+route in the static output and in production.
+
 Do not substitute `pnpm --dir website build` for this command when preparing
 an FTP deployment. `build` creates a Nuxt server bundle under `.output`, while
 `generate` creates the fully rendered static site under `.output/public`.

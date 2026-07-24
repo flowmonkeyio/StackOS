@@ -12,9 +12,11 @@ from sqlmodel import Session, select
 
 from stackos.auth_providers import AuthRepository
 from stackos.db.models import (
+    AuthProvider,
     Credential,
     CredentialAccount,
     CredentialRefreshEvent,
+    CredentialScope,
     CredentialUsageEvent,
     IntegrationCredential,
 )
@@ -54,6 +56,218 @@ def test_status_wraps_existing_credentials_with_opaque_refs(
     ).one()
     assert credential.credential_ref == connection.credential_ref
     assert credential.config_json == {"label": "Primary Firecrawl"}
+
+
+def _add_permission_probe_test_provider(session: Session) -> None:
+    session.add(
+        AuthProvider(
+            key="permission-probe-test",
+            name="Permission Probe Test",
+            description="Test-only provider for saved-method evidence routing.",
+            auth_type="oauth",
+            config_json={
+                "auth_methods": [
+                    {
+                        "key": "oauth-import",
+                        "label": "OAuth import",
+                        "auth_type": "oauth",
+                        "payload_format": "raw",
+                        "payload_field": "access_token",
+                        "fields": [
+                            {
+                                "key": "access_token",
+                                "label": "Access token",
+                                "secret": True,
+                                "required": True,
+                            }
+                        ],
+                        "permission_verification": {
+                            "evidence_source": "oauth_response",
+                            "enforcement": "local_required",
+                        },
+                    },
+                    {
+                        "key": "static-token",
+                        "label": "Static token",
+                        "auth_type": "api-key",
+                        "payload_format": "raw",
+                        "payload_field": "access_token",
+                        "fields": [
+                            {
+                                "key": "access_token",
+                                "label": "Access token",
+                                "secret": True,
+                                "required": True,
+                            }
+                        ],
+                        "permission_verification": {
+                            "evidence_source": "provider_probe",
+                            "enforcement": "local_required",
+                        },
+                    },
+                ]
+            },
+        )
+    )
+    session.commit()
+
+
+def test_auth_test_uses_saved_method_for_probe_context_and_evidence(
+    session: Session,
+    project_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen_probe_contexts: list[object] = []
+
+    class _ProbeIntegration:
+        def __init__(self, *, probe_context: object, **_kwargs: object) -> None:
+            seen_probe_contexts.append(probe_context)
+
+        async def test_credentials(self) -> dict[str, object]:
+            return {
+                "ok": True,
+                "metadata": {
+                    "evidence": {
+                        "grants": ["records.read"],
+                        "account": {
+                            "provider_account_id": "account-1",
+                            "display_name": "Test account",
+                            "metadata": {"region": "us"},
+                        },
+                    }
+                },
+            }
+
+    _add_permission_probe_test_provider(session)
+    repo = AuthRepository(session)
+    methods = {
+        method.key: method
+        for method in repo.list_providers(provider_key="permission-probe-test")[0].auth_methods
+    }
+    assert methods["static-token"].permission_verification is not None
+    assert methods["static-token"].permission_verification.evidence_source == "provider_probe"
+    oauth = repo.store_credential(
+        project_id=project_id,
+        provider_key="permission-probe-test",
+        auth_method_key="oauth-import",
+        profile_key="oauth",
+        fields={"access_token": "identical-token-shape"},
+    ).data
+    static = repo.store_credential(
+        project_id=project_id,
+        provider_key="permission-probe-test",
+        auth_method_key="static-token",
+        profile_key="static",
+        fields={"access_token": "identical-token-shape"},
+    ).data
+    monkeypatch.setattr(
+        "stackos.auth_providers.repository.testing._integration_class_for",
+        lambda kind: _ProbeIntegration if kind == "permission-probe-test" else None,
+    )
+
+    oauth_result = asyncio.run(
+        repo.test(project_id=project_id, credential_ref=oauth.credential_ref)
+    ).data
+    static_result = asyncio.run(
+        repo.test(project_id=project_id, credential_ref=static.credential_ref)
+    ).data
+
+    assert [context.auth_method_key for context in seen_probe_contexts] == [
+        "oauth-import",
+        "static-token",
+    ]
+    assert seen_probe_contexts[0].permission_verification.evidence_source == "oauth_response"
+    assert seen_probe_contexts[1].permission_verification.evidence_source == "provider_probe"
+    assert oauth_result.metadata["evidence"]["grants"] == ["records.read"]
+    assert static_result.metadata["evidence"]["grants"] == ["records.read"]
+
+    credentials = {
+        credential.profile_key: credential
+        for credential in session.exec(select(Credential)).all()
+        if credential.provider_key == "permission-probe-test"
+    }
+    oauth_scopes = session.exec(
+        select(CredentialScope).where(CredentialScope.credential_id == credentials["oauth"].id)
+    ).all()
+    static_scopes = session.exec(
+        select(CredentialScope).where(CredentialScope.credential_id == credentials["static"].id)
+    ).all()
+    static_account = session.exec(
+        select(CredentialAccount).where(CredentialAccount.credential_id == credentials["static"].id)
+    ).one()
+
+    assert oauth_scopes == []
+    assert [scope.scope for scope in static_scopes] == ["records.read"]
+    assert (credentials["oauth"].config_json or {})["scope_status"] == "unknown"
+    assert (credentials["static"].config_json or {})["scope_status"] == "known"
+    assert static_account.provider_account_id == "account-1"
+    assert static_account.display_name == "Test account"
+    resolved = asyncio.run(
+        repo.resolve_for_execution(
+            project_id=project_id,
+            provider_key="permission-probe-test",
+            credential_ref=static.credential_ref,
+            operation="test.permission-probe-scope-gate",
+            required_scopes=["records.read"],
+        )
+    )
+    assert resolved.credential.credential_ref == static.credential_ref
+    with pytest.raises(ConflictError, match="missing required scopes"):
+        asyncio.run(
+            repo.resolve_for_execution(
+                project_id=project_id,
+                provider_key="permission-probe-test",
+                credential_ref=static.credential_ref,
+                operation="test.permission-probe-scope-gate",
+                required_scopes=["records.write"],
+            )
+        )
+
+
+def test_cross_method_profile_write_is_rejected_before_replacing_credential(
+    session: Session,
+    project_id: int,
+) -> None:
+    _add_permission_probe_test_provider(session)
+    repo = AuthRepository(session)
+    stored = repo.store_credential(
+        project_id=project_id,
+        provider_key="permission-probe-test",
+        auth_method_key="static-token",
+        profile_key="shared",
+        fields={"access_token": "original-static-token"},
+    ).data
+    rotated = repo.store_credential(
+        project_id=project_id,
+        provider_key="permission-probe-test",
+        auth_method_key="static-token",
+        profile_key="shared",
+        fields={"access_token": "rotated-static-token"},
+    ).data
+    assert rotated.credential_ref == stored.credential_ref
+
+    with pytest.raises(ConflictError, match="different auth method"):
+        repo.store_credential(
+            project_id=project_id,
+            provider_key="permission-probe-test",
+            auth_method_key="oauth-import",
+            profile_key="shared",
+            fields={"access_token": "replacement-oauth-token"},
+        )
+
+    row = session.exec(
+        select(IntegrationCredential).where(
+            IntegrationCredential.project_id == project_id,
+            IntegrationCredential.kind == "permission-probe-test",
+            IntegrationCredential.profile_key == "shared",
+        )
+    ).one()
+    assert row.id is not None
+    assert row.config_json is not None
+    assert row.config_json["auth_method_key"] == "static-token"
+    assert IntegrationCredentialRepository(session).get_decrypted(row.id) == (
+        b"rotated-static-token"
+    )
 
 
 def test_secret_fields_preserve_significant_whitespace(

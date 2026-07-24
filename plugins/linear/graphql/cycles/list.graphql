@@ -1,0 +1,37 @@
+query LinearCyclesList(
+  $filter: CycleFilter
+  $first: Int!
+  $after: String
+  $includeArchived: Boolean
+  $orderBy: PaginationOrderBy
+) {
+  cycles(
+    filter: $filter
+    first: $first
+    after: $after
+    includeArchived: $includeArchived
+    orderBy: $orderBy
+  ) {
+    nodes {
+      id
+      number
+      name
+      description
+      startsAt
+      endsAt
+      completedAt
+      archivedAt
+      team {
+        id
+        name
+        key
+      }
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+  }
+}

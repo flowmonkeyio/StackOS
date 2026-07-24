@@ -37,6 +37,7 @@ const initials = computed(() => {
         'provider-mark--logo': logo,
         'provider-mark--wordmark': logo?.kind.includes('wordmark'),
         'provider-mark--dark': logo?.kind === 'wordmark-dark',
+        'provider-mark--inverse': logo?.kind === 'wordmark-inverse',
       },
     ]"
     aria-hidden="true"
@@ -112,6 +113,10 @@ const initials = computed(() => {
   background: var(--color-bg-sunken);
 }
 
+.provider-mark--inverse {
+  background: var(--color-bg-provider-inverse);
+}
+
 .provider-mark img {
   display: block;
   width: 72%;
@@ -122,5 +127,17 @@ const initials = computed(() => {
 .provider-mark--wordmark img {
   width: 82%;
   height: 62%;
+}
+
+.provider-mark--wordmark {
+  width: 96px;
+}
+
+.provider-mark--wordmark.provider-mark--sm {
+  width: 80px;
+}
+
+.provider-mark--wordmark.provider-mark--xs {
+  width: 64px;
 }
 </style>

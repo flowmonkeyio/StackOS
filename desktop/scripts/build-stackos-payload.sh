@@ -16,7 +16,6 @@ PAYLOAD_DIR="${DESKTOP_DIR}/payload/stackos"
 UV_BIN="${UV:-uv}"
 PYTHON_VERSION="${STACKOS_DESKTOP_PYTHON:-3.12}"
 PYTHON_VERSION_MAJOR_MINOR=""
-INSTALL_PLAYWRIGHT="${STACKOS_DESKTOP_INSTALL_PLAYWRIGHT:-1}"
 
 rm -rf "${BUILD_DIR}" "${PAYLOAD_DIR}"
 mkdir -p "${BUILD_DIR}/dist" "${PAYLOAD_DIR}/bin"
@@ -59,7 +58,6 @@ thin_payload_to_arm64() {
 }
 
 normalize_payload_metadata_paths() {
-  rm -rf "${PAYLOAD_DIR}/ms-playwright/.links"
   find "${PAYLOAD_DIR}/.venv/lib" \
     \( -name "*Config.sh" -o -path "*/config-*/Makefile" \) \
     -type f -delete
@@ -164,11 +162,17 @@ version_info = $("${PYTHON_LINK}" -c 'import sys; print(".".join(str(part) for p
 include-system-site-packages = false
 CFG
 
-if [[ "${INSTALL_PLAYWRIGHT}" == "1" ]]; then
-  PLAYWRIGHT_BROWSERS_PATH="${PAYLOAD_DIR}/ms-playwright" \
-  PYTHONHOME="${PAYLOAD_DIR}/.venv" PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 \
-    "${PAYLOAD_DIR}/.venv/bin/python" -B -m playwright install chromium
-fi
+PYTHONHOME="${PAYLOAD_DIR}/.venv" PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 \
+  "${PAYLOAD_DIR}/.venv/bin/python" -B -c '
+from pathlib import Path
+import sys
+from stackos.install import ensure_chromium_runtime
+
+ok, message = ensure_chromium_runtime(runtime_root=Path(sys.argv[1]))
+if not ok:
+    raise SystemExit(message)
+print(message)
+' "${PAYLOAD_DIR}"
 
 normalize_payload_metadata_paths
 thin_payload_to_arm64
@@ -204,7 +208,6 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export STACKOS_PACKAGED_CLI="${ROOT_DIR}/bin/stackos"
 export PYTHONHOME="${ROOT_DIR}/.venv"
-export PLAYWRIGHT_BROWSERS_PATH="${ROOT_DIR}/ms-playwright"
 export PYTHONDONTWRITEBYTECODE=1
 export PYTHONNOUSERSITE=1
 unset PYTHONPATH

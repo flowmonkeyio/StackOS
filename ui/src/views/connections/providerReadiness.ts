@@ -7,6 +7,8 @@ export type CapabilityReadinessState =
   | 'operator-checklist'
   | 'connection-repair'
   | 'pending'
+  | 'provider-enforced'
+  | 'permission-unverified'
 
 export interface CapabilityReadiness {
   key: string
@@ -36,6 +38,9 @@ export function providerCapabilityReadiness(
   const bundles = recordValue(config?.scope_bundles)
   if (!groups) return []
 
+  const permissionVerification = provider.auth_methods?.find(
+    (method) => method.key === connection.auth_method_key,
+  )?.permission_verification
   const granted = new Set(connection.scopes ?? [])
   return Object.entries(groups).flatMap(([key, rawGroup]) => {
     const group = recordValue(rawGroup)
@@ -48,7 +53,10 @@ export function providerCapabilityReadiness(
       ...stringList(bundle?.optional_scopes),
     ])
     const grantedScopes = requiredScopes.filter((scope) => granted.has(scope))
-    const missingScopes = requiredScopes.filter((scope) => !granted.has(scope))
+    const missingScopes =
+      permissionVerification?.enforcement === 'provider_enforced'
+        ? []
+        : requiredScopes.filter((scope) => !granted.has(scope))
     const prerequisites = uniqueStrings(stringList(group.prerequisites))
     const state = readinessState({
       connection,
@@ -56,6 +64,7 @@ export function providerCapabilityReadiness(
       requiredScopes,
       missingScopes,
       prerequisites,
+      permissionVerification,
     })
 
     return [
@@ -96,12 +105,17 @@ function readinessState({
   requiredScopes,
   missingScopes,
   prerequisites,
+  permissionVerification,
 }: {
   connection: SchemaCredentialConnectionOut
   optionalBundle: boolean
   requiredScopes: string[]
   missingScopes: string[]
   prerequisites: string[]
+  permissionVerification:
+    | NonNullable<SchemaAuthProviderOut['auth_methods']>[number]['permission_verification']
+    | null
+    | undefined
 }): CapabilityReadinessState {
   if (connection.status === 'pending') return 'pending'
   if (
@@ -110,6 +124,16 @@ function readinessState({
     connection.revoked_at !== null
   ) {
     return 'connection-repair'
+  }
+  if (permissionVerification?.evidence_source === 'unavailable') {
+    if (permissionVerification.enforcement === 'local_required' && requiredScopes.length > 0) {
+      return 'permission-unverified'
+    }
+    if (permissionVerification.enforcement === 'local_required') {
+      if (prerequisites.length > 0) return 'operator-checklist'
+      return 'ready'
+    }
+    return 'provider-enforced'
   }
   if (missingScopes.length > 0) {
     if (optionalBundle && requiredScopes.length === missingScopes.length) return 'not-enabled'
@@ -127,6 +151,12 @@ function readinessSummary(
 ): string {
   if (state === 'pending') return 'Authorization is still pending.'
   if (state === 'connection-repair') return 'Repair or reconnect this account first.'
+  if (state === 'provider-enforced') {
+    return 'The provider enforces required permissions; StackOS cannot verify them locally.'
+  }
+  if (state === 'permission-unverified') {
+    return 'Permission evidence is unavailable, so actions that require verified permissions stay blocked.'
+  }
   if (state === 'not-enabled') return 'Reconnect and grant this optional capability bundle.'
   if (state === 'missing-scopes') {
     return `${missingCount} of ${scopeCount} required ${scopeCount === 1 ? 'scope is' : 'scopes are'} missing.`

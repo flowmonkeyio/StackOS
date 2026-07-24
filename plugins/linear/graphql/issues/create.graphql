@@ -1,0 +1,27 @@
+mutation LinearIssueCreate($input: IssueCreateInput!) {
+  issueCreate(input: $input) {
+    success
+    issue {
+      id
+      identifier
+      title
+      description
+      priority
+      estimate
+      dueDate
+      url
+      createdAt
+      updatedAt
+      team {
+        id
+        name
+        key
+      }
+      state {
+        id
+        name
+        type
+      }
+    }
+  }
+}

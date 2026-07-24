@@ -3444,7 +3444,11 @@ def test_pipedrive_builtin_deal_search_uses_search_whitelist(
         project_id=project_id,
         kind="pipedrive",
         secret_payload=json.dumps({"api_token": "pd-secret"}).encode("utf-8"),
-        config_json={"company_domain": "acme", "organizations": {"org": 42}},
+        config_json={
+            "auth_method_key": "api_token",
+            "company_domain": "acme",
+            "organizations": {"org": 42},
+        },
     )
     credential_ref = _provider_credential_ref(session, project_id, "pipedrive")
     httpx_mock.add_response(method="GET", json={"data": [{"id": 1}]})
@@ -3562,7 +3566,11 @@ def test_salesloft_builtin_cadence_membership_posts_ids(
         project_id=project_id,
         kind="salesloft",
         secret_payload=json.dumps({"access_token": "salesloft-secret"}).encode("utf-8"),
-        config_json={"cadences": {"cadence": 10}, "persons": {"person": 20}},
+        config_json={
+            "auth_method_key": "oauth2_token",
+            "cadences": {"cadence": 10},
+            "persons": {"person": 20},
+        },
     )
     credential_ref = _provider_credential_ref(session, project_id, "salesloft")
     httpx_mock.add_response(method="POST", json={"data": {"id": 30}})

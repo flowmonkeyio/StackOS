@@ -1,0 +1,14 @@
+query LinearViewerGet {
+  viewer {
+    id
+    name
+    displayName
+    active
+    avatarUrl
+    organization {
+      id
+      name
+      urlKey
+    }
+  }
+}

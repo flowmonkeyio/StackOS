@@ -30,14 +30,18 @@ from stackos.integrations.google_paa import GooglePaaIntegration
 from stackos.integrations.google_search_console import GoogleSearchConsoleIntegration
 from stackos.integrations.google_tag_manager import GoogleTagManagerIntegration
 from stackos.integrations.google_veo import GoogleVeoIntegration
+from stackos.integrations.hubspot import HubSpotIntegration
 from stackos.integrations.ideogram_images import IdeogramImagesIntegration
 from stackos.integrations.imap import ImapIntegration
 from stackos.integrations.jina_reader import JinaReaderIntegration
 from stackos.integrations.kling_video import KlingVideoIntegration
+from stackos.integrations.linear import LinearIntegration
 from stackos.integrations.openai_images import OpenAIImagesIntegration
 from stackos.integrations.openrouter import OpenRouterIntegration
+from stackos.integrations.pipedrive import PipedriveIntegration
 from stackos.integrations.reddit import RedditIntegration
 from stackos.integrations.reve_images import ReveImagesIntegration
+from stackos.integrations.salesloft import SalesloftIntegration
 from stackos.integrations.serper import SerperIntegration
 from stackos.integrations.shopify import ShopifyIntegration
 from stackos.integrations.slack_bot import SlackBotIntegration
@@ -66,6 +70,7 @@ REGISTRY: dict[str, type[BaseIntegration]] = {
     "google-veo": GoogleVeoIntegration,
     "ideogram": IdeogramImagesIntegration,
     "kling": KlingVideoIntegration,
+    "linear": LinearIntegration,
     "byteplus-ark": BytePlusArkIntegration,
     "openrouter": OpenRouterIntegration,
     "reddit": RedditIntegration,
@@ -75,6 +80,9 @@ REGISTRY: dict[str, type[BaseIntegration]] = {
     "google-search-console": GoogleSearchConsoleIntegration,
     "google-analytics": GoogleAnalyticsIntegration,
     "google-tag-manager": GoogleTagManagerIntegration,
+    "hubspot": HubSpotIntegration,
+    "pipedrive": PipedriveIntegration,
+    "salesloft": SalesloftIntegration,
     "wordpress": WordPressIntegration,
     "ghost": GhostIntegration,
     "telegram-bot": TelegramBotIntegration,
@@ -113,15 +121,19 @@ __all__ = [
     "GoogleSearchConsoleIntegration",
     "GoogleTagManagerIntegration",
     "GoogleVeoIntegration",
+    "HubSpotIntegration",
     "IdeogramImagesIntegration",
     "ImapIntegration",
     "IntegrationCallResult",
     "JinaReaderIntegration",
     "KlingVideoIntegration",
+    "LinearIntegration",
     "OpenAIImagesIntegration",
     "OpenRouterIntegration",
+    "PipedriveIntegration",
     "RedditIntegration",
     "ReveImagesIntegration",
+    "SalesloftIntegration",
     "SerperIntegration",
     "ShopifyIntegration",
     "SlackBotIntegration",

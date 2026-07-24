@@ -1,0 +1,19 @@
+query LinearIssueRelationGet($id: String!) {
+  issueRelation(id: $id) {
+    id
+    type
+    createdAt
+    updatedAt
+    archivedAt
+    issue {
+      id
+      identifier
+      title
+    }
+    relatedIssue {
+      id
+      identifier
+      title
+    }
+  }
+}

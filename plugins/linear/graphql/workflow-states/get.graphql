@@ -1,0 +1,16 @@
+query LinearWorkflowStateGet($id: String!) {
+  workflowState(id: $id) {
+    id
+    name
+    description
+    color
+    type
+    position
+    archivedAt
+    team {
+      id
+      name
+      key
+    }
+  }
+}
