@@ -34,13 +34,10 @@ def _enforce_telegram_profile(request: ActionConnectorRequest) -> dict[str, Any]
     if data.get("key") != profile_key or data.get("provider_key") != "telegram-bot":
         raise ValidationError("Telegram communication profile was not found")
     _validate_telegram_profile(data)
-    expected_profile = data.get("auth_profile_key")
-    actual_profile = request.credential.integration.profile_key if request.credential else None
-    actual_project = request.credential.integration.project_id if request.credential else None
-    if actual_project != request.project_id:
-        raise ValidationError("Telegram communication profile requires a project-scoped credential")
-    if expected_profile != actual_profile:
-        raise ValidationError("Telegram communication profile does not match credential profile")
+    expected_credential_ref = data.get("credential_ref")
+    actual_credential_ref = request.credential.credential_ref if request.credential else None
+    if expected_credential_ref != actual_credential_ref:
+        raise ValidationError("Telegram communication profile does not match selected Account")
     if data.get("enabled") is False:
         raise ValidationError("Telegram communication profile is disabled")
     return data

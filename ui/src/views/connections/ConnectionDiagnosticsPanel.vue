@@ -18,8 +18,8 @@ interface DiagnosticsConnection {
 
 const connections = computed<DiagnosticsConnection[]>(() => {
   const value = props.authStatus
-  if (value && typeof value === 'object' && Array.isArray((value as { connections?: unknown }).connections)) {
-    return (value as { connections: DiagnosticsConnection[] }).connections
+  if (value && typeof value === 'object' && Array.isArray((value as { accounts?: unknown }).accounts)) {
+    return (value as { accounts: DiagnosticsConnection[] }).accounts
   }
   return []
 })

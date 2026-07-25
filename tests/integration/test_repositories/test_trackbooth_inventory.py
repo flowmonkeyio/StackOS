@@ -247,13 +247,13 @@ def test_trackbooth_generated_inventory_is_bound_to_credential_and_api_url(
         session,
         project_id,
         api_base_url="https://trackbooth.local.test",
-        profile_key="local",
+        account_name="Trackbooth - Local",
     )
     prod_ref = _trackbooth_credential_ref(
         session,
         project_id,
         api_base_url="https://apis.trackbooth.com",
-        profile_key="prod",
+        account_name="Trackbooth - Production",
     )
     _add_trackbooth_sync_responses(httpx_mock, _trackbooth_links_create_detail())
     sync_output = _sync_trackbooth_catalog(session, project_id, local_ref)
@@ -358,13 +358,13 @@ def test_trackbooth_stable_ref_uses_execution_context_to_select_inventory_scope(
         session,
         project_id,
         api_base_url="https://trackbooth.local.test",
-        profile_key="local",
+        account_name="Trackbooth - Local",
     )
     prod_ref = _trackbooth_credential_ref(
         session,
         project_id,
         api_base_url="https://apis.trackbooth.com",
-        profile_key="prod",
+        account_name="Trackbooth - Production",
     )
     _add_trackbooth_sync_responses(
         httpx_mock,

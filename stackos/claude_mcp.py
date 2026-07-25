@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from stackos.host_mcp.bridge import is_stackos_bridge_command
+
 MCP_SERVER_NAME = "stackos"
 DEFAULT_SCOPE = "user"
 CLAUDE_BIN_ENV = "STACKOS_CLAUDE_BIN"
@@ -43,6 +45,7 @@ ClaudeMcpStatus = Literal[
     "unsupported_cli",
     "missing",
     "stale",
+    "unsafe",
     "registration_failed",
     "token_missing",
 ]
@@ -137,33 +140,82 @@ def inspect(
             legacy_json_error=legacy.error,
         )
 
+    expected = list(expected_command or resolve_bridge_command())
+    saved = _read_user_registration(home_dir, server_name)
+    if saved is not None:
+        return _classify_registration(
+            saved,
+            expected=expected,
+            claude_bin=resolved_claude,
+            returncode=0,
+            legacy=legacy,
+            server_name=server_name,
+        )
+
     result = _run_claude(
         resolved_claude,
         ["mcp", "get", server_name],
         timeout_seconds=timeout_seconds,
     )
+    parsed = _parse_claude_get(result.stdout)
     if result.returncode != 0:
         status: ClaudeMcpStatus = (
             "missing" if "No MCP server named" in result.stderr else "unsupported_cli"
         )
+        saved_config_visible = bool(parsed.command and parsed.scope and parsed.transport)
+        if status == "missing" or not saved_config_visible:
+            return ClaudeMcpResult(
+                ok=False,
+                status=status,
+                message=(
+                    "StackOS is not registered with Claude Code."
+                    if status == "missing"
+                    else "Claude Code MCP status could not be inspected."
+                ),
+                claude_bin=resolved_claude,
+                returncode=result.returncode,
+                repair="Run `stackos install --mcp-only` or desktop Repair.",
+                legacy_json_present=legacy.present,
+                legacy_json_error=legacy.error,
+            )
+
+    return _classify_registration(
+        parsed,
+        expected=expected,
+        claude_bin=resolved_claude,
+        returncode=result.returncode,
+        legacy=legacy,
+        server_name=server_name,
+    )
+
+
+def _classify_registration(
+    parsed: _ClaudeGet,
+    *,
+    expected: list[str],
+    claude_bin: str,
+    returncode: int,
+    legacy: _LegacyState,
+    server_name: str,
+) -> ClaudeMcpResult:
+    command = parsed.command
+    if parsed.unsafe:
         return ClaudeMcpResult(
             ok=False,
-            status=status,
+            status="unsafe",
             message=(
-                "StackOS is not registered with Claude Code."
-                if status == "missing"
-                else "Claude Code MCP status could not be inspected."
+                "Claude Code has a StackOS MCP entry with unsafe connection settings; "
+                "it was left unchanged."
             ),
-            claude_bin=resolved_claude,
-            returncode=result.returncode,
-            repair="Run `stackos install --mcp-only` or desktop Repair.",
+            claude_bin=claude_bin,
+            scope=parsed.scope,
+            transport=parsed.transport,
+            command=[],
+            returncode=returncode,
+            repair="Review the existing Claude Code MCP entry before connecting StackOS.",
             legacy_json_present=legacy.present,
             legacy_json_error=legacy.error,
         )
-
-    parsed = _parse_claude_get(result.stdout)
-    command = parsed.command
-    expected = list(expected_command or resolve_bridge_command())
     stale_reasons: list[str] = []
     if parsed.scope != DEFAULT_SCOPE:
         stale_reasons.append(f"scope is {parsed.scope!r}, expected {DEFAULT_SCOPE!r}")
@@ -187,11 +239,11 @@ def inspect(
             status="stale",
             message="Claude Code has a StackOS MCP entry, but it is stale: "
             + "; ".join(stale_reasons),
-            claude_bin=resolved_claude,
+            claude_bin=claude_bin,
             scope=parsed.scope,
             transport=parsed.transport,
             command=command,
-            returncode=result.returncode,
+            returncode=returncode,
             repair=repair,
             legacy_json_present=legacy.present,
             legacy_json_error=legacy.error,
@@ -201,11 +253,11 @@ def inspect(
         ok=True,
         status="healthy",
         message="Claude Code StackOS MCP registration is healthy.",
-        claude_bin=resolved_claude,
+        claude_bin=claude_bin,
         scope=parsed.scope,
         transport=parsed.transport,
         command=command,
-        returncode=result.returncode,
+        returncode=returncode,
         legacy_json_present=legacy.present,
         legacy_json_error=legacy.error,
     )
@@ -249,9 +301,38 @@ def register(
         )
 
     command = list(bridge_command or resolve_bridge_command())
+    current = inspect(
+        home=home_dir,
+        expected_command=command,
+        server_name=server_name,
+        claude_bin=resolved_claude,
+        timeout_seconds=timeout_seconds,
+    )
+    if current.status == "healthy":
+        return current
+    if current.status == "unsafe":
+        return current
+    if current.status == "stale" and not is_stackos_bridge_command(current.command):
+        return ClaudeMcpResult(
+            ok=False,
+            status="stale",
+            message=(
+                "Claude Code has an MCP entry named stackos that StackOS does not own; "
+                "it was left unchanged."
+            ),
+            claude_bin=resolved_claude,
+            scope=current.scope,
+            transport=current.transport,
+            command=current.command,
+            returncode=current.returncode,
+            repair="Review the existing Claude Code MCP entry before connecting StackOS.",
+            legacy_json_present=legacy.present,
+            legacy_json_error=legacy.error,
+        )
+    remove_scope = current.scope if current.status == "stale" and current.scope else DEFAULT_SCOPE
     removed = _run_claude(
         resolved_claude,
-        ["mcp", "remove", server_name, "--scope", DEFAULT_SCOPE],
+        ["mcp", "remove", server_name, "--scope", remove_scope],
         timeout_seconds=timeout_seconds,
     )
     if removed.returncode != 0 and "No MCP server named" not in removed.stderr:
@@ -371,6 +452,7 @@ class _ClaudeGet:
     scope: str | None
     transport: str | None
     command: list[str]
+    unsafe: bool = False
 
 
 @dataclass(frozen=True)
@@ -514,6 +596,42 @@ def _parse_claude_get(stdout: str) -> _ClaudeGet:
         scope=scope,
         transport=transport,
         command=[command, *args] if command else [],
+    )
+
+
+def _read_user_registration(home: Path, server_name: str) -> _ClaudeGet | None:
+    """Read Claude's user-scoped registry without triggering a live health check."""
+
+    path = home / ".claude.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    servers = payload.get("mcpServers")
+    if not isinstance(servers, dict):
+        return None
+    entry = servers.get(server_name)
+    if not isinstance(entry, dict):
+        return None
+    command = entry.get("command")
+    args = entry.get("args", [])
+    if not isinstance(command, str):
+        return None
+    if not isinstance(args, list) or not all(isinstance(arg, str) for arg in args):
+        return None
+    transport = entry.get("type", entry.get("transport", "stdio"))
+    unsafe = (
+        entry.get("env") not in (None, {})
+        or entry.get("headers") not in (None, {})
+        or _looks_secretish([json.dumps(entry, sort_keys=True)])
+    )
+    return _ClaudeGet(
+        scope=DEFAULT_SCOPE,
+        transport=str(transport).lower() if transport is not None else None,
+        command=[command, *args],
+        unsafe=unsafe,
     )
 
 

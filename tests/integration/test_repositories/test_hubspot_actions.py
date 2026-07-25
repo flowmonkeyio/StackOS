@@ -10,17 +10,17 @@ from pytest_httpx import HTTPXMock
 from sqlmodel import Session, select
 
 from stackos.actions import ActionRepository
-from stackos.auth_providers import AuthRepository
 from stackos.db.models import (
     ActionCall,
     Credential,
     CredentialAccount,
     CredentialScope,
+    ProjectCredential,
 )
 from stackos.repositories.base import ConflictError, ValidationError
-from stackos.repositories.projects import IntegrationCredentialRepository
 from stackos.repositories.provider_refs import ProviderObjectReferenceRepository
 from stackos.repositories.resources import ArtifactRepository, ResourceRepository
+from tests.integration.account_test_support import seed_test_account
 
 
 def _hubspot_credential(
@@ -30,32 +30,30 @@ def _hubspot_credential(
     scopes: set[str],
     transactional_email_entitlement_confirmed: bool | None = None,
 ) -> str:
-    IntegrationCredentialRepository(session).set(
+    seeded = seed_test_account(
+        session,
         project_id=project_id,
-        kind="hubspot",
+        provider_key="hubspot",
         secret_payload=json.dumps({"access_token": "hubspot-secret"}).encode(),
-        config_json=(
-            {
-                "transactional_email_entitlement_confirmed": (
-                    transactional_email_entitlement_confirmed
-                )
-            }
-            if transactional_email_entitlement_confirmed is not None
-            else None
-        ),
-    )
-    credential_ref = (
-        AuthRepository(session)
-        .status(project_id=project_id, provider_key="hubspot")
-        .connections[0]
-        .credential_ref
+        display_name="HubSpot - Default",
+        config_json={
+            "auth_method_key": "oauth2_authorization_code",
+            "scope_status": "known",
+            **(
+                {
+                    "transactional_email_entitlement_confirmed": (
+                        transactional_email_entitlement_confirmed
+                    )
+                }
+                if transactional_email_entitlement_confirmed is not None
+                else {}
+            ),
+        },
     )
     credential = session.exec(
-        select(Credential).where(Credential.credential_ref == credential_ref)
+        select(Credential).where(Credential.integration_credential_id == seeded.data.id)
     ).one()
-    credential.auth_type = "oauth"
-    credential.auth_method_key = "oauth2_authorization_code"
-    credential.config_json = {**(credential.config_json or {}), "scope_status": "known"}
+    credential_ref = credential.credential_ref
     if transactional_email_entitlement_confirmed is not None:
         credential.config_json["transactional_email_entitlement_confirmed"] = (
             transactional_email_entitlement_confirmed
@@ -86,7 +84,15 @@ def _safe_ref(
     credential = session.exec(
         select(Credential).where(Credential.credential_ref == credential_ref)
     ).one()
-    return ProviderObjectReferenceRepository(session).upsert(
+    attachment = session.exec(
+        select(ProjectCredential).where(
+            ProjectCredential.credential_id == credential.id,
+        )
+    ).one()
+    return ProviderObjectReferenceRepository(
+        session,
+        project_id=attachment.project_id,
+    ).upsert(
         credential=credential,
         object_type=object_type,
         provider_object_id=provider_object_id,
@@ -1124,7 +1130,7 @@ def test_hubspot_association_rejects_wrong_direction_and_stale_record_refs(
     credential = session.exec(
         select(Credential).where(Credential.credential_ref == credential_ref)
     ).one()
-    ProviderObjectReferenceRepository(session).mark_stale(
+    ProviderObjectReferenceRepository(session, project_id=project_id).mark_stale(
         credential=credential,
         safe_ref=contact_ref,
         expected_object_type="contact",
@@ -1507,7 +1513,7 @@ def test_hubspot_activity_scope_and_ref_failures_stop_before_provider_call(
         )
     assert "object type" in wrong_owner.value.data["error"]
 
-    ProviderObjectReferenceRepository(session).mark_stale(
+    ProviderObjectReferenceRepository(session, project_id=project_id).mark_stale(
         credential=credential,
         safe_ref=contact_ref,
         expected_object_type="contact",
@@ -2475,7 +2481,7 @@ def test_hubspot_segment_scope_type_and_stale_ref_failures_stop_before_http(
         )
     assert "object type" in wrong_type.value.data["error"]
 
-    ProviderObjectReferenceRepository(session).mark_stale(
+    ProviderObjectReferenceRepository(session, project_id=project_id).mark_stale(
         credential=credential,
         safe_ref=placeholder_contact_ref,
         expected_object_type="contact",
@@ -3796,7 +3802,7 @@ def test_hubspot_transactional_send_uses_safe_refs_and_replays_without_second_se
     credential = session.exec(
         select(Credential).where(Credential.credential_ref == credential_ref)
     ).one()
-    event = ProviderObjectReferenceRepository(session).resolve(
+    event = ProviderObjectReferenceRepository(session, project_id=project_id).resolve(
         credential=credential,
         safe_ref=output["event_ref"],
         expected_object_type="transactional-email-event",

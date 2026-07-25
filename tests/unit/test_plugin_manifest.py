@@ -932,7 +932,7 @@ def test_communications_plugin_yaml_facade_validates() -> None:
     assert (
         providers["telegram-bot"]
         .config["setup_note"]
-        .startswith("Store only Telegram token material and transport endpoints here")
+        .startswith("Create a reusable Telegram Account containing only token material")
     )
     assert _auth_field_keys(providers["smtp"], "smtp-password")[:4] == [
         "password",

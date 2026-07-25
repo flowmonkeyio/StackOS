@@ -14,9 +14,9 @@ from stackos.auth_providers import AuthRepository
 from stackos.db.models import ActionCall, Credential, CredentialAccount, CredentialScope
 from stackos.operations import communication_platform
 from stackos.repositories.agent_requests import AgentRequestRepository
-from stackos.repositories.projects import IntegrationCredentialRepository
 from stackos.repositories.provider_refs import ProviderObjectReferenceRepository
 from stackos.repositories.resources import ResourceRepository
+from tests.integration.account_test_support import seed_test_account
 
 from .conftest import MCPClient
 
@@ -25,52 +25,76 @@ def _seed_telegram_credential(
     mcp: MCPClient,
     project_id: int,
     *,
-    profile_key: str = "support",
+    account_name: str = "support",
     bot_token: str = "123456:ABC",
-) -> None:
+) -> str:
     engine = mcp.test_client.app.state.engine  # type: ignore[attr-defined]
     with Session(engine) as session:
-        IntegrationCredentialRepository(session).set(
-            project_id=project_id,
-            kind="telegram-bot",
-            profile_key=profile_key,
-            secret_payload=json.dumps(
-                {"bot_token": bot_token, "webhook_secret_token": "telegram-secret"}
-            ).encode("utf-8"),
+        return (
+            AuthRepository(session)
+            .store_credential(
+                provider_key="telegram-bot",
+                auth_method_key="bot-token",
+                display_name=account_name,
+                fields={
+                    "bot_token": bot_token,
+                    "webhook_secret_token": "telegram-secret",
+                },
+                attach_project_id=project_id,
+            )
+            .data.credential_ref
         )
 
 
-def _seed_smtp_credential(mcp: MCPClient, project_id: int, *, profile_key: str = "primary") -> None:
+def _seed_smtp_credential(
+    mcp: MCPClient,
+    project_id: int,
+    *,
+    account_name: str = "primary",
+) -> str:
     engine = mcp.test_client.app.state.engine  # type: ignore[attr-defined]
     with Session(engine) as session:
-        IntegrationCredentialRepository(session).set(
-            project_id=project_id,
-            kind="smtp",
-            profile_key=profile_key,
-            secret_payload=json.dumps({"password": "smtp-secret"}).encode("utf-8"),
-            config_json={
-                "auth_method_key": "smtp-password",
-                "profile_key": profile_key,
-                "host": "smtp.example.test",
-                "port": 587,
-                "tls_mode": "none",
-                "username": "mailer@example.test",
-                "from_email": "mailer@example.test",
-            },
+        return (
+            AuthRepository(session)
+            .store_credential(
+                provider_key="smtp",
+                auth_method_key="smtp-password",
+                display_name=account_name,
+                fields={
+                    "password": "smtp-secret",
+                    "host": "smtp.example.test",
+                    "port": 587,
+                    "tls_mode": "none",
+                    "username": "mailer@example.test",
+                    "from_email": "mailer@example.test",
+                },
+                attach_project_id=project_id,
+            )
+            .data.credential_ref
         )
 
 
 def _seed_slack_credential(
-    mcp: MCPClient, project_id: int, *, profile_key: str = "default"
-) -> None:
+    mcp: MCPClient,
+    project_id: int,
+    *,
+    account_name: str = "default",
+) -> str:
     engine = mcp.test_client.app.state.engine  # type: ignore[attr-defined]
     with Session(engine) as session:
-        IntegrationCredentialRepository(session).set(
-            project_id=project_id,
-            kind="slack-bot",
-            profile_key=profile_key,
-            secret_payload=json.dumps({"bot_token": "xoxb-test-token"}).encode("utf-8"),
-            config_json={"auth_method_key": "bot-token", "profile_key": profile_key},
+        return (
+            AuthRepository(session)
+            .store_credential(
+                provider_key="slack-bot",
+                auth_method_key="bot-token",
+                display_name=account_name,
+                fields={
+                    "bot_token": "xoxb-test-token",
+                    "signing_secret": "slack-signing-secret",
+                },
+                attach_project_id=project_id,
+            )
+            .data.credential_ref
         )
 
 
@@ -79,29 +103,26 @@ def _seed_hubspot_transactional_credential(
     project_id: int,
     *,
     entitlement_confirmed: bool,
-    profile_key: str = "default",
+    account_name: str = "default",
     email_verified: bool = True,
 ) -> tuple[str, str, str]:
     engine = mcp.test_client.app.state.engine  # type: ignore[attr-defined]
     with Session(engine) as session:
-        IntegrationCredentialRepository(session).set(
+        seeded = seed_test_account(
+            session,
             project_id=project_id,
-            kind="hubspot",
-            profile_key=profile_key,
+            provider_key="hubspot",
+            display_name=account_name,
             secret_payload=json.dumps({"access_token": "hubspot-communication-secret"}).encode(),
             config_json={
                 "auth_method_key": "oauth2_authorization_code",
-                "profile_key": profile_key,
                 "scope_status": "known",
                 "transactional_email_entitlement_confirmed": entitlement_confirmed,
             },
         )
-        AuthRepository(session).status(project_id=project_id, provider_key="hubspot")
         credential = session.exec(
             select(Credential).where(
-                Credential.project_id == project_id,
-                Credential.provider_key == "hubspot",
-                Credential.profile_key == profile_key,
+                Credential.integration_credential_id == seeded.data.id,
             )
         ).one()
         credential.auth_type = "oauth"
@@ -126,7 +147,7 @@ def _seed_hubspot_transactional_credential(
             "transactional-email",
         ):
             session.add(CredentialScope(credential_id=credential.id, scope=scope))
-        refs = ProviderObjectReferenceRepository(session)
+        refs = ProviderObjectReferenceRepository(session, project_id=project_id)
         contact_ref = refs.upsert(
             credential=credential,
             object_type="contact",
@@ -149,20 +170,20 @@ def _credential_ref(
     *,
     project_id: int,
     provider_key: str,
-    profile_key: str,
+    display_name: str,
 ) -> str:
     status = mcp.call_tool_structured(
-        "auth.status",
+        "connection.list",
         {
             "project_id": project_id,
             "provider_key": provider_key,
             "response_mode": "raw",
         },
     )
-    for connection in status["connections"]:
-        if connection["profile_key"] == profile_key:
-            return str(connection["credential_ref"])
-    raise AssertionError(f"credential profile {profile_key!r} not found")
+    for account in status["accounts"]:
+        if account["display_name"] == display_name:
+            return str(account["credential_ref"])
+    raise AssertionError(f"Account {display_name!r} not found")
 
 
 class _FakeNgrokResponse:
@@ -231,7 +252,8 @@ def test_ingress_endpoint_mcp_derives_and_syncs_provider_routes(
     seeded_project: dict,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
-    _seed_telegram_credential(mcp_client, project_id)
+    telegram_credential_ref = _seed_telegram_credential(mcp_client, project_id)
+    slack_credential_ref = _seed_slack_credential(mcp_client, project_id)
 
     mcp_client.call_tool_structured(
         "communicationProfile.upsert",
@@ -240,7 +262,10 @@ def test_ingress_endpoint_mcp_derives_and_syncs_provider_routes(
             "key": "support",
             "identity": {"display_name": "Support Agent"},
             "provider_facets": {
-                "slack-bot": {"auth_profile_key": "default", "bot_user_id": "U123"},
+                "slack-bot": {
+                    "credential_ref": slack_credential_ref,
+                    "bot_user_id": "U123",
+                },
             },
         },
     )
@@ -250,7 +275,7 @@ def test_ingress_endpoint_mcp_derives_and_syncs_provider_routes(
             "project_id": project_id,
             "key": "support-bot",
             "identity": {"display_name": "Support Telegram Bot"},
-            "provider_facets": {"telegram-bot": {"auth_profile_key": "support"}},
+            "provider_facets": {"telegram-bot": {"credential_ref": telegram_credential_ref}},
             "access_policy": {
                 "dm_mode": "all",
                 "group_mode": "all",
@@ -367,6 +392,253 @@ def test_ingress_endpoint_mcp_derives_and_syncs_provider_routes(
     ]
 
 
+def test_shared_communication_accounts_allow_outbound_reuse_but_reject_duplicate_ingress_owners(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    monkeypatch,
+) -> None:
+    first_project_id = int(seeded_project["data"]["id"])
+    second_project = mcp_client.call_tool_structured(
+        "project.create",
+        {
+            "slug": "second-communication-project",
+            "name": "Second Communication Project",
+            "domain": "second.example",
+            "locale": "en-US",
+        },
+    )
+    second_project_id = int(second_project["data"]["id"])
+
+    credential_refs = {
+        "slack-bot": _seed_slack_credential(mcp_client, first_project_id),
+        "telegram-bot": _seed_telegram_credential(mcp_client, first_project_id),
+    }
+    engine = mcp_client.test_client.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        accounts = AuthRepository(session)
+        for credential_ref in credential_refs.values():
+            attached = accounts.attach_account(
+                project_id=second_project_id,
+                credential_ref=credential_ref,
+            ).data
+            assert attached.credential_ref == credential_ref
+
+    attached_to_second_project = mcp_client.call_tool_structured(
+        "connection.list",
+        {"project_id": second_project_id, "response_mode": "raw"},
+    )
+    assert {account["credential_ref"] for account in attached_to_second_project["accounts"]} == set(
+        credential_refs.values()
+    )
+
+    mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
+        {
+            "project_id": first_project_id,
+            "key": "shared-bot",
+            "identity": {"display_name": "Shared bot ingress owner"},
+            "provider_facets": {
+                "slack-bot": {
+                    "credential_ref": credential_refs["slack-bot"],
+                    "bot_user_id": "UOWNER",
+                    "ingress_enabled": True,
+                },
+                "telegram-bot": {
+                    "credential_ref": credential_refs["telegram-bot"],
+                    "ingress_enabled": True,
+                },
+            },
+        },
+    )
+    mcp_client.call_tool_structured(
+        "ingressEndpoint.configure",
+        {
+            "project_id": first_project_id,
+            "driver": "public-url",
+            "public_base_url": "https://owner.stackos.example.com",
+        },
+    )
+    mcp_client.call_tool_structured(
+        "ingressEndpoint.sync",
+        {
+            "project_id": first_project_id,
+            "apply_provider_webhooks": False,
+            "response_mode": "raw",
+        },
+    )
+
+    for provider_key, credential_ref in credential_refs.items():
+        for invalid_value in ("false", 0):
+            invalid = mcp_client.call_tool_error(
+                "communicationProfile.upsert",
+                {
+                    "project_id": second_project_id,
+                    "key": f"invalid-{provider_key}-{str(invalid_value).lower()}",
+                    "identity": {"display_name": f"Invalid {provider_key} profile"},
+                    "provider_facets": {
+                        provider_key: {
+                            "credential_ref": credential_ref,
+                            "ingress_enabled": invalid_value,
+                        }
+                    },
+                },
+            )
+            assert invalid["code"] == -32602
+            assert invalid["data"]["field"] == "ingress_enabled"
+            assert invalid["data"]["expected"] == "boolean"
+
+    for provider_key, credential_ref in credential_refs.items():
+        created = mcp_client.call_tool_structured(
+            "communicationProfile.upsert",
+            {
+                "project_id": second_project_id,
+                "key": f"outbound-{provider_key}",
+                "identity": {"display_name": f"Outbound {provider_key} profile"},
+                "provider_facets": {
+                    provider_key: {
+                        "credential_ref": credential_ref,
+                        "ingress_enabled": False,
+                    }
+                },
+            },
+        )
+        assert created["data"]["profile_ref"] == f"communication-profile:outbound-{provider_key}"
+        stored = mcp_client.call_tool_structured(
+            "communicationProfile.get",
+            {
+                "project_id": second_project_id,
+                "key": f"outbound-{provider_key}",
+                "response_mode": "raw",
+            },
+        )
+        assert stored["provider_facets"][provider_key]["ingress_enabled"] is False
+
+    mcp_client.call_tool_structured(
+        "communicationSurface.upsert",
+        {
+            "project_id": second_project_id,
+            "surface_ref": "slack-channel:COUTBOUND",
+            "provider_key": "slack-bot",
+            "kind": "slack-channel",
+            "display_name": "outbound-only",
+            "capabilities": {"can_write": True},
+        },
+    )
+    mcp_client.call_tool_structured(
+        "communicationTarget.upsert",
+        {
+            "project_id": second_project_id,
+            "key": "outbound-slack",
+            "provider_key": "slack-bot",
+            "surface_ref": "slack-channel:COUTBOUND",
+            "profile_ref": "communication-profile:outbound-slack-bot",
+            "send_policy": {
+                "mode": "explicit-target",
+                "allowed_profile_refs": ["communication-profile:outbound-slack-bot"],
+                "allowed_target_refs": ["communication-target:outbound-slack"],
+            },
+        },
+    )
+    sent = mcp_client.call_tool_structured(
+        "communication.send",
+        {
+            "project_id": second_project_id,
+            "to": "outbound-slack",
+            "text": "Outbound Account reuse works.",
+            "dry_run": True,
+        },
+    )
+    assert sent["data"]["status"] == "validated"
+    assert sent["data"]["actor_ref"] == "communication-profile:outbound-slack-bot"
+    assert sent["data"]["credential_ref"] == credential_refs["slack-bot"]
+
+    mcp_client.call_tool_structured(
+        "ingressEndpoint.configure",
+        {
+            "project_id": second_project_id,
+            "driver": "public-url",
+            "public_base_url": "https://second.stackos.example.com",
+        },
+    )
+    second_routes = mcp_client.call_tool_structured(
+        "ingressEndpoint.routes",
+        {"project_id": second_project_id, "response_mode": "raw"},
+    )
+    assert second_routes["routes"] == []
+
+    for project_id in (first_project_id, second_project_id):
+        for provider_key, credential_ref in credential_refs.items():
+            duplicate = mcp_client.call_tool_error(
+                "communicationProfile.upsert",
+                {
+                    "project_id": project_id,
+                    "key": f"duplicate-{provider_key}",
+                    "identity": {"display_name": f"Duplicate {provider_key} profile"},
+                    "provider_facets": {
+                        provider_key: {
+                            "credential_ref": credential_ref,
+                            "ingress_enabled": True,
+                        }
+                    },
+                },
+            )
+            assert duplicate["code"] == -32008
+            assert duplicate["data"]["provider_key"] == provider_key
+            assert duplicate["data"]["credential_ref"] == credential_ref
+            assert duplicate["data"]["owner_project_id"] == first_project_id
+            assert duplicate["data"]["owner_profile_ref"] == ("communication-profile:shared-bot")
+            assert "Turn off inbound webhook ownership" in duplicate["data"]["next_action"]
+
+    provider_calls: list[dict[str, object]] = []
+
+    async def unexpected_provider_call(self, **kwargs: object) -> object:
+        provider_calls.append(kwargs)
+        raise AssertionError("provider webhook mutation must not run")
+
+    monkeypatch.setattr(ActionRepository, "execute", unexpected_provider_call)
+
+    engine = mcp_client.test_client.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        ResourceRepository(session).upsert_record(
+            project_id=second_project_id,
+            plugin_slug="communications",
+            resource_key="communication-profile",
+            external_id="communication-profile:unsafe-legacy",
+            title="Unsafe legacy profile",
+            data_json={
+                "key": "unsafe-legacy",
+                "profile_ref": "communication-profile:unsafe-legacy",
+                "enabled": True,
+                "identity": {"display_name": "Unsafe legacy profile"},
+                "provider_facets": {
+                    "slack-bot": {
+                        "credential_ref": credential_refs["slack-bot"],
+                        "bot_user_id": "ULEGACY",
+                        "ingress_enabled": True,
+                    },
+                    "telegram-bot": {
+                        "credential_ref": credential_refs["telegram-bot"],
+                        "ingress_enabled": True,
+                    },
+                },
+            },
+            provenance_json={"source": "legacy-test-bypass"},
+        )
+        session.commit()
+
+    sync_error = mcp_client.call_tool_error(
+        "ingressEndpoint.sync",
+        {
+            "project_id": second_project_id,
+            "apply_provider_webhooks": True,
+            "response_mode": "raw",
+        },
+    )
+    assert sync_error["code"] == -32008
+    assert sync_error["data"]["owner_project_id"] == first_project_id
+    assert provider_calls == []
+
+
 def test_ingress_endpoint_refresh_discovers_ngrok_agent_endpoints(
     mcp_client: MCPClient,
     seeded_project: dict,
@@ -404,6 +676,8 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
     seeded_project: dict,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
+    telegram_credential_ref = _seed_telegram_credential(mcp_client, project_id)
+    slack_credential_ref = _seed_slack_credential(mcp_client, project_id)
 
     profile = mcp_client.call_tool_structured(
         "communicationProfile.upsert",
@@ -415,8 +689,11 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
                 "purpose": "Coordinate customer issues across chat surfaces.",
             },
             "provider_facets": {
-                "telegram-bot": {"auth_profile_key": "support"},
-                "slack-bot": {"bot_user_id": "U123"},
+                "telegram-bot": {"credential_ref": telegram_credential_ref},
+                "slack-bot": {
+                    "credential_ref": slack_credential_ref,
+                    "bot_user_id": "U123",
+                },
             },
             "send_policy": {
                 "mode": "explicit-targets",
@@ -732,7 +1009,7 @@ def test_communication_send_executes_raw_dry_run_through_target(
     seeded_project: dict,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
-    _seed_slack_credential(mcp_client, project_id)
+    credential_ref = _seed_slack_credential(mcp_client, project_id)
 
     mcp_client.call_tool_structured(
         "communicationProfile.upsert",
@@ -740,7 +1017,7 @@ def test_communication_send_executes_raw_dry_run_through_target(
             "project_id": project_id,
             "key": "ops-bot",
             "identity": {"display_name": "Ops Bot"},
-            "provider_facets": {"slack-bot": {"auth_profile_key": "default"}},
+            "provider_facets": {"slack-bot": {"credential_ref": credential_ref}},
         },
     )
     mcp_client.call_tool_structured(
@@ -873,7 +1150,7 @@ def test_communication_send_hubspot_transactional_resolves_target_and_replays_sa
                 "display_name": "Order Mailer",
                 "purpose": "Send approved customer transaction updates.",
             },
-            "provider_facets": {"hubspot": {"auth_profile_key": "default"}},
+            "provider_facets": {"hubspot": {"credential_ref": credential_ref}},
         },
     )
     mcp_client.call_tool_structured(
@@ -981,7 +1258,7 @@ def test_communication_send_hubspot_denies_unconfirmed_entitlement(
     httpx_mock: HTTPXMock,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
-    _credential_ref_value, contact_ref, email_ref = _seed_hubspot_transactional_credential(
+    credential_ref, contact_ref, email_ref = _seed_hubspot_transactional_credential(
         mcp_client,
         project_id,
         entitlement_confirmed=False,
@@ -992,7 +1269,7 @@ def test_communication_send_hubspot_denies_unconfirmed_entitlement(
             "project_id": project_id,
             "key": "order-mailer",
             "identity": {"display_name": "Order Mailer"},
-            "provider_facets": {"hubspot": {"auth_profile_key": "default"}},
+            "provider_facets": {"hubspot": {"credential_ref": credential_ref}},
         },
     )
     mcp_client.call_tool_structured(
@@ -1039,7 +1316,7 @@ def test_communication_send_hubspot_denies_incomplete_transactional_policy(
     httpx_mock: HTTPXMock,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
-    _credential_ref_value, contact_ref, email_ref = _seed_hubspot_transactional_credential(
+    credential_ref, contact_ref, email_ref = _seed_hubspot_transactional_credential(
         mcp_client,
         project_id,
         entitlement_confirmed=True,
@@ -1050,7 +1327,7 @@ def test_communication_send_hubspot_denies_incomplete_transactional_policy(
             "project_id": project_id,
             "key": "order-mailer",
             "identity": {"display_name": "Order Mailer"},
-            "provider_facets": {"hubspot": {"auth_profile_key": "default"}},
+            "provider_facets": {"hubspot": {"credential_ref": credential_ref}},
         },
     )
     mcp_client.call_tool_structured(
@@ -1097,7 +1374,7 @@ def test_communication_send_uses_single_slack_file_upload_for_text_and_files(
     seeded_project: dict,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
-    _seed_slack_credential(mcp_client, project_id)
+    credential_ref = _seed_slack_credential(mcp_client, project_id)
 
     mcp_client.call_tool_structured(
         "communicationProfile.upsert",
@@ -1105,7 +1382,7 @@ def test_communication_send_uses_single_slack_file_upload_for_text_and_files(
             "project_id": project_id,
             "key": "ops-bot",
             "identity": {"display_name": "Ops Bot"},
-            "provider_facets": {"slack-bot": {"auth_profile_key": "default"}},
+            "provider_facets": {"slack-bot": {"credential_ref": credential_ref}},
         },
     )
     mcp_client.call_tool_structured(
@@ -1228,7 +1505,7 @@ def test_communication_send_rejects_unsupported_email_buttons(
     seeded_project: dict,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
-    _seed_smtp_credential(mcp_client, project_id)
+    credential_ref = _seed_smtp_credential(mcp_client, project_id)
 
     mcp_client.call_tool_structured(
         "communicationProfile.upsert",
@@ -1236,7 +1513,7 @@ def test_communication_send_rejects_unsupported_email_buttons(
             "project_id": project_id,
             "key": "support-mailer",
             "identity": {"display_name": "Support Mailer"},
-            "provider_facets": {"smtp": {"auth_profile_key": "primary"}},
+            "provider_facets": {"smtp": {"credential_ref": credential_ref}},
         },
     )
     mcp_client.call_tool_structured(
@@ -1284,7 +1561,11 @@ def test_communication_send_rejects_unsupported_delivery_and_content_shape(
     seeded_project: dict,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
-    _seed_telegram_credential(mcp_client, project_id, profile_key="support-bot")
+    credential_ref = _seed_telegram_credential(
+        mcp_client,
+        project_id,
+        account_name="support-bot",
+    )
 
     mcp_client.call_tool_structured(
         "communicationProfile.upsert",
@@ -1292,7 +1573,7 @@ def test_communication_send_rejects_unsupported_delivery_and_content_shape(
             "project_id": project_id,
             "key": "support-bot",
             "identity": {"display_name": "Support Bot"},
-            "provider_facets": {"telegram-bot": {"auth_profile_key": "support-bot"}},
+            "provider_facets": {"telegram-bot": {"credential_ref": credential_ref}},
         },
     )
     mcp_client.call_tool_structured(
@@ -1426,7 +1707,7 @@ def test_communication_send_can_infer_actor_from_source_request(
     seeded_project: dict,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
-    _seed_slack_credential(mcp_client, project_id)
+    credential_ref = _seed_slack_credential(mcp_client, project_id)
 
     mcp_client.call_tool_structured(
         "communicationProfile.upsert",
@@ -1434,7 +1715,7 @@ def test_communication_send_can_infer_actor_from_source_request(
             "project_id": project_id,
             "key": "ops-bot",
             "identity": {"display_name": "Ops Bot"},
-            "provider_facets": {"slack-bot": {"auth_profile_key": "default"}},
+            "provider_facets": {"slack-bot": {"credential_ref": credential_ref}},
         },
     )
     mcp_client.call_tool_structured(
@@ -1494,8 +1775,12 @@ def test_communication_send_prefers_target_actor_over_cross_platform_source(
     seeded_project: dict,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
-    _seed_slack_credential(mcp_client, project_id)
-    _seed_telegram_credential(mcp_client, project_id, profile_key="telegram-bot")
+    slack_credential_ref = _seed_slack_credential(mcp_client, project_id)
+    telegram_credential_ref = _seed_telegram_credential(
+        mcp_client,
+        project_id,
+        account_name="telegram-bot",
+    )
 
     mcp_client.call_tool_structured(
         "communicationProfile.upsert",
@@ -1503,7 +1788,7 @@ def test_communication_send_prefers_target_actor_over_cross_platform_source(
             "project_id": project_id,
             "key": "slack-ops",
             "identity": {"display_name": "Slack Ops"},
-            "provider_facets": {"slack-bot": {"auth_profile_key": "default"}},
+            "provider_facets": {"slack-bot": {"credential_ref": slack_credential_ref}},
         },
     )
     mcp_client.call_tool_structured(
@@ -1512,7 +1797,7 @@ def test_communication_send_prefers_target_actor_over_cross_platform_source(
             "project_id": project_id,
             "key": "telegram-bot",
             "identity": {"display_name": "Telegram Bot"},
-            "provider_facets": {"telegram-bot": {"auth_profile_key": "telegram-bot"}},
+            "provider_facets": {"telegram-bot": {"credential_ref": telegram_credential_ref}},
         },
     )
     mcp_client.call_tool_structured(
@@ -1569,7 +1854,7 @@ def test_communication_send_can_run_inside_granted_run_plan_step(
     seeded_project: dict,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
-    _seed_slack_credential(mcp_client, project_id)
+    credential_ref = _seed_slack_credential(mcp_client, project_id)
 
     mcp_client.call_tool_structured(
         "communicationProfile.upsert",
@@ -1577,7 +1862,7 @@ def test_communication_send_can_run_inside_granted_run_plan_step(
             "project_id": project_id,
             "key": "ops-bot",
             "identity": {"display_name": "Ops Bot"},
-            "provider_facets": {"slack-bot": {"auth_profile_key": "default"}},
+            "provider_facets": {"slack-bot": {"credential_ref": credential_ref}},
         },
     )
     mcp_client.call_tool_structured(
@@ -1660,7 +1945,11 @@ def test_communication_reply_requires_matching_run_plan_source_grant(
     seeded_project: dict,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
-    _seed_telegram_credential(mcp_client, project_id, profile_key="support-bot")
+    credential_ref = _seed_telegram_credential(
+        mcp_client,
+        project_id,
+        account_name="support-bot",
+    )
 
     mcp_client.call_tool_structured(
         "communicationProfile.upsert",
@@ -1668,7 +1957,7 @@ def test_communication_reply_requires_matching_run_plan_source_grant(
             "project_id": project_id,
             "key": "support-bot",
             "identity": {"display_name": "Support Bot"},
-            "provider_facets": {"telegram-bot": {"auth_profile_key": "support-bot"}},
+            "provider_facets": {"telegram-bot": {"credential_ref": credential_ref}},
         },
     )
     engine = mcp_client.test_client.app.state.engine  # type: ignore[attr-defined]
@@ -1744,7 +2033,11 @@ def test_communication_reply_enforces_profile_response_policy(
     seeded_project: dict,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
-    _seed_telegram_credential(mcp_client, project_id, profile_key="support-bot")
+    credential_ref = _seed_telegram_credential(
+        mcp_client,
+        project_id,
+        account_name="support-bot",
+    )
 
     mcp_client.call_tool_structured(
         "communicationProfile.upsert",
@@ -1752,7 +2045,7 @@ def test_communication_reply_enforces_profile_response_policy(
             "project_id": project_id,
             "key": "support-bot",
             "identity": {"display_name": "Support Bot"},
-            "provider_facets": {"telegram-bot": {"auth_profile_key": "support-bot"}},
+            "provider_facets": {"telegram-bot": {"credential_ref": credential_ref}},
             "access_policy": {
                 "user_mode": "allowlist",
                 "allowed_user_refs": ["telegram-user:555"],
@@ -1799,7 +2092,11 @@ def test_communication_reply_resolves_origin_without_provider_payload(
     seeded_project: dict,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
-    _seed_telegram_credential(mcp_client, project_id, profile_key="support-bot")
+    credential_ref = _seed_telegram_credential(
+        mcp_client,
+        project_id,
+        account_name="support-bot",
+    )
 
     mcp_client.call_tool_structured(
         "communicationProfile.upsert",
@@ -1807,7 +2104,7 @@ def test_communication_reply_resolves_origin_without_provider_payload(
             "project_id": project_id,
             "key": "support-bot",
             "identity": {"display_name": "Support Bot"},
-            "provider_facets": {"telegram-bot": {"auth_profile_key": "support-bot"}},
+            "provider_facets": {"telegram-bot": {"credential_ref": credential_ref}},
         },
     )
     engine = mcp_client.test_client.app.state.engine  # type: ignore[attr-defined]
@@ -1911,7 +2208,7 @@ def test_communication_profile_mcp_lifecycle_has_no_secret_roundtrip(
     seeded_project: dict,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
-    _seed_telegram_credential(mcp_client, project_id)
+    credential_ref = _seed_telegram_credential(mcp_client, project_id)
 
     created = mcp_client.call_tool_structured(
         "communicationProfile.upsert",
@@ -1925,7 +2222,7 @@ def test_communication_profile_mcp_lifecycle_has_no_secret_roundtrip(
             },
             "provider_facets": {
                 "telegram-bot": {
-                    "auth_profile_key": "support",
+                    "credential_ref": credential_ref,
                     "bot_username": "support_bot",
                     "reply_to_message_refs": {"telegram-message:999:88": 88},
                     "thread_refs": {"telegram-thread:999:default": 1},
@@ -1948,7 +2245,7 @@ def test_communication_profile_mcp_lifecycle_has_no_secret_roundtrip(
     )
     assert created["data"]["key"] == "support-bot"
     telegram_facet = created["data"]["provider_facets"]["telegram-bot"]
-    assert telegram_facet["auth_profile_key"] == "support"
+    assert telegram_facet["credential_ref"] == credential_ref
     assert created["data"]["identity"]["display_name"] == "Support Bot"
     assert telegram_facet["reply_to_message_refs"] == {"telegram-message:999:88": 88}
 
@@ -1971,13 +2268,13 @@ def test_communication_profile_mcp_lifecycle_has_no_secret_roundtrip(
     assert "telegram-secret" not in rendered
 
 
-def test_tool_profile_resolve_mcp_reports_missing_telegram_credential(
+def test_communication_profile_upsert_rejects_missing_telegram_account(
     mcp_client: MCPClient,
     seeded_project: dict,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
 
-    resolved = mcp_client.call_tool_structured(
+    missing = mcp_client.call_tool_error(
         "communicationProfile.upsert",
         {
             "project_id": project_id,
@@ -1987,7 +2284,7 @@ def test_tool_profile_resolve_mcp_reports_missing_telegram_credential(
                 "purpose": "Exercise credential validation.",
                 "voice": "Concise.",
             },
-            "provider_facets": {"telegram-bot": {"auth_profile_key": "missing"}},
+            "provider_facets": {"telegram-bot": {"credential_ref": "cred_missing"}},
             "access_policy": {
                 "dm_mode": "allowlist",
                 "group_mode": "allowlist",
@@ -1999,19 +2296,37 @@ def test_tool_profile_resolve_mcp_reports_missing_telegram_credential(
         },
     )
 
-    assert resolved["data"]["provider_facets"]["telegram-bot"]["auth_profile_key"] == "missing"
-    missing = mcp_client.call_tool_structured(
-        "toolProfile.resolve",
+    assert missing["code"] == -32004
+    assert missing["data"]["credential_ref"] == "cred_missing"
+
+
+def test_communication_profile_upsert_rejects_provider_mismatched_account(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    slack_credential_ref = _seed_slack_credential(mcp_client, project_id)
+
+    mismatch = mcp_client.call_tool_error(
+        "communicationProfile.upsert",
         {
             "project_id": project_id,
-            "provider_key": "telegram-bot",
-            "tool_profile_key": "missing-credential",
-            "response_mode": "raw",
+            "key": "provider-mismatch",
+            "identity": {
+                "display_name": "Provider mismatch",
+            },
+            "provider_facets": {
+                "telegram-bot": {
+                    "credential_ref": slack_credential_ref,
+                }
+            },
         },
     )
-    assert missing["ready"] is False
-    assert missing["tool_profile"]["auth_profile_key"] == "missing"
-    assert "credential" in missing["missing"]
+
+    assert mismatch["code"] == -32602
+    assert mismatch["data"]["credential_ref"] == slack_credential_ref
+    assert mismatch["data"]["credential_provider"] == "slack-bot"
+    assert mismatch["data"]["provider_key"] == "telegram-bot"
 
 
 def test_tool_profile_resolve_mcp_resolves_telegram_profile_and_credential(
@@ -2019,7 +2334,7 @@ def test_tool_profile_resolve_mcp_resolves_telegram_profile_and_credential(
     seeded_project: dict,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
-    _seed_telegram_credential(mcp_client, project_id)
+    credential_ref = _seed_telegram_credential(mcp_client, project_id)
     mcp_client.call_tool_structured(
         "communicationProfile.upsert",
         {
@@ -2032,7 +2347,7 @@ def test_tool_profile_resolve_mcp_resolves_telegram_profile_and_credential(
             },
             "provider_facets": {
                 "telegram-bot": {
-                    "auth_profile_key": "support",
+                    "credential_ref": credential_ref,
                     "bot_username": "support_bot",
                 }
             },
@@ -2062,10 +2377,10 @@ def test_tool_profile_resolve_mcp_resolves_telegram_profile_and_credential(
     assert resolved["provider"]["provider_key"] == "telegram-bot"
     assert resolved["provider"]["setup_required"] is False
     assert resolved["tool_profile"]["key"] == "support-bot"
-    assert resolved["tool_profile"]["auth_profile_key"] == "support"
+    assert resolved["tool_profile"]["credential_ref"] == credential_ref
     assert resolved["tool_profile"]["access_policy"]["allowed_user_refs"] == ["telegram-user:555"]
-    assert resolved["credential"]["credential_ref"].startswith("cred_")
-    assert resolved["credential"]["profile_key"] == "support"
+    assert resolved["credential"]["credential_ref"] == credential_ref
+    assert resolved["credential"]["display_name"] == "support"
     assert resolved["missing"] == []
     assert "123456:ABC" not in rendered
     assert "telegram-secret" not in rendered
@@ -2076,18 +2391,16 @@ def test_tool_profile_resolve_mcp_rejects_profile_credential_mismatch(
     seeded_project: dict,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
-    _seed_telegram_credential(mcp_client, project_id, profile_key="support")
-    _seed_telegram_credential(
+    support_ref = _seed_telegram_credential(
         mcp_client,
         project_id,
-        profile_key="analytics",
-        bot_token="654321:XYZ",
+        account_name="support",
     )
-    analytics_ref = _credential_ref(
+    analytics_ref = _seed_telegram_credential(
         mcp_client,
-        project_id=project_id,
-        provider_key="telegram-bot",
-        profile_key="analytics",
+        project_id,
+        account_name="analytics",
+        bot_token="654321:XYZ",
     )
     mcp_client.call_tool_structured(
         "communicationProfile.upsert",
@@ -2099,7 +2412,7 @@ def test_tool_profile_resolve_mcp_rejects_profile_credential_mismatch(
                 "purpose": "Handle approved support requests.",
                 "voice": "Concise.",
             },
-            "provider_facets": {"telegram-bot": {"auth_profile_key": "support"}},
+            "provider_facets": {"telegram-bot": {"credential_ref": support_ref}},
             "access_policy": {
                 "dm_mode": "allowlist",
                 "group_mode": "allowlist",
@@ -2122,8 +2435,8 @@ def test_tool_profile_resolve_mcp_rejects_profile_credential_mismatch(
 
     assert err["code"] == -32602
     assert err["message"] == "ValidationError"
-    assert err["data"]["credential_profile_key"] == "analytics"
-    assert err["data"]["requested_auth_profile_key"] == "support"
+    assert err["data"]["profile_credential_ref"] == support_ref
+    assert err["data"]["requested_credential_ref"] == analytics_ref
 
 
 def test_tool_profile_resolve_mcp_redacts_profile_sections(
@@ -2131,7 +2444,7 @@ def test_tool_profile_resolve_mcp_redacts_profile_sections(
     seeded_project: dict,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
-    _seed_telegram_credential(mcp_client, project_id)
+    credential_ref = _seed_telegram_credential(mcp_client, project_id)
     mcp_client.call_tool_structured(
         "communicationProfile.upsert",
         {
@@ -2144,7 +2457,7 @@ def test_tool_profile_resolve_mcp_redacts_profile_sections(
             },
             "provider_facets": {
                 "telegram-bot": {
-                    "auth_profile_key": "support",
+                    "credential_ref": credential_ref,
                     "refs": {
                         "safe_ref": "telegram-chat:999",
                     },
@@ -2190,6 +2503,7 @@ def test_communication_profile_upsert_mcp_rejects_secret_like_setup_fields(
     seeded_project: dict,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
+    credential_ref = _seed_telegram_credential(mcp_client, project_id)
 
     err = mcp_client.call_tool_error(
         "communicationProfile.upsert",
@@ -2199,7 +2513,7 @@ def test_communication_profile_upsert_mcp_rejects_secret_like_setup_fields(
             "identity": {"display_name": "Support Bot"},
             "provider_facets": {
                 "telegram-bot": {
-                    "auth_profile_key": "support",
+                    "credential_ref": credential_ref,
                     "api_key": "raw-secret",
                 }
             },
@@ -2217,14 +2531,14 @@ def test_tool_profile_resolve_mcp_resolves_generic_credential_profile(
     seeded_project: dict,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
-    _seed_smtp_credential(mcp_client, project_id)
+    credential_ref = _seed_smtp_credential(mcp_client, project_id)
 
     resolved = mcp_client.call_tool_structured(
         "toolProfile.resolve",
         {
             "project_id": project_id,
             "provider_key": "smtp",
-            "auth_profile_key": "primary",
+            "credential_ref": credential_ref,
             "response_mode": "raw",
         },
     )
@@ -2234,37 +2548,34 @@ def test_tool_profile_resolve_mcp_resolves_generic_credential_profile(
     assert resolved["provider"]["setup_required"] is False
     assert resolved["tool_profile"] is None
     assert resolved["credential"]["provider_key"] == "smtp"
-    assert resolved["credential"]["profile_key"] == "primary"
-    assert resolved["credential"]["credential_ref"].startswith("cred_")
+    assert resolved["credential"]["display_name"] == "primary"
+    assert resolved["credential"]["credential_ref"] == credential_ref
     assert resolved["next_action"] is None
     assert "smtp-secret" not in rendered
 
 
-def test_tool_profile_resolve_mcp_rejects_generic_credential_profile_mismatch(
+def test_tool_profile_resolve_mcp_selects_exact_generic_account(
     mcp_client: MCPClient,
     seeded_project: dict,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
-    _seed_smtp_credential(mcp_client, project_id, profile_key="primary")
-    _seed_smtp_credential(mcp_client, project_id, profile_key="secondary")
-    secondary_ref = _credential_ref(
+    _seed_smtp_credential(mcp_client, project_id, account_name="primary")
+    secondary_ref = _seed_smtp_credential(
         mcp_client,
-        project_id=project_id,
-        provider_key="smtp",
-        profile_key="secondary",
+        project_id,
+        account_name="secondary",
     )
 
-    err = mcp_client.call_tool_error(
+    resolved = mcp_client.call_tool_structured(
         "toolProfile.resolve",
         {
             "project_id": project_id,
             "provider_key": "smtp",
-            "auth_profile_key": "primary",
             "credential_ref": secondary_ref,
+            "response_mode": "raw",
         },
     )
 
-    assert err["code"] == -32602
-    assert err["message"] == "ValidationError"
-    assert err["data"]["credential_profile_key"] == "secondary"
-    assert err["data"]["requested_auth_profile_key"] == "primary"
+    assert resolved["ready"] is True
+    assert resolved["credential"]["credential_ref"] == secondary_ref
+    assert resolved["credential"]["display_name"] == "secondary"

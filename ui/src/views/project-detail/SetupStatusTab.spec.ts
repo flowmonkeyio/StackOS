@@ -32,12 +32,12 @@ describe('SetupStatusTab (calm readiness)', () => {
           milestone: 'M10',
         })
       }
-      if (url === '/api/v1/projects/1/auth/status') {
+      if (url === '/api/v1/projects/1/connections/accounts') {
         return json({
           project_id: 1,
           provider_key: null,
           providers: [{ key: 'firecrawl', name: 'Firecrawl', plugin_slug: 'utils' }],
-          connections: [
+          accounts: [
             {
               credential_ref: 'cred_firecrawl',
               provider_key: 'firecrawl',
@@ -98,7 +98,7 @@ describe('SetupStatusTab (calm readiness)', () => {
     expect(wrapper.text()).not.toContain('cred_firecrawl')
 
     expect(requestedUrls).toContain('/api/v1/health')
-    expect(requestedUrls).toContain('/api/v1/projects/1/auth/status')
+    expect(requestedUrls).toContain('/api/v1/projects/1/connections/accounts')
     expect(requestedUrls).toContain('/api/v1/operations/integration.list/call')
   })
 })

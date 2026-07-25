@@ -12,7 +12,7 @@ from stackos.communications import (
     communication_record_by_external_id,
     merged_provider_profile,
 )
-from stackos.db.models import Credential, ResourceRecord
+from stackos.db.models import ResourceRecord
 from stackos.operations.communication_platform import (
     CommunicationTargetOut,
     _communication_target_out,
@@ -223,24 +223,22 @@ def _resolve_actor(
                 }
             ],
         )
-    auth_profile_key = str(provider_profile.get("auth_profile_key") or "default")
-    credential_ref = _credential_ref_for_profile(
+    requested_credential_ref = str(provider_profile.get("credential_ref") or "").strip()
+    credential_ref = _attached_credential_ref(
         session,
         project_id=project_id,
         provider_key=provider_key,
-        profile_key=auth_profile_key,
+        credential_ref=requested_credential_ref,
     )
     if credential_ref is None:
         _reject(
             code="COMM_CREDENTIAL_REQUIRED",
             category="setup",
-            message=(
-                f"No connected {provider_key} credential exists for profile {auth_profile_key!r}."
-            ),
+            message=(f"No connected {provider_key} Account is attached for profile {actor_ref!r}."),
             resolved={
                 "provider": provider_key,
                 "actor_ref": actor_ref,
-                "auth_profile_key": auth_profile_key,
+                "credential_ref": provider_profile.get("credential_ref"),
             },
             failed_paths=[{"path": "/from", "requested": actor_ref}],
             repair_options=[
@@ -255,7 +253,6 @@ def _resolve_actor(
     return {
         "profile_ref": actor_ref,
         "profile_key": actor_ref.split(":", 1)[1],
-        "auth_profile_key": auth_profile_key,
         "credential_ref": credential_ref,
         "profile": profile,
         "provider_profile": provider_profile,
@@ -300,25 +297,27 @@ def _normalize_profile_ref(value: str) -> str:
     return communication_profile_ref(raw)
 
 
-def _credential_ref_for_profile(
+def _attached_credential_ref(
     session: Session,
     *,
     project_id: int,
     provider_key: str,
-    profile_key: str,
+    credential_ref: str,
 ) -> str | None:
-    from sqlmodel import col, select
-
-    AuthRepository(session).status(project_id=project_id, provider_key=provider_key)
-    row = session.exec(
-        select(Credential).where(
-            col(Credential.project_id) == project_id,
-            col(Credential.provider_key) == provider_key,
-            col(Credential.profile_key) == profile_key,
-            col(Credential.revoked_at).is_(None),
-        )
-    ).first()
-    return row.credential_ref if row is not None else None
+    if not credential_ref:
+        return None
+    status = AuthRepository(session).status(
+        project_id=project_id,
+        provider_key=provider_key,
+    )
+    for account in status.accounts:
+        if (
+            account.credential_ref == credential_ref
+            and account.status == "connected"
+            and not account.setup_required
+        ):
+            return credential_ref
+    return None
 
 
 def _surface_data(session: Session, *, project_id: int, surface_ref: str) -> dict[str, Any]:

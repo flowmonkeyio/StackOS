@@ -13,6 +13,7 @@ import RunsView from './views/RunsView.vue'
 import PluginsView from './views/PluginsView.vue'
 import CapabilitiesView from './views/CapabilitiesView.vue'
 import ConnectionsView from './views/ConnectionsView.vue'
+import AccountsView from './views/AccountsView.vue'
 import OperationsView from './views/OperationsView.vue'
 import WorkflowTemplatesView from './views/WorkflowTemplatesView.vue'
 import AgentPresetsView from './views/AgentPresetsView.vue'
@@ -25,6 +26,7 @@ import TaskTrackerView from './views/TaskTrackerView.vue'
 const routes: RouteRecordRaw[] = [
   { path: '/', name: 'home', component: HomeView },
   { path: '/auth-error', name: 'auth-error', component: AuthErrorView },
+  { path: '/accounts', name: 'accounts', component: AccountsView },
   { path: '/projects', redirect: '/' },
   {
     path: '/projects/:id',

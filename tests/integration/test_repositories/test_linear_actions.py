@@ -9,12 +9,16 @@ from pytest_httpx import HTTPXMock
 from sqlmodel import Session, select
 
 from stackos.actions import ActionRepository
-from stackos.auth_providers import AuthRepository
-from stackos.db.models import Credential, CredentialAccount, CredentialScope
+from stackos.db.models import (
+    Credential,
+    CredentialAccount,
+    CredentialScope,
+    ProjectCredential,
+)
 from stackos.repositories.base import ConflictError, NotFoundError
 from stackos.repositories.plugins import PluginRepository
-from stackos.repositories.projects import IntegrationCredentialRepository
 from stackos.repositories.provider_refs import ProviderObjectReferenceRepository
+from tests.integration.account_test_support import seed_test_account
 
 READ_ACTIONS = {
     "viewer.get",
@@ -70,22 +74,18 @@ def _linear_credential(
     config_json: dict[str, object] = {"auth_method_key": auth_method_key}
     if auth_method_key == "oauth2_authorization_code":
         config_json["scope_status"] = "known"
-    IntegrationCredentialRepository(session).set(
+    seeded = seed_test_account(
+        session,
         project_id=project_id,
-        kind="linear",
-        profile_key="primary",
+        provider_key="linear",
+        display_name="Linear - Default",
         secret_payload=secret_payload,
         config_json=config_json,
     )
-    credential_ref = (
-        AuthRepository(session)
-        .status(project_id=project_id, provider_key="linear")
-        .connections[0]
-        .credential_ref
-    )
     credential = session.exec(
-        select(Credential).where(Credential.credential_ref == credential_ref)
+        select(Credential).where(Credential.integration_credential_id == seeded.data.id)
     ).one()
+    credential_ref = credential.credential_ref
     credential.auth_type = "api-key" if auth_method_key == "personal_api_key" else "oauth"
     credential.auth_method_key = auth_method_key
     if auth_method_key == "oauth2_authorization_code":
@@ -116,7 +116,15 @@ def _safe_ref(
     credential = session.exec(
         select(Credential).where(Credential.credential_ref == credential_ref)
     ).one()
-    return ProviderObjectReferenceRepository(session).upsert(
+    attachment = session.exec(
+        select(ProjectCredential).where(
+            ProjectCredential.credential_id == credential.id,
+        )
+    ).one()
+    return ProviderObjectReferenceRepository(
+        session,
+        project_id=attachment.project_id,
+    ).upsert(
         credential=credential,
         object_type=f"linear.{object_type}",
         provider_object_id=provider_id,

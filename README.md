@@ -37,7 +37,8 @@ domains. The core product is the runtime underneath them.
 | Project | The workspace for a company, site, product, or client. |
 | Workspace binding | The daemon-owned mapping from the current repository root to one StackOS project for MCP sessions. |
 | Plugin | A domain package such as SEO, media buying, GTM, publishing, or utilities. |
-| Connection | A safe provider credential profile, such as an API key, OAuth account, SMTP setup, CMS account, or internal webhook credential. |
+| Account | A global named provider identity with daemon-held OAuth tokens, API keys, passwords, or other credential material that can be reused across projects. |
+| Connection | One project's explicit authorization to use a selected Account. Project communication profiles and webhooks remain project-bound. |
 | Workflow template | Reusable setup for repeated work, including inputs, context needs, gates, expected outputs, and default steps. |
 | Agent preset | A generic MCP/tool-consumer role contract that must be adapted to the project before use. |
 | Run plan | One concrete execution instance with scoped permissions, steps, outputs, and audit history. |

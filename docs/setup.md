@@ -126,9 +126,10 @@ on install or update. After install or repair, the desktop service consumes the
 same `stackos doctor --json` readiness envelope used by the CLI.
 
 When the app version and packaged payload are already prepared, desktop launch
-still runs a lightweight MCP registration reconciliation. This covers late
-Claude Code installs, reset MCP config, and drag-and-drop app replacement
-without reinstalling the full local runtime. Claude Code absence remains
+still runs a lightweight MCP registration reconciliation before the UI becomes
+ready. This covers late host installs, reset MCP config, and drag-and-drop app
+replacement without reinstalling the full local runtime, and prevents the first
+status report from racing stale pre-repair state. Optional host absence remains
 advisory and does not block startup.
 
 The desktop home and project toolbars keep a visible **Getting started** action,
@@ -144,19 +145,56 @@ Doctor just to render AI-tool status:
 stackos mcp-host-status --json
 ```
 
-This reports whether Codex, Claude Code, Claude Desktop, and Gemini CLI can use
-the current StackOS bridge. In the UI, **Connected** means the tool was found
-and its StackOS MCP entry points at the current local bridge. **Not connected**,
-**Restart needed**, and **Repair needed** describe that connection only.
-**Not detected** means the desktop process could not find the tool; it must not
-be presented as an assertion that the app is not installed. Managed skills,
-plugin assets, root instructions, daemon state, and other installation checks
-remain part of full `stackos doctor --json`.
+This reports the canonical connection state for ChatGPT / Codex, Claude Code,
+Claude Desktop, Gemini CLI, and Hermes. **Repair needed** means a selected,
+StackOS-owned entry is stale and safely repairable. Unselected detected hosts
+are **Available**, arbitrary same-name entries are **Review required**, and
+absent optional hosts are **Not detected** and nonblocking. The Vue UI renders
+the backend-owned state, label, message, and blocking flag; it does not infer
+lifecycle from adapter-native status.
 
-Codex discovery covers the current process path, common Volta/ASDF/mise/NVM/fnm
-locations, the Codex macOS app bundle, and finally the user's login shell. This
-keeps Finder-launched StackOS from misreporting a Codex installation that is
-available only through a Node version manager or `Codex.app`.
+ChatGPT / Codex is one logical host. Discovery prefers Codex bundled with
+ChatGPT, then a capable standalone Codex CLI, while retaining `Codex.app` as a
+compatibility candidate. The StackOS plugin is the forward ChatGPT/Codex
+distribution path and direct Codex registration keeps standalone and legacy app
+readiness; both use the same local bridge with `--runtime codex`.
+
+The host connection model has one brain:
+
+1. the shared bridge contract owns the local stdio command, runtime label,
+   token/daemon preflight, and StackOS command-ownership test;
+2. host adapters report only native discovery, saved config, restart, and
+   profile facts;
+3. the shared lifecycle service alone maps those facts to canonical state,
+   blocking status, repairability, and next action;
+4. Doctor, CLI, desktop IPC, and Vue present that result without rebuilding
+   host-specific policy.
+
+The canonical states are:
+
+| State | Meaning |
+| --- | --- |
+| `connected` | A selected StackOS-owned entry points at the current bridge. |
+| `available` | The host or explicit target is available but not connected. |
+| `repair_needed` | A selected StackOS-owned entry is stale and safely repairable. |
+| `review_required` | The selected entry is unsafe, unreadable, or not StackOS-owned. |
+| `update_required` | A selected host version cannot support the contract. |
+| `restart_required` | Config is current, but the host must reload it. |
+| `unavailable` | The optional host was not detected. |
+| `error` | An explicit operation or selected connection failed. |
+
+Bulk repair connects unselected targets only for automatic hosts, repairs only
+`repair_needed`, and never mutates an unmanaged same-name entry. Removal uses
+the same ownership gate. Safe status responses include `display_name`,
+`connection_state`, `status_label`, `selected`, `managed`, `repairable`,
+`setup_policy`, and safe target refs. Automatic hosts are reconciled before the
+desktop UI loads; these fields describe the result rather than asking the user
+to choose a repair action.
+
+Host readiness and install success are separate. Restart, review, update, or
+optional-host availability can remain visible in the status report without
+preventing StackOS from opening. Install/repair fails only when shared bootstrap
+fails or a StackOS-owned repair attempt does not complete.
 
 Claude Desktop reports **Restart needed** only after StackOS actually changes
 its config while Claude is open; a no-op repair must not renew that state.
@@ -414,7 +452,7 @@ The JSON envelope includes `checks.provider_readiness_available` and
 `info.provider_readiness`. Provider readiness is advisory: missing provider
 credentials do not make the local install unhealthy, but the details point
 operators and agents to the project Connections page plus `readiness.check`,
-`auth.status`, and `auth.test`. The envelope never includes raw provider
+`connection.list`, and `account.test`. The envelope never includes raw provider
 secrets.
 
 ## Local Paths
@@ -480,12 +518,35 @@ bash scripts/register-mcp-codex.sh --force
 bash scripts/register-mcp-claude.sh --force
 ```
 
-MCP registration is repaired through the shared host lifecycle service. It
-checks Codex, Claude Code, Claude Desktop, and Gemini CLI when those hosts are
-detected, registers the same local stdio bridge with a host-specific
-runtime label, and treats entries that point at an old app/package path as
-stale. Hosts installed after StackOS are picked up by rerunning
-`stackos install --mcp-only`, desktop Repair, or the next desktop launch.
+MCP registration is repaired through the shared host lifecycle service.
+Automatic hosts use the same local stdio bridge with a host-specific runtime
+label. Only selected StackOS-owned stale entries are repaired; unmanaged
+same-name entries fail closed. Hosts installed after StackOS are picked up by
+rerunning `stackos install --mcp-only`, desktop Repair, or the next desktop
+launch.
+
+Hermes is explicit and profile-scoped. StackOS never installs Hermes or creates
+a profile. Connect an existing named profile with:
+
+```bash
+stackos install --mcp-only --mcp-host hermes --mcp-profile work
+```
+
+This adds the local StackOS MCP bridge and only the canonical StackOS skill to
+that profile. It does not change provider auth, personality, memories, agents,
+or sibling skills. StackOS uses Hermes's documented `-p/--profile`,
+`mcp add/remove/list`, per-profile `config.yaml`, and per-profile `skills/`
+contracts; default-profile operations explicitly target `-p default` rather
+than inheriting the user's active-profile preference.
+
+The upstream product contracts are OpenAI's
+[shared ChatGPT/Codex plugin directory](https://learn.chatgpt.com/docs/plugins)
+and Hermes's
+[profile](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/reference/profile-commands.md),
+[MCP](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/mcp.md),
+and
+[skills](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/skills.md)
+documentation.
 
 Claude Code registration uses `claude mcp add --scope user --transport stdio`.
 Claude Desktop registration writes

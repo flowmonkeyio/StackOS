@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from sqlmodel import Session, select
 
+from stackos.auth_providers import AuthRepository
 from stackos.db.models import Credential, CredentialAccount, ProviderObjectReference
 from stackos.repositories.base import ConflictError, NotFoundError
 from stackos.repositories.provider_refs import ProviderObjectReferenceRepository
+from tests.integration.account_test_support import seed_test_account
 
 
 def _credential(
@@ -14,17 +16,19 @@ def _credential(
     ref: str,
     account_id: str | None,
 ) -> Credential:
-    credential = Credential(
+    backing = seed_test_account(
+        session,
         project_id=project_id,
-        credential_ref=ref,
         provider_key="hubspot",
-        auth_type="oauth",
-        auth_method_key="oauth2_authorization_code",
-        profile_key=ref,
-        status="connected",
+        display_name=ref,
+        secret_payload=b'{"access_token":"test"}',
+        config_json={"auth_method_key": "oauth2_authorization_code"},
     )
-    session.add(credential)
-    session.flush()
+    credential = session.exec(
+        select(Credential).where(
+            Credential.integration_credential_id == backing.data.id,
+        )
+    ).one()
     assert credential.id is not None
     if account_id is not None:
         session.add(
@@ -53,7 +57,7 @@ def test_provider_object_refs_are_stable_opaque_and_account_type_bound(
         ref="cred_hubspot_other",
         account_id="portal-2",
     )
-    repo = ProviderObjectReferenceRepository(session)
+    repo = ProviderObjectReferenceRepository(session, project_id=project_id)
 
     safe_ref = repo.upsert(
         credential=primary,
@@ -111,7 +115,7 @@ def test_provider_object_ref_staleness_fails_closed(
         ref="cred_hubspot_stale",
         account_id="portal-1",
     )
-    repo = ProviderObjectReferenceRepository(session)
+    repo = ProviderObjectReferenceRepository(session, project_id=project_id)
     safe_ref = repo.upsert(
         credential=credential,
         object_type="deal",
@@ -148,7 +152,7 @@ def test_provider_object_refs_require_one_verified_account(
     )
 
     try:
-        ProviderObjectReferenceRepository(session).upsert(
+        ProviderObjectReferenceRepository(session, project_id=project_id).upsert(
             credential=credential,
             object_type="contact",
             provider_object_id="123",
@@ -157,3 +161,30 @@ def test_provider_object_refs_require_one_verified_account(
         assert exc.data["account_count"] == 0
     else:  # pragma: no cover
         raise AssertionError("provider ref unexpectedly accepted an unverified account")
+
+
+def test_provider_object_refs_use_the_shared_project_attachment_boundary(
+    session: Session,
+    project_id: int,
+) -> None:
+    credential = _credential(
+        session,
+        project_id=project_id,
+        ref="cred_hubspot_detached",
+        account_id="portal-1",
+    )
+    AuthRepository(session).detach_account(
+        project_id=project_id,
+        credential_ref=credential.credential_ref,
+    )
+
+    try:
+        ProviderObjectReferenceRepository(session, project_id=project_id).upsert(
+            credential=credential,
+            object_type="contact",
+            provider_object_id="123",
+        )
+    except NotFoundError as exc:
+        assert "not attached" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("provider ref unexpectedly bypassed Account attachment")

@@ -184,7 +184,7 @@ def _missing_item(
             action_refs=[action_ref],
             workflow_key=workflow_key,
             provider_key=provider_key,
-            next_tool="auth.status",
+            next_tool="connection.list",
             ui_url=_connections_url(project_id, provider_key),
             setup=provider_setup,
         )
@@ -204,7 +204,7 @@ def _missing_item(
             workflow_key=workflow_key,
             provider_key=provider_key,
             credential_refs=credential_refs,
-            next_tool="auth.test",
+            next_tool="account.test",
             ui_url=_connections_url(project_id, provider_key),
             setup=provider_setup,
         )
@@ -381,7 +381,7 @@ def _next_step_arguments(
             }.items()
             if value is not None
         }
-    if tool in {"auth.status", "auth.test"}:
+    if tool in {"connection.list", "account.test"}:
         return {
             key: value
             for key, value in {

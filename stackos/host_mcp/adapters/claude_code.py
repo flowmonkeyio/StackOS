@@ -5,8 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from stackos import claude_mcp
-from stackos.host_mcp.bridge import MCP_SERVER_NAME, resolve_bridge_command
-from stackos.host_mcp.result import HostMcpResult
+from stackos.host_mcp.bridge import (
+    MCP_SERVER_NAME,
+    is_stackos_bridge_command,
+    resolve_bridge_command,
+)
+from stackos.host_mcp.result import HostMcpResult, looks_secretish
 
 HOST_KEY = "claude-code"
 SURFACE = "cli"
@@ -47,9 +51,18 @@ def _convert(result: claude_mcp.ClaudeMcpResult) -> HostMcpResult:
         "unsupported_cli": "unsupported_host_version",
         "missing": "available_unregistered",
         "stale": "registered_stale",
+        "unsafe": "registered_unsafe",
         "registration_failed": "register_failed",
         "token_missing": "token_missing",
     }.get(result.status, "register_failed")
+    selected = result.status in {"healthy", "registered", "stale", "unsafe"}
+    managed = result.status in {"healthy", "registered"} or (
+        result.status == "stale" and is_stackos_bridge_command(result.command)
+    )
+    if result.status == "unsafe":
+        managed = False
+    elif result.status == "stale" and not managed:
+        status = "registered_unsafe" if looks_secretish(result.command) else "registered_unmanaged"
     return HostMcpResult(
         host_key=HOST_KEY,
         surface=SURFACE,
@@ -62,4 +75,6 @@ def _convert(result: claude_mcp.ClaudeMcpResult) -> HostMcpResult:
         command=list(result.command),
         repair=result.repair,
         warnings=[warning for warning in [result.legacy_json_error] if warning],
+        selected=selected,
+        managed=managed,
     )

@@ -49,13 +49,13 @@ describe('attention supervision projection', () => {
           ],
         }
       }
-      if (url.endsWith('/auth/status')) {
+      if (url.endsWith('/connections/accounts')) {
         return {
-          connections: [
+          accounts: [
             {
               credential_ref: 'cred_slack',
               provider_key: 'slack',
-              label: 'Slack',
+              display_name: 'Slack - Default',
               status: 'expired',
               revoked_at: null,
               last_tested_at: '2026-07-10T09:00:00Z',
@@ -98,7 +98,7 @@ describe('attention supervision projection', () => {
     mockedCallOperation.mockResolvedValue({ blocked_ticket_count: 2 })
     mockedApiFetch.mockImplementation(async (url) => {
       if (url.includes('/runs?status=failed')) return { items: [] }
-      if (url.endsWith('/auth/status')) return { connections: [] }
+      if (url.endsWith('/connections/accounts')) return { accounts: [] }
       if (url.endsWith('/budgets')) return []
       if (url.includes('/cost?month=')) return { by_integration: {} }
       throw new Error(`unexpected URL ${url}`)

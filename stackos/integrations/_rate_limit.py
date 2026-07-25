@@ -7,9 +7,8 @@ calls is allowed but sustained throughput is rate-limited.
 
 The buckets are *process-level* — the daemon runs single-process so we
 don't need cross-process coordination. Keys are
-``(project_id_or_None, kind)`` so a "global" credential and a
-project-scoped credential maintain independent buckets even when their
-``kind`` matches.
+``(project_id_or_None, kind)`` so project execution budgets remain
+independent even when projects reuse the same global Account.
 """
 
 from __future__ import annotations

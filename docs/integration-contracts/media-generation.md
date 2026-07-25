@@ -201,7 +201,7 @@ already registered and integrated.
   This contract was observed with Playwright-rendered official pages and was
   independently verified against official docs and official JS bundles on
   2026-06-10. Reve does not document a free live credential probe; StackOS
-  `auth.test` for `reve` is format-only to avoid hidden billable image calls.
+  `account.test` for `reve` is format-only to avoid hidden billable image calls.
 
 ### 3. Nano Banana 2 — Google (`gemini-3.1-flash-image`)
 

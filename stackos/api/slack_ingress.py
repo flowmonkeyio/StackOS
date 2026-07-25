@@ -19,10 +19,11 @@ from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from stackos.api.deps import get_session
 from stackos.artifacts import redact_secret_text
+from stackos.auth_providers import AuthRepository
 from stackos.communications import (
     CommunicationDecision,
     CommunicationInteractionCheck,
@@ -36,6 +37,7 @@ from stackos.communications import (
     config_policy,
     evaluate_inbound_policy,
     process_inbound_event,
+    provider_ingress_enabled,
 )
 from stackos.communications.provider_ids import (
     slack_message_ref as _message_ref,
@@ -49,9 +51,7 @@ from stackos.communications.provider_ids import (
 from stackos.communications.provider_ids import (
     slack_thread_ref as _thread_ref,
 )
-from stackos.db.models import IntegrationCredential
 from stackos.repositories.base import ValidationError
-from stackos.repositories.projects import IntegrationCredentialRepository
 
 router = APIRouter(prefix="/api/v1/ingress/slack", tags=["slack-ingress"])
 
@@ -76,7 +76,7 @@ class SlackIngressOut(BaseModel):
 @dataclass(frozen=True)
 class SlackProfile:
     key: str
-    auth_profile_key: str
+    credential_ref: str
     data: dict[str, Any]
 
 
@@ -103,7 +103,7 @@ async def ingest_slack_payload(
 
     profile = _require_slack_profile(session, project_id=project_id, profile_key=profile_key)
     raw_body = await request.body()
-    _verify_signature(
+    await _verify_signature(
         session,
         project_id=project_id,
         profile=profile,
@@ -127,7 +127,7 @@ async def ingest_slack_payload(
     return SlackIngressOut(**stored).model_dump(mode="json")
 
 
-def _verify_signature(
+async def _verify_signature(
     session: Session,
     *,
     project_id: int,
@@ -147,10 +147,10 @@ def _verify_signature(
         ) from exc
     if abs(int(time.time()) - ts) > _REPLAY_WINDOW_SECONDS:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid Slack signature")
-    signing_secret = _signing_secret(
+    signing_secret = await _signing_secret(
         session,
         project_id=project_id,
-        profile_key=profile.auth_profile_key,
+        credential_ref=profile.credential_ref,
     )
     basestring = b"v0:" + timestamp.encode("utf-8") + b":" + raw_body
     digest = hmac.new(signing_secret.encode("utf-8"), basestring, hashlib.sha256).hexdigest()
@@ -159,24 +159,27 @@ def _verify_signature(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid Slack signature")
 
 
-def _signing_secret(
+async def _signing_secret(
     session: Session,
     *,
     project_id: int,
-    profile_key: str,
+    credential_ref: str,
 ) -> str:
-    credential = session.exec(
-        select(IntegrationCredential).where(
-            IntegrationCredential.project_id == project_id,
-            IntegrationCredential.kind == "slack-bot",
-            IntegrationCredential.profile_key == profile_key,
-        )
-    ).first()
-    if credential is None or credential.id is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid Slack signature")
-    raw = IntegrationCredentialRepository(session).get_decrypted(credential.id)
     try:
-        payload = json.loads(raw.decode("utf-8"))
+        resolved = await AuthRepository(session).resolve_for_execution(
+            project_id=project_id,
+            provider_key="slack-bot",
+            credential_ref=credential_ref,
+            operation="ingress.slack.verify",
+            required_scopes=[],
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="invalid Slack signature",
+        ) from exc
+    try:
+        payload = json.loads(resolved.secret_payload.decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError):
         payload = {}
     secret = str(payload.get("signing_secret") or "")
@@ -206,10 +209,12 @@ def _require_slack_profile(
     slack_facet = facets.get("slack-bot") if isinstance(facets, Mapping) else None
     if not isinstance(slack_facet, Mapping):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid Slack signature")
-    auth_profile_key = str(slack_facet.get("auth_profile_key") or "").strip()
-    if not auth_profile_key:
+    if not provider_ingress_enabled(dict(slack_facet)):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid Slack signature")
-    return SlackProfile(key=profile_key, auth_profile_key=auth_profile_key, data=data)
+    credential_ref = str(slack_facet.get("credential_ref") or "").strip()
+    if not credential_ref:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid Slack signature")
+    return SlackProfile(key=profile_key, credential_ref=credential_ref, data=data)
 
 
 def _parse_payload(raw_body: bytes, *, content_type: str | None) -> dict[str, Any]:
@@ -484,7 +489,7 @@ def _normalized_slack_event(
             data_json={
                 "provider_key": "slack-bot",
                 "profile_key": profile.key,
-                "auth_profile_key": profile.auth_profile_key,
+                "credential_ref": profile.credential_ref,
                 "event_key": parsed["event_key"],
                 "team_id": parsed.get("team_id"),
                 "update_type": parsed["update_type"],
@@ -508,7 +513,7 @@ def _normalized_slack_event(
         ),
         request_metadata_json={
             "profile_key": profile.key,
-            "auth_profile_key": profile.auth_profile_key,
+            "credential_ref": profile.credential_ref,
             "interaction_ref": parsed.get("interaction_ref"),
             "invoker_ref": parsed.get("user_ref"),
             "surface_ref": parsed.get("surface_ref"),
@@ -546,7 +551,7 @@ def _slack_message_write(
         data_json={
             "provider_key": "slack-bot",
             "profile_key": profile.key,
-            "auth_profile_key": profile.auth_profile_key,
+            "credential_ref": profile.credential_ref,
             "team_id": parsed.get("team_id"),
             "direction": "inbound",
             "surface_ref": parsed.get("surface_ref"),
@@ -591,7 +596,7 @@ def _slack_interaction_write(
         data_json={
             "provider_key": "slack-bot",
             "profile_key": profile.key,
-            "auth_profile_key": profile.auth_profile_key,
+            "credential_ref": profile.credential_ref,
             "interaction_ref": interaction_ref,
             "interaction_type": "block_actions",
             "surface_ref": parsed.get("surface_ref"),
@@ -621,7 +626,7 @@ def _slack_surface_write(
         data_json={
             "provider_key": "slack-bot",
             "profile_key": profile.key,
-            "auth_profile_key": profile.auth_profile_key,
+            "credential_ref": profile.credential_ref,
             "team_id": parsed.get("team_id"),
             "surface_ref": _surface_ref(channel_id),
             "channel_ref": _surface_ref(channel_id),

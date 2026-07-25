@@ -117,7 +117,7 @@ than it is in the live MCP surface.
 | Start in a repo | `workspace.startSession`, `workspace.resolve` | cwd/repo hints injected by bridge | `project_id`, binding, connect status | Good |
 | Connect repo | `toolbox.call(workspace.connect)` | repo name/root/framework metadata | daemon-owned binding | Good, admin authority could be clearer |
 | Discover capabilities | `toolbox.call(plugin.list/catalog.list/provider.list/capability.list)`, `toolbox.describe(tool_names=[...])` | optional plugin/provider filters or exact tool names | plugins, providers, requested hidden/setup tools | Good inventory, but broad catalog calls should be skill/workflow-directed |
-| Resolve auth target | `toolbox.call(toolProfile.resolve/auth.status/auth.test)` | provider key, optional profile/ref | safe credential ref, status, missing items, next action | Strong |
+| Resolve auth target | `toolbox.call(toolProfile.resolve/connection.list/account.test)` | provider key, optional profile/ref | safe credential ref, status, missing items, next action | Strong |
 | Inspect action | `toolbox.call(action.describe)` | action ref or plugin/action key | manifest, availability, schema | Standard good, compact loses important schema shape |
 | Validate action | `toolbox.call(action.validate)` | action input, credential ref when needed | validation issues and estimated cost | Good, but some duplicate issues |
 | Run direct action | `toolbox.call(action.run)` | explicit input, confirmation for non-read writes | action call audit and redacted result | Good guardrail, repair could be more self-contained |
@@ -145,7 +145,7 @@ dry-run unless the operation itself is designed to update safe project metadata.
 | 2 | Session/tool discovery | `toolbox.describe(tool_names=[...])` | Direct tools, requested setup tools, and active-step grants returned without dumping the whole catalog | Useful when exact tools are requested; skills/workflows should point agents to the right tool names. |
 | 3 | Legal states | `meta.enums` | State transitions returned compactly | Good for lifecycle-aware agents. |
 | 4 | Plugin/provider inventory | `plugin.list`, `provider.list`, `capability.list` | Broad catalog visible | Useful but high volume. Prefer job-based catalog search. |
-| 5 | Auth status | `auth.status` | Slack and Telegram connected; most others missing | Good overview. |
+| 5 | Auth status | `connection.list` | Slack and Telegram connected; most others missing | Good overview. |
 | 6 | Ready profile resolution | `toolProfile.resolve(slack-bot)` | Safe credential ref and account metadata returned | Strong pattern, no secrets leaked. |
 | 7 | Missing provider resolution | `toolProfile.resolve(openai-images)` | `ready=false`, `missing=["credential"]`, next action points to connections page | Excellent repair UX. |
 | 8 | Compact action describe | `action.describe(communications.slack-bot.message.send, compact)` | Availability ready, but `required` empty and nested `anyOf`/`oneOf` dropped | Compact mode hides required alternatives. |

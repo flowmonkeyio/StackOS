@@ -295,7 +295,10 @@ class LinearActionConnector:
         if request.session is None:
             raise ValidationError("Linear action requires a repository session")
 
-        refs = ProviderObjectReferenceRepository(request.session)
+        refs = ProviderObjectReferenceRepository(
+            request.session,
+            project_id=request.project_id,
+        )
         variables = _variables_for_action(request, refs)
         async with httpx.AsyncClient(timeout=60.0) as http:
             integration = LinearIntegration(

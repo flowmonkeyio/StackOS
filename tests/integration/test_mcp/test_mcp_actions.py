@@ -498,7 +498,7 @@ def test_integration_list_summarizes_hidden_external_actions(
     assert row["state"] == "not_connected"
     assert row["connected"] is False
     assert row["hidden_action_count"] >= 1
-    assert row["next_action"]["tool"] == "auth.status"
+    assert row["next_action"]["tool"] == "connection.list"
     assert row["next_action"]["reason"] == (
         "Connect provider 'openai-images' before its required actions appear."
     )
@@ -559,189 +559,188 @@ def test_action_validate_rejects_raw_secret_payloads(mcp_client: MCPClient) -> N
     assert "must not contain secrets" in err["data"]["detail"]
 
 
-def _credential_ref(mcp: MCPClient, project_id: int, provider_key: str) -> str:
-    status = mcp.call_tool_structured(
-        "auth.status",
-        {"project_id": project_id, "provider_key": provider_key, "response_mode": "raw"},
+def _create_account(
+    mcp: MCPClient,
+    project_id: int,
+    *,
+    provider_key: str,
+    auth_method_key: str,
+    fields: dict[str, object],
+    display_name: str | None = None,
+) -> str:
+    response = mcp.test_client.post(
+        f"/api/v1/auth/accounts/{provider_key}",
+        json={
+            "auth_method_key": auth_method_key,
+            "display_name": display_name or f"{provider_key} - Default",
+            "attach_project_id": project_id,
+            "fields": fields,
+        },
+        headers=mcp._headers(),
     )
-    return status["connections"][0]["credential_ref"]
+    response.raise_for_status()
+    return str(response.json()["data"]["credential_ref"])
 
 
 def _create_openai_credential(mcp: MCPClient, project_id: int) -> str:
-    response = mcp.test_client.post(
-        f"/api/v1/projects/{project_id}/auth/openai-images/credentials",
-        json={"auth_method_key": "api_key", "fields": {"api_key": "sk-openai"}},
-        headers=mcp._headers(),
+    return _create_account(
+        mcp,
+        project_id,
+        provider_key="openai-images",
+        auth_method_key="api_key",
+        fields={"api_key": "sk-openai"},
     )
-    response.raise_for_status()
-    return _credential_ref(mcp, project_id, "openai-images")
 
 
 def _create_xai_credential(mcp: MCPClient, project_id: int) -> str:
-    response = mcp.test_client.post(
-        f"/api/v1/projects/{project_id}/auth/xai-imagine/credentials",
-        json={"auth_method_key": "api_key", "fields": {"api_key": "xai-key"}},
-        headers=mcp._headers(),
+    return _create_account(
+        mcp,
+        project_id,
+        provider_key="xai-imagine",
+        auth_method_key="api_key",
+        fields={"api_key": "xai-key"},
     )
-    response.raise_for_status()
-    return _credential_ref(mcp, project_id, "xai-imagine")
 
 
 def _create_google_veo_credential(mcp: MCPClient, project_id: int) -> str:
-    response = mcp.test_client.post(
-        f"/api/v1/projects/{project_id}/auth/google-veo/credentials",
-        json={"auth_method_key": "api_key", "fields": {"api_key": "gemini-key"}},
-        headers=mcp._headers(),
+    return _create_account(
+        mcp,
+        project_id,
+        provider_key="google-veo",
+        auth_method_key="api_key",
+        fields={"api_key": "gemini-key"},
     )
-    response.raise_for_status()
-    return _credential_ref(mcp, project_id, "google-veo")
 
 
 def _create_reve_credential(mcp: MCPClient, project_id: int) -> str:
-    response = mcp.test_client.post(
-        f"/api/v1/projects/{project_id}/auth/reve/credentials",
-        json={"auth_method_key": "api_key", "fields": {"api_key": "reve-key"}},
-        headers=mcp._headers(),
+    return _create_account(
+        mcp,
+        project_id,
+        provider_key="reve",
+        auth_method_key="api_key",
+        fields={"api_key": "reve-key"},
     )
-    response.raise_for_status()
-    return _credential_ref(mcp, project_id, "reve")
 
 
 def _create_google_gemini_image_credential(mcp: MCPClient, project_id: int) -> str:
-    response = mcp.test_client.post(
-        f"/api/v1/projects/{project_id}/auth/google-gemini-image/credentials",
-        json={"auth_method_key": "api_key", "fields": {"api_key": "gemini-key"}},
-        headers=mcp._headers(),
+    return _create_account(
+        mcp,
+        project_id,
+        provider_key="google-gemini-image",
+        auth_method_key="api_key",
+        fields={"api_key": "gemini-key"},
     )
-    response.raise_for_status()
-    return _credential_ref(mcp, project_id, "google-gemini-image")
 
 
 def _create_ideogram_credential(mcp: MCPClient, project_id: int) -> str:
-    response = mcp.test_client.post(
-        f"/api/v1/projects/{project_id}/auth/ideogram/credentials",
-        json={"auth_method_key": "api_key", "fields": {"api_key": "ideo-key"}},
-        headers=mcp._headers(),
+    return _create_account(
+        mcp,
+        project_id,
+        provider_key="ideogram",
+        auth_method_key="api_key",
+        fields={"api_key": "ideo-key"},
     )
-    response.raise_for_status()
-    return _credential_ref(mcp, project_id, "ideogram")
 
 
 def _create_byteplus_ark_credential(mcp: MCPClient, project_id: int) -> str:
-    response = mcp.test_client.post(
-        f"/api/v1/projects/{project_id}/auth/byteplus-ark/credentials",
-        json={"auth_method_key": "api_key", "fields": {"api_key": "ark-key"}},
-        headers=mcp._headers(),
+    return _create_account(
+        mcp,
+        project_id,
+        provider_key="byteplus-ark",
+        auth_method_key="api_key",
+        fields={"api_key": "ark-key"},
     )
-    response.raise_for_status()
-    return _credential_ref(mcp, project_id, "byteplus-ark")
 
 
 def _create_alibaba_wan_credential(mcp: MCPClient, project_id: int) -> str:
-    response = mcp.test_client.post(
-        f"/api/v1/projects/{project_id}/auth/alibaba-wan/credentials",
-        json={"auth_method_key": "api_key", "fields": {"api_key": "dashscope-key"}},
-        headers=mcp._headers(),
+    return _create_account(
+        mcp,
+        project_id,
+        provider_key="alibaba-wan",
+        auth_method_key="api_key",
+        fields={"api_key": "dashscope-key"},
     )
-    response.raise_for_status()
-    return _credential_ref(mcp, project_id, "alibaba-wan")
 
 
 def _create_kling_credential(mcp: MCPClient, project_id: int) -> str:
-    response = mcp.test_client.post(
-        f"/api/v1/projects/{project_id}/auth/kling/credentials",
-        json={
-            "auth_method_key": "access_key_secret",
-            "fields": {"access_key": "ak-test", "secret_key": "sk-test"},
-        },
-        headers=mcp._headers(),
+    return _create_account(
+        mcp,
+        project_id,
+        provider_key="kling",
+        auth_method_key="access_key_secret",
+        fields={"access_key": "ak-test", "secret_key": "sk-test"},
     )
-    response.raise_for_status()
-    return _credential_ref(mcp, project_id, "kling")
 
 
 def _create_firecrawl_credential(mcp: MCPClient, project_id: int) -> str:
-    response = mcp.test_client.post(
-        f"/api/v1/projects/{project_id}/auth/firecrawl/credentials",
-        json={"auth_method_key": "api_key", "fields": {"api_key": "fc-key"}},
-        headers=mcp._headers(),
+    return _create_account(
+        mcp,
+        project_id,
+        provider_key="firecrawl",
+        auth_method_key="api_key",
+        fields={"api_key": "fc-key"},
     )
-    response.raise_for_status()
-    return _credential_ref(mcp, project_id, "firecrawl")
 
 
 def _create_dataforseo_credential(mcp: MCPClient, project_id: int) -> str:
-    response = mcp.test_client.post(
-        f"/api/v1/projects/{project_id}/auth/dataforseo/credentials",
-        json={
-            "auth_method_key": "basic",
-            "fields": {"login": "login@example.com", "password": "password"},
-        },
-        headers=mcp._headers(),
+    return _create_account(
+        mcp,
+        project_id,
+        provider_key="dataforseo",
+        auth_method_key="basic",
+        fields={"login": "login@example.com", "password": "password"},
     )
-    response.raise_for_status()
-    return _credential_ref(mcp, project_id, "dataforseo")
 
 
 def _create_serper_credential(mcp: MCPClient, project_id: int) -> str:
-    response = mcp.test_client.post(
-        f"/api/v1/projects/{project_id}/auth/serper/credentials",
-        json={"auth_method_key": "api_key", "fields": {"api_key": "serper-key"}},
-        headers=mcp._headers(),
+    return _create_account(
+        mcp,
+        project_id,
+        provider_key="serper",
+        auth_method_key="api_key",
+        fields={"api_key": "serper-key"},
     )
-    response.raise_for_status()
-    return _credential_ref(mcp, project_id, "serper")
 
 
 def _create_wordpress_credential(mcp: MCPClient, project_id: int) -> str:
-    response = mcp.test_client.post(
-        f"/api/v1/projects/{project_id}/auth/wordpress/credentials",
-        json={
-            "auth_method_key": "application_password",
-            "fields": {
-                "username": "editor",
-                "application_password": "app pass",
-                "wp_url": "https://wp.example",
-            },
+    return _create_account(
+        mcp,
+        project_id,
+        provider_key="wordpress",
+        auth_method_key="application_password",
+        fields={
+            "username": "editor",
+            "application_password": "app pass",
+            "wp_url": "https://wp.example",
         },
-        headers=mcp._headers(),
     )
-    response.raise_for_status()
-    return _credential_ref(mcp, project_id, "wordpress")
 
 
 def _create_ghost_credential(mcp: MCPClient, project_id: int) -> str:
-    response = mcp.test_client.post(
-        f"/api/v1/projects/{project_id}/auth/ghost/credentials",
-        json={
-            "auth_method_key": "admin_api_key",
-            "fields": {
-                "admin_api_key": "keyid:00112233445566778899aabbccddeeff",
-                "ghost_url": "https://ghost.example",
-                "api_version": "v5.0",
-            },
+    return _create_account(
+        mcp,
+        project_id,
+        provider_key="ghost",
+        auth_method_key="admin_api_key",
+        fields={
+            "admin_api_key": "keyid:00112233445566778899aabbccddeeff",
+            "ghost_url": "https://ghost.example",
+            "api_version": "v5.0",
         },
-        headers=mcp._headers(),
     )
-    response.raise_for_status()
-    return _credential_ref(mcp, project_id, "ghost")
 
 
 def _create_mock_credential(
     mcp: MCPClient, project_id: int, secret: str = "mock-mcp-secret"
 ) -> str:
-    response = mcp.test_client.post(
-        f"/api/v1/projects/{project_id}/auth/mock-provider/credentials",
-        json={
-            "auth_method_key": "api_key",
-            "profile_key": "primary",
-            "label": "Mock MCP Primary",
-            "fields": {"api_key": secret},
-        },
-        headers=mcp._headers(),
+    return _create_account(
+        mcp,
+        project_id,
+        provider_key="mock-provider",
+        auth_method_key="api_key",
+        display_name="Mock MCP Primary",
+        fields={"api_key": secret},
     )
-    response.raise_for_status()
-    return _credential_ref(mcp, project_id, "mock-provider")
 
 
 def _image_action_plan_json() -> dict:

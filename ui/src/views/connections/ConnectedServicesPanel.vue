@@ -35,6 +35,7 @@ import type { ConnectionRow, MessageMap, ServiceGroup } from './types'
 
 const props = defineProps<{
   loading: boolean
+  error?: string | null
   serviceGroups: ServiceGroup[]
   connectionsCount: number
   connectionMessages: MessageMap
@@ -43,9 +44,9 @@ const props = defineProps<{
 
 defineEmits<{
   (e: 'add-connection', providerKey?: string): void
-  (e: 'edit-connection', connection: ConnectionRow): void
-  (e: 'test-connection', connection: ConnectionRow): void
-  (e: 'revoke-connection', connection: ConnectionRow): void
+  (e: 'manage-account', connection: ConnectionRow): void
+  (e: 'detach-connection', connection: ConnectionRow): void
+  (e: 'refresh'): void
 }>()
 
 const search = ref('')
@@ -119,10 +120,13 @@ function statusLabel(connection: ConnectionRow): string {
 </script>
 
 <template>
-  <section class="space-y-3" aria-label="Services">
+  <section
+    class="space-y-3"
+    aria-label="Services"
+  >
     <UiSectionHeader
       title="Services"
-      description="Tools and accounts your agents can use. Secrets stay on this machine — agents only ever get a safe reference."
+      description="Reusable Accounts attached to this project. Manage credentials globally from Accounts."
       as="h3"
     >
       <template #actions>
@@ -136,24 +140,62 @@ function statusLabel(connection: ConnectionRow): string {
       search-placeholder="Find a service or account…"
       aria-label="Service filters"
     >
-      <div v-if="categoryOptions.length > 2" class="connection-category-scroll">
-        <UiSegmentedControl v-model="category" :options="categoryOptions" label="Category" />
+      <div
+        v-if="categoryOptions.length > 2"
+        class="connection-category-scroll"
+      >
+        <UiSegmentedControl
+          v-model="category"
+          :options="categoryOptions"
+          label="Category"
+        />
       </div>
     </UiFilterBar>
 
-    <UiCard v-if="loading" role="status" aria-label="Loading connections">
-      <UiSkeleton shape="line" :lines="3" />
+    <UiCard
+      v-if="loading"
+      role="status"
+      aria-label="Loading connections"
+    >
+      <UiSkeleton
+        shape="line"
+        :lines="3"
+      />
     </UiCard>
+
+    <UiEmptyState
+      v-else-if="error && serviceGroups.length === 0"
+      title="Services unavailable"
+      description="StackOS could not load this project's Connections. Retry before attaching or changing an Account."
+      icon="alert-triangle"
+      framed
+    >
+      <template #actions>
+        <UiButton
+          variant="secondary"
+          size="sm"
+          icon-left="refresh-cw"
+          @click="$emit('refresh')"
+        >
+          Retry
+        </UiButton>
+      </template>
+    </UiEmptyState>
 
     <UiEmptyState
       v-else-if="serviceGroups.length === 0"
       title="No services connected"
-      description="Add the first connection for a provider account or internal tool. The daemon stores the secret and exposes only status, labels, and credential refs."
+      description="Attach an existing Account, or create one and attach it automatically."
       icon="plug"
       framed
     >
       <template #actions>
-        <UiButton variant="primary" size="sm" icon-left="plus" @click="$emit('add-connection')">
+        <UiButton
+          variant="primary"
+          size="sm"
+          icon-left="plus"
+          @click="$emit('add-connection')"
+        >
           Add connection
         </UiButton>
       </template>
@@ -167,7 +209,10 @@ function statusLabel(connection: ConnectionRow): string {
       framed
     />
 
-    <div v-else class="grid grid-cols-1 gap-3">
+    <div
+      v-else
+      class="grid grid-cols-1 gap-3"
+    >
       <UiCard
         v-for="group in visibleGroups"
         :key="group.providerKey"
@@ -177,7 +222,7 @@ function statusLabel(connection: ConnectionRow): string {
         :aria-label="serviceName(group)"
       >
         <template #header>
-          <div class="flex min-w-0 items-center gap-3">
+          <div class="flex min-w-0 flex-1 items-center gap-3">
             <ProviderMark
               :name="serviceName(group)"
               :provider-key="group.providerKey"
@@ -188,7 +233,10 @@ function statusLabel(connection: ConnectionRow): string {
                 <h4 class="t-h3 truncate text-fg-strong">
                   {{ serviceName(group) }}
                 </h4>
-                <UiBadge v-if="group.provider" variant="outline">
+                <UiBadge
+                  v-if="group.provider"
+                  variant="outline"
+                >
                   {{ pluginLabel(group.provider.plugin_slug) }}
                 </UiBadge>
                 <UiBadge>
@@ -196,14 +244,29 @@ function statusLabel(connection: ConnectionRow): string {
                   {{ group.connections.length === 1 ? 'account' : 'accounts' }}
                 </UiBadge>
               </div>
-              <p v-if="group.provider?.description" class="mt-0.5 truncate text-xs text-fg-subtle">
+              <p
+                v-if="group.provider?.description"
+                class="mt-0.5 truncate text-xs text-fg-subtle"
+              >
                 {{ group.provider.description }}
               </p>
             </div>
           </div>
+          <UiButton
+            size="sm"
+            variant="secondary"
+            icon-left="plus"
+            :aria-label="`Add ${serviceName(group)} connection`"
+            @click="$emit('add-connection', group.providerKey)"
+          >
+            Add connection
+          </UiButton>
         </template>
 
-        <ul class="divide-y divide-border-subtle" :aria-label="`${serviceName(group)} connections`">
+        <ul
+          class="divide-y divide-border-subtle"
+          :aria-label="`${serviceName(group)} connections`"
+        >
           <li
             v-for="connection in group.connections"
             :key="connection.credential_ref"
@@ -231,7 +294,10 @@ function statusLabel(connection: ConnectionRow): string {
                 </div>
                 <p class="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-fg-muted">
                   <span>{{ authLabel(group, connection) }}</span>
-                  <span aria-hidden="true" class="text-fg-subtle">·</span>
+                  <span
+                    aria-hidden="true"
+                    class="text-fg-subtle"
+                  >·</span>
                   <span :title="formatAbsoluteDateTime(connection.last_tested_at)">
                     {{
                       connection.last_tested_at
@@ -240,13 +306,19 @@ function statusLabel(connection: ConnectionRow): string {
                     }}
                   </span>
                   <template v-if="connection.expires_at">
-                    <span aria-hidden="true" class="text-fg-subtle">·</span>
+                    <span
+                      aria-hidden="true"
+                      class="text-fg-subtle"
+                    >·</span>
                     <span :title="formatAbsoluteDateTime(connection.expires_at)">
                       expires {{ formatRelativeDateTime(connection.expires_at) }}
                     </span>
                   </template>
                   <template v-if="showAccount(connection)">
-                    <span aria-hidden="true" class="text-fg-subtle">·</span>
+                    <span
+                      aria-hidden="true"
+                      class="text-fg-subtle"
+                    >·</span>
                     <span class="truncate font-mono text-2xs">{{ accountLabel(connection) }}</span>
                   </template>
                 </p>
@@ -257,31 +329,18 @@ function statusLabel(connection: ConnectionRow): string {
                 <UiButton
                   size="sm"
                   variant="ghost"
-                  :loading="busyAction === connectionActionKey(connection.credential_ref, 'edit')"
-                  :disabled="connection.revoked_at !== null"
-                  @click="$emit('edit-connection', connection)"
+                  @click="$emit('manage-account', connection)"
                 >
-                  Edit
-                </UiButton>
-                <UiButton
-                  size="sm"
-                  variant="secondary"
-                  icon-left="bolt"
-                  :loading="busyAction === connectionActionKey(connection.credential_ref, 'test')"
-                  :disabled="connection.revoked_at !== null"
-                  @click="$emit('test-connection', connection)"
-                >
-                  Test
+                  Manage Account
                 </UiButton>
                 <UiButton
                   size="sm"
                   variant="danger-ghost"
-                  icon-left="trash"
-                  :loading="busyAction === connectionActionKey(connection.credential_ref, 'revoke')"
+                  :loading="busyAction === connectionActionKey(connection.credential_ref, 'detach')"
                   :disabled="connection.revoked_at !== null"
-                  @click="$emit('revoke-connection', connection)"
+                  @click="$emit('detach-connection', connection)"
                 >
-                  Revoke
+                  Detach
                 </UiButton>
               </div>
             </div>

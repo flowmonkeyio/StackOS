@@ -13,13 +13,18 @@ import httpx
 from sqlmodel import col, select
 
 from stackos.auth_providers.oauth_contracts import OAuthProviderContract, oauth_contract_for
-from stackos.db.models import Credential, CredentialScope, IntegrationCredential
+from stackos.db.models import (
+    Credential,
+    CredentialScope,
+    IntegrationCredential,
+    ProjectCredential,
+)
 from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 from stackos.repositories.projects import IntegrationCredentialRepository
 
 from .oauth import OAuthTokenRequestError
 from .schema import ResolvedCredential
-from .utils import _PROJECT_SCOPED_PROVIDER_KEYS, utcnow
+from .utils import utcnow
 
 _RENEWAL_WINDOW = timedelta(seconds=60)
 
@@ -28,6 +33,69 @@ class CredentialResolutionMixin:
     """Resolve opaque references and keep renewable credentials usable."""
 
     _oauth_refresh_locks: ClassVar[dict[tuple[int, int], asyncio.Lock]] = {}
+
+    def require_attached_account(
+        self,
+        *,
+        project_id: int,
+        credential_ref: str,
+        provider_key: str | None = None,
+        require_connected: bool = True,
+    ) -> Credential:
+        """Validate one Account through the sole project-attachment boundary."""
+        credential = self._s.exec(
+            select(Credential).where(col(Credential.credential_ref) == credential_ref)
+        ).first()
+        if credential is None:
+            raise NotFoundError(
+                f"Account {credential_ref!r} not found",
+                data={
+                    "project_id": project_id,
+                    "credential_ref": credential_ref,
+                    "provider_key": provider_key,
+                    "next_action": (
+                        "Select an existing Account or create one in the local Accounts setup."
+                    ),
+                },
+            )
+        assert credential.id is not None
+        attachment = self._s.exec(
+            select(ProjectCredential).where(
+                col(ProjectCredential.project_id) == project_id,
+                col(ProjectCredential.credential_id) == credential.id,
+            )
+        ).first()
+        if attachment is None:
+            raise NotFoundError(
+                f"Account {credential_ref!r} is not attached to project {project_id}",
+                data={
+                    "project_id": project_id,
+                    "credential_ref": credential_ref,
+                },
+            )
+        if credential.revoked_at is not None or credential.integration_credential_id is None:
+            raise ConflictError(
+                "Account is revoked",
+                data={"credential_ref": credential_ref},
+            )
+        if provider_key is not None and credential.provider_key != provider_key:
+            raise ValidationError(
+                "Account provider does not match the requested provider",
+                data={
+                    "credential_ref": credential_ref,
+                    "credential_provider": credential.provider_key,
+                    "provider_key": provider_key,
+                },
+            )
+        if require_connected and credential.status != "connected":
+            raise ConflictError(
+                "Account is not connected",
+                data={
+                    "credential_ref": credential_ref,
+                    "status": credential.status,
+                },
+            )
+        return credential
 
     async def resolve_for_execution(
         self,
@@ -61,14 +129,18 @@ class CredentialResolutionMixin:
                     "status": credential.status,
                 },
             )
-        contract = self._optional_oauth_contract(row)
-        if contract is not None and self._needs_renewal(row=row, contract=contract):
+        contract = self._optional_oauth_contract(credential)
+        if contract is not None and self._needs_renewal(
+            credential=credential,
+            row=row,
+            contract=contract,
+        ):
             credential, row = await self._renew_under_lock(
                 project_id=project_id,
                 credential_ref=credential.credential_ref,
                 contract=contract,
             )
-        elif row.expires_at is not None and row.expires_at <= utcnow():
+        elif credential.expires_at is not None and credential.expires_at <= utcnow():
             credential.status = "repair-required"
             credential.updated_at = utcnow()
             self._s.add(credential)
@@ -81,7 +153,7 @@ class CredentialResolutionMixin:
                     "next_action": "Reconnect this provider credential.",
                 },
             )
-        if self._uses_scoped_auth(row):
+        if self._uses_scoped_auth(credential):
             self._require_scopes(
                 credential=credential,
                 required_scopes=tuple(required_scopes or ()),
@@ -97,13 +169,14 @@ class CredentialResolutionMixin:
                 "credential_ref": credential.credential_ref,
                 "required_scope_count": len(required_scopes or ()),
             },
+            project_id=project_id,
         )
         self._s.commit()
         return ResolvedCredential(
             credential=credential,
             integration=row,
             secret_payload=secret_payload,
-            config_json=row.config_json,
+            config_json=credential.config_json,
         )
 
     async def _renew_under_lock(
@@ -127,7 +200,11 @@ class CredentialResolutionMixin:
                 project_id=project_id,
                 credential_ref=credential_ref,
             )
-            if not self._needs_renewal(row=row, contract=contract):
+            if not self._needs_renewal(
+                credential=credential,
+                row=row,
+                contract=contract,
+            ):
                 return credential, row
             payload = self._json_payload(row)
             expected_updated_at = row.updated_at
@@ -149,7 +226,7 @@ class CredentialResolutionMixin:
                 if not exc.repair_required:
                     self._record_retryable_renewal_failure(
                         credential=credential,
-                        provider_key=row.kind,
+                        provider_key=credential.provider_key,
                         reason="token-endpoint-unavailable",
                     )
                     raise ConflictError(
@@ -178,7 +255,7 @@ class CredentialResolutionMixin:
             except httpx.HTTPError:
                 self._record_retryable_renewal_failure(
                     credential=credential,
-                    provider_key=row.kind,
+                    provider_key=credential.provider_key,
                     reason="token-endpoint-network-failure",
                 )
                 raise ConflictError(
@@ -214,7 +291,7 @@ class CredentialResolutionMixin:
             raw_expires_in = response_body.get("expires_in")
             if isinstance(raw_expires_in, (int, float)) and raw_expires_in > 0:
                 expires_at = utcnow() + timedelta(seconds=float(raw_expires_in))
-            safe_config = dict(row.config_json or {})
+            safe_config = dict(credential.config_json or {})
             safe_config["oauth_connection_status"] = "connected"
             response_declares_scopes = any(
                 isinstance(response_body.get(field), str | list)
@@ -230,6 +307,7 @@ class CredentialResolutionMixin:
             )
             if not self._cas_profile_update(
                 row=row,
+                credential=credential,
                 expected_updated_at=expected_updated_at,
                 payload=updated_payload,
                 safe_config=safe_config,
@@ -240,7 +318,11 @@ class CredentialResolutionMixin:
                     project_id=project_id,
                     credential_ref=credential_ref,
                 )
-                if not self._needs_renewal(row=current_row, contract=contract):
+                if not self._needs_renewal(
+                    credential=current_credential,
+                    row=current_row,
+                    contract=contract,
+                ):
                     return current_credential, current_row
                 raise ConflictError(
                     "credential changed during renewal",
@@ -265,9 +347,10 @@ class CredentialResolutionMixin:
             )
             self.record_refresh_event(
                 credential=credential,
-                provider_key=row.kind,
+                provider_key=credential.provider_key,
                 status="refreshed",
                 metadata_json={"flow": contract.flow},
+                project_id=project_id,
             )
             self._s.commit()
             self._s.expire_all()
@@ -315,14 +398,15 @@ class CredentialResolutionMixin:
         payload: dict[str, Any],
         expected_updated_at: Any,
     ) -> None:
-        safe_config = dict(row.config_json or {})
+        safe_config = dict(credential.config_json or {})
         safe_config["oauth_connection_status"] = "repair-required"
         if not self._cas_profile_update(
             row=row,
+            credential=credential,
             expected_updated_at=expected_updated_at,
             payload=payload,
             safe_config=safe_config,
-            expires_at=row.expires_at,
+            expires_at=credential.expires_at,
         ):
             return
         credential.status = "repair-required"
@@ -331,7 +415,7 @@ class CredentialResolutionMixin:
         self._s.add(credential)
         self.record_refresh_event(
             credential=credential,
-            provider_key=row.kind,
+            provider_key=credential.provider_key,
             status="failed",
             metadata_json={"reason": "provider-renewal-failed"},
         )
@@ -391,9 +475,9 @@ class CredentialResolutionMixin:
 
     def _optional_oauth_contract(
         self,
-        row: IntegrationCredential,
+        credential: Credential,
     ) -> OAuthProviderContract | None:
-        method = self._configured_auth_method(row)
+        method = self._configured_auth_method(credential)
         has_refresh_material = bool(
             method is not None and any(field.key == "refresh_token" for field in method.fields)
         )
@@ -404,21 +488,28 @@ class CredentialResolutionMixin:
         ):
             return None
         try:
-            return oauth_contract_for(row.kind, safe_config=row.config_json)
+            return oauth_contract_for(
+                credential.provider_key,
+                safe_config=credential.config_json,
+            )
         except ValidationError:
             return None
 
-    def _uses_scoped_auth(self, row: IntegrationCredential) -> bool:
-        method = self._configured_auth_method(row)
+    def _uses_scoped_auth(self, credential: Credential) -> bool:
+        method = self._configured_auth_method(credential)
         if method is None:
             return True
         return self._method_requires_local_scope_gate(method)
 
-    def _configured_auth_method(self, row: IntegrationCredential) -> Any | None:
-        method_key = (row.config_json or {}).get("auth_method_key")
+    def _configured_auth_method(self, credential: Credential) -> Any | None:
+        method_key = credential.auth_method_key
         if not method_key:
             return None
-        provider = self._get_provider(row.kind, required=False, sync=False)
+        provider = self._get_provider(
+            credential.provider_key,
+            required=False,
+            sync=False,
+        )
         if provider is None:
             return None
         return self._get_auth_method(provider, method_key, required=False)
@@ -426,6 +517,7 @@ class CredentialResolutionMixin:
     def _needs_renewal(
         self,
         *,
+        credential: Credential,
         row: IntegrationCredential,
         contract: OAuthProviderContract,
     ) -> bool:
@@ -438,9 +530,9 @@ class CredentialResolutionMixin:
             and payload.get("refresh_token")
         ):
             return True
-        if row.expires_at is None:
+        if credential.expires_at is None:
             return False
-        return row.expires_at <= utcnow() + _RENEWAL_WINDOW
+        return credential.expires_at <= utcnow() + _RENEWAL_WINDOW
 
     def _json_payload(self, row: IntegrationCredential) -> dict[str, Any]:
         assert row.id is not None
@@ -462,30 +554,15 @@ class CredentialResolutionMixin:
     ) -> tuple[Credential, IntegrationCredential]:
         if credential_ref is None:
             raise ValidationError("credential_ref is required")
-        credential = self._s.exec(
-            select(Credential).where(col(Credential.credential_ref) == credential_ref)
-        ).first()
-        if credential is None:
-            raise NotFoundError(f"credential ref {credential_ref!r} not found")
-        if credential.revoked_at is not None or credential.integration_credential_id is None:
-            raise ConflictError(
-                "credential is revoked",
-                data={"credential_ref": credential.credential_ref},
-            )
+        credential = self.require_attached_account(
+            project_id=project_id,
+            credential_ref=credential_ref,
+            require_connected=False,
+        )
         row = self._s.get(IntegrationCredential, credential.integration_credential_id)
         if row is None:
             raise NotFoundError(
                 "backing credential not found",
                 data={"credential_ref": credential.credential_ref},
-            )
-        if row.kind in _PROJECT_SCOPED_PROVIDER_KEYS and row.project_id is None:
-            raise NotFoundError(
-                f"credential {credential.credential_ref!r} not in project {project_id}",
-                data={"project_id": project_id, "credential_ref": credential.credential_ref},
-            )
-        if row.project_id is not None and row.project_id != project_id:
-            raise NotFoundError(
-                f"credential {credential.credential_ref!r} not in project {project_id}",
-                data={"project_id": project_id, "credential_ref": credential.credential_ref},
             )
         return credential, row

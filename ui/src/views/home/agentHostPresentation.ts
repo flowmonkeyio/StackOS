@@ -1,19 +1,14 @@
 import type { DesktopMcpHostStatus } from '@/lib/desktop'
 
-export const SUPPORTED_AGENT_HOSTS = [
-  { host_key: 'codex', label: 'Codex' },
-  { host_key: 'claude-code', label: 'Claude Code' },
-  { host_key: 'claude-desktop', label: 'Claude Desktop' },
-  { host_key: 'gemini-cli', label: 'Gemini CLI' },
-] as const
-
 export type AgentHostConnectionState =
   | 'connected'
-  | 'restart-needed'
-  | 'not-connected'
-  | 'update-needed'
-  | 'repair-needed'
-  | 'not-detected'
+  | 'available'
+  | 'repair_needed'
+  | 'review_required'
+  | 'update_required'
+  | 'restart_required'
+  | 'unavailable'
+  | 'error'
 
 export interface AgentHostPresentation {
   state: AgentHostConnectionState
@@ -22,70 +17,83 @@ export interface AgentHostPresentation {
   tone: 'success' | 'warning' | 'danger' | 'neutral'
 }
 
-export function agentHostLabel(hostKey: string): string {
-  return SUPPORTED_AGENT_HOSTS.find((host) => host.host_key === hostKey)?.label ?? hostKey
+const STATES = new Set<AgentHostConnectionState>([
+  'connected',
+  'available',
+  'repair_needed',
+  'review_required',
+  'update_required',
+  'restart_required',
+  'unavailable',
+  'error',
+])
+
+const DEFAULT_LABELS: Record<AgentHostConnectionState, string> = {
+  connected: 'Connected',
+  available: 'Available',
+  repair_needed: 'Repair needed',
+  review_required: 'Review required',
+  update_required: 'Update needed',
+  restart_required: 'Restart needed',
+  unavailable: 'Not detected',
+  error: 'Status unavailable',
+}
+
+const TONES: Record<
+  AgentHostConnectionState,
+  AgentHostPresentation['tone']
+> = {
+  connected: 'success',
+  available: 'neutral',
+  repair_needed: 'warning',
+  review_required: 'danger',
+  update_required: 'warning',
+  restart_required: 'warning',
+  unavailable: 'neutral',
+  error: 'danger',
+}
+
+const HOST_LOGOS: Record<string, string> = {
+  codex: '/images/openai.webp',
+  'claude-code': '/images/claude-code.webp',
+  'claude-desktop': '/images/claude.webp',
+  'gemini-cli': '/images/gemini.webp',
+  hermes: '/images/hermes.webp',
+}
+
+export function agentHostLabel(host: DesktopMcpHostStatus): string {
+  return host.display_name || host.host_key
+}
+
+export function agentHostLogo(host: DesktopMcpHostStatus): string {
+  return HOST_LOGOS[host.host_key] || '/images/stackos-icon.png'
 }
 
 export function agentHostPresentation(host: DesktopMcpHostStatus): AgentHostPresentation {
-  if (!host.available || host.status === 'absent') {
-    return {
-      state: 'not-detected',
-      label: 'Not detected',
-      detail: 'This tool was not found on this Mac.',
-      tone: 'neutral',
-    }
-  }
-  if (host.needs_restart || host.status === 'restart_required') {
-    return {
-      state: 'restart-needed',
-      label: 'Restart needed',
-      detail: 'Restart this tool to finish its StackOS connection.',
-      tone: 'warning',
-    }
-  }
-  if (
-    (host.status === 'registered_current' || host.status === 'registered') &&
-    host.ok !== false
-  ) {
-    return {
-      state: 'connected',
-      label: 'Connected',
-      detail: 'StackOS is ready in this tool.',
-      tone: 'success',
-    }
-  }
-  if (host.status === 'available_unregistered' || host.status === 'removed') {
-    return {
-      state: 'not-connected',
-      label: 'Not connected',
-      detail: 'This tool is available, but it cannot use StackOS yet.',
-      tone: host.advisory ? 'neutral' : 'warning',
-    }
-  }
-  if (host.status === 'unsupported_host_version') {
-    return {
-      state: 'update-needed',
-      label: 'Update needed',
-      detail: 'This version cannot report its StackOS connection.',
-      tone: 'warning',
-    }
-  }
+  const candidate = host.connection_state
+  const state: AgentHostConnectionState =
+    candidate && STATES.has(candidate) ? candidate : 'error'
   return {
-    state: 'repair-needed',
-    label: 'Repair needed',
-    detail: 'The saved StackOS connection needs repair.',
-    tone: host.status === 'registered_unsafe' ? 'danger' : 'warning',
+    state,
+    label: host.status_label || DEFAULT_LABELS[state],
+    detail: host.message || 'StackOS could not read this connection status.',
+    tone: TONES[state],
   }
 }
 
 export function agentHostSummary(items: DesktopMcpHostStatus[]): string {
   if (items.length === 0) return 'No connection status yet'
-  const states = items.map((item) => agentHostPresentation(item).state)
-  const connected = states.filter((state) => state === 'connected').length
-  const notDetected = states.filter((state) => state === 'not-detected').length
-  const needsAttention = states.length - connected - notDetected
+  const connected = items.filter(
+    (item) => agentHostPresentation(item).state === 'connected',
+  ).length
+  const notDetected = items.filter(
+    (item) => agentHostPresentation(item).state === 'unavailable',
+  ).length
+  const needsAttention = items.filter((item) => item.blocking === true).length
+  const available = items.length - connected - notDetected - needsAttention
   const parts: string[] = []
   if (connected) parts.push(`${connected} connected`)
+  if (available) parts.push(`${available} available`)
   if (needsAttention) parts.push(`${needsAttention} ${needsAttention === 1 ? 'needs' : 'need'} attention`)
   if (notDetected) parts.push(`${notDetected} not detected`)
   return parts.join(' · ')

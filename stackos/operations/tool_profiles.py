@@ -7,7 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from stackos.artifacts import redact_secret_text, redact_secrets
-from stackos.auth_providers import AuthRepository, AuthStatusOut, CredentialConnectionOut
+from stackos.auth_providers import AccountOut, AuthRepository, AuthStatusOut
 from stackos.communications import merged_provider_profile
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput
@@ -44,13 +44,6 @@ class ToolProfileResolveInput(MCPInput):
         default=None,
         description=("Provider-specific project profile key, such as a communication profile key."),
     )
-    auth_profile_key: str | None = Field(
-        default=None,
-        description=(
-            "Credential profile key. When omitted, StackOS uses the resolved tool profile's "
-            "auth_profile_key or the provider default."
-        ),
-    )
     credential_ref: str | None = Field(
         default=None,
         description=(
@@ -74,12 +67,11 @@ class ToolProfileCredentialOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     credential_ref: str
-    project_id: int | None
+    project_id: int
     provider_key: str
+    display_name: str
     auth_type: str
     auth_method_key: str
-    profile_key: str
-    label: str | None = None
     status: str
     setup_required: bool
     account: dict[str, Any] | None = None
@@ -94,7 +86,7 @@ class ToolProfileOut(BaseModel):
     ref: str
     record_id: int | None = None
     enabled: bool = True
-    auth_profile_key: str | None = None
+    credential_ref: str | None = None
     identity: dict[str, Any] = Field(default_factory=dict)
     agent_guidance: dict[str, Any] = Field(default_factory=dict)
     access_policy: dict[str, Any] = Field(default_factory=dict)
@@ -141,7 +133,7 @@ async def tool_profile_resolve(
     missing: list[str] = []
     warnings: list[str] = []
     profile: ToolProfileOut | None = None
-    auth_profile_key = _clean(inp.auth_profile_key)
+    credential_ref = _clean(inp.credential_ref)
 
     if inp.provider_key == "telegram-bot":
         profile, profile_missing, profile_warnings = _resolve_telegram_profile(
@@ -156,29 +148,29 @@ async def tool_profile_resolve(
         missing.extend(profile_missing)
         warnings.extend(profile_warnings)
         if profile is not None:
-            profile_auth = _clean(profile.auth_profile_key)
-            if auth_profile_key is not None and profile_auth != auth_profile_key:
+            profile_account_ref = _clean(profile.credential_ref)
+            if credential_ref is not None and profile_account_ref != credential_ref:
                 raise ValidationError(
-                    "auth_profile_key does not match the resolved tool profile",
+                    "credential_ref does not match the resolved tool profile",
                     data={
                         "provider_key": inp.provider_key,
                         "tool_profile_key": profile.key,
-                        "profile_auth_profile_key": profile_auth,
-                        "requested_auth_profile_key": auth_profile_key,
+                        "profile_credential_ref": profile_account_ref,
+                        "requested_credential_ref": credential_ref,
                     },
                 )
-            auth_profile_key = profile_auth
+            credential_ref = profile_account_ref
     elif _clean(inp.tool_profile_key) is not None:
         warnings.append(
-            "provider has no project-scoped tool profile resolver; using credential profile only"
+            "provider has no project-scoped tool profile resolver; using attached Accounts only"
         )
 
     credential = _resolve_credential(
         status=status,
+        project_id=inp.project_id,
         provider_auth_type=provider.auth_type,
         provider_key=inp.provider_key,
-        auth_profile_key=auth_profile_key,
-        credential_ref=_clean(inp.credential_ref),
+        credential_ref=credential_ref,
         warnings=warnings,
         missing=missing,
     )
@@ -276,7 +268,9 @@ def _telegram_profile_out(record: ResourceRecordOut) -> ToolProfileOut | None:
         ref=f"communication-profile:{key}" if key else str(record.external_id or ""),
         record_id=record.id,
         enabled=bool(data.get("enabled", True)),
-        auth_profile_key=str(data.get("auth_profile_key") or "default"),
+        credential_ref=_clean(
+            str(data.get("credential_ref")) if data.get("credential_ref") is not None else None
+        ),
         identity=_safe_dict(data.get("identity")),
         agent_guidance=_safe_dict(data.get("agent_guidance")),
         access_policy=_safe_dict(data.get("access_policy")),
@@ -294,9 +288,9 @@ def _telegram_profile_out(record: ResourceRecordOut) -> ToolProfileOut | None:
 def _resolve_credential(
     *,
     status: AuthStatusOut,
+    project_id: int,
     provider_auth_type: str,
     provider_key: str,
-    auth_profile_key: str | None,
     credential_ref: str | None,
     warnings: list[str],
     missing: list[str],
@@ -304,70 +298,61 @@ def _resolve_credential(
     if provider_auth_type in _NO_AUTH_TYPES:
         return None
 
-    connections = [
-        connection for connection in status.connections if connection.provider_key == provider_key
-    ]
+    accounts = [account for account in status.accounts if account.provider_key == provider_key]
     if credential_ref is not None:
-        for connection in connections:
-            if connection.credential_ref == credential_ref:
-                if auth_profile_key is not None and connection.profile_key != auth_profile_key:
-                    raise ValidationError(
-                        "credential_ref does not match the requested auth profile",
-                        data={
-                            "provider_key": provider_key,
-                            "credential_ref": credential_ref,
-                            "credential_profile_key": connection.profile_key,
-                            "requested_auth_profile_key": auth_profile_key,
-                        },
-                    )
-                return _credential_out(connection, missing=missing)
+        for account in accounts:
+            if account.credential_ref == credential_ref:
+                return _credential_out(
+                    account,
+                    project_id=project_id,
+                    missing=missing,
+                )
         missing.append("credential_ref")
-        warnings.append("credential_ref was not found for this provider/project")
+        warnings.append("credential_ref is not attached to this provider/project")
         return None
 
-    selected_profile_key = auth_profile_key or "default"
-    for connection in connections:
-        if connection.profile_key == selected_profile_key:
-            return _credential_out(connection, missing=missing)
-
     connected = [
-        connection
-        for connection in connections
-        if connection.status == "connected" and not connection.setup_required
+        account
+        for account in accounts
+        if account.status == "connected" and not account.setup_required
     ]
-    if auth_profile_key is None and len(connected) == 1:
-        warnings.append("auth_profile_key omitted; selected the only connected credential")
-        return _credential_out(connected[0], missing=missing)
+    if len(connected) == 1:
+        warnings.append("credential_ref omitted; selected the only connected Account")
+        return _credential_out(
+            connected[0],
+            project_id=project_id,
+            missing=missing,
+        )
 
     missing.append("credential")
-    if connections:
-        warnings.append(
-            f"no credential profile {selected_profile_key!r} is connected for {provider_key}"
-        )
+    if len(connected) > 1:
+        warnings.append(f"multiple {provider_key} Accounts are attached; pass credential_ref")
+    elif accounts:
+        warnings.append(f"no attached {provider_key} Account is connected")
     else:
-        warnings.append(f"no {provider_key} credential is connected")
+        warnings.append(f"no {provider_key} Account is attached")
     return None
 
 
 def _credential_out(
-    connection: CredentialConnectionOut,
+    account: AccountOut,
     *,
+    project_id: int,
     missing: list[str],
 ) -> ToolProfileCredentialOut:
-    if connection.status != "connected" or connection.setup_required:
+    if account.status != "connected" or account.setup_required:
         missing.append("credential_connected")
     return ToolProfileCredentialOut(
-        credential_ref=connection.credential_ref,
-        project_id=connection.project_id,
-        provider_key=connection.provider_key,
-        auth_type=connection.auth_type,
-        auth_method_key=connection.auth_method_key,
-        profile_key=connection.profile_key,
-        label=connection.label,
-        status=connection.status,
-        setup_required=connection.setup_required,
-        account=connection.account,
-        scopes=connection.scopes,
+        credential_ref=account.credential_ref,
+        project_id=project_id,
+        provider_key=account.provider_key,
+        display_name=account.display_name,
+        auth_type=account.auth_type,
+        auth_method_key=account.auth_method_key,
+        status=account.status,
+        setup_required=account.setup_required,
+        account=account.account,
+        scopes=account.scopes,
     )
 
 
@@ -454,7 +439,7 @@ def operation_specs() -> list[OperationSpec]:
             ),
             when_to_use=(
                 "Resolve Telegram communication profile + credential before sending messages.",
-                "Resolve one provider credential profile before a direct action.run call.",
+                "Resolve one attached Account before a direct action.run call.",
                 "Diagnose missing setup without listing every provider and profile separately.",
             ),
             prerequisites=(
@@ -480,11 +465,11 @@ def operation_specs() -> list[OperationSpec]:
                     },
                 ),
                 OperationExample(
-                    title="Resolve SMTP credential profile",
+                    title="Resolve a specific SMTP Account",
                     arguments={
                         "project_id": 1,
                         "provider_key": "smtp",
-                        "auth_profile_key": "primary",
+                        "credential_ref": "cred_...",
                     },
                 ),
             ),

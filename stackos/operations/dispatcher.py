@@ -51,7 +51,10 @@ class OperationDispatcher:
         surface: str,
         client_surface: str | None = None,
         settings: Settings | None = None,
+        trusted_local_admin: bool = False,
     ) -> OperationDispatchResult:
+        if trusted_local_admin and surface != "rest":
+            raise ValueError("trusted local-admin dispatch is REST-only")
         spec = self._registry.get(name, surface=surface)
         response_surface = client_surface or surface
         response_mode = resolve_response_mode(spec, arguments, surface=response_surface)
@@ -66,6 +69,7 @@ class OperationDispatcher:
         ctx = build_context(arguments, session)
         ctx.extras["surface"] = surface
         ctx.extras["client_surface"] = response_surface
+        ctx.extras["trusted_local_admin"] = trusted_local_admin
         if settings is not None:
             ctx.extras["settings"] = settings
         with bind_context(ctx):
@@ -84,7 +88,8 @@ class OperationDispatcher:
                         "requested_project_id": ctx.project_id,
                     },
                 )
-            check_call_grant(spec.name, ctx, parsed)
+            if not trusted_local_admin:
+                check_call_grant(spec.name, ctx, parsed)
             if (
                 not spec.read_only
                 and ctx.idempotency_key is not None

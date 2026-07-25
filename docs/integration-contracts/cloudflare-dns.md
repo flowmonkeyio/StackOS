@@ -31,7 +31,7 @@ Zone Read for zone discovery. Record reads accept DNS Read or DNS Write;
 create, edit, replace, and delete require DNS Write. The operator scopes those
 permissions when the token is created.
 
-`auth.test` calls only `GET /user/tokens/verify`. A successful probe proves that
+`account.test` calls only `GET /user/tokens/verify`. A successful probe proves that
 the token is active; it does not claim Zone Read, DNS Read, or DNS Write. The
 result returns no token, token id, zone id, or zone name.
 

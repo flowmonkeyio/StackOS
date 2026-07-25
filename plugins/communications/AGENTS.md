@@ -55,17 +55,23 @@ does not run an assistant, classify intent, or decide workflows.
   must not invoke a model or select a workflow. For a local agent response,
   call it with `direction=outbound`, the same `thread_key`, a new
   `message_key`, and `create_request=false`.
-- Telegram behavior is project-scoped through `communication-profile`
-  records. Credentials store token material and transport endpoints only.
+- Telegram Accounts are global and reusable. Telegram behavior, ingress routes,
+  and webhook ownership remain project-scoped through `communication-profile`
+  records. Accounts store token material and safe transport configuration only.
 - Generic communication profiles store identity, default agent guidance, and
   optional structured command intents. Commands are not plain strings; each
   command may carry guidance/configuration for the operating agent. Telegram
   profile facets store only safe Telegram-specific refs/settings such as
-  `auth_profile_key`, bot username, webhook settings, allowed updates, and
+  `credential_ref`, bot username, webhook settings, allowed updates, and
   provider id maps.
-- Each Telegram communication profile binds to one credential profile through
-  `auth_profile_key`; do not add global Telegram credentials or fallback token
-  lookup.
+- Each Telegram communication profile binds to one global Account through
+  `credential_ref`. The Account must be explicitly attached to the profile's
+  project; never fall back to another Account or a provider-wide token.
+- One inbound-enabled Slack or Telegram communication profile may own provider
+  ingress for an Account because each upstream app/bot has one inbound endpoint.
+  Profiles default to inbound enabled. Set the provider facet's
+  `ingress_enabled` to `false` for outbound-only reuse in another attached
+  project; such profiles must not appear in ingress routes or webhook sync.
 - Create and update communication profiles through `communicationProfile.upsert`.
   Inspect them through `communicationProfile.get` and
   `communicationProfile.list`. These are setup operations shared by REST,
@@ -109,8 +115,9 @@ does not run an assistant, classify intent, or decide workflows.
   `/api/v1/ingress/slack/{project_id}/{profile_key}`.
 - When Slack actions include `profile_ref`, the connector must resolve the
   `communication-profile` server-side and reject mismatches between
-  `provider_facets.slack-bot.auth_profile_key` and the daemon-resolved
-  credential profile.
+  `provider_facets.slack-bot.credential_ref` and the daemon-resolved Account.
+  The Account is reusable across projects, while the profile and signed ingress
+  URL remain project-bound.
 - Slack Socket Mode remains deferred until a daemon runner owns app-token
   connection lifecycle, reconnects, and envelope ACKs.
 - Slack Block Kit buttons must use opaque non-secret values only. Store button

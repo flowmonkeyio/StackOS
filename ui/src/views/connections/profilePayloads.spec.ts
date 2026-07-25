@@ -29,9 +29,9 @@ const baseProfile = (partial: Partial<CommunicationProfile>): CommunicationProfi
     ...partial,
   }) as CommunicationProfile
 
-const slackConnection = (profileKey: string, teamId: string): ConnectionRow =>
+const slackConnection = (credentialRef: string, teamId: string): ConnectionRow =>
   ({
-    profile_key: profileKey,
+    credential_ref: credentialRef,
     account: {
       metadata_json: {
         team_id: teamId,
@@ -46,8 +46,8 @@ describe('connection profile payloads', () => {
   it('preserves non-Telegram facets and policies while building a Telegram profile payload', () => {
     const existing = baseProfile({
       provider_facets: {
-        'telegram-bot': { auth_profile_key: 'old', ingress_mode: 'polling' },
-        'slack-bot': { auth_profile_key: 'slack', bot_user_id: 'U1' },
+        'telegram-bot': { credential_ref: 'cred_old', ingress_mode: 'polling' },
+        'slack-bot': { credential_ref: 'cred_slack', bot_user_id: 'U1' },
       },
       access_policy: { denied_user_refs: ['telegram-user:denied'] },
       context_policy: { include_last_messages: 10 },
@@ -58,7 +58,7 @@ describe('connection profile payloads', () => {
       projectId: 1,
       existing,
       key: 'ops',
-      authProfileKey: 'telegram-primary',
+      credentialRef: 'cred_telegram_primary',
       botUsername: 'ops_bot',
       identityDisplayName: 'Ops Bot',
       identityPurpose: 'Route operational requests.',
@@ -70,6 +70,7 @@ describe('connection profile payloads', () => {
       allowedUserRefs: ['telegram-user:1'],
       commands: [{ command: '/ops', guidance: 'Triage.' }],
       mentionPatterns: ['ops'],
+      ingressEnabled: false,
       storeNonTriggerMessages: true,
       originRequired: true,
       replyToSourceMessage: true,
@@ -79,11 +80,12 @@ describe('connection profile payloads', () => {
     expect(payload).toMatchObject({
       provider_facets: {
         'telegram-bot': {
-          auth_profile_key: 'telegram-primary',
+          credential_ref: 'cred_telegram_primary',
           bot_username: 'ops_bot',
+          ingress_enabled: false,
           ingress_mode: 'polling',
         },
-        'slack-bot': { auth_profile_key: 'slack', bot_user_id: 'U1' },
+        'slack-bot': { credential_ref: 'cred_slack', bot_user_id: 'U1' },
       },
       access_policy: {
         denied_user_refs: ['telegram-user:denied'],
@@ -99,7 +101,7 @@ describe('connection profile payloads', () => {
     const existing = baseProfile({
       provider_facets: {
         'slack-bot': {
-          auth_profile_key: 'old',
+          credential_ref: 'cred_old',
           team_id: 'T_OLD',
           team_name: 'Old team',
           bot_user_id: 'U_OLD',
@@ -111,9 +113,9 @@ describe('connection profile payloads', () => {
     const payload = buildSlackProfilePayload({
       projectId: 1,
       existing,
-      selectedConnection: slackConnection('new', 'T_NEW'),
+      selectedConnection: slackConnection('cred_new', 'T_NEW'),
       key: 'ops',
-      authProfileKey: 'new',
+      credentialRef: 'cred_new',
       displayName: 'Ops Slack',
       identityPurpose: 'Ops requests.',
       identityVoice: 'Clear.',
@@ -123,17 +125,19 @@ describe('connection profile payloads', () => {
       allowedUserRefs: ['slack-user:U1'],
       allowedSurfaceRefs: ['slack-channel:C1'],
       mentionPatterns: ['ops'],
+      ingressEnabled: false,
     })
 
-    expect(slackProfileNeedsTestedConnection(existing, 'new')).toBe(true)
+    expect(slackProfileNeedsTestedConnection(existing, 'cred_new')).toBe(true)
     expect(payload).toMatchObject({
       provider_facets: {
         'slack-bot': {
-          auth_profile_key: 'new',
+          credential_ref: 'cred_new',
           team_id: 'T_NEW',
           team_name: 'Team T_NEW',
           bot_user_id: 'U_T_NEW',
           bot_id: 'B_T_NEW',
+          ingress_enabled: false,
         },
       },
       access_policy: {
@@ -149,7 +153,7 @@ describe('connection profile payloads', () => {
     const existing = baseProfile({
       provider_facets: {
         'slack-bot': {
-          auth_profile_key: 'same',
+          credential_ref: 'cred_same',
           team_id: 'T_SAME',
           ingress_path: '/api/v1/ingress/slack/1/ops',
         },
@@ -161,7 +165,7 @@ describe('connection profile payloads', () => {
       existing,
       selectedConnection: null,
       key: 'ops',
-      authProfileKey: 'same',
+      credentialRef: 'cred_same',
       displayName: 'Ops Slack',
       identityPurpose: '',
       identityVoice: '',
@@ -171,15 +175,17 @@ describe('connection profile payloads', () => {
       allowedUserRefs: ['slack-user:U1'],
       allowedSurfaceRefs: [],
       mentionPatterns: [],
+      ingressEnabled: true,
     })
 
-    expect(slackProfileNeedsTestedConnection(existing, 'same')).toBe(false)
+    expect(slackProfileNeedsTestedConnection(existing, 'cred_same')).toBe(false)
     expect(payload).toMatchObject({
       provider_facets: {
         'slack-bot': {
-          auth_profile_key: 'same',
+          credential_ref: 'cred_same',
           team_id: 'T_SAME',
           ingress_path: '/api/v1/ingress/slack/1/ops',
+          ingress_enabled: true,
         },
       },
     })

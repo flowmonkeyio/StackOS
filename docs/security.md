@@ -51,19 +51,24 @@ Provider credentials are daemon-owned. Agents may inspect sanitized auth status
 and run daemon-side health probes, but they do not receive raw API keys, OAuth
 tokens, refresh tokens, encrypted payloads, or local setup secrets.
 
-`credentials` are the public, opaque profile records. `integration_credentials`
-is the encrypted backing store keyed by project, provider, and profile; it is
-not an agent-facing credential API. OAuth state rows are the provider-neutral
-transaction core; trusted provider contracts supply protocol data without
-turning OAuth into agent-visible or plugin-stored secret state.
+`credentials` are global reusable Account records with opaque refs and safe
+lifecycle state. `project_credentials` authorizes an Account for a project.
+`integration_credentials` is encrypted backing only: it carries no project,
+provider, or display identity and is not an agent-facing API. OAuth state rows
+are the provider-neutral transaction core; trusted provider contracts supply
+protocol data without turning OAuth into agent-visible or plugin-stored secret
+state.
 
-In normal agent sessions, the MCP bridge exposes `auth.status` and `auth.test`
-through `toolbox.call`; it does not advertise them as direct tools. Local
-human/admin REST operations such as `auth.start`, `auth.revoke`, and
-`auth/{provider}/credentials` are daemon-admin setup paths, not agent toolbox
-tools. When a tool needs a credential, the agent passes an opaque
-`credential_ref`; the daemon resolves and decrypts the backing secret inside
-the vendor wrapper process.
+In normal agent sessions, the MCP bridge exposes `account.list`,
+`connection.list`, and `account.test` through `toolbox.call`; it does not
+advertise them as direct tools. Local human/admin REST operations such as
+`account.start`, the REST-only `account.create/get/update` contracts,
+`account.revoke`, and project Connection attach/detach are daemon-admin setup
+paths. Their exact REST routes dispatch through the operation registry, while
+credential fields remain write-only and unavailable on MCP/CLI. When a tool
+needs a credential, the agent passes an opaque `credential_ref`; the daemon
+verifies that the Account is attached to the project, then resolves and
+decrypts the backing secret inside the vendor wrapper process.
 
 Provider manifests declare typed `auth_methods`. The UI renders those methods
 directly, so an API-key system, SMTP system, OAuth2 system, and custom webhook
@@ -73,8 +78,8 @@ credential material in plugin config.
 All methods use the ownership, evidence, profile-isolation, migration, and
 local-versus-provider revocation rules in the
 [one-brain auth-method contract](./auth-providers.md#one-brain-auth-method-contract).
-One credential profile is bound to one saved method; changing methods requires
-a separately verified profile and deliberate exact-credential reassignment.
+One Account is bound to one saved method; changing methods requires a
+separately verified Account and deliberate Connection reassignment.
 
 Every auth usage/refresh audit payload is passed through the shared redactor
 before persistence. Secret-like keys such as `api_key`, `access_token`,
@@ -87,7 +92,7 @@ StackOS owns one callback path: `/api/v1/auth/oauth/callback`. The callback
 origin defaults to the local daemon and can be changed with
 `STACKOS_OAUTH_CALLBACK_BASE_URL`; a configured value must be one origin with
 no path, query, credentials, or fragment, and must use HTTPS except for an HTTP
-loopback origin. `auth.start` never accepts a redirect URI from its caller, so a
+loopback origin. `account.start` never accepts a redirect URI from its caller, so a
 tool or UI request cannot turn the daemon into an open OAuth redirect target.
 
 Each start creates a random state value but persists only its SHA-256 digest,
@@ -145,7 +150,7 @@ REST mutation routes are local-admin surfaces behind the daemon bearer token.
 The browser UI receives only a derived REST-only console token. That token can
 read REST state, call operation-registry entries whose specs are read-only,
 create projects during local setup, and manage provider auth setup for a
-project (`auth.start`, secret storage and edits, sanitized auth tests, and
+project (`account.start`, secret storage and edits, sanitized auth tests, and
 revoke). Provider-auth route definitions own method validity inside that
 namespace. Mutating operation calls are allowed only when the operation's REST
 surface declares `browser_safe=True` for explicit local setup. It cannot access
@@ -215,7 +220,8 @@ to `127.0.0.1:5180` can fetch the UI token by sending `GET
 for REST reads, read-only `POST /api/v1/operations/{operation}/call` transport
 calls, `POST /api/v1/projects`, narrow no-secret setup operations such as
 `communicationProfile.upsert` and `ingressEndpoint.*`, and the
-provider-auth setup routes under `/api/v1/projects/{id}/auth/*`. It can also
+global Account routes under `/api/v1/auth/accounts/*` plus explicit project
+Connection attach/detach routes. It can also
 call local setup operations whose REST surface is explicitly marked
 browser-safe; it cannot access `/mcp` and cannot mutate existing projects,
 tracker lifecycle, resources, runs, action execution, templates, or project data.

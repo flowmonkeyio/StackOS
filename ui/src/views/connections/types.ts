@@ -1,6 +1,9 @@
-import type { SchemaAuthProviderOut, SchemaCredentialConnectionOut } from '@/api'
+import type { SchemaAccountOut, SchemaAuthProviderOut } from '@/api'
 
-export type ConnectionRow = SchemaCredentialConnectionOut & { id: string }
+export type ConnectionRow = Omit<SchemaAccountOut, 'project_ids'> & {
+  id: string
+  project_ids: number[]
+}
 export type AuthMethod = NonNullable<SchemaAuthProviderOut['auth_methods']>[number]
 export type AuthField = NonNullable<AuthMethod['fields']>[number]
 export type MessageTone = 'success' | 'danger' | 'warning' | 'info'
@@ -50,7 +53,7 @@ export type BotPolicyFormFields = Record<BotPolicyFieldKey, string>
 
 export interface TelegramProfileForm {
   key: string
-  auth_profile_key: string
+  credential_ref: string
   bot_username: string
   identity_display_name: string
   identity_purpose: string
@@ -62,6 +65,7 @@ export interface TelegramProfileForm {
   allowed_user_refs: string
   commands: TelegramCommandDraft[]
   mention_patterns: string
+  ingress_enabled: boolean
   store_non_trigger_messages: boolean
   origin_required: boolean
   reply_to_source_message: boolean
@@ -70,7 +74,7 @@ export interface TelegramProfileForm {
 
 export interface SlackProfileForm {
   key: string
-  auth_profile_key: string
+  credential_ref: string
   identity_display_name: string
   identity_purpose: string
   identity_voice: string
@@ -80,6 +84,7 @@ export interface SlackProfileForm {
   allowed_chat_refs: string
   allowed_user_refs: string
   mention_patterns: string
+  ingress_enabled: boolean
 }
 
 export interface CommunicationProfile {

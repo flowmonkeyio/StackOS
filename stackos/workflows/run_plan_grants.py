@@ -59,8 +59,10 @@ RUN_PLAN_GRANTABLE_TOOL_NAMES: frozenset[str] = frozenset(
 
 RUN_PLAN_ADMIN_ONLY_TOOL_NAMES: frozenset[str] = frozenset(
     {
-        "auth.revoke",
-        "auth.start",
+        "account.revoke",
+        "account.start",
+        "connection.attach",
+        "connection.detach",
         "plugin.disable",
         "plugin.enable",
         "runPlan.update",

@@ -271,8 +271,8 @@ user-explainable meaning.
 
 ## Connections `/projects/:id/connections`
 
-**User question:** “Which services are connected, which need repair, and how do
-I safely add one?”
+**User question:** “Which reusable Accounts can this project use, and which one
+is attached to each service?”
 
 **Current failure:** Services, bots, channels, destinations, handoff rules,
 connectivity, and diagnostics are peer tabs rather than one setup journey.
@@ -281,14 +281,24 @@ connectivity, and diagnostics are peer tabs rather than one setup journey.
 
 1. Default **Services** view with provider groups, status, safe account label,
    last tested time, expiry, and exact repair/test actions.
-2. Add connection flow: provider -> auth method -> credential input -> test ->
-   success. Secret input is never echoed after submission.
+2. Add Connection flow first selects an existing global Account. **Create new
+   Account** opens the same reusable Account panel as `/accounts`, attaches the
+   successful Account automatically, and never echoes secrets.
 3. Services needing repair precede healthy services.
 4. Messaging becomes a secondary grouped area: identities, places,
    destinations/handoffs, and inbound connectivity.
 5. Diagnostics is a technical disclosure, not a peer primary tab.
 6. Query `section` lands users on services, messaging, connectivity, or
    diagnostics from Setup/Attention.
+
+## Accounts `/accounts`
+
+**User question:** “Which named provider Accounts do I own, and where are they
+used?”
+
+The page is global rather than project-scoped. It supports multiple Accounts
+for the same provider, clear `{Service} - Default` naming, safe edit/test/revoke
+actions, project usage visibility, and the reusable Add Account panel.
 
 ## Secondary inspection screens
 

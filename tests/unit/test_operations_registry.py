@@ -8,13 +8,17 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 193
+    assert len(names) == 199
     assert {
         "action.execute",
         "actionCall.get",
         "secret.set",
         "schema.get",
-        "auth.status",
+        "account.list",
+        "account.create",
+        "account.get",
+        "account.update",
+        "connection.list",
         "workflowTemplate.authoringGuide",
         "workflowTemplate.describe",
         "resource.query",
@@ -250,25 +254,48 @@ def test_operation_registry_documents_core_operations() -> None:
     assert schema_get.response_policy.allowed_modes == ["raw"]
     assert schema_get.examples[0].arguments["schema_ref"] == "stackos.action-output.v1"
 
-    auth_status = registry.get("auth.status").describe_out()
-    assert auth_status.surfaces["mcp"].enabled is True
-    assert auth_status.surfaces["rest"].enabled is True
-    assert auth_status.surfaces["rest"].path == "/api/v1/projects/{project_id}/auth/status"
-    assert auth_status.surfaces["cli"].command == "ops call auth.status"
-    assert auth_status.grant_policy == "direct-read"
-    assert any("credential_ref" in item for item in auth_status.returns)
+    account_list = registry.get("account.list").describe_out()
+    assert account_list.surfaces["mcp"].enabled is True
+    assert account_list.surfaces["rest"].path == "/api/v1/auth/accounts"
+    assert account_list.surfaces["cli"].command == "ops call account.list"
+    assert account_list.grant_policy == "direct-read"
+    assert any("credential_ref" in item for item in account_list.returns)
 
-    auth_test = registry.get("auth.test").describe_out()
-    assert auth_test.surfaces["mcp"].enabled is True
-    assert auth_test.surfaces["rest"].enabled is True
-    assert auth_test.surfaces["cli"].command == "ops call auth.test"
-    assert auth_test.grant_policy == "direct-setup-write"
-    assert any("auth.status" in item for item in auth_test.prerequisites)
+    account_create = registry.get("account.create").describe_out()
+    assert account_create.surfaces["rest"].path == "/api/v1/auth/accounts/{provider_key}"
+    assert account_create.surfaces["mcp"].enabled is False
+    assert account_create.surfaces["cli"].enabled is False
+    assert account_create.input_schema["properties"]["fields"]["writeOnly"] is True
+    assert account_create.secret_policy == "write-only-input-no-secret-output"
 
-    auth_start = registry.get("auth.start").describe_out()
-    assert auth_start.surfaces["rest"].path == (
-        "/api/v1/projects/{project_id}/auth/{provider_key}/start"
+    account_get = registry.get("account.get").describe_out()
+    assert account_get.surfaces["rest"].path == "/api/v1/auth/accounts/{credential_ref}"
+    assert account_get.read_only is True
+    assert account_get.secret_policy == "no-secret-output"
+
+    account_update = registry.get("account.update").describe_out()
+    assert account_update.surfaces["rest"].path == "/api/v1/auth/accounts/{credential_ref}"
+    assert account_update.surfaces["mcp"].enabled is False
+    assert account_update.input_schema["properties"]["fields"]["writeOnly"] is True
+
+    connection_list = registry.get("connection.list").describe_out()
+    assert connection_list.surfaces["rest"].path == (
+        "/api/v1/projects/{project_id}/connections/accounts"
     )
+    for operation_name in ("connection.attach", "connection.detach"):
+        connection_write = registry.get(operation_name).describe_out()
+        assert connection_write.surfaces["rest"].enabled is True
+        assert connection_write.grant_policy == "local-admin-auth-write"
+
+    account_test = registry.get("account.test").describe_out()
+    assert account_test.surfaces["mcp"].enabled is True
+    assert account_test.surfaces["rest"].enabled is True
+    assert account_test.surfaces["cli"].command == "ops call account.test"
+    assert account_test.grant_policy == "direct-setup-write"
+    assert any("account.list" in item for item in account_test.prerequisites)
+
+    account_start = registry.get("account.start").describe_out()
+    assert account_start.surfaces["rest"].path == ("/api/v1/auth/accounts/{provider_key}/start")
 
     auth_callback = registry.get("auth.callback").describe_out()
     assert auth_callback.surfaces["rest"].enabled is True
@@ -346,7 +373,7 @@ def test_operation_registry_documents_core_operations() -> None:
     assert readiness.surfaces["rest"].enabled is True
     assert readiness.surfaces["cli"].command == "ops call readiness.check"
     assert readiness.grant_policy == "direct-read"
-    assert any("global auth.status gaps" in item for item in readiness.prerequisites)
+    assert any("global Account inventory gaps" in item for item in readiness.prerequisites)
 
     workflow_extension = registry.get("workflowExtension.upsert").describe_out()
     assert workflow_extension.category == "workflow"
@@ -443,6 +470,9 @@ def test_operation_registry_surface_filter() -> None:
 
     cli_names = {item.name for item in registry.by_surface("cli")}
     assert cli_names == {item.name for item in registry.all()} - {
+        "account.create",
+        "account.get",
+        "account.update",
         "auth.callback",
         "secret.set",
     }

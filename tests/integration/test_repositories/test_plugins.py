@@ -17,10 +17,7 @@ from stackos.plugins.manifest import BUILTIN_PLUGIN_MANIFESTS
 from stackos.repositories import plugins as plugin_repository_module
 from stackos.repositories.base import NotFoundError
 from stackos.repositories.plugins import PluginRepository
-from stackos.repositories.projects import (
-    IntegrationBudgetRepository,
-    IntegrationCredentialRepository,
-)
+from stackos.repositories.projects import IntegrationBudgetRepository
 
 
 def test_builtin_plugins_sync_and_list(session: Session) -> None:
@@ -63,7 +60,7 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
     linear = repo.get_plugin("linear")
     assert linear.name == "Linear"
     assert linear.manifest_json["ui"]["nav"]["section"] == "Linear"
-    assert linear.manifest_json["providers"][0]["auth_type"] == "oauth"
+    assert linear.manifest_json["providers"][0]["auth_type"] == "oauth-or-api-key"
     linear_methods = linear.manifest_json["providers"][0]["auth_methods"]
     assert [method["key"] for method in linear_methods] == [
         "oauth2_authorization_code",
@@ -505,12 +502,12 @@ def test_project_catalog_reports_action_availability(session: Session, project_i
     assert missing_setup["mock.echo"].availability.status == "missing_credential"
     assert missing_setup["mock.echo"].availability.reasons == ["credential_required"]
 
-    IntegrationCredentialRepository(session).set(
-        project_id=project_id,
-        kind="firecrawl",
-        secret_payload=b"firecrawl-key",
+    AuthRepository(session).store_credential(
+        provider_key="firecrawl",
+        display_name="Firecrawl - Default",
+        fields={"api_key": "firecrawl-key"},
+        attach_project_id=project_id,
     )
-    AuthRepository(session).status(project_id=project_id, provider_key="firecrawl")
     IntegrationBudgetRepository(session).set(
         project_id=project_id,
         kind="firecrawl",

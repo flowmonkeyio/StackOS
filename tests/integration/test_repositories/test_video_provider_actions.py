@@ -13,8 +13,8 @@ from stackos.actions import ActionRepository
 from stackos.auth_providers import AuthRepository
 from stackos.repositories.projects import (
     IntegrationBudgetRepository,
-    IntegrationCredentialRepository,
 )
+from tests.integration.account_test_support import seed_test_account
 
 
 def _credential_ref(
@@ -23,9 +23,10 @@ def _credential_ref(
     provider_key: str,
     payload: bytes,
 ) -> str:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind=provider_key,
+        provider_key=provider_key,
         secret_payload=payload,
     )
     IntegrationBudgetRepository(session).set(
@@ -34,7 +35,7 @@ def _credential_ref(
         monthly_budget_usd=10.0,
     )
     status = AuthRepository(session).status(project_id=project_id, provider_key=provider_key)
-    return status.connections[0].credential_ref
+    return status.accounts[0].credential_ref
 
 
 def test_google_veo_video_action_executes_and_registers_artifact(

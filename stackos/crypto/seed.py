@@ -153,12 +153,12 @@ def rotate_seed(
 ) -> tuple[bytes, list[dict[str, Any]]]:
     """Rotate the seed, re-encrypting every credential row in memory.
 
-    The caller passes a list of dicts (one per ``integration_credentials``
-    row) shaped as::
+    Account credential rows use immutable Account identity::
 
-        {"id": int, "project_id": int|None, "kind": str,
+        {"id": int, "credential_ref": str, "provider_key": str,
          "encrypted_payload": bytes, "nonce": bytes}
 
+    Project payload-secret rows continue to use ``project_id`` + ``kind``.
     We:
 
     1. Decrypt every row under the *current* seed. Any decryption
@@ -192,7 +192,9 @@ def reencrypt_rows_for_seed_rotation(
     """Return ``(new_seed, rotated_rows)`` without mutating seed files."""
     # Local import to avoid a circular import at module load time.
     from stackos.crypto.aes_gcm import decrypt as _decrypt
+    from stackos.crypto.aes_gcm import decrypt_account as _decrypt_account
     from stackos.crypto.aes_gcm import encrypt as _encrypt
+    from stackos.crypto.aes_gcm import encrypt_account as _encrypt_account
 
     if not seed_path.exists():
         raise SeedFileError(
@@ -204,25 +206,44 @@ def reencrypt_rows_for_seed_rotation(
 
     plaintexts: list[bytes] = []
     for row in rows:
-        plaintexts.append(
-            _decrypt(
-                row["encrypted_payload"],
-                nonce=row["nonce"],
-                project_id=row["project_id"],
-                kind=row["kind"],
-                seed=old_seed,
+        if row.get("storage_kind") == "integration_credential":
+            plaintexts.append(
+                _decrypt_account(
+                    row["encrypted_payload"],
+                    nonce=row["nonce"],
+                    credential_ref=row["credential_ref"],
+                    provider_key=row["provider_key"],
+                    seed=old_seed,
+                )
             )
-        )
+        else:
+            plaintexts.append(
+                _decrypt(
+                    row["encrypted_payload"],
+                    nonce=row["nonce"],
+                    project_id=row["project_id"],
+                    kind=row["kind"],
+                    seed=old_seed,
+                )
+            )
 
     new_seed = secrets.token_bytes(_SEED_BYTES)
     rotated_rows: list[dict[str, Any]] = []
     for plaintext, row in zip(plaintexts, rows, strict=True):
-        new_payload, new_nonce = _encrypt(
-            plaintext,
-            project_id=row["project_id"],
-            kind=row["kind"],
-            seed=new_seed,
-        )
+        if row.get("storage_kind") == "integration_credential":
+            new_payload, new_nonce = _encrypt_account(
+                plaintext,
+                credential_ref=row["credential_ref"],
+                provider_key=row["provider_key"],
+                seed=new_seed,
+            )
+        else:
+            new_payload, new_nonce = _encrypt(
+                plaintext,
+                project_id=row["project_id"],
+                kind=row["kind"],
+                seed=new_seed,
+            )
         rotated_rows.append(
             {
                 **row,

@@ -26,14 +26,15 @@ from stackos.db.models import (
 )
 from stackos.repositories.base import ConflictError
 from stackos.repositories.projects import IntegrationCredentialRepository
+from tests.integration.account_test_support import seed_test_account
 
 
 def _interactive_google_profile(repo: AuthRepository, project_id: int) -> str:
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="google-search-console",
         auth_method_key="oauth2_authorization_code",
-        profile_key="primary",
+        display_name="primary",
         fields={
             "client_id": "google-client-id",
             "client_secret": "google-client-secret",
@@ -52,7 +53,7 @@ def _start_google(
     settings: Settings,
 ) -> tuple[object, str, dict[str, list[str]]]:
     started = repo.start(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="google-search-console",
         auth_method_key="oauth2_authorization_code",
         credential_ref=credential_ref,
@@ -123,15 +124,15 @@ def test_google_family_profiles_start_the_shared_interactive_flow(
 ) -> None:
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key=provider_key,
         auth_method_key="oauth2_authorization_code",
-        profile_key="primary",
+        display_name="primary",
         fields=fields,
     ).data
 
     started = repo.start(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key=provider_key,
         auth_method_key="oauth2_authorization_code",
         credential_ref=stored.credential_ref,
@@ -214,10 +215,10 @@ def test_enterprise_profiles_start_provider_correct_interactive_flow(
 ) -> None:
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key=provider_key,
         auth_method_key="oauth2_authorization_code",
-        profile_key="primary",
+        display_name="primary",
         fields={
             "client_id": f"{provider_key}-client-id",
             "client_secret": f"{provider_key}-client-secret",
@@ -225,7 +226,7 @@ def test_enterprise_profiles_start_provider_correct_interactive_flow(
     ).data
 
     started = repo.start(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key=provider_key,
         auth_method_key="oauth2_authorization_code",
         credential_ref=stored.credential_ref,
@@ -284,16 +285,17 @@ def test_provider_callback_normalizes_execution_base_url(
 ) -> None:
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key=provider_key,
         auth_method_key="oauth2_authorization_code",
+        display_name=f"{provider_key} - Default",
         fields={
             "client_id": f"{provider_key}-client-id",
             "client_secret": f"{provider_key}-client-secret",
         },
     ).data
     started = repo.start(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key=provider_key,
         auth_method_key="oauth2_authorization_code",
         credential_ref=stored.credential_ref,
@@ -317,17 +319,11 @@ def test_provider_callback_normalizes_execution_base_url(
     )
 
     assert completed.status == "connected"
-    row = session.exec(
-        select(IntegrationCredential).where(
-            IntegrationCredential.project_id == project_id,
-            IntegrationCredential.kind == provider_key,
-        )
-    ).one()
-    assert row.config_json is not None
-    assert row.config_json[config_key] == config_value
     credential = session.exec(
         select(Credential).where(Credential.credential_ref == stored.credential_ref)
     ).one()
+    assert credential.config_json is not None
+    assert credential.config_json[config_key] == config_value
     assert credential.id is not None
     scopes = {
         item.scope
@@ -346,13 +342,14 @@ def test_meta_callback_exchanges_short_token_for_long_lived_token(
 ) -> None:
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="meta-ads",
         auth_method_key="oauth2_authorization_code",
+        display_name="Meta Ads - Default",
         fields={"client_id": "meta-client", "client_secret": "meta-secret"},
     ).data
     started = repo.start(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="meta-ads",
         auth_method_key="oauth2_authorization_code",
         credential_ref=stored.credential_ref,
@@ -380,16 +377,16 @@ def test_meta_callback_exchanges_short_token_for_long_lived_token(
     )
 
     assert completed.status == "connected"
-    row = session.exec(
-        select(IntegrationCredential).where(
-            IntegrationCredential.project_id == project_id,
-            IntegrationCredential.kind == "meta-ads",
-        )
+    account = session.exec(
+        select(Credential).where(Credential.credential_ref == stored.credential_ref)
     ).one()
-    assert row.id is not None and row.expires_at is not None
-    payload = json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id))
+    assert account.integration_credential_id is not None
+    assert account.expires_at is not None
+    payload = json.loads(
+        IntegrationCredentialRepository(session).get_decrypted(account.integration_credential_id)
+    )
     assert payload["access_token"] == "meta-long"
-    assert row.expires_at > utcnow() + timedelta(days=50)
+    assert account.expires_at > utcnow() + timedelta(days=50)
     assert len(httpx_mock.get_requests()) == 2
 
 
@@ -401,13 +398,14 @@ def test_provider_callback_rejects_untrusted_execution_base(
 ) -> None:
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="pipedrive",
         auth_method_key="oauth2_authorization_code",
+        display_name="Pipedrive - Default",
         fields={"client_id": "pipedrive-client", "client_secret": "pipedrive-secret"},
     ).data
     started = repo.start(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="pipedrive",
         auth_method_key="oauth2_authorization_code",
         credential_ref=stored.credential_ref,
@@ -432,15 +430,14 @@ def test_provider_callback_rejects_untrusted_execution_base(
     )
 
     assert completed.status == "repair-required"
-    row = session.exec(
-        select(IntegrationCredential).where(
-            IntegrationCredential.project_id == project_id,
-            IntegrationCredential.kind == "pipedrive",
-        )
+    account = session.exec(
+        select(Credential).where(Credential.credential_ref == stored.credential_ref)
     ).one()
-    assert "base_url" not in (row.config_json or {})
-    assert row.id is not None
-    payload = json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id))
+    assert "base_url" not in (account.config_json or {})
+    assert account.integration_credential_id is not None
+    payload = json.loads(
+        IntegrationCredentialRepository(session).get_decrypted(account.integration_credential_id)
+    )
     assert "access_token" not in payload
 
 
@@ -474,9 +471,10 @@ def test_static_token_alternative_does_not_require_oauth_scope_records(
 ) -> None:
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key=provider_key,
         auth_method_key=auth_method_key,
+        display_name=f"{provider_key} - Static",
         fields=fields,
     ).data
 
@@ -543,26 +541,24 @@ def test_enterprise_refresh_uses_the_provider_contract_and_rotates_tokens(
     client_auth_style: str,
     response_metadata: dict[str, str],
 ) -> None:
-    stored = (
-        IntegrationCredentialRepository(session)
-        .set(
-            project_id=project_id,
-            kind=provider_key,
-            secret_payload=json.dumps(
-                {
-                    "client_id": f"{provider_key}-client",
-                    "client_secret": f"{provider_key}-secret",
-                    "access_token": "expired-access",
-                    "refresh_token": "old-refresh",
-                }
-            ).encode(),
-            config_json={
-                "auth_method_key": "oauth2_authorization_code",
-                "scope_status": "known",
-            },
-            expires_at=utcnow() - timedelta(minutes=5),
-        )
-        .data
+    stored = seed_test_account(
+        session,
+        project_id=project_id,
+        provider_key=provider_key,
+        display_name=f"{provider_key} - Default",
+        secret_payload=json.dumps(
+            {
+                "client_id": f"{provider_key}-client",
+                "client_secret": f"{provider_key}-secret",
+                "access_token": "expired-access",
+                "refresh_token": "old-refresh",
+            }
+        ).encode(),
+        config_json={
+            "auth_method_key": "oauth2_authorization_code",
+            "scope_status": "known",
+        },
+        expires_at=utcnow() - timedelta(minutes=5),
     )
     repo = AuthRepository(session)
     credential_ref = (
@@ -570,7 +566,7 @@ def test_enterprise_refresh_uses_the_provider_contract_and_rotates_tokens(
             project_id=project_id,
             provider_key=provider_key,
         )
-        .connections[0]
+        .accounts[0]
         .credential_ref
     )
     httpx_mock.add_response(
@@ -608,9 +604,13 @@ def test_enterprise_refresh_uses_the_provider_contract_and_rotates_tokens(
     payload = json.loads(resolved.secret_payload)
     assert payload["access_token"] == "renewed-access"
     assert payload["refresh_token"] == "rotated-refresh"
-    row = session.get(IntegrationCredential, stored.id)
-    assert row is not None and row.expires_at is not None
-    assert row.expires_at > utcnow() + timedelta(minutes=50)
+    account = session.exec(
+        select(Credential).where(
+            Credential.integration_credential_id == stored.data.id,
+        )
+    ).one()
+    assert account.expires_at is not None
+    assert account.expires_at > utcnow() + timedelta(minutes=50)
 
 
 @pytest.mark.parametrize(
@@ -626,13 +626,14 @@ def test_enterprise_denial_ends_pending_profile_without_a_token_request(
 ) -> None:
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key=provider_key,
         auth_method_key="oauth2_authorization_code",
+        display_name=f"{provider_key} - Default",
         fields={"client_id": "client-id", "client_secret": "client-secret"},
     ).data
     started = repo.start(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key=provider_key,
         auth_method_key="oauth2_authorization_code",
         credential_ref=stored.credential_ref,
@@ -651,7 +652,7 @@ def test_enterprise_denial_ends_pending_profile_without_a_token_request(
     )
 
     assert denied.status == "authorization-denied"
-    connection = repo.status(project_id=project_id, provider_key=provider_key).connections[0]
+    connection = repo.status(project_id=project_id, provider_key=provider_key).accounts[0]
     assert connection.status == "repair-required"
     assert httpx_mock.get_requests() == []
 
@@ -739,7 +740,7 @@ def test_oauth_callback_exchanges_once_and_persists_normalized_credential(
     connection = repo.status(
         project_id=project_id,
         provider_key="google-search-console",
-    ).connections[0]
+    ).accounts[0]
     assert connection.status == "connected"
     assert connection.scopes == ["https://www.googleapis.com/auth/webmasters.readonly"]
     stored_scope = session.exec(select(CredentialScope)).one()
@@ -775,10 +776,10 @@ def test_failed_alternative_oauth_profile_preserves_the_active_credential(
 ) -> None:
     repo = AuthRepository(session)
     active = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="google-search-console",
         auth_method_key="oauth2_refresh_token",
-        profile_key="primary",
+        display_name="primary",
         fields={
             "client_id": "google-client-id",
             "client_secret": "google-client-secret",
@@ -787,10 +788,10 @@ def test_failed_alternative_oauth_profile_preserves_the_active_credential(
         },
     ).data
     pending = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="google-search-console",
         auth_method_key="oauth2_authorization_code",
-        profile_key="replacement",
+        display_name="replacement",
         fields={
             "client_id": "replacement-client-id",
             "client_secret": "replacement-client-secret",
@@ -819,19 +820,17 @@ def test_failed_alternative_oauth_profile_preserves_the_active_credential(
     connections = repo.status(
         project_id=project_id,
         provider_key="google-search-console",
-    ).connections
-    connection_by_profile = {connection.profile_key: connection for connection in connections}
-    assert connection_by_profile["primary"].status == "connected"
-    assert connection_by_profile["replacement"].status == "repair-required"
-    row = session.exec(
-        select(IntegrationCredential).where(
-            IntegrationCredential.project_id == project_id,
-            IntegrationCredential.kind == "google-search-console",
-            IntegrationCredential.profile_key == "primary",
-        )
+    ).accounts
+    connection_by_name = {connection.display_name: connection for connection in connections}
+    assert connection_by_name["primary"].status == "connected"
+    assert connection_by_name["replacement"].status == "repair-required"
+    account = session.exec(
+        select(Credential).where(Credential.credential_ref == active.credential_ref)
     ).one()
-    assert row.id is not None
-    payload = json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id))
+    assert account.integration_credential_id is not None
+    payload = json.loads(
+        IntegrationCredentialRepository(session).get_decrypted(account.integration_credential_id)
+    )
     assert payload["refresh_token"] == "still-working-refresh-value"
     assert "_oauth_pending" not in payload
 
@@ -843,10 +842,10 @@ def test_expired_google_credential_refreshes_and_persists_rotation(
 ) -> None:
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="google-search-console",
         auth_method_key="oauth2_refresh_token",
-        profile_key="primary",
+        display_name="primary",
         fields={
             "client_id": "refresh-client-id",
             "client_secret": "refresh-client-secret",
@@ -892,15 +891,16 @@ def test_expired_google_credential_refreshes_and_persists_rotation(
     assert first_payload["refresh_token"] == "rotated-refresh-value"
     assert second_payload == first_payload
     assert len(httpx_mock.get_requests()) == 1
-    row = session.get(IntegrationCredential, first.integration.id)
-    assert row is not None and row.expires_at is not None
-    assert row.expires_at > utcnow() + timedelta(minutes=50)
+    account = session.exec(
+        select(Credential).where(Credential.credential_ref == stored.credential_ref)
+    ).one()
+    assert account.expires_at is not None
+    assert account.expires_at > utcnow() + timedelta(minutes=50)
 
     updated = repo.update_credential(
-        project_id=project_id,
         credential_ref=stored.credential_ref,
         fields={"default_site_url": "https://updated.example.test/"},
-        label="Updated manual refresh",
+        display_name="Updated manual refresh",
     ).data
     assert updated.status == "connected"
     session.expire_all()
@@ -912,7 +912,7 @@ def test_expired_google_credential_refreshes_and_persists_rotation(
     connection = repo.status(
         project_id=project_id,
         provider_key="google-search-console",
-    ).connections[0]
+    ).accounts[0]
     assert connection.scopes == ["https://www.googleapis.com/auth/webmasters.readonly"]
 
 
@@ -923,10 +923,10 @@ def test_manual_refresh_does_not_invent_scopes_when_provider_omits_them(
 ) -> None:
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="google-search-console",
         auth_method_key="oauth2_refresh_token",
-        profile_key="manual-unknown-scope",
+        display_name="manual-unknown-scope",
         fields={
             "client_id": "refresh-client-id",
             "client_secret": "refresh-client-secret",
@@ -954,7 +954,7 @@ def test_manual_refresh_does_not_invent_scopes_when_provider_omits_them(
     connection = repo.status(
         project_id=project_id,
         provider_key="google-search-console",
-    ).connections[0]
+    ).accounts[0]
     assert connection.scopes == []
     credential = session.exec(
         select(Credential).where(Credential.credential_ref == stored.credential_ref)
@@ -971,10 +971,10 @@ def test_transient_refresh_failure_keeps_credential_retryable(
 ) -> None:
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="google-search-console",
         auth_method_key="oauth2_refresh_token",
-        profile_key=f"transient-{failure_kind}",
+        display_name=f"transient-{failure_kind}",
         fields={
             "client_id": "refresh-client-id",
             "client_secret": "refresh-client-secret",
@@ -1043,10 +1043,10 @@ def test_required_scopes_are_checked_before_credential_use(
 ) -> None:
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="google-search-console",
         auth_method_key="oauth2_access_token",
-        profile_key="primary",
+        display_name="primary",
         fields={
             "access_token": "scope-access-value",
             "default_site_url": "https://example.test/",
@@ -1098,10 +1098,10 @@ def test_manual_token_replacement_discards_prior_scope_evidence(
 ) -> None:
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="google-search-console",
         auth_method_key="oauth2_access_token",
-        profile_key="manual-replacement",
+        display_name="manual-replacement",
         fields={"access_token": "first-access-value"},
     ).data
     credential = session.exec(
@@ -1118,11 +1118,9 @@ def test_manual_token_replacement_discards_prior_scope_evidence(
     )
     session.commit()
 
-    replaced = repo.store_credential(
-        project_id=project_id,
-        provider_key="google-search-console",
-        auth_method_key="oauth2_access_token",
-        profile_key="manual-replacement",
+    replaced = repo.update_credential(
+        credential_ref=stored.credential_ref,
+        display_name="manual-replacement",
         fields={"access_token": "replacement-access-value"},
     ).data
 
@@ -1156,10 +1154,10 @@ def test_legacy_unknown_scopes_remain_usable_only_without_scope_requirement(
 ) -> None:
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="google-search-console",
         auth_method_key="oauth2_access_token",
-        profile_key="legacy",
+        display_name="legacy",
         fields={"access_token": "legacy-access-value"},
     ).data
 

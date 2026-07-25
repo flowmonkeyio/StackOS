@@ -8,16 +8,15 @@ from typing import Any
 from sqlmodel import Session, col, select
 
 from stackos.actions.connectors import ActionConnectorRequest
-from stackos.actions.provider_utils import credential_config
 from stackos.db.models import Plugin, Resource, ResourceRecord
 from stackos.repositories.base import ValidationError
 from stackos.repositories.resources import ResourceRepository
 
 
-def _credential_profile_key(request: ActionConnectorRequest) -> str:
-    if request.credential is not None:
-        return request.credential.integration.profile_key
-    return str(credential_config(request).get("profile_key") or "default")
+def _credential_ref(request: ActionConnectorRequest) -> str:
+    if request.credential is None:
+        raise ValidationError("Slack communication actions require a connected Account")
+    return request.credential.credential_ref
 
 
 def _communication_profile_key(request: ActionConnectorRequest) -> str:
@@ -29,10 +28,7 @@ def _communication_profile_key(request: ActionConnectorRequest) -> str:
         profile_key = text.removeprefix("communication-profile:")
         _communication_profile_data(request, profile_key=profile_key)
         return profile_key
-    profile_key = _credential_profile_key(request)
-    if request.operation in {"message.send", "conversation.open"}:
-        _communication_profile_data(request, profile_key=profile_key)
-    return profile_key
+    raise ValidationError("Slack profile_ref or profile_key is required")
 
 
 def _communication_profile_data(
@@ -67,15 +63,15 @@ def _communication_profile_data(
             "Slack communication profile missing slack-bot provider facet",
             data={"profile_ref": f"communication-profile:{profile_key}"},
         )
-    auth_profile_key = str(slack_facet.get("auth_profile_key") or "").strip()
-    credential_profile_key = _credential_profile_key(request)
-    if auth_profile_key != credential_profile_key:
+    profile_credential_ref = str(slack_facet.get("credential_ref") or "").strip()
+    credential_ref = _credential_ref(request)
+    if profile_credential_ref != credential_ref:
         raise ValidationError(
-            "Slack communication profile auth_profile_key does not match credential profile",
+            "Slack communication profile does not match the selected Account",
             data={
                 "profile_ref": f"communication-profile:{profile_key}",
-                "auth_profile_key": auth_profile_key,
-                "credential_profile_key": credential_profile_key,
+                "profile_credential_ref": profile_credential_ref,
+                "credential_ref": credential_ref,
             },
         )
     return data

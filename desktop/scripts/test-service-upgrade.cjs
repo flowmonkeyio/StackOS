@@ -17,6 +17,18 @@ function cleanup(paths) {
 }
 
 async function main() {
+  const mainSource = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
+  assert.match(
+    mainSource,
+    /prepareInstalledVersion\(\{[\s\S]*repairPreparedInstallBeforeReady:\s*true/,
+    "desktop startup must reconcile prepared host registrations before loading the workspace"
+  );
+  assert.doesNotMatch(
+    mainSource,
+    /schedulePreparedInstallMaintenance\(install\)/,
+    "desktop startup must not defer host reconciliation until after the workspace loads"
+  );
+
   const tempPaths = [];
   const originalDesktopCli = process.env.STACKOS_DESKTOP_CLI;
   try {

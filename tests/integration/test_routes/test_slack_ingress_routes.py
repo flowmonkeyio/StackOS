@@ -11,8 +11,8 @@ from urllib.parse import urlencode
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
+from stackos.auth_providers import AuthRepository
 from stackos.repositories.agent_requests import AgentRequestRepository
-from stackos.repositories.projects import IntegrationCredentialRepository
 from stackos.repositories.resources import ResourceRepository
 
 _TOKEN = "xoxb-1234567890-safe-test-token"
@@ -24,24 +24,26 @@ def _store_slack_profile(
     project_id: int,
     *,
     profile_key: str = "support-agent",
-    auth_profile_key: str = "support-auth",
     access_policy: dict | None = None,
     trigger_policy: dict | None = None,
     visibility_policy: dict | None = None,
-) -> None:
+    ingress_enabled: bool = True,
+) -> str:
     engine = api.app.state.engine  # type: ignore[attr-defined]
     with Session(engine) as session:
-        IntegrationCredentialRepository(session).set(
-            project_id=project_id,
-            kind="slack-bot",
-            profile_key=auth_profile_key,
-            secret_payload=json.dumps(
-                {
+        credential_ref = (
+            AuthRepository(session)
+            .store_credential(
+                provider_key="slack-bot",
+                auth_method_key="bot-token",
+                display_name=f"Slack - {profile_key}",
+                fields={
                     "bot_token": _TOKEN,
                     "signing_secret": _SIGNING_SECRET,
-                }
-            ).encode("utf-8"),
-            config_json={"team_id": "T123"},
+                },
+                attach_project_id=project_id,
+            )
+            .data.credential_ref
         )
         ResourceRepository(session).upsert_record(
             project_id=project_id,
@@ -54,8 +56,9 @@ def _store_slack_profile(
                 "enabled": True,
                 "provider_facets": {
                     "slack-bot": {
-                        "auth_profile_key": auth_profile_key,
+                        "credential_ref": credential_ref,
                         "bot_user_id": "U_BOT",
+                        "ingress_enabled": ingress_enabled,
                     }
                 },
                 "identity": {
@@ -93,6 +96,7 @@ def _store_slack_profile(
             },
             provenance_json={"source": "test"},
         )
+    return credential_ref
 
 
 def _store_outbound_button(
@@ -111,10 +115,19 @@ def _store_outbound_button(
     ).hexdigest()[:24]
     engine = api.app.state.engine  # type: ignore[attr-defined]
     with Session(engine) as session:
+        credential_ref = (
+            AuthRepository(session)
+            .status(
+                project_id=project_id,
+                provider_key="slack-bot",
+            )
+            .accounts[0]
+            .credential_ref
+        )
         data_json = {
             "provider_key": "slack-bot",
             "profile_key": profile_key,
-            "auth_profile_key": "support-auth",
+            "credential_ref": credential_ref,
             "interaction_type": "outbound_block_button",
             "surface_ref": "slack-channel:C123",
             "message_ref": message_ref,
@@ -221,6 +234,15 @@ def test_slack_ingress_self_message_echo_does_not_overwrite_outbound_history(
     _store_slack_profile(api, project_id)
     engine = api.app.state.engine  # type: ignore[attr-defined]
     with Session(engine) as session:
+        credential_ref = (
+            AuthRepository(session)
+            .status(
+                project_id=project_id,
+                provider_key="slack-bot",
+            )
+            .accounts[0]
+            .credential_ref
+        )
         ResourceRepository(session).upsert_record(
             project_id=project_id,
             plugin_slug="communications",
@@ -230,7 +252,7 @@ def test_slack_ingress_self_message_echo_does_not_overwrite_outbound_history(
             data_json={
                 "provider_key": "slack-bot",
                 "profile_key": "support-agent",
-                "auth_profile_key": "support-auth",
+                "credential_ref": credential_ref,
                 "direction": "outbound",
                 "surface_ref": "slack-channel:C123",
                 "channel_ref": "slack-channel:C123",
@@ -631,6 +653,47 @@ def test_slack_ingress_rejects_bad_signature_before_storing(
             resource_key="communication-event",
         )
     assert events.items == []
+
+
+def test_slack_ingress_rejects_outbound_only_profile_without_writes(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    _store_slack_profile(api, project_id, profile_key="outbound-only", ingress_enabled=False)
+    raw_body = json.dumps(
+        {
+            "type": "event_callback",
+            "team_id": "T123",
+            "event_id": "EvOutboundOnly",
+            "event": {
+                "type": "app_mention",
+                "user": "U111",
+                "channel": "C123",
+                "text": "<@U_BOT> should not be accepted",
+                "ts": "1770000000.000999",
+            },
+        },
+        separators=(",", ":"),
+    ).encode()
+    response = _post_without_bearer(
+        api,
+        f"/api/v1/ingress/slack/{project_id}/outbound-only",
+        raw_body=raw_body,
+        headers={**_signed_headers(raw_body), "Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 403, response.text  # type: ignore[attr-defined]
+    assert response.json()["detail"] == "invalid Slack signature"  # type: ignore[attr-defined]
+    engine = api.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        events = ResourceRepository(session).query_records(
+            project_id=project_id,
+            plugin_slug="communications",
+            resource_key="communication-event",
+        )
+        requests = AgentRequestRepository(session).list(project_id=project_id)
+    assert events.items == []
+    assert requests.total_estimate == 0
 
 
 def test_slack_url_verification_returns_challenge_without_resource_writes(

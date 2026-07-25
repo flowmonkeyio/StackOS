@@ -234,6 +234,18 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
           <ProjectSwitcher />
         </div>
 
+        <div class="px-3 pb-2">
+          <RouterLink
+            to="/accounts"
+            class="focus-ring-sb flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors duration-fast hover:bg-sb-hover hover:text-sb-strong"
+            :class="route.path === '/accounts' ? 'bg-sb-active text-sb-strong' : 'text-sb-fg'"
+            @click="closeDrawer"
+          >
+            <UiIcon name="key" class="h-4 w-4" aria-hidden="true" />
+            <span>Accounts</span>
+          </RouterLink>
+        </div>
+
         <nav class="scrollbar-dark min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-1">
           <p
             v-if="projectNavSections.length === 0"

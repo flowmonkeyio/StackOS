@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
-from sqlmodel import Session, col, select
+from sqlmodel import Session, select
 
 from stackos.db.models import Credential, IntegrationBudget
 from stackos.provider_setup import ProviderSetupOut, provider_local_setup_url
@@ -169,7 +169,7 @@ def build_action_exposure(
                 external_provider=True,
                 requires_integration=True,
                 next_action=ActionExposureNextActionOut(
-                    tool="auth.test",
+                    tool="account.test",
                     reason=f"Existing credential for provider {provider_key!r} is not connected.",
                     arguments={
                         **base_arguments,
@@ -196,7 +196,7 @@ def build_action_exposure(
                 external_provider=True,
                 requires_integration=True,
                 next_action=ActionExposureNextActionOut(
-                    tool="auth.status",
+                    tool="connection.list",
                     reason=reason,
                     arguments=base_arguments,
                     ui_url=integration_setup_url(project_id, provider_key),
@@ -286,18 +286,9 @@ def build_action_availability_context(
     if project_id is None:
         return ActionAvailabilityContext(project_id=None)
 
-    credential_rows = session.exec(
-        select(Credential)
-        .where(
-            col(Credential.revoked_at).is_(None),
-            (col(Credential.project_id) == project_id) | col(Credential.project_id).is_(None),
-        )
-        .order_by(
-            col(Credential.provider_key).asc(),
-            col(Credential.project_id).desc(),
-            col(Credential.created_at).desc(),
-        )
-    ).all()
+    from stackos.auth_providers import AuthRepository
+
+    credential_rows = AuthRepository(session).attached_credentials(project_id=project_id)
     credentials_by_provider: dict[str, list[Credential]] = {}
     for row in credential_rows:
         credentials_by_provider.setdefault(row.provider_key, []).append(row)
@@ -340,17 +331,11 @@ def _credential_state(
     if context is not None and context.project_id == project_id:
         rows = context.credentials_by_provider.get(manifest.provider_key, [])
     else:
-        rows = list(
-            session.exec(
-                select(Credential)
-                .where(
-                    Credential.provider_key == manifest.provider_key,
-                    col(Credential.revoked_at).is_(None),
-                    (col(Credential.project_id) == project_id)
-                    | col(Credential.project_id).is_(None),
-                )
-                .order_by(col(Credential.project_id).desc(), col(Credential.created_at).desc())
-            ).all()
+        from stackos.auth_providers import AuthRepository
+
+        rows = AuthRepository(session).attached_credentials(
+            project_id=project_id,
+            provider_key=manifest.provider_key,
         )
     refs = [row.credential_ref for row in rows]
     connected_refs = [row.credential_ref for row in rows if row.status == "connected"]

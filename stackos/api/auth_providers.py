@@ -12,8 +12,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session
 
 from stackos.api.deps import get_session, get_settings
-from stackos.api.envelopes import WriteResponse, write_response
+from stackos.api.envelopes import WriteResponse
 from stackos.auth_providers import (
+    AccountOut,
     AuthCredentialEditOut,
     AuthCredentialSetOut,
     AuthProviderOut,
@@ -24,9 +25,31 @@ from stackos.auth_providers import (
     AuthTestOut,
 )
 from stackos.config import Settings
+from stackos.operations.dispatcher import OperationDispatcher
+from stackos.operations.registry import build_operation_registry
 from stackos.repositories.base import RepositoryError
 
 router = APIRouter(prefix="/api/v1", tags=["auth-providers"])
+
+
+async def _dispatch_auth_operation(
+    name: str,
+    arguments: dict[str, Any],
+    *,
+    session: Session,
+    settings: Settings | None = None,
+) -> dict[str, Any]:
+    """Execute an exact auth REST route through its registered operation contract."""
+
+    result = await OperationDispatcher(build_operation_registry()).dispatch(
+        name,
+        {**arguments, "response_mode": "raw"},
+        session=session,
+        surface="rest",
+        settings=settings,
+        trusted_local_admin=True,
+    )
+    return result.payload
 
 
 class AuthStartRequest(BaseModel):
@@ -39,50 +62,32 @@ class AuthStartRequest(BaseModel):
 
     auth_method_key: str | None = None
     credential_ref: str | None = None
-
-
-class AuthTestRequest(BaseModel):
-    """Sanitized auth test request using an opaque credential ref."""
-
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={"example": {"credential_ref": "cred_..."}},
+    attach_project_id: int | None = None
+    return_surface: str = Field(
+        default="accounts",
+        pattern="^(accounts|project-connections)$",
     )
-
-    credential_ref: str
-
-
-class AuthRevokeRequest(BaseModel):
-    """Local-admin revoke request using an opaque credential ref."""
-
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={"example": {"credential_ref": "cred_..."}},
-    )
-
-    credential_ref: str
 
 
 class AuthCredentialSetRequest(BaseModel):
-    """Local-admin credential profile write. The response never includes secrets."""
+    """Global Account write. The response never includes secrets."""
 
     model_config = ConfigDict(
         extra="forbid",
         json_schema_extra={
             "example": {
                 "auth_method_key": "api_key",
-                "profile_key": "primary",
-                "label": "Primary",
+                "display_name": "Production",
                 "fields": {"api_key": "provider-secret"},
             }
         },
     )
 
     auth_method_key: str | None = None
-    profile_key: str = Field(default="default", min_length=1, max_length=120)
-    label: str | None = Field(default=None, max_length=200)
+    display_name: str = Field(min_length=1, max_length=200)
     fields: dict[str, Any] = Field(default_factory=dict)
     expires_at: datetime | None = None
+    attach_project_id: int | None = None
 
 
 class AuthCredentialUpdateRequest(BaseModel):
@@ -91,7 +96,7 @@ class AuthCredentialUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     fields: dict[str, Any] = Field(default_factory=dict)
-    label: str | None = Field(max_length=200)
+    display_name: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 @router.get("/auth/providers", response_model=list[AuthProviderOut])
@@ -103,38 +108,63 @@ async def list_auth_providers(
     return AuthRepository(session).list_providers(provider_key=provider_key)
 
 
-@router.get("/projects/{project_id}/auth/status", response_model=AuthStatusOut)
-async def auth_status(
+@router.get("/auth/accounts", response_model=AuthStatusOut)
+async def list_accounts(
+    provider_key: str | None = Query(default=None),
+    session: Session = Depends(get_session),
+) -> AuthStatusOut:
+    """Return the sanitized global Account inventory."""
+    payload = await _dispatch_auth_operation(
+        "account.list",
+        {"provider_key": provider_key},
+        session=session,
+    )
+    return AuthStatusOut.model_validate(payload)
+
+
+@router.get(
+    "/projects/{project_id}/connections/accounts",
+    response_model=AuthStatusOut,
+)
+async def list_project_connections(
     project_id: int,
     provider_key: str | None = Query(default=None),
     session: Session = Depends(get_session),
 ) -> AuthStatusOut:
-    """Return sanitized auth status and opaque credential references."""
-    return AuthRepository(session).status(project_id=project_id, provider_key=provider_key)
+    """Return Accounts explicitly attached to one project."""
+    payload = await _dispatch_auth_operation(
+        "connection.list",
+        {"project_id": project_id, "provider_key": provider_key},
+        session=session,
+    )
+    return AuthStatusOut.model_validate(payload)
 
 
 @router.post(
-    "/projects/{project_id}/auth/{provider_key}/start",
+    "/auth/accounts/{provider_key}/start",
     response_model=WriteResponse[AuthStartOut],
     status_code=status.HTTP_200_OK,
 )
 async def auth_start(
-    project_id: int,
     provider_key: str,
     body: AuthStartRequest | None = Body(default=None),
     settings: Settings = Depends(get_settings),
     session: Session = Depends(get_session),
 ) -> WriteResponse[AuthStartOut]:
     """Start a local-human setup flow without accepting or returning secrets."""
-    return write_response(
-        AuthRepository(session).start(
-            project_id=project_id,
-            provider_key=provider_key,
-            settings=settings,
-            auth_method_key=body.auth_method_key if body is not None else None,
-            credential_ref=body.credential_ref if body is not None else None,
-        )
+    payload = await _dispatch_auth_operation(
+        "account.start",
+        {
+            "provider_key": provider_key,
+            "auth_method_key": body.auth_method_key if body is not None else None,
+            "credential_ref": body.credential_ref if body is not None else None,
+            "attach_project_id": body.attach_project_id if body is not None else None,
+            "return_surface": body.return_surface if body is not None else "accounts",
+        },
+        session=session,
+        settings=settings,
     )
+    return WriteResponse[AuthStartOut].model_validate(payload)
 
 
 @router.get(
@@ -186,13 +216,17 @@ async def auth_oauth_callback(
     query: dict[str, str] = {"oauth_status": status_label}
     if result is not None and result.provider_key is not None:
         query["provider_key"] = result.provider_key
-    if result is not None and result.project_id is not None:
+    if (
+        result is not None
+        and result.return_surface == "project-connections"
+        and result.attach_project_id is not None
+    ):
         destination = (
             f"http://{settings.host}:{settings.port}/projects/"
-            f"{result.project_id}/connections?{urlencode(query)}"
+            f"{result.attach_project_id}/connections?{urlencode(query)}"
         )
     else:
-        destination = f"http://{settings.host}:{settings.port}/?{urlencode(query)}"
+        destination = f"http://{settings.host}:{settings.port}/accounts?{urlencode(query)}"
     return RedirectResponse(
         destination,
         status_code=status.HTTP_303_SEE_OTHER,
@@ -206,101 +240,138 @@ async def auth_oauth_callback(
 
 
 @router.post(
-    "/projects/{project_id}/auth/{provider_key}/credentials",
+    "/auth/accounts/{provider_key}",
     response_model=WriteResponse[AuthCredentialSetOut],
     status_code=status.HTTP_201_CREATED,
 )
 async def auth_store_credential(
-    project_id: int,
     provider_key: str,
     body: AuthCredentialSetRequest,
     session: Session = Depends(get_session),
 ) -> WriteResponse[AuthCredentialSetOut]:
-    """Store a provider credential profile through the local-admin auth surface."""
-    return write_response(
-        AuthRepository(session).store_credential(
-            project_id=project_id,
-            provider_key=provider_key,
-            auth_method_key=body.auth_method_key,
-            profile_key=body.profile_key,
-            label=body.label,
-            fields=body.fields,
-            expires_at=body.expires_at,
-        )
+    """Create a reusable Account through the local-admin auth surface."""
+    payload = await _dispatch_auth_operation(
+        "account.create",
+        {
+            "provider_key": provider_key,
+            "auth_method_key": body.auth_method_key,
+            "display_name": body.display_name,
+            "fields": body.fields,
+            "expires_at": body.expires_at,
+            "attach_project_id": body.attach_project_id,
+        },
+        session=session,
     )
+    return WriteResponse[AuthCredentialSetOut].model_validate(payload)
 
 
 @router.get(
-    "/projects/{project_id}/auth/credentials/{credential_ref}",
+    "/auth/accounts/{credential_ref}",
     response_model=AuthCredentialEditOut,
 )
 async def auth_get_credential(
-    project_id: int,
     credential_ref: str,
     session: Session = Depends(get_session),
 ) -> AuthCredentialEditOut:
     """Return editable non-secret values and secret-presence flags."""
-    return AuthRepository(session).get_credential_edit_state(
-        project_id=project_id,
-        credential_ref=credential_ref,
+    payload = await _dispatch_auth_operation(
+        "account.get",
+        {"credential_ref": credential_ref},
+        session=session,
     )
+    return AuthCredentialEditOut.model_validate(payload)
 
 
 @router.patch(
-    "/projects/{project_id}/auth/credentials/{credential_ref}",
+    "/auth/accounts/{credential_ref}",
     response_model=WriteResponse[AuthCredentialSetOut],
 )
 async def auth_update_credential(
-    project_id: int,
     credential_ref: str,
     body: AuthCredentialUpdateRequest,
     session: Session = Depends(get_session),
 ) -> WriteResponse[AuthCredentialSetOut]:
     """Update safe fields and explicitly supplied secrets without exposing either."""
-    return write_response(
-        AuthRepository(session).update_credential(
-            project_id=project_id,
-            credential_ref=credential_ref,
-            fields=body.fields,
-            label=body.label,
-        )
+    payload = await _dispatch_auth_operation(
+        "account.update",
+        {
+            "credential_ref": credential_ref,
+            "fields": body.fields,
+            "display_name": body.display_name,
+        },
+        session=session,
     )
+    return WriteResponse[AuthCredentialSetOut].model_validate(payload)
 
 
 @router.post(
-    "/projects/{project_id}/auth/test",
+    "/auth/accounts/{credential_ref}/test",
     response_model=WriteResponse[AuthTestOut],
 )
 async def auth_test(
-    project_id: int,
-    body: AuthTestRequest,
+    credential_ref: str,
     session: Session = Depends(get_session),
 ) -> WriteResponse[AuthTestOut]:
     """Run a sanitized provider credential test without returning secrets."""
-    return write_response(
-        await AuthRepository(session).test(
-            project_id=project_id,
-            credential_ref=body.credential_ref,
-        )
+    payload = await _dispatch_auth_operation(
+        "account.test",
+        {"credential_ref": credential_ref},
+        session=session,
     )
+    return WriteResponse[AuthTestOut].model_validate(payload)
 
 
 @router.post(
-    "/projects/{project_id}/auth/revoke",
+    "/auth/accounts/{credential_ref}/revoke",
     response_model=WriteResponse[AuthRevokeOut],
 )
 async def auth_revoke(
-    project_id: int,
-    body: AuthRevokeRequest,
+    credential_ref: str,
     session: Session = Depends(get_session),
 ) -> WriteResponse[AuthRevokeOut]:
     """Revoke a provider credential through the local-admin REST surface."""
-    return write_response(
-        AuthRepository(session).revoke(
-            project_id=project_id,
-            credential_ref=body.credential_ref,
-        )
+    payload = await _dispatch_auth_operation(
+        "account.revoke",
+        {"credential_ref": credential_ref},
+        session=session,
     )
+    return WriteResponse[AuthRevokeOut].model_validate(payload)
+
+
+@router.post(
+    "/projects/{project_id}/connections/accounts/{credential_ref}",
+    response_model=WriteResponse[AccountOut],
+)
+async def attach_account(
+    project_id: int,
+    credential_ref: str,
+    session: Session = Depends(get_session),
+) -> WriteResponse[AccountOut]:
+    """Attach one global Account to a project Connection."""
+    payload = await _dispatch_auth_operation(
+        "connection.attach",
+        {"project_id": project_id, "credential_ref": credential_ref},
+        session=session,
+    )
+    return WriteResponse[AccountOut].model_validate(payload)
+
+
+@router.delete(
+    "/projects/{project_id}/connections/accounts/{credential_ref}",
+    response_model=WriteResponse[AccountOut],
+)
+async def detach_account(
+    project_id: int,
+    credential_ref: str,
+    session: Session = Depends(get_session),
+) -> WriteResponse[AccountOut]:
+    """Detach an Account without revoking or deleting it."""
+    payload = await _dispatch_auth_operation(
+        "connection.detach",
+        {"project_id": project_id, "credential_ref": credential_ref},
+        session=session,
+    )
+    return WriteResponse[AccountOut].model_validate(payload)
 
 
 __all__ = ["router"]

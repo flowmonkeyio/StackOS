@@ -105,11 +105,15 @@ class ProviderMetadataMixin:
                 },
             )
 
-    def _local_setup_url(self, *, settings: Settings, project_id: int, provider_key: str) -> str:
-        return (
-            f"http://{settings.host}:{settings.port}"
-            f"/projects/{project_id}/connections?provider_key={provider_key}"
-        )
+    def _local_setup_url(
+        self,
+        *,
+        settings: Settings,
+        project_id: int | None,
+        provider_key: str,
+    ) -> str:
+        path = f"/projects/{project_id}/connections" if project_id is not None else "/accounts"
+        return f"http://{settings.host}:{settings.port}{path}?provider_key={provider_key}"
 
     def _get_provider(
         self,

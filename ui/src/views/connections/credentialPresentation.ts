@@ -1,4 +1,4 @@
-import type { SchemaAuthProviderOut, SchemaCredentialConnectionOut } from '@/api'
+import type { SchemaAccountOut, SchemaAuthProviderOut } from '@/api'
 
 import type { ConnectionRow, ServiceGroup } from './types'
 import { providerSetupGuidance } from './providerSetup'
@@ -6,11 +6,12 @@ import { providerSetupGuidance } from './providerSetup'
 export { formatAuthType } from '@/lib/stackos/providerPresentation'
 
 const STATUS_ORDER: Record<string, number> = {
-  connected: 0,
-  pending: 1,
-  expired: 2,
-  failed: 3,
-  revoked: 4,
+  failed: 0,
+  expired: 1,
+  revoked: 2,
+  'setup-required': 3,
+  pending: 4,
+  connected: 5,
 }
 
 interface ConnectionStatusLike {
@@ -55,7 +56,9 @@ export function methodLabel(provider: SchemaAuthProviderOut, methodKey: string):
 }
 
 export function compareConnections(left: ConnectionRow, right: ConnectionRow): number {
-  const statusDiff = (STATUS_ORDER[left.status] ?? 99) - (STATUS_ORDER[right.status] ?? 99)
+  const statusDiff =
+    (STATUS_ORDER[connectionStatusKey(left)] ?? 99) -
+    (STATUS_ORDER[connectionStatusKey(right)] ?? 99)
   if (statusDiff !== 0) return statusDiff
   return connectionTitle(left).localeCompare(connectionTitle(right))
 }
@@ -79,15 +82,15 @@ export function connectionAttentionTone(connection: ConnectionStatusLike): 'dang
     : 'warning'
 }
 
-export function connectionTitle(connection: SchemaCredentialConnectionOut): string {
-  return String(connection.label || connection.account?.display_name || connection.profile_key)
+export function connectionTitle(connection: SchemaAccountOut): string {
+  return connection.display_name
 }
 
-export function accountLabel(connection: SchemaCredentialConnectionOut): string {
+export function accountLabel(connection: SchemaAccountOut): string {
   return String(
     connection.account?.display_name ??
       connection.account?.provider_account_id ??
-      connection.profile_key ??
+      connection.display_name ??
       '-',
   )
 }

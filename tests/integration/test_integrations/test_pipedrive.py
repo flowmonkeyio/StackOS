@@ -41,10 +41,8 @@ def _action_request(
     credential = ResolvedCredential(
         credential=Credential(credential_ref="cred_pipedrive", provider_key="pipedrive"),
         integration=IntegrationCredential(
-            kind="pipedrive",
             encrypted_payload=b"not-used",
             nonce=b"0" * 12,
-            config_json=config,
         ),
         secret_payload=json.dumps(payload).encode(),
         config_json=config,

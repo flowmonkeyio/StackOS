@@ -132,7 +132,7 @@ def _workflow_readiness(
     elif missing:
         next_steps.append(
             ReadinessNextStepOut(
-                tool="auth.status",
+                tool="connection.list",
                 reason=(
                     "Only the listed workflow action dependencies are missing; inspect or repair "
                     "those providers before executing affected run-plan steps."

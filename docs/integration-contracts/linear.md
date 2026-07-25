@@ -63,7 +63,7 @@ or provider-side revocation execution.
 | Refresh evidence | rotated/current `refresh_token`, `expires_in`, `Bearer`, and full `read,write` scope evidence |
 | Account binding | fixed `viewer { organization { ... } }` probe after authorization/test |
 | Credential handling | access token, refresh token, client id, and client secret remain daemon-held |
-| Disconnect | existing local `auth.revoke`; Linear's documented `POST https://api.linear.app/oauth/revoke` capability is explicitly deferred |
+| Disconnect | existing local `account.revoke`; Linear's documented `POST https://api.linear.app/oauth/revoke` capability is explicitly deferred |
 
 The callback is application-owned and fixed by the shared OAuth infrastructure.
 The manifest presents

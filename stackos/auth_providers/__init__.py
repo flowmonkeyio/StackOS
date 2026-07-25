@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from stackos.auth_providers.repository import (
+    AccountOut,
     AuthCredentialEditOut,
     AuthCredentialSetOut,
     AuthFieldOut,
@@ -13,12 +14,12 @@ from stackos.auth_providers.repository import (
     AuthStartOut,
     AuthStatusOut,
     AuthTestOut,
-    CredentialConnectionOut,
     OAuthCallbackOut,
     ResolvedCredential,
 )
 
 __all__ = [
+    "AccountOut",
     "AuthCredentialEditOut",
     "AuthCredentialSetOut",
     "AuthFieldOut",
@@ -29,7 +30,6 @@ __all__ = [
     "AuthStartOut",
     "AuthStatusOut",
     "AuthTestOut",
-    "CredentialConnectionOut",
     "OAuthCallbackOut",
     "ResolvedCredential",
 ]

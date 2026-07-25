@@ -59,10 +59,11 @@ step that explicitly grants `agentRequest.create`.
 a caller-supplied run plan; it claims, creates, links, and returns the claim
 token without choosing strategy or executing tools.
 
-Telegram communication profiles are project scoped. Each profile binds to one credential
-profile through `auth_profile_key`; there are no global Telegram credentials or
-agent-visible bot tokens. Credentials store token material, webhook secrets, and
-safe transport endpoints only; communication profiles store identity, agent guidance,
+Telegram Accounts are global and reusable. Each project-scoped communication
+profile binds to one explicitly attached Account through `credential_ref`;
+there are no agent-visible bot tokens or provider-wide fallback lookups.
+Accounts store token material, webhook secrets, and safe transport configuration
+only; communication profiles store identity, agent guidance,
 structured command intents, access policy, trigger policy, context policy,
 response policy, and ingress mode. Visibility is
 not activation: visible messages may be stored as bounded context without
@@ -71,18 +72,18 @@ creating an agent request; only allowlisted users can trigger work or replies.
 ingress endpoint contract as production, usually with `driver=local-tunnel` and
 provider details in `driver_config`. `updates.poll` is diagnostic/bootstrap-only.
 
-Slack communication profiles are project scoped. Each profile binds to a
-project-scoped `slack-bot` credential profile through
-`provider_facets.slack-bot.auth_profile_key`. Credentials store Slack token
-material and the signing secret only; communication profiles store identity,
+Slack Accounts are global and reusable. Each project-scoped communication
+profile binds to an explicitly attached `slack-bot` Account through
+`provider_facets.slack-bot.credential_ref`. Accounts store Slack token material
+and the signing secret only; communication profiles store identity,
 agent guidance, access policy, trigger policy, context policy, response policy,
 and send/handoff policy. HTTP ingress verifies Slack signatures before storing
 events or creating agent requests. `response_url` and `trigger_id` are transient
 sensitive values and are not persisted.
 
-SMTP and IMAP are project-scoped typed auth profiles. Agents see safe status and
-opaque credential refs; host, username, password, TLS mode, and mailbox mapping
-resolve only inside the daemon. SMTP acceptance is recorded as outbound message
+SMTP and IMAP use reusable global Accounts with explicit project attachments.
+Agents see safe status and opaque credential refs; host, username, password, TLS
+mode, and mailbox mapping resolve only inside the daemon. SMTP acceptance is recorded as outbound message
 submission metadata, not delivery or read state. IMAP uses UID/UIDVALIDITY-based
 resources for mailbox cursor, message fetch, and local read/unread lifecycle.
 
@@ -120,7 +121,8 @@ Project setup uses shared StackOS operations:
   history. It never fetches live provider history. Invalid field errors return
   both rejected `fields` and the safe `allowed_fields` set.
 - `communicationProfile.upsert` creates or updates safe bot identity,
-  guidance, and policy after the typed `telegram-bot` credential profile exists.
+  guidance, and policy after a reusable `telegram-bot` Account is attached to
+  the project.
 - `communicationProfile.get` and `communicationProfile.list` let agents
   inspect profiles without receiving token material.
 - `ingressEndpoint.*` stores one project-level public ingress endpoint, derives

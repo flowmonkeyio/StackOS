@@ -88,7 +88,7 @@ Before an integration delivery is signed off, verify:
   `url_confidence`, `verified_at`, and a fallback URL/reason when exact vendor
   setup pages are account-gated or not public
 - `integration.list`, `readiness.check`, `action.describe`, and compact
-  `auth.status` expose enough setup metadata for an agent to answer where to
+  `connection.list` expose enough setup metadata for an agent to answer where to
   connect in StackOS, where to register with the vendor, and where to get the
   API key
 

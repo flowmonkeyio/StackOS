@@ -3,16 +3,15 @@ import { computed, useId } from 'vue'
 
 import { UiCallout, UiRadioGroup } from '@/components/ui'
 
+import AccountNameField from '@/views/accounts/AccountNameField.vue'
 import ConnectionCredentialField from './ConnectionCredentialField.vue'
-import ConnectionMetadataFields from './ConnectionMetadataFields.vue'
 import type { AuthField, AuthMethod } from './types'
 
 const props = defineProps<{
   authMethods: AuthMethod[]
   selectedMethodKey: string
   selectedMethod: AuthMethod | null
-  profileValue: string
-  labelValue: string
+  displayNameValue: string
   fields: AuthField[]
   inputType: (field: AuthField) => 'text' | 'url' | 'number' | 'email'
   isSecretField: (field: AuthField) => boolean
@@ -26,8 +25,7 @@ const props = defineProps<{
 
 defineEmits<{
   (event: 'select-method', value: string | number | null): void
-  (event: 'update:profile', value: string | number | null): void
-  (event: 'update:label', value: string | number | null): void
+  (event: 'update:display-name', value: string | number | null): void
   (event: 'update:field', update: { fieldKey: string; value: string | number | null }): void
 }>()
 
@@ -58,8 +56,8 @@ function methodAudience(method: AuthMethod): string {
 
 function methodLifecycle(method: AuthMethod): string {
   return method.interactive
-    ? 'StackOS saves this profile, then starts the provider authorization flow.'
-    : 'StackOS saves this profile locally, then tests the credential.'
+    ? 'StackOS saves this Account, then starts the provider authorization flow.'
+    : 'StackOS saves this Account locally, then tests the credential.'
 }
 
 function permissionVerificationGuidance(method: AuthMethod): string {
@@ -79,14 +77,8 @@ function permissionVerificationGuidance(method: AuthMethod): string {
 </script>
 
 <template>
-  <fieldset
-    v-if="authMethods.length > 1"
-    class="m-0 flex min-w-0 flex-col gap-1.5 border-0 p-0"
-  >
-    <legend
-      :id="authMethodLegendId"
-      class="text-xs font-medium text-fg-default"
-    >
+  <fieldset v-if="authMethods.length > 1" class="m-0 flex min-w-0 flex-col gap-1.5 border-0 p-0">
+    <legend :id="authMethodLegendId" class="text-xs font-medium text-fg-default">
       Authentication method
       <span class="text-danger" aria-hidden="true">*</span>
     </legend>
@@ -101,31 +93,21 @@ function permissionVerificationGuidance(method: AuthMethod): string {
     />
   </fieldset>
 
-  <UiCallout
-    v-if="authMethods.length > 1 && !selectedMethod"
-    tone="info"
-    density="compact"
-  >
+  <UiCallout v-if="authMethods.length > 1 && !selectedMethod" tone="info" density="compact">
     Choose an authentication method to review its setup and continue.
   </UiCallout>
 
   <template v-if="selectedMethod">
-    <UiCallout
-      v-if="editing"
-      tone="info"
-      density="compact"
-    >
+    <UiCallout v-if="editing" tone="info" density="compact">
       Authentication method is locked to {{ selectedMethod.label }}. To change methods, create a
-      separate named profile, test it, explicitly reassign exact consumers to the new credential
-      reference, then locally revoke the old profile when it is no longer used.
+      separate named Account, test it, explicitly reassign exact consumers to its credential
+      reference, then revoke the old Account when it is no longer used.
     </UiCallout>
 
-    <ConnectionMetadataFields
-      :profile-value="profileValue"
-      :label-value="labelValue"
-      :profile-readonly="editing"
-      @update:profile="$emit('update:profile', $event)"
-      @update:label="$emit('update:label', $event)"
+    <AccountNameField
+      :model-value="displayNameValue"
+      :error="fieldErrors.display_name"
+      @update:model-value="$emit('update:display-name', $event)"
     />
 
     <ConnectionCredentialField
@@ -143,11 +125,7 @@ function permissionVerificationGuidance(method: AuthMethod): string {
       @update:model-value="$emit('update:field', { fieldKey: field.key, value: $event })"
     />
 
-    <UiCallout
-      v-if="selectedMethod.description"
-      tone="info"
-      density="compact"
-    >
+    <UiCallout v-if="selectedMethod.description" tone="info" density="compact">
       {{ selectedMethod.description }}
     </UiCallout>
   </template>

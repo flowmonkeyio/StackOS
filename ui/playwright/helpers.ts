@@ -39,6 +39,30 @@ export async function resetProjects(): Promise<void> {
   }
 }
 
+/** Revoke every detached global Account after project cleanup. */
+export async function resetAccounts(): Promise<void> {
+  const headers = { Authorization: `Bearer ${getDaemonToken()}` }
+  const res = await fetch(`${getBaseUrl()}/api/v1/auth/accounts`, { headers })
+  if (!res.ok) throw new Error(`list Accounts failed: ${res.status} ${await res.text()}`)
+  const body = (await res.json()) as {
+    accounts: Array<{ credential_ref: string; project_ids: number[] }>
+  }
+  for (const account of body.accounts) {
+    if (account.project_ids.length > 0) {
+      throw new Error(
+        `Account ${account.credential_ref} is still attached after project cleanup: ${account.project_ids.join(', ')}`,
+      )
+    }
+    const revoked = await fetch(
+      `${getBaseUrl()}/api/v1/auth/accounts/${encodeURIComponent(account.credential_ref)}/revoke`,
+      { method: 'POST', headers },
+    )
+    if (!revoked.ok) {
+      throw new Error(`revoke Account failed: ${revoked.status} ${await revoked.text()}`)
+    }
+  }
+}
+
 /**
  * Patterns that should be ignored when collecting console errors.
  *
@@ -114,44 +138,39 @@ export async function createProject(input: {
   return body.data
 }
 
-export async function storeCredential(input: {
-  projectId: number
+export async function storeAccount(input: {
   providerKey: string
   authMethodKey: string
-  profileKey: string
-  label: string
+  displayName: string
   fields: Record<string, unknown>
+  attachProjectId?: number | null
 }): Promise<{ credentialRef: string }> {
-  const res = await fetch(
-    `${getBaseUrl()}/api/v1/projects/${input.projectId}/auth/${input.providerKey}/credentials`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${getDaemonToken()}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        auth_method_key: input.authMethodKey,
-        profile_key: input.profileKey,
-        label: input.label,
-        fields: input.fields,
-      }),
+  const res = await fetch(`${getBaseUrl()}/api/v1/auth/accounts/${input.providerKey}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${getDaemonToken()}`,
+      'content-type': 'application/json',
     },
-  )
-  if (!res.ok) throw new Error(`store credential failed: ${res.status} ${await res.text()}`)
+    body: JSON.stringify({
+      auth_method_key: input.authMethodKey,
+      display_name: input.displayName,
+      fields: input.fields,
+      attach_project_id: input.attachProjectId ?? null,
+    }),
+  })
+  if (!res.ok) throw new Error(`store Account failed: ${res.status} ${await res.text()}`)
   const body = (await res.json()) as { data: { credential_ref: string } }
   return { credentialRef: body.data.credential_ref }
 }
 
-export async function getCredentialEditState(
-  projectId: number,
+export async function getAccountEditState(
   credentialRef: string,
 ): Promise<{ values: Record<string, unknown>; secret_present: Record<string, boolean> }> {
   const res = await fetch(
-    `${getBaseUrl()}/api/v1/projects/${projectId}/auth/credentials/${encodeURIComponent(credentialRef)}`,
+    `${getBaseUrl()}/api/v1/auth/accounts/${encodeURIComponent(credentialRef)}`,
     { headers: { Authorization: `Bearer ${getDaemonToken()}` } },
   )
-  if (!res.ok) throw new Error(`get credential failed: ${res.status} ${await res.text()}`)
+  if (!res.ok) throw new Error(`get Account failed: ${res.status} ${await res.text()}`)
   return (await res.json()) as {
     values: Record<string, unknown>
     secret_present: Record<string, boolean>

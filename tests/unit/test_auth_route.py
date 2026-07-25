@@ -121,11 +121,12 @@ def test_ui_token_can_call_telegram_profile_setup_operation(
     ui_token = derive_ui_token(auth_token)
 
     stored = client.post(
-        f"/api/v1/projects/{project_id}/auth/telegram-bot/credentials",
+        "/api/v1/auth/accounts/telegram-bot",
         headers={"authorization": f"Bearer {ui_token}"},
         json={
             "auth_method_key": "bot-token",
-            "profile_key": "support",
+            "display_name": "Telegram - Support",
+            "attach_project_id": project_id,
             "fields": {
                 "bot_token": "123456:ABC",
                 "webhook_secret_token": "telegram-secret",
@@ -133,6 +134,7 @@ def test_ui_token_can_call_telegram_profile_setup_operation(
         },
     )
     assert stored.status_code == 201, stored.text
+    credential_ref = stored.json()["data"]["credential_ref"]
 
     resp = client.post(
         "/api/v1/operations/communicationProfile.upsert/call",
@@ -146,7 +148,7 @@ def test_ui_token_can_call_telegram_profile_setup_operation(
                     "purpose": "Handle support requests from approved Telegram users.",
                     "voice": "Concise and calm.",
                 },
-                "provider_facets": {"telegram-bot": {"auth_profile_key": "support"}},
+                "provider_facets": {"telegram-bot": {"credential_ref": credential_ref}},
                 "access_policy": {
                     "dm_mode": "allowlist",
                     "group_mode": "allowlist",
@@ -160,7 +162,9 @@ def test_ui_token_can_call_telegram_profile_setup_operation(
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["data"]["key"] == "support-bot"
-    assert resp.json()["data"]["provider_facets"]["telegram-bot"]["auth_profile_key"] == "support"
+    assert (
+        resp.json()["data"]["provider_facets"]["telegram-bot"]["credential_ref"] == credential_ref
+    )
     assert "123456:ABC" not in resp.text
     assert "telegram-secret" not in resp.text
 
@@ -272,11 +276,12 @@ def test_ui_token_can_manage_provider_auth_setup(client: TestClient, auth_token:
     ui_token = derive_ui_token(auth_token)
 
     created = client.post(
-        f"/api/v1/projects/{project_id}/auth/firecrawl/credentials",
+        "/api/v1/auth/accounts/firecrawl",
         headers={"authorization": f"Bearer {ui_token}"},
         json={
             "auth_method_key": "api_key",
-            "label": "Primary",
+            "display_name": "Firecrawl - Primary",
+            "attach_project_id": project_id,
             "fields": {"api_key": "fc-secret"},
         },
     )
@@ -286,31 +291,57 @@ def test_ui_token_can_manage_provider_auth_setup(client: TestClient, auth_token:
     assert "fc-secret" not in created.text
 
     updated = client.patch(
-        f"/api/v1/projects/{project_id}/auth/credentials/{credential_ref}",
+        f"/api/v1/auth/accounts/{credential_ref}",
         headers={"authorization": f"Bearer {ui_token}"},
-        json={"label": "Updated", "fields": {}},
+        json={"display_name": "Firecrawl - Updated", "fields": {}},
     )
     assert updated.status_code == 200, updated.text
     assert updated.json()["data"]["credential_ref"] == credential_ref
     assert "fc-secret" not in updated.text
 
     edit = client.get(
-        f"/api/v1/projects/{project_id}/auth/credentials/{credential_ref}",
+        f"/api/v1/auth/accounts/{credential_ref}",
         headers={"authorization": f"Bearer {ui_token}"},
     )
     assert edit.status_code == 200, edit.text
-    assert edit.json()["connection"]["label"] == "Updated"
+    assert edit.json()["account"]["display_name"] == "Firecrawl - Updated"
     assert edit.json()["secret_present"] == {"api_key": True}
     assert "fc-secret" not in edit.text
 
-    revoked = client.post(
-        f"/api/v1/projects/{project_id}/auth/revoke",
+    detached = client.delete(
+        f"/api/v1/projects/{project_id}/connections/accounts/{credential_ref}",
         headers={"authorization": f"Bearer {ui_token}"},
-        json={"credential_ref": credential_ref},
+    )
+    assert detached.status_code == 200, detached.text
+
+    revoked = client.post(
+        f"/api/v1/auth/accounts/{credential_ref}/revoke",
+        headers={"authorization": f"Bearer {ui_token}"},
     )
     assert revoked.status_code == 200, revoked.text
     assert revoked.json()["data"]["status"] == "revoked"
     assert "fc-secret" not in revoked.text
+
+
+def test_ui_token_auth_setup_scope_denies_unknown_paths_and_methods(
+    client: TestClient,
+    auth_token: str,
+) -> None:
+    """Account setup authority is an exact route/method allowlist, never a namespace grant."""
+
+    ui_token = derive_ui_token(auth_token)
+    headers = {"authorization": f"Bearer {ui_token}"}
+    attempts = (
+        ("PUT", "/api/v1/auth/accounts/cred_unknown"),
+        ("DELETE", "/api/v1/auth/accounts/cred_unknown"),
+        ("POST", "/api/v1/auth/accounts/cred_unknown/rotate"),
+        ("PATCH", "/api/v1/projects/1/connections/accounts/cred_unknown"),
+        ("POST", "/api/v1/projects/1/connections/accounts/cred_unknown/extra"),
+    )
+
+    for method, path in attempts:
+        response = client.request(method, path, headers=headers, json={})
+        assert response.status_code == 403, (method, path, response.text)
 
 
 def test_ui_token_can_create_project_for_local_setup(

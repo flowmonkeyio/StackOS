@@ -14,10 +14,10 @@ from sqlalchemy import select as sa_select
 from sqlmodel import Session, col, select
 
 from stackos.actions.manifest import ExecutableActionManifest, parse_action_manifest
+from stackos.auth_providers import AuthRepository
 from stackos.db.models import (
     Action,
     Artifact,
-    Credential,
     ExecutionContext,
     ExecutionContextArtifact,
     ExecutionContextLink,
@@ -880,32 +880,11 @@ class ExecutionContextRepository:
     ) -> None:
         if credential_ref is None:
             return
-        credential = self._s.exec(
-            select(Credential).where(col(Credential.credential_ref) == credential_ref)
-        ).first()
-        if credential is None:
-            raise NotFoundError(f"credential ref {credential_ref!r} not found")
-        if credential.revoked_at is not None:
-            raise ValidationError("credential is revoked", data={"credential_ref": credential_ref})
-        if credential.status != "connected":
-            raise ValidationError(
-                f"credential is {credential.status}",
-                data={"credential_ref": credential_ref},
-            )
-        if credential.project_id is not None and credential.project_id != project_id:
-            raise ValidationError(
-                "credential does not belong to this project",
-                data={"credential_ref": credential_ref, "project_id": project_id},
-            )
-        if provider_key is not None and credential.provider_key != provider_key:
-            raise ValidationError(
-                "credential provider does not match execution context provider",
-                data={
-                    "credential_ref": credential_ref,
-                    "credential_provider": credential.provider_key,
-                    "provider_key": provider_key,
-                },
-            )
+        AuthRepository(self._s).require_attached_account(
+            project_id=project_id,
+            credential_ref=credential_ref,
+            provider_key=provider_key,
+        )
 
     def _normalize_link_args(self, raw: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(raw, dict):

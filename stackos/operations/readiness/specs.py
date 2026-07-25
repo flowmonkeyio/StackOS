@@ -22,15 +22,15 @@ def operation_specs() -> list[OperationSpec]:
             ),
             when_to_use=(
                 "Before telling the operator credentials are missing for a selected workflow.",
-                "Before broad auth.status when the agent already knows the workflow or action.",
+                "Before broad connection.list when the agent already knows the workflow or action.",
                 "Before runPlan.create/start when provider setup might block execution.",
             ),
             prerequisites=(
                 "Pass exactly one workflow_key or action_ref/plugin_slug/action_key.",
                 "Use workflow readiness for setup; use action readiness for one explicit action.",
                 (
-                    "Do not treat global auth.status gaps as blockers until readiness.check says "
-                    "the selected scope needs them."
+                    "Do not treat global Account inventory gaps as blockers until "
+                    "readiness.check says the selected scope needs them."
                 ),
             ),
             returns=(

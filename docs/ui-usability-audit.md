@@ -136,8 +136,9 @@ communications setup.
   pages. Closed details still consume vertical space when there are hundreds of
   rows.
 - Use `break-all` or bounded scroll for refs, URLs, and opaque IDs.
-- Keep `Connections` as the only broad setup surface for credentials unless a
-  future generic setup route is introduced.
+- Keep reusable credential lifecycle on the global `Accounts` surface;
+  project `Connections` should only attach Accounts and own project-bound
+  communication/webhook setup.
 - Use `UiFactGroups` for sectioned drawer summaries before JSON/code blocks, so
   operators can scan the business context without reading raw payloads first.
 

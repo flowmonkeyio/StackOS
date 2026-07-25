@@ -241,7 +241,7 @@ def _connected_next_step(project_id: int) -> dict[str, Any]:
             "readiness.check",
             "agentPreset.list",
             "tracker.status",
-            "auth.status",
+            "connection.list",
         ],
         "ui_paths": _ui_paths(project_id),
     }

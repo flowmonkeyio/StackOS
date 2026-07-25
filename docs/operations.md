@@ -806,34 +806,46 @@ URL.
 
 ## Provider authentication operations
 
-The operation registry describes one auth lifecycle, with surface policy doing
-the safety work:
+The operation registry separates global Account lifecycle from project
+Connection authorization:
 
-- `auth.status` and `auth.test` are the normal agent-visible diagnostics. They
-  return opaque refs and sanitized results only.
-- `auth.start` is a local-admin setup operation. For an interactive method it
-  accepts the provider, auth method, and existing opaque `credential_ref`, then
-  returns the provider authorization URL created from the trusted provider
-  contract. It does not accept secrets, authorization codes, or a redirect URI.
-- credential create/edit and `auth.revoke` remain local-admin setup mutations.
-  They are not normal agent credential tools.
+- `account.list` inventories reusable Accounts globally; `connection.list`
+  returns only Accounts attached to one project.
+- `account.test` is the normal daemon-side Account health probe. These
+  operations return opaque refs and sanitized results only.
+- `connection.attach` and `connection.detach` change only project
+  authorization. They are local-admin setup mutations, never copy, rotate, or
+  delete Account secrets, and are not callable by normal agent sessions.
+- `account.start` is a local-admin setup operation. For an interactive method
+  it accepts the provider, auth method, existing opaque `credential_ref`,
+  optional project to attach after success, and trusted return surface. It
+  returns the provider authorization URL created from the provider contract and
+  never accepts authorization codes or caller-selected redirect URIs.
+- `account.create`, `account.get`, and `account.update` are registered
+  REST-only local-admin contracts because their write-only credential fields
+  and edit state must not cross MCP or CLI. The exact REST routes and the other
+  Account/Connection adapters dispatch through these same operation handlers;
+  there is no parallel repository route lifecycle.
+- `account.revoke` remains a local-admin setup mutation. Revocation is blocked
+  while project Connections still use the Account.
 - `auth.callback` is REST-only at exact GET
   `/api/v1/auth/oauth/callback`. It is absent from MCP and CLI so provider
   callback values cannot be routed through an agent or command invocation.
 
-The callback consumes the bound transaction and immediately returns a
-sanitized 303 to Connections. Action execution later resolves a fresh token and
-enforces the action's required scopes inside the daemon. No operation adapter or
-connector may implement a parallel OAuth callback, refresh, or token-acquisition
-path.
+The callback consumes the bound transaction, attaches the Account when a
+project origin was requested, and returns a sanitized 303 to Accounts or that
+project's Connections page. Action execution later resolves a fresh token and
+enforces both the project attachment and action scopes inside the daemon. No
+operation adapter or connector may implement a parallel OAuth callback,
+refresh, or token-acquisition path.
 
 `toolProfile.resolve` is the agent-friendly target resolver. Use it before
 `action.run` or workflow setup when the agent needs one safe execution tuple for
 a provider: optional project tool profile, daemon-held `credential_ref`,
 provider auth status, and a concise setup `next_action` when the tuple is not
 ready. For Telegram it resolves the `communication-profile` plus its
-credential profile. For SMTP, IMAP, and other provider credentials it resolves
-the requested auth profile directly. It never returns secret payloads and never
+attached Account. For SMTP, IMAP, and other providers it resolves the requested
+Account directly. It never returns secret payloads and never
 chooses the workflow or provider action for the agent.
 
 No operation adapter should bypass repository/connector auth, grant, idempotency,

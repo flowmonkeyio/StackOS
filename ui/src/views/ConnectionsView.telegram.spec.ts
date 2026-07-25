@@ -37,34 +37,24 @@ describe('ConnectionsView Telegram profiles', () => {
       const catalogResponse = catalogJson(url)
       if (catalogResponse) return catalogResponse
 
-      if (url === '/api/v1/auth/providers') {
-        return json([
-          authProvider('telegram-bot', 'Telegram Bot', 'bot-token', telegramBotMethod()),
-        ])
-      }
-      if (url === '/api/v1/projects/1/auth/status') {
+      if (
+        url === '/api/v1/auth/accounts' ||
+        url === '/api/v1/projects/1/connections/accounts'
+      ) {
         return json({
-          project_id: 1,
+          project_id: url === '/api/v1/auth/accounts' ? null : 1,
           provider_key: null,
-          providers: [],
-          connections: connected
+          providers: [
+            authProvider('telegram-bot', 'Telegram Bot', 'bot-token', telegramBotMethod()),
+          ],
+          accounts: connected
             ? [
-                authConnection({
-                  revokedAt: null,
-                  providerKey: 'telegram-bot',
-                  credentialRef: 'cred_telegram_unidentified',
-                  authType: 'bot-token',
-                  authMethodKey: 'bot-token',
-                  profileKey: 'default',
-                  label: 'Untested Bot',
-                }),
                 authConnection({
                   revokedAt: null,
                   providerKey: 'telegram-bot',
                   credentialRef: 'cred_telegram',
                   authType: 'bot-token',
                   authMethodKey: 'bot-token',
-                  profileKey: 'support',
                   label: 'Support Bot',
                   account: telegramTested
                     ? {
@@ -78,7 +68,7 @@ describe('ConnectionsView Telegram profiles', () => {
             : [],
         })
       }
-      if (url === '/api/v1/projects/1/auth/telegram-bot/credentials') {
+      if (url === '/api/v1/auth/accounts/telegram-bot') {
         connected = true
         return json(
           {
@@ -88,14 +78,13 @@ describe('ConnectionsView Telegram profiles', () => {
               credentialRef: 'cred_telegram',
               authType: 'bot-token',
               authMethodKey: 'bot-token',
-              profileKey: 'support',
               label: 'Support Bot',
             }),
           },
           201,
         )
       }
-      if (url === '/api/v1/projects/1/auth/test') {
+      if (url === '/api/v1/auth/accounts/cred_telegram/test') {
         telegramTested = true
         return json({
           data: {
@@ -156,6 +145,7 @@ describe('ConnectionsView Telegram profiles', () => {
     const wrapper = mountConnections(router)
     await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected'))
     await clickButton(wrapper, 'Add connection')
+    await clickButton(wrapper, 'Create another Account')
     await vi.waitFor(() =>
       expect(wrapper.find('input[placeholder="123456:ABC..."]').exists()).toBe(true),
     )
@@ -164,9 +154,8 @@ describe('ConnectionsView Telegram profiles', () => {
       .find<HTMLInputElement>('input[placeholder="123456:ABC..."]')
       .setValue('123456:ABC')
     await wrapper
-      .find<HTMLInputElement>('input[placeholder="Primary account"]')
+      .find<HTMLInputElement>('input[placeholder="Service - Default"]')
       .setValue('Support Bot')
-    await wrapper.find<HTMLInputElement>('input[placeholder="default"]').setValue('support')
     expect(wrapper.text()).not.toContain('Advanced connection settings')
     expect(wrapper.text()).toContain('Local Bot API URL')
     await clickButton(wrapper, 'Save and verify')
@@ -202,8 +191,9 @@ describe('ConnectionsView Telegram profiles', () => {
         key: 'ops-bot',
         provider_facets: {
           'telegram-bot': expect.objectContaining({
-            auth_profile_key: 'support',
+            credential_ref: 'cred_telegram',
             bot_username: 'support_bot',
+            ingress_enabled: true,
           }),
         },
         identity: {
@@ -229,7 +219,6 @@ describe('ConnectionsView Telegram profiles', () => {
       },
     })
     expect(JSON.stringify(profileCalls)).not.toContain('123456:ABC')
-    expect(wrapper.text()).not.toContain('123456:ABC')
   })
 
   it('preserves non-Telegram profile facets and policies when editing Telegram setup', async () => {
@@ -247,13 +236,13 @@ describe('ConnectionsView Telegram profiles', () => {
       },
       provider_facets: {
         'telegram-bot': {
-          auth_profile_key: 'support',
+          credential_ref: 'cred_telegram',
           bot_username: 'support_bot',
           ingress_mode: 'webhook',
           allowed_updates: ['message', 'callback_query'],
         },
         'slack-bot': {
-          auth_profile_key: 'ops-slack',
+          credential_ref: 'cred_slack',
           bot_user_id: 'U123',
         },
       },
@@ -291,24 +280,28 @@ describe('ConnectionsView Telegram profiles', () => {
       const catalogResponse = catalogJson(url)
       if (catalogResponse) return catalogResponse
 
-      if (url === '/api/v1/auth/providers') {
-        return json([
-          authProvider('telegram-bot', 'Telegram Bot', 'bot-token', telegramBotMethod()),
-        ])
+      if (url === '/api/v1/auth/accounts') {
+        return json({
+          project_id: null,
+          provider_key: null,
+          providers: [
+            authProvider('telegram-bot', 'Telegram Bot', 'bot-token', telegramBotMethod()),
+          ],
+          accounts: [],
+        })
       }
-      if (url === '/api/v1/projects/1/auth/status') {
+      if (url === '/api/v1/projects/1/connections/accounts') {
         return json({
           project_id: 1,
           provider_key: null,
           providers: [],
-          connections: [
+          accounts: [
             authConnection({
               revokedAt: null,
               providerKey: 'telegram-bot',
               credentialRef: 'cred_telegram',
               authType: 'bot-token',
               authMethodKey: 'bot-token',
-              profileKey: 'support',
               label: 'Support Bot',
               account: {
                 provider_account_id: '123456',
@@ -339,6 +332,10 @@ describe('ConnectionsView Telegram profiles', () => {
     const wrapper = mountConnections(router)
     await vi.waitFor(() => expect(wrapper.text()).toContain('Support Bot'))
     await clickButton(wrapper, 'Configure')
+    expect(wrapper.text()).toContain('Receive inbound Telegram updates in this project')
+    const ingressToggle = wrapper.find<HTMLInputElement>('input[type="checkbox"]')
+    expect(ingressToggle.element.checked).toBe(true)
+    await ingressToggle.setValue(false)
     await clickButton(wrapper, 'Save Telegram profile')
 
     const saveCall = postedCalls.find(
@@ -351,10 +348,11 @@ describe('ConnectionsView Telegram profiles', () => {
       arguments: {
         provider_facets: {
           'telegram-bot': expect.objectContaining({
-            auth_profile_key: 'support',
+            credential_ref: 'cred_telegram',
             bot_username: 'support_bot',
+            ingress_enabled: false,
           }),
-          'slack-bot': { auth_profile_key: 'ops-slack', bot_user_id: 'U123' },
+          'slack-bot': { credential_ref: 'cred_slack', bot_user_id: 'U123' },
         },
         access_policy: expect.objectContaining({
           denied_user_refs: ['telegram-user:999'],

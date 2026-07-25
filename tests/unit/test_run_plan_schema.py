@@ -81,10 +81,11 @@ def test_run_plan_schema_rejects_unknown_step_tool_grant() -> None:
     assert "unknown step" in result.errors[0].message
 
 
-def test_run_plan_schema_rejects_admin_tool_grant() -> None:
+@pytest.mark.parametrize("tool_name", ["account.start", "connection.attach", "connection.detach"])
+def test_run_plan_schema_rejects_admin_tool_grant(tool_name: str) -> None:
     data = _plan_dict()
     data["grants"] = {
-        "mcp_tool_grants": [{"step_id": "create-campaign", "tool": "auth.start"}],
+        "mcp_tool_grants": [{"step_id": "create-campaign", "tool": tool_name}],
     }
 
     result = validate_run_plan_obj(data)

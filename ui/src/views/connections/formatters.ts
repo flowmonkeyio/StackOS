@@ -1,4 +1,4 @@
-import type { SchemaCredentialConnectionOut } from '@/api'
+import type { SchemaAccountOut } from '@/api'
 
 import type {
   CommunicationProfile,
@@ -225,8 +225,8 @@ export function telegramFacetString(profile: CommunicationProfile, key: string):
   return typeof value === 'string' ? value : ''
 }
 
-export function telegramProfileAuthKey(profile: CommunicationProfile): string {
-  return telegramFacetString(profile, 'auth_profile_key') || 'default'
+export function telegramProfileCredentialRef(profile: CommunicationProfile): string {
+  return telegramFacetString(profile, 'credential_ref')
 }
 
 export function telegramProfileUsername(profile: CommunicationProfile): string {
@@ -241,9 +241,9 @@ export function slackFacet(profile: CommunicationProfile): Record<string, unknow
   return profile.provider_facets?.['slack-bot'] ?? {}
 }
 
-export function slackProfileAuthKey(profile: CommunicationProfile): string {
-  const value = slackFacet(profile)['auth_profile_key']
-  return typeof value === 'string' && value ? value : 'default'
+export function slackProfileCredentialRef(profile: CommunicationProfile): string {
+  const value = slackFacet(profile)['credential_ref']
+  return typeof value === 'string' ? value : ''
 }
 
 /** True once a Slack connection has been tested and its workspace identity resolved. */
@@ -269,14 +269,16 @@ export function telegramCommands(profile: CommunicationProfile): TelegramCommand
 }
 
 export function telegramConnectionForProfile(
-  profileKey: string,
+  credentialRef: string,
   telegramConnections: ConnectionRow[],
 ): ConnectionRow | null {
-  return telegramConnections.find((connection) => connection.profile_key === profileKey) ?? null
+  return (
+    telegramConnections.find((connection) => connection.credential_ref === credentialRef) ?? null
+  )
 }
 
 export function botUsernameFromConnection(
-  connection: SchemaCredentialConnectionOut | null,
+  connection: SchemaAccountOut | null,
 ): string | null {
   const metadata = connection?.account?.metadata_json
   const username =

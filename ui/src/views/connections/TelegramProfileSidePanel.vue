@@ -117,32 +117,41 @@ function updateCommandEnabled(index: number, value: boolean): void {
           <template #default="{ id, describedBy, invalid }">
             <UiSelect
               :id="id"
-              :model-value="form.auth_profile_key"
+              :model-value="form.credential_ref"
               :options="telegramConnectionOptions"
               :aria-describedby="describedBy"
               :invalid="invalid"
               placeholder="Select connection"
-              @update:model-value="updateTextField('auth_profile_key', $event)"
+              @update:model-value="updateTextField('credential_ref', $event)"
             />
           </template>
         </UiFormField>
 
         <UiCallout
-          v-if="form.auth_profile_key"
+          v-if="form.credential_ref"
           tone="info"
           density="compact"
         >
           Telegram identity:
           {{
             botUsernameFromConnection(
-              telegramConnectionForProfile(form.auth_profile_key, telegramConnections),
+              telegramConnectionForProfile(form.credential_ref, telegramConnections),
             )
               ? `@${botUsernameFromConnection(
-                telegramConnectionForProfile(form.auth_profile_key, telegramConnections),
+                telegramConnectionForProfile(form.credential_ref, telegramConnections),
               )}`
               : 'test the selected connection to fetch it from Telegram'
           }}
         </UiCallout>
+
+        <div class="rounded-lg border border-subtle bg-bg-surface-alt p-3">
+          <UiCheckbox
+            :model-value="form.ingress_enabled"
+            label="Receive inbound Telegram updates in this project"
+            description="A Telegram bot can send inbound updates to one project. Turn this off when reusing the Account here only for outbound messages."
+            @update:model-value="updateBooleanField('ingress_enabled', $event)"
+          />
+        </div>
       </section>
 
       <BotPolicySections

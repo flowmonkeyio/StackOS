@@ -36,7 +36,7 @@ describe('ConnectionsView Slack profiles', () => {
       identity: { display_name: 'Ops Slack Bot', purpose: 'Handle ops.', voice: 'Concise.' },
       provider_facets: {
         'slack-bot': {
-          auth_profile_key: 'default',
+          credential_ref: 'cred_slack',
           team_id: 'T123',
           team_name: 'Acme',
           bot_user_id: 'U_BOT',
@@ -68,22 +68,21 @@ describe('ConnectionsView Slack profiles', () => {
       const catalogResponse = catalogJson(url)
       if (catalogResponse) return catalogResponse
 
-      if (url === '/api/v1/auth/providers') {
-        return json([authProvider('slack-bot', 'Slack Bot', 'bot-token', slackBotMethod())])
-      }
-      if (url === '/api/v1/projects/1/auth/status') {
+      if (
+        url === '/api/v1/auth/accounts' ||
+        url === '/api/v1/projects/1/connections/accounts'
+      ) {
         return json({
-          project_id: 1,
+          project_id: url === '/api/v1/auth/accounts' ? null : 1,
           provider_key: null,
-          providers: [],
-          connections: [
+          providers: [authProvider('slack-bot', 'Slack Bot', 'bot-token', slackBotMethod())],
+          accounts: [
             authConnection({
               revokedAt: null,
               providerKey: 'slack-bot',
               credentialRef: 'cred_slack',
               authType: 'bot-token',
               authMethodKey: 'bot-token',
-              profileKey: 'default',
               label: 'Acme Slack',
               account: {
                 provider_account_id: 'T123',
@@ -114,6 +113,10 @@ describe('ConnectionsView Slack profiles', () => {
     const wrapper = mountConnections(router)
     await vi.waitFor(() => expect(wrapper.text()).toContain('Ops Slack Bot'))
     await clickButton(wrapper, 'Configure')
+    expect(wrapper.text()).toContain('Receive inbound Slack events in this project')
+    const ingressToggle = wrapper.find<HTMLInputElement>('input[type="checkbox"]')
+    expect(ingressToggle.element.checked).toBe(true)
+    await ingressToggle.setValue(false)
     await wrapper.find<HTMLInputElement>('input[placeholder="Ops Bot"]').setValue('Ops Slack Bot v2')
     await clickButton(wrapper, 'Save Slack bot')
 
@@ -129,9 +132,10 @@ describe('ConnectionsView Slack profiles', () => {
         identity: expect.objectContaining({ display_name: 'Ops Slack Bot v2' }),
         provider_facets: {
           'slack-bot': expect.objectContaining({
-            auth_profile_key: 'default',
+            credential_ref: 'cred_slack',
             team_id: 'T123',
             bot_user_id: 'U_BOT',
+            ingress_enabled: false,
             ingress_path: '/api/v1/ingress/slack/1/ops-slack',
           }),
         },
@@ -160,7 +164,7 @@ describe('ConnectionsView Slack profiles', () => {
       identity: { display_name: 'Ops Slack Bot', purpose: 'Handle ops.', voice: 'Concise.' },
       provider_facets: {
         'slack-bot': {
-          auth_profile_key: 'default',
+          credential_ref: 'cred_slack',
           team_id: 'T123',
           team_name: 'Acme',
           bot_user_id: 'U_OLD',
@@ -189,22 +193,21 @@ describe('ConnectionsView Slack profiles', () => {
       const catalogResponse = catalogJson(url)
       if (catalogResponse) return catalogResponse
 
-      if (url === '/api/v1/auth/providers') {
-        return json([authProvider('slack-bot', 'Slack Bot', 'bot-token', slackBotMethod())])
-      }
-      if (url === '/api/v1/projects/1/auth/status') {
+      if (
+        url === '/api/v1/auth/accounts' ||
+        url === '/api/v1/projects/1/connections/accounts'
+      ) {
         return json({
-          project_id: 1,
+          project_id: url === '/api/v1/auth/accounts' ? null : 1,
           provider_key: null,
-          providers: [],
-          connections: [
+          providers: [authProvider('slack-bot', 'Slack Bot', 'bot-token', slackBotMethod())],
+          accounts: [
             authConnection({
               revokedAt: null,
               providerKey: 'slack-bot',
               credentialRef: 'cred_slack_default',
               authType: 'bot-token',
               authMethodKey: 'bot-token',
-              profileKey: 'default',
               label: 'Acme Slack',
               account: {
                 provider_account_id: 'T123',
@@ -218,7 +221,6 @@ describe('ConnectionsView Slack profiles', () => {
               credentialRef: 'cred_slack_beta',
               authType: 'bot-token',
               authMethodKey: 'bot-token',
-              profileKey: 'beta',
               label: 'Beta Slack',
               account: {
                 provider_account_id: 'T456',
@@ -275,7 +277,7 @@ describe('ConnectionsView Slack profiles', () => {
       arguments: {
         provider_facets: {
           'slack-bot': {
-            auth_profile_key: 'beta',
+            credential_ref: 'cred_slack_beta',
             team_id: 'T456',
             team_name: 'Beta',
             bot_user_id: 'U_NEW',
@@ -299,22 +301,26 @@ describe('ConnectionsView Slack profiles', () => {
       const catalogResponse = catalogJson(url)
       if (catalogResponse) return catalogResponse
 
-      if (url === '/api/v1/auth/providers') {
-        return json([authProvider('slack-bot', 'Slack Bot', 'bot-token', slackBotMethod())])
+      if (url === '/api/v1/auth/accounts') {
+        return json({
+          project_id: null,
+          provider_key: null,
+          providers: [authProvider('slack-bot', 'Slack Bot', 'bot-token', slackBotMethod())],
+          accounts: [],
+        })
       }
-      if (url === '/api/v1/projects/1/auth/status') {
+      if (url === '/api/v1/projects/1/connections/accounts') {
         return json({
           project_id: 1,
           provider_key: null,
           providers: [],
-          connections: [
+          accounts: [
             authConnection({
               revokedAt: null,
               providerKey: 'slack-bot',
               credentialRef: 'cred_slack',
               authType: 'bot-token',
               authMethodKey: 'bot-token',
-              profileKey: 'default',
               label: 'Acme Slack',
               account: {
                 provider_account_id: 'T123',
@@ -387,9 +393,10 @@ describe('ConnectionsView Slack profiles', () => {
         identity: expect.objectContaining({ display_name: 'Slack Bot' }),
         provider_facets: {
           'slack-bot': expect.objectContaining({
-            auth_profile_key: 'default',
+            credential_ref: 'cred_slack',
             team_id: 'T123',
             bot_user_id: 'U_BOT',
+            ingress_enabled: true,
           }),
         },
         access_policy: expect.objectContaining({
@@ -413,15 +420,15 @@ describe('ConnectionsView Slack profiles', () => {
       const catalogResponse = catalogJson(url)
       if (catalogResponse) return catalogResponse
 
-      if (url === '/api/v1/auth/providers') {
-        return json([authProvider('slack-bot', 'Slack Bot', 'bot-token', slackBotMethod())])
-      }
-      if (url === '/api/v1/projects/1/auth/status') {
+      if (
+        url === '/api/v1/auth/accounts' ||
+        url === '/api/v1/projects/1/connections/accounts'
+      ) {
         return json({
-          project_id: 1,
+          project_id: url === '/api/v1/auth/accounts' ? null : 1,
           provider_key: null,
-          providers: [],
-          connections: connected
+          providers: [authProvider('slack-bot', 'Slack Bot', 'bot-token', slackBotMethod())],
+          accounts: connected
             ? [
                 authConnection({
                   revokedAt: null,
@@ -429,7 +436,6 @@ describe('ConnectionsView Slack profiles', () => {
                   credentialRef: 'cred_slack',
                   authType: 'bot-token',
                   authMethodKey: 'bot-token',
-                  profileKey: 'support',
                   label: 'Support Slack',
                   account: slackTested
                     ? {
@@ -449,7 +455,7 @@ describe('ConnectionsView Slack profiles', () => {
             : [],
         })
       }
-      if (url === '/api/v1/projects/1/auth/slack-bot/credentials') {
+      if (url === '/api/v1/auth/accounts/slack-bot') {
         connected = true
         return json(
           {
@@ -459,14 +465,13 @@ describe('ConnectionsView Slack profiles', () => {
               credentialRef: 'cred_slack',
               authType: 'bot-token',
               authMethodKey: 'bot-token',
-              profileKey: 'support',
               label: 'Support Slack',
             }),
           },
           201,
         )
       }
-      if (url === '/api/v1/projects/1/auth/test') {
+      if (url === '/api/v1/auth/accounts/cred_slack/test') {
         slackTested = true
         slackTestCount += 1
         return json({
@@ -504,6 +509,7 @@ describe('ConnectionsView Slack profiles', () => {
     const wrapper = mountConnections(router)
     await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected'))
     await clickButton(wrapper, 'Add connection')
+    await clickButton(wrapper, 'Create another Account')
     await vi.waitFor(() => expect(wrapper.text()).toContain('Slack Bot'))
 
     expect(wrapper.find<HTMLInputElement>('input[placeholder="xoxb-..."]').exists()).toBe(true)
@@ -515,9 +521,8 @@ describe('ConnectionsView Slack profiles', () => {
 
     await wrapper.find<HTMLInputElement>('input[placeholder="xoxb-..."]').setValue('xoxb-secret')
     await wrapper
-      .find<HTMLInputElement>('input[placeholder="Primary account"]')
+      .find<HTMLInputElement>('input[placeholder="Service - Default"]')
       .setValue('Support Slack')
-    await wrapper.find<HTMLInputElement>('input[placeholder="default"]').setValue('support')
     const signingSecretInput = wrapper
       .findAll<HTMLInputElement>('input[type="password"]')
       .find((input) => input.element.placeholder !== 'xoxb-...')
@@ -530,20 +535,17 @@ describe('ConnectionsView Slack profiles', () => {
     expect(slackTestCount).toBe(1)
     expect(postedBodies).toContainEqual({
       auth_method_key: 'bot-token',
-      profile_key: 'support',
-      label: 'Support Slack',
+      display_name: 'Support Slack',
       fields: {
         bot_token: 'xoxb-secret',
         signing_secret: 'signing-secret',
       },
+      attach_project_id: 1,
     })
-    expect(postedBodies).toContainEqual({ credential_ref: 'cred_slack' })
     expect(wrapper.text()).not.toContain('xoxb-secret')
     expect(wrapper.text()).not.toContain('signing-secret')
 
-    await clickButton(wrapper, 'Test')
-    await vi.waitFor(() => expect(wrapper.text()).toContain('Slack bot verified for Acme.'))
-    expect(slackTestCount).toBe(2)
+    expect(wrapper.text()).toContain('Manage Account')
     expect(wrapper.text()).not.toContain('Loading connections...')
   })
 })

@@ -43,7 +43,7 @@ def test_install_plugins_creates_plugin_and_marketplace(
     mcp = json.loads((plugin_root / ".mcp.json").read_text(encoding="utf-8"))
     assert mcp["mcpServers"]["stackos"] == {
         "command": sys.executable,
-        "args": ["-m", "stackos", "mcp-bridge"],
+        "args": ["-m", "stackos", "mcp-bridge", "--runtime", "codex"],
     }
     assert (plugin_root / "skills" / "stackos" / "SKILL.md").is_file()
     assert not (plugin_root / "skills" / "stackos-sdlc-delivery-orchestrator").exists()
@@ -90,7 +90,7 @@ def test_install_plugins_refreshes_existing_codex_cache(
     mcp = json.loads((cache / ".mcp.json").read_text(encoding="utf-8"))
     assert mcp["mcpServers"]["stackos"] == {
         "command": sys.executable,
-        "args": ["-m", "stackos", "mcp-bridge"],
+        "args": ["-m", "stackos", "mcp-bridge", "--runtime", "codex"],
     }
 
 

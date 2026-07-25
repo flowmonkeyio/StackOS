@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 import shlex
 import sys
+import urllib.error
+import urllib.request
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -34,6 +36,25 @@ def token_preflight(home: Path | None = None) -> str | None:
     if not path.is_file():
         return f"auth token missing at {path} — run `stackos install` or desktop Repair first."
     return None
+
+
+def daemon_preflight(*, timeout: float = 0.5) -> str | None:
+    """Return a readable error when the local daemon is not ready."""
+
+    try:
+        from stackos.config import get_settings
+
+        settings = get_settings()
+        request = urllib.request.Request(
+            f"http://{settings.host}:{settings.port}/api/v1/health",
+            method="GET",
+        )
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            if 200 <= response.status < 300:
+                return None
+    except (OSError, urllib.error.URLError, ValueError) as exc:
+        return f"StackOS is not reachable: {type(exc).__name__}"
+    return "StackOS health check did not return a ready response."
 
 
 def resolve_bridge_command(
@@ -81,12 +102,57 @@ def command_line_mentions(expected: Sequence[str], line: str) -> bool:
     return False
 
 
+def is_stackos_bridge_command(
+    command: Sequence[str],
+    *,
+    runtime: str | None = None,
+) -> bool:
+    """Recognize a daemon-owned local StackOS stdio bridge command."""
+
+    if not command:
+        return False
+    lowered = [str(part).lower() for part in command]
+    if "mcp-bridge" not in lowered:
+        return False
+    command_text = " ".join(lowered)
+    packaged = "stackos" in Path(lowered[0]).name or "stackos.app" in command_text
+    module = any(
+        lowered[index : index + 3] == ["-m", "stackos", "mcp-bridge"]
+        for index in range(max(0, len(lowered) - 2))
+    )
+    if not packaged and not module:
+        return False
+    if runtime is None:
+        return True
+    try:
+        runtime_index = lowered.index("--runtime")
+    except ValueError:
+        return False
+    return runtime_index + 1 < len(lowered) and lowered[runtime_index + 1] == runtime.lower()
+
+
 def output_row_matches_server(line: str, server_name: str = MCP_SERVER_NAME) -> bool:
     stripped = line.strip().lstrip("*-•✓✔ ")
     if not stripped:
         return False
     first = stripped.split(maxsplit=1)[0].rstrip(":")
     return first == server_name
+
+
+def command_from_output_row(
+    line: str,
+    server_name: str = MCP_SERVER_NAME,
+) -> list[str]:
+    """Extract a best-effort command suffix from one host MCP list row."""
+
+    try:
+        tokens = shlex.split(line)
+    except ValueError:
+        tokens = line.split()
+    for index, token in enumerate(tokens):
+        if token.strip("*-•✓✔:") == server_name:
+            return tokens[index + 1 :]
+    return []
 
 
 def _with_runtime(command: list[str], runtime: str | None) -> list[str]:

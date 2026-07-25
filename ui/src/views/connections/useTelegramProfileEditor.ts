@@ -10,7 +10,7 @@ import {
   preferredTelegramConnection,
   telegramConnectionForProfile,
   telegramFacet,
-  telegramProfileAuthKey,
+  telegramProfileCredentialRef,
   telegramProfileUsername,
   toCommandDrafts,
   toCommandSpecs,
@@ -37,7 +37,7 @@ export function useTelegramProfileEditor(options: TelegramProfileEditorOptions) 
   const message = ref<{ tone: MessageTone; text: string } | null>(null)
   const form = ref<TelegramProfileForm>({
     key: 'ops-bot',
-    auth_profile_key: '',
+    credential_ref: '',
     bot_username: '',
     identity_display_name: 'Ops Bot',
     identity_purpose: '',
@@ -56,6 +56,7 @@ export function useTelegramProfileEditor(options: TelegramProfileEditorOptions) 
       },
     ],
     mention_patterns: '',
+    ingress_enabled: true,
     store_non_trigger_messages: true,
     origin_required: true,
     reply_to_source_message: true,
@@ -72,8 +73,8 @@ export function useTelegramProfileEditor(options: TelegramProfileEditorOptions) 
   )
   const connectionOptions = computed(() =>
     connections.value.map((connection) => ({
-      value: connection.profile_key,
-      label: `${connectionTitle(connection)} (${connection.profile_key})`,
+      value: connection.credential_ref,
+      label: connectionTitle(connection),
     })),
   )
 
@@ -82,8 +83,8 @@ export function useTelegramProfileEditor(options: TelegramProfileEditorOptions) 
       identifiedConnections.value,
       connections.value,
     )
-    if (!form.value.auth_profile_key && preferred) {
-      form.value = { ...form.value, auth_profile_key: preferred.profile_key }
+    if (!form.value.credential_ref && preferred) {
+      form.value = { ...form.value, credential_ref: preferred.credential_ref }
     }
     message.value = null
     panelOpen.value = true
@@ -99,7 +100,7 @@ export function useTelegramProfileEditor(options: TelegramProfileEditorOptions) 
       : []
     form.value = {
       key: profile.key,
-      auth_profile_key: telegramProfileAuthKey(profile),
+      credential_ref: telegramProfileCredentialRef(profile),
       bot_username: telegramProfileUsername(profile),
       identity_display_name: String(profile.identity.display_name ?? profile.key),
       identity_purpose: String(profile.identity.purpose ?? ''),
@@ -111,6 +112,7 @@ export function useTelegramProfileEditor(options: TelegramProfileEditorOptions) 
       allowed_user_refs: (profile.access_policy.allowed_user_refs ?? []).join(', '),
       commands: toCommandDrafts(commands),
       mention_patterns: mentionPatterns.join(', '),
+      ingress_enabled: facet.ingress_enabled !== false,
       store_non_trigger_messages: profile.visibility_policy.store_non_trigger_messages !== false,
       origin_required: profile.response_policy.origin_required !== false,
       reply_to_source_message: profile.response_policy.reply_to_source_message === true,
@@ -139,15 +141,15 @@ export function useTelegramProfileEditor(options: TelegramProfileEditorOptions) 
     ensureDefaults()
     const values = form.value
     const key = values.key.trim()
-    const authProfileKey = values.auth_profile_key.trim()
+    const credentialRef = values.credential_ref.trim()
     const allowedChatRefs = parseCsv(values.allowed_chat_refs)
     const allowedUserRefs = parseCsv(values.allowed_user_refs)
     const identityDisplayName = values.identity_display_name.trim()
     const commands = toCommandSpecs(values.commands)
     if (!key) return fail('Telegram profile key is required.')
     if (!identityDisplayName) return fail('Bot display name is required.')
-    if (!authProfileKey) return fail('Choose a Telegram connection.')
-    const selectedConnection = telegramConnectionForProfile(authProfileKey, connections.value)
+    if (!credentialRef) return fail('Choose a Telegram connection.')
+    const selectedConnection = telegramConnectionForProfile(credentialRef, connections.value)
     const botUsername = botUsernameFromConnection(selectedConnection)
     if (!botUsername) {
       return fail(
@@ -166,7 +168,7 @@ export function useTelegramProfileEditor(options: TelegramProfileEditorOptions) 
           projectId: options.projectId.value,
           existing,
           key,
-          authProfileKey,
+          credentialRef,
           botUsername,
           identityDisplayName,
           identityPurpose: values.identity_purpose.trim(),
@@ -178,6 +180,7 @@ export function useTelegramProfileEditor(options: TelegramProfileEditorOptions) 
           allowedUserRefs,
           commands,
           mentionPatterns: parseCsv(values.mention_patterns),
+          ingressEnabled: values.ingress_enabled,
           storeNonTriggerMessages: values.store_non_trigger_messages,
           originRequired: values.origin_required,
           replyToSourceMessage: values.reply_to_source_message,
@@ -202,8 +205,8 @@ export function useTelegramProfileEditor(options: TelegramProfileEditorOptions) 
       identifiedConnections.value,
       connections.value,
     )
-    if (!form.value.auth_profile_key && preferred) {
-      form.value = { ...form.value, auth_profile_key: preferred.profile_key }
+    if (!form.value.credential_ref && preferred) {
+      form.value = { ...form.value, credential_ref: preferred.credential_ref }
     }
   }
 

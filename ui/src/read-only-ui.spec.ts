@@ -45,20 +45,24 @@ describe('restricted UI write contract', () => {
       .map((match) => match[0])
       .filter((block) => /method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/.test(block))
 
-    expect(methodBlocks.length).toBe(5)
+    expect(methodBlocks.length).toBe(7)
     expect(methodBlocks.map((block) => block.match(/method:\s*'([^']+)'/)?.[1])).toEqual([
       'POST',
       'PATCH',
       'POST',
       'POST',
       'POST',
+      'POST',
+      'DELETE',
     ])
     expect(methodBlocks.map((block) => block.match(/`([^`]+)`/)?.[1])).toEqual([
-      '/api/v1/projects/${projectId}/auth/${providerKey}/credentials',
-      '/api/v1/projects/${projectId}/auth/credentials/${encodeURIComponent(credentialRef)}',
-      '/api/v1/projects/${projectId}/auth/${providerKey}/start',
-      '/api/v1/projects/${projectId}/auth/test',
-      '/api/v1/projects/${projectId}/auth/revoke',
+      '/api/v1/auth/accounts/${providerKey}',
+      '/api/v1/auth/accounts/${encodeURIComponent(credentialRef)}',
+      '/api/v1/auth/accounts/${providerKey}/start',
+      '/api/v1/auth/accounts/${encodeURIComponent(credentialRef)}/test',
+      '/api/v1/auth/accounts/${encodeURIComponent(credentialRef)}/revoke',
+      '/api/v1/projects/${projectId}/connections/accounts/${encodeURIComponent(credentialRef)}',
+      '/api/v1/projects/${projectId}/connections/accounts/${encodeURIComponent(credentialRef)}',
     ])
   })
 

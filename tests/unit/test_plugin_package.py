@@ -21,7 +21,10 @@ def test_plugin_mcp_uses_local_bridge_not_project_env() -> None:
     config = json.loads((PLUGIN / ".mcp.json").read_text())
     server = config["mcpServers"]["stackos"]
 
-    assert server == {"command": "stackos", "args": ["mcp-bridge"]}
+    assert server == {
+        "command": "stackos",
+        "args": ["mcp-bridge", "--runtime", "codex"],
+    }
 
 
 def test_plugin_skill_preserves_repo_local_files_by_default() -> None:

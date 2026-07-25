@@ -5,7 +5,9 @@ import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import SubNav from '@/components/SubNav.vue'
 import { UiButton, UiCallout, UiConfirmDialog, UiPageShell, UiSkeleton } from '@/components/ui'
-import AddConnectionPanel from './connections/AddConnectionPanel.vue'
+import AddAccountPanel from './accounts/AddAccountPanel.vue'
+import { useAccountCredentials } from './accounts/useAccountCredentials'
+import AttachAccountPanel from './connections/AttachAccountPanel.vue'
 import BotsPanel from './connections/BotsPanel.vue'
 import ChannelsPanel from './connections/ChannelsPanel.vue'
 import ConnectedServicesPanel from './connections/ConnectedServicesPanel.vue'
@@ -49,18 +51,39 @@ const route = useRoute()
 const router = useRouter()
 
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
+const accountAttachProjectId = computed<number | null>(() => projectId.value)
 const initialLoadComplete = ref(false)
 const {
   authStatus,
   loading,
   error,
-  addPanelOpen,
+  attachPanelOpen,
+  selectedAccountRef,
+  providerFilter,
   busyAction,
-  providerMessages,
-  oauthReturnMessage,
   connectionMessages,
+  pendingDetach,
+  accountOptions,
+  activeConnections,
+  connectedConnections,
+  attentionConnections,
+  serviceGroups,
+  connectedServiceCount,
+  load: loadCredentials,
+  openAddConnection,
+  closeAttachPanel,
+  selectAccount,
+  attachSelectedAccount,
+  requestDetach,
+  confirmDetach,
+} = useConnectionCredentials(projectId)
+const {
+  panelOpen: accountPanelOpen,
+  busyAction: accountBusyAction,
+  providerMessages,
+  accountMessages,
+  oauthReturnMessage,
   fieldErrors,
-  pendingRevoke,
   editing,
   editingSecretPresent,
   authMethods,
@@ -75,31 +98,17 @@ const {
   hasFieldOptions,
   fieldValue,
   setFieldValue,
-  profileValue,
-  setProfileValue,
-  labelValue,
-  setLabelValue,
+  displayNameValue,
+  setDisplayNameValue,
   setSelectedProvider,
   visibleAuthProviders,
   providerOptions,
   selectedProvider,
-  activeConnections,
-  connectedConnections,
-  attentionConnections,
-  serviceGroups,
-  connectedServiceCount,
-  load: loadCredentials,
-  applyProviderSelection,
-  openAddConnection,
-  openEditConnection,
-  saveCredential: saveCredentialAction,
+  openAddAccount,
+  saveAccount: saveAccountAction,
   startProvider: startProviderAction,
   applyOAuthReturn,
-  testConnection,
-  requestRevoke,
-  confirmRevoke,
-  connectionActionKey,
-} = useConnectionCredentials(projectId)
+} = useAccountCredentials(accountAttachProjectId)
 const activeSection = ref<ConnectionSection>('services')
 const {
   profiles: communicationProfiles,
@@ -242,7 +251,9 @@ async function load(): Promise<void> {
     await loadCredentials()
     await loadCommunicationSetup()
     if (!handleOAuthReturnQuery(route.query.oauth_status, route.query.provider_key)) {
-      applyProviderSelection(route.query.provider_key)
+      const providerKey =
+        typeof route.query.provider_key === 'string' ? route.query.provider_key : undefined
+      if (providerKey) openAddConnection(providerKey)
     }
   } finally {
     initialLoadComplete.value = true
@@ -296,14 +307,29 @@ function clearOAuthReturnQuery(): void {
   void router.replace({ query: nextQuery })
 }
 
-function setAddPanelOpen(open: boolean): void {
-  addPanelOpen.value = open
+function setAccountPanelOpen(open: boolean): void {
+  accountPanelOpen.value = open
   if (!open) clearProviderQuery()
 }
 
-async function saveCredential(...args: Parameters<typeof saveCredentialAction>): Promise<void> {
-  await saveCredentialAction(...args)
-  if (!addPanelOpen.value) clearProviderQuery()
+function openCreateAccount(): void {
+  openAddAccount(providerFilter.value || undefined)
+}
+
+async function saveProjectAccount(...args: Parameters<typeof saveAccountAction>): Promise<void> {
+  const credentialRef = await saveAccountAction(...args)
+  if (credentialRef) {
+    const accountMessage = accountMessages.value[credentialRef]
+    if (accountMessage) {
+      connectionMessages.value = {
+        ...connectionMessages.value,
+        [credentialRef]: accountMessage,
+      }
+    }
+    closeAttachPanel()
+    await loadCredentials()
+  }
+  if (!accountPanelOpen.value) clearProviderQuery()
 }
 
 async function startProvider(...args: Parameters<typeof startProviderAction>): Promise<void> {
@@ -322,8 +348,9 @@ onMounted(load)
 onBeforeRouteUpdate((to) => {
   const nextProjectId = Number.parseInt(String(to.params.id), 10)
   if (nextProjectId !== projectId.value) {
-    addPanelOpen.value = false
-    pendingRevoke.value = null
+    attachPanelOpen.value = false
+    accountPanelOpen.value = false
+    pendingDetach.value = null
     telegramProfilePanelOpen.value = false
     slackProfilePanelOpen.value = false
     ingressSetupOpen.value = false
@@ -336,7 +363,7 @@ onBeforeRouteUpdate((to) => {
     setTimeout(() => void refreshOAuthReturn(to.query.oauth_status, to.query.provider_key), 0)
     return
   }
-  applyProviderSelection(to.query.provider_key)
+  if (typeof to.query.provider_key === 'string') openAddConnection(to.query.provider_key)
 })
 </script>
 
@@ -345,21 +372,32 @@ onBeforeRouteUpdate((to) => {
     <ProjectPageHeader
       :project-id="projectId"
       title="Connections"
-      description="Add, test, and repair the services connected agents can use. Messaging topology and diagnostics stay secondary."
+      description="Choose which reusable Accounts this project can use. Messaging profiles and webhooks stay project-bound."
       :breadcrumbs="[{ label: 'Connections' }]"
     >
       <template #actions>
-        <UiButton variant="primary" size="sm" icon-left="plus" @click="openAddConnection()">
+        <UiButton
+          variant="primary"
+          size="sm"
+          icon-left="plus"
+          @click="openAddConnection()"
+        >
           Add connection
         </UiButton>
       </template>
     </ProjectPageHeader>
 
-    <UiCallout v-if="error" tone="danger">
+    <UiCallout
+      v-if="error"
+      tone="danger"
+    >
       {{ error }}
     </UiCallout>
 
-    <UiCallout v-if="oauthReturnMessage" :tone="oauthReturnMessage.tone">
+    <UiCallout
+      v-if="oauthReturnMessage"
+      :tone="oauthReturnMessage.tone"
+    >
       {{ oauthReturnMessage.text }}
     </UiCallout>
 
@@ -370,7 +408,9 @@ onBeforeRouteUpdate((to) => {
     >
       <div class="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
         <div>
-          <p class="t-overline text-fg-subtle">Connection state</p>
+          <p class="t-overline text-fg-subtle">
+            Connection state
+          </p>
           <h2
             id="connection-state-title"
             class="mt-1 text-xl font-semibold tracking-tight text-fg-strong"
@@ -392,8 +432,13 @@ onBeforeRouteUpdate((to) => {
             </template>
           </p>
         </div>
-        <div v-if="attentionConnections.length > 0" class="flex flex-wrap gap-2 lg:justify-end">
-          <UiButton @click="setActiveSection('services')"> Review services </UiButton>
+        <div
+          v-if="attentionConnections.length > 0"
+          class="flex flex-wrap gap-2 lg:justify-end"
+        >
+          <UiButton @click="setActiveSection('services')">
+            Review services
+          </UiButton>
         </div>
       </div>
       <div class="grid border-t border-border-subtle bg-bg-surface-alt sm:grid-cols-4">
@@ -402,45 +447,31 @@ onBeforeRouteUpdate((to) => {
           class="focus-ring-inset border-b border-border-subtle px-4 py-3 text-left transition hover:bg-bg-surface sm:border-b-0 sm:border-r"
           @click="setActiveSection('services')"
         >
-          <span class="block text-2xs font-medium uppercase tracking-wide text-fg-subtle"
-            >Services</span
-          >
-          <span class="mt-1 block text-sm font-semibold text-fg-strong"
-            >{{ connectedServiceCount }} connected</span
-          >
+          <span class="block text-2xs font-medium uppercase tracking-wide text-fg-subtle">Services</span>
+          <span class="mt-1 block text-sm font-semibold text-fg-strong">{{ connectedServiceCount }} connected</span>
         </button>
         <button
           type="button"
           class="focus-ring-inset border-b border-border-subtle px-4 py-3 text-left transition hover:bg-bg-surface sm:border-b-0 sm:border-r"
           @click="setActiveSection('bots')"
         >
-          <span class="block text-2xs font-medium uppercase tracking-wide text-fg-subtle"
-            >Messaging identities</span
-          >
-          <span class="mt-1 block text-sm font-semibold text-fg-strong"
-            >{{ communicationProfiles.length }} configured</span
-          >
+          <span class="block text-2xs font-medium uppercase tracking-wide text-fg-subtle">Messaging identities</span>
+          <span class="mt-1 block text-sm font-semibold text-fg-strong">{{ communicationProfiles.length }} configured</span>
         </button>
         <button
           type="button"
           class="focus-ring-inset border-b border-border-subtle px-4 py-3 text-left transition hover:bg-bg-surface sm:border-b-0 sm:border-r"
           @click="setActiveSection('channels')"
         >
-          <span class="block text-2xs font-medium uppercase tracking-wide text-fg-subtle"
-            >Places</span
-          >
-          <span class="mt-1 block text-sm font-semibold text-fg-strong"
-            >{{ communicationSurfaces.length }} visible</span
-          >
+          <span class="block text-2xs font-medium uppercase tracking-wide text-fg-subtle">Places</span>
+          <span class="mt-1 block text-sm font-semibold text-fg-strong">{{ communicationSurfaces.length }} visible</span>
         </button>
         <button
           type="button"
           class="focus-ring-inset px-4 py-3 text-left transition hover:bg-bg-surface"
           @click="setActiveSection('connectivity')"
         >
-          <span class="block text-2xs font-medium uppercase tracking-wide text-fg-subtle"
-            >Inbound messaging</span
-          >
+          <span class="block text-2xs font-medium uppercase tracking-wide text-fg-subtle">Inbound messaging</span>
           <span
             class="mt-1 block text-sm font-semibold"
             :class="ingressStatus?.ready ? 'text-success-fg' : 'text-warning-fg'"
@@ -469,7 +500,11 @@ onBeforeRouteUpdate((to) => {
       {{ manualIngressRoutes[0].profile_key }} needs its webhook URL copied into the provider
       console.
       <template #actions>
-        <UiButton variant="secondary" size="sm" @click="setActiveSection('connectivity')">
+        <UiButton
+          variant="secondary"
+          size="sm"
+          @click="setActiveSection('connectivity')"
+        >
           Review connectivity
         </UiButton>
       </template>
@@ -492,18 +527,25 @@ onBeforeRouteUpdate((to) => {
         >
           <ConnectedServicesPanel
             :loading="loading"
+            :error="error"
             :service-groups="serviceGroups"
             :connections-count="activeConnections.length"
             :connection-messages="connectionMessages"
             :busy-action="busyAction"
             @add-connection="openAddConnection"
-            @edit-connection="openEditConnection"
-            @test-connection="testConnection"
-            @revoke-connection="requestRevoke"
+            @manage-account="
+              (connection) => router.push(`/accounts?account=${connection.credential_ref}`)
+            "
+            @detach-connection="requestDetach"
+            @refresh="loadCredentials"
           />
         </div>
 
-        <div role="tabpanel" aria-labelledby="cs-subnav-bots" :hidden="activeSection !== 'bots'">
+        <div
+          role="tabpanel"
+          aria-labelledby="cs-subnav-bots"
+          :hidden="activeSection !== 'bots'"
+        >
           <BotsPanel
             :bots="communicationProfiles"
             :telegram-connections="telegramConnections"
@@ -581,14 +623,26 @@ onBeforeRouteUpdate((to) => {
       </div>
     </div>
 
-    <AddConnectionPanel
-      :model-value="addPanelOpen"
+    <AttachAccountPanel
+      :model-value="attachPanelOpen"
+      :selected-account-ref="selectedAccountRef"
+      :account-options="accountOptions"
+      :message="selectedAccountRef ? (connectionMessages[selectedAccountRef] ?? null) : null"
+      :busy="Boolean(selectedAccountRef && busyAction === `${selectedAccountRef}:attach`)"
+      @update:model-value="(open) => (open ? (attachPanelOpen = true) : closeAttachPanel())"
+      @update:selected-account-ref="selectAccount(String($event ?? ''))"
+      @attach="attachSelectedAccount"
+      @create-account="openCreateAccount"
+    />
+
+    <AddAccountPanel
+      :model-value="accountPanelOpen"
       :selected-provider="selectedProvider"
       :visible-auth-providers="visibleAuthProviders"
       :provider-options="providerOptions"
       :provider-messages="providerMessages"
       :field-errors="fieldErrors"
-      :busy-action="busyAction"
+      :busy-action="accountBusyAction"
       :editing="editing"
       :secret-present="editingSecretPresent"
       :auth-methods="authMethods"
@@ -600,17 +654,15 @@ onBeforeRouteUpdate((to) => {
       :method-fields="methodFields"
       :has-field-options="hasFieldOptions"
       :field-options="fieldOptions"
-      :profile-value="profileValue"
-      :set-profile-value="setProfileValue"
-      :label-value="labelValue"
-      :set-label-value="setLabelValue"
+      :display-name-value="displayNameValue"
+      :set-display-name-value="setDisplayNameValue"
       :field-value="fieldValue"
       :set-field-value="setFieldValue"
-      @update:model-value="setAddPanelOpen"
+      @update:model-value="setAccountPanelOpen"
       @select-provider="setSelectedProvider"
       @select-method="setSelectedMethod"
       @start-provider="startProvider"
-      @save-credential="saveCredential"
+      @save-account="saveProjectAccount"
       @go-plugins="router.push(`/projects/${projectId}/plugins`)"
     />
 
@@ -646,29 +698,24 @@ onBeforeRouteUpdate((to) => {
     />
 
     <UiConfirmDialog
-      :model-value="Boolean(pendingRevoke)"
-      title="Revoke this connection?"
+      :model-value="Boolean(pendingDetach)"
+      title="Detach this Account?"
       :description="
-        pendingRevoke
-          ? `Agents will immediately lose access to ${providerLabel(pendingRevoke.provider_key)} (${pendingRevoke.label || pendingRevoke.profile_key}).`
+        pendingDetach
+          ? `${pendingDetach.display_name} will stop being available to this project. The Account remains available elsewhere.`
           : undefined
       "
-      confirm-label="Revoke connection"
-      cancel-label="Keep connection"
+      confirm-label="Detach Account"
+      cancel-label="Keep attached"
       tone="danger"
-      :loading="
-        Boolean(
-          pendingRevoke &&
-          busyAction === connectionActionKey(pendingRevoke.credential_ref, 'revoke'),
-        )
-      "
+      :loading="Boolean(pendingDetach && busyAction === `${pendingDetach.credential_ref}:detach`)"
       @update:model-value="
         (open) => {
-          if (!open) pendingRevoke = null
+          if (!open) pendingDetach = null
         }
       "
-      @confirm="confirmRevoke"
-      @cancel="pendingRevoke = null"
+      @confirm="confirmDetach"
+      @cancel="pendingDetach = null"
     />
   </UiPageShell>
 </template>

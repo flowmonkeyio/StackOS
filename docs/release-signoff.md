@@ -32,8 +32,8 @@ touches committed UI assets.
 | --- | --- | --- |
 | Workspace-bound MCP bootstrap | The bridge resolves the current project, injects `project_id`, and rejects cross-project calls. | `uv run pytest tests/integration/test_mcp/test_mcp_workspaces.py tests/integration/test_mcp/test_mcp_bridge_agent_path.py tests/unit/test_mcp_bridge.py -q` |
 | MCP operation discovery | Agents can inspect OperationSpec purpose, schemas, grants, examples, and toolbox categories from MCP. | `uv run pytest tests/unit/test_mcp_bridge.py tests/unit/test_operations_registry.py -q` |
-| Auth/profile resolution | Agents see safe credential refs/status only, never secrets, and `toolProfile.resolve` gives repair guidance. | `uv run pytest tests/integration/test_mcp/test_mcp_communications.py::test_tool_profile_resolve_telegram_profile_returns_safe_tuple tests/integration/test_repositories/test_auth_providers.py -q` |
-| OAuth lifecycle and Connections | Fixed callback/state/PKCE, provider exchanges, renewal/client credentials, scope gates, sanitized failures, and the one-action Connect UI stay aligned. | `uv run pytest tests/integration/test_repositories/test_oauth_lifecycle.py tests/integration/test_routes/test_auth_provider_routes.py tests/integration/test_repositories/test_auth_providers.py -q`<br>`pnpm --dir ui exec vitest run src/views/ConnectionsView.credentials.spec.ts` |
+| Account/profile resolution | Agents see safe Account refs/status only, never secrets, project profiles bind exact attached Accounts, and `toolProfile.resolve` gives repair guidance. | `uv run pytest tests/integration/test_mcp/test_mcp_communications.py::test_tool_profile_resolve_mcp_resolves_telegram_profile_and_credential tests/integration/test_repositories/test_auth_providers.py -q` |
+| Account, OAuth, and Connection lifecycle | Global named Accounts, explicit multi-project attachments, fixed callback/state/PKCE, migration, renewal, scope gates, and sanitized failures stay aligned. | `uv run pytest tests/integration/test_repositories/test_oauth_lifecycle.py tests/integration/test_routes/test_auth_provider_routes.py tests/integration/test_repositories/test_auth_providers.py tests/integration/test_repositories/test_global_accounts.py tests/integration/test_schema.py::test_global_account_migration_preserves_and_reencrypts_legacy_credentials -q`<br>`pnpm --dir ui exec vitest run src/views/AccountsView.spec.ts src/views/ConnectionsView.accounts.spec.ts` |
 | Direct action execution | `action.describe/validate/run` and direct dry-runs use the same connector/auth/audit path. | `uv run pytest tests/integration/test_mcp/test_mcp_actions.py tests/integration/test_routes/test_cli_mock_provider.py -q` |
 | Workflow/run-plan execution | `runPlan.validate/create/start/claimStep/recordStep`, step grants, and non-executable warnings behave predictably. | `uv run pytest tests/unit/test_run_plan_schema.py tests/integration/test_mcp/test_mcp_run_plans.py tests/integration/test_mcp/test_mcp_tool_grants.py -q` |
 | Tracker task/ticket workflow | Bulk create/review/update, dependency previews, compact reads, history, and verification stay agent-friendly. | `uv run pytest tests/integration/test_mcp/test_mcp_tracker.py tests/integration/test_repositories/test_tracker.py tests/unit/test_operation_responses.py tests/unit/test_operations_registry.py -q` |
@@ -42,6 +42,7 @@ touches committed UI assets.
 | Agent request handoff | Agent requests claim, prepare run plans atomically, link, complete, release, and hide claim tokens correctly. | `uv run pytest tests/integration/test_mcp/test_mcp_agent_requests.py tests/integration/test_repositories/test_agent_requests.py -q` |
 | UI human signoff surfaces | Tracker, setup, connections, runs, resources, and operation pages render the generic objects agents act on. | `pnpm --dir ui test && pnpm --dir ui build` |
 | Setup/package smoke | Install, daemon start/doctor, MCP registration, assets, and docs match the release shape. | `make install && make doctor` |
+| AI-tool host lifecycle | Shared canonical states, fail-closed ownership, ChatGPT/Codex capability fallback, explicit Hermes profiles, desktop pre-ready reconciliation, and backend-owned UI labels stay aligned. | `uv run pytest tests/unit/test_host_mcp.py tests/unit/test_claude_mcp.py tests/unit/test_cli_install.py -q`<br>`pnpm --dir ui exec vitest run src/views/home/agentHostPresentation.spec.ts`<br>`node desktop/scripts/test-service-upgrade.cjs` |
 | Local daemon lifecycle | Restart ignores stale pid files and zombie/defunct children, refuses non-StackOS port blockers, and does not leave launchd booted out. | `uv run pytest tests/unit/test_cli_daemon.py -q` |
 | macOS desktop app | Electron metadata, service bridge, update endpoint config, packaged install/repair, and desktop docs stay aligned with the installer contract. | `make desktop-doctor` |
 | Visible Chromium runtime | The app ships one signed arm64 `Chromium.app`, no Chrome for Testing/headless shell, and a stable StackOS profile persists a nonce cookie across a visible restart. | `pnpm --dir desktop check` plus installed-app proof |
@@ -71,7 +72,7 @@ uv run pytest \
   tests/integration/test_routes/test_auth_provider_routes.py \
   tests/integration/test_repositories/test_auth_providers.py \
   -q
-pnpm --dir ui exec vitest run src/views/ConnectionsView.credentials.spec.ts
+pnpm --dir ui exec vitest run src/views/AccountsView.spec.ts src/views/ConnectionsView.accounts.spec.ts
 npm --prefix workers/oauth-callback-relay test
 ```
 

@@ -29,6 +29,7 @@ import stackos.cli.launchd as launchd_cli
 import stackos.cli.local_commands as local_cli
 import stackos.db.migrate as migrate_module
 import stackos.db.models  # noqa: F401  (populate SQLModel metadata)
+import stackos.host_mcp as host_mcp
 import stackos.host_mcp.adapters.claude_code as claude_code_adapter
 from stackos import claude_mcp
 from stackos import install as installer
@@ -40,11 +41,14 @@ from stackos.crypto.seed import ensure_seed_file
 from stackos.db.connection import make_engine
 from stackos.db.migrate import current_alembic_version, upgrade_to_head
 from stackos.db.models import PayloadSecret, Project
+from stackos.host_mcp.bridge import resolve_bridge_command
+from stackos.host_mcp.result import HostMcpResult
+from stackos.host_mcp.service import HostMcpAggregate
 from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.secrets import PayloadSecretRepository
 
-HEAD_REVISION = "0025_visible_chromium_profiles"
+HEAD_REVISION = "0027_repair_global_account_backings"
 
 
 @pytest.fixture
@@ -191,9 +195,10 @@ def test_copy_plugins_hydrates_catalogs(sandbox: Path) -> None:
     assert count == 1
     assert (target / ".codex-plugin" / "plugin.json").is_file()
     mcp = json.loads((target / ".mcp.json").read_text(encoding="utf-8"))
+    command = resolve_bridge_command(runtime="codex")
     assert mcp["mcpServers"]["stackos"] == {
-        "command": sys.executable,
-        "args": ["-m", "stackos", "mcp-bridge"],
+        "command": command[0],
+        "args": command[1:],
     }
     assert (target / "skills" / "stackos" / "SKILL.md").is_file()
     assert not (target / "skills" / "catalog").exists()
@@ -219,9 +224,10 @@ def test_copy_plugins_refreshes_existing_codex_cache(sandbox: Path) -> None:
     assert stale_skill.read_bytes() == (target / "skills" / "stackos" / "SKILL.md").read_bytes()
     assert not stale_file.exists()
     mcp = json.loads((cache / ".mcp.json").read_text(encoding="utf-8"))
+    command = resolve_bridge_command(runtime="codex")
     assert mcp["mcpServers"]["stackos"] == {
-        "command": sys.executable,
-        "args": ["-m", "stackos", "mcp-bridge"],
+        "command": command[0],
+        "args": command[1:],
     }
 
 
@@ -619,7 +625,7 @@ def test_doctor_provider_readiness_reports_missing_connections(sandbox: Path) ->
     assert details["connected_count"] == 0
     assert details["setup_required_count"] == details["providers_count"]
     assert "connections" in str(details["connections_url"])
-    assert "auth.status" in str(details["repair"])
+    assert "connection.list" in str(details["repair"])
 
 
 def test_doctor_provider_readiness_does_not_sync_catalog(
@@ -667,11 +673,10 @@ def test_doctor_provider_readiness_summarizes_connections_without_secrets(
             session.refresh(project)
             assert project.id is not None
             AuthRepository(session).store_credential(
-                project_id=project.id,
+                attach_project_id=project.id,
                 provider_key="firecrawl",
                 auth_method_key="api_key",
-                profile_key="primary",
-                label="Primary Firecrawl",
+                display_name="Primary Firecrawl",
                 fields={"api_key": "fc-secret"},
             )
     finally:
@@ -772,6 +777,21 @@ def test_copy_skills_deletes_stale(sandbox: Path) -> None:
     stale.write_text("not in source\n", encoding="utf-8")
     installer.copy_skills("codex", home=sandbox)
     assert not stale.exists()
+
+
+def test_copy_stackos_skill_to_preserves_unrelated_hermes_skills(
+    sandbox: Path,
+) -> None:
+    skills_root = sandbox / ".hermes" / "profiles" / "work" / "skills"
+    unrelated = skills_root / "research" / "SKILL.md"
+    unrelated.parent.mkdir(parents=True)
+    unrelated.write_text("keep me\n", encoding="utf-8")
+
+    target = installer.copy_stackos_skill_to(skills_root)
+
+    assert target == skills_root / "stackos"
+    assert (target / "SKILL.md").is_file()
+    assert unrelated.read_text(encoding="utf-8") == "keep me\n"
 
 
 def test_register_mcp_claude_uses_shared_contract(
@@ -992,6 +1012,100 @@ def test_cli_install_mcp_only_registers_claude_with_fake_cli(
         call[:6] for call in state["calls"]
     ]
     assert not (sandbox / ".claude" / "mcp.json").exists()
+
+
+def test_cli_install_targets_one_existing_hermes_profile(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, Path, str | None]] = []
+
+    def fake_register(
+        host_key: str,
+        *,
+        home: Path,
+        profile: str | None = None,
+        force: bool = False,
+    ) -> HostMcpResult:
+        del force
+        calls.append((host_key, home, profile))
+        return HostMcpResult(
+            host_key=host_key,
+            surface="profile-config",
+            status="registered",
+            message="Hermes profile work connected.",
+            ok=True,
+            available=True,
+            selected=True,
+            managed=True,
+        )
+
+    monkeypatch.setattr(host_mcp, "register_host", fake_register)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "install",
+            "--mcp-only",
+            "--mcp-host",
+            "hermes",
+            "--mcp-profile",
+            "work",
+            "--skip-doctor",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert calls == [("hermes", sandbox, "work")]
+    assert "Hermes profile work connected." in result.stdout
+
+
+def test_bulk_install_can_finish_while_unmanaged_host_needs_review(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    review = HostMcpResult(
+        host_key="claude-code",
+        surface="cli",
+        status="registered_unmanaged",
+        message="The existing entry is not StackOS-owned.",
+        ok=False,
+        available=True,
+        blocking=True,
+        selected=True,
+        managed=False,
+        connection_state="review_required",
+        status_label="Review required",
+    )
+    monkeypatch.setattr(
+        host_mcp,
+        "repair_all",
+        lambda home: HostMcpAggregate(ok=False, results=[review]),
+    )
+
+    ok, messages = installer.repair_mcp_hosts(home=sandbox)
+
+    assert ok is True
+    assert messages == ["claude-code: The existing entry is not StackOS-owned."]
+
+
+def test_cli_rejects_profile_target_for_non_profile_host() -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "install",
+            "--mcp-only",
+            "--mcp-host",
+            "codex",
+            "--mcp-profile",
+            "work",
+            "--skip-doctor",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "--mcp-profile is valid only" in result.output
 
 
 def test_cli_uninstall_removes_integrations_and_preserves_state(

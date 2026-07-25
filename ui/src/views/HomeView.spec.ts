@@ -58,21 +58,44 @@ describe('HomeView', () => {
     const hostStatuses = vi.fn(async () => ({
       ok: false,
       items: [
-        host({ host_key: 'codex', status: 'registered_current', ok: true, available: true }),
-        host({ host_key: 'claude-code', status: 'absent', ok: true, available: false }),
+        host({}),
+        host({
+          host_key: 'claude-code',
+          display_name: 'Claude Code',
+          status: 'absent',
+          connection_state: 'unavailable',
+          status_label: 'Not detected',
+          ok: true,
+          available: false,
+        }),
         host({
           host_key: 'claude-desktop',
+          display_name: 'Claude Desktop',
           status: 'restart_required',
-          ok: true,
+          connection_state: 'restart_required',
+          status_label: 'Restart needed',
+          ok: false,
           available: true,
+          blocking: true,
           needs_restart: true,
         }),
         host({
           host_key: 'gemini-cli',
+          display_name: 'Gemini CLI',
           status: 'available_unregistered',
-          ok: false,
+          connection_state: 'available',
+          status_label: 'Available',
+          ok: true,
           available: true,
-          blocking: true,
+        }),
+        host({
+          host_key: 'hermes',
+          display_name: 'Hermes',
+          status: 'absent',
+          connection_state: 'unavailable',
+          status_label: 'Not detected',
+          ok: true,
+          available: false,
         }),
       ],
     }))
@@ -95,15 +118,18 @@ describe('HomeView', () => {
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('AI tool connections'))
     expect(hostStatuses).toHaveBeenCalledTimes(1)
-    expect(wrapper.text()).toContain('1 connected · 2 need attention · 1 not detected')
-    expect(wrapper.text()).toContain('Codex')
+    expect(wrapper.text()).toContain('1 connected · 1 available · 1 needs attention · 2 not detected')
     expect(wrapper.text()).toContain('Connected')
-    expect(wrapper.text()).toContain('Claude Code')
     expect(wrapper.text()).toContain('Not detected')
-    expect(wrapper.text()).toContain('Claude Desktop')
     expect(wrapper.text()).toContain('Restart needed')
-    expect(wrapper.text()).toContain('Gemini CLI')
-    expect(wrapper.text()).toContain('Not connected')
+    expect(wrapper.text()).toContain('Available')
+    expect(wrapper.findAll('ul.grid-cols-5 > li')).toHaveLength(5)
+    expect(wrapper.get('img[alt="ChatGPT / Codex"]').attributes('src')).toBe('/images/openai.webp')
+    expect(wrapper.get('img[alt="Claude Code"]').attributes('src')).toBe('/images/claude-code.webp')
+    expect(wrapper.get('img[alt="Claude Desktop"]').attributes('src')).toBe('/images/claude.webp')
+    expect(wrapper.get('img[alt="Gemini CLI"]').attributes('src')).toBe('/images/gemini.webp')
+    expect(wrapper.get('img[alt="Hermes"]').attributes('src')).toBe('/images/hermes.webp')
+    expect(wrapper.findAll('p[title] > span.truncate')).toHaveLength(5)
   })
 })
 
@@ -172,6 +198,9 @@ function host(overrides: Record<string, unknown>) {
     config_path: null,
     repair: null,
     warnings: [],
+    display_name: 'ChatGPT / Codex',
+    connection_state: 'connected',
+    status_label: 'Connected',
     ...overrides,
   }
 }

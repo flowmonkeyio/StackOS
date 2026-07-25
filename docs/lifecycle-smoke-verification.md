@@ -79,6 +79,16 @@ Confirm removed:
 - StackOS Codex plugin cache
 - StackOS MCP registrations
 
+For host-lifecycle changes, also prove the canonical state matrix in a temp
+home:
+
+- absent optional and unselected available hosts are nonblocking;
+- only selected StackOS-owned stale entries report `repair_needed`;
+- unmanaged same-name entries report `review_required` and are not mutated;
+- ChatGPT-bundled Codex capability probing falls back to standalone Codex;
+- Hermes remains unselected during bulk repair, and an explicit existing
+  profile preserves sibling skills and profile state.
+
 Confirm preserved:
 
 - `~/.local/share/stackos/stackos.db`

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from stackos.db.models import ActionCall, ActionCallStatus, Credential
+from tests.integration.account_test_support import seed_test_account
 
 
 def test_action_call_route_returns_redacted_audit_rows(
@@ -14,14 +15,18 @@ def test_action_call_route_returns_redacted_audit_rows(
 ) -> None:
     engine = api.app.state.engine  # type: ignore[attr-defined]
     with Session(engine) as session:
-        credential = Credential(
+        backing = seed_test_account(
+            session,
             project_id=project_id,
-            credential_ref="cred_123",
             provider_key="openai-images",
-            auth_type="api-key",
+            display_name="OpenAI Images - Default",
+            secret_payload=b"secret",
         )
-        session.add(credential)
-        session.flush()
+        credential = session.exec(
+            select(Credential).where(
+                Credential.integration_credential_id == backing.data.id,
+            )
+        ).one()
         row = ActionCall(
             project_id=project_id,
             action_key="image.generate",
@@ -33,10 +38,13 @@ def test_action_call_route_returns_redacted_audit_rows(
             dry_run=False,
             credential_id=credential.id,
             idempotency_key="caller-secret-key",
-            credential_ref="cred_123",
+            credential_ref=credential.credential_ref,
             request_json={"prompt": "test", "api_key": "secret"},
             response_json={"asset_url": "/generated-assets/test.webp", "token": "secret"},
-            metadata_json={"credential_ref": "cred_123", "refresh_token": "secret"},
+            metadata_json={
+                "credential_ref": credential.credential_ref,
+                "refresh_token": "secret",
+            },
         )
         failed = ActionCall(
             project_id=project_id,
@@ -48,7 +56,7 @@ def test_action_call_route_returns_redacted_audit_rows(
             status=ActionCallStatus.FAILED,
             dry_run=False,
             credential_id=credential.id,
-            credential_ref="cred_123",
+            credential_ref=credential.credential_ref,
             request_json={"prompt": "bad"},
             response_json=None,
             error="provider rejected request",
@@ -56,6 +64,7 @@ def test_action_call_route_returns_redacted_audit_rows(
         session.add(row)
         session.add(failed)
         session.commit()
+        credential_ref = credential.credential_ref
 
     resp = api.get(
         f"/api/v1/projects/{project_id}/action-calls",
@@ -68,7 +77,7 @@ def test_action_call_route_returns_redacted_audit_rows(
     assert item["status"] == "success"
     assert item["request_json"]["api_key"] == "[redacted]"
     assert item["response_json"]["token"] == "[redacted]"
-    assert item["metadata_json"]["credential_ref"] == "cred_123"
+    assert item["metadata_json"]["credential_ref"] == credential_ref
     assert item["metadata_json"]["refresh_token"] == "[redacted]"
     assert "credential_id" not in item
     assert "idempotency_key" not in item

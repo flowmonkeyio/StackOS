@@ -29,7 +29,6 @@ from stackos.operations.execution_contexts import (
 )
 from stackos.repositories.base import ValidationError
 from stackos.repositories.execution_contexts import ExecutionContextRepository
-from stackos.repositories.projects import IntegrationCredentialRepository
 
 
 def _api_key_auth_methods() -> dict:
@@ -184,14 +183,14 @@ def _seed_region_context_action(session: Session) -> str:
 
 
 def _credential_ref(session: Session, project_id: int, provider_key: str) -> str:
-    IntegrationCredentialRepository(session).set(
-        project_id=project_id,
-        kind=provider_key,
-        secret_payload=b"daemon-only-secret",
-        config_json={"label": "Example credential"},
+    created = AuthRepository(session).store_credential(
+        provider_key=provider_key,
+        display_name="Example Provider - Default",
+        auth_method_key="api_key",
+        fields={"api_key": "daemon-only-secret"},
+        attach_project_id=project_id,
     )
-    status = AuthRepository(session).status(project_id=project_id, provider_key=provider_key)
-    return status.connections[0].credential_ref
+    return created.data.credential_ref
 
 
 def test_execution_context_create_resolve_and_list_by_task(

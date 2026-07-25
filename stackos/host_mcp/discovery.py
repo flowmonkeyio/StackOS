@@ -25,32 +25,59 @@ def resolve_cli_bin(
 ) -> str | None:
     """Find a host CLI from the current PATH, known installs, or a login shell."""
 
+    candidates = resolve_cli_bins(
+        command_name,
+        env_var=env_var,
+        explicit=explicit,
+        common_candidates=common_candidates,
+        app_bundle_candidates=app_bundle_candidates,
+    )
+    return candidates[0] if candidates else None
+
+
+def resolve_cli_bins(
+    command_name: str,
+    *,
+    env_var: str | None = None,
+    explicit: str | None = None,
+    preferred_candidates: Iterable[str] = (),
+    common_candidates: Iterable[str] = (),
+    app_bundle_candidates: Iterable[str] = (),
+) -> list[str]:
+    """Return ordered, deduplicated executable candidates for a host CLI."""
+
     if explicit is not None:
-        return executable_path_or_none(explicit)
+        resolved = executable_path_or_none(explicit)
+        return [resolved] if resolved else []
 
     if env_var:
         override = os.environ.get(env_var)
         if override is not None:
-            return executable_path_or_none(override)
+            resolved = executable_path_or_none(override)
+            return [resolved] if resolved else []
 
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    def add(candidate: str | None) -> None:
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            ordered.append(candidate)
+
+    for candidate in expand_candidate_paths(preferred_candidates):
+        add(executable_path_or_none(candidate))
     from_path = shutil.which(command_name)
-    if from_path:
-        return from_path
+    add(from_path)
 
     for candidate in expand_candidate_paths(common_candidates):
-        resolved = executable_path_or_none(candidate)
-        if resolved:
-            return resolved
+        add(executable_path_or_none(candidate))
 
     for candidate in expand_candidate_paths(app_bundle_candidates):
-        resolved = executable_path_or_none(candidate)
-        if resolved:
-            return resolved
+        add(executable_path_or_none(candidate))
 
     from_login_shell = discover_with_login_shell(command_name)
-    if from_login_shell:
-        return from_login_shell
-    return None
+    add(from_login_shell)
+    return ordered
 
 
 def subprocess_env_for_cli(cli_bin: str) -> dict[str, str]:

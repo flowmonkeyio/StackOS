@@ -24,7 +24,6 @@ from stackos.actions import (
 from stackos.auth_providers import AuthRepository
 from stackos.db.models import ActionCallStatus
 from stackos.repositories.base import ConflictError
-from stackos.repositories.projects import IntegrationCredentialRepository
 
 
 class _FakeFTP:
@@ -419,20 +418,23 @@ def _credential_ref(
     tls_mode: str = "explicit",
 ) -> str:
     ActionRepository(session).describe(action_ref="utils.ftp.directory.list")
-    IntegrationCredentialRepository(session).set(
-        project_id=project_id,
-        kind="ftp",
-        secret_payload=json.dumps({"password": "ftp-secret"}).encode(),
-        config_json={
-            "host": "ftp.example.test",
-            "port": 21,
-            "tls_mode": tls_mode,
-            "username": "deploy",
-            "passive_mode": True,
-        },
+    return (
+        AuthRepository(session)
+        .store_credential(
+            provider_key="ftp",
+            display_name="FTP - Default",
+            fields={
+                "password": "ftp-secret",
+                "host": "ftp.example.test",
+                "port": 21,
+                "tls_mode": tls_mode,
+                "username": "deploy",
+                "passive_mode": True,
+            },
+            attach_project_id=project_id,
+        )
+        .data.credential_ref
     )
-    status = AuthRepository(session).status(project_id=project_id, provider_key="ftp")
-    return status.connections[0].credential_ref
 
 
 def _patch_ftps(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -6,8 +6,7 @@ import type { AuthField, AuthMethod } from '@/views/connections/types'
 export function useConnectionForm() {
   const selectedProviderKey = ref('')
   const selectedMethodByProvider = ref<Record<string, string>>({})
-  const labelByForm = ref<Record<string, string>>({})
-  const profileByForm = ref<Record<string, string>>({})
+  const displayNameByForm = ref<Record<string, string>>({})
   const fieldsByForm = ref<Record<string, Record<string, string>>>({})
 
   function authMethods(provider: SchemaAuthProviderOut): AuthMethod[] {
@@ -97,24 +96,17 @@ export function useConnectionForm() {
     }
   }
 
-  function profileValue(providerKey: string, methodKey: string): string {
-    return profileByForm.value[formKey(providerKey, methodKey)] ?? ''
+  function displayNameValue(providerKey: string, methodKey: string): string {
+    return displayNameByForm.value[formKey(providerKey, methodKey)] ?? ''
   }
 
-  function setProfileValue(providerKey: string, methodKey: string, value: string | number | null) {
-    profileByForm.value = {
-      ...profileByForm.value,
-      [formKey(providerKey, methodKey)]: String(value ?? ''),
-    }
-  }
-
-  function labelValue(providerKey: string, methodKey: string): string {
-    return labelByForm.value[formKey(providerKey, methodKey)] ?? ''
-  }
-
-  function setLabelValue(providerKey: string, methodKey: string, value: string | number | null) {
-    labelByForm.value = {
-      ...labelByForm.value,
+  function setDisplayNameValue(
+    providerKey: string,
+    methodKey: string,
+    value: string | number | null,
+  ) {
+    displayNameByForm.value = {
+      ...displayNameByForm.value,
       [formKey(providerKey, methodKey)]: String(value ?? ''),
     }
   }
@@ -126,8 +118,7 @@ export function useConnectionForm() {
   function clearForm(providerKey: string, methodKey: string): void {
     const key = formKey(providerKey, methodKey)
     fieldsByForm.value = { ...fieldsByForm.value, [key]: {} }
-    profileByForm.value = { ...profileByForm.value, [key]: '' }
-    labelByForm.value = { ...labelByForm.value, [key]: '' }
+    displayNameByForm.value = { ...displayNameByForm.value, [key]: '' }
   }
 
   function clearProviderForms(providerKey: string): void {
@@ -135,11 +126,8 @@ export function useConnectionForm() {
     fieldsByForm.value = Object.fromEntries(
       Object.entries(fieldsByForm.value).filter(([key]) => !key.startsWith(prefix)),
     )
-    profileByForm.value = Object.fromEntries(
-      Object.entries(profileByForm.value).filter(([key]) => !key.startsWith(prefix)),
-    )
-    labelByForm.value = Object.fromEntries(
-      Object.entries(labelByForm.value).filter(([key]) => !key.startsWith(prefix)),
+    displayNameByForm.value = Object.fromEntries(
+      Object.entries(displayNameByForm.value).filter(([key]) => !key.startsWith(prefix)),
     )
   }
 
@@ -147,20 +135,17 @@ export function useConnectionForm() {
     providerKey: string,
     methodKey: string,
     values: Record<string, string>,
-    profile: string,
-    label: string,
+    displayName: string,
   ): void {
     const key = formKey(providerKey, methodKey)
     fieldsByForm.value = { ...fieldsByForm.value, [key]: { ...values } }
-    profileByForm.value = { ...profileByForm.value, [key]: profile }
-    labelByForm.value = { ...labelByForm.value, [key]: label }
+    displayNameByForm.value = { ...displayNameByForm.value, [key]: displayName }
   }
 
   return {
     selectedProviderKey,
     selectedMethodByProvider,
-    labelByForm,
-    profileByForm,
+    displayNameByForm,
     fieldsByForm,
     authMethods,
     selectedMethodKey,
@@ -176,10 +161,8 @@ export function useConnectionForm() {
     hasFieldOptions,
     fieldValue,
     setFieldValue,
-    profileValue,
-    setProfileValue,
-    labelValue,
-    setLabelValue,
+    displayNameValue,
+    setDisplayNameValue,
     setSelectedProvider,
     clearForm,
     clearProviderForms,

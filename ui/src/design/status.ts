@@ -104,7 +104,7 @@ export const budgetState = defineStatuses({
   capped: { label: 'Capped', tone: 'neutral', icon: 'lock' },
 });
 
-// Provider/credential connection status (auth/status connections[].status).
+// Reusable Account status as rendered on project Connections.
 export const connectionStatus = defineStatuses({
   connected: { label: 'Connected', tone: 'success', icon: 'check-circle', dot: true },
   used: { label: 'Connected', tone: 'success', icon: 'check-circle', dot: true },

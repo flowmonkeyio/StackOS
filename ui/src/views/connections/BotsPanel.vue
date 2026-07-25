@@ -22,7 +22,7 @@ import {
   profilePrimaryProvider,
   providerLabel,
   telegramCommands,
-  telegramProfileAuthKey,
+  telegramProfileCredentialRef,
   telegramProfileIngressMode,
   telegramProfileUsername,
 } from './formatters'
@@ -68,6 +68,14 @@ function isTelegram(bot: CommunicationProfile): boolean {
 /** Bots the browser UI can edit: Telegram or Slack profiles. */
 function isEditable(bot: CommunicationProfile): boolean {
   return isTelegram(bot) || Boolean(bot.provider_facets?.['slack-bot'])
+}
+
+function telegramAccountName(bot: CommunicationProfile): string {
+  const credentialRef = telegramProfileCredentialRef(bot)
+  return (
+    props.telegramConnections.find((account) => account.credential_ref === credentialRef)
+      ?.display_name ?? 'Account unavailable'
+  )
 }
 
 function botProviderLabel(bot: CommunicationProfile): string {
@@ -202,7 +210,7 @@ function userCount(bot: CommunicationProfile): number {
                 <p class="mt-0.5 truncate font-mono text-2xs text-fg-subtle">
                   {{ bot.key }}
                   <template v-if="isTelegram(bot)">
-                    · {{ telegramProfileAuthKey(bot) }}
+                    · {{ telegramAccountName(bot) }}
                     <template v-if="telegramProfileUsername(bot)">
                       · @{{ telegramProfileUsername(bot) }}
                     </template>

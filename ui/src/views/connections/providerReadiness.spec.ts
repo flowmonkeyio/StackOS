@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { SchemaAuthProviderOut, SchemaCredentialConnectionOut } from '@/api'
+import type { SchemaAccountOut, SchemaAuthProviderOut } from '@/api'
 
 import { humanizeIdentifier, providerCapabilityReadiness } from './providerReadiness'
 
@@ -50,22 +50,22 @@ const provider = {
 
 function connection(
   scopes: string[],
-  overrides: Partial<SchemaCredentialConnectionOut> = {},
-): SchemaCredentialConnectionOut {
+  overrides: Partial<SchemaAccountOut> = {},
+): SchemaAccountOut {
   return {
+    credential_id: 1,
     credential_ref: 'cred_crm',
-    project_id: 1,
     provider_key: 'crm-provider',
+    display_name: 'CRM - Default',
     auth_type: 'oauth',
     auth_method_key: 'oauth2',
-    profile_key: 'default',
-    label: 'Primary CRM',
     status: 'connected',
     expires_at: null,
     last_tested_at: null,
     revoked_at: null,
     scopes,
     account: null,
+    project_ids: [1],
     setup_required: false,
     ...overrides,
   }

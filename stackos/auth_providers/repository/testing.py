@@ -14,7 +14,7 @@ from sqlalchemy import delete
 from sqlmodel import col, select
 
 from stackos.artifacts import redact_secret_text, redact_secrets
-from stackos.db.models import Credential, CredentialAccount, CredentialScope, IntegrationCredential
+from stackos.db.models import Credential, CredentialAccount, CredentialScope
 from stackos.repositories.base import Envelope, RepositoryError, ValidationError
 
 from .schema import AuthMethodOut, AuthMethodProbeContext, AuthProbeEvidence, AuthTestOut
@@ -35,48 +35,62 @@ class CredentialTestingMixin:
     async def test(
         self,
         *,
-        project_id: int,
+        project_id: int | None,
         credential_ref: str,
     ) -> Envelope[AuthTestOut]:
-        credential, row = self._resolve_credential(
-            project_id=project_id,
-            credential_ref=credential_ref,
-        )
-        integration_cls = _integration_class_for(row.kind)
+        if project_id is None:
+            credential, row = self._global_credential(credential_ref)
+            assert row.id is not None
+            from stackos.repositories.projects import IntegrationCredentialRepository
+
+            secret_payload = IntegrationCredentialRepository(self._s).get_decrypted(row.id)
+        else:
+            credential, row = self._resolve_credential(
+                project_id=project_id,
+                credential_ref=credential_ref,
+            )
+            resolved = await self.resolve_for_execution(
+                project_id=project_id,
+                provider_key=credential.provider_key,
+                credential_ref=credential_ref,
+                operation="account.test.resolve",
+                required_scopes=[],
+            )
+            credential = resolved.credential
+            row = resolved.integration
+            secret_payload = resolved.secret_payload
+        integration_cls = _integration_class_for(credential.provider_key)
         if integration_cls is None:
             raise ValidationError(
-                f"auth provider {row.kind!r} has no test wrapper",
-                data={"provider_key": row.kind, "credential_ref": credential.credential_ref},
+                f"auth provider {credential.provider_key!r} has no test wrapper",
+                data={
+                    "provider_key": credential.provider_key,
+                    "credential_ref": credential.credential_ref,
+                },
             )
-        resolved = await self.resolve_for_execution(
-            project_id=project_id,
-            provider_key=row.kind,
-            credential_ref=credential_ref,
-            operation="auth.test.resolve",
-            required_scopes=[],
+        provider = self._get_provider(
+            credential.provider_key,
+            required=False,
+            sync=False,
         )
-        credential = resolved.credential
-        row = resolved.integration
-        secret_payload = resolved.secret_payload
-        provider = self._get_provider(row.kind, required=False, sync=False)
         method: AuthMethodOut | None = None
         probe_context: AuthMethodProbeContext | None = None
         if provider is not None:
             method = self._get_auth_method(
                 provider,
-                (row.config_json or {}).get("auth_method_key"),
+                credential.auth_method_key,
             )
             assert method is not None
             probe_context = AuthMethodProbeContext(
                 auth_method_key=method.key,
                 permission_verification=method.permission_verification,
             )
-        extra = self._integration_extra(row)
+        extra = self._integration_extra(credential)
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 integration = integration_cls(
                     payload=secret_payload,
-                    project_id=project_id,
+                    project_id=project_id or 0,
                     http=client,
                     probe_context=probe_context,
                     **extra,
@@ -95,13 +109,13 @@ class CredentialTestingMixin:
             raw_result = {
                 "ok": False,
                 "status": "failed",
-                "summary": f"{row.kind} credential test failed at {stage}",
+                "summary": f"{credential.provider_key} credential test failed at {stage}",
                 "retryable": bool(exc.retryable),
                 "metadata": metadata,
             }
         out = self._normalize_test_result(
             credential=credential,
-            provider_key=row.kind,
+            provider_key=credential.provider_key,
             raw=raw_result,
         )
         now = utcnow()
@@ -113,24 +127,24 @@ class CredentialTestingMixin:
         self._s.add(credential)
         self._sync_account_from_test_result(
             credential=credential,
-            provider_key=row.kind,
+            provider_key=credential.provider_key,
             ok=out.ok,
             metadata=out.metadata,
         )
         if method is not None:
             self._sync_probe_evidence_from_test_result(
                 credential=credential,
-                row=row,
                 method=method,
                 ok=out.ok,
                 metadata=out.metadata,
             )
         self.record_usage_event(
             credential=credential,
-            provider_key=row.kind,
-            operation="auth.test",
+            provider_key=credential.provider_key,
+            operation="account.test",
             status=out.status,
             metadata_json={"ok": out.ok, "metadata": out.metadata},
+            project_id=project_id,
         )
         self._s.commit()
         return Envelope(data=out, project_id=project_id)
@@ -139,7 +153,6 @@ class CredentialTestingMixin:
         self,
         *,
         credential: Credential,
-        row: IntegrationCredential,
         method: AuthMethodOut,
         ok: bool,
         metadata: Mapping[str, Any],
@@ -167,7 +180,7 @@ class CredentialTestingMixin:
             self._s.add(account)
         if posture.evidence_source != "provider_probe" or posture.enforcement != "local_required":
             return
-        safe_config = dict(row.config_json or {})
+        safe_config = dict(credential.config_json or {})
         if evidence is None or evidence.grants is None:
             safe_config["scope_status"] = "unknown"
             self._s.exec(
@@ -181,9 +194,7 @@ class CredentialTestingMixin:
             )
             for grant in grants:
                 self._s.add(CredentialScope(credential_id=credential.id, scope=grant))
-        row.config_json = safe_config
         credential.config_json = self._safe_config(safe_config)
-        self._s.add(row)
         self._s.add(credential)
 
     def _sync_account_from_test_result(
@@ -210,10 +221,7 @@ class CredentialTestingMixin:
         if bot_account_id:
             self._assert_telegram_bot_account_available(
                 bot_id=bot_account_id,
-                project_id=credential.project_id,
-                profile_key=credential.profile_key,
                 current_credential_id=credential.id,
-                current_integration_credential_id=credential.integration_credential_id,
             )
         account = self._s.exec(
             select(CredentialAccount).where(CredentialAccount.credential_id == credential.id)
@@ -264,73 +272,80 @@ class CredentialTestingMixin:
         account.updated_at = now
         self._s.add(account)
 
-    def _integration_extra(self, row: IntegrationCredential) -> dict[str, Any]:
+    def _integration_extra(self, credential: Credential) -> dict[str, Any]:
         extra: dict[str, Any] = {}
-        config = row.config_json or {}
-        if row.kind == "dataforseo":
+        config = credential.config_json or {}
+        if credential.provider_key == "dataforseo":
             login = config.get("login")
             if not login:
                 raise ValidationError(
                     "dataforseo credential missing config_json.login",
-                    data={"credential_id": row.id},
+                    data={"credential_id": credential.id},
                 )
             extra["login"] = login
-        elif row.kind == "wordpress":
+        elif credential.provider_key == "wordpress":
             site_url = config.get("wp_url") or config.get("site_url") or config.get("base_url")
             if not site_url:
                 raise ValidationError(
                     "wordpress credential missing config_json.wp_url",
-                    data={"credential_id": row.id},
+                    data={"credential_id": credential.id},
                 )
             extra["site_url"] = str(site_url)
-        elif row.kind == "ghost":
+        elif credential.provider_key == "ghost":
             site_url = config.get("ghost_url") or config.get("site_url") or config.get("base_url")
             if not site_url:
                 raise ValidationError(
                     "ghost credential missing config_json.ghost_url",
-                    data={"credential_id": row.id},
+                    data={"credential_id": credential.id},
                 )
             extra["site_url"] = str(site_url)
             if config.get("api_version"):
                 extra["api_version"] = str(config["api_version"])
-        elif row.kind == "openrouter":
+        elif credential.provider_key == "openrouter":
             for key in ("http_referer", "app_title"):
                 value = config.get(key)
                 if isinstance(value, str) and value.strip():
                     extra[key] = value.strip()
-        elif row.kind == "pipedrive":
+        elif credential.provider_key == "pipedrive":
             api_domain = (
                 config.get("api_domain") or config.get("base_url") or config.get("company_domain")
             )
             if not isinstance(api_domain, str) or not api_domain.strip():
                 raise ValidationError(
                     "pipedrive credential missing a trusted API domain",
-                    data={"credential_id": row.id},
+                    data={"credential_id": credential.id},
                 )
             # The provider wrapper owns strict normalization and the
             # ``.pipedrive.com`` host allowlist before it performs HTTP.
             extra["api_domain"] = api_domain.strip()
-        elif row.kind in {"telegram-bot", "slack-bot", "trackbooth"} and config.get("api_base_url"):
+        elif credential.provider_key in {
+            "telegram-bot",
+            "slack-bot",
+            "trackbooth",
+        } and config.get("api_base_url"):
             extra["api_base_url"] = str(config["api_base_url"])
-        elif row.kind == "shopify":
+        elif credential.provider_key == "shopify":
             store_domain = (
                 config.get("store_domain") or config.get("shop_domain") or config.get("shop")
             )
             if not store_domain:
                 raise ValidationError(
                     "shopify credential missing config_json.store_domain",
-                    data={"credential_id": row.id},
+                    data={"credential_id": credential.id},
                 )
             extra["store_domain"] = str(store_domain)
             if config.get("api_version"):
                 extra["api_version"] = str(config["api_version"])
-        elif row.kind == "ftp":
+        elif credential.provider_key == "ftp":
             from stackos.integrations.ftp import validate_ftp_credential_config
 
             try:
                 validate_ftp_credential_config(config)
             except ValueError as exc:
-                raise ValidationError(str(exc), data={"credential_id": row.id}) from exc
+                raise ValidationError(
+                    str(exc),
+                    data={"credential_id": credential.id},
+                ) from exc
             passive_value = config.get("passive_mode", True)
             extra.update(
                 {
@@ -347,17 +362,17 @@ class CredentialTestingMixin:
                     "encoding": str(config.get("encoding") or "utf-8"),
                 }
             )
-        elif row.kind in {"smtp", "imap"}:
+        elif credential.provider_key in {"smtp", "imap"}:
             for key in ("host", "port", "tls_mode", "username", "timeout_s"):
                 if key in config and config[key] is not None:
                     extra[key] = config[key]
-            if row.kind == "imap":
+            if credential.provider_key == "imap":
                 extra["default_mailbox"] = str(config.get("default_mailbox") or "INBOX")
             missing = [key for key in ("host", "port", "tls_mode", "username") if key not in extra]
             if missing:
                 raise ValidationError(
-                    f"{row.kind} credential missing config_json fields",
-                    data={"credential_id": row.id, "missing": missing},
+                    f"{credential.provider_key} credential missing config_json fields",
+                    data={"credential_id": credential.id, "missing": missing},
                 )
             extra["port"] = int(extra["port"])
             extra["timeout_s"] = float(extra.get("timeout_s") or 30)

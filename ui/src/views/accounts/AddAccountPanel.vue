@@ -2,11 +2,11 @@
 import type { SchemaAuthProviderOut } from '@/api'
 import { UiButton, UiCallout, UiSidePanel } from '@/components/ui'
 
-import { providerActionKey } from './formatters'
-import ConnectionCredentialFields from './ConnectionCredentialFields.vue'
-import ConnectionProviderSetupGuidance from './ConnectionProviderSetupGuidance.vue'
-import ConnectionServiceSelect from './ConnectionServiceSelect.vue'
-import type { AuthField, AuthMethod, MessageMap } from './types'
+import { providerActionKey } from '@/views/connections/formatters'
+import ConnectionCredentialFields from '@/views/connections/ConnectionCredentialFields.vue'
+import ConnectionProviderSetupGuidance from '@/views/connections/ConnectionProviderSetupGuidance.vue'
+import ConnectionServiceSelect from '@/views/connections/ConnectionServiceSelect.vue'
+import type { AuthField, AuthMethod, MessageMap } from '@/views/connections/types'
 
 const props = defineProps<{
   modelValue: boolean
@@ -27,10 +27,12 @@ const props = defineProps<{
   methodFields: (method: AuthMethod | null | undefined) => AuthField[]
   hasFieldOptions: (field: AuthField) => boolean
   fieldOptions: (field: AuthField) => Array<{ value: string; label: string }>
-  profileValue: (providerKey: string, methodKey: string) => string
-  setProfileValue: (providerKey: string, methodKey: string, value: string | number | null) => void
-  labelValue: (providerKey: string, methodKey: string) => string
-  setLabelValue: (providerKey: string, methodKey: string, value: string | number | null) => void
+  displayNameValue: (providerKey: string, methodKey: string) => string
+  setDisplayNameValue: (
+    providerKey: string,
+    methodKey: string,
+    value: string | number | null,
+  ) => void
   fieldValue: (providerKey: string, methodKey: string, fieldKey: string) => string
   setFieldValue: (
     providerKey: string,
@@ -45,16 +47,16 @@ const emit = defineEmits<{
   (e: 'select-provider', value: string | number | null): void
   (e: 'select-method', providerKey: string, value: string | number | null): void
   (e: 'start-provider', provider: SchemaAuthProviderOut): void
-  (e: 'save-credential', provider: SchemaAuthProviderOut): void
+  (e: 'save-account', provider: SchemaAuthProviderOut): void
   (e: 'go-plugins'): void
 }>()
 
-function submitConnection(): void {
+function submitAccount(): void {
   const provider = props.selectedProvider
   const method = provider ? props.selectedMethod(provider) : null
   if (!provider || !method) return
   if (method.interactive) emit('start-provider', provider)
-  else emit('save-credential', provider)
+  else emit('save-account', provider)
 }
 
 function credentialFieldValues(provider: SchemaAuthProviderOut, method: AuthMethod | null) {
@@ -79,16 +81,16 @@ function updateCredentialField(
 <template>
   <UiSidePanel
     :model-value="modelValue"
-    :title="editing ? 'Edit connection' : 'Add connection'"
+    :title="editing ? 'Edit Account' : 'Add Account'"
     :description="
       editing
-        ? 'Update connection settings without exposing the stored secret.'
-        : 'Choose a service and store the credential in the local daemon.'
+        ? 'Update this reusable Account without exposing its stored secret.'
+        : 'Create a reusable provider Account. You can attach it to any project.'
     "
     size="lg"
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <form id="connection-credential-form" @submit.prevent="submitConnection">
+    <form id="account-credential-form" @submit.prevent="submitAccount">
       <p class="mb-4 text-xs leading-5 text-fg-muted">
         Credentials stay in the local daemon. Connected agents receive only safe references.
       </p>
@@ -113,11 +115,11 @@ function updateCredentialField(
             :auth-methods="authMethods(selectedProvider)"
             :selected-method-key="selectedMethodKey(selectedProvider)"
             :selected-method="selectedMethod(selectedProvider)"
-            :profile-value="
-              profileValue(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '')
-            "
-            :label-value="
-              labelValue(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '')
+            :display-name-value="
+              displayNameValue(
+                selectedProvider.key,
+                selectedMethod(selectedProvider)?.key ?? '',
+              )
             "
             :fields="methodFields(selectedMethod(selectedProvider))"
             :input-type="inputType"
@@ -131,15 +133,8 @@ function updateCredentialField(
             :editing="editing"
             :secret-present="secretPresent"
             @select-method="$emit('select-method', selectedProvider.key, $event)"
-            @update:profile="
-              setProfileValue(
-                selectedProvider.key,
-                selectedMethod(selectedProvider)?.key ?? '',
-                $event,
-              )
-            "
-            @update:label="
-              setLabelValue(
+            @update:display-name="
+              setDisplayNameValue(
                 selectedProvider.key,
                 selectedMethod(selectedProvider)?.key ?? '',
                 $event,
@@ -179,9 +174,9 @@ function updateCredentialField(
         variant="primary"
         icon-left="external-link"
         type="submit"
-        form="connection-credential-form"
+        form="account-credential-form"
         :loading="busyAction === providerActionKey(selectedProvider.key, 'start')"
-        @click.prevent="submitConnection"
+        @click.prevent="submitAccount"
       >
         {{ editing ? 'Reconnect' : 'Connect' }}
       </UiButton>
@@ -190,13 +185,13 @@ function updateCredentialField(
         variant="primary"
         icon-left="save"
         type="submit"
-        form="connection-credential-form"
+        form="account-credential-form"
         :loading="busyAction === providerActionKey(selectedProvider.key, 'save')"
         :disabled="
           !selectedMethod(selectedProvider) ||
           selectedMethod(selectedProvider)?.payload_format === 'none'
         "
-        @click.prevent="submitConnection"
+        @click.prevent="submitAccount"
       >
         {{ editing ? 'Save changes' : 'Save and verify' }}
       </UiButton>

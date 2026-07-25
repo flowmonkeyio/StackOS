@@ -1,26 +1,29 @@
-# StackOS Connection Credential Setup
+# StackOS Account and Connection Setup
 
-This guide walks through obtaining credentials for provider connections. Every
-secret is stored encrypted at rest in `integration_credentials` and exposed to
-agents only as sanitized status plus opaque `credential_ref` values.
+This guide walks through creating reusable provider Accounts and attaching them
+to project Connections. Every secret is encrypted at rest in
+`integration_credentials` and exposed to agents only as sanitized state plus
+opaque `credential_ref` values.
 
 Recommended setup flow:
 
 1. Let the agent identify the vendors needed for the current run plan.
 2. Let the agent call `toolbox.call` for `readiness.check` on the selected
-   workflow or action first, then `auth.status` only for the scoped missing
+   workflow or action first, then `connection.list` only for the scoped missing
    providers.
 3. Open the project Connections page the agent gives you, for example
    `http://127.0.0.1:5180/projects/1/connections?provider_key=dataforseo`.
-4. Connect vendors from the named cards. Do not paste secrets into agent
-   chat and do not add vendor keys to the website repository.
-5. Return to the agent. The agent should run `toolbox.call` for `auth.test`
+4. Select an existing Account or create a named Account in the reusable
+   account panel. The newly created Account is attached automatically.
+5. Do not paste secrets into agent chat or add vendor keys to the website
+   repository.
+6. Return to the agent. The agent should run `toolbox.call` for `account.test`
    with the selected opaque `credential_ref` before continuing.
 
 Providers define typed `auth_methods`. The local UI renders those schemas and
-stores one or more named credential profiles per provider. Secret fields are
-encrypted in `integration_credentials`; safe fields are stored as redacted
-credential config. `auth.status` and `auth.test` return sanitized provider
+stores one or more named global Accounts per provider. Secret fields are
+encrypted in `integration_credentials`; safe fields live on the Account.
+`account.list`, `connection.list`, and `account.test` return sanitized provider
 state and credential refs only.
 
 Do not paste secrets into tracker tickets, run-plan metadata, communication
@@ -91,8 +94,8 @@ connections.
 2. Create an OAuth client and complete any consent-screen requirements for the
    Google account that owns the Search Console properties, GA4 properties, or
    Tag Manager containers.
-3. Store one credential profile in StackOS Connections for each provider you
-   need:
+3. Create one reusable Account on the StackOS Accounts page for each provider
+   you need, then attach it from each project's Connections page:
    - Google Search Console: `google-search-console`
    - Google Analytics 4: `google-analytics`
    - Google Tag Manager: `google-tag-manager`

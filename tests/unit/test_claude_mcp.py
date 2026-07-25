@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -138,6 +139,157 @@ def _write_token(home: Path) -> None:
     token.parent.mkdir(parents=True, exist_ok=True)
     token.write_text("unit-test-token\n", encoding="utf-8")
     token.chmod(0o600)
+
+
+def test_inspect_parses_saved_config_when_connection_probe_exits_nonzero(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    expected = [
+        "/Applications/StackOS.app/Contents/Resources/stackos/bin/stackos",
+        "mcp-bridge",
+        "--runtime",
+        "claude-code",
+    ]
+    monkeypatch.setattr(claude_mcp, "resolve_claude_bin", lambda _value=None: "/fake/claude")
+    monkeypatch.setattr(
+        claude_mcp,
+        "_run_claude",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            ["claude", "mcp", "get", "stackos"],
+            1,
+            stdout=(
+                "stackos:\n"
+                "  Scope: User config\n"
+                "  Status: ✗ Failed to connect\n"
+                "  Type: stdio\n"
+                f"  Command: {expected[0]}\n"
+                f"  Args: {' '.join(expected[1:])}\n"
+            ),
+            stderr="Failed to connect",
+        ),
+    )
+
+    result = claude_mcp.inspect(home=tmp_path, expected_command=expected)
+
+    assert result.status == "healthy"
+    assert result.ok is True
+
+
+def test_inspect_reads_user_registry_without_live_connection_probe(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    expected = [
+        "/Applications/StackOS.app/Contents/Resources/stackos/bin/stackos",
+        "mcp-bridge",
+        "--runtime",
+        "claude-code",
+    ]
+    (tmp_path / ".claude.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "stackos": {
+                        "type": "stdio",
+                        "command": expected[0],
+                        "args": expected[1:],
+                        "env": {},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(claude_mcp, "resolve_claude_bin", lambda _value=None: "/fake/claude")
+    monkeypatch.setattr(
+        claude_mcp,
+        "_run_claude",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("live connection probe must not run")
+        ),
+    )
+
+    result = claude_mcp.inspect(home=tmp_path, expected_command=expected)
+
+    assert result.status == "healthy"
+    assert result.command == expected
+
+
+def test_register_fails_closed_on_unsafe_user_registry_entry(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_token(tmp_path)
+    (tmp_path / ".claude.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "stackos": {
+                        "type": "stdio",
+                        "command": "stackos",
+                        "args": ["mcp-bridge"],
+                        "env": {"AUTH_TOKEN": "do-not-expose"},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(claude_mcp, "resolve_claude_bin", lambda _value=None: "/fake/claude")
+    monkeypatch.setattr(
+        claude_mcp,
+        "_run_claude",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("unsafe entry must not be mutated")
+        ),
+    )
+
+    result = claude_mcp.register(
+        home=tmp_path,
+        bridge_command=["stackos", "mcp-bridge", "--runtime", "claude-code"],
+    )
+
+    assert result.status == "unsafe"
+    assert result.command == []
+
+
+def test_register_does_not_replace_unmanaged_same_name_entry(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_token(tmp_path)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    state_path = tmp_path / "claude-state.json"
+    _write_fake_claude(bin_dir, state_path)
+    state_path.write_text(
+        json.dumps(
+            {
+                "servers": {
+                    "stackos": {
+                        "scope": "user",
+                        "type": "stdio",
+                        "command": "other-tool",
+                        "args": ["serve"],
+                    }
+                },
+                "calls": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+
+    result = claude_mcp.register(
+        home=tmp_path,
+        bridge_command=["stackos", "mcp-bridge", "--runtime", "claude-code"],
+    )
+
+    assert result.status == "stale"
+    calls = _fake_state(state_path)["calls"]
+    assert ["mcp", "remove", "stackos", "--scope", "user"] not in calls
+    assert not any(call[:2] == ["mcp", "add"] for call in calls)
 
 
 def test_register_uses_claude_cli_user_scope_without_secrets(tmp_path: Path, monkeypatch) -> None:

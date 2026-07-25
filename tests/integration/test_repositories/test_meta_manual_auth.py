@@ -42,10 +42,10 @@ def test_meta_manual_oauth_token_stays_scope_blocked_before_provider_http(
     stored = (
         AuthRepository(session)
         .store_credential(
-            project_id=project_id,
+            attach_project_id=project_id,
             provider_key="meta-ads",
             auth_method_key="oauth2_token",
-            profile_key="meta-manual-token",
+            display_name="meta-manual-token",
             fields={
                 "access_token": "meta-manual-token-canary",
                 "business_ref": "business-primary",

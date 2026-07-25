@@ -102,6 +102,13 @@ the resolved workflow and presets in the current session, and ask the operator
 to move durable recurring work into a real host project when they want future
 sessions to resume reliably.
 
+Host connectivity itself follows the one-brain contract in
+[`setup.md`](./setup.md). ChatGPT and Codex are one logical host with shared
+StackOS plugin/MCP mechanics. Hermes support is an explicit existing-profile
+connection that adds neutral MCP connectivity and the canonical StackOS
+mechanics skill only; it does not create a Hermes profile, choose its
+model/provider, or install agents, personality, or workflow behavior.
+
 Workflow infrastructure setup is not workflow execution. Select
 `setup_existing` from `workflowTemplate.authoringGuide`, resolve the effective
 workflow and exact role topology, materialize required roles and recommended
@@ -182,7 +189,7 @@ non-executable external-provider actions. Executable local/no-credential
 actions remain visible. Use `integration.list` for project setup or planning
 when the agent needs compact provider readiness, hidden-action counts, and safe
 connection links. Use `readiness.check` for the selected workflow/action when
-the agent already knows the work scope. Broad `auth.status` is still available
+the agent already knows the work scope. Broad `connection.list` is still available
 for diagnostics, but it should not be the default first-run answer for one
 concrete workflow/action.
 

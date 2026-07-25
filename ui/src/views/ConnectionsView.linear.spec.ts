@@ -7,7 +7,6 @@ import {
   authConnection,
   authProvider,
   catalogJson,
-  clickButton,
   interactiveMethod,
   json,
   mountConnections,
@@ -79,7 +78,7 @@ describe('ConnectionsView Linear presentation', () => {
     vi.restoreAllMocks()
   })
 
-  it('uses the generic OAuth connection flow, readiness, account binding, and repair controls', async () => {
+  it('shows OAuth Account readiness while keeping credential controls on Accounts', async () => {
     const provider = linearProvider()
     const connection = linearConnection()
     const postedBodies: unknown[] = []
@@ -105,38 +104,20 @@ describe('ConnectionsView Linear presentation', () => {
       }
       const catalogResponse = catalogJson(url)
       if (catalogResponse) return catalogResponse
-      if (url === '/api/v1/auth/providers') return json([provider])
-      if (url === '/api/v1/projects/1/auth/status') {
+      if (url === '/api/v1/auth/accounts') {
+        return json({
+          project_id: null,
+          provider_key: null,
+          providers: [provider],
+          accounts: [connection],
+        })
+      }
+      if (url === '/api/v1/projects/1/connections/accounts') {
         return json({
           project_id: 1,
           provider_key: null,
           providers: [provider],
-          connections: [connection],
-        })
-      }
-      if (url === '/api/v1/projects/1/auth/credentials/cred_linear') {
-        return json({
-          connection,
-          values: {},
-          secret_present: { client_id: true, client_secret: true },
-        })
-      }
-      if (url === '/api/v1/projects/1/auth/test') {
-        return json({
-          data: {
-            credential_ref: 'cred_linear',
-            provider_key: 'linear',
-            ok: true,
-            status: 'ok',
-            summary: 'Linear workspace verified as Acme Workspace.',
-            checked_at: '2026-07-23T00:00:00Z',
-            retryable: false,
-            next_action: null,
-            metadata: {
-              organization_ref: 'provider-object:organization-safe',
-              organization_name: 'Acme Workspace',
-            },
-          },
+          accounts: [connection],
         })
       }
       return json({})
@@ -161,19 +142,9 @@ describe('ConnectionsView Linear presentation', () => {
     expect(wrapper.text()).toContain('expires')
     expect(wrapper.text()).toContain('Connect with Linear')
 
-    await clickButton(wrapper, 'Test')
-    await vi.waitFor(() =>
-      expect(wrapper.text()).toContain('Linear workspace verified as Acme Workspace.'),
-    )
-    expect(postedBodies).toContainEqual({ credential_ref: 'cred_linear' })
-
-    await clickButton(wrapper, 'Edit')
-    await vi.waitFor(() => expect(wrapper.text()).toContain('Reconnect guidance'))
-    expect(wrapper.text()).toContain('Reconnect if authorization is expired or missing scope')
-    expect(wrapper.text()).toContain(CALLBACK_URL)
-    expect(wrapper.findAll('button').some((button) => button.text().trim() === 'Reconnect')).toBe(
-      true,
-    )
-    expect(wrapper.findAll('button').some((button) => button.text().trim() === 'Revoke')).toBe(true)
+    expect(wrapper.text()).toContain('Manage Account')
+    expect(wrapper.text()).toContain('Detach')
+    expect(wrapper.text()).not.toContain('Reconnect guidance')
+    expect(postedBodies).not.toContainEqual({ credential_ref: 'cred_linear' })
   })
 })

@@ -386,7 +386,7 @@ class _RunPlanControllerListFallbackClient(_RunPlanControllerRefreshClient):
 def test_bridge_tools_list_hides_daemon_internals() -> None:
     daemon_tools = [
         *[_tool(name) for name in _AGENT_VISIBLE_TOOL_ORDER],
-        _tool("auth.start"),
+        _tool("account.start"),
         _tool("plugin.enable"),
         _tool("resource.upsert"),
         _tool("agentRequest.create"),
@@ -402,7 +402,7 @@ def test_bridge_tools_list_hides_daemon_internals() -> None:
     assert names[: len(_AGENT_VISIBLE_TOOL_ORDER)] == list(_AGENT_VISIBLE_TOOL_ORDER)
     assert "toolbox.describe" in names
     assert "toolbox.call" in names
-    assert "auth.start" not in names
+    assert "account.start" not in names
     assert "plugin.enable" not in names
     assert "resource.upsert" not in names
     assert "agentRequest.create" not in names
@@ -415,7 +415,7 @@ def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
     catalog = {
         name: _tool(name)
         for name in [
-            "auth.start",
+            "account.start",
             "resource.upsert",
             "action.execute",
             "cost.queryProject",
@@ -439,7 +439,7 @@ def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
         arguments={
             "run_id": 7,
             "tool_names": [
-                "auth.start",
+                "account.start",
                 "integration.test",
                 "resource.upsert",
                 "action.execute",
@@ -465,14 +465,14 @@ def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
     assert payload["tool_categories"]["operation_backed"] == ["action.execute"]
     assert set(payload["denied_tool_names"]) == {
         "artifact.create",
-        "auth.start",
+        "account.start",
         "learning.update",
         "project.update",
     }
     assert payload["unknown_tool_names"] == ["integration.test", "missing"]
     assert "admin_gated_tool_names" not in payload
     statuses = {item["name"]: item for item in payload["tool_statuses"]}
-    assert statuses["auth.start"]["reason_code"] == "local_admin_required"
+    assert statuses["account.start"]["reason_code"] == "local_admin_required"
     assert statuses["artifact.create"]["reason_code"] == "not_granted_to_active_step"
     assert statuses["project.update"]["reason_code"] == "local_admin_required"
     assert statuses["project.update"]["grant_policy"] == "local-admin-project-write"
@@ -830,8 +830,8 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "provider.describe" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "resource.query" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "artifact.get" in _AGENT_SETUP_TOOLBOX_NAMES
-    assert "auth.status" in _AGENT_SETUP_TOOLBOX_NAMES
-    assert "auth.test" in _AGENT_SETUP_TOOLBOX_NAMES
+    assert "connection.list" in _AGENT_SETUP_TOOLBOX_NAMES
+    assert "account.test" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "communicationProfile.list" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "communicationProfile.get" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "communicationProfile.upsert" in _AGENT_SETUP_TOOLBOX_NAMES
@@ -962,11 +962,14 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
             "identity": {"display_name": "Support", "purpose": "Help", "voice": "Calm"},
             "provider_facets": {
                 "telegram-bot": {
-                    "auth_profile_key": "support-telegram",
+                    "credential_ref": "cred_telegram_support",
                     "bot_username": "support_bot",
                     "ingress_mode": "webhook",
                 },
-                "slack-bot": {"auth_profile_key": "support-slack", "bot_user_id": "U123"},
+                "slack-bot": {
+                    "credential_ref": "cred_slack_support",
+                    "bot_user_id": "U123",
+                },
             },
             "access_policy": {
                 "dm_mode": "all",
@@ -983,10 +986,10 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
     )
 
     assert compact["profile_ref"] == "communication-profile:support"
-    assert compact["provider_facets"]["telegram-bot"]["auth_profile_key"] == "support-telegram"
-    assert compact["provider_facets"]["slack-bot"]["auth_profile_key"] == "support-slack"
+    assert compact["provider_facets"]["telegram-bot"]["credential_ref"] == "cred_telegram_support"
+    assert compact["provider_facets"]["slack-bot"]["credential_ref"] == "cred_slack_support"
     assert compact["send_policy"] == {"mode": "explicit-targets"}
-    assert "auth_profile_key" not in compact
+    assert "credential_ref" not in compact
     assert "bot_username" not in compact
     assert "context.query" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
     assert "resource.upsert" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
@@ -1008,8 +1011,10 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
     assert "artifact.supersede" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "action.list" in _AGENT_BASE_TOOLBOX_NAMES
     assert "agentRequest.create" not in _AGENT_BASE_TOOLBOX_NAMES
-    assert "auth.start" not in _AGENT_BASE_TOOLBOX_NAMES
-    assert "auth.revoke" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "account.start" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "account.revoke" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "connection.attach" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "connection.detach" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "project.create" in _AGENT_BASE_TOOLBOX_NAMES
     assert "project.list" in _AGENT_BASE_TOOLBOX_NAMES
     assert "learning.create" not in _AGENT_BASE_TOOLBOX_NAMES
@@ -1018,8 +1023,10 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
     assert "workflowTemplate.save" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "workflowTemplate.fork" not in _AGENT_BASE_TOOLBOX_NAMES
     assert {
-        "auth.revoke",
-        "auth.start",
+        "account.revoke",
+        "account.start",
+        "connection.attach",
+        "connection.detach",
         "plugin.enable",
         "plugin.disable",
         "runPlan.update",

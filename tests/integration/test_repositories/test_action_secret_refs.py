@@ -25,9 +25,10 @@ from stackos.db.models import (
     Provider,
 )
 from stackos.repositories.base import ConflictError, ValidationError
-from stackos.repositories.projects import IntegrationCredentialRepository, ProjectRepository
+from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.secrets import PayloadSecretRepository
 from stackos.workflows.run_plan_schema import find_run_plan_secret_paths
+from tests.integration.account_test_support import seed_test_account
 
 CANARY = "transit-canary-7bb97c28dca84d70"
 
@@ -112,17 +113,18 @@ def _seed_tenant_action(session: Session) -> None:
 
 
 def _provider_credential_ref(session: Session, project_id: int) -> str:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="tenant-provider",
+        provider_key="tenant-provider",
         secret_payload=b"provider-super-admin",
-        config_json={"label": "Tenant provider admin"},
+        display_name="Tenant provider admin",
     )
     status = AuthRepository(session).status(
         project_id=project_id,
         provider_key="tenant-provider",
     )
-    return status.connections[0].credential_ref
+    return status.accounts[0].credential_ref
 
 
 class _CapturingConnector:

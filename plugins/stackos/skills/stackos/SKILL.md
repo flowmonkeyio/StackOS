@@ -50,11 +50,11 @@ run token.
    guidance, never subagents.
 6. When a workflow or action might need vendor setup, call `toolbox.call` for
    `readiness.check` with the selected `workflow_key` or `action_ref` before
-   broad `auth.status`. Do not ask the user to paste secrets into chat. Name
+   broad `connection.list`. Do not ask the user to paste secrets into chat. Name
    only the scoped missing providers and send the operator to
    `http://localhost:5180/projects/{project_id}/connections`. After the user
-   connects them in the UI, call `toolbox.call` for `auth.status` and
-   `auth.test` before continuing.
+   connects them in the UI, call `toolbox.call` for `connection.list` and
+   `account.test` before continuing.
 7. Use `action.list` for normal "what can I use now?" discovery. It returns
    executable/current actions and hides disconnected, deferred, project-local,
    missing-connector, and otherwise non-executable external-provider actions.
@@ -245,11 +245,11 @@ run token.
   fields for StackOS connect, register, API-key, billing, docs, and fallback
   URLs. Share exact URLs from those fields; when `url_confidence` is
   `directional`, say it is the closest official destination. Never ask for
-  secrets in chat. After the operator connects a provider, run `auth.status`
-  and `auth.test`.
+  secrets in chat. After the operator connects a provider, run `connection.list`
+  and `account.test`.
 - Inspect integrations: call `toolbox.call` for `integration.list` when the
   agent needs a project-level provider inventory, connected counts, hidden
-  external action counts, and safe setup links. Do not use broad `auth.status`
+  external action counts, and safe setup links. Do not use broad `connection.list`
   as the first answer for one selected workflow/action unless diagnostics need
   all provider rows.
 - Author workflows from any repo: call `toolbox.call` for

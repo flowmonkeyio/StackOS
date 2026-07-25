@@ -7,12 +7,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlmodel import select
-
 from stackos.actions.connectors import ActionValidationIssue
 from stackos.actions.manifest import ExecutableActionManifest
-from stackos.db.models import Credential
-from stackos.repositories.base import NotFoundError, ValidationError
+from stackos.auth_providers import AuthRepository
+from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 from stackos.repositories.execution_contexts import ExecutionContextRepository
 from stackos.repositories.secrets import PayloadSecretRepository
 from stackos.secret_refs import find_secret_ref_occurrences, project_secret_refs
@@ -338,46 +336,34 @@ class ActionValidationMixin:
                     code="credential_project_required",
                 )
             ]
-        credential = self._s.exec(
-            select(Credential).where(Credential.credential_ref == credential_ref)
-        ).first()
-        if credential is None:
+        try:
+            AuthRepository(self._s).require_attached_account(
+                project_id=project_id,
+                credential_ref=credential_ref,
+                provider_key=manifest.provider_key,
+            )
+        except NotFoundError:
             return [
                 ActionValidationIssue(
                     path="$.credential_ref",
-                    message="credential_ref was not found",
-                    code="credential_not_found",
+                    message="Account is not attached to this project",
+                    code="credential_not_attached",
                 )
             ]
-        if credential.revoked_at is not None:
+        except ConflictError as exc:
+            status = str(exc.data.get("status") or "")
             return [
                 ActionValidationIssue(
                     path="$.credential_ref",
-                    message="credential is revoked",
-                    code="credential_revoked",
+                    message=exc.detail,
+                    code=("credential_not_connected" if status else "credential_revoked"),
                 )
             ]
-        if credential.status != "connected":
+        except ValidationError as exc:
             return [
                 ActionValidationIssue(
                     path="$.credential_ref",
-                    message=f"credential is {credential.status}",
-                    code="credential_not_connected",
-                )
-            ]
-        if credential.project_id is not None and credential.project_id != project_id:
-            return [
-                ActionValidationIssue(
-                    path="$.credential_ref",
-                    message="credential does not belong to this project",
-                    code="credential_project_mismatch",
-                )
-            ]
-        if manifest.provider_key is not None and credential.provider_key != manifest.provider_key:
-            return [
-                ActionValidationIssue(
-                    path="$.credential_ref",
-                    message="credential provider does not match action provider",
+                    message=exc.detail,
                     code="credential_provider_mismatch",
                 )
             ]

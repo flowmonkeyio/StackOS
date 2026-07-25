@@ -3,30 +3,32 @@ import { expect, test } from '@playwright/test'
 
 import {
   createProject,
-  getCredentialEditState,
+  getAccountEditState,
+  resetAccounts,
   resetProjects,
-  storeCredential,
+  storeAccount,
   trackConsoleErrors,
 } from '../helpers'
 
-test.describe('Connections — credential lifecycle', () => {
+test.describe('Connections — reusable Account lifecycle', () => {
   test.beforeEach(async () => {
     await resetProjects()
+    await resetAccounts()
   })
 
-  test('edits a credential through the real UI-token boundary', async ({ page }) => {
+  test('attaches an existing Account and edits it through the global Accounts surface', async ({
+    page,
+  }) => {
     const errors = trackConsoleErrors(page)
     const project = await createProject({
       name: 'Connections Project',
       slug: 'connections-project',
       domain: 'connections.example.test',
     })
-    const credential = await storeCredential({
-      projectId: project.id,
+    const account = await storeAccount({
       providerKey: 'ftp',
       authMethodKey: 'ftp-password',
-      profileKey: 'primary',
-      label: 'Production FTP',
+      displayName: 'Production FTP',
       fields: {
         host: 'ftp.example.test',
         username: 'deploy',
@@ -37,36 +39,43 @@ test.describe('Connections — credential lifecycle', () => {
 
     await page.goto(`/projects/${project.id}/connections`)
     await expect(page.getByRole('heading', { level: 1, name: 'Connections' })).toBeVisible()
+    await expect(page.getByText('No services connected')).toBeVisible()
+    await page.getByRole('button', { name: 'Add connection' }).first().click()
+    const attachPanel = page.getByRole('dialog', { name: 'Add connection' })
+    await expect(attachPanel).toContainText('Production FTP')
+    await attachPanel.getByRole('button', { name: 'Attach Account' }).click()
 
     const connection = page.getByRole('listitem').filter({ hasText: 'Production FTP' })
-    await connection.getByRole('button', { name: 'Edit' }).click()
-    await expect(page.getByText('Edit connection', { exact: true })).toBeVisible()
+    await connection.getByRole('button', { name: 'Manage Account' }).click()
+    await expect(page.getByRole('heading', { level: 1, name: 'Accounts' })).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'Edit Account' })).toBeVisible()
 
-    await page.getByLabel('Display label').fill('Updated FTP')
+    await page.getByLabel('Account name').fill('Updated FTP')
     await page.getByRole('button', { name: 'Save changes' }).click()
 
-    await expect(page.getByText('Connection settings updated.')).toBeVisible()
+    await expect(page.getByText('Account updated.')).toBeVisible()
     await expect(page.getByText('Updated FTP', { exact: true })).toBeVisible()
 
-    const editState = await getCredentialEditState(project.id, credential.credentialRef)
+    const editState = await getAccountEditState(account.credentialRef)
     expect(editState.values.host).toBe('ftp.example.test')
     expect(editState.secret_present).toEqual({ password: true })
     errors.assertNone()
   })
 
-  test('renders manifest-driven OAuth readiness and setup guidance accessibly', async ({ page }) => {
+  test('renders manifest-driven OAuth readiness and setup guidance accessibly', async ({
+    page,
+  }) => {
     const errors = trackConsoleErrors(page)
     const project = await createProject({
       name: 'OAuth Readiness Project',
       slug: 'oauth-readiness-project',
       domain: 'oauth-readiness.example.test',
     })
-    await storeCredential({
-      projectId: project.id,
+    await storeAccount({
       providerKey: 'hubspot',
       authMethodKey: 'oauth2_authorization_code',
-      profileKey: 'primary',
-      label: 'HubSpot OAuth Draft',
+      displayName: 'HubSpot OAuth Draft',
+      attachProjectId: project.id,
       fields: {
         client_id: 'e2e-client-id',
         client_secret: 'e2e-client-secret',
@@ -90,8 +99,8 @@ test.describe('Connections — credential lifecycle', () => {
       await expect(connection.getByText(label, { exact: true })).toBeVisible()
     }
 
-    await connection.getByRole('button', { name: 'Edit' }).click()
-    const panel = page.getByRole('dialog', { name: 'Edit connection' })
+    await connection.getByRole('button', { name: 'Manage Account' }).click()
+    const panel = page.getByRole('dialog', { name: 'Edit Account' })
     await expect(panel).toBeVisible()
     await expect(
       panel.getByText('https://auth.stackos.flowmonkey.io/api/v1/auth/oauth/callback', {
@@ -129,7 +138,9 @@ test.describe('Connections — credential lifecycle', () => {
     await page.goto(`/projects/${project.id}/connections`)
     await page.getByRole('button', { name: 'Add connection' }).first().click()
 
-    const panel = page.getByRole('dialog', { name: 'Add connection' })
+    const attachPanel = page.getByRole('dialog', { name: 'Add connection' })
+    await attachPanel.getByRole('button', { name: 'Create new Account' }).click()
+    const panel = page.getByRole('dialog', { name: 'Add Account' })
     await expect(panel).toBeVisible()
     await panel.getByRole('combobox', { name: 'Service' }).click()
     await panel.getByRole('combobox', { name: 'Search options' }).fill('HubSpot')
@@ -186,12 +197,11 @@ test.describe('Connections — credential lifecycle', () => {
       slug: 'auth-method-lifecycle-project',
       domain: 'auth-method-lifecycle.example.test',
     })
-    await storeCredential({
-      projectId: project.id,
+    await storeAccount({
       providerKey: 'hubspot',
       authMethodKey: 'private_app_token',
-      profileKey: 'private-app',
-      label: 'HubSpot Private App',
+      displayName: 'HubSpot Private App',
+      attachProjectId: project.id,
       fields: {
         access_token: secretCanary,
       },
@@ -203,17 +213,19 @@ test.describe('Connections — credential lifecycle', () => {
     await expect(connection.getByText('Private app access token', { exact: true })).toBeVisible()
     expect(await page.content()).not.toContain(secretCanary)
 
-    await connection.getByRole('button', { name: 'Edit' }).click()
-    const panel = page.getByRole('dialog', { name: 'Edit connection' })
+    await connection.getByRole('button', { name: 'Manage Account' }).click()
+    const panel = page.getByRole('dialog', { name: 'Edit Account' })
     const oauth = panel.getByRole('radio', { name: /Connect with HubSpot/ })
     const privateApp = panel.getByRole('radio', { name: /Private app access token/ })
     await expect(privateApp).toBeChecked()
     await expect(privateApp).toBeDisabled()
     await expect(oauth).toBeDisabled()
-    await expect(panel).toContainText('Authentication method is locked to Private app access token.')
-    await expect(panel).toContainText('create a separate named profile')
+    await expect(panel).toContainText(
+      'Authentication method is locked to Private app access token.',
+    )
+    await expect(panel).toContainText('create a separate named Account')
     await expect(panel).toContainText('reassign exact consumers')
-    await expect(panel).toContainText('locally revoke the old profile')
+    await expect(panel).toContainText('revoke the old Account')
     expect(await page.content()).not.toContain(secretCanary)
 
     const axe = await new AxeBuilder({ page })
@@ -226,11 +238,22 @@ test.describe('Connections — credential lifecycle', () => {
     ).toEqual([])
 
     await panel.getByRole('button', { name: 'Cancel' }).click()
-    await connection.getByRole('button', { name: 'Revoke' }).click()
-    await page.getByRole('dialog', { name: 'Revoke this connection?' }).getByRole('button', {
-      name: 'Revoke connection',
-    }).click()
+    await page.goto(`/projects/${project.id}/connections`)
+    const attachedConnection = page.getByRole('listitem').filter({ hasText: 'HubSpot Private App' })
+    await attachedConnection.getByRole('button', { name: 'Detach' }).click()
+    await page
+      .getByRole('dialog', { name: 'Detach this Account?' })
+      .getByRole('button', { name: 'Detach Account' })
+      .click()
     await expect(page.getByText('No services connected')).toBeVisible()
+
+    await page.goto('/accounts')
+    await page.getByRole('button', { name: 'Revoke' }).click()
+    await page
+      .getByRole('dialog', { name: 'Revoke this Account?' })
+      .getByRole('button', { name: 'Revoke Account' })
+      .click()
+    await expect(page.getByText('No Accounts yet')).toBeVisible()
     expect(await page.content()).not.toContain(secretCanary)
     errors.assertNone()
   })

@@ -1,15 +1,16 @@
-"""AES-256-GCM encrypt / decrypt with project-bound AAD (PLAN.md L1117-L1124).
+"""AES-256-GCM encryption for project secrets and reusable Accounts.
 
-Every row in ``integration_credentials`` is encrypted under the same
-HKDF-derived key (PLAN.md L1114-L1116) but with a fresh per-row 12-byte
-nonce and an AAD that binds the ciphertext to its row context::
+Every encrypted row uses the same HKDF-derived key and a fresh per-row
+12-byte nonce. AAD binds project payload secrets to their project context and
+Account credentials to their immutable Account and provider identities::
 
-    AAD = f"project_id={p}|kind={k}".encode()
+    v1|project_id={p}|kind={k}
+    v2|credential_ref={credential_ref}|provider_key={provider_key}
 
-where ``p`` is the integer ``project_id`` for project-scoped rows or the
-literal string ``global`` for project-less rows. Tampering with either
-column or moving a row between projects renders the ciphertext
-undecryptable.
+The v1 format remains the current contract for project-bound payload secrets.
+Integration credentials use v2 exclusively after migration, which permits one
+Account to be attached to multiple projects without weakening row-swap
+protection.
 
 The wire format inside ``encrypted_payload`` is ``ciphertext || auth_tag``
 — that's what ``cryptography``'s ``AESGCM.encrypt`` returns natively, so
@@ -108,13 +109,22 @@ def _key_for_seed(seed: bytes) -> bytes:
 
 
 def format_aad(project_id: int | None, kind: str) -> bytes:
-    """Build the per-row AAD per PLAN.md L1119-L1122.
+    """Build the legacy/project-secret AAD.
 
     Project-scoped rows: ``project_id={int}|kind={str}``.
     Global rows (``project_id IS NULL``): ``project_id=global|kind={str}``.
     """
     p = "global" if project_id is None else str(int(project_id))
     return f"project_id={p}|kind={kind}".encode()
+
+
+def format_account_aad(*, credential_ref: str, provider_key: str) -> bytes:
+    """Build v2 AAD for reusable Account ciphertext."""
+    ref = credential_ref.strip()
+    provider = provider_key.strip()
+    if not ref or not provider:
+        raise ValueError("credential_ref and provider_key are required")
+    return f"v2|credential_ref={ref}|provider_key={provider}".encode()
 
 
 # ---------------------------------------------------------------------------
@@ -190,11 +200,81 @@ def decrypt(
         ) from exc
 
 
+def encrypt_account(
+    plaintext: bytes,
+    *,
+    credential_ref: str,
+    provider_key: str,
+    seed: bytes | None = None,
+    nonce: bytes | None = None,
+) -> tuple[bytes, bytes]:
+    """Encrypt Account secret material with account-bound v2 AAD."""
+    if not isinstance(plaintext, bytes):
+        raise TypeError("plaintext must be bytes")
+    seed_bytes = _seed_for_call(seed)
+    key = _key_for_seed(seed_bytes)
+    nonce_bytes = nonce if nonce is not None else os.urandom(NONCE_BYTES)
+    if len(nonce_bytes) != NONCE_BYTES:
+        raise ValueError(f"nonce must be {NONCE_BYTES} bytes, got {len(nonce_bytes)}")
+    payload = AESGCM(key).encrypt(
+        nonce_bytes,
+        plaintext,
+        format_account_aad(
+            credential_ref=credential_ref,
+            provider_key=provider_key,
+        ),
+    )
+    return payload, nonce_bytes
+
+
+def decrypt_account(
+    ciphertext: bytes,
+    *,
+    nonce: bytes,
+    credential_ref: str,
+    provider_key: str,
+    seed: bytes | None = None,
+) -> bytes:
+    """Decrypt Account secret material and reject identity/provider swaps."""
+    if not isinstance(ciphertext, bytes):
+        raise TypeError("ciphertext must be bytes")
+    if len(nonce) != NONCE_BYTES:
+        raise CryptoError(
+            f"nonce length {len(nonce)} != {NONCE_BYTES}",
+            data={
+                "credential_ref": credential_ref,
+                "provider_key": provider_key,
+            },
+        )
+    seed_bytes = _seed_for_call(seed)
+    try:
+        return AESGCM(_key_for_seed(seed_bytes)).decrypt(
+            nonce,
+            ciphertext,
+            format_account_aad(
+                credential_ref=credential_ref,
+                provider_key=provider_key,
+            ),
+        )
+    except InvalidTag as exc:
+        raise CryptoError(
+            "credential decryption failed (account identity/provider mismatch, "
+            "wrong seed, or tampered row)",
+            data={
+                "credential_ref": credential_ref,
+                "provider_key": provider_key,
+            },
+        ) from exc
+
+
 __all__ = [
     "NONCE_BYTES",
     "CryptoError",
     "configure_seed_path",
     "decrypt",
+    "decrypt_account",
     "encrypt",
+    "encrypt_account",
     "format_aad",
+    "format_account_aad",
 ]

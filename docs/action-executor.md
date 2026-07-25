@@ -184,7 +184,7 @@ Direct/read discovery operations:
 
 - `action.list`
 - `integration.list` when the agent needs compact integration/provider
-  inventory and hidden-action counts without broad `auth.status` noise
+  inventory and hidden-action counts without broad Account inventory noise
 - `action.describe`
 - `action.validate`
 - `actionCall.get` after a background action returns polling guidance
@@ -218,7 +218,7 @@ row includes normalized `setup` guidance derived from the provider manifest:
 the local StackOS connection URL plus safe vendor registration, API-key,
 billing, docs, fallback, and URL-confidence metadata when known.
 
-Use `readiness.check` before `auth.status` for selected work. It reuses action
+Use `readiness.check` before `connection.list` for selected work. It reuses action
 availability and workflow template action contracts to report only the
 credentials, budgets, or connectors needed by that workflow/action. This keeps
 an agent from treating every disconnected provider in the project as a blocker
@@ -228,8 +228,9 @@ and "where do I get the vendor key?" from the scoped blocker.
 
 Use `action.describe` when the agent already knows the action and needs its
 payload schema, capability metadata, and provider setup context in one response.
-Use `auth.status` for sanitized credential diagnostics; compact responses keep
-only a small setup summary and omit full auth-method details.
+Use `connection.list` for sanitized project attachment diagnostics and
+`account.list` for global Account inventory. Compact responses keep only a
+small setup summary and omit full auth-method details.
 
 Run-plan-scoped execution operation:
 
@@ -435,16 +436,16 @@ formats remain deferred until separately modeled.
 
 Communication setup is not an action connector. Telegram communication profile
 setup uses the shared `communicationProfile.upsert/get/list` operations across
-REST, CLI, and MCP after the project-scoped `telegram-bot` credential exists.
-Slack uses project-scoped `communication-profile` records with a
-`provider_facets.slack-bot.auth_profile_key` binding after the project-scoped
-`slack-bot` credential exists. Normal agent messaging goes through
+REST, CLI, and MCP after a reusable `telegram-bot` Account is explicitly
+attached to the project. Slack uses project-scoped `communication-profile`
+records with a `provider_facets.slack-bot.credential_ref` binding to an
+explicitly attached reusable `slack-bot` Account. Normal agent messaging goes through
 `communication.send` or `communication.reply`; `action.run` and
 `action.execute` remain lower-level escape hatches for explicit provider
 diagnostics, webhook setup, or provider-specific work. SMTP and IMAP credentials
-are also project-scoped auth profiles; agents receive only opaque credential
-refs and safe status, while the connector resolves host/user/password/TLS config
-inside the daemon process.
+are also reusable Accounts with explicit project attachments; agents receive
+only opaque credential refs and safe status, while the connector resolves
+host/user/password/TLS config inside the daemon process.
 
 The generic HTTP connector is a plugin-authoring escape hatch, not a direct
 agent browsing tool. The endpoint, method, auth mode, request mode, static

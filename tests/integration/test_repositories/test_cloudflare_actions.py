@@ -15,7 +15,6 @@ from stackos.auth_providers import AuthRepository
 from stackos.db.models import ActionCall
 from stackos.plugins.manifest import BUILTIN_PLUGIN_MANIFESTS
 from stackos.repositories.base import ConflictError
-from stackos.repositories.projects import IntegrationCredentialRepository
 
 _ZONE_ID = "023e105f4ecef8ad9ca31a8372d0c353"
 _RECORD_ID = "372e67954025e0ba6aaa6d586b9e0b59"
@@ -109,13 +108,16 @@ _STRUCTURED_BOUNDS = [
 
 def _credential_ref(session: Session, project_id: int) -> str:
     ActionRepository(session).describe(action_ref="utils.cloudflare.zones.list")
-    IntegrationCredentialRepository(session).set(
-        project_id=project_id,
-        kind="cloudflare",
-        secret_payload=b"cloudflare-action-secret",
+    return (
+        AuthRepository(session)
+        .store_credential(
+            provider_key="cloudflare",
+            display_name="Cloudflare - Default",
+            fields={"api_token": "cloudflare-action-secret"},
+            attach_project_id=project_id,
+        )
+        .data.credential_ref
     )
-    status = AuthRepository(session).status(project_id=project_id, provider_key="cloudflare")
-    return status.connections[0].credential_ref
 
 
 def _envelope(result: Any, *, result_info: dict[str, int] | None = None) -> dict[str, Any]:

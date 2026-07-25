@@ -77,7 +77,7 @@ def _assert_master_api_key(request: ActionConnectorRequest) -> None:
     scope = credential_config(request).get("access_scope")
     if scope != "master":
         raise ValidationError(
-            "Apollo people.search requires a credential profile marked access_scope='master'",
+            "Apollo people.search requires an Account marked access_scope='master'",
             data={
                 "provider": "apollo",
                 "operation": "people.search",

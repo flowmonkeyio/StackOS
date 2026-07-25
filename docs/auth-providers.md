@@ -1,8 +1,9 @@
 # StackOS Auth Providers
 
-StackOS treats credentials as daemon-owned infrastructure, not agent context.
-Agents can inspect sanitized provider state, test whether a connection works,
-and pass opaque credential references into granted tools. They must never
+StackOS treats Accounts as reusable daemon-owned infrastructure, not agent
+context. A project Connection is an explicit attachment to one Account. Agents
+can inspect sanitized provider state, test an Account, and pass opaque
+credential references into granted tools. They must never
 receive API keys, OAuth tokens, refresh tokens, encrypted payloads, or local
 setup secrets.
 
@@ -11,63 +12,75 @@ setup secrets.
 The auth-provider layer uses:
 
 - `auth_providers`: provider metadata synced from plugin manifests.
-- `credentials`: opaque refs over encrypted provider credential profiles.
-- `integration_credentials`: encrypted secret payloads keyed by project,
-  provider, and profile.
+- `credentials`: global Account identity, display name, safe configuration,
+  auth method, status, and opaque `credential_ref`.
+- `integration_credentials`: encrypted secret backing for an Account. It has no
+  project, provider, label, or profile ownership.
+- `project_credentials`: explicit project-to-Account attachments. These are
+  Connections; they contain no credential material.
 - `credential_scopes`: granted scopes for a credential ref.
 - `credential_accounts`: provider account metadata safe to show to agents.
-- `oauth_states`: local-human OAuth state nonces with expiry and consumption.
+- `oauth_states`: local-human OAuth state nonces with expiry, consumption, and
+  an optional project attachment origin plus exact return surface.
 - `credential_usage_events`: redacted audit trail for tests/revocations/use.
 - `credential_refresh_events`: redacted audit trail for OAuth/refresh attempts.
 
-The stable agent identifier is `credential_ref`, for example `cred_...`.
-Agents may also see safe labels, profile keys, auth method keys, status,
-scopes, and account metadata. They never receive credential field values.
+The stable identifier is `credential_ref`, for example `cred_...`. Accounts
+have a user-facing `display_name`; names are unique per provider using
+case-insensitive normalized comparison. Agents may also see auth method keys,
+status, scopes, safe account metadata, and attached project ids. They never
+receive credential field values.
 
 ## Agent Surface
 
 Normal agents may use:
 
-- `auth.status`: list provider metadata and sanitized connection status.
-- `auth.test`: run a daemon-side health probe and return a sanitized result.
-- `toolProfile.resolve`: resolve one safe provider/profile/credential tuple
-  for execution without dumping the broader auth/provider catalog into context.
+- `account.list`: list global Accounts and sanitized provider metadata.
+- `connection.list`: list Accounts explicitly attached to the current project.
+- `account.test`: run a daemon-side health probe and return a sanitized result.
+- `toolProfile.resolve`: resolve one attached provider/Account tuple for
+  execution without dumping the broader Account catalog into context.
 
 Normal agents may not use:
 
-- `auth.start`: starts local setup or OAuth and is a human/admin operation.
-- `auth.revoke`: removes daemon-held secrets and is a human/admin operation.
+- `account.start`: starts local setup or OAuth and is a human/admin operation.
+- `account.revoke`: removes daemon-held secrets and is a human/admin operation;
+  the Account must first be detached from every project.
+- `connection.attach` and `connection.detach`: project setup mutations.
 - plaintext credential setup routes or local UI admin mutations.
 
 The MCP bridge exposes these through `toolbox.call` in normal agent sessions.
 Agents should prefer `toolProfile.resolve` when they already know which
-provider/profile they need; `auth.status` is still available for diagnostics.
+provider/Account they need; `connection.list` is still available for
+project-scoped diagnostics.
 
 ## Setup Flow
 
 1. The agent inspects required providers through plugin/catalog metadata.
 2. The agent calls `toolbox.call` for `toolProfile.resolve`, or for
-   `auth.status` when it needs full sanitized diagnostics.
+   `connection.list` when it needs project attachment diagnostics.
 3. If setup is missing, the agent points the operator to
-   `/projects/{project_id}/connections?provider_key={provider_key}` in the local
-   UI and uses the provider manifest `setup` metadata to answer where to
-   register, where to find the vendor API key/token, where billing/credits live,
-   and which official docs apply. Only the operator/local admin uses setup
-   routes or interactive OAuth starts.
-4. The provider's plugin must be enabled for the project. The UI filters setup
-   choices and the daemon independently rejects start/store attempts for an
-   explicitly disabled plugin.
-5. The operator chooses the provider auth method and enters the fields required
-   by that method, or starts the provider OAuth flow when one is configured.
+   `/projects/{project_id}/connections?provider_key={provider_key}`. The
+   operator selects an existing reusable Account or opens the shared Add
+   Account panel. The dedicated `/accounts` page manages all Accounts.
+4. The provider's plugin must be enabled for a project before an Account can be
+   attached or executed there. Global Account creation does not silently enable
+   a project plugin.
+5. When creating an Account, the operator gives it a display name, chooses the
+   provider auth method, and enters the fields required by that method, or
+   starts the provider OAuth flow when one is configured.
    A provider with multiple methods requires an explicit choice. A provider
    with one method may select it automatically.
-   Local UI setup stores the credential and immediately attempts the same
-   provider-neutral credential test. A failed or unavailable test remains a
-   repairable connection; it is never reported as verified.
-6. An agent may later call `toolbox.call` for `auth.test` with the selected
+   Local UI setup stores the Account and immediately attempts the same
+   provider-neutral credential test. Creation from a project Connection
+   attaches the new Account automatically after success. A failed or unavailable
+   test remains a repairable Account; it is never reported as verified.
+6. An agent may later call `toolbox.call` for `account.test` with the selected
    `credential_ref` when work needs a fresh readiness check.
-7. The daemon decrypts the secret inside its process, calls the connector,
-   records a redacted usage event, and returns sanitized status/metadata.
+7. Before any project execution, the daemon verifies the exact Account is
+   attached to that project, decrypts the secret inside its process, calls the
+   connector, records a redacted usage event, and returns sanitized
+   status/metadata.
 
 No step requires an agent prompt, workflow template, or repository file to carry
 secret material.
@@ -90,7 +103,7 @@ deep link.
 - API-key providers usually have one secret `api_key` field.
 - Slack bot providers expose only secret `bot_token` and `signing_secret`
   setup fields. StackOS discovers safe workspace and bot identity metadata with
-  Slack `auth.test`; communication identity and trigger policy live in project
+  Slack `account.test`; communication identity and trigger policy live in project
   resources, not credentials.
 - SMTP-style systems can expose host, port, username, password, TLS, and sender
   fields in a single method, with only password/token fields encrypted.
@@ -142,7 +155,8 @@ Use this decision order:
 
 The operator flow is:
 
-1. Choose a provider in Connections.
+1. Choose a provider on Accounts, or choose **Create new Account** from a
+   project's Connections page.
 2. When the provider offers multiple methods, choose one explicit method card.
    StackOS does not preselect the first method or enable Connect/Save before
    this choice.
@@ -151,22 +165,23 @@ The operator flow is:
    shared managed OAuth application.
 4. For a static method, create the key or token in the provider's official
    console, then enter it locally. Agents never ask for the value in chat.
-5. Give the connection a profile name that identifies its purpose or account.
-   Each profile has one immutable `auth_method_key`.
-6. Verify the connection. StackOS reports whether permission evidence is known
+5. Give the Account a display name that identifies its purpose or provider
+   account. Each Account has one immutable `auth_method_key`.
+6. Verify the Account. StackOS reports whether permission evidence is known
    locally, enforced by the provider, or unavailable and therefore blocked.
-7. To change methods, create and verify a separate named profile, reassign work
-   to its exact `credential_ref`, and only then revoke the old local profile.
-   Editing a profile never converts it in place.
+7. To change methods, create and verify a separate named Account, attach it to
+   the required projects, update exact `credential_ref` bindings, detach the old
+   Account, and only then revoke it. Editing an Account never converts it in
+   place.
 
 The complete ownership and execution path is:
 
 ```text
-Connections method choice
+Account method choice
   -> manifest auth_method_key + verification posture
-  -> encrypted credential profile
-  -> shared auth.test + normalized safe evidence
-  -> CredentialResolver renewal/readiness/exact-profile gate
+  -> global Account identity + encrypted credential backing
+  -> shared account.test + normalized safe evidence
+  -> project attachment + CredentialResolver renewal/readiness/exact-Account gate
   -> existing provider action connector transport
   -> provider
 ```
@@ -178,14 +193,14 @@ The daemon flow is:
 2. The auth repository validates the method, encrypts only secret material,
    stores safe config plus the saved method key, and rejects an in-place method
    change before decrypting, merging, or writing credential state.
-3. `auth.start` invokes the shared OAuth lifecycle only for an interactive
+3. `account.start` invokes the shared OAuth lifecycle only for an interactive
    method. Static methods use the same credential record and test lifecycle but
    do not create OAuth state.
-4. `auth.test` resolves the saved method and passes only a non-secret probe
+4. `account.test` resolves the saved method and passes only a non-secret probe
    context to the provider wrapper. A wrapper may perform a documented,
    read-only provider probe and return normalized safe account/grant evidence;
    it does not decide readiness or write credential state.
-5. The credential resolver owns renewal, exact-profile selection, local grant
+5. The credential resolver owns renewal, exact-Account selection, local grant
    enforcement, and denial before action dispatch. The action connector receives
    the already selected credential and may only apply method-specific request
    transport using the saved method key.
@@ -217,39 +232,42 @@ together:
 1. Record the official provider auth and permission-evidence sources in the
    provider integration contract.
 2. Add the method and one reviewed verification posture to the manifest.
-3. Reuse encrypted credential storage, exact profile selection, test/audit, and
+3. Reuse encrypted Account storage, exact Account selection, test/audit, and
    resolver enforcement. Do not add a provider-owned lifecycle.
 4. Add a read-only test wrapper only when an official safe endpoint and
    response shape are known. Return normalized safe evidence; never raw secret
    values or arbitrary provider responses.
 5. Make action transport branch only on the saved `auth_method_key`; reject
    missing, unknown, or mismatched method/payload combinations before HTTP.
-6. Let the generic Connections UI render the method. Provider-specific UI
-   selection or readiness rules are not allowed.
+6. Let the shared Add Account panel render the method on both Accounts and
+   Connections. Provider-specific UI selection or readiness rules are not
+   allowed.
 7. Test method isolation, redaction, evidence handling, resolver behavior, and
    provider transport, then link the provider contract back to this section.
 
 ### Rotation, Repair, And Revocation
 
-- Editing a profile may rotate secret material only within its saved method.
+- Editing an Account may rotate secret material only within its saved method.
   Leaving an existing secret field blank preserves it. Supplying replacement
   material clears stale grant evidence when the method requires local grants,
-  and the connection must be tested or reauthorized again.
+  and the Account must be tested or reauthorized again.
 - OAuth expiry uses the shared renewal path when the provider contract supports
   refresh/acquisition. Terminal authorization failure moves the connection to
-  repair-required; reconnect uses the same profile and method. A transient test
+  repair-required; reconnect uses the same Account and method. A transient test
   failure is diagnostic and does not silently disable an otherwise stored
   credential.
 - Static credentials do not enter OAuth renewal. A provider rejection means
   the operator must correct permissions or rotate the value at the provider,
-  update the same-method profile, and test again.
-- `auth.revoke` is local cleanup: it removes daemon-held material and prevents
+  update the same-method Account, and test again.
+- `account.revoke` is local cleanup: it removes daemon-held material and prevents
   future StackOS use. It does not claim to invalidate the credential at the
   provider. Remote revocation/rotation remains operator-owned unless a
-  separately reviewed provider action explicitly implements it.
-- Changing methods is migration, not rotation. Create a second profile, verify
+  separately reviewed provider action explicitly implements it. After recording
+  the redacted revoke audit, StackOS removes the Account identity so its display
+  name can be reused.
+- Changing methods is migration, not rotation. Create a second Account, verify
   it, deliberately rebind consumers to its exact `credential_ref`, then revoke
-  the old local profile and remotely invalidate its provider credential when
+  the old Account and remotely invalidate its provider credential when
   required.
 
 ## OAuth Providers
@@ -301,8 +319,8 @@ provider cannot select an arbitrary return path.
 
 The operator then completes this flow:
 
-1. Open `/projects/{project_id}/connections` in the StackOS UI and choose
-   **Add connection**.
+1. Open `/accounts` and choose **Add Account**, or open
+   `/projects/{project_id}/connections` and choose **Create new Account**.
 2. Select the provider and interactive OAuth method, enter the provider
    application's client fields, and choose **Connect**.
 3. StackOS encrypts those fields, creates a short-lived one-use transaction,
@@ -314,9 +332,11 @@ The operator then completes this flow:
 6. StackOS returns the browser to the committed local UI at:
 
    ```text
-   http://127.0.0.1:5180/projects/{project_id}/connections?oauth_status={status}&provider_key={provider_key}
+   http://127.0.0.1:5180/accounts?oauth_status={status}&provider_key={provider_key}
    ```
 
+   When OAuth began from a project Connection, StackOS instead returns to that
+   exact project's Connections page and attaches the Account after success.
    `{status}` is only `connected`, `denied`, `expired`, `repair-required`, or
    `error`. The UI displays the result and immediately removes those query
    fields. Provider codes, state, tokens, secrets, and error descriptions are
@@ -329,15 +349,16 @@ OAuth flow was started in a browser on the same machine as StackOS.
 The authorization-code flow is:
 
 1. The local operator stores the provider application's required fields through
-   Connections. Secret fields remain encrypted; safe account/tenant fields stay
-   in credential config.
-2. `auth.start` accepts the provider, auth method, and opaque `credential_ref`.
+   the shared Add Account panel. Secret fields remain encrypted; safe
+   account/tenant fields stay in Account config.
+2. `account.start` accepts the provider, auth method, and opaque `credential_ref`.
    It never accepts a caller-selected callback URL. StackOS uses the fixed
    `/api/v1/auth/oauth/callback` route at the configured callback origin.
-3. StackOS creates a short-lived transaction bound to the project, provider,
-   credential profile, and auth method. Only a digest of the random state is
-   stored. Any PKCE verifier and pending application values remain encrypted.
-   Starting again consumes earlier uncompleted transactions for that profile.
+3. StackOS creates a short-lived transaction bound to the Account, provider,
+   auth method, exact return surface, and optional project attachment origin.
+   Only a digest of the random state is stored. Any PKCE verifier and pending
+   application values remain encrypted. Starting again consumes earlier
+   uncompleted transactions for that Account.
 4. The exact public callback route consumes the state atomically, handles denial
    or expiry, exchanges the code once, applies any provider hook, and validates
    the provider contract's account, renewal, expiry, and scope evidence before
@@ -349,7 +370,7 @@ The authorization-code flow is:
    provider-declared response requirements are validated before rotated token,
    expiry, or scope state is committed. A per-credential async lock plus an
    `updated_at` compare-and-swap prevents concurrent requests from overwriting
-   newer token material. Generic profile editing exposes only provider-declared
+   newer token material. Generic Account editing exposes only provider-declared
    setup fields; unchanged setup secrets retain the acquired token and grants,
    while changed token/application material resets them.
 6. The resolver compares the action manifest's `required_scopes` with the
@@ -358,14 +379,15 @@ The authorization-code flow is:
 
 Callback, refresh, and acquisition failures are redacted in persisted audit and
 returned diagnostics. The callback immediately redirects with HTTP 303 to the
-local Connections page using only `connected`, `denied`, `expired`,
-`repair-required`, or `error`; provider codes, state, token values, and provider
-error descriptions are never forwarded into the UI URL. A timeout, network
+server-stored Accounts or exact project Connections return surface using only
+`connected`, `denied`, `expired`, `repair-required`, or `error`; provider codes,
+state, token values, and provider error descriptions are never forwarded into
+the UI URL. A timeout, network
 failure, rate limit, or provider 5xx during renewal leaves the stored credential
 retryable; only a terminal authorization failure such as `invalid_grant` moves
 it to `repair-required`.
 
-Manual OAuth-token methods remain supported for compatibility. A manual profile
+Provider-declared manual OAuth-token methods use the same lifecycle. A manual Account
 with a refresh token uses the same core renewal path when the provider contract
 supports it. Replacing manual token material clears any grants recorded for the
 old token. Provider-returned grants from a later exchange restore known scope
@@ -408,48 +430,61 @@ Do not add a provider subclass merely to repeat the generic flow. Add a trusted
 contract row for protocol data, and add dedicated code only for a real variant
 such as Meta's second exchange or trusted provider-specific response metadata.
 
-Linear personal keys use the same Connection and action catalog as OAuth but
-remain a separate profile with `auth_method_key=personal_api_key`. The saved
+Linear personal keys use the same Account and action catalog as OAuth but
+remain a separate Account with `auth_method_key=personal_api_key`. The saved
 method selects raw `Authorization: <key>` transport; StackOS does not infer it
 from payload shape. Linear enforces personal-key permissions at action time,
 while the shared read-only Test records only safe viewer/workspace identity.
 
-Local disconnect uses the existing `auth.revoke` path. Linear's documented
+Local disconnect uses the existing `account.revoke` path. Linear's documented
 OAuth revoke endpoint remains unsupported/deferred in this delivery, and local
 revocation of any static credential removes daemon-held material without
 invalidating the value at the provider. An operator who needs immediate remote
 invalidation must revoke or rotate it in Linear before local cleanup.
 
-## Connections UI Contract
+## Accounts And Connections UI Contract
 
-The local Connections screen is service/account first:
+The dedicated `/accounts` page owns Account lifecycle:
 
-- primary action: `Add connection`
-- main list: connected services grouped by provider, with multiple named
-  connections per service; revoked history is excluded
-- connection rows: safe label, account metadata, profile key, status, last
-  tested time, expiry, and opaque `credential_ref`
+- primary action: **Add Account**
+- main list: reusable Accounts grouped by provider, including display name,
+  safe provider metadata, status, last test, expiry, attached projects, and
+  opaque `credential_ref`; revoked history is excluded
+- account actions: edit, test, and revoke; revoke is unavailable while any
+  project attachment remains
 - method choice: a one-method provider may select automatically; a
   multi-method provider renders accessible method cards and requires an
   explicit choice before credential fields or submit actions become active
-- edit action: pin the saved provider auth method and reuse its credential form;
-  prefill safe fields, leave secrets blank, and preserve an existing secret
-  unless the operator supplies a replacement; changing methods requires a
-  separate named profile
-- setup panel: enabled-plugin providers only, rendered from `auth_methods`
-- interactive setup: one `Connect` action validates and stores the application
-  fields, calls `auth.start` with only the auth method and opaque
-  `credential_ref`, then navigates to the returned HTTPS authorization URL
-- callback result: a global callout renders `connected`, `denied`, `expired`,
+- edit action: pin the saved provider auth method and reuse the shared Account
+  form; prefill safe fields, leave secrets blank, and preserve an existing
+  secret unless the operator supplies a replacement; changing methods requires
+  a separate named Account
+- interactive setup: one **Connect** action validates and stores application
+  fields, calls `account.start`, and navigates to the returned HTTPS
+  authorization URL
+- callback result: a callout renders `connected`, `denied`, `expired`,
   `repair-required`, or `error`, and the UI clears callback query parameters
   immediately after reading them
-- diagnostics: `auth.test` returns a sanitized result and records the same
-  redacted outcome in the existing credential usage audit; a failed test does
-  not disable the stored credential
+- diagnostics: `account.test` returns a sanitized result and records the same
+  redacted outcome in the credential usage audit; a failed test does not disable
+  the stored Account
 
-`GET /projects/{project_id}/auth/status` is the UI's canonical provider and
-connection read model. Its `providers` collection avoids a second provider
-catalog synchronization request during normal Connections loading.
+The project `/projects/{project_id}/connections` page only lists attached
+Accounts, attaches an existing Account, detaches an unused Account, and opens
+the same Add Account panel when a new one is needed. A newly created Account is
+attached and selected automatically. Slack and Telegram communication profiles,
+webhook routes, and ingress endpoints remain on this project surface.
+Because each Slack app and Telegram bot has one provider-owned inbound endpoint,
+one Account may have only one inbound-enabled communication profile. New and
+legacy profiles default to inbound enabled. Set the Slack or Telegram facet's
+`ingress_enabled` to `false` when reusing the Account in another project for
+outbound messages only; outbound-only profiles are omitted from ingress routes
+and provider webhook sync. A second inbound profile must use a different Account
+or explicitly release the first profile's inbound ownership.
+
+`GET /api/v1/auth/accounts` is the global Accounts read model.
+`GET /api/v1/projects/{project_id}/connections/accounts` is the project
+Connections read model.
 
 Built-in placeholder providers for project-local custom tools, such as
 `custom-media-tool` and `custom-gtm-tool`, are not normal service credentials.
@@ -463,8 +498,8 @@ timeout policy, and response contract.
   can collide unless auth routes, credential storage, and action manifests move
   to a stable provider ref such as `plugin_slug.provider_key` or
   `auth_provider_id`.
-- Multiple credentials are supported through `profile_key`, but account/scopes
-  need richer population from safe setup fields and provider test metadata.
+- Safe Account/scopes metadata still needs richer provider-specific population
+  from setup fields and provider test evidence.
 - Template `auth_ref` is a local requirement label. Execution should document
   or model the binding from template auth requirement to selected
   `credential_ref`, for example `auth_bindings`.

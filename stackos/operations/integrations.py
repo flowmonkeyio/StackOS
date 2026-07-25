@@ -6,9 +6,10 @@ from collections import defaultdict
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlmodel import Session, col, select
+from sqlmodel import Session
 
 from stackos.action_availability import ActionExposureNextActionOut, integration_setup_url
+from stackos.auth_providers import AuthRepository
 from stackos.db.models import Credential
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput
@@ -163,18 +164,7 @@ def _actions_by_provider(actions: list[ActionOut]) -> dict[tuple[str, str], list
 
 
 def _credentials_by_provider(session: Session, *, project_id: int) -> dict[str, list[Credential]]:
-    rows = session.exec(
-        select(Credential)
-        .where(
-            col(Credential.revoked_at).is_(None),
-            (col(Credential.project_id) == project_id) | col(Credential.project_id).is_(None),
-        )
-        .order_by(
-            col(Credential.provider_key).asc(),
-            col(Credential.project_id).desc(),
-            col(Credential.created_at).desc(),
-        )
-    ).all()
+    rows = AuthRepository(session).attached_credentials(project_id=project_id)
     grouped: dict[str, list[Credential]] = defaultdict(list)
     for row in rows:
         grouped[row.provider_key].append(row)
@@ -213,7 +203,7 @@ def _integration_item(
     next_action = None
     if state in {"not_connected", "partially_available"}:
         next_action = ActionExposureNextActionOut(
-            tool="auth.status",
+            tool="connection.list",
             reason=f"Connect provider {provider.key!r} before its required actions appear.",
             arguments={"project_id": project_id, "provider_key": provider.key},
             ui_url=integration_setup_url(project_id, provider.key),

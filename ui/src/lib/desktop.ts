@@ -26,8 +26,19 @@ export interface DesktopStatus {
 
 export interface DesktopMcpHostStatus {
   host_key: string
+  display_name?: string
   surface?: string
   status?: string
+  connection_state?:
+    | 'connected'
+    | 'available'
+    | 'repair_needed'
+    | 'review_required'
+    | 'update_required'
+    | 'restart_required'
+    | 'unavailable'
+    | 'error'
+  status_label?: string
   message?: string
   ok?: boolean
   available?: boolean
@@ -36,6 +47,12 @@ export interface DesktopMcpHostStatus {
   needs_restart?: boolean
   repair?: string | null
   warnings?: string[]
+  selected?: boolean
+  managed?: boolean
+  repairable?: boolean
+  setup_policy?: 'automatic' | 'explicit'
+  target?: { kind: string; [key: string]: string } | null
+  targets?: Array<{ kind: string; [key: string]: string }>
   [key: string]: unknown
 }
 

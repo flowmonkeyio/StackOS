@@ -10,7 +10,14 @@ from sqlmodel import Session, col, select
 
 from stackos.actions import ActionRepository
 from stackos.artifacts import redact_secret_text
-from stackos.communications import communication_profile_record_by_key, merged_provider_profile
+from stackos.auth_providers import AuthRepository
+from stackos.communications import (
+    communication_profile_record_by_key,
+    merged_provider_profile,
+    provider_ingress_enabled,
+    validate_communication_profile_account_bindings,
+    validate_communication_profile_ingress_ownership,
+)
 from stackos.db.models import Credential, ResourceRecord
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import WriteEnvelope
@@ -428,7 +435,8 @@ def _ingress_routes(session: Session, *, endpoint: IngressEndpointOut) -> list[I
         facets = data.get("provider_facets")
         if not isinstance(facets, dict):
             continue
-        if isinstance(facets.get("slack-bot"), dict):
+        slack_facet = facets.get("slack-bot")
+        if isinstance(slack_facet, dict) and provider_ingress_enabled(slack_facet):
             routes.append(
                 _route_out(
                     endpoint=endpoint,
@@ -440,7 +448,8 @@ def _ingress_routes(session: Session, *, endpoint: IngressEndpointOut) -> list[I
                 )
             )
             seen.add(("slack-bot", profile_key))
-        if isinstance(facets.get("telegram-bot"), dict):
+        telegram_facet = facets.get("telegram-bot")
+        if isinstance(telegram_facet, dict) and provider_ingress_enabled(telegram_facet):
             key = ("telegram-bot", profile_key)
             if key in seen:
                 continue
@@ -455,14 +464,20 @@ def _ingress_routes(session: Session, *, endpoint: IngressEndpointOut) -> list[I
                 )
             )
             seen.add(key)
-    hubspot_credentials = session.exec(
-        select(Credential).where(
-            col(Credential.project_id) == endpoint.project_id,
-            col(Credential.provider_key) == "hubspot",
-            col(Credential.revoked_at).is_(None),
+    hubspot_accounts = (
+        AuthRepository(session)
+        .status(
+            project_id=endpoint.project_id,
+            provider_key="hubspot",
         )
-    ).all()
-    for credential in sorted(hubspot_credentials, key=lambda item: item.profile_key):
+        .accounts
+    )
+    for account in hubspot_accounts:
+        credential = session.exec(
+            select(Credential).where(col(Credential.credential_ref) == account.credential_ref)
+        ).first()
+        if credential is None:
+            continue
         config = dict(credential.config_json or {})
         if config.get("webhook_enabled") is not True:
             continue
@@ -470,10 +485,11 @@ def _ingress_routes(session: Session, *, endpoint: IngressEndpointOut) -> list[I
             _route_out(
                 endpoint=endpoint,
                 provider_key="hubspot",
-                profile_key=credential.profile_key,
+                profile_key=credential.credential_ref,
                 profile_ref=credential.credential_ref,
                 profile_resource_key="credential",
                 remote_status="manual_provider_update_required",
+                display_label=credential.display_name,
             )
         )
     return routes
@@ -487,6 +503,7 @@ def _route_out(
     profile_ref: str,
     profile_resource_key: str,
     remote_status: str,
+    display_label: str | None = None,
 ) -> IngressRouteOut:
     path = _provider_ingress_path(
         project_id=endpoint.project_id,
@@ -497,6 +514,7 @@ def _route_out(
     next_action = _route_next_action(
         provider_key=provider_key,
         profile_key=profile_key,
+        display_label=display_label,
         remote_status=remote_status,
         ingress_url=ingress_url,
     )
@@ -535,16 +553,18 @@ def _route_next_action(
     *,
     provider_key: str,
     profile_key: str,
+    display_label: str | None,
     remote_status: str,
     ingress_url: str | None,
 ) -> IngressRouteNextActionOut | None:
     if remote_status != "manual_provider_update_required":
         return None
+    label = display_label or profile_key
     if provider_key == "slack-bot":
         return IngressRouteNextActionOut(
             kind="manual-provider-update",
             label="Copy webhook URL",
-            title=f"Update Slack webhook for {profile_key}",
+            title=f"Update Slack webhook for {label}",
             instructions=(
                 "Copy this URL into the Slack app Event Subscriptions Request URL and "
                 "Interactivity Request URL fields."
@@ -559,7 +579,7 @@ def _route_next_action(
         return IngressRouteNextActionOut(
             kind="manual-provider-update",
             label="Copy webhook URL",
-            title=f"Update HubSpot ingress for {profile_key}",
+            title=f"Update HubSpot ingress for {label}",
             instructions=(
                 "Copy this URL into the HubSpot app Webhooks Target URL. Use the same "
                 "URL as actionUrl only for explicitly allowlisted custom workflow actions."
@@ -573,7 +593,7 @@ def _route_next_action(
     return IngressRouteNextActionOut(
         kind="manual-provider-update",
         label="Copy webhook URL",
-        title=f"Update {provider_key} webhook for {profile_key}",
+        title=f"Update {provider_key} webhook for {label}",
         instructions="Copy this URL into the provider webhook configuration.",
         url=ingress_url,
         provider_fields=["Webhook URL"],
@@ -605,6 +625,33 @@ async def _sync_ingress_endpoint(
     dry_run_provider_webhooks: bool,
 ) -> IngressEndpointSyncOut:
     routes = _ingress_routes(ctx.session, endpoint=endpoint)
+    for route in routes:
+        if route.profile_resource_key != "communication-profile":
+            continue
+        record = _record_by_resource_external_id(
+            ctx.session,
+            project_id=endpoint.project_id,
+            resource_key="communication-profile",
+            external_id=route.profile_ref,
+        )
+        if record is None:
+            continue
+        facets = dict(dict(record.data_json or {}).get("provider_facets") or {})
+        facet = facets.get(route.provider_key)
+        if not isinstance(facet, dict):
+            continue
+        validate_communication_profile_account_bindings(
+            ctx.session,
+            project_id=endpoint.project_id,
+            profile_ref=route.profile_ref,
+            provider_facets={route.provider_key: facet},
+        )
+        validate_communication_profile_ingress_ownership(
+            ctx.session,
+            project_id=endpoint.project_id,
+            profile_ref=route.profile_ref,
+            provider_facets={route.provider_key: facet},
+        )
     updated_profile_refs: list[str] = []
     provider_results: list[dict[str, Any]] = []
     resources = ResourceRepository(ctx.session)
@@ -760,15 +807,10 @@ async def _maybe_apply_telegram_webhook(
             "remote_status": "not_applied",
             "webhook_url": route.ingress_url,
         }
-    credential_ref = _credential_ref_for_profile(
+    credential_ref = _telegram_credential_ref(
         ctx.session,
         project_id=project_id,
-        provider_key="telegram-bot",
-        profile_key=_telegram_auth_profile_key(
-            ctx.session,
-            project_id=project_id,
-            profile_key=route.profile_key,
-        ),
+        profile_key=route.profile_key,
     )
     if credential_ref is None:
         return {
@@ -808,7 +850,12 @@ async def _maybe_apply_telegram_webhook(
     }
 
 
-def _telegram_auth_profile_key(session: Session, *, project_id: int, profile_key: str) -> str:
+def _telegram_credential_ref(
+    session: Session,
+    *,
+    project_id: int,
+    profile_key: str,
+) -> str | None:
     record = communication_profile_record_by_key(
         session,
         project_id=project_id,
@@ -819,25 +866,18 @@ def _telegram_auth_profile_key(session: Session, *, project_id: int, profile_key
         if record is not None
         else {}
     )
-    return str(data.get("auth_profile_key") or "default")
-
-
-def _credential_ref_for_profile(
-    session: Session,
-    *,
-    project_id: int,
-    provider_key: str,
-    profile_key: str,
-) -> str | None:
-    row = session.exec(
-        select(Credential).where(
-            col(Credential.project_id) == project_id,
-            col(Credential.provider_key) == provider_key,
-            col(Credential.profile_key) == profile_key,
-            col(Credential.revoked_at).is_(None),
-        )
-    ).first()
-    return row.credential_ref if row is not None else None
+    credential_ref = str(data.get("credential_ref") or "").strip()
+    if not credential_ref:
+        return None
+    attached = AuthRepository(session).status(
+        project_id=project_id,
+        provider_key="telegram-bot",
+    )
+    return (
+        credential_ref
+        if any(account.credential_ref == credential_ref for account in attached.accounts)
+        else None
+    )
 
 
 def _mark_ingress_endpoint_synced(

@@ -35,6 +35,15 @@ _SIGNED_URL_PARAM_RE = re.compile(
 
 def _is_sensitive_key(key: str) -> bool:
     normalized = key.lower().replace("-", "_")
+    if (
+        normalized in {"credential_ref", "credential_refs", "credential_id", "credential_ids"}
+        or normalized.endswith("_credential_ref")
+        or normalized.endswith("_credential_refs")
+    ):
+        # StackOS credential refs are intentionally opaque, non-secret public
+        # identities. They are safe selectors; provider credential material is
+        # never embedded in them.
+        return False
     return any(part in normalized for part in _SECRET_KEY_PARTS)
 
 

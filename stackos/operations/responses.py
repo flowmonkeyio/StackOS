@@ -242,6 +242,7 @@ _SCALAR_KEEP_FIELDS = frozenset(
 _LIST_KEEP_FIELDS = frozenset(
     {
         "allowed_tools",
+        "accounts",
         "action_refs_json",
         "actions",
         "action_contracts",

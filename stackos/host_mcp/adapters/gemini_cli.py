@@ -9,7 +9,9 @@ from pathlib import Path
 
 from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
+    command_from_output_row,
     command_line_mentions,
+    is_stackos_bridge_command,
     output_row_matches_server,
     resolve_bridge_command,
     token_preflight,
@@ -78,6 +80,21 @@ def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
             repair="Run `stackos install --mcp-only` or desktop Repair.",
             warnings=[GEMINI_COMPAT_WARNING],
         )
+    config_entry, config_error = _user_config_entry(home, server_name=server_name)
+    if config_error:
+        return HostMcpResult(
+            host_key=HOST_KEY,
+            surface=SURFACE,
+            status="config_unreadable",
+            message="Gemini CLI user MCP settings could not be inspected safely.",
+            ok=True,
+            available=True,
+            advisory=True,
+            repair="Check ~/.gemini/settings.json, then rerun StackOS Repair.",
+            warnings=[GEMINI_COMPAT_WARNING],
+        )
+    if config_entry is not None:
+        return _inspect_config_entry(config_entry, expected_command=command)
     if any(looks_secretish(row) for row in rows):
         return HostMcpResult(
             host_key=HOST_KEY,
@@ -89,6 +106,8 @@ def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
             blocking=True,
             repair="Run `stackos install --mcp-only` or desktop Repair.",
             warnings=["unsafe Gemini MCP entry redacted"],
+            selected=True,
+            managed=False,
         )
     if any(command_line_mentions(command, row) for row in rows):
         return HostMcpResult(
@@ -100,17 +119,34 @@ def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
             available=True,
             command=command,
             warnings=[GEMINI_COMPAT_WARNING],
+            selected=True,
+            managed=True,
         )
+    managed = any(_row_has_stackos_bridge(row, server_name) for row in rows)
     return HostMcpResult(
         host_key=HOST_KEY,
         surface=SURFACE,
-        status="registered_stale",
-        message="Gemini CLI has a StackOS MCP entry, but it is not the local stdio bridge.",
+        status="registered_stale" if managed else "registered_unmanaged",
+        message=(
+            "Gemini CLI has a stale StackOS-owned MCP entry."
+            if managed
+            else (
+                "Gemini CLI has a stackos entry that StackOS does not own; it was left unchanged."
+            )
+        ),
         ok=False,
         available=True,
         blocking=True,
-        repair="Run `stackos install --mcp-only` or desktop Repair.",
-        warnings=["stale Gemini MCP entry redacted"],
+        repair=(
+            "Run `stackos install --mcp-only` or desktop Repair."
+            if managed
+            else "Review the Gemini CLI entry before connecting StackOS."
+        ),
+        warnings=[
+            "stale Gemini MCP entry redacted" if managed else "unmanaged Gemini MCP entry redacted"
+        ],
+        selected=True,
+        managed=managed,
     )
 
 
@@ -177,17 +213,34 @@ def _inspect_config_entry(
             available=True,
             command=expected_command,
             warnings=[GEMINI_COMPAT_WARNING],
+            selected=True,
+            managed=True,
         )
+    managed = is_stackos_bridge_command(stored_command)
     return HostMcpResult(
         host_key=HOST_KEY,
         surface=SURFACE,
-        status="registered_stale",
-        message="Gemini CLI has a StackOS MCP entry, but it is not the local stdio bridge.",
+        status="registered_stale" if managed else "registered_unmanaged",
+        message=(
+            "Gemini CLI has a stale StackOS-owned MCP entry."
+            if managed
+            else (
+                "Gemini CLI has a stackos entry that StackOS does not own; it was left unchanged."
+            )
+        ),
         ok=False,
         available=True,
         blocking=True,
-        repair="Run `stackos install --mcp-only` or desktop Repair.",
-        warnings=["stale Gemini MCP entry redacted"],
+        repair=(
+            "Run `stackos install --mcp-only` or desktop Repair."
+            if managed
+            else "Review the Gemini CLI entry before connecting StackOS."
+        ),
+        warnings=[
+            "stale Gemini MCP entry redacted" if managed else "unmanaged Gemini MCP entry redacted"
+        ],
+        selected=True,
+        managed=managed,
     )
 
 
@@ -209,6 +262,8 @@ def register(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult
         )
     current = inspect(home, server_name=server_name)
     if current.ok and current.status != "available_unregistered":
+        return current
+    if current.selected and not current.managed:
         return current
     if current.available and current.status != "available_unregistered":
         removed = _run_gemini(
@@ -258,13 +313,13 @@ def register(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult
 
 
 def remove(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
-    del home
     gemini_bin = resolve_gemini_bin()
     if gemini_bin is None:
         return _absent(message="Gemini CLI not found; skipped Gemini MCP removal.")
-    current = _run_gemini(gemini_bin, ["mcp", "list"])
-    rows = _stackos_rows(current.stdout, server_name) if current.returncode == 0 else []
-    if not rows:
+    current = inspect(home, server_name=server_name)
+    if current.selected and not current.managed:
+        return current
+    if not current.selected:
         return HostMcpResult(
             host_key=HOST_KEY,
             surface=SURFACE,
@@ -356,6 +411,12 @@ def _stackos_rows(stdout: str, server_name: str) -> list[str]:
     return [
         line.strip() for line in stdout.splitlines() if output_row_matches_server(line, server_name)
     ]
+
+
+def _row_has_stackos_bridge(row: str, server_name: str) -> bool:
+    return is_stackos_bridge_command(
+        command_from_output_row(row, server_name),
+    )
 
 
 def _text(value: object) -> str:

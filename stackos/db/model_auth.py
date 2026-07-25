@@ -47,26 +47,24 @@ class AuthProvider(SQLModel, table=True):
 
 
 class Credential(SQLModel, table=True):
-    """Opaque credential reference over encrypted integration credential rows."""
+    """Global reusable Account identity over encrypted credential backing."""
 
     __tablename__ = "credentials"
     __table_args__ = (
         UniqueConstraint("credential_ref", name="uq_credentials_ref"),
         UniqueConstraint(
+            "provider_key",
+            "display_name_key",
+            name="uq_credentials_provider_display_name",
+        ),
+        UniqueConstraint(
             "integration_credential_id",
             name="uq_credentials_integration_credential",
         ),
-        Index("ix_credentials_project_provider", "project_id", "provider_key"),
+        Index("ix_credentials_provider", "provider_key"),
     )
 
     id: int | None = Field(default=None, primary_key=True)
-    project_id: int | None = Field(
-        default=None,
-        sa_column=Column(
-            ForeignKey("projects.id", ondelete="CASCADE"),
-            nullable=True,
-        ),
-    )
     auth_provider_id: int | None = Field(
         default=None,
         sa_column=Column(
@@ -83,9 +81,10 @@ class Credential(SQLModel, table=True):
     )
     credential_ref: str = Field(max_length=120)
     provider_key: str = Field(max_length=160)
+    display_name: str = Field(max_length=200)
+    display_name_key: str = Field(max_length=200)
     auth_type: str = Field(default="none", max_length=80)
     auth_method_key: str = Field(default="default", max_length=160)
-    profile_key: str = Field(default="default", max_length=160)
     status: str = Field(default="connected", max_length=40)
     expires_at: datetime | None = Field(default=None)
     last_tested_at: datetime | None = Field(default=None)
@@ -93,6 +92,37 @@ class Credential(SQLModel, table=True):
     config_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=_utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
+class ProjectCredential(SQLModel, table=True):
+    """Project Connection attaching one global Account to one project."""
+
+    __tablename__ = "project_credentials"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "credential_id",
+            name="uq_project_credentials_project_credential",
+        ),
+        Index("ix_project_credentials_project", "project_id"),
+        Index("ix_project_credentials_credential", "credential_id"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(
+        sa_column=Column(
+            ForeignKey("projects.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    credential_id: int = Field(
+        sa_column=Column(
+            ForeignKey("credentials.id", ondelete="RESTRICT"),
+            nullable=False,
+        )
+    )
+    attached_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    attached_by: str | None = Field(default=None, max_length=120)
 
 
 class CredentialScope(SQLModel, table=True):
@@ -139,21 +169,27 @@ class CredentialAccount(SQLModel, table=True):
 
 
 class OAuthState(SQLModel, table=True):
-    """OAuth state nonce for local human setup flows."""
+    """OAuth nonce with an exact safe return surface and optional auto-attach."""
 
     __tablename__ = "oauth_states"
     __table_args__ = (
         UniqueConstraint("state", name="uq_oauth_states_state"),
-        Index("ix_oauth_states_project_provider", "project_id", "provider_key"),
+        Index(
+            "ix_oauth_states_attach_project_provider",
+            "attach_project_id",
+            "provider_key",
+        ),
     )
 
     id: int | None = Field(default=None, primary_key=True)
-    project_id: int = Field(
+    attach_project_id: int | None = Field(
+        default=None,
         sa_column=Column(
-            ForeignKey("projects.id", ondelete="CASCADE"),
-            nullable=False,
-        )
+            ForeignKey("projects.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
     )
+    return_surface: str = Field(default="accounts", max_length=40)
     provider_key: str = Field(max_length=160)
     credential_id: int | None = Field(
         default=None,
@@ -226,45 +262,18 @@ class CredentialRefreshEvent(SQLModel, table=True):
 
 
 class IntegrationCredential(SQLModel, table=True):
-    """Encrypted provider credential profile backing daemon-side execution.
+    """Encrypted backing for a global Account.
 
-    ``project_id`` is nullable for global credentials. ``encrypted_payload`` +
-    ``nonce`` are AES-256-GCM ciphertext; AAD is composed at the repository
-    layer (M5).
+    Identity, status, safe configuration, and project authorization live on
+    ``Credential`` and ``ProjectCredential``. This table contains only
+    ciphertext lifecycle state.
     """
 
     __tablename__ = "integration_credentials"
-    __table_args__ = (
-        UniqueConstraint(
-            "project_id",
-            "kind",
-            "profile_key",
-            name="uq_integration_credentials_project_kind_profile",
-        ),
-        Index("ix_integration_credentials_project", "project_id"),
-        Index(
-            "ix_integration_credentials_project_kind_profile",
-            "project_id",
-            "kind",
-            "profile_key",
-        ),
-    )
 
     id: int | None = Field(default=None, primary_key=True)
-    project_id: int | None = Field(
-        default=None,
-        sa_column=Column(
-            ForeignKey("projects.id", ondelete="CASCADE"),
-            nullable=True,
-        ),
-    )
-    kind: str = Field(max_length=120)
-    profile_key: str = Field(default="default", max_length=160)
     encrypted_payload: bytes = Field(sa_column=Column(LargeBinary, nullable=False))
     nonce: bytes = Field(sa_column=Column(LargeBinary(12), nullable=False))
-    expires_at: datetime | None = Field(default=None)
-    last_refreshed_at: datetime | None = Field(default=None)
-    config_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=_utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
 
@@ -309,4 +318,5 @@ __all__ = [
     "IntegrationBudget",
     "IntegrationCredential",
     "OAuthState",
+    "ProjectCredential",
 ]

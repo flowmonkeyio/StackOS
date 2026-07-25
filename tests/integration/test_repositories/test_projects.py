@@ -5,9 +5,10 @@ from __future__ import annotations
 from datetime import datetime
 
 import pytest
-from sqlmodel import Session, SQLModel
+from sqlmodel import Session, SQLModel, select
 
 from stackos.db.connection import make_engine
+from stackos.db.models import Credential, ProjectCredential
 from stackos.repositories.base import (
     BudgetExceededError,
     ConflictError,
@@ -20,6 +21,7 @@ from stackos.repositories.projects import (
     ProjectRepository,
     ScheduledJobRepository,
 )
+from tests.integration.account_test_support import seed_test_account
 
 
 def test_project_crud_live_projects_and_pagination(session: Session) -> None:
@@ -71,36 +73,53 @@ def test_integration_credential_set_round_trip_and_remove(
     project_id: int,
 ) -> None:
     repo = IntegrationCredentialRepository(session)
-    out = repo.set(
+    out = seed_test_account(
+        session,
         project_id=project_id,
-        kind="dataforseo",
+        provider_key="dataforseo",
+        display_name="DataForSEO - Default",
         secret_payload=b"API_KEY",
-        config_json={"login": "user@example.com"},
     )
 
     assert repo.get_decrypted(out.data.id) == b"API_KEY"
     row = repo.fetch_row(out.data.id)
     assert row.encrypted_payload
     assert len(row.nonce) == 12
-    assert repo.list(project_id)[0].kind == "dataforseo"
+    assert repo.list()[0].id == out.data.id
 
+    account = session.exec(
+        select(Credential).where(Credential.integration_credential_id == out.data.id)
+    ).one()
+    attachment = session.exec(
+        select(ProjectCredential).where(ProjectCredential.credential_id == account.id)
+    ).one()
+    session.delete(attachment)
+    session.flush()
+    session.delete(account)
+    session.commit()
     repo.remove(out.data.id)
-    assert repo.list(project_id) == []
+    assert repo.list() == []
 
 
 def test_integration_credential_aad_tamper_fails(session: Session, project_id: int) -> None:
-    from stackos.crypto.aes_gcm import CryptoError, decrypt
+    from stackos.crypto.aes_gcm import CryptoError, decrypt_account
 
     repo = IntegrationCredentialRepository(session)
-    env = repo.set(project_id=project_id, kind="firecrawl", secret_payload=b"secret")
+    env = seed_test_account(
+        session,
+        project_id=project_id,
+        provider_key="firecrawl",
+        display_name="Firecrawl - Default",
+        secret_payload=b"secret",
+    )
     row = repo.fetch_row(env.data.id)
 
     with pytest.raises(CryptoError):
-        decrypt(
+        decrypt_account(
             row.encrypted_payload,
             nonce=row.nonce,
-            project_id=project_id + 1,
-            kind="firecrawl",
+            credential_ref="cred_wrong",
+            provider_key="firecrawl",
         )
 
 

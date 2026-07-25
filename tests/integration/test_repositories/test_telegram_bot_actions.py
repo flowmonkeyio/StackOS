@@ -14,8 +14,7 @@ from stackos.actions import ActionRepository
 from stackos.auth_providers import AuthRepository
 from stackos.communications import telegram_callback_button_external_id
 from stackos.repositories.agent_requests import AgentRequestRepository
-from stackos.repositories.base import ConflictError, NotFoundError
-from stackos.repositories.projects import IntegrationCredentialRepository
+from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.resources import ResourceRepository
 
 _TOKEN = "123456:ABC"
@@ -29,16 +28,19 @@ def _telegram_credential_ref(
     config_json: dict | None = None,
 ) -> str:
     ActionRepository(session).describe(action_ref="communications.telegram-bot.identity.get")
-    IntegrationCredentialRepository(session).set(
-        project_id=project_id,
-        kind="telegram-bot",
-        secret_payload=json.dumps(
-            {"bot_token": _TOKEN, "webhook_secret_token": "telegram-secret"}
-        ).encode("utf-8"),
-        config_json=config_json or {},
+    fields = {
+        "bot_token": _TOKEN,
+        "webhook_secret_token": "telegram-secret",
+        **(config_json or {}),
+    }
+    created = AuthRepository(session).store_credential(
+        provider_key="telegram-bot",
+        display_name="Telegram - Default",
+        auth_method_key="bot-token",
+        fields=fields,
+        attach_project_id=project_id,
     )
-    status = AuthRepository(session).status(project_id=project_id, provider_key="telegram-bot")
-    return status.connections[0].credential_ref
+    return created.data.credential_ref
 
 
 def _telegram_profile(
@@ -46,11 +48,22 @@ def _telegram_profile(
     project_id: int,
     *,
     key: str = "support-bot",
-    auth_profile_key: str = "default",
+    credential_ref: str | None = None,
     access_policy: dict | None = None,
     response_policy: dict | None = None,
     profile_overrides: dict | None = None,
 ) -> None:
+    if credential_ref is None:
+        accounts = (
+            AuthRepository(session)
+            .status(
+                project_id=project_id,
+                provider_key="telegram-bot",
+            )
+            .accounts
+        )
+        assert accounts
+        credential_ref = accounts[0].credential_ref
     data_json = {
         "key": key,
         "enabled": True,
@@ -74,7 +87,7 @@ def _telegram_profile(
         "response_policy": response_policy or {},
         "provider_facets": {
             "telegram-bot": {
-                "auth_profile_key": auth_profile_key,
+                "credential_ref": credential_ref,
                 "bot_username": "stackos_bot",
                 "allowed_updates": ["message", "callback_query"],
                 "refs": {"main": "12345"},
@@ -85,7 +98,7 @@ def _telegram_profile(
         facet = data_json["provider_facets"]["telegram-bot"]
         for override_key, override_value in profile_overrides.items():
             if override_key in {
-                "auth_profile_key",
+                "credential_ref",
                 "bot_username",
                 "allowed_updates",
                 "refs",
@@ -713,7 +726,7 @@ def test_telegram_send_rejects_communication_profile_credential_mismatch(
         session,
         project_id,
         key="support-bot",
-        auth_profile_key="other-profile",
+        credential_ref="cred_other_account",
     )
 
     with pytest.raises(ConflictError, match="action connector failed") as exc:
@@ -730,7 +743,7 @@ def test_telegram_send_rejects_communication_profile_credential_mismatch(
             )
         )
 
-    assert "does not match credential profile" in exc.value.data["error"]
+    assert "does not match selected Account" in exc.value.data["error"]
     assert httpx_mock.get_requests() == []
 
 
@@ -739,26 +752,23 @@ def test_telegram_send_rejects_global_credential_for_project_communication_profi
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    global_credential = (
-        IntegrationCredentialRepository(session)
-        .set(
-            project_id=None,
-            kind="telegram-bot",
-            secret_payload=json.dumps(
-                {"bot_token": _TOKEN, "webhook_secret_token": "telegram-secret"}
-            ).encode("utf-8"),
-        )
-        .data
+    created = AuthRepository(session).store_credential(
+        provider_key="telegram-bot",
+        display_name="Telegram - Global",
+        auth_method_key="bot-token",
+        fields={
+            "bot_token": _TOKEN,
+            "webhook_secret_token": "telegram-secret",
+        },
     )
     status = AuthRepository(session).status(
         project_id=project_id,
         provider_key="telegram-bot",
     )
-    assert status.connections == []
-    credential = AuthRepository(session).sync_credential_for_integration(global_credential.id)
-    _telegram_profile(session, project_id)
+    assert status.accounts == []
+    _telegram_profile(session, project_id, credential_ref=created.data.credential_ref)
 
-    with pytest.raises(NotFoundError):
+    with pytest.raises(ValidationError, match="action payload is invalid"):
         asyncio.run(
             ActionRepository(session).execute(
                 project_id=project_id,
@@ -768,7 +778,7 @@ def test_telegram_send_rejects_global_credential_for_project_communication_profi
                     "chat_ref": "main",
                     "text": "hello",
                 },
-                credential_ref=credential.credential_ref,
+                credential_ref=created.data.credential_ref,
             )
         )
 

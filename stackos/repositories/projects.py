@@ -6,11 +6,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import or_
 from sqlmodel import Session, col, select
 
-from stackos.artifacts import redact_secrets
 from stackos.db.models import (
+    Credential,
     IntegrationBudget,
     IntegrationCredential,
     Project,
@@ -50,12 +49,6 @@ class IntegrationCredentialOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    project_id: int | None
-    kind: str
-    profile_key: str
-    expires_at: datetime | None
-    last_refreshed_at: datetime | None
-    config_json: dict[str, Any] | None
     created_at: datetime
     updated_at: datetime
 
@@ -209,73 +202,65 @@ class ProjectRepository:
 
 
 class IntegrationCredentialRepository:
-    """Encrypted credential storage for daemon-side tool execution."""
+    """Encrypted backing storage for global Accounts."""
 
     def __init__(self, session: Session) -> None:
         self._s = session
 
-    def list(self, project_id: int | None) -> list[IntegrationCredentialOut]:
+    def list(self) -> list[IntegrationCredentialOut]:
         stmt = select(IntegrationCredential)
-        if project_id is None:
-            stmt = stmt.where(col(IntegrationCredential.project_id).is_(None))
-        else:
-            stmt = stmt.where(
-                or_(
-                    col(IntegrationCredential.project_id) == project_id,
-                    col(IntegrationCredential.project_id).is_(None),
-                )
-            )
         rows = self._s.exec(stmt.order_by(col(IntegrationCredential.id).asc())).all()
         return [IntegrationCredentialOut.model_validate(row) for row in rows]
 
     def set(
         self,
         *,
-        project_id: int | None,
-        kind: str,
+        credential_ref: str,
+        provider_key: str,
         secret_payload: bytes,
-        profile_key: str = "default",
-        config_json: dict[str, Any] | None = None,
-        expires_at: datetime | None = None,
+        integration_credential_id: int | None = None,
         commit: bool = True,
     ) -> Envelope[IntegrationCredentialOut]:
-        from stackos.crypto.aes_gcm import encrypt as _crypto_encrypt
+        from stackos.crypto.aes_gcm import encrypt_account
 
-        if config_json is not None and redact_secrets(config_json) != config_json:
-            raise ValidationError(
-                "credential config_json must not contain secret-like keys; "
-                "put secrets in the encrypted credential payload"
-            )
-        existing_stmt = select(IntegrationCredential).where(
-            IntegrationCredential.kind == kind,
-            IntegrationCredential.profile_key == profile_key,
-        )
-        if project_id is None:
-            existing_stmt = existing_stmt.where(IntegrationCredential.project_id.is_(None))  # type: ignore[union-attr]
+        account = self._s.exec(
+            select(Credential).where(col(Credential.credential_ref) == credential_ref)
+        ).first()
+        if integration_credential_id is not None:
+            row = self._s.get(IntegrationCredential, integration_credential_id)
+            if row is None:
+                raise NotFoundError(f"credential backing {integration_credential_id} not found")
+            if (
+                account is None
+                or account.integration_credential_id != integration_credential_id
+                or account.provider_key != provider_key
+            ):
+                raise ValidationError(
+                    "credential backing does not match the supplied Account identity"
+                )
         else:
-            existing_stmt = existing_stmt.where(IntegrationCredential.project_id == project_id)
-        row = self._s.exec(existing_stmt).first()
-        ciphertext, nonce = _crypto_encrypt(secret_payload, project_id=project_id, kind=kind)
+            if account is not None:
+                raise ConflictError(
+                    "Account already has encrypted credential backing",
+                    data={"credential_ref": credential_ref},
+                )
+            row = None
+        ciphertext, nonce = encrypt_account(
+            secret_payload,
+            credential_ref=credential_ref,
+            provider_key=provider_key,
+        )
         now = _utcnow()
         if row is None:
             row = IntegrationCredential(
-                project_id=project_id,
-                kind=kind,
-                profile_key=profile_key,
                 encrypted_payload=ciphertext,
                 nonce=nonce,
-                expires_at=expires_at,
-                config_json=config_json,
-                last_refreshed_at=now,
                 created_at=now,
                 updated_at=now,
             )
         else:
             row.encrypted_payload = ciphertext
             row.nonce = nonce
-            row.expires_at = expires_at
-            row.config_json = config_json
-            row.last_refreshed_at = now
             row.updated_at = now
         self._s.add(row)
         if commit:
@@ -283,26 +268,33 @@ class IntegrationCredentialRepository:
             self._s.refresh(row)
         else:
             self._s.flush()
-        return Envelope(data=IntegrationCredentialOut.model_validate(row), project_id=project_id)
+        return Envelope(data=IntegrationCredentialOut.model_validate(row))
 
     def get_decrypted(self, credential_id: int) -> bytes:
-        from stackos.crypto.aes_gcm import decrypt as _crypto_decrypt
+        from stackos.crypto.aes_gcm import decrypt_account
 
         row = self._s.get(IntegrationCredential, credential_id)
         if row is None:
             raise NotFoundError(f"credential {credential_id} not found")
-        return _crypto_decrypt(
+        account = self._s.exec(
+            select(Credential).where(col(Credential.integration_credential_id) == credential_id)
+        ).first()
+        if account is None:
+            raise NotFoundError(
+                "Account identity for encrypted credential backing not found",
+                data={"integration_credential_id": credential_id},
+            )
+        return decrypt_account(
             row.encrypted_payload,
             nonce=row.nonce,
-            project_id=row.project_id,
-            kind=row.kind,
+            credential_ref=account.credential_ref,
+            provider_key=account.provider_key,
         )
 
     def mark_refreshed(self, credential_id: int) -> None:
         row = self._s.get(IntegrationCredential, credential_id)
         if row is None:
             raise NotFoundError(f"credential {credential_id} not found")
-        row.last_refreshed_at = _utcnow()
         row.updated_at = _utcnow()
         self._s.add(row)
         self._s.commit()
@@ -322,7 +314,7 @@ class IntegrationCredentialRepository:
             self._s.commit()
         else:
             self._s.flush()
-        return Envelope(data=out, project_id=out.project_id)
+        return Envelope(data=out)
 
     def fetch_row(self, credential_id: int) -> IntegrationCredential:
         row = self._s.get(IntegrationCredential, credential_id)

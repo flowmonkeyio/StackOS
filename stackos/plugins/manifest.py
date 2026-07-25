@@ -1196,7 +1196,7 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 config={
                     "setup_note": (
                         "Store the Reve API key from api.reve.com. Reve does not "
-                        "document a free credential probe, so StackOS auth.test "
+                        "document a free credential probe, so StackOS account.test "
                         "records credential storage format without making a billable "
                         "image request."
                     ),

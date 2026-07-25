@@ -42,7 +42,11 @@ const initials = computed(() => {
     ]"
     aria-hidden="true"
   >
-    <img v-if="logo" :src="logo.src" alt="" />
+    <img
+      v-if="logo"
+      :src="logo.src"
+      alt=""
+    >
     <template v-else>
       <i />
       <b>{{ initials }}</b>
@@ -106,13 +110,10 @@ const initials = computed(() => {
 }
 
 .provider-mark--logo {
-  background: var(--color-bg-surface-alt);
+  background: var(--color-bg-provider-logo);
 }
 
-.provider-mark--dark {
-  background: var(--color-bg-sunken);
-}
-
+.provider-mark--dark,
 .provider-mark--inverse {
   background: var(--color-bg-provider-inverse);
 }

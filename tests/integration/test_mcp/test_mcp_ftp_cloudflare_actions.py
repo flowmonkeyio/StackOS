@@ -65,17 +65,19 @@ class _FakeFTP:
 
 def _credential_ref(mcp: MCPClient, project_id: int, provider_key: str) -> str:
     status = mcp.call_tool_structured(
-        "auth.status",
+        "connection.list",
         {"project_id": project_id, "provider_key": provider_key, "response_mode": "raw"},
     )
-    return status["connections"][0]["credential_ref"]
+    return status["accounts"][0]["credential_ref"]
 
 
 def _create_ftp_credential(mcp: MCPClient, project_id: int) -> str:
     response = mcp.test_client.post(
-        f"/api/v1/projects/{project_id}/auth/ftp/credentials",
+        "/api/v1/auth/accounts/ftp",
         json={
             "auth_method_key": "ftp-password",
+            "display_name": "FTP - Default",
+            "attach_project_id": project_id,
             "fields": {
                 "host": "ftp.example.test",
                 "port": 21,
@@ -93,9 +95,11 @@ def _create_ftp_credential(mcp: MCPClient, project_id: int) -> str:
 
 def _create_cloudflare_credential(mcp: MCPClient, project_id: int) -> str:
     response = mcp.test_client.post(
-        f"/api/v1/projects/{project_id}/auth/cloudflare/credentials",
+        "/api/v1/auth/accounts/cloudflare",
         json={
             "auth_method_key": "api_token",
+            "display_name": "Cloudflare - Default",
+            "attach_project_id": project_id,
             "fields": {"api_token": "cloudflare-action-secret"},
         },
         headers=mcp._headers(),

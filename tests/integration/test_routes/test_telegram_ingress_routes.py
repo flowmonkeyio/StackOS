@@ -7,9 +7,9 @@ import json
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
+from stackos.auth_providers import AuthRepository
 from stackos.communications import telegram_callback_button_external_id
 from stackos.repositories.agent_requests import AgentRequestRepository
-from stackos.repositories.projects import IntegrationCredentialRepository
 from stackos.repositories.resources import ResourceRepository
 
 
@@ -18,26 +18,31 @@ def _store_telegram_profile(
     project_id: int,
     *,
     profile_key: str = "support-bot",
-    auth_profile_key: str = "support-credential",
+    credential_ref: str | None = None,
     access_policy: dict | None = None,
     trigger_policy: dict | None = None,
     visibility_policy: dict | None = None,
     ingress_mode: str = "webhook",
-) -> None:
+    ingress_enabled: bool = True,
+) -> str:
     engine = api.app.state.engine  # type: ignore[attr-defined]
     with Session(engine) as session:
-        IntegrationCredentialRepository(session).set(
-            project_id=project_id,
-            kind="telegram-bot",
-            profile_key=auth_profile_key,
-            secret_payload=json.dumps(
-                {
-                    "bot_token": "123456:ABC",
-                    "webhook_secret_token": "telegram-secret",
-                }
-            ).encode("utf-8"),
-            config_json={"api_base_url": "http://127.0.0.1:8081"},
-        )
+        if credential_ref is None:
+            credential_ref = (
+                AuthRepository(session)
+                .store_credential(
+                    provider_key="telegram-bot",
+                    auth_method_key="bot-token",
+                    display_name=f"Telegram - {profile_key}",
+                    fields={
+                        "bot_token": "123456:ABC",
+                        "webhook_secret_token": "telegram-secret",
+                        "api_base_url": "http://127.0.0.1:8081",
+                    },
+                    attach_project_id=project_id,
+                )
+                .data.credential_ref
+            )
         ResourceRepository(session).upsert_record(
             project_id=project_id,
             plugin_slug="communications",
@@ -82,8 +87,9 @@ def _store_telegram_profile(
                 "response_policy": {"reply_in_same_chat": True},
                 "provider_facets": {
                     "telegram-bot": {
-                        "auth_profile_key": auth_profile_key,
+                        "credential_ref": credential_ref,
                         "bot_username": "support_bot",
+                        "ingress_enabled": ingress_enabled,
                         "ingress_mode": ingress_mode,
                         "allowed_updates": ["message", "callback_query"],
                     }
@@ -91,6 +97,7 @@ def _store_telegram_profile(
             },
             provenance_json={"source": "test"},
         )
+    return credential_ref
 
 
 def _store_outbound_button(
@@ -290,6 +297,35 @@ def test_telegram_ingress_rejects_disabled_ingress_profile_without_writes(
 
     assert response.status_code == 202
     assert response.json()["policy_status"] == "ingress_disabled"
+    engine = api.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        requests = AgentRequestRepository(session).list(project_id=project_id)
+    assert requests.total_estimate == 0
+
+
+def test_telegram_ingress_rejects_outbound_only_profile_without_writes(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    _store_telegram_profile(
+        api,
+        project_id,
+        profile_key="outbound-only",
+        ingress_enabled=False,
+    )
+    original_auth = api.headers.pop("Authorization", None)
+    try:
+        response = api.post(
+            f"/api/v1/ingress/telegram/{project_id}/outbound-only",
+            headers={"X-Telegram-Bot-Api-Secret-Token": "telegram-secret"},
+            json={"update_id": 458, "message": {"message_id": 1, "chat": {"id": 999}}},
+        )
+    finally:
+        if original_auth is not None:
+            api.headers["Authorization"] = original_auth
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "invalid Telegram secret"
     engine = api.app.state.engine  # type: ignore[attr-defined]
     with Session(engine) as session:
         requests = AgentRequestRepository(session).list(project_id=project_id)
@@ -755,17 +791,16 @@ def test_telegram_ingress_scopes_same_update_id_per_communication_profile(
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_telegram_profile(
+    credential_ref = _store_telegram_profile(
         api,
         project_id,
         profile_key="support-bot",
-        auth_profile_key="support-credential",
     )
     _store_telegram_profile(
         api,
         project_id,
         profile_key="analytics-bot",
-        auth_profile_key="analytics-credential",
+        credential_ref=credential_ref,
     )
     original_auth = api.headers.pop("Authorization", None)
     try:

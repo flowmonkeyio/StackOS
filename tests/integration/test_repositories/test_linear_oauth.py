@@ -16,6 +16,7 @@ from stackos.config import Settings
 from stackos.db.models import Credential, CredentialAccount, CredentialScope, IntegrationCredential
 from stackos.repositories.base import ConflictError
 from stackos.repositories.projects import IntegrationCredentialRepository
+from tests.integration.account_test_support import seed_test_account
 
 AUTH_DOCUMENT = (
     Path(__file__).parents[3]
@@ -29,10 +30,10 @@ AUTH_DOCUMENT = (
 
 def _store_linear(repo: AuthRepository, project_id: int) -> str:
     return repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="linear",
         auth_method_key="oauth2_authorization_code",
-        profile_key="primary",
+        display_name="primary",
         fields={
             "client_id": "linear-client-id",
             "client_secret": "linear-client-secret",
@@ -48,7 +49,7 @@ def _start_linear(
     settings: Settings,
 ) -> tuple[str, dict[str, list[str]]]:
     started = repo.start(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="linear",
         auth_method_key="oauth2_authorization_code",
         credential_ref=credential_ref,
@@ -167,8 +168,8 @@ def test_linear_callback_persists_current_scope_string_and_fixed_account_probe(
     payload = json.loads(IntegrationCredentialRepository(session).get_decrypted(integration.id))
     assert payload["access_token"] == "linear-access"
     assert payload["refresh_token"] == "linear-refresh"
-    assert "access_token" not in (integration.config_json or {})
-    assert "refresh_token" not in (integration.config_json or {})
+    assert "access_token" not in (credential.config_json or {})
+    assert "refresh_token" not in (credential.config_json or {})
 
     httpx_mock.add_response(
         method="POST",
@@ -217,10 +218,10 @@ def test_linear_personal_api_key_probe_uses_raw_authorization_without_renewal(
 ) -> None:
     repo = AuthRepository(session)
     credential_ref = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="linear",
         auth_method_key="personal_api_key",
-        profile_key="personal",
+        display_name="personal",
         fields={"api_key": "linear-personal-key-sentinel"},
     ).data.credential_ref
     httpx_mock.add_response(
@@ -310,31 +311,33 @@ def test_linear_refresh_rotates_access_and_refresh_tokens(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    stored = (
-        IntegrationCredentialRepository(session)
-        .set(
-            project_id=project_id,
-            kind="linear",
-            profile_key="primary",
-            secret_payload=json.dumps(
-                {
-                    "client_id": "linear-client-id",
-                    "client_secret": "linear-client-secret",
-                    "access_token": "expired-linear-access",
-                    "refresh_token": "old-linear-refresh",
-                }
-            ).encode(),
-            config_json={
-                "auth_method_key": "oauth2_authorization_code",
-                "scope_status": "known",
-            },
-            expires_at=utcnow() - timedelta(minutes=5),
-        )
-        .data
+    stored = seed_test_account(
+        session,
+        project_id=project_id,
+        provider_key="linear",
+        display_name="Linear - Primary",
+        secret_payload=json.dumps(
+            {
+                "client_id": "linear-client-id",
+                "client_secret": "linear-client-secret",
+                "access_token": "expired-linear-access",
+                "refresh_token": "old-linear-refresh",
+            }
+        ).encode(),
+        config_json={
+            "auth_method_key": "oauth2_authorization_code",
+            "scope_status": "known",
+        },
+        expires_at=utcnow() - timedelta(minutes=5),
     )
     repo = AuthRepository(session)
     credential_ref = (
-        repo.status(project_id=project_id, provider_key="linear").connections[0].credential_ref
+        repo.status(
+            project_id=project_id,
+            provider_key="linear",
+        )
+        .accounts[0]
+        .credential_ref
     )
     httpx_mock.add_response(
         method="POST",
@@ -367,9 +370,13 @@ def test_linear_refresh_rotates_access_and_refresh_tokens(
     payload = json.loads(resolved.secret_payload)
     assert payload["access_token"] == "renewed-linear-access"
     assert payload["refresh_token"] == "rotated-linear-refresh"
-    row = session.get(IntegrationCredential, stored.id)
-    assert row is not None and row.expires_at is not None
-    assert row.expires_at > utcnow() + timedelta(hours=23)
+    account = session.exec(
+        select(Credential).where(
+            Credential.integration_credential_id == stored.data.id,
+        )
+    ).one()
+    assert account.expires_at is not None
+    assert account.expires_at > utcnow() + timedelta(hours=23)
 
 
 @pytest.mark.parametrize(
@@ -445,31 +452,33 @@ def test_linear_refresh_rejects_non_bearer_or_incomplete_scope_responses(
     field: str,
     invalid_value: object,
 ) -> None:
-    stored = (
-        IntegrationCredentialRepository(session)
-        .set(
-            project_id=project_id,
-            kind="linear",
-            profile_key="primary",
-            secret_payload=json.dumps(
-                {
-                    "client_id": "linear-client-id",
-                    "client_secret": "linear-client-secret",
-                    "access_token": "expired-linear-access",
-                    "refresh_token": "old-linear-refresh",
-                }
-            ).encode(),
-            config_json={
-                "auth_method_key": "oauth2_authorization_code",
-                "scope_status": "known",
-            },
-            expires_at=utcnow() - timedelta(minutes=5),
-        )
-        .data
+    stored = seed_test_account(
+        session,
+        project_id=project_id,
+        provider_key="linear",
+        display_name="Linear - Primary",
+        secret_payload=json.dumps(
+            {
+                "client_id": "linear-client-id",
+                "client_secret": "linear-client-secret",
+                "access_token": "expired-linear-access",
+                "refresh_token": "old-linear-refresh",
+            }
+        ).encode(),
+        config_json={
+            "auth_method_key": "oauth2_authorization_code",
+            "scope_status": "known",
+        },
+        expires_at=utcnow() - timedelta(minutes=5),
     )
     repo = AuthRepository(session)
     credential_ref = (
-        repo.status(project_id=project_id, provider_key="linear").connections[0].credential_ref
+        repo.status(
+            project_id=project_id,
+            provider_key="linear",
+        )
+        .accounts[0]
+        .credential_ref
     )
     response: dict[str, object] = {
         "access_token": "rejected-renewed-access",
@@ -499,7 +508,7 @@ def test_linear_refresh_rejects_non_bearer_or_incomplete_scope_responses(
             )
         )
 
-    row = session.get(IntegrationCredential, stored.id)
+    row = session.get(IntegrationCredential, stored.data.id)
     assert row is not None and row.id is not None
     payload = json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id))
     assert payload["access_token"] == "expired-linear-access"
@@ -514,12 +523,12 @@ def test_linear_local_revoke_makes_no_provider_request_while_remote_revoke_is_de
     repo = AuthRepository(session)
     credential_ref = _store_linear(repo, project_id)
 
-    revoked = repo.revoke(project_id=project_id, credential_ref=credential_ref).data
+    repo.detach_account(project_id=project_id, credential_ref=credential_ref)
+    revoked = repo.revoke(credential_ref=credential_ref).data
 
     assert revoked.provider_key == "linear"
     assert httpx_mock.get_requests() == []
     credential = session.exec(
         select(Credential).where(Credential.credential_ref == credential_ref)
-    ).one()
-    assert credential.status == "revoked"
-    assert credential.integration_credential_id is None
+    ).first()
+    assert credential is None

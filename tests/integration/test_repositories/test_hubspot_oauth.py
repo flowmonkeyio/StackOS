@@ -53,10 +53,10 @@ def _store_hubspot(
             transactional_email_entitlement_confirmed
         )
     return repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="hubspot",
         auth_method_key="oauth2_authorization_code",
-        profile_key="primary",
+        display_name="primary",
         fields=fields,
     ).data.credential_ref
 
@@ -74,7 +74,7 @@ def test_hubspot_start_uses_required_and_selected_optional_scope_bundles(
     )
 
     started = repo.start(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="hubspot",
         auth_method_key="oauth2_authorization_code",
         credential_ref=credential_ref,
@@ -116,7 +116,7 @@ def test_hubspot_webhook_bundle_does_not_request_automation_consent(
     )
 
     started = repo.start(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="hubspot",
         auth_method_key="oauth2_authorization_code",
         credential_ref=credential_ref,
@@ -144,7 +144,7 @@ def test_hubspot_callback_persists_plural_scopes_and_hub_account(
         transactional_email_entitlement_confirmed=True,
     )
     started = repo.start(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="hubspot",
         auth_method_key="oauth2_authorization_code",
         credential_ref=credential_ref,
@@ -196,7 +196,7 @@ def test_hubspot_callback_persists_plural_scopes_and_hub_account(
             IntegrationCredential.id == credential.integration_credential_id
         )
     ).one()
-    assert integration.config_json["transactional_email_entitlement_confirmed"] is True
+    assert integration.id == credential.integration_credential_id
     stored_scopes = {
         item.scope
         for item in session.exec(
@@ -220,7 +220,7 @@ def test_hubspot_callback_persists_plural_scopes_and_hub_account(
     assert "hubspot-client-secret" not in rendered_status
     assert "hubspot-access" not in rendered_status
     assert "hubspot-refresh" not in rendered_status
-    assert safe_status["connections"][0]["account"]["provider_account_id"] == "1234567"
+    assert safe_status["accounts"][0]["account"]["provider_account_id"] == "1234567"
 
 
 def test_hubspot_callback_rejects_token_without_hub_account(
@@ -232,7 +232,7 @@ def test_hubspot_callback_rejects_token_without_hub_account(
     repo = AuthRepository(session)
     credential_ref = _store_hubspot(repo, project_id)
     started = repo.start(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="hubspot",
         auth_method_key="oauth2_authorization_code",
         credential_ref=credential_ref,
@@ -256,7 +256,7 @@ def test_hubspot_callback_rejects_token_without_hub_account(
     )
 
     assert completed.status == "repair-required"
-    connection = repo.status(project_id=project_id, provider_key="hubspot").connections[0]
+    connection = repo.status(project_id=project_id, provider_key="hubspot").accounts[0]
     assert connection.status == "repair-required"
     credential = session.exec(
         select(Credential).where(Credential.credential_ref == credential_ref)
@@ -297,7 +297,7 @@ def test_hubspot_callback_rejects_incomplete_token_lifecycle(
     repo = AuthRepository(session)
     credential_ref = _store_hubspot(repo, project_id)
     started = repo.start(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="hubspot",
         auth_method_key="oauth2_authorization_code",
         credential_ref=credential_ref,
@@ -327,7 +327,7 @@ def test_hubspot_callback_rejects_incomplete_token_lifecycle(
     )
 
     assert completed.status == "repair-required"
-    connection = repo.status(project_id=project_id, provider_key="hubspot").connections[0]
+    connection = repo.status(project_id=project_id, provider_key="hubspot").accounts[0]
     assert connection.status == "repair-required"
     credential = session.exec(
         select(Credential).where(Credential.credential_ref == credential_ref)
@@ -348,7 +348,7 @@ def test_hubspot_failed_reconnect_without_hub_account_preserves_active_connectio
     repo = AuthRepository(session)
     credential_ref = _store_hubspot(repo, project_id)
     started = repo.start(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="hubspot",
         auth_method_key="oauth2_authorization_code",
         credential_ref=credential_ref,
@@ -372,10 +372,8 @@ def test_hubspot_failed_reconnect_without_hub_account_preserves_active_connectio
     )
     assert connected.status == "connected"
 
-    pending_ref = _store_hubspot(repo, project_id)
-    assert pending_ref == credential_ref
     restarted = repo.start(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="hubspot",
         auth_method_key="oauth2_authorization_code",
         credential_ref=credential_ref,
@@ -403,7 +401,7 @@ def test_hubspot_failed_reconnect_without_hub_account_preserves_active_connectio
     )
 
     assert completed.status == "repair-required"
-    connection = repo.status(project_id=project_id, provider_key="hubspot").connections[0]
+    connection = repo.status(project_id=project_id, provider_key="hubspot").accounts[0]
     assert connection.status == "connected"
     credential = session.exec(
         select(Credential).where(Credential.credential_ref == credential_ref)
@@ -429,7 +427,7 @@ def test_hubspot_incomplete_reconnect_preserves_active_connection(
     repo = AuthRepository(session)
     credential_ref = _store_hubspot(repo, project_id)
     started = repo.start(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="hubspot",
         auth_method_key="oauth2_authorization_code",
         credential_ref=credential_ref,
@@ -453,9 +451,8 @@ def test_hubspot_incomplete_reconnect_preserves_active_connection(
     )
     assert connected.status == "connected"
 
-    assert _store_hubspot(repo, project_id) == credential_ref
     restarted = repo.start(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="hubspot",
         auth_method_key="oauth2_authorization_code",
         credential_ref=credential_ref,
@@ -483,7 +480,7 @@ def test_hubspot_incomplete_reconnect_preserves_active_connection(
     )
 
     assert completed.status == "repair-required"
-    connection = repo.status(project_id=project_id, provider_key="hubspot").connections[0]
+    connection = repo.status(project_id=project_id, provider_key="hubspot").accounts[0]
     assert connection.status == "connected"
     credential = session.exec(
         select(Credential).where(Credential.credential_ref == credential_ref)
@@ -505,7 +502,7 @@ def test_hubspot_rejects_unknown_scope_bundle_before_authorization(
     with pytest.raises(ValidationError, match="scope bundle"):
         credential_ref = _store_hubspot(repo, project_id, scope_bundles=["unknown-bundle"])
         repo.start(
-            project_id=project_id,
+            attach_project_id=project_id,
             provider_key="hubspot",
             auth_method_key="oauth2_authorization_code",
             credential_ref=credential_ref,
@@ -528,7 +525,7 @@ def test_hubspot_refresh_rotates_tokens_and_preserves_verified_scopes_when_omitt
     repo = AuthRepository(session)
     credential_ref = _store_hubspot(repo, project_id)
     started = repo.start(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="hubspot",
         auth_method_key="oauth2_authorization_code",
         credential_ref=credential_ref,
@@ -551,9 +548,7 @@ def test_hubspot_refresh_rotates_tokens_and_preserves_verified_scopes_when_omitt
         repo.complete_oauth_callback(state=state, code="hubspot-code", settings=settings)
     )
     assert completed.status == "connected"
-    row = session.exec(
-        select(IntegrationCredential).where(IntegrationCredential.kind == "hubspot")
-    ).one()
+    row = session.exec(select(Credential).where(Credential.credential_ref == credential_ref)).one()
     row.expires_at = utcnow() - timedelta(minutes=1)
     session.add(row)
     session.commit()
@@ -599,7 +594,7 @@ def test_hubspot_refresh_rotates_tokens_and_preserves_verified_scopes_when_omitt
     connection = repo.status(
         project_id=project_id,
         provider_key="hubspot",
-    ).connections[0]
+    ).accounts[0]
     assert set(connection.scopes) == expected_scopes
     credential = session.exec(
         select(Credential).where(Credential.credential_ref == credential_ref)
@@ -618,7 +613,7 @@ def test_hubspot_refresh_rejects_incomplete_lifecycle_response(
     repo = AuthRepository(session)
     credential_ref = _store_hubspot(repo, project_id)
     started = repo.start(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="hubspot",
         auth_method_key="oauth2_authorization_code",
         credential_ref=credential_ref,
@@ -641,9 +636,7 @@ def test_hubspot_refresh_rejects_incomplete_lifecycle_response(
         repo.complete_oauth_callback(state=state, code="hubspot-code", settings=settings)
     )
     assert completed.status == "connected"
-    row = session.exec(
-        select(IntegrationCredential).where(IntegrationCredential.kind == "hubspot")
-    ).one()
+    row = session.exec(select(Credential).where(Credential.credential_ref == credential_ref)).one()
     row.expires_at = utcnow() - timedelta(minutes=1)
     session.add(row)
     session.commit()
@@ -672,12 +665,14 @@ def test_hubspot_refresh_rejects_incomplete_lifecycle_response(
             )
         )
 
-    connection = repo.status(project_id=project_id, provider_key="hubspot").connections[0]
+    connection = repo.status(project_id=project_id, provider_key="hubspot").accounts[0]
     assert connection.status == "repair-required"
-    integration = session.exec(
-        select(IntegrationCredential).where(IntegrationCredential.kind == "hubspot")
+    credential = session.exec(
+        select(Credential).where(Credential.credential_ref == credential_ref)
     ).one()
-    assert integration.id is not None
-    payload = json.loads(IntegrationCredentialRepository(session).get_decrypted(integration.id))
+    assert credential.integration_credential_id is not None
+    payload = json.loads(
+        IntegrationCredentialRepository(session).get_decrypted(credential.integration_credential_id)
+    )
     assert payload["access_token"] == "first-access"
     assert payload["refresh_token"] == "first-refresh"

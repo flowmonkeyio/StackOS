@@ -1,7 +1,7 @@
 import {
   slackFacet,
   slackFacetFromConnection,
-  slackProfileAuthKey,
+  slackProfileCredentialRef,
   telegramFacet,
   telegramProfileIngressMode,
 } from './formatters'
@@ -15,7 +15,7 @@ export interface TelegramProfilePayloadInput {
   projectId: number
   existing: CommunicationProfile | null
   key: string
-  authProfileKey: string
+  credentialRef: string
   botUsername: string
   identityDisplayName: string
   identityPurpose: string
@@ -27,6 +27,7 @@ export interface TelegramProfilePayloadInput {
   allowedUserRefs: string[]
   commands: TelegramCommandSpec[]
   mentionPatterns: string[]
+  ingressEnabled: boolean
   storeNonTriggerMessages: boolean
   originRequired: boolean
   replyToSourceMessage: boolean
@@ -38,7 +39,7 @@ export interface SlackProfilePayloadInput {
   existing: CommunicationProfile | null
   selectedConnection: ConnectionRow | null
   key: string
-  authProfileKey: string
+  credentialRef: string
   displayName: string
   identityPurpose: string
   identityVoice: string
@@ -48,6 +49,7 @@ export interface SlackProfilePayloadInput {
   allowedUserRefs: string[]
   allowedSurfaceRefs: string[]
   mentionPatterns: string[]
+  ingressEnabled: boolean
 }
 
 export function buildTelegramProfilePayload(input: TelegramProfilePayloadInput): Record<string, unknown> {
@@ -68,8 +70,9 @@ export function buildTelegramProfilePayload(input: TelegramProfilePayloadInput):
       ...existingFacets,
       'telegram-bot': {
         ...existingTelegramFacet,
-        auth_profile_key: input.authProfileKey,
+        credential_ref: input.credentialRef,
         bot_username: input.botUsername,
+        ingress_enabled: input.ingressEnabled,
         ingress_mode:
           existingIngressMode && existingIngressMode !== 'not configured'
             ? existingIngressMode
@@ -122,15 +125,15 @@ export function buildTelegramProfilePayload(input: TelegramProfilePayloadInput):
 
 export function slackProfileNeedsTestedConnection(
   existing: CommunicationProfile | null,
-  authProfileKey: string,
+  credentialRef: string,
 ): boolean {
-  return !existing || slackProfileAuthKey(existing) !== authProfileKey
+  return !existing || slackProfileCredentialRef(existing) !== credentialRef
 }
 
 export function buildSlackProfilePayload(input: SlackProfilePayloadInput): Record<string, unknown> {
   const useSelectedConnection = slackProfileNeedsTestedConnection(
     input.existing,
-    input.authProfileKey,
+    input.credentialRef,
   )
   const baseFacet = useSelectedConnection
     ? slackFacetFromConnection(input.selectedConnection)
@@ -172,7 +175,11 @@ export function buildSlackProfilePayload(input: SlackProfilePayloadInput): Recor
     },
     provider_facets: {
       ...(input.existing?.provider_facets ?? {}),
-      'slack-bot': { ...baseFacet, auth_profile_key: input.authProfileKey },
+      'slack-bot': {
+        ...baseFacet,
+        credential_ref: input.credentialRef,
+        ingress_enabled: input.ingressEnabled,
+      },
     },
     agent_guidance: {
       ...(input.existing?.agent_guidance ?? {}),

@@ -14,7 +14,6 @@ from stackos.actions import ActionRepository
 from stackos.auth_providers import AuthRepository
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.base import ConflictError
-from stackos.repositories.projects import IntegrationCredentialRepository
 from stackos.repositories.resources import ResourceRepository
 
 _TOKEN = "xoxb-1234567890-safe-test-token"
@@ -27,23 +26,19 @@ def _slack_credential_ref(
     project_id: int,
     *,
     profile_key: str = "support-auth",
-    config_json: dict | None = None,
 ) -> str:
     ActionRepository(session).describe(action_ref="communications.slack-bot.identity.get")
-    IntegrationCredentialRepository(session).set(
-        project_id=project_id,
-        kind="slack-bot",
-        profile_key=profile_key,
-        secret_payload=json.dumps(
-            {
-                "bot_token": _TOKEN,
-                "signing_secret": _SIGNING_SECRET,
-            }
-        ).encode("utf-8"),
-        config_json=config_json or {"team_id": "T123"},
+    created = AuthRepository(session).store_credential(
+        provider_key="slack-bot",
+        display_name=f"Slack - {profile_key}",
+        auth_method_key="bot-token",
+        fields={
+            "bot_token": _TOKEN,
+            "signing_secret": _SIGNING_SECRET,
+        },
+        attach_project_id=project_id,
     )
-    status = AuthRepository(session).status(project_id=project_id, provider_key="slack-bot")
-    return status.connections[0].credential_ref
+    return created.data.credential_ref
 
 
 def _slack_communication_profile(
@@ -51,8 +46,19 @@ def _slack_communication_profile(
     project_id: int,
     *,
     profile_key: str = "support-agent",
-    auth_profile_key: str = "support-auth",
+    credential_ref: str | None = None,
 ) -> None:
+    if credential_ref is None:
+        accounts = (
+            AuthRepository(session)
+            .status(
+                project_id=project_id,
+                provider_key="slack-bot",
+            )
+            .accounts
+        )
+        assert accounts
+        credential_ref = accounts[0].credential_ref
     ResourceRepository(session).upsert_record(
         project_id=project_id,
         plugin_slug="communications",
@@ -64,7 +70,7 @@ def _slack_communication_profile(
             "enabled": True,
             "provider_facets": {
                 "slack-bot": {
-                    "auth_profile_key": auth_profile_key,
+                    "credential_ref": credential_ref,
                     "bot_user_id": "U_BOT",
                 }
             },
@@ -366,7 +372,7 @@ def test_slack_actions_execute_store_resources_and_redact_secrets(
     assert len(outbound) == 1
     assert outbound[0].external_id == "slack-message:support-agent:C123:1770000000.000100"
     assert outbound[0].data_json["profile_key"] == "support-agent"
-    assert outbound[0].data_json["auth_profile_key"] == "support-auth"
+    assert outbound[0].data_json["credential_ref"] == credential_ref
     assert outbound[0].data_json["transport_status"] == "deleted"
     assert outbound[0].data_json["attention_status"] == "deleted"
 
@@ -469,7 +475,7 @@ def test_slack_send_rejects_unbound_communication_profile(
         session,
         project_id,
         profile_key="wrong-agent",
-        auth_profile_key="other-auth",
+        credential_ref="cred_other_account",
     )
 
     with pytest.raises(ConflictError, match="action connector failed") as exc:
@@ -486,7 +492,7 @@ def test_slack_send_rejects_unbound_communication_profile(
             )
         )
 
-    assert "auth_profile_key does not match credential profile" in exc.value.data["error"]
+    assert "does not match the selected Account" in exc.value.data["error"]
     assert httpx_mock.get_requests() == []
 
 

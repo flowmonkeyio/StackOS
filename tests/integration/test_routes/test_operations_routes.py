@@ -109,12 +109,12 @@ def _store_mock_credential(
     api: TestClient, project_id: int, secret: str = "mock-secret-token"
 ) -> str:
     credential = api.post(
-        f"/api/v1/projects/{project_id}/auth/mock-provider/credentials",
+        "/api/v1/auth/accounts/mock-provider",
         json={
             "auth_method_key": "api_key",
-            "profile_key": "primary",
-            "label": "Mock Primary",
+            "display_name": "Mock Primary",
             "fields": {"api_key": secret},
+            "attach_project_id": project_id,
         },
     )
     assert credential.status_code == 201, credential.text
@@ -123,11 +123,10 @@ def _store_mock_credential(
 
 def _store_smtp_credential(api: TestClient, project_id: int) -> str:
     credential = api.post(
-        f"/api/v1/projects/{project_id}/auth/smtp/credentials",
+        "/api/v1/auth/accounts/smtp",
         json={
             "auth_method_key": "smtp-password",
-            "profile_key": "primary",
-            "label": "Primary SMTP",
+            "display_name": "Primary SMTP",
             "fields": {
                 "password": "smtp-secret",
                 "host": "smtp.example.test",
@@ -136,6 +135,7 @@ def _store_smtp_credential(api: TestClient, project_id: int) -> str:
                 "username": "mailer@example.test",
                 "from_email": "mailer@example.test",
             },
+            "attach_project_id": project_id,
         },
     )
     assert credential.status_code == 201, credential.text
@@ -144,16 +144,33 @@ def _store_smtp_credential(api: TestClient, project_id: int) -> str:
 
 def _store_telegram_credential(api: TestClient, project_id: int) -> str:
     credential = api.post(
-        f"/api/v1/projects/{project_id}/auth/telegram-bot/credentials",
+        "/api/v1/auth/accounts/telegram-bot",
         json={
             "auth_method_key": "bot-token",
-            "profile_key": "support",
-            "label": "Support Bot",
+            "display_name": "Support Bot",
             "fields": {
                 "bot_token": "123456:ABC",
                 "webhook_secret_token": "telegram-secret",
                 "api_base_url": "http://127.0.0.1:8081",
             },
+            "attach_project_id": project_id,
+        },
+    )
+    assert credential.status_code == 201, credential.text
+    return str(credential.json()["data"]["credential_ref"])
+
+
+def _store_slack_credential(api: TestClient, project_id: int) -> str:
+    credential = api.post(
+        "/api/v1/auth/accounts/slack-bot",
+        json={
+            "auth_method_key": "bot-token",
+            "display_name": "Support Slack",
+            "fields": {
+                "bot_token": "xoxb-test-token",
+                "signing_secret": "slack-signing-secret",
+            },
+            "attach_project_id": project_id,
         },
     )
     assert credential.status_code == 201, credential.text
@@ -431,7 +448,7 @@ def test_operation_rest_tool_profile_resolve_returns_safe_target(
             "arguments": {
                 "project_id": project_id,
                 "provider_key": "smtp",
-                "auth_profile_key": "primary",
+                "credential_ref": credential_ref,
                 "response_mode": "raw",
             }
         },
@@ -444,7 +461,7 @@ def test_operation_rest_tool_profile_resolve_returns_safe_target(
     assert body["provider"]["provider_key"] == "smtp"
     assert body["provider"]["setup_required"] is False
     assert body["credential"]["credential_ref"] == credential_ref
-    assert body["credential"]["profile_key"] == "primary"
+    assert body["credential"]["display_name"] == "Primary SMTP"
     assert body["tool_profile"] is None
     assert body["missing"] == []
     assert "smtp-secret" not in rendered
@@ -655,7 +672,7 @@ def test_operation_rest_mock_provider_vertical_slice(
             )
         ).all()
     operations = {row.operation for row in usage}
-    assert {"auth.credential.set", "action.utils.mock.echo"} <= operations
+    assert {"account.create", "action.utils.mock.echo"} <= operations
     assert "mock-secret-token" not in json.dumps(
         [row.metadata_json for row in usage],
         default=str,
@@ -1270,7 +1287,7 @@ def test_operation_rest_telegram_profile_setup_to_ingress_slice(
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_telegram_credential(api, project_id)
+    credential_ref = _store_telegram_credential(api, project_id)
 
     created = api.post(
         "/api/v1/operations/communicationProfile.upsert/call",
@@ -1323,7 +1340,7 @@ def test_operation_rest_telegram_profile_setup_to_ingress_slice(
                 },
                 "provider_facets": {
                     "telegram-bot": {
-                        "auth_profile_key": "support",
+                        "credential_ref": credential_ref,
                         "bot_username": "support_bot",
                         "ingress_mode": "webhook",
                         "allowed_updates": ["message", "callback_query"],
@@ -1341,7 +1358,7 @@ def test_operation_rest_telegram_profile_setup_to_ingress_slice(
     body = created.json()["data"]
     assert body["key"] == "support-bot"
     telegram_facet = body["provider_facets"]["telegram-bot"]
-    assert telegram_facet["auth_profile_key"] == "support"
+    assert telegram_facet["credential_ref"] == credential_ref
     assert telegram_facet["bot_username"] == "support_bot"
     assert body["identity"]["display_name"] == "Support Bot"
     assert body["agent_guidance"]["boundaries"].startswith("Do not change")
@@ -1424,7 +1441,7 @@ def test_operation_rest_communication_setup_rejects_secret_like_fields(
                 "identity": {"display_name": "Support"},
                 "provider_facets": {
                     "telegram-bot": {
-                        "auth_profile_key": "support",
+                        "credential_ref": "cred_support",
                         "webhook_secret_token": "raw-secret",
                     }
                 },
@@ -1467,7 +1484,8 @@ def test_operation_rest_ingress_endpoint_syncs_provider_routes(
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_telegram_credential(api, project_id)
+    credential_ref = _store_telegram_credential(api, project_id)
+    slack_credential_ref = _store_slack_credential(api, project_id)
 
     profile = api.post(
         "/api/v1/operations/communicationProfile.upsert/call",
@@ -1477,7 +1495,10 @@ def test_operation_rest_ingress_endpoint_syncs_provider_routes(
                 "key": "support",
                 "identity": {"display_name": "Support Agent"},
                 "provider_facets": {
-                    "slack-bot": {"auth_profile_key": "default", "bot_user_id": "U123"}
+                    "slack-bot": {
+                        "credential_ref": slack_credential_ref,
+                        "bot_user_id": "U123",
+                    }
                 },
             }
         },
@@ -1491,7 +1512,7 @@ def test_operation_rest_ingress_endpoint_syncs_provider_routes(
                 "project_id": project_id,
                 "key": "support-bot",
                 "identity": {"display_name": "Support Telegram Bot"},
-                "provider_facets": {"telegram-bot": {"auth_profile_key": "support"}},
+                "provider_facets": {"telegram-bot": {"credential_ref": credential_ref}},
                 "access_policy": {
                     "dm_mode": "all",
                     "group_mode": "all",
@@ -1573,7 +1594,7 @@ def test_operation_rest_ingress_sync_redacts_provider_failure(
     project_id: int,
     monkeypatch,
 ) -> None:  # type: ignore[no-untyped-def]
-    _store_telegram_credential(api, project_id)
+    credential_ref = _store_telegram_credential(api, project_id)
 
     bot = api.post(
         "/api/v1/operations/communicationProfile.upsert/call",
@@ -1582,7 +1603,7 @@ def test_operation_rest_ingress_sync_redacts_provider_failure(
                 "project_id": project_id,
                 "key": "support-bot",
                 "identity": {"display_name": "Support Telegram Bot"},
-                "provider_facets": {"telegram-bot": {"auth_profile_key": "support"}},
+                "provider_facets": {"telegram-bot": {"credential_ref": credential_ref}},
                 "access_policy": {
                     "dm_mode": "all",
                     "group_mode": "all",

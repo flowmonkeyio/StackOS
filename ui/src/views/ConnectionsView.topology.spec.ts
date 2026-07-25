@@ -32,22 +32,26 @@ describe('ConnectionsView ingress and topology', () => {
       const catalogResponse = catalogJson(url)
       if (catalogResponse) return catalogResponse
 
-      if (url === '/api/v1/auth/providers') {
-        return json([authProvider('slack-bot', 'Slack Bot', 'bot-token', slackBotMethod())])
+      if (url === '/api/v1/auth/accounts') {
+        return json({
+          project_id: null,
+          provider_key: null,
+          providers: [authProvider('slack-bot', 'Slack Bot', 'bot-token', slackBotMethod())],
+          accounts: [],
+        })
       }
-      if (url === '/api/v1/projects/1/auth/status') {
+      if (url === '/api/v1/projects/1/connections/accounts') {
         return json({
           project_id: 1,
           provider_key: null,
           providers: [],
-          connections: [
+          accounts: [
             authConnection({
               revokedAt: null,
               providerKey: 'slack-bot',
               credentialRef: 'cred_slack',
               authType: 'bot-token',
               authMethodKey: 'bot-token',
-              profileKey: 'default',
               label: 'Demo Workspace',
               account: {
                 provider_account_id: 'T123',
@@ -209,11 +213,18 @@ describe('ConnectionsView ingress and topology', () => {
       const catalogResponse = catalogJson(url)
       if (catalogResponse) return catalogResponse
 
-      if (url === '/api/v1/auth/providers') {
-        return json([authProvider('telegram-bot', 'Telegram Bot', 'bot-token', telegramBotMethod())])
+      if (url === '/api/v1/auth/accounts') {
+        return json({
+          project_id: null,
+          provider_key: null,
+          providers: [
+            authProvider('telegram-bot', 'Telegram Bot', 'bot-token', telegramBotMethod()),
+          ],
+          accounts: [],
+        })
       }
-      if (url === '/api/v1/projects/1/auth/status') {
-        return json({ project_id: 1, provider_key: null, providers: [], connections: [] })
+      if (url === '/api/v1/projects/1/connections/accounts') {
+        return json({ project_id: 1, provider_key: null, providers: [], accounts: [] })
       }
       if (url === '/api/v1/operations/ingressEndpoint.status/call') {
         return json({ configured: false, ready: false, endpoint: null, routes: [], notes: [] })
@@ -262,11 +273,18 @@ describe('ConnectionsView ingress and topology', () => {
       const catalogResponse = catalogJson(url)
       if (catalogResponse) return catalogResponse
 
-      if (url === '/api/v1/auth/providers') {
-        return json([authProvider('telegram-bot', 'Telegram Bot', 'bot-token', telegramBotMethod())])
+      if (url === '/api/v1/auth/accounts') {
+        return json({
+          project_id: null,
+          provider_key: null,
+          providers: [
+            authProvider('telegram-bot', 'Telegram Bot', 'bot-token', telegramBotMethod()),
+          ],
+          accounts: [],
+        })
       }
-      if (url === '/api/v1/projects/1/auth/status') {
-        return json({ project_id: 1, provider_key: null, providers: [], connections: [] })
+      if (url === '/api/v1/projects/1/connections/accounts') {
+        return json({ project_id: 1, provider_key: null, providers: [], accounts: [] })
       }
       if (url === '/api/v1/operations/ingressEndpoint.status/call') {
         return json({ configured: false, ready: false, endpoint: null, routes: [], notes: [] })
@@ -318,11 +336,18 @@ describe('ConnectionsView ingress and topology', () => {
       const catalogResponse = catalogJson(url)
       if (catalogResponse) return catalogResponse
 
-      if (url === '/api/v1/auth/providers') {
-        return json([authProvider('telegram-bot', 'Telegram Bot', 'bot-token', telegramBotMethod())])
+      if (url === '/api/v1/auth/accounts') {
+        return json({
+          project_id: null,
+          provider_key: null,
+          providers: [
+            authProvider('telegram-bot', 'Telegram Bot', 'bot-token', telegramBotMethod()),
+          ],
+          accounts: [],
+        })
       }
-      if (url === '/api/v1/projects/1/auth/status') {
-        return json({ project_id: 1, provider_key: null, providers: [], connections: [] })
+      if (url === '/api/v1/projects/1/connections/accounts') {
+        return json({ project_id: 1, provider_key: null, providers: [], accounts: [] })
       }
       if (url === '/api/v1/operations/communicationProfile.list/call') {
         return json({ items: [], next_cursor: null, total_estimate: 0 })
@@ -434,11 +459,16 @@ describe('ConnectionsView ingress and topology', () => {
       const catalogResponse = catalogJson(url)
       if (catalogResponse) return catalogResponse
 
-      if (url === '/api/v1/auth/providers') {
-        return json([])
+      if (url === '/api/v1/auth/accounts') {
+        return json({
+          project_id: null,
+          provider_key: null,
+          providers: [],
+          accounts: [],
+        })
       }
-      if (url === '/api/v1/projects/1/auth/status') {
-        return json({ project_id: 1, provider_key: null, providers: [], connections: [] })
+      if (url === '/api/v1/projects/1/connections/accounts') {
+        return json({ project_id: 1, provider_key: null, providers: [], accounts: [] })
       }
       if (
         [

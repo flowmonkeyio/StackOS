@@ -12,7 +12,6 @@ from sqlmodel import Session
 
 from stackos.actions import ActionRepository
 from stackos.auth_providers import AuthRepository
-from stackos.repositories.projects import IntegrationCredentialRepository
 from stackos.repositories.resources import ResourceRepository
 
 
@@ -102,22 +101,25 @@ def _credential_ref(
     tls_mode: str = "ssl",
 ) -> str:
     ActionRepository(session).describe(action_ref="communications.imap.mailbox.list")
-    IntegrationCredentialRepository(session).set(
-        project_id=project_id,
-        kind="imap",
-        secret_payload=json.dumps({"password": "imap-secret"}).encode("utf-8"),
-        config_json={
-            "host": "imap.example.test",
-            "port": 993 if tls_mode == "ssl" else 143,
-            "tls_mode": tls_mode,
-            "username": "support@example.test",
-            "default_mailbox": "INBOX",
-            "mailbox_refs": {"support": "Support"},
-            "search_limit": 50,
-        },
+    return (
+        AuthRepository(session)
+        .store_credential(
+            provider_key="imap",
+            display_name="IMAP - Default",
+            fields={
+                "password": "imap-secret",
+                "host": "imap.example.test",
+                "port": 993 if tls_mode == "ssl" else 143,
+                "tls_mode": tls_mode,
+                "username": "support@example.test",
+                "default_mailbox": "INBOX",
+                "mailbox_refs": {"support": "Support"},
+                "search_limit": 50,
+            },
+            attach_project_id=project_id,
+        )
+        .data.credential_ref
     )
-    status = AuthRepository(session).status(project_id=project_id, provider_key="imap")
-    return status.connections[0].credential_ref
 
 
 def test_imap_actions_are_registered(session: Session) -> None:

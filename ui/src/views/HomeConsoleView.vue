@@ -81,7 +81,9 @@ async function loadTimeline(id: number): Promise<void> {
 async function loadAll(): Promise<void> {
   const id = projectId.value
   if (!id || Number.isNaN(id)) return
-  const authStatus = apiFetch<SchemaAuthStatusOut>(`/api/v1/projects/${id}/auth/status`)
+  const authStatus = apiFetch<SchemaAuthStatusOut>(
+    `/api/v1/projects/${id}/connections/accounts`,
+  )
   // Home needs the immediate health and connection signals. The full action
   // inventory is intentionally owned by Setup; loading it here added a large,
   // blocking integration scan to every Home refresh.

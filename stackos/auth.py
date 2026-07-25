@@ -71,7 +71,6 @@ _TOKEN_BYTES = 32
 _REQUIRED_MODE = 0o600
 _UI_TOKEN_MESSAGE = b"stackos-ui-console-v1"
 _UI_SAFE_METHODS: frozenset[str] = frozenset({"GET", "HEAD", "OPTIONS"})
-_UI_WRITE_METHODS: frozenset[str] = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 
 class TokenFileError(RuntimeError):
@@ -210,19 +209,25 @@ def _allows_ui_auth_setup(path: str, method: str) -> bool:
     """Return True for the only local-admin writes the browser may perform.
 
     The browser never receives the daemon token and cannot access MCP. The
-    console token can manage only provider credential setup routes for a
-    concrete project. FastAPI route definitions remain the source of truth for
-    which methods and paths exist inside that namespace.
+    console token can manage global Account setup and explicit project
+    Connection attachments. This closed method/path matcher must change with
+    the registered auth operation surface; namespace-prefix authorization is
+    deliberately forbidden.
     """
     method = method.upper()
     segments = path.strip("/").split("/")
+    if segments[:4] == ["api", "v1", "auth", "accounts"]:
+        if len(segments) == 5:
+            return method in {"POST", "PATCH"}
+        if len(segments) == 6 and segments[5] in {"start", "test", "revoke"}:
+            return method == "POST"
+        return False
     return (
-        method in _UI_WRITE_METHODS
-        and len(segments) >= 6
+        len(segments) == 7
         and segments[:3] == ["api", "v1", "projects"]
         and segments[3].isdigit()
-        and segments[4] == "auth"
-        and all(segments[5:])
+        and segments[4:6] == ["connections", "accounts"]
+        and method in {"POST", "DELETE"}
     )
 
 

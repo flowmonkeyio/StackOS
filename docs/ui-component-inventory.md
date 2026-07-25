@@ -112,15 +112,18 @@ Connections is the reference implementation:
 
 - `ConnectionsView.vue` owns project routing, section composition, and
   cross-provider bot dispatch.
-- `useConnectionCredentials` owns provider visibility, the schema-driven
-  credential form lifecycle, inline validation, verification, and revoke state.
+- `useAccountCredentials` and `AddAccountPanel` own the global Account
+  lifecycle: schema-driven creation and editing, inline validation,
+  verification, and revoke state. The same panel is composed by Accounts and
+  Connections.
+- `useConnectionCredentials` and `AttachAccountPanel` own only project
+  attachment selection and attach/detach state.
 - `useCommunicationTopology` owns profile/target/surface/route loading.
 - `useIngressEndpointEditor`, `useTelegramProfileEditor`, and
   `useSlackProfileEditor` each own one mutation lifecycle.
-- `ConnectionServiceSelect`, `ConnectionMetadataFields`,
-  `ConnectionCredentialFields`, and `ConnectionCredentialField` own form
-  regions and schema rendering; `AddConnectionPanel` composes them and owns
-  provider/setup feedback plus its action footer.
+- `ConnectionServiceSelect`, `AccountNameField`,
+  `ConnectionCredentialFields`, and `ConnectionCredentialField` own Account
+  form regions and schema rendering.
 
 Plugins follows the same composition rule: `PluginsView.vue` owns route loading
 and catalog controls; `plugins/viewModel.ts` owns cross-plugin/provider/action
@@ -144,12 +147,14 @@ test for cross-feature wiring, loading, and error-state truthfulness.
 
 | File | Current ownership decision | Next safe seam |
 |---|---|---|
-| `views/ConnectionsView.vue` | Route/query synchronization, section composition, loading order, and cross-provider dispatch remain. Credential, topology, ingress, Telegram, and Slack lifecycles are extracted. | Keep router access and cross-feature dispatch here; do not fold lifecycle state or provider editors back into the page. |
-| `views/connections/useConnectionCredentials.ts` | Provider visibility, credential form state, save-and-verify, test, and revoke form one lifecycle with field-level validation. | Keep routing out. Split only if credential discovery and mutation acquire separate reload/error policies. |
-| `views/connections/AddConnectionPanel.vue` | Cohesive panel/form shell; service selection, account metadata, and schema-driven credential rendering are subcomponents. | Keep provider/setup feedback and the action footer here; promote field rendering only if another feature adopts the same schema contract. |
+| `views/AccountsView.vue` | Global Account inventory, filtering, edit/test/revoke dispatch, and reusable creation-panel composition. | Keep project attachment concerns out; those belong to Connections. |
+| `views/accounts/useAccountCredentials.ts` | Global Account create/edit/test/revoke lifecycle with schema-driven fields and field-level validation. | Keep routing out and preserve the reusable panel contract. |
+| `views/accounts/AddAccountPanel.vue` | Reusable Account creation shell used by Accounts and project Connections; service selection, Account naming, auth method, and schema-driven credential fields stay cohesive. | Promote field rendering only if another feature adopts the same auth schema contract. |
+| `views/ConnectionsView.vue` | Route/query synchronization, Account attachment, section composition, and project-bound communication/ingress dispatch remain. | Keep Account secret lifecycle in the reusable Accounts panel; do not fold it back into the project page. |
+| `views/connections/useConnectionCredentials.ts` | Lists attached Accounts, filters reusable unattached Accounts, and owns attach/detach confirmation state. | Keep global Account mutation and project communication topology out. |
 | `views/TaskTrackerView.vue` | Route/query synchronization, page-level snapshot loading, and cross-feature dispatch remain. `useTrackerExecutionContexts` owns context/artifact pagination; `useTrackerGraphSession` composes focused graph loading and selection with dedicated viewport and live-update lifecycles. Pure projections and filters remain in `task-tracker/viewModel.ts`. | Keep new graph interaction state inside the graph session. Extract command/filter orchestration only if it gains an independent async lifecycle; do not move route/query access into a feature composable. |
 | `views/connections/credentialPresentation.ts` | Provider/auth grouping, labels, connection status, and account presentation. | Keep provider catalog knowledge here; do not mix in communication topology facets. |
-| `views/connections/formatters.ts` | Communication profile, route, surface, Telegram, Slack, and ingress presentation, plus a compatibility re-export of credential presentation. | Rename/split another provider-specific facet only when it gains a distinct contract or test lifecycle. |
+| `views/connections/formatters.ts` | Communication profile, route, surface, Telegram, Slack, ingress, and shared Account presentation exports. | Split another provider-specific facet only when it gains a distinct contract or test lifecycle. |
 | `views/AgentRequestsView.vue` | One cohesive queue/master-detail flow. | Extract the request detail region only if it gains independent mutation/loading state. |
 
 Large generated catalogs, API types, and declarative plugin manifests are not

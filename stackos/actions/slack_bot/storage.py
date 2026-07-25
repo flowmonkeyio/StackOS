@@ -13,7 +13,7 @@ from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.resources import ResourceRepository
 
 from .constants import _RECOMMENDED_TEXT_CHARS
-from .profile import _communication_profile_key, _credential_profile_key
+from .profile import _communication_profile_key, _credential_ref
 from .refs import (
     _button_specs,
     _channel_display_name,
@@ -42,7 +42,7 @@ def _store_outbound_message(
     if not channel or not ts:
         return
     profile_key = _communication_profile_key(request)
-    auth_profile_key = _credential_profile_key(request)
+    credential_ref = _credential_ref(request)
     team_id = _team_id(request, provider_body)
     text = str(sent_payload.get("text") or _nested(provider_body, "message.text") or "")
     thread_ts = str(sent_payload.get("thread_ts") or ts)
@@ -51,7 +51,7 @@ def _store_outbound_message(
         resources,
         request.project_id,
         profile_key=profile_key,
-        auth_profile_key=auth_profile_key,
+        credential_ref=credential_ref,
         team_id=team_id,
         channel_obj={"id": channel, "name": channel},
         source="slack-bot-action",
@@ -66,7 +66,7 @@ def _store_outbound_message(
         data_json={
             "provider_key": "slack-bot",
             "profile_key": profile_key,
-            "auth_profile_key": auth_profile_key,
+            "credential_ref": credential_ref,
             "team_id": team_id,
             "direction": "outbound",
             "surface_ref": _surface_ref(channel),
@@ -102,7 +102,7 @@ def _store_outbound_buttons(
         else {}
     )
     profile_key = _communication_profile_key(request)
-    auth_profile_key = _credential_profile_key(request)
+    credential_ref = _credential_ref(request)
     source_scope = _source_button_scope(request, fallback_channel_ref=_surface_ref(channel))
     for button in _button_specs(blocks):
         action_id = str(button.get("action_id") or "")
@@ -124,7 +124,7 @@ def _store_outbound_buttons(
             data_json={
                 "provider_key": "slack-bot",
                 "profile_key": profile_key,
-                "auth_profile_key": auth_profile_key,
+                "credential_ref": credential_ref,
                 "interaction_type": "outbound_block_button",
                 "surface_ref": _surface_ref(channel),
                 "channel_ref": _surface_ref(channel),
@@ -157,7 +157,7 @@ def _store_reaction_add(
     if not channel or not timestamp or not reaction_name:
         return
     profile_key = _communication_profile_key(request)
-    auth_profile_key = _credential_profile_key(request)
+    credential_ref = _credential_ref(request)
     message_ref = _message_ref(channel, timestamp)
     digest = _reaction_digest(message_ref=message_ref, reaction_name=reaction_name)
     ResourceRepository(request.session).upsert_record(
@@ -169,7 +169,7 @@ def _store_reaction_add(
         data_json={
             "provider_key": "slack-bot",
             "profile_key": profile_key,
-            "auth_profile_key": auth_profile_key,
+            "credential_ref": credential_ref,
             "interaction_type": "reaction_added",
             "surface_ref": _surface_ref(channel),
             "channel_ref": _surface_ref(channel),
@@ -193,7 +193,7 @@ def _store_file_upload(
     if not channel:
         return
     profile_key = _communication_profile_key(request)
-    auth_profile_key = _credential_profile_key(request)
+    credential_ref = _credential_ref(request)
     team_id = _team_id(request, provider_body)
     thread_ts = str(sent_payload.get("thread_ts") or "") or _first_file_share_ts(
         provider_body,
@@ -207,7 +207,7 @@ def _store_file_upload(
         resources,
         request.project_id,
         profile_key=profile_key,
-        auth_profile_key=auth_profile_key,
+        credential_ref=credential_ref,
         team_id=team_id,
         channel_obj={"id": channel, "name": channel},
         source="slack-bot-action",
@@ -226,7 +226,7 @@ def _store_file_upload(
         data_json={
             "provider_key": "slack-bot",
             "profile_key": profile_key,
-            "auth_profile_key": auth_profile_key,
+            "credential_ref": credential_ref,
             "team_id": team_id,
             "direction": "outbound",
             "surface_ref": _surface_ref(channel),
@@ -399,7 +399,7 @@ def _store_conversation_from_body(request: ActionConnectorRequest, provider_body
         ResourceRepository(request.session),
         request.project_id,
         profile_key=_communication_profile_key(request),
-        auth_profile_key=_credential_profile_key(request),
+        credential_ref=_credential_ref(request),
         team_id=_team_id(request, provider_body),
         channel_obj=channel,
         source="slack-bot-action",
@@ -414,14 +414,14 @@ def _store_conversation_list(request: ActionConnectorRequest, provider_body: Any
         return
     resources = ResourceRepository(request.session)
     profile_key = _communication_profile_key(request)
-    auth_profile_key = _credential_profile_key(request)
+    credential_ref = _credential_ref(request)
     for channel in channels:
         if isinstance(channel, Mapping):
             _upsert_channel(
                 resources,
                 request.project_id,
                 profile_key=profile_key,
-                auth_profile_key=auth_profile_key,
+                credential_ref=credential_ref,
                 team_id=_team_id(request, provider_body),
                 channel_obj=channel,
                 source="slack-bot-action",
@@ -438,7 +438,7 @@ def _store_memberships_from_body(request: ActionConnectorRequest, provider_body:
     channel = _channel_id(request, channel_ref)
     resources = ResourceRepository(request.session)
     profile_key = _communication_profile_key(request)
-    auth_profile_key = _credential_profile_key(request)
+    credential_ref = _credential_ref(request)
     for member in members:
         if not isinstance(member, str) or not member:
             continue
@@ -451,7 +451,7 @@ def _store_memberships_from_body(request: ActionConnectorRequest, provider_body:
             data_json={
                 "provider_key": "slack-bot",
                 "profile_key": profile_key,
-                "auth_profile_key": auth_profile_key,
+                "credential_ref": credential_ref,
                 "surface_ref": _surface_ref(channel),
                 "member_ref": f"slack-user:{member}",
                 "membership_kind": "user",
@@ -469,7 +469,7 @@ def _upsert_channel(
     project_id: int,
     *,
     profile_key: str,
-    auth_profile_key: str,
+    credential_ref: str,
     team_id: str | None,
     channel_obj: Mapping[str, Any],
     source: str,
@@ -487,7 +487,7 @@ def _upsert_channel(
         data_json={
             "provider_key": "slack-bot",
             "profile_key": profile_key,
-            "auth_profile_key": auth_profile_key,
+            "credential_ref": credential_ref,
             "team_id": team_id,
             "surface_ref": _surface_ref(channel_id),
             "channel_ref": _surface_ref(channel_id),

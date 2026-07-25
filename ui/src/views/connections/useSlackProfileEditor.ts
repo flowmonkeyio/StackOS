@@ -3,7 +3,12 @@ import { computed, ref, type ComputedRef, type Ref } from 'vue'
 import { formatApiError } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
 
-import { connectionTitle, parseCsv, slackIdentified, slackProfileAuthKey } from './formatters'
+import {
+  connectionTitle,
+  parseCsv,
+  slackIdentified,
+  slackProfileCredentialRef,
+} from './formatters'
 import { buildSlackProfilePayload, slackProfileNeedsTestedConnection } from './profilePayloads'
 import type {
   CommunicationProfile,
@@ -33,13 +38,13 @@ export function useSlackProfileEditor(options: SlackProfileEditorOptions) {
   )
   const connectionOptions = computed(() =>
     connections.value.map((connection) => ({
-      value: connection.profile_key,
-      label: `${connectionTitle(connection)} (${connection.profile_key})`,
+      value: connection.credential_ref,
+      label: connectionTitle(connection),
     })),
   )
   const teamLabel = computed(() => {
     const connection = connections.value.find(
-      (item) => item.profile_key === form.value.auth_profile_key,
+      (item) => item.credential_ref === form.value.credential_ref,
     )
     const meta = connection?.account?.metadata_json as Record<string, unknown> | undefined
     const team = meta?.team ?? meta?.team_id
@@ -50,7 +55,7 @@ export function useSlackProfileEditor(options: SlackProfileEditorOptions) {
     form.value = {
       ...emptyForm(),
       key: 'slack-bot',
-      auth_profile_key: connections.value[0]?.profile_key ?? '',
+      credential_ref: connections.value[0]?.credential_ref ?? '',
       identity_display_name: 'Slack Bot',
       identity_voice: 'Clear, concise, and operational.',
     }
@@ -64,13 +69,14 @@ export function useSlackProfileEditor(options: SlackProfileEditorOptions) {
     const rawMentions = profile.trigger_policy['mention_patterns']
     form.value = {
       key: profile.key,
-      auth_profile_key: slackProfileAuthKey(profile),
+      credential_ref: slackProfileCredentialRef(profile),
       identity_display_name: String(profile.identity.display_name ?? profile.key),
       identity_purpose: String(profile.identity.purpose ?? ''),
       identity_voice: String(profile.identity.voice ?? ''),
       agent_default_instructions: String(profile.agent_guidance.default_instructions ?? ''),
       agent_boundaries: String(profile.agent_guidance.boundaries ?? ''),
       agent_escalation: String(profile.agent_guidance.escalation ?? ''),
+      ingress_enabled: profile.provider_facets['slack-bot']?.ingress_enabled !== false,
       allowed_chat_refs: (access.allowed_surface_refs ?? []).join(', '),
       allowed_user_refs: (access.allowed_user_refs ?? []).join(', '),
       mention_patterns: (Array.isArray(rawMentions) ? (rawMentions as string[]) : []).join(', '),
@@ -83,20 +89,20 @@ export function useSlackProfileEditor(options: SlackProfileEditorOptions) {
   async function save(): Promise<void> {
     const values = form.value
     const key = values.key.trim()
-    const authProfileKey = values.auth_profile_key.trim()
+    const credentialRef = values.credential_ref.trim()
     const displayName = values.identity_display_name.trim()
     const allowedUserRefs = parseCsv(values.allowed_user_refs)
     const allowedSurfaceRefs = parseCsv(values.allowed_chat_refs)
     if (!key) return fail('Bot key is required.')
     if (!displayName) return fail('Bot display name is required.')
-    if (!authProfileKey) return fail('Choose a Slack connection.')
+    if (!credentialRef) return fail('Choose a Slack connection.')
     if (allowedUserRefs.length === 0) {
       return fail('Allowlisted users are required before the bot can trigger agents.')
     }
     const existing = options.profiles.value.find((profile) => profile.key === key) ?? null
     const connection =
-      connections.value.find((item) => item.profile_key === authProfileKey) ?? null
-    if (slackProfileNeedsTestedConnection(existing, authProfileKey) && !slackIdentified(connection)) {
+      connections.value.find((item) => item.credential_ref === credentialRef) ?? null
+    if (slackProfileNeedsTestedConnection(existing, credentialRef) && !slackIdentified(connection)) {
       return fail(
         'Test the Slack connection first so StackOS can fetch the workspace identity from Slack.',
       )
@@ -110,7 +116,7 @@ export function useSlackProfileEditor(options: SlackProfileEditorOptions) {
           existing,
           selectedConnection: connection,
           key,
-          authProfileKey,
+          credentialRef,
           displayName,
           identityPurpose: values.identity_purpose.trim(),
           identityVoice: values.identity_voice.trim(),
@@ -120,6 +126,7 @@ export function useSlackProfileEditor(options: SlackProfileEditorOptions) {
           allowedUserRefs,
           allowedSurfaceRefs,
           mentionPatterns: parseCsv(values.mention_patterns),
+          ingressEnabled: values.ingress_enabled,
         }),
       )
       message.value = { tone: 'success', text: `Saved ${key}.` }
@@ -142,13 +149,14 @@ export function useSlackProfileEditor(options: SlackProfileEditorOptions) {
   function emptyForm(): SlackProfileForm {
     return {
       key: '',
-      auth_profile_key: '',
+      credential_ref: '',
       identity_display_name: '',
       identity_purpose: '',
       identity_voice: '',
       agent_default_instructions: '',
       agent_boundaries: '',
       agent_escalation: '',
+      ingress_enabled: true,
       allowed_chat_refs: '',
       allowed_user_refs: '',
       mention_patterns: '',

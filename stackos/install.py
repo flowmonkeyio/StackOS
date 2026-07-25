@@ -34,7 +34,6 @@ import platform
 import plistlib
 import shutil
 import subprocess
-import sys
 import tempfile
 import urllib.request
 import uuid
@@ -530,6 +529,12 @@ def copy_skills(
     """
     home_dir = home if home is not None else Path.home()
     target = _runtime_target(home_dir, runtime, "skills")
+    return copy_skills_to(target)
+
+
+def copy_skills_to(target: Path) -> tuple[Path, int]:
+    """Mirror the canonical StackOS skill set into one exact skills directory."""
+
     source = _resolve_source("skills")
     if isinstance(source, Path):
         _mirror_path(source, target, exclude_dirs=())
@@ -537,6 +542,18 @@ def copy_skills(
         _mirror_traversable(source, target, exclude_dirs=())
     count = sum(1 for _ in target.rglob("SKILL.md"))
     return target, count
+
+
+def copy_stackos_skill_to(skills_root: Path) -> Path:
+    """Mirror only the canonical StackOS skill without touching sibling skills."""
+
+    source_root = _resolve_source("skills")
+    target = skills_root / "stackos"
+    if isinstance(source_root, Path):
+        _mirror_path(source_root, target, exclude_dirs=())
+    else:
+        _mirror_traversable(source_root, target, exclude_dirs=())
+    return target
 
 
 def remove_skills(
@@ -552,11 +569,15 @@ def remove_skills(
 
 def _plugin_mcp_payload() -> dict[str, object]:
     """Return a plugin-local MCP config that does not depend on shell PATH."""
+
+    from stackos.host_mcp.bridge import resolve_bridge_command
+
+    command = resolve_bridge_command(runtime="codex")
     return {
         "mcpServers": {
             MCP_SERVER_NAME: {
-                "command": sys.executable,
-                "args": ["-m", "stackos", "mcp-bridge"],
+                "command": command[0],
+                "args": command[1:],
             }
         }
     }
@@ -764,7 +785,12 @@ def repair_mcp_hosts(*, home: Path | None = None) -> tuple[bool, list[str]]:
     from stackos.host_mcp import repair_all
 
     aggregate = repair_all(home=home if home is not None else Path.home())
-    return aggregate.ok, aggregate.summary_lines()
+    operation_ok = not any(
+        result.status in {"token_missing", "register_failed", "remove_failed"}
+        or result.connection_state == "repair_needed"
+        for result in aggregate.results
+    )
+    return operation_ok, aggregate.summary_lines()
 
 
 def remove_mcp_hosts(*, home: Path | None = None) -> tuple[bool, list[str]]:
@@ -786,6 +812,8 @@ __all__ = [
     "InstallMode",
     "copy_plugins",
     "copy_skills",
+    "copy_skills_to",
+    "copy_stackos_skill_to",
     "detect_mode",
     "ensure_chromium_runtime",
     "register_mcp_claude",

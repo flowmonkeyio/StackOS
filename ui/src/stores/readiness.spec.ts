@@ -23,10 +23,10 @@ describe('readiness supervision projection', () => {
       if (url === '/api/v1/health') {
         return { db_status: 'ok', scheduler_running: true, version: '1.2.3', daemon_uptime_s: 90 }
       }
-      if (url === '/api/v1/projects/7/auth/status') {
+      if (url === '/api/v1/projects/7/connections/accounts') {
         return {
           providers: [{ provider_key: 'slack' }],
-          connections: [{ status: 'connected', revoked_at: null }],
+          accounts: [{ status: 'connected', revoked_at: null }],
         }
       }
       throw new Error(`unexpected URL ${url}`)
@@ -50,7 +50,9 @@ describe('readiness supervision projection', () => {
   it('keeps a failed local service probe explicit and blocking', async () => {
     mockedApiFetch.mockImplementation(async (url) => {
       if (url === '/api/v1/health') throw new Error('offline')
-      if (url === '/api/v1/projects/7/auth/status') return { providers: [], connections: [] }
+      if (url === '/api/v1/projects/7/connections/accounts') {
+        return { providers: [], accounts: [] }
+      }
       throw new Error(`unexpected URL ${url}`)
     })
     mockedCallOperation.mockResolvedValue({ count: 1, hidden_action_count: 0 })
@@ -74,7 +76,7 @@ describe('readiness supervision projection', () => {
       project_id: 7,
       provider_key: null,
       providers: [],
-      connections: [],
+      accounts: [],
     })
 
     const store = useReadinessStore()

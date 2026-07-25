@@ -170,20 +170,20 @@ export const useAttentionStore = defineStore('attention', () => {
     authStatus?: Promise<SchemaAuthStatusOut>,
   ): Promise<AttentionItem[]> {
     const status = await (authStatus ??
-      apiFetch<SchemaAuthStatusOut>(`/api/v1/projects/${id}/auth/status`))
-    const attention = (status.connections ?? []).filter(
+      apiFetch<SchemaAuthStatusOut>(`/api/v1/projects/${id}/connections/accounts`))
+    const attention = (status.accounts ?? []).filter(
       (c) => c.revoked_at == null && c.status !== 'connected' && c.status !== 'used',
     )
     return attention.slice(0, 6).map((c) => ({
       id: `connection:${c.credential_ref}`,
       kind: 'connection' as const,
       tone: (c.status === 'expired' || c.status === 'failed' ? 'danger' : 'warning') as Tone,
-      title: `${c.label || c.provider_key} needs attention`,
+      title: `${c.display_name || c.provider_key} needs attention`,
       detail: `Connection ${c.status}.`,
       when: c.last_tested_at ?? null,
       to: `${base}/connections?section=services&provider_key=${encodeURIComponent(c.provider_key)}`,
       cta: 'Repair connection',
-      impact: `Agent actions that require ${c.label || c.provider_key} may fail or remain unavailable.`,
+      impact: `Agent actions that require ${c.display_name || c.provider_key} may fail or remain unavailable.`,
       ownership: 'Connection setup is a human local-admin action. Credentials stay inside the StackOS daemon.',
       after: 'Test the repaired connection. Connected agents will receive the same safe credential reference when it is healthy.',
     }))

@@ -77,7 +77,8 @@ describe('desktop screen composition contract', () => {
 
   it('opens Connections on services and groups messaging and diagnostics', () => {
     const text = source('views/ConnectionsView.vue')
-    const addPanel = source('views/connections/AddConnectionPanel.vue')
+    const addPanel = source('views/accounts/AddAccountPanel.vue')
+    const accounts = source('views/AccountsView.vue')
 
     expect(text).toContain("const activeSection = ref<ConnectionSection>('services')")
     expect(text).toContain("label: 'Messaging setup'")
@@ -85,6 +86,7 @@ describe('desktop screen composition contract', () => {
     expect(text).toContain('webhook needs manual update')
     expect(addPanel).toContain('Credentials stay in the local daemon')
     expect(addPanel).toContain('Save and verify')
+    expect(accounts).toContain('Set up provider Accounts once')
   })
 
   it('explains the request-to-work-to-outcome handoff', () => {

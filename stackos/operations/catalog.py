@@ -143,7 +143,7 @@ def operation_specs():
             input_model=ProviderListInput,
             output_model=list[ProviderOut],
             handler=_provider_list,
-            purpose="Use this to discover provider keys before auth/status checks.",
+            purpose="Use this to discover provider keys before Account or Connection checks.",
             examples=(OperationExample(title="List providers", arguments={"project_id": 1}),),
             mutating=False,
             grant_policy="direct-read",

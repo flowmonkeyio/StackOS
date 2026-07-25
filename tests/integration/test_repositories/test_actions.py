@@ -29,7 +29,6 @@ from stackos.db.models import (
     CredentialAccount,
     CredentialScope,
     CredentialUsageEvent,
-    IntegrationCredential,
     Plugin,
     PluginSource,
     Provider,
@@ -48,6 +47,7 @@ from stackos.repositories.projects import (
 )
 from stackos.repositories.resources import ResourceRepository
 from stackos.repositories.run_plans import RunPlanRepository
+from tests.integration.account_test_support import seed_test_account
 
 
 def _png_header(width: int, height: int) -> bytes:
@@ -144,6 +144,10 @@ def _api_key_auth_methods() -> dict:
                 "key": "api_key",
                 "label": "API key",
                 "auth_type": "api-key",
+                "permission_verification": {
+                    "evidence_source": "unavailable",
+                    "enforcement": "local_required",
+                },
                 "payload_format": "raw",
                 "payload_field": "api_key",
                 "fields": [
@@ -281,16 +285,17 @@ def _seed_http_action(session: Session) -> None:
 
 
 def _credential_ref(session: Session, project_id: int) -> str:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="fake-provider",
+        provider_key="fake-provider",
         secret_payload=b"daemon-only-secret",
         config_json={"label": "Fake"},
     )
     from stackos.auth_providers import AuthRepository
 
     status = AuthRepository(session).status(project_id=project_id, provider_key="fake-provider")
-    return status.connections[0].credential_ref
+    return status.accounts[0].credential_ref
 
 
 def _enable_workspace_provider_context_schema(session: Session) -> None:
@@ -315,7 +320,7 @@ def _provider_credential_ref(session: Session, project_id: int, provider_key: st
     from stackos.auth_providers import AuthRepository
 
     status = AuthRepository(session).status(project_id=project_id, provider_key=provider_key)
-    credential_ref = status.connections[0].credential_ref
+    credential_ref = status.accounts[0].credential_ref
     provider_scopes = {
         "google-ads": ["https://www.googleapis.com/auth/adwords"],
         "google-workspace": [
@@ -957,9 +962,10 @@ def test_openai_image_action_rejects_legacy_quality_for_gpt_profiles(
     session: Session,
     project_id: int,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="openai-images",
+        provider_key="openai-images",
         secret_payload=b"sk-openai",
     )
     credential_ref = _provider_credential_ref(session, project_id, "openai-images")
@@ -985,9 +991,10 @@ def test_openai_image_action_rejects_gpt_image_2_freeform_size_until_budget_mode
     session: Session,
     project_id: int,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="openai-images",
+        provider_key="openai-images",
         secret_payload=b"sk-openai",
     )
     credential_ref = _provider_credential_ref(session, project_id, "openai-images")
@@ -1013,9 +1020,10 @@ def test_openai_image_action_rejects_prompt_over_openai_limit(
     session: Session,
     project_id: int,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="openai-images",
+        provider_key="openai-images",
         secret_payload=b"sk-openai",
     )
     credential_ref = _provider_credential_ref(session, project_id, "openai-images")
@@ -1038,9 +1046,10 @@ def test_openai_image_edit_action_rejects_ref_cap_and_wrong_fidelity_model(
     session: Session,
     project_id: int,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="openai-images",
+        provider_key="openai-images",
         secret_payload=b"sk-openai",
     )
     credential_ref = _provider_credential_ref(session, project_id, "openai-images")
@@ -1085,9 +1094,10 @@ def test_xai_video_action_rejects_mode_mismatches_and_reference_duration_cap(
     session: Session,
     project_id: int,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="xai-imagine",
+        provider_key="xai-imagine",
         secret_payload=b"xai-key",
     )
     credential_ref = _provider_credential_ref(session, project_id, "xai-imagine")
@@ -1133,9 +1143,10 @@ def test_xai_actions_reject_single_image_edit_aspect_and_unsafe_poll_bounds(
     session: Session,
     project_id: int,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="xai-imagine",
+        provider_key="xai-imagine",
         secret_payload=b"xai-key",
     )
     credential_ref = _provider_credential_ref(session, project_id, "xai-imagine")
@@ -1183,9 +1194,10 @@ def test_xai_image_generate_action_executes_and_registers_artifact(
     tmp_path: Path,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="xai-imagine",
+        provider_key="xai-imagine",
         secret_payload=b"xai-key",
     )
     IntegrationBudgetRepository(session).set(
@@ -1235,9 +1247,10 @@ def test_xai_image_edit_action_executes_without_single_image_aspect_and_register
     source_dir.mkdir()
     source = source_dir / "source.png"
     source.write_bytes(b"source-png")
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="xai-imagine",
+        provider_key="xai-imagine",
         secret_payload=b"xai-key",
     )
     IntegrationBudgetRepository(session).set(
@@ -1289,9 +1302,10 @@ def test_xai_video_generate_action_executes_and_registers_artifact(
     tmp_path: Path,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="xai-imagine",
+        provider_key="xai-imagine",
         secret_payload=b"xai-key",
     )
     IntegrationBudgetRepository(session).set(
@@ -1354,9 +1368,10 @@ def test_reve_actions_reject_invalid_versions_and_ref_counts(
     session: Session,
     project_id: int,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="reve",
+        provider_key="reve",
         secret_payload=b"reve-key",
     )
     credential_ref = _provider_credential_ref(session, project_id, "reve")
@@ -1400,9 +1415,10 @@ def test_reve_image_generate_action_executes_and_registers_artifact(
     tmp_path: Path,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="reve",
+        provider_key="reve",
         secret_payload=b"reve-key",
     )
     IntegrationBudgetRepository(session).set(
@@ -1460,9 +1476,10 @@ def test_reve_image_edit_action_executes_and_registers_artifact(
     source_dir.mkdir()
     source = source_dir / "source.png"
     source.write_bytes(b"source-png")
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="reve",
+        provider_key="reve",
         secret_payload=b"reve-key",
     )
     IntegrationBudgetRepository(session).set(
@@ -1525,9 +1542,10 @@ def test_reve_image_remix_action_executes_and_registers_artifact(
     second = source_dir / "second.png"
     first.write_bytes(first_bytes)
     second.write_bytes(second_bytes)
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="reve",
+        provider_key="reve",
         secret_payload=b"reve-key",
     )
     IntegrationBudgetRepository(session).set(
@@ -1592,9 +1610,10 @@ def test_reve_remix_pixel_preflight_fails_before_budget_or_action_call(
     source_dir.mkdir()
     oversized = source_dir / "oversized.png"
     oversized.write_bytes(_png_header(8000, 4001))
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="reve",
+        provider_key="reve",
         secret_payload=b"reve-key",
     )
     IntegrationBudgetRepository(session).set(
@@ -1653,9 +1672,10 @@ def test_google_gemini_image_actions_reject_invalid_model_specific_controls(
         (source_dir / f"ref-{index}.png").write_bytes(b"ref")
     (source_dir / "unsupported.heic").write_bytes(b"heic")
     (source_dir / "unsupported.heif").write_bytes(b"heif")
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="google-gemini-image",
+        provider_key="google-gemini-image",
         secret_payload=b"gemini-key",
     )
     credential_ref = _provider_credential_ref(session, project_id, "google-gemini-image")
@@ -1737,9 +1757,10 @@ def test_google_gemini_image_generate_action_executes_and_registers_artifact(
     tmp_path: Path,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="google-gemini-image",
+        provider_key="google-gemini-image",
         secret_payload=b"gemini-key",
     )
     IntegrationBudgetRepository(session).set(
@@ -1818,9 +1839,10 @@ def test_google_gemini_image_generate_action_omits_image_size_when_unset(
     tmp_path: Path,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="google-gemini-image",
+        provider_key="google-gemini-image",
         secret_payload=b"gemini-key",
     )
     IntegrationBudgetRepository(session).set(
@@ -1877,9 +1899,10 @@ def test_google_gemini_image_edit_action_executes_and_registers_artifact(
     source_dir.mkdir()
     source = source_dir / "source.webp"
     source.write_bytes(b"source-webp")
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="google-gemini-image",
+        provider_key="google-gemini-image",
         secret_payload=b"gemini-key",
     )
     IntegrationBudgetRepository(session).set(
@@ -1957,9 +1980,10 @@ def test_google_gemini_inline_preflight_fails_before_budget_or_action_call(
     source_dir.mkdir()
     source = source_dir / "too-large.png"
     source.write_bytes(b"x" * 15_000_000)
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="google-gemini-image",
+        provider_key="google-gemini-image",
         secret_payload=b"gemini-key",
     )
     IntegrationBudgetRepository(session).set(
@@ -2016,9 +2040,10 @@ def test_ideogram_image_actions_reject_invalid_contract_controls(
     source_dir.mkdir()
     (source_dir / "source.heic").write_bytes(b"heic")
     (source_dir / "source.png").write_bytes(b"png")
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="ideogram",
+        provider_key="ideogram",
         secret_payload=b"ideo-key",
     )
     credential_ref = _provider_credential_ref(session, project_id, "ideogram")
@@ -2073,9 +2098,10 @@ def test_ideogram_image_generate_action_executes_and_registers_artifact(
 ) -> None:
     provider_url = "https://ideogram.ai/api/images/ephemeral/generated.png?sig=secret"
     provider_url_2 = "https://ideogram.ai/api/images/ephemeral/generated-2.png?sig=secret"
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="ideogram",
+        provider_key="ideogram",
         secret_payload=b"ideo-key",
     )
     IntegrationBudgetRepository(session).set(
@@ -2167,9 +2193,10 @@ def test_ideogram_image_remix_action_executes_and_registers_artifact(
     source_dir.mkdir()
     (source_dir / "source.webp").write_bytes(_webp_header())
     provider_url = "https://ideogram.ai/api/images/ephemeral/remix.webp?sig=secret"
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="ideogram",
+        provider_key="ideogram",
         secret_payload=b"ideo-key",
     )
     IntegrationBudgetRepository(session).set(
@@ -2243,9 +2270,10 @@ def test_ideogram_remix_preflight_fails_before_budget_or_action_call(
     source_dir.mkdir()
     source = source_dir / "too-large.png"
     source.write_bytes(b"x" * 10_000_001)
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="ideogram",
+        provider_key="ideogram",
         secret_payload=b"ideo-key",
     )
     IntegrationBudgetRepository(session).set(
@@ -2301,9 +2329,10 @@ def test_byteplus_seedream_image_actions_reject_invalid_contract_controls(
     source_dir = tmp_path / "uploads"
     source_dir.mkdir()
     (source_dir / "source.png").write_bytes(_png_header(32, 32))
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="byteplus-ark",
+        provider_key="byteplus-ark",
         secret_payload=b"ark-key",
     )
     credential_ref = _provider_credential_ref(session, project_id, "byteplus-ark")
@@ -2396,9 +2425,10 @@ def test_byteplus_seedream_generate_action_executes_and_registers_artifacts(
 ) -> None:
     provider_url = "https://ark-output.byteplus.test/generated-1.jpeg?token=secret"
     provider_url_2 = "https://ark-output.byteplus.test/generated-2.jpeg?token=secret"
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="byteplus-ark",
+        provider_key="byteplus-ark",
         secret_payload=b"ark-key",
     )
     IntegrationBudgetRepository(session).set(
@@ -2481,9 +2511,10 @@ def test_byteplus_seedream_multi_output_estimate_preempts_budget(
     tmp_path: Path,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="byteplus-ark",
+        provider_key="byteplus-ark",
         secret_payload=b"ark-key",
     )
     IntegrationBudgetRepository(session).set(
@@ -2537,9 +2568,10 @@ def test_byteplus_seedream_edit_action_executes_and_registers_artifact(
     source_dir = tmp_path / "uploads"
     source_dir.mkdir()
     (source_dir / "source.webp").write_bytes(_webp_header())
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="byteplus-ark",
+        provider_key="byteplus-ark",
         secret_payload=b"ark-key",
     )
     IntegrationBudgetRepository(session).set(
@@ -2602,9 +2634,10 @@ def test_byteplus_seedream_preflight_fails_before_budget_or_action_call(
     source_dir.mkdir()
     source = source_dir / "fake.png"
     source.write_bytes(b"not-png")
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="byteplus-ark",
+        provider_key="byteplus-ark",
         secret_payload=b"ark-key",
     )
     IntegrationBudgetRepository(session).set(
@@ -2813,9 +2846,10 @@ def test_custom_http_action_executes_static_webhook_with_daemon_side_auth(
 ) -> None:
     _seed_action(session)
     _seed_http_action(session)
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="internal-webhook",
+        provider_key="internal-webhook",
         secret_payload=b"webhook-token",
         config_json={"label": "Internal webhook"},
     )
@@ -2827,7 +2861,7 @@ def test_custom_http_action_executes_static_webhook_with_daemon_side_auth(
             project_id=project_id,
             provider_key="internal-webhook",
         )
-        .connections[0]
+        .accounts[0]
         .credential_ref
     )
     httpx_mock.add_response(
@@ -2870,9 +2904,10 @@ def test_hubspot_builtin_company_upsert_sends_documented_batch_body(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="hubspot",
+        provider_key="hubspot",
         secret_payload=json.dumps({"access_token": "hubspot-secret"}).encode("utf-8"),
     )
     credential_ref = _provider_credential_ref(session, project_id, "hubspot")
@@ -2881,7 +2916,7 @@ def test_hubspot_builtin_company_upsert_sends_documented_batch_body(
     ).one()
     from stackos.repositories.provider_refs import ProviderObjectReferenceRepository
 
-    provider_refs = ProviderObjectReferenceRepository(session)
+    provider_refs = ProviderObjectReferenceRepository(session, project_id=project_id)
     external_id_ref = provider_refs.upsert(
         credential=credential,
         object_type="company-property",
@@ -2948,9 +2983,10 @@ def test_meta_builtin_campaign_create_resolves_account_ref_and_sends_form_body(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="meta-ads",
+        provider_key="meta-ads",
         secret_payload=json.dumps({"access_token": "meta-secret"}).encode("utf-8"),
         config_json={"api_version": "v25.0", "accounts": {"primary": "act_123"}},
     )
@@ -2996,9 +3032,10 @@ def test_google_ads_builtin_report_search_sets_required_headers_and_body(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="google-ads",
+        provider_key="google-ads",
         secret_payload=json.dumps(
             {"access_token": "google-access", "developer_token": "google-dev"}
         ).encode("utf-8"),
@@ -3046,18 +3083,15 @@ def test_taboola_builtin_campaign_create_uses_backstage_account_endpoint(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    stored = (
-        IntegrationCredentialRepository(session)
-        .set(
-            project_id=project_id,
-            kind="taboola",
-            secret_payload=json.dumps(
-                {"client_id": "taboola-client", "client_secret": "taboola-secret"}
-            ).encode("utf-8"),
-            config_json={"accounts": {"main": "demo-account"}},
-        )
-        .data
-    )
+    stored = seed_test_account(
+        session,
+        project_id=project_id,
+        provider_key="taboola",
+        secret_payload=json.dumps(
+            {"client_id": "taboola-client", "client_secret": "taboola-secret"}
+        ).encode("utf-8"),
+        config_json={"accounts": {"main": "demo-account"}},
+    ).data
     from stackos.auth_providers import AuthRepository
 
     credential_ref = (
@@ -3066,7 +3100,7 @@ def test_taboola_builtin_campaign_create_uses_backstage_account_endpoint(
             project_id=project_id,
             provider_key="taboola",
         )
-        .connections[0]
+        .accounts[0]
         .credential_ref
     )
     httpx_mock.add_response(
@@ -3115,7 +3149,9 @@ def test_taboola_builtin_campaign_create_uses_backstage_account_endpoint(
         IntegrationCredentialRepository(session).get_decrypted(stored.id).decode("utf-8")
     )
     assert payload["access_token"] == "taboola-access"
-    row = session.get(IntegrationCredential, stored.id)
+    row = session.exec(
+        select(Credential).where(Credential.integration_credential_id == stored.id)
+    ).one()
     assert row is not None and row.expires_at is not None
 
 
@@ -3124,21 +3160,18 @@ def test_reddit_action_acquires_once_in_core_then_uses_bearer_token(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    stored = (
-        IntegrationCredentialRepository(session)
-        .set(
-            project_id=project_id,
-            kind="reddit",
-            secret_payload=json.dumps(
-                {
-                    "client_id": "reddit-client",
-                    "client_secret": "reddit-secret",
-                    "user_agent": "stackos-test/1.0",
-                }
-            ).encode("utf-8"),
-        )
-        .data
-    )
+    stored = seed_test_account(
+        session,
+        project_id=project_id,
+        provider_key="reddit",
+        secret_payload=json.dumps(
+            {
+                "client_id": "reddit-client",
+                "client_secret": "reddit-secret",
+                "user_agent": "stackos-test/1.0",
+            }
+        ).encode("utf-8"),
+    ).data
     credential_ref = _provider_credential_ref(session, project_id, "reddit")
     httpx_mock.add_response(
         method="POST",
@@ -3309,9 +3342,10 @@ def test_salesforce_builtin_account_upsert_uses_external_id_endpoint(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="salesforce",
+        provider_key="salesforce",
         secret_payload=json.dumps({"access_token": "sf-secret"}).encode("utf-8"),
         config_json={
             "instance_url": "https://example.my.salesforce.com",
@@ -3356,9 +3390,10 @@ def test_apollo_builtin_people_enrich_sends_single_record_params(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="apollo",
+        provider_key="apollo",
         secret_payload=json.dumps({"api_key": "apollo-secret"}).encode("utf-8"),
     )
     credential_ref = _provider_credential_ref(session, project_id, "apollo")
@@ -3386,9 +3421,10 @@ def test_apollo_phone_reveal_requires_webhook_url(
     session: Session,
     project_id: int,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="apollo",
+        provider_key="apollo",
         secret_payload=json.dumps({"api_key": "apollo-secret"}).encode("utf-8"),
         config_json={"access_scope": "endpoint"},
     )
@@ -3413,9 +3449,10 @@ def test_apollo_people_search_requires_master_key_scope(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="apollo",
+        provider_key="apollo",
         secret_payload=json.dumps({"api_key": "apollo-secret"}).encode("utf-8"),
         config_json={"access_scope": "endpoint"},
     )
@@ -3440,9 +3477,10 @@ def test_pipedrive_builtin_deal_search_uses_search_whitelist(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="pipedrive",
+        provider_key="pipedrive",
         secret_payload=json.dumps({"api_token": "pd-secret"}).encode("utf-8"),
         config_json={
             "auth_method_key": "api_token",
@@ -3488,9 +3526,10 @@ def test_clay_builtin_table_webhook_submits_configured_rows(
     credential_ref = (
         AuthRepository(session)
         .store_credential(
-            project_id=project_id,
+            attach_project_id=project_id,
             provider_key="clay",
             auth_method_key="webhook",
+            display_name="Clay - Default",
             fields={
                 "webhook_url": "https://hooks.clay.com/t/leads",
                 "webhook_token": "clay-secret",
@@ -3521,9 +3560,10 @@ def test_outreach_builtin_sequence_state_posts_json_api_relationships(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="outreach",
+        provider_key="outreach",
         secret_payload=json.dumps({"access_token": "outreach-secret"}).encode("utf-8"),
         config_json={
             "sequences": {"seq": 1},
@@ -3562,9 +3602,10 @@ def test_salesloft_builtin_cadence_membership_posts_ids(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="salesloft",
+        provider_key="salesloft",
         secret_payload=json.dumps({"access_token": "salesloft-secret"}).encode("utf-8"),
         config_json={
             "auth_method_key": "oauth2_token",
@@ -3600,9 +3641,10 @@ def test_google_workspace_builtin_gmail_send_posts_raw_message(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="google-workspace",
+        provider_key="google-workspace",
         secret_payload=json.dumps({"access_token": "workspace-secret"}).encode("utf-8"),
     )
     credential_ref = _provider_credential_ref(session, project_id, "google-workspace")
@@ -3630,9 +3672,10 @@ def test_microsoft_graph_builtin_mail_send_requires_user_for_application_auth(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="microsoft-365",
+        provider_key="microsoft-365",
         secret_payload=json.dumps({"access_token": "graph-secret"}).encode("utf-8"),
         config_json={"auth_mode": "application", "users": {"primary": "ada@example.com"}},
     )
@@ -3667,9 +3710,10 @@ def test_firecrawl_action_executes_through_generic_connector(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="firecrawl",
+        provider_key="firecrawl",
         secret_payload=b"fc-key",
     )
     IntegrationBudgetRepository(session).set(
@@ -3685,7 +3729,7 @@ def test_firecrawl_action_executes_through_generic_connector(
             project_id=project_id,
             provider_key="firecrawl",
         )
-        .connections[0]
+        .accounts[0]
         .credential_ref
     )
     httpx_mock.add_response(
@@ -3713,9 +3757,10 @@ def test_dataforseo_action_executes_with_daemon_side_login_config(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="dataforseo",
+        provider_key="dataforseo",
         secret_payload=b"password",
         config_json={"login": "login@example.com"},
     )
@@ -3732,7 +3777,7 @@ def test_dataforseo_action_executes_with_daemon_side_login_config(
             project_id=project_id,
             provider_key="dataforseo",
         )
-        .connections[0]
+        .accounts[0]
         .credential_ref
     )
     httpx_mock.add_response(
@@ -3770,9 +3815,10 @@ def test_dataforseo_keyword_and_serp_limits_match_live_contracts(
     session: Session,
     project_id: int,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="dataforseo",
+        provider_key="dataforseo",
         secret_payload=b"password",
         config_json={"login": "login@example.com"},
     )
@@ -3848,9 +3894,10 @@ def test_dataforseo_paa_action_uses_explicit_action_contract(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="dataforseo",
+        provider_key="dataforseo",
         secret_payload=b"password",
         config_json={"login": "login@example.com"},
     )
@@ -3867,7 +3914,7 @@ def test_dataforseo_paa_action_uses_explicit_action_contract(
             project_id=project_id,
             provider_key="dataforseo",
         )
-        .connections[0]
+        .accounts[0]
         .credential_ref
     )
     httpx_mock.add_response(
@@ -3908,9 +3955,10 @@ def test_serper_action_executes_with_daemon_side_credential(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="serper",
+        provider_key="serper",
         secret_payload=b"serper-secret",
     )
     credential_ref = _provider_credential_ref(session, project_id, "serper")
@@ -3949,9 +3997,10 @@ def test_serper_action_validation_bounds_provider_inputs(
     session: Session,
     project_id: int,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="serper",
+        provider_key="serper",
         secret_payload=b"serper-secret",
     )
     credential_ref = _provider_credential_ref(session, project_id, "serper")
@@ -3976,10 +4025,10 @@ def test_google_search_console_search_analytics_action_maps_google_contract(
     stored = (
         AuthRepository(session)
         .store_credential(
-            project_id=project_id,
+            attach_project_id=project_id,
             provider_key="google-search-console",
             auth_method_key="oauth2_refresh_token",
-            profile_key="manual-refresh-action",
+            display_name="manual-refresh-action",
             fields={
                 "client_id": "gsc-client-id",
                 "client_secret": "gsc-client-secret",
@@ -4051,9 +4100,10 @@ def test_google_search_console_provider_error_is_preserved_for_agent_repair(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="google-search-console",
+        provider_key="google-search-console",
         secret_payload=json.dumps({"access_token": "gsc-token"}).encode("utf-8"),
     )
     credential_ref = _provider_credential_ref(session, project_id, "google-search-console")
@@ -4099,9 +4149,10 @@ def test_google_search_console_refresh_failure_stops_before_connector_execution(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="google-search-console",
+        provider_key="google-search-console",
         secret_payload=json.dumps(
             {
                 "client_id": "client-id",
@@ -4145,9 +4196,10 @@ def test_google_search_console_validation_rejects_malformed_google_requests(
     session: Session,
     project_id: int,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="google-search-console",
+        provider_key="google-search-console",
         secret_payload=json.dumps({"access_token": "gsc-token"}).encode("utf-8"),
     )
     credential_ref = _provider_credential_ref(session, project_id, "google-search-console")
@@ -4213,9 +4265,10 @@ def test_google_search_console_validation_keeps_legacy_gsc_surfaces_out(
     session: Session,
     project_id: int,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="google-search-console",
+        provider_key="google-search-console",
         secret_payload=json.dumps({"access_token": "gsc-token"}).encode("utf-8"),
     )
     credential_ref = _provider_credential_ref(session, project_id, "google-search-console")
@@ -4242,9 +4295,10 @@ def test_google_analytics_run_report_action_maps_property_ref_and_body(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="google-analytics",
+        provider_key="google-analytics",
         secret_payload=json.dumps({"access_token": "ga-token"}).encode("utf-8"),
         config_json={"property_refs": {"main": "1234"}},
     )
@@ -4296,9 +4350,10 @@ def test_google_analytics_account_summaries_action_maps_cursor_without_secret_ke
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="google-analytics",
+        provider_key="google-analytics",
         secret_payload=json.dumps({"access_token": "ga-token"}).encode("utf-8"),
     )
     credential_ref = _provider_credential_ref(session, project_id, "google-analytics")
@@ -4334,9 +4389,10 @@ def test_google_analytics_report_validation_rejects_nested_property_and_bad_limi
     session: Session,
     project_id: int,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="google-analytics",
+        provider_key="google-analytics",
         secret_payload=json.dumps({"access_token": "ga-token"}).encode("utf-8"),
     )
     credential_ref = _provider_credential_ref(session, project_id, "google-analytics")
@@ -4368,9 +4424,10 @@ def test_google_tag_manager_workspace_tags_action_resolves_safe_refs(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="google-tag-manager",
+        provider_key="google-tag-manager",
         secret_payload=json.dumps({"access_token": "gtm-token"}).encode("utf-8"),
         config_json={
             "account_refs": {"main": "111"},
@@ -4416,9 +4473,10 @@ def test_google_tag_manager_validation_bounds_refs_and_page_cursors(
     session: Session,
     project_id: int,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="google-tag-manager",
+        provider_key="google-tag-manager",
         secret_payload=json.dumps({"access_token": "gtm-token"}).encode("utf-8"),
     )
     credential_ref = _provider_credential_ref(session, project_id, "google-tag-manager")
@@ -4444,9 +4502,10 @@ def test_wordpress_post_create_action_uses_daemon_side_site_config(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="wordpress",
+        provider_key="wordpress",
         secret_payload=json.dumps(
             {"username": "editor", "application_password": "app pass"}
         ).encode("utf-8"),
@@ -4460,7 +4519,7 @@ def test_wordpress_post_create_action_uses_daemon_side_site_config(
             project_id=project_id,
             provider_key="wordpress",
         )
-        .connections[0]
+        .accounts[0]
         .credential_ref
     )
     httpx_mock.add_response(
@@ -4503,9 +4562,10 @@ def test_ghost_post_create_action_uses_daemon_side_admin_config(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
+    seed_test_account(
+        session,
         project_id=project_id,
-        kind="ghost",
+        provider_key="ghost",
         secret_payload=b"keyid:00112233445566778899aabbccddeeff",
         config_json={"ghost_url": "https://ghost.example", "api_version": "v5.0"},
     )
@@ -4517,7 +4577,7 @@ def test_ghost_post_create_action_uses_daemon_side_admin_config(
             project_id=project_id,
             provider_key="ghost",
         )
-        .connections[0]
+        .accounts[0]
         .credential_ref
     )
     httpx_mock.add_response(

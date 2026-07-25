@@ -19,10 +19,10 @@ def _shopify_credential_ref(session: Session, project_id: int) -> str:
     return (
         AuthRepository(session)
         .store_credential(
-            project_id=project_id,
+            attach_project_id=project_id,
             provider_key="shopify",
             auth_method_key="admin-api-token",
-            profile_key="primary",
+            display_name="primary",
             fields={
                 "admin_api_access_token": "shpat-secret",
                 "store_domain": "demo.myshopify.com",

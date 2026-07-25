@@ -11,7 +11,6 @@ from sqlmodel import Session
 
 from stackos.actions import ActionRepository
 from stackos.auth_providers import AuthRepository
-from stackos.repositories.projects import IntegrationCredentialRepository
 from stackos.repositories.resources import ResourceRepository
 
 
@@ -73,22 +72,25 @@ def _credential_ref(
     tls_mode: str = "starttls",
 ) -> str:
     ActionRepository(session).describe(action_ref="communications.smtp.email.send")
-    IntegrationCredentialRepository(session).set(
-        project_id=project_id,
-        kind="smtp",
-        secret_payload=json.dumps({"password": "smtp-secret"}).encode("utf-8"),
-        config_json={
-            "host": "smtp.example.test",
-            "port": 587 if tls_mode != "ssl" else 465,
-            "tls_mode": tls_mode,
-            "username": "mailer@example.test",
-            "from_email": "mailer@example.test",
-            "from_name": "StackOS",
-            "reply_to": "reply@example.test",
-        },
+    return (
+        AuthRepository(session)
+        .store_credential(
+            provider_key="smtp",
+            display_name="SMTP - Default",
+            fields={
+                "password": "smtp-secret",
+                "host": "smtp.example.test",
+                "port": 587 if tls_mode != "ssl" else 465,
+                "tls_mode": tls_mode,
+                "username": "mailer@example.test",
+                "from_email": "mailer@example.test",
+                "from_name": "StackOS",
+                "reply_to": "reply@example.test",
+            },
+            attach_project_id=project_id,
+        )
+        .data.credential_ref
     )
-    status = AuthRepository(session).status(project_id=project_id, provider_key="smtp")
-    return status.connections[0].credential_ref
 
 
 def test_smtp_action_is_executable_and_sends_without_secret_leak(

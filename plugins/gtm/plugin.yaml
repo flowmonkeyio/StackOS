@@ -992,7 +992,7 @@ providers:
       connection_setup: project-local-plugin-required
       setup_note: Custom GTM tools need a project-local plugin that declares the endpoint, method, allowlisted host, auth injection, timeout, and response contract.
       setup:
-        credential_label: Project-local endpoint/auth profile
+        credential_label: Project-local endpoint/auth Account
         setup_note: No public vendor registration exists. Install a project-local plugin that declares endpoint, auth injection, allowlisted host, timeout, and response contract.
         fallback_url: http://127.0.0.1:5180/
         fallback_reason: Custom GTM providers are project-local; use StackOS extension docs and the local Connections UI.
@@ -3905,7 +3905,7 @@ actions:
         - api
   - key: apollo.people.search
     name: Search Apollo People
-    description: Search Apollo people from explicit criteria and source refs; requires an Apollo credential profile marked as a master API key.
+    description: Search Apollo people from explicit criteria and source refs; requires an Apollo Account marked as a master API key.
     provider: apollo
     capability: lead-management
     risk_level: cost

@@ -11,11 +11,12 @@ from .conftest import MCPClient
 
 def _create_firecrawl_credential(mcp: MCPClient, project_id: int) -> dict:
     response = mcp.test_client.post(
-        f"/api/v1/projects/{project_id}/auth/firecrawl/credentials",
+        "/api/v1/auth/accounts/firecrawl",
         json={
             "auth_method_key": "api_key",
-            "label": "Primary Firecrawl",
+            "display_name": "Primary Firecrawl",
             "fields": {"api_key": "fc-secret"},
+            "attach_project_id": project_id,
         },
         headers=mcp._headers(),
     )
@@ -32,7 +33,7 @@ def test_auth_status_and_test_return_sanitized_refs(
     _create_firecrawl_credential(mcp_client, project_id)
 
     status = mcp_client.call_tool_structured(
-        "auth.status",
+        "connection.list",
         {
             "project_id": project_id,
             "provider_key": "firecrawl",
@@ -40,7 +41,7 @@ def test_auth_status_and_test_return_sanitized_refs(
         },
     )
 
-    credential_ref = status["connections"][0]["credential_ref"]
+    credential_ref = status["accounts"][0]["credential_ref"]
     assert credential_ref.startswith("cred_")
     rendered_status = json.dumps(status)
     assert "fc-secret" not in rendered_status
@@ -53,9 +54,8 @@ def test_auth_status_and_test_return_sanitized_refs(
         json={"data": {"markdown": "# ok"}},
     )
     tested = mcp_client.call_tool_structured(
-        "auth.test",
+        "account.test",
         {
-            "project_id": project_id,
             "credential_ref": credential_ref,
             "response_mode": "raw",
         },
@@ -71,10 +71,9 @@ def test_local_admin_auth_mutations_are_not_system_granted(
     mcp_client: MCPClient,
     seeded_project: dict,
 ) -> None:
-    project_id = seeded_project["data"]["id"]
     for tool_name, arguments in [
-        ("auth.start", {"project_id": project_id, "provider_key": "firecrawl"}),
-        ("auth.revoke", {"project_id": project_id, "credential_ref": "cred_missing"}),
+        ("account.start", {"provider_key": "firecrawl"}),
+        ("account.revoke", {"credential_ref": "cred_missing"}),
     ]:
         err = mcp_client.call_tool_error(tool_name, arguments)
         assert err["code"] == -32007

@@ -261,7 +261,11 @@ def operation_specs() -> list[OperationSpec]:
             prerequisites=(
                 "Pass identity.display_name.",
                 "Keep policy declarative; agents still decide work and provider calls.",
-                "Use provider_facets only for safe provider refs, never tokens or secrets.",
+                "Use provider_facets only for safe provider refs, never tokens or secrets; "
+                "each credential_ref must name a connected Account attached to this project.",
+                "Set Slack or Telegram provider_facets.<provider>.ingress_enabled=false "
+                "for outbound-only Account reuse. One inbound-enabled profile may own "
+                "provider ingress for each Account.",
             ),
             returns=("A WriteEnvelope with the safe CommunicationProfileOut record.",),
             examples=(

@@ -193,7 +193,10 @@ def _ref_context(request: ActionConnectorRequest) -> tuple[ProviderObjectReferen
     if request.session is None or request.credential is None:
         raise ValidationError("HubSpot safe references require a resolved project credential")
     return (
-        ProviderObjectReferenceRepository(request.session),
+        ProviderObjectReferenceRepository(
+            request.session,
+            project_id=request.project_id,
+        ),
         request.credential.credential,
     )
 

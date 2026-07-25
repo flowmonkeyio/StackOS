@@ -15,7 +15,6 @@ let mainWindow = null;
 let updateController = null;
 let notificationController = null;
 let pendingDeepLink = null;
-let startupMaintenancePromise = null;
 
 function escapeHtml(value) {
   return String(value || "")
@@ -271,30 +270,6 @@ function showStartupProgress(update, fallbackProgress = 5) {
   return startupProgressQueue;
 }
 
-function schedulePreparedInstallMaintenance(install) {
-  if (!install || install.maintenanceRequired !== true || startupMaintenancePromise) {
-    return;
-  }
-
-  startupMaintenancePromise = new Promise((resolve) => {
-    setTimeout(() => {
-      service
-        .repairPreparedInstall()
-        .then((result) => {
-          if (!result || result.ok === false) {
-            console.warn("StackOS startup maintenance did not complete", result);
-          }
-        })
-        .catch((error) => {
-          console.warn("StackOS startup maintenance failed", error);
-        })
-        .finally(resolve);
-    }, 1500);
-  }).finally(() => {
-    startupMaintenancePromise = null;
-  });
-}
-
 function failureHtml(title, { summary, repair, details }) {
   return `<!doctype html>
 <html>
@@ -470,6 +445,7 @@ async function prepareAndLoadStackOS({ forceInstall = false } = {}) {
     payloadInfo: service.readPackagedBuildInfo(),
     force: forceInstall,
     runDoctor: forceInstall,
+    repairPreparedInstallBeforeReady: true,
     onProgress: showStartupProgress
   });
   if (!install.ok) {
@@ -488,7 +464,6 @@ async function prepareAndLoadStackOS({ forceInstall = false } = {}) {
   await showStartupProgress("Opening your workspace...", 94);
   loadingPageActive = false;
   await mainWindow.loadURL(service.DAEMON_URL);
-  schedulePreparedInstallMaintenance(install);
   if (pendingDeepLink) {
     const candidate = pendingDeepLink;
     pendingDeepLink = null;

@@ -255,10 +255,11 @@ def test_bridge_compacts_noisy_agent_responses_by_default(mcp_client: MCPClient)
         },
     )
     credential = mcp_client.test_client.post(
-        f"/api/v1/projects/{project_id}/auth/mock-provider/credentials",
+        "/api/v1/auth/accounts/mock-provider",
         json={
             "auth_method_key": "api_key",
-            "profile_key": "primary",
+            "display_name": "Mock Provider - Primary",
+            "attach_project_id": project_id,
             "fields": {"api_key": "mock-secret"},
         },
         headers=mcp_client._headers(),
@@ -276,7 +277,7 @@ def test_bridge_compacts_noisy_agent_responses_by_default(mcp_client: MCPClient)
         _toolbox_call(
             proxy,
             client,
-            "auth.status",
+            "connection.list",
             {"provider_key": "mock-provider"},
             request_id="auth-compact",
         )
@@ -285,7 +286,7 @@ def test_bridge_compacts_noisy_agent_responses_by_default(mcp_client: MCPClient)
         _toolbox_call(
             proxy,
             client,
-            "auth.status",
+            "connection.list",
             {"provider_key": "mock-provider", "response_mode": "standard"},
             request_id="auth-standard",
         )
@@ -314,8 +315,8 @@ def test_bridge_compacts_noisy_agent_responses_by_default(mcp_client: MCPClient)
     resolved_standard_data = _operation_data(resolved_standard)
 
     assert compact["project_id"] == project_id
-    assert compact_data["connections"][0]["credential_ref"].startswith("cred_")
-    assert compact_data["connections"][0]["status"] == "connected"
+    assert compact_data["accounts"][0]["credential_ref"].startswith("cred_")
+    assert compact_data["accounts"][0]["status"] == "connected"
     assert compact_data["providers"][0]["key"] == "mock-provider"
     assert "auth_methods" in compact_data["providers"][0]
     assert "auth_methods" in standard_data["providers"][0]
@@ -447,7 +448,7 @@ def test_bridge_scopes_project_from_workspace_and_injects_project_id(
             "toolbox.describe",
             {
                 "tool_names": [
-                    "auth.status",
+                    "connection.list",
                     "toolProfile.resolve",
                     "workspace.connect",
                 ]
@@ -456,7 +457,7 @@ def test_bridge_scopes_project_from_workspace_and_injects_project_id(
         )
     )
     by_tool = {tool["name"]: tool for tool in described["described_tools"]}
-    auth_tool = by_tool["auth.status"]
+    auth_tool = by_tool["connection.list"]
     resolver_tool = by_tool["toolProfile.resolve"]
     workspace_connect_tool = by_tool["workspace.connect"]
     auth_required = auth_tool["inputSchema"].get("required", [])
@@ -475,7 +476,7 @@ def test_bridge_scopes_project_from_workspace_and_injects_project_id(
         _toolbox_call(
             proxy,
             client,
-            "auth.status",
+            "connection.list",
             {"provider_key": "mock-provider"},
             request_id="auth-status",
         )
@@ -501,7 +502,7 @@ def test_bridge_scopes_project_from_workspace_and_injects_project_id(
     cross_project = _toolbox_call(
         proxy,
         client,
-        "auth.status",
+        "connection.list",
         {"project_id": project_id + 1000, "provider_key": "mock-provider"},
         request_id="auth-status-cross",
     )
@@ -1184,8 +1185,10 @@ def test_bridge_describes_setup_tools_and_treats_removed_vendor_tools_as_unknown
             "tool_names": [
                 "project.delete",
                 "schedule.remove",
-                "auth.test",
-                "auth.start",
+                "account.test",
+                "account.start",
+                "connection.attach",
+                "connection.detach",
                 "dataforseo.serp",
             ]
         },
@@ -1195,9 +1198,14 @@ def test_bridge_describes_setup_tools_and_treats_removed_vendor_tools_as_unknown
 
     assert [tool["name"] for tool in payload["described_tools"]] == [
         "schedule.remove",
-        "auth.test",
+        "account.test",
     ]
-    assert payload["denied_tool_names"] == ["project.delete", "auth.start"]
+    assert payload["denied_tool_names"] == [
+        "project.delete",
+        "account.start",
+        "connection.attach",
+        "connection.detach",
+    ]
     assert payload["unknown_tool_names"] == ["dataforseo.serp"]
     assert "admin_gated_tool_names" not in payload
 
@@ -1282,8 +1290,13 @@ def test_bridge_toolbox_operates_setup_actions(
         json={"data": {"markdown": "# ok"}},
     )
     credential_resp = mcp_client.test_client.post(
-        f"/api/v1/projects/{project_id}/auth/firecrawl/credentials",
-        json={"auth_method_key": "api_key", "fields": {"api_key": "fc-key"}},
+        "/api/v1/auth/accounts/firecrawl",
+        json={
+            "auth_method_key": "api_key",
+            "display_name": "Firecrawl - Default",
+            "attach_project_id": project_id,
+            "fields": {"api_key": "fc-key"},
+        },
         headers=mcp_client._headers(),
     )
     credential_resp.raise_for_status()
@@ -1291,18 +1304,18 @@ def test_bridge_toolbox_operates_setup_actions(
         _toolbox_call(
             proxy,
             client,
-            "auth.status",
+            "connection.list",
             {"project_id": project_id, "provider_key": "firecrawl"},
             request_id="auth-status",
         )
     )
-    credential_ref = _operation_data(status)["connections"][0]["credential_ref"]
+    credential_ref = _operation_data(status)["accounts"][0]["credential_ref"]
     tested = _structured(
         _toolbox_call(
             proxy,
             client,
-            "auth.test",
-            {"project_id": project_id, "credential_ref": credential_ref},
+            "account.test",
+            {"credential_ref": credential_ref},
             request_id="auth-test",
         )
     )
@@ -1681,8 +1694,13 @@ def test_bridge_executes_run_plan_granted_action_with_injected_token(
 
     project_id = _create_project(mcp_client, "bridge-action-grant")
     cred_resp = mcp_client.test_client.post(
-        f"/api/v1/projects/{project_id}/auth/openai-images/credentials",
-        json={"auth_method_key": "api_key", "fields": {"api_key": "sk-openai"}},
+        "/api/v1/auth/accounts/openai-images",
+        json={
+            "auth_method_key": "api_key",
+            "display_name": "OpenAI Images - Default",
+            "attach_project_id": project_id,
+            "fields": {"api_key": "sk-openai"},
+        },
         headers=mcp_client._headers(),
     )
     cred_resp.raise_for_status()
@@ -1690,12 +1708,12 @@ def test_bridge_executes_run_plan_granted_action_with_injected_token(
         _toolbox_call(
             proxy,
             client,
-            "auth.status",
+            "connection.list",
             {"project_id": project_id, "provider_key": "openai-images"},
             request_id="auth-status",
         )
     )
-    credential_ref = _operation_data(auth_status)["connections"][0]["credential_ref"]
+    credential_ref = _operation_data(auth_status)["accounts"][0]["credential_ref"]
     created_plan = _structured(
         _toolbox_call(
             proxy,

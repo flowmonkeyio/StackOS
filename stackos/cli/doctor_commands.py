@@ -56,7 +56,7 @@ def _check_credentials_decrypt(
             configure_seed_path,
         )
         from stackos.db.connection import make_engine
-        from stackos.db.models import IntegrationCredential, PayloadSecret
+        from stackos.db.models import Credential, IntegrationCredential, PayloadSecret
         from stackos.repositories.projects import IntegrationCredentialRepository
         from stackos.repositories.secrets import PayloadSecretRepository
 
@@ -66,6 +66,11 @@ def _check_credentials_decrypt(
         try:
             with Session(engine) as session:
                 rows = session.exec(select(IntegrationCredential)).all()
+                account_by_backing = {
+                    account.integration_credential_id: account
+                    for account in session.exec(select(Credential)).all()
+                    if account.integration_credential_id is not None
+                }
                 repo = IntegrationCredentialRepository(session)
                 for credential_row in rows:
                     if credential_row.id is None:
@@ -73,11 +78,16 @@ def _check_credentials_decrypt(
                     try:
                         repo.get_decrypted(credential_row.id)
                     except CryptoError as exc:
+                        account = account_by_backing.get(credential_row.id)
                         issues.append(
                             {
                                 "credential_id": credential_row.id,
-                                "kind": credential_row.kind,
-                                "project_id": credential_row.project_id,
+                                "credential_ref": (
+                                    account.credential_ref if account is not None else None
+                                ),
+                                "provider_key": (
+                                    account.provider_key if account is not None else None
+                                ),
                                 "error": str(exc.detail),
                             }
                         )
@@ -431,10 +441,28 @@ def mcp_host_status(
         bool,
         typer.Option("--json", help="Emit the safe machine-readable host connection status."),
     ] = False,
+    host: Annotated[
+        str | None,
+        typer.Option("--host", help="Inspect one AI-tool host key."),
+    ] = None,
+    profile: Annotated[
+        str | None,
+        typer.Option("--profile", help="Inspect one existing Hermes profile."),
+    ] = None,
 ) -> None:
     """Inspect only supported AI-tool connections, without running full doctor."""
 
-    ok, hosts = _check_mcp_hosts(_doctor_home())
+    if profile is not None and host != "hermes":
+        typer.echo("error: --profile is valid only with --host hermes.", err=True)
+        raise typer.Exit(code=2)
+    if host is None:
+        ok, hosts = _check_mcp_hosts(_doctor_home())
+    else:
+        from stackos.host_mcp import inspect_host
+
+        result = inspect_host(host, home=_doctor_home(), profile=profile)
+        ok = not result.blocking
+        hosts = [result.to_info()]
     payload = {
         "ok": ok,
         "status": "ready" if ok else "needs_attention",
@@ -443,8 +471,8 @@ def mcp_host_status(
     if json_output:
         typer.echo(json.dumps(payload))
     else:
-        for host in hosts:
-            typer.echo(f"{host['host_key']}: {host['message']}")
+        for host_info in hosts:
+            typer.echo(f"{host_info['host_key']}: {host_info['message']}")
     if not ok:
         raise typer.Exit(code=9)
 
@@ -477,7 +505,7 @@ def _check_provider_readiness(
     connections_url = f"http://{settings.host}:{settings.port}/projects/{{project_id}}/connections"
     repair = (
         "open the StackOS Connections page for the project, add provider credentials, "
-        "then let agents use readiness.check, auth.status, and auth.test"
+        "then let agents use readiness.check, connection.list, and account.test"
     )
     if not db_present:
         return True, {

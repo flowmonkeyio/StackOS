@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from stackos.communications import (
+    validate_communication_profile_account_bindings,
+    validate_communication_profile_ingress_ownership,
+)
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import WriteEnvelope
 from stackos.mcp.streaming import ProgressEmitter
@@ -40,9 +44,22 @@ async def communication_profile_upsert(
             "metadata_json": inp.metadata_json,
         },
     )
+    profile_ref = _communication_profile_ref(inp.key)
+    validate_communication_profile_account_bindings(
+        ctx.session,
+        project_id=inp.project_id,
+        profile_ref=profile_ref,
+        provider_facets=inp.provider_facets,
+    )
+    validate_communication_profile_ingress_ownership(
+        ctx.session,
+        project_id=inp.project_id,
+        profile_ref=profile_ref,
+        provider_facets=inp.provider_facets,
+    )
     data_json = {
         "key": inp.key.strip(),
-        "profile_ref": _communication_profile_ref(inp.key),
+        "profile_ref": profile_ref,
         "enabled": inp.enabled,
         "identity": inp.identity,
         "agent_guidance": inp.agent_guidance,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from collections.abc import Sequence
@@ -9,12 +10,14 @@ from pathlib import Path
 
 from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
+    command_from_output_row,
     command_line_mentions,
+    is_stackos_bridge_command,
     output_row_matches_server,
     resolve_bridge_command,
     token_preflight,
 )
-from stackos.host_mcp.discovery import resolve_cli_bin, subprocess_env_for_cli
+from stackos.host_mcp.discovery import resolve_cli_bins, subprocess_env_for_cli
 from stackos.host_mcp.result import HostMcpResult, looks_secretish
 
 HOST_KEY = "codex"
@@ -33,6 +36,10 @@ COMMON_CODEX_CLI_CANDIDATES = (
     "/opt/homebrew/bin/codex",
     "/usr/local/bin/codex",
 )
+MACOS_CHATGPT_BUNDLE_CANDIDATES = (
+    "/Applications/ChatGPT.app/Contents/Resources/codex",
+    "~/Applications/ChatGPT.app/Contents/Resources/codex",
+)
 MACOS_CODEX_APP_BUNDLE_CANDIDATES = (
     "/Applications/Codex.app/Contents/Resources/codex",
     "~/Applications/Codex.app/Contents/Resources/codex",
@@ -41,10 +48,29 @@ MACOS_CODEX_APP_BUNDLE_CANDIDATES = (
 
 def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
     del home
-    codex_bin = resolve_codex_bin()
-    if codex_bin is None:
+    codex_bins = resolve_codex_bins()
+    if not codex_bins:
         return _absent()
     command = resolve_bridge_command(runtime=HOST_KEY)
+    unsupported: HostMcpResult | None = None
+    for codex_bin in codex_bins:
+        result = _inspect_with_bin(codex_bin, command, server_name)
+        if result.status != "unsupported_host_version":
+            return result
+        unsupported = result
+    return unsupported or _absent()
+
+
+def _inspect_with_bin(
+    codex_bin: str,
+    command: Sequence[str],
+    server_name: str,
+) -> HostMcpResult:
+    details = _run_codex(codex_bin, ["mcp", "get", server_name, "--json"])
+    if details.returncode == 0:
+        details_result = _json_details_result(details.stdout, command, server_name)
+        if details_result is not None:
+            return details_result
     listed = _run_codex(codex_bin, ["mcp", "list"])
     if listed.returncode != 0:
         return HostMcpResult(
@@ -80,6 +106,8 @@ def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
             blocking=True,
             repair="Run `stackos install --mcp-only` or desktop Repair.",
             warnings=["unsafe Codex MCP entry redacted"],
+            selected=True,
+            managed=False,
         )
     bridge_rows = [row for row in rows if _line_is_bridge(row, command, server_name)]
     if bridge_rows:
@@ -90,7 +118,24 @@ def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
             message="Codex StackOS MCP registration is healthy.",
             ok=True,
             available=True,
-            command=command,
+            command=list(command),
+            selected=True,
+            managed=True,
+        )
+    managed_rows = [row for row in rows if _line_is_managed_bridge(row)]
+    if not managed_rows:
+        return HostMcpResult(
+            host_key=HOST_KEY,
+            surface=SURFACE,
+            status="registered_unmanaged",
+            message="Codex has an MCP entry named stackos that StackOS does not own.",
+            ok=False,
+            available=True,
+            blocking=True,
+            repair="Review the existing Codex MCP entry; StackOS left it unchanged.",
+            warnings=["unmanaged Codex MCP entry redacted"],
+            selected=True,
+            managed=False,
         )
     return HostMcpResult(
         host_key=HOST_KEY,
@@ -102,6 +147,8 @@ def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
         blocking=True,
         repair="Run `stackos install --mcp-only` or desktop Repair.",
         warnings=["stale Codex MCP entry redacted"],
+        selected=True,
+        managed=True,
     )
 
 
@@ -111,7 +158,7 @@ def register(
     server_name: str = MCP_SERVER_NAME,
     force: bool = False,
 ) -> HostMcpResult:
-    codex_bin = resolve_codex_bin()
+    codex_bin = _select_codex_bin()
     if codex_bin is None:
         return _absent()
     token_error = token_preflight(home)
@@ -138,8 +185,15 @@ def register(
             ok=True,
             available=True,
             command=command,
+            selected=True,
+            managed=True,
         )
-    if current.available and current.status != "available_unregistered":
+    if current.selected and not current.managed:
+        return current
+    replaces_current_entry = current.status == "registered_stale" or (
+        current.status == "registered_current" and force
+    )
+    if replaces_current_entry:
         removed = _run_codex(codex_bin, ["mcp", "remove", server_name])
         if removed.returncode != 0:
             return HostMcpResult(
@@ -152,6 +206,8 @@ def register(
                 blocking=True,
                 repair=f"Run `codex mcp remove {server_name}`, then rerun StackOS Repair.",
             )
+    if not replaces_current_entry and current.status != "available_unregistered":
+        return current
     command = resolve_bridge_command(runtime=HOST_KEY)
     added = _run_codex(codex_bin, ["mcp", "add", server_name, "--", *command])
     if added.returncode != 0:
@@ -173,17 +229,17 @@ def register(
         ok=True,
         available=True,
         command=command,
+        selected=True,
+        managed=True,
     )
 
 
 def remove(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
-    del home
-    codex_bin = resolve_codex_bin()
+    codex_bin = _select_codex_bin()
     if codex_bin is None:
         return _absent(message="Codex was not detected; skipped StackOS MCP removal.")
-    current = _run_codex(codex_bin, ["mcp", "list"])
-    rows = _stackos_rows(current.stdout, server_name) if current.returncode == 0 else []
-    if not rows:
+    current = inspect(home, server_name=server_name)
+    if current.status in {"available_unregistered", "absent", "removed"}:
         return HostMcpResult(
             host_key=HOST_KEY,
             surface=SURFACE,
@@ -192,6 +248,8 @@ def remove(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
             ok=True,
             available=True,
         )
+    if not current.managed:
+        return current
     removed = _run_codex(codex_bin, ["mcp", "remove", server_name])
     if removed.returncode != 0:
         return HostMcpResult(
@@ -230,15 +288,30 @@ def _absent(
 
 
 def resolve_codex_bin(codex_bin: str | None = None) -> str | None:
-    return resolve_cli_bin(
+    candidates = resolve_codex_bins(codex_bin)
+    return candidates[0] if candidates else None
+
+
+def resolve_codex_bins(codex_bin: str | None = None) -> list[str]:
+    return resolve_cli_bins(
         "codex",
         explicit=codex_bin,
         env_var=CODEX_BIN_ENV,
+        preferred_candidates=(MACOS_CHATGPT_BUNDLE_CANDIDATES if sys.platform == "darwin" else ()),
         common_candidates=COMMON_CODEX_CLI_CANDIDATES,
         app_bundle_candidates=(
             MACOS_CODEX_APP_BUNDLE_CANDIDATES if sys.platform == "darwin" else ()
         ),
     )
+
+
+def _select_codex_bin() -> str | None:
+    """Return the first preferred Codex executable whose MCP surface responds."""
+
+    for candidate in resolve_codex_bins():
+        if _run_codex(candidate, ["mcp", "list"]).returncode == 0:
+            return candidate
+    return None
 
 
 def _run_codex(codex_bin: str, args: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -286,6 +359,116 @@ def _line_is_bridge(
     if any(token in lowered for token in forbidden):
         return False
     return command_line_mentions(command, normalized)
+
+
+def _line_is_managed_bridge(line: str) -> bool:
+    return is_stackos_bridge_command(
+        command_from_output_row(line),
+    )
+
+
+def _json_details_result(
+    stdout: str,
+    command: Sequence[str],
+    server_name: str,
+) -> HostMcpResult | None:
+    """Classify Codex's machine-readable MCP record without exposing its contents."""
+
+    try:
+        payload = json.loads(stdout)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("name") not in (None, server_name):
+        return None
+    transport = payload.get("transport")
+    if not isinstance(transport, dict):
+        return None
+    if _transport_is_unsafe(transport):
+        return HostMcpResult(
+            host_key=HOST_KEY,
+            surface=SURFACE,
+            status="registered_unsafe",
+            message="Codex has a StackOS MCP entry with unsafe connection settings.",
+            ok=False,
+            available=True,
+            blocking=True,
+            repair="Review and remove the entry manually before StackOS Repair.",
+            warnings=["unsafe Codex MCP entry redacted"],
+            selected=True,
+            managed=False,
+        )
+
+    actual_command = _transport_command(transport)
+    if (
+        payload.get("enabled") is True
+        and transport.get("type") == "stdio"
+        and actual_command == list(command)
+    ):
+        return HostMcpResult(
+            host_key=HOST_KEY,
+            surface=SURFACE,
+            status="registered_current",
+            message="Codex StackOS MCP registration is healthy.",
+            ok=True,
+            available=True,
+            command=list(command),
+            selected=True,
+            managed=True,
+        )
+    if actual_command is not None and _command_is_managed_bridge(actual_command):
+        return HostMcpResult(
+            host_key=HOST_KEY,
+            surface=SURFACE,
+            status="registered_stale",
+            message="Codex has a StackOS-owned MCP entry that needs reconciliation.",
+            ok=False,
+            available=True,
+            blocking=True,
+            repair="Run `stackos install --mcp-only` or desktop Repair.",
+            warnings=["stale Codex MCP entry redacted"],
+            selected=True,
+            managed=True,
+        )
+    return HostMcpResult(
+        host_key=HOST_KEY,
+        surface=SURFACE,
+        status="registered_unmanaged",
+        message="Codex has an MCP entry named stackos that StackOS does not own.",
+        ok=False,
+        available=True,
+        blocking=True,
+        repair="Review the existing Codex MCP entry; StackOS left it unchanged.",
+        warnings=["unmanaged Codex MCP entry redacted"],
+        selected=True,
+        managed=False,
+    )
+
+
+def _transport_is_unsafe(transport: dict[str, object]) -> bool:
+    expected_fields = {"type", "command", "args", "env", "env_vars", "cwd"}
+    if set(transport) - expected_fields:
+        return True
+    if transport.get("env") not in (None, {}):
+        return True
+    if transport.get("env_vars") not in (None, []):
+        return True
+    if transport.get("cwd") is not None:
+        return True
+    return looks_secretish(transport)
+
+
+def _transport_command(transport: dict[str, object]) -> list[str] | None:
+    executable = transport.get("command")
+    args = transport.get("args")
+    if not isinstance(executable, str) or not isinstance(args, list):
+        return None
+    if not all(isinstance(arg, str) for arg in args):
+        return None
+    return [executable, *args]
+
+
+def _command_is_managed_bridge(command: Sequence[str]) -> bool:
+    return is_stackos_bridge_command(command)
 
 
 def _text(value: object) -> str:

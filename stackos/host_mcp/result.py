@@ -12,6 +12,7 @@ HostMcpStatus = Literal[
     "registered",
     "registered_stale",
     "registered_unsafe",
+    "registered_unmanaged",
     "shadowed",
     "unsupported_host_version",
     "config_unreadable",
@@ -21,6 +22,19 @@ HostMcpStatus = Literal[
     "restart_required",
     "token_missing",
 ]
+
+HostMcpConnectionState = Literal[
+    "connected",
+    "available",
+    "repair_needed",
+    "review_required",
+    "update_required",
+    "restart_required",
+    "unavailable",
+    "error",
+]
+
+HostMcpSetupPolicy = Literal["automatic", "explicit"]
 
 
 @dataclass(frozen=True)
@@ -38,6 +52,15 @@ class HostMcpResult:
     config_path: str | None = None
     repair: str | None = None
     warnings: list[str] = field(default_factory=list)
+    display_name: str | None = None
+    connection_state: HostMcpConnectionState | None = None
+    status_label: str | None = None
+    selected: bool | None = None
+    managed: bool | None = None
+    repairable: bool = False
+    setup_policy: HostMcpSetupPolicy | None = None
+    target: dict[str, str] | None = None
+    targets: list[dict[str, str]] = field(default_factory=list)
 
     def to_info(self) -> dict[str, object]:
         return {
@@ -54,6 +77,15 @@ class HostMcpResult:
             "config_path": self.config_path,
             "repair": self.repair,
             "warnings": self.warnings,
+            "display_name": self.display_name or self.host_key,
+            "connection_state": self.connection_state,
+            "status_label": self.status_label,
+            "selected": bool(self.selected),
+            "managed": bool(self.managed),
+            "repairable": self.repairable,
+            "setup_policy": self.setup_policy,
+            "target": self.target,
+            "targets": self.targets,
         }
 
 

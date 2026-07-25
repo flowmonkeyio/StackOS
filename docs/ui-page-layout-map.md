@@ -31,7 +31,8 @@ not become narrower when its data or selected mode changes.
 | `/projects/:id/runs/:run_id` | Run detail | `RunsView` | selected run journey and evidence |
 | `/projects/:id/plugins` | Plugins | `PluginsView` | plugin catalog/cards |
 | `/projects/:id/capabilities` | Capabilities | `CapabilitiesView` | capability inventory |
-| `/projects/:id/connections` | Connections | `ConnectionsView` | persistent section navigation and connection workspace |
+| `/accounts` | Accounts | `AccountsView` | global named Account inventory and reusable Account setup |
+| `/projects/:id/connections` | Connections | `ConnectionsView` | Account attachment plus project-bound communication setup |
 | `/projects/:id/operations` | Operations | `OperationsView` | operation catalog and detail |
 | `/projects/:id/action-calls` | Action history | `ActionCallsView` | action inventory and result detail |
 | `/projects/:id/agent-requests` | Agent requests | `AgentRequestsView` | request intake/handoff inventory and detail |

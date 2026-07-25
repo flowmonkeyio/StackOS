@@ -20,10 +20,11 @@ from typing import Any, NoReturn
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from sqlmodel import Session, col, select
+from sqlmodel import Session, select
 
 from stackos.api.deps import get_session
 from stackos.artifacts import redact_secret_text, redact_secrets
+from stackos.auth_providers import AuthRepository
 from stackos.communications import (
     NormalizedInboundEvent,
     NormalizedResourceWrite,
@@ -31,8 +32,7 @@ from stackos.communications import (
     evaluate_inbound_event_allowlist,
     process_inbound_event,
 )
-from stackos.db.models import Credential, CredentialAccount, IntegrationCredential
-from stackos.repositories.projects import IntegrationCredentialRepository
+from stackos.db.models import Credential, CredentialAccount
 from stackos.repositories.provider_refs import ProviderObjectReferenceRepository
 
 router = APIRouter(prefix="/api/v1/ingress/hubspot", tags=["hubspot-ingress"])
@@ -143,7 +143,7 @@ async def ingest_hubspot_payload(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail="HubSpot payload must use application/json",
         )
-    profile = _require_hubspot_profile(
+    profile = await _require_hubspot_profile(
         session,
         project_id=project_id,
         profile_key=profile_key,
@@ -204,7 +204,7 @@ def _validate_content_length(value: str | None) -> None:
         )
 
 
-def _require_hubspot_profile(
+async def _require_hubspot_profile(
     session: Session,
     *,
     project_id: int,
@@ -212,20 +212,20 @@ def _require_hubspot_profile(
 ) -> HubSpotIngressProfile:
     if not _PROFILE_KEY_RE.fullmatch(profile_key):
         _invalid_ingress_target()
-    credential = session.exec(
-        select(Credential).where(
-            col(Credential.project_id) == project_id,
-            col(Credential.provider_key) == "hubspot",
-            col(Credential.profile_key) == profile_key,
-            col(Credential.revoked_at).is_(None),
+    try:
+        resolved = await AuthRepository(session).resolve_for_execution(
+            project_id=project_id,
+            provider_key="hubspot",
+            credential_ref=profile_key,
+            operation="ingress.hubspot.verify",
+            required_scopes=[],
         )
-    ).first()
-    if credential is None or credential.id is None or credential.integration_credential_id is None:
+    except Exception:
         _invalid_ingress_target()
-    integration = session.get(IntegrationCredential, credential.integration_credential_id)
-    if integration is None or integration.id is None:
+    credential = resolved.credential
+    if credential.id is None:
         _invalid_ingress_target()
-    config = {**dict(integration.config_json or {}), **dict(credential.config_json or {})}
+    config = dict(credential.config_json or {})
     if config.get("webhook_enabled") is not True:
         _invalid_ingress_target()
     app_id = _normalized_positive_integer(config.get("app_id"))
@@ -245,8 +245,7 @@ def _require_hubspot_profile(
     if portal_id is None:
         _invalid_ingress_target()
     try:
-        raw_secret = IntegrationCredentialRepository(session).get_decrypted(integration.id)
-        decoded = json.loads(raw_secret.decode("utf-8"))
+        decoded = json.loads(resolved.secret_payload.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
         _invalid_ingress_target()
     if not isinstance(decoded, Mapping):
@@ -476,7 +475,7 @@ def _process_subscription_event(
         )
     )
     digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()
-    refs = ProviderObjectReferenceRepository(session)
+    refs = ProviderObjectReferenceRepository(session, project_id=project_id)
     account_ref = refs.upsert(
         credential=profile.credential,
         object_type="account",
@@ -586,7 +585,7 @@ def _store_workflow_action(
 ) -> dict[str, Any]:
     validated = _validated_workflow_action(payload, profile=profile)
     callback_digest = hashlib.sha256(validated["callback_id"].encode("utf-8")).hexdigest()
-    refs = ProviderObjectReferenceRepository(session)
+    refs = ProviderObjectReferenceRepository(session, project_id=project_id)
     account_ref = refs.upsert(
         credential=profile.credential,
         object_type="account",

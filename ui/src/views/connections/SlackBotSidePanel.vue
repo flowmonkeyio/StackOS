@@ -2,6 +2,7 @@
 import {
   UiButton,
   UiCallout,
+  UiCheckbox,
   UiFormField,
   UiInput,
   UiSelect,
@@ -33,6 +34,10 @@ function updateField(key: keyof SlackProfileForm, value: string | number | null)
 
 function updatePolicyField(key: BotPolicyFieldKey, value: string | number | null): void {
   updateField(key, value)
+}
+
+function updateBooleanField(key: keyof SlackProfileForm, value: boolean): void {
+  emit('update:form', { ...props.form, [key]: value })
 }
 </script>
 
@@ -82,12 +87,12 @@ function updatePolicyField(key: BotPolicyFieldKey, value: string | number | null
           <template #default="{ id, describedBy, invalid }">
             <UiSelect
               :id="id"
-              :model-value="form.auth_profile_key"
+              :model-value="form.credential_ref"
               :options="slackConnectionOptions"
               :aria-describedby="describedBy"
               :invalid="invalid"
               placeholder="Select connection"
-              @update:model-value="updateField('auth_profile_key', $event)"
+              @update:model-value="updateField('credential_ref', $event)"
             />
           </template>
         </UiFormField>
@@ -99,6 +104,15 @@ function updatePolicyField(key: BotPolicyFieldKey, value: string | number | null
         >
           Slack workspace: {{ teamLabel }}
         </UiCallout>
+
+        <div class="rounded-lg border border-subtle bg-bg-surface-alt p-3">
+          <UiCheckbox
+            :model-value="form.ingress_enabled"
+            label="Receive inbound Slack events in this project"
+            description="A Slack app can send inbound events to one project. Turn this off when reusing the Account here only for outbound messages."
+            @update:model-value="updateBooleanField('ingress_enabled', $event)"
+          />
+        </div>
       </section>
 
       <BotPolicySections

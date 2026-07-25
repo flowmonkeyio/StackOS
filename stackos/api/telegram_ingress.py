@@ -10,10 +10,11 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
 from pydantic import BaseModel
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from stackos.api.deps import get_session
 from stackos.artifacts import redact_secret_text
+from stackos.auth_providers import AuthRepository
 from stackos.communications import (
     CommunicationDecision,
     CommunicationInteractionCheck,
@@ -30,11 +31,10 @@ from stackos.communications import (
     evaluate_inbound_policy,
     merged_provider_profile,
     process_inbound_event,
+    provider_ingress_enabled,
     telegram_callback_button_external_id,
 )
-from stackos.db.models import IntegrationCredential
 from stackos.repositories.base import ValidationError
-from stackos.repositories.projects import IntegrationCredentialRepository
 
 router = APIRouter(prefix="/api/v1/ingress/telegram", tags=["telegram-ingress"])
 
@@ -57,7 +57,7 @@ class TelegramIngressOut(BaseModel):
 class TelegramProfile:
     key: str
     profile_ref: str
-    auth_profile_key: str
+    credential_ref: str
     data: dict[str, Any]
 
 
@@ -89,7 +89,12 @@ async def ingest_telegram_update(
         project_id=project_id,
         profile_key=profile_key,
     )
-    _verify_secret(session, project_id=project_id, profile=profile, header=secret_token)
+    await _verify_secret(
+        session,
+        project_id=project_id,
+        profile=profile,
+        header=secret_token,
+    )
     stored = _store_update(
         session,
         project_id=project_id,
@@ -99,7 +104,7 @@ async def ingest_telegram_update(
     return TelegramIngressOut(**stored)
 
 
-def _verify_secret(
+async def _verify_secret(
     session: Session,
     *,
     project_id: int,
@@ -108,17 +113,21 @@ def _verify_secret(
 ) -> None:
     if not header:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid Telegram secret")
-    credential = _integration_credential(
-        session,
-        project_id=project_id,
-        profile_key=profile.auth_profile_key,
-    )
-    if credential is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid Telegram secret")
-    assert credential.id is not None
-    raw = IntegrationCredentialRepository(session).get_decrypted(credential.id)
     try:
-        payload = json.loads(raw.decode("utf-8"))
+        resolved = await AuthRepository(session).resolve_for_execution(
+            project_id=project_id,
+            provider_key="telegram-bot",
+            credential_ref=profile.credential_ref,
+            operation="ingress.telegram.verify",
+            required_scopes=[],
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="invalid Telegram secret",
+        ) from exc
+    try:
+        payload = json.loads(resolved.secret_payload.decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError):
         payload = {}
     expected = str(payload.get("webhook_secret_token") or "")
@@ -140,36 +149,22 @@ def _require_telegram_profile(
     if record is not None:
         data = merged_provider_profile(dict(record.data_json or {}), "telegram-bot")
         provider_key = data.get("provider_key")
-        auth_profile_key = data.get("auth_profile_key")
+        credential_ref = data.get("credential_ref")
         if (
             data.get("key") == profile_key
             and provider_key == "telegram-bot"
-            and isinstance(auth_profile_key, str)
+            and provider_ingress_enabled(data)
+            and isinstance(credential_ref, str)
+            and credential_ref.strip()
         ):
             profile_ref = str(data.get("profile_ref") or f"communication-profile:{profile_key}")
             return TelegramProfile(
                 key=profile_key,
                 profile_ref=profile_ref,
-                auth_profile_key=auth_profile_key,
+                credential_ref=credential_ref.strip(),
                 data=data,
             )
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid Telegram secret")
-
-
-def _integration_credential(
-    session: Session,
-    *,
-    project_id: int,
-    profile_key: str,
-) -> IntegrationCredential | None:
-    row = session.exec(
-        select(IntegrationCredential).where(
-            IntegrationCredential.project_id == project_id,
-            IntegrationCredential.kind == "telegram-bot",
-            IntegrationCredential.profile_key == profile_key,
-        )
-    ).first()
-    return row
 
 
 def _store_update(
@@ -409,7 +404,7 @@ def _normalized_telegram_event(
                 "provider_key": "telegram-bot",
                 "profile_key": profile.key,
                 "profile_ref": profile.profile_ref,
-                "auth_profile_key": profile.auth_profile_key,
+                "credential_ref": profile.credential_ref,
                 "update_id": update_id,
                 "update_type": parsed["update_type"],
                 "message_ref": parsed.get("message_ref"),
@@ -428,7 +423,7 @@ def _normalized_telegram_event(
         request_metadata_json={
             "profile_key": profile.key,
             "profile_ref": profile.profile_ref,
-            "auth_profile_key": profile.auth_profile_key,
+            "credential_ref": profile.credential_ref,
             "update_id": update_id,
             "interaction_ref": parsed.get("interaction_ref"),
             "invoker_ref": parsed.get("user_ref"),

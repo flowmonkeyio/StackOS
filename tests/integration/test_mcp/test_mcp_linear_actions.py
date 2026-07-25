@@ -8,11 +8,10 @@ from typing import Any
 from pytest_httpx import HTTPXMock
 from sqlmodel import Session, select
 
-from stackos.auth_providers import AuthRepository
 from stackos.config import Settings
 from stackos.db.connection import make_engine
 from stackos.db.models import Credential, CredentialAccount, CredentialScope
-from stackos.repositories.projects import IntegrationCredentialRepository
+from tests.integration.account_test_support import seed_test_account
 
 from .conftest import MCPClient
 
@@ -29,10 +28,11 @@ def _seed_linear_credential(
             config_json: dict[str, str] = {"auth_method_key": auth_method_key}
             if auth_method_key == "oauth2_authorization_code":
                 config_json["scope_status"] = "known"
-            IntegrationCredentialRepository(session).set(
+            backing = seed_test_account(
+                session,
                 project_id=project_id,
-                kind="linear",
-                profile_key="primary",
+                provider_key="linear",
+                display_name="Linear - Primary",
                 secret_payload=(
                     b"linear-personal-key-sentinel"
                     if auth_method_key == "personal_api_key"
@@ -40,14 +40,8 @@ def _seed_linear_credential(
                 ),
                 config_json=config_json,
             )
-            credential_ref = (
-                AuthRepository(session)
-                .status(project_id=project_id, provider_key="linear")
-                .connections[0]
-                .credential_ref
-            )
             credential = session.exec(
-                select(Credential).where(Credential.credential_ref == credential_ref)
+                select(Credential).where(Credential.integration_credential_id == backing.data.id)
             ).one()
             credential.auth_type = "api-key" if auth_method_key == "personal_api_key" else "oauth"
             credential.auth_method_key = auth_method_key
@@ -69,7 +63,7 @@ def _seed_linear_credential(
                 for scope in ("read", "write"):
                     session.add(CredentialScope(credential_id=credential.id, scope=scope))
             session.commit()
-            return credential_ref
+            return credential.credential_ref
     finally:
         engine.dispose()
 

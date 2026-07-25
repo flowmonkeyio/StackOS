@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-24T04:40:10.440Z",
+  "generatedAt": "2026-07-25T07:16:35.923Z",
   "source": "StackOS catalog.list after provider catalog synchronization",
   "counts": {
     "providers": 55,
@@ -446,8 +446,8 @@
         {
           "key": "gtm.apollo.people.search",
           "name": "Search Apollo People",
-          "description": "Search Apollo people from explicit criteria and source refs; requires an Apollo credential profile marked as a master API key.",
-          "keywords": "Search Apollo people from explicit criteria and source refs; requires an Apollo credential profile marked as a master API key.",
+          "description": "Search Apollo people from explicit criteria and source refs; requires an Apollo Account marked as a master API key.",
+          "keywords": "Search Apollo people from explicit criteria and source refs; requires an Apollo Account marked as a master API key.",
           "capability": "lead-management",
           "capabilityName": "Lead Management",
           "risk": "cost"
@@ -1960,8 +1960,8 @@
       "slug": "hubspot",
       "providerKey": "hubspot",
       "name": "HubSpot",
-      "description": "HubSpot sales and marketing customer-lifecycle provider with capability-scoped OAuth readiness.",
-      "authType": "oauth",
+      "description": "HubSpot sales and marketing customer-lifecycle provider with capability-scoped OAuth or private-app token readiness.",
+      "authType": "oauth-or-api-key",
       "pluginSlug": "gtm",
       "pluginName": "GTM And RevOps",
       "pluginDescription": "Research accounts, enrich leads, update CRM records, and prepare sales follow-up across your revenue tools.",
@@ -2981,8 +2981,8 @@
       "slug": "linear",
       "providerKey": "linear",
       "name": "Linear",
-      "description": "Linear GraphQL provider using daemon-owned OAuth authorization code with PKCE. Tokens stay daemon-held and only curated issue-work actions are executable.",
-      "authType": "oauth",
+      "description": "Linear GraphQL provider using daemon-owned OAuth or a personal API key. Credentials stay daemon-held and only curated issue-work actions are executable.",
+      "authType": "oauth-or-api-key",
       "pluginSlug": "linear",
       "pluginName": "Linear",
       "pluginDescription": "Plan and track product work through Linear issues, projects, cycles, teams, comments, and workflow states.",
@@ -3331,7 +3331,7 @@
       ],
       "primaryUrl": "https://linear.app/",
       "docsUrl": "https://linear.app/developers/oauth-2-0-authentication",
-      "setupNote": "Create a Linear OAuth application, copy its client id and secret into the local StackOS connection form, and register the exact callback URL shown there."
+      "setupNote": "Create a Linear OAuth application and register the exact callback URL shown in StackOS, or create a personal API key in Linear account settings. Personal-key permissions are enforced by Linear at request time."
     },
     {
       "key": "branding.linkedin-api",

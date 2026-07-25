@@ -20,32 +20,31 @@ describe('StackOS catalog store auth controls', () => {
     globalThis.fetch = vi.fn(async (input, init) => {
       const url = String(input)
       calls.push({ url, init })
-      if (url === '/api/v1/auth/providers') return json([authProvider()])
-      if (url === '/api/v1/projects/1/auth/status') return json(authStatus())
-      if (url === '/api/v1/projects/1/auth/firecrawl/credentials') {
+      if (url === '/api/v1/auth/accounts') return json(authStatus(null))
+      if (url === '/api/v1/auth/accounts/firecrawl') {
         return json({ data: authConnection() }, 201)
       }
       return json({})
     }) as typeof fetch
 
     const store = useStackOsCatalogStore()
-    const response = await store.storeCredential(1, 'firecrawl', {
+    const response = await store.storeCredential('firecrawl', {
       auth_method_key: 'api_key',
-      profile_key: 'default',
-      label: 'Primary',
+      display_name: 'Firecrawl - Primary',
       fields: { api_key: 'fc-secret' },
+      attach_project_id: 1,
     })
 
-    const write = calls.find((call) => call.url.endsWith('/auth/firecrawl/credentials'))
+    const write = calls.find((call) => call.url.endsWith('/auth/accounts/firecrawl'))
     expect(write?.init?.method).toBe('POST')
     expect(JSON.parse(String(write?.init?.body))).toEqual({
       auth_method_key: 'api_key',
-      profile_key: 'default',
-      label: 'Primary',
+      display_name: 'Firecrawl - Primary',
       fields: { api_key: 'fc-secret' },
+      attach_project_id: 1,
     })
     expect(response.data.credential_ref).toBe('cred_firecrawl')
-    expect(store.authStatus?.connections[0].credential_ref).toBe('cred_firecrawl')
+    expect(store.globalAccountsStatus?.accounts[0].credential_ref).toBe('cred_firecrawl')
     expect(JSON.stringify(store.$state)).not.toContain('fc-secret')
   })
 
@@ -54,9 +53,8 @@ describe('StackOS catalog store auth controls', () => {
     globalThis.fetch = vi.fn(async (input, init) => {
       const url = String(input)
       if (init?.body) postedBodies.push(JSON.parse(String(init.body)))
-      if (url === '/api/v1/auth/providers') return json([authProvider()])
-      if (url === '/api/v1/projects/1/auth/status') return json(authStatus())
-      if (url === '/api/v1/projects/1/auth/test') {
+      if (url === '/api/v1/auth/accounts') return json(authStatus(null))
+      if (url === '/api/v1/auth/accounts/cred_firecrawl/test') {
         return json({
           data: {
             credential_ref: 'cred_firecrawl',
@@ -71,12 +69,11 @@ describe('StackOS catalog store auth controls', () => {
           },
         })
       }
-      if (url === '/api/v1/projects/1/auth/revoke') {
+      if (url === '/api/v1/auth/accounts/cred_firecrawl/revoke') {
         return json({
           data: {
             credential_ref: 'cred_firecrawl',
             provider_key: 'firecrawl',
-            project_id: 1,
             revoked_at: '2026-05-22T00:01:00Z',
             status: 'revoked',
           },
@@ -86,10 +83,10 @@ describe('StackOS catalog store auth controls', () => {
     }) as typeof fetch
 
     const store = useStackOsCatalogStore()
-    await store.testCredential(1, { credential_ref: 'cred_firecrawl' })
-    await store.revokeCredential(1, { credential_ref: 'cred_firecrawl' })
+    await store.testCredential('cred_firecrawl')
+    await store.revokeCredential('cred_firecrawl')
 
-    expect(postedBodies).toContainEqual({ credential_ref: 'cred_firecrawl' })
+    expect(postedBodies).toEqual([])
     expect(JSON.stringify(postedBodies)).not.toContain('secret')
   })
 
@@ -204,28 +201,28 @@ function authProvider() {
 function authConnection() {
   return {
     credential_ref: 'cred_firecrawl',
-    project_id: 1,
+    credential_id: 1,
     provider_key: 'firecrawl',
+    display_name: 'Firecrawl - Primary',
     auth_type: 'api-key',
     auth_method_key: 'api_key',
-    profile_key: 'default',
-    label: 'Primary',
     status: 'connected',
     expires_at: null,
     last_tested_at: null,
     revoked_at: null,
     scopes: [],
     account: null,
+    project_ids: [1],
     setup_required: false,
   }
 }
 
-function authStatus() {
+function authStatus(projectId: number | null = 1) {
   return {
-    project_id: 1,
+    project_id: projectId,
     provider_key: null,
     providers: [authProvider()],
-    connections: [authConnection()],
+    accounts: [authConnection()],
   }
 }
 

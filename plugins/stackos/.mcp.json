@@ -2,7 +2,7 @@
   "mcpServers": {
     "stackos": {
       "command": "stackos",
-      "args": ["mcp-bridge"]
+      "args": ["mcp-bridge", "--runtime", "codex"]
     }
   }
 }

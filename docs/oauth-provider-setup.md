@@ -673,7 +673,7 @@ the first connection or before a reconnect.
 | Transactional communications | One-to-one template delivery through `communication.send` | Marketing Professional/Enterprise, Transactional Email add-on, target/profile, and consent policy |
 
 Adding a bundle with OAuth scopes is an incremental-consent operation: edit the
-connection, select the bundle, and reconnect. The Webhooks bundle adds operator
+Account, select the bundle, and reconnect. The Webhooks bundle adds operator
 setup checks but no OAuth scope, so selecting it alone does not require new
 consent. StackOS keeps the prior working credential if an upgrade fails and
 computes scope state from the scopes HubSpot actually returns. Never treat a
@@ -682,7 +682,9 @@ selected checkbox or an account tier as proof that a scope was granted.
 ### Connect from StackOS
 
 1. Open `/projects/{project_id}/connections` on the local StackOS UI.
-2. Select **Add connection** -> **HubSpot** -> **Connect with HubSpot**.
+2. Select **Add connection** -> **Create new Account** -> **HubSpot** ->
+   **Connect with HubSpot**. If a suitable HubSpot Account already exists,
+   select and attach it instead.
 3. Select only the optional capability bundles needed now. If transactional
    email will be used, confirm the add-on only after checking this exact portal.
    Leave signed ingress disabled until its public endpoint exists.
@@ -691,7 +693,7 @@ selected checkbox or an account tier as proof that a scope was granted.
    permissions, and select **Connect app**. The browser returns through the
    public callback page to the StackOS daemon on the same machine and finishes
    on the Connections screen.
-6. Confirm the connection shows the expected HubSpot account, connected status,
+6. Confirm the Connection shows the expected HubSpot Account, connected status,
    granted bundles/scopes, and capability readiness. Run the safe connection
    test before using actions.
 

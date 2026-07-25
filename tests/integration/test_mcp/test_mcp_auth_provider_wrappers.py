@@ -36,8 +36,12 @@ def _create_integration_credential(
     else:
         body = {"auth_method_key": "api_key", "fields": {"api_key": text_payload}}
     response = mcp.test_client.post(
-        f"/api/v1/projects/{project_id}/auth/{kind}/credentials",
-        json=body,
+        f"/api/v1/auth/accounts/{kind}",
+        json={
+            **body,
+            "display_name": f"{kind} - Default",
+            "attach_project_id": project_id,
+        },
         headers=mcp._headers(),
     )
     response.raise_for_status()
@@ -46,14 +50,14 @@ def _create_integration_credential(
 
 def _credential_ref(mcp: MCPClient, *, project_id: int, provider_key: str) -> str:
     status = mcp.call_tool_structured(
-        "auth.status",
+        "connection.list",
         {
             "project_id": project_id,
             "provider_key": provider_key,
             "response_mode": "raw",
         },
     )
-    return status["connections"][0]["credential_ref"]
+    return status["accounts"][0]["credential_ref"]
 
 
 def test_auth_test_dispatches_to_firecrawl(
@@ -77,8 +81,8 @@ def test_auth_test_dispatches_to_firecrawl(
     credential_ref = _credential_ref(mcp_client, project_id=project_id, provider_key="firecrawl")
 
     out = mcp_client.call_tool_structured(
-        "auth.test",
-        {"project_id": project_id, "credential_ref": credential_ref, "response_mode": "raw"},
+        "account.test",
+        {"credential_ref": credential_ref, "response_mode": "raw"},
     )
 
     assert out["data"]["ok"] is True
@@ -110,8 +114,8 @@ def test_auth_test_dispatches_to_wordpress_provider_manifest(
     credential_ref = _credential_ref(mcp_client, project_id=project_id, provider_key="wordpress")
 
     out = mcp_client.call_tool_structured(
-        "auth.test",
-        {"project_id": project_id, "credential_ref": credential_ref, "response_mode": "raw"},
+        "account.test",
+        {"credential_ref": credential_ref, "response_mode": "raw"},
     )
 
     rendered = json.dumps(out)
@@ -142,8 +146,8 @@ def test_auth_test_dispatches_to_ghost_provider_manifest(
     credential_ref = _credential_ref(mcp_client, project_id=project_id, provider_key="ghost")
 
     out = mcp_client.call_tool_structured(
-        "auth.test",
-        {"project_id": project_id, "credential_ref": credential_ref, "response_mode": "raw"},
+        "account.test",
+        {"credential_ref": credential_ref, "response_mode": "raw"},
     )
 
     rendered = json.dumps(out)
@@ -159,8 +163,13 @@ def test_auth_test_validates_unknown_kind(
 ) -> None:
     project_id = seeded_project["data"]["id"]
     response = mcp_client.test_client.post(
-        f"/api/v1/projects/{project_id}/auth/unknown-vendor/credentials",
-        json={"auth_method_key": "api_key", "fields": {"api_key": "x"}},
+        "/api/v1/auth/accounts/unknown-vendor",
+        json={
+            "display_name": "Unknown - Default",
+            "auth_method_key": "api_key",
+            "fields": {"api_key": "x"},
+            "attach_project_id": project_id,
+        },
         headers=mcp_client._headers(),
     )
 
@@ -171,9 +180,8 @@ def test_local_admin_auth_mutations_are_not_agent_system_granted(
     mcp_client: MCPClient,
     seeded_project: dict,
 ) -> None:
-    project_id = seeded_project["data"]["id"]
     for tool_name, arguments in [
-        ("auth.start", {"project_id": project_id, "provider_key": "firecrawl"}),
+        ("account.start", {"provider_key": "firecrawl"}),
     ]:
         err = mcp_client.call_tool_error(tool_name, arguments)
         assert err["code"] == -32007

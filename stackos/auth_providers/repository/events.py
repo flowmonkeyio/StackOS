@@ -25,11 +25,12 @@ class CredentialEventMixin:
         operation: str,
         status: str,
         metadata_json: dict[str, Any] | None,
+        project_id: int | None = None,
     ) -> None:
         self._s.add(
             CredentialUsageEvent(
                 credential_id=credential.id if credential is not None else None,
-                project_id=credential.project_id if credential is not None else None,
+                project_id=project_id,
                 provider_key=provider_key,
                 operation=operation,
                 status=status,
@@ -44,11 +45,12 @@ class CredentialEventMixin:
         provider_key: str,
         status: str,
         metadata_json: dict[str, Any] | None,
+        project_id: int | None = None,
     ) -> None:
         self._s.add(
             CredentialRefreshEvent(
                 credential_id=credential.id if credential is not None else None,
-                project_id=credential.project_id if credential is not None else None,
+                project_id=project_id,
                 provider_key=provider_key,
                 status=status,
                 metadata_json=redact_secrets(metadata_json) if metadata_json is not None else None,

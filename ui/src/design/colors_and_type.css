@@ -112,7 +112,8 @@
   --color-bg-surface-alt:   #fafafa;
   --color-bg-sunken:        #f1f1f3;
   --color-bg-inverse:       #18181b;
-  --color-bg-provider-inverse: #18181b;
+  --color-bg-provider-logo: #f8f7f2;
+  --color-bg-provider-inverse: #090b10;
   --color-bg-overlay:       rgba(24, 24, 27, 0.48);
 
   /* Foreground */
@@ -206,7 +207,8 @@
   --color-bg-surface-alt:   #212128;   /* raised: stat cards, nested insets */
   --color-bg-sunken:        #0e0e12;   /* wells: code, table headers, tracks */
   --color-bg-inverse:       #fafafa;
-  --color-bg-provider-inverse: #18181b;
+  --color-bg-provider-logo: #f8f7f2;
+  --color-bg-provider-inverse: #090b10;
   --color-bg-overlay:       rgba(0, 0, 0, 0.66);
 
   --color-fg-default:       #d8d8dc;

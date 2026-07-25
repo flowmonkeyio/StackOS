@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { compareConnections } from './credentialPresentation'
 import {
   channelKindLabel,
   commandSummary,
@@ -83,6 +84,30 @@ describe('connections formatters', () => {
     expect(connectionNeedsAttention({ status: 'connected', setup_required: false })).toBe(false)
     expect(connectionAttentionTone({ status: 'failed' })).toBe('danger')
     expect(connectionAttentionTone({ status: 'pending' })).toBe('warning')
+  })
+
+  it('sorts repair-needed Accounts before healthy Accounts', () => {
+    const connected = {
+      display_name: 'Alpha',
+      status: 'connected',
+      setup_required: false,
+    } as ConnectionRow
+    const setupRequired = {
+      display_name: 'Beta',
+      status: 'connected',
+      setup_required: true,
+    } as ConnectionRow
+    const failed = {
+      display_name: 'Gamma',
+      status: 'failed',
+      setup_required: false,
+    } as ConnectionRow
+
+    expect([connected, setupRequired, failed].sort(compareConnections)).toEqual([
+      failed,
+      setupRequired,
+      connected,
+    ])
   })
 
   it('picks the first provider facet as the primary provider', () => {

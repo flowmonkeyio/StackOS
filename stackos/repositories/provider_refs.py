@@ -10,7 +10,12 @@ from typing import Any
 from sqlmodel import Session, col, select
 
 from stackos.artifacts import redact_secrets
-from stackos.db.models import Credential, CredentialAccount, ProviderObjectReference
+from stackos.auth_providers import AuthRepository
+from stackos.db.models import (
+    Credential,
+    CredentialAccount,
+    ProviderObjectReference,
+)
 from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 
 
@@ -28,10 +33,11 @@ class ResolvedProviderObject:
 
 
 class ProviderObjectReferenceRepository:
-    """Issue and resolve opaque provider refs inside connector execution only."""
+    """Issue and resolve opaque provider refs for one project/account binding."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, project_id: int) -> None:
         self._s = session
+        self._project_id = project_id
 
     def upsert(
         self,
@@ -206,8 +212,15 @@ class ProviderObjectReferenceRepository:
         self._s.flush()
 
     def _binding(self, credential: Credential) -> tuple[int, str]:
-        if credential.id is None or credential.project_id is None:
-            raise ConflictError("provider object refs require a project credential")
+        if credential.id is None:
+            raise ConflictError("provider object refs require a persisted Account")
+        credential = AuthRepository(self._s).require_attached_account(
+            project_id=self._project_id,
+            credential_ref=credential.credential_ref,
+            provider_key=credential.provider_key,
+            require_connected=False,
+        )
+        assert credential.id is not None
         accounts = self._s.exec(
             select(CredentialAccount).where(CredentialAccount.credential_id == credential.id)
         ).all()
@@ -228,7 +241,7 @@ class ProviderObjectReferenceRepository:
                     ),
                 },
             )
-        return credential.project_id, next(iter(account_ids))
+        return self._project_id, next(iter(account_ids))
 
     @staticmethod
     def _safe_ref(value: Any) -> str:

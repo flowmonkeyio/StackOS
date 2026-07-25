@@ -13,7 +13,7 @@ presets:
       - agentPreset.describe
       - integration.list
       - readiness.check
-      - auth.status
+      - connection.list
       - action.list
       - action.describe
       - action.validate

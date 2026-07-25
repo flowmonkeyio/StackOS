@@ -18,7 +18,7 @@ from sqlmodel import col, select
 
 from stackos.auth_providers.oauth_contracts import OAuthProviderContract, oauth_contract_for
 from stackos.config import Settings
-from stackos.crypto.aes_gcm import encrypt
+from stackos.crypto.aes_gcm import encrypt_account
 from stackos.db.models import (
     Credential,
     CredentialAccount,
@@ -61,23 +61,35 @@ class OAuthLifecycleMixin:
     def start(
         self,
         *,
-        project_id: int,
         provider_key: str,
         settings: Settings,
         auth_method_key: str | None = None,
         credential_ref: str | None = None,
+        attach_project_id: int | None = None,
+        return_surface: str = "accounts",
     ) -> Envelope[AuthStartOut]:
-        self._require_project(project_id)
+        if return_surface not in {"accounts", "project-connections"}:
+            raise ValidationError("return_surface must be accounts or project-connections")
+        if return_surface == "project-connections" and attach_project_id is None:
+            raise ValidationError(
+                "attach_project_id is required for the project-connections return surface"
+            )
         provider = self._get_provider(provider_key)
         assert provider is not None
-        self._require_provider_enabled_for_project(project_id=project_id, provider=provider)
+        if attach_project_id is not None:
+            self._require_project(attach_project_id)
+            self._require_provider_enabled_for_project(
+                project_id=attach_project_id,
+                provider=provider,
+            )
         method = self._get_auth_method(provider, auth_method_key)
         assert method is not None
         setup_required = provider.auth_type not in {"none", "local"}
         if not method.interactive:
             return Envelope(
                 data=AuthStartOut(
-                    project_id=project_id,
+                    attach_project_id=attach_project_id,
+                    return_surface=return_surface,
                     provider_key=provider.key,
                     auth_type=method.auth_type,
                     auth_method_key=method.key,
@@ -85,34 +97,31 @@ class OAuthLifecycleMixin:
                     setup_url=(
                         self._local_setup_url(
                             settings=settings,
-                            project_id=project_id,
+                            project_id=attach_project_id,
                             provider_key=provider_key,
                         )
                         if setup_required
                         else None
                     ),
                 ),
-                project_id=project_id,
+                project_id=attach_project_id,
             )
         if credential_ref is None:
             raise ValidationError(
                 "credential_ref is required for an interactive auth method",
                 data={"provider_key": provider_key, "auth_method_key": method.key},
             )
-        credential, row = self._resolve_credential(
-            project_id=project_id,
-            credential_ref=credential_ref,
-        )
-        if row.kind != provider_key:
+        credential, row = self._global_credential(credential_ref)
+        if credential.provider_key != provider_key:
             raise ValidationError(
                 "credential provider does not match auth provider",
                 data={
                     "credential_ref": credential_ref,
-                    "credential_provider": row.kind,
+                    "credential_provider": credential.provider_key,
                     "provider_key": provider_key,
                 },
             )
-        configured_method = (row.config_json or {}).get("auth_method_key")
+        configured_method = credential.auth_method_key
         if configured_method != method.key:
             raise ValidationError(
                 "credential auth method does not match requested auth method",
@@ -125,17 +134,31 @@ class OAuthLifecycleMixin:
         payload = self._oauth_payload(row)
         application = payload.get("_oauth_application_pending")
         if not isinstance(application, dict):
-            raise ConflictError(
-                "interactive provider application configuration is missing",
-                data={"credential_ref": credential_ref, "provider_key": provider_key},
-            )
-        client_id = application.get("client_id") or (row.config_json or {}).get("client_id")
+            # Successful exchanges promote application fields out of the
+            # pending envelope. Rebuild it from the Account's durable secret
+            # payload and safe configuration when reconnecting.
+            safe_config = credential.config_json or {}
+            application = {
+                field.key: (payload.get(field.key) if field.secret else safe_config.get(field.key))
+                for field in method.fields
+                if (field.key in payload if field.secret else field.key in safe_config)
+            }
+            if not application:
+                raise ConflictError(
+                    "interactive provider application configuration is missing",
+                    data={"credential_ref": credential_ref, "provider_key": provider_key},
+                )
+            payload["_oauth_application_pending"] = application
+        client_id = application.get("client_id") or (credential.config_json or {}).get("client_id")
         if not isinstance(client_id, str) or not client_id.strip():
             raise ConflictError(
                 "interactive provider application id is missing",
                 data={"credential_ref": credential_ref, "provider_key": provider_key},
             )
-        contract = oauth_contract_for(provider_key, safe_config=row.config_json)
+        contract = oauth_contract_for(
+            provider_key,
+            safe_config=credential.config_json,
+        )
         if contract.flow != "authorization_code" or contract.authorization_endpoint is None:
             raise ValidationError(
                 "auth method is not an authorization-code provider flow",
@@ -161,7 +184,7 @@ class OAuthLifecycleMixin:
         optional_scopes = self._selected_optional_scopes(
             provider_key=provider_key,
             provider_config=provider.config_json,
-            credential_config=row.config_json,
+            credential_config=credential.config_json,
         )
         if optional_scopes:
             if contract.optional_scope_parameter is None:
@@ -182,18 +205,16 @@ class OAuthLifecycleMixin:
             "code_verifier": verifier,
             "required_scopes": list(scopes),
         }
-        safe_config = dict(row.config_json or {})
+        safe_config = dict(credential.config_json or {})
         safe_config["oauth_pending"] = True
         if safe_config.get("oauth_connection_status") != "connected":
             safe_config["oauth_connection_status"] = "pending"
         assert row.id is not None
         IntegrationCredentialRepository(self._s).set(
-            project_id=row.project_id,
-            kind=row.kind,
-            profile_key=row.profile_key,
+            credential_ref=credential.credential_ref,
+            provider_key=credential.provider_key,
             secret_payload=self._encode_payload(payload),
-            config_json=safe_config,
-            expires_at=row.expires_at,
+            integration_credential_id=row.id,
             commit=False,
         )
         self._s.exec(
@@ -205,7 +226,8 @@ class OAuthLifecycleMixin:
             .values(consumed_at=now)
         )
         state_row = OAuthState(
-            project_id=project_id,
+            attach_project_id=attach_project_id,
+            return_surface=return_surface,
             provider_key=provider_key,
             credential_id=credential.id,
             integration_credential_id=row.id,
@@ -216,20 +238,23 @@ class OAuthLifecycleMixin:
         self._s.add(state_row)
         if credential.status != "connected":
             credential.status = "pending"
+        credential.config_json = self._safe_config(safe_config)
         credential.updated_at = now
         self._s.add(credential)
         self.record_usage_event(
             credential=credential,
             provider_key=provider_key,
-            operation="auth.start",
+            operation="account.start",
             status="authorization-pending",
-            metadata_json={"auth_method_key": method.key, "profile_key": row.profile_key},
+            metadata_json={"auth_method_key": method.key},
+            project_id=attach_project_id,
         )
         self._s.commit()
         authorization_url = f"{contract.authorization_endpoint}?{urlencode(query)}"
         return Envelope(
             data=AuthStartOut(
-                project_id=project_id,
+                attach_project_id=attach_project_id,
+                return_surface=return_surface,
                 provider_key=provider_key,
                 auth_type=method.auth_type,
                 auth_method_key=method.key,
@@ -239,7 +264,7 @@ class OAuthLifecycleMixin:
                 credential_ref=credential.credential_ref,
                 expires_at=expires_at,
             ),
-            project_id=project_id,
+            project_id=attach_project_id,
         )
 
     @staticmethod
@@ -305,7 +330,7 @@ class OAuthLifecycleMixin:
             raise ConflictError("OAuth transaction is no longer linked to a credential")
         row = self._s.get(IntegrationCredential, state_row.integration_credential_id)
         if row is None or row.id is None:
-            raise NotFoundError("OAuth credential profile no longer exists")
+            raise NotFoundError("OAuth Account backing no longer exists")
         credential = self._credential_for_oauth_state(state_row=state_row, row=row)
         payload = self._oauth_payload(row)
         pending = payload.get("_oauth_pending")
@@ -313,7 +338,10 @@ class OAuthLifecycleMixin:
         if not isinstance(pending, dict) or not isinstance(application, dict):
             raise ConflictError("OAuth transaction is stale")
         expected_updated_at = row.updated_at
-        contract = oauth_contract_for(row.kind, safe_config=row.config_json)
+        contract = oauth_contract_for(
+            credential.provider_key,
+            safe_config=credential.config_json,
+        )
         if provider_error is not None:
             status = self._finish_failed_attempt(
                 row=row,
@@ -323,7 +351,8 @@ class OAuthLifecycleMixin:
                 outcome="authorization-denied",
             )
             return OAuthCallbackOut(
-                project_id=state_row.project_id,
+                attach_project_id=state_row.attach_project_id,
+                return_surface=state_row.return_surface,
                 provider_key=state_row.provider_key,
                 credential_ref=credential.credential_ref,
                 status=status,
@@ -337,7 +366,8 @@ class OAuthLifecycleMixin:
                 outcome="repair-required",
             )
             return OAuthCallbackOut(
-                project_id=state_row.project_id,
+                attach_project_id=state_row.attach_project_id,
+                return_surface=state_row.return_surface,
                 provider_key=state_row.provider_key,
                 credential_ref=credential.credential_ref,
                 status=status,
@@ -364,7 +394,8 @@ class OAuthLifecycleMixin:
                 outcome="repair-required",
             )
             return OAuthCallbackOut(
-                project_id=state_row.project_id,
+                attach_project_id=state_row.attach_project_id,
+                return_surface=state_row.return_surface,
                 provider_key=state_row.provider_key,
                 credential_ref=credential.credential_ref,
                 status=status,
@@ -652,7 +683,7 @@ class OAuthLifecycleMixin:
         refresh_value = response_body.get("refresh_token")
         if isinstance(refresh_value, str) and refresh_value.strip():
             new_payload["refresh_token"] = refresh_value.strip()
-        safe_config = dict(row.config_json or {})
+        safe_config = dict(credential.config_json or {})
         safe_config.pop("oauth_pending", None)
         safe_config["oauth_connection_status"] = "connected"
         safe_config["scope_status"] = "known"
@@ -665,13 +696,15 @@ class OAuthLifecycleMixin:
             expires_at = utcnow() + timedelta(seconds=float(raw_expires_in))
         if not self._cas_profile_update(
             row=row,
+            credential=credential,
             expected_updated_at=expected_updated_at,
             payload=new_payload,
             safe_config=safe_config,
             expires_at=expires_at,
         ):
             return OAuthCallbackOut(
-                project_id=state_row.project_id,
+                attach_project_id=state_row.attach_project_id,
+                return_surface=state_row.return_surface,
                 provider_key=state_row.provider_key,
                 credential_ref=credential.credential_ref,
                 status="stale-attempt",
@@ -698,14 +731,33 @@ class OAuthLifecycleMixin:
         )
         self.record_usage_event(
             credential=credential,
-            provider_key=row.kind,
+            provider_key=credential.provider_key,
             operation="auth.callback",
             status="connected",
-            metadata_json={"profile_key": row.profile_key},
+            metadata_json={},
+            project_id=state_row.attach_project_id,
         )
+        if state_row.attach_project_id is not None and credential.id is not None:
+            from stackos.db.models import ProjectCredential
+
+            attached = self._s.exec(
+                select(ProjectCredential).where(
+                    col(ProjectCredential.project_id) == state_row.attach_project_id,
+                    col(ProjectCredential.credential_id) == credential.id,
+                )
+            ).first()
+            if attached is None:
+                self._s.add(
+                    ProjectCredential(
+                        project_id=state_row.attach_project_id,
+                        credential_id=credential.id,
+                        attached_by="oauth-callback",
+                    )
+                )
         self._s.commit()
         return OAuthCallbackOut(
-            project_id=state_row.project_id,
+            attach_project_id=state_row.attach_project_id,
+            return_surface=state_row.return_surface,
             provider_key=state_row.provider_key,
             credential_ref=credential.credential_ref,
             status="connected",
@@ -724,15 +776,16 @@ class OAuthLifecycleMixin:
         payload.pop("_oauth_pending", None)
         active = any(payload.get(key) for key in ("access_token", "refresh_token", "value"))
         connection_status = "connected" if active else "repair-required"
-        safe_config = dict(row.config_json or {})
+        safe_config = dict(credential.config_json or {})
         safe_config.pop("oauth_pending", None)
         safe_config["oauth_connection_status"] = connection_status
         if not self._cas_profile_update(
             row=row,
+            credential=credential,
             expected_updated_at=expected_updated_at,
             payload=payload,
             safe_config=safe_config,
-            expires_at=row.expires_at,
+            expires_at=credential.expires_at,
         ):
             return "stale-attempt"
         credential.status = connection_status
@@ -741,10 +794,10 @@ class OAuthLifecycleMixin:
         self._s.add(credential)
         self.record_usage_event(
             credential=credential,
-            provider_key=row.kind,
+            provider_key=credential.provider_key,
             operation="auth.callback",
             status=outcome,
-            metadata_json={"profile_key": row.profile_key},
+            metadata_json={},
         )
         self._s.commit()
         return outcome
@@ -753,16 +806,17 @@ class OAuthLifecycleMixin:
         self,
         *,
         row: IntegrationCredential,
+        credential: Credential,
         expected_updated_at: Any,
         payload: dict[str, Any],
         safe_config: dict[str, Any],
         expires_at: Any,
     ) -> bool:
         assert row.id is not None
-        ciphertext, nonce = encrypt(
+        ciphertext, nonce = encrypt_account(
             self._encode_payload(payload),
-            project_id=row.project_id,
-            kind=row.kind,
+            credential_ref=credential.credential_ref,
+            provider_key=credential.provider_key,
         )
         now = utcnow()
         result = self._s.exec(
@@ -774,9 +828,6 @@ class OAuthLifecycleMixin:
             .values(
                 encrypted_payload=ciphertext,
                 nonce=nonce,
-                config_json=safe_config,
-                expires_at=expires_at,
-                last_refreshed_at=now,
                 updated_at=now,
             )
         )
@@ -809,8 +860,6 @@ class OAuthLifecycleMixin:
         state_row: OAuthState,
         row: IntegrationCredential,
     ) -> Credential:
-        if state_row.provider_key != row.kind or state_row.project_id != row.project_id:
-            raise ConflictError("OAuth transaction binding does not match credential")
         credential = None
         if state_row.credential_id is not None:
             credential = self._s.get(Credential, state_row.credential_id)
@@ -822,6 +871,8 @@ class OAuthLifecycleMixin:
             ).first()
         if credential is None or credential.integration_credential_id != row.id:
             raise ConflictError("OAuth transaction credential binding is invalid")
+        if state_row.provider_key != credential.provider_key:
+            raise ConflictError("OAuth transaction binding does not match credential")
         return credential
 
     def _replace_scopes(

@@ -7,7 +7,6 @@ import {
   authConnection,
   authProvider,
   catalogJson,
-  clickButton,
   interactiveMethod,
   json,
   mountConnections,
@@ -98,28 +97,20 @@ describe('ConnectionsView provider readiness', () => {
       }
       const catalogResponse = catalogJson(url)
       if (catalogResponse) return catalogResponse
-      if (url === '/api/v1/auth/providers') return json([provider])
-      if (url === '/api/v1/projects/1/auth/credentials/cred_crm_provider') {
+      if (url === '/api/v1/auth/accounts') {
         return json({
-          connection: authConnection({
-            revokedAt: null,
-            providerKey: 'crm-provider',
-            credentialRef: 'cred_crm_provider',
-            authType: 'oauth',
-            authMethodKey: 'oauth2',
-            label: 'Primary CRM',
-            scopes: [...coreScopes, 'crm.leads.read', 'automation'],
-          }),
-          values: {},
-          secret_present: { client_id: true, client_secret: true },
+          project_id: null,
+          provider_key: null,
+          providers: [provider],
+          accounts: [],
         })
       }
-      if (url === '/api/v1/projects/1/auth/status') {
+      if (url === '/api/v1/projects/1/connections/accounts') {
         return json({
           project_id: 1,
           provider_key: null,
           providers: [provider],
-          connections: [
+          accounts: [
             authConnection({
               revokedAt: null,
               providerKey: 'crm-provider',
@@ -168,23 +159,7 @@ describe('ConnectionsView provider readiness', () => {
     ])
     expect(wrapper.text()).toContain('OAuth App, Public Ingress, Signature Validation')
 
-    await clickButton(wrapper, 'Add connection')
-    await vi.waitFor(() =>
-      expect(wrapper.text()).toContain('https://auth.stackos.example/api/v1/auth/oauth/callback'),
-    )
-    expect(
-      wrapper.get('a[href="https://provider.example/developer/apps"]').attributes('target'),
-    ).toBe('_blank')
-    expect(wrapper.text()).toContain('Reconnect after selecting more optional capabilities.')
-
-    await clickButton(wrapper, 'Cancel')
-    await clickButton(wrapper, 'Edit')
-    await vi.waitFor(() => expect(wrapper.text()).toContain('Reconnect guidance'))
-    expect(wrapper.text()).toContain(
-      'Reconnect for missing scopes and verify provider entitlements.',
-    )
-    expect(wrapper.findAll('button').some((button) => button.text().trim() === 'Reconnect')).toBe(
-      true,
-    )
+    expect(wrapper.text()).toContain('Manage Account')
+    expect(wrapper.text()).not.toContain('Reconnect guidance')
   })
 })

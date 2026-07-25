@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from stackos.artifacts import redact_secrets
-from stackos.db.models import Credential
+from stackos.auth_providers import AuthRepository
 from stackos.operations.communication_platform import (
     CommunicationTargetOut,
     _target_action_defaults,
@@ -451,10 +451,12 @@ def _require_hubspot_transactional_entitlement(
     operation: str,
     target: CommunicationTargetOut,
 ) -> None:
-    credential = session.exec(
-        select(Credential).where(Credential.credential_ref == credential_ref)
-    ).first()
-    config = dict(credential.config_json or {}) if credential is not None else {}
+    credential = AuthRepository(session).require_attached_account(
+        project_id=target.project_id,
+        credential_ref=credential_ref,
+        provider_key="hubspot",
+    )
+    config = dict(credential.config_json or {})
     if config.get("transactional_email_entitlement_confirmed") is True:
         return
     _reject(

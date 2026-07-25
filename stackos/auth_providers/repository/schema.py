@@ -92,20 +92,20 @@ class AuthProviderOut(BaseModel):
     config_json: dict[str, Any] | None
 
 
-class CredentialConnectionOut(BaseModel):
+class AccountOut(BaseModel):
+    credential_id: int
     credential_ref: str
-    project_id: int | None
+    display_name: str
     provider_key: str
     auth_type: str
     auth_method_key: str
-    profile_key: str
-    label: str | None = None
     status: str
     expires_at: datetime | None
     last_tested_at: datetime | None
     revoked_at: datetime | None
     scopes: list[str]
     account: dict[str, Any] | None = None
+    project_ids: list[int] = Field(default_factory=list)
     setup_required: bool = False
 
 
@@ -113,11 +113,12 @@ class AuthStatusOut(BaseModel):
     project_id: int | None
     provider_key: str | None
     providers: list[AuthProviderOut]
-    connections: list[CredentialConnectionOut]
+    accounts: list[AccountOut]
 
 
 class AuthStartOut(BaseModel):
-    project_id: int
+    attach_project_id: int | None = None
+    return_surface: str = "accounts"
     provider_key: str
     auth_type: str
     auth_method_key: str
@@ -132,7 +133,8 @@ class AuthStartOut(BaseModel):
 class OAuthCallbackOut(BaseModel):
     """Sanitized result used only to choose the local callback redirect."""
 
-    project_id: int | None = None
+    attach_project_id: int | None = None
+    return_surface: str = "accounts"
     provider_key: str | None = None
     credential_ref: str | None = None
     status: str
@@ -153,19 +155,18 @@ class AuthTestOut(BaseModel):
 class AuthRevokeOut(BaseModel):
     credential_ref: str
     provider_key: str
-    project_id: int | None
     revoked_at: datetime
     status: str = "revoked"
 
 
-class AuthCredentialSetOut(CredentialConnectionOut):
-    """Sanitized result for a local-admin credential profile write."""
+class AuthCredentialSetOut(AccountOut):
+    """Sanitized result for a global Account write."""
 
 
 class AuthCredentialEditOut(BaseModel):
     """Safe stored values for the existing provider-declared credential schema."""
 
-    connection: CredentialConnectionOut
+    account: AccountOut
     values: dict[str, Any]
     secret_present: dict[str, bool]
 

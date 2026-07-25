@@ -21,7 +21,7 @@ from stackos.db.models import (
     IntegrationCredential,
 )
 from stackos.mcp.errors import IntegrationDownError
-from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
+from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.projects import IntegrationCredentialRepository
 
 
@@ -29,13 +29,13 @@ def test_status_wraps_existing_credentials_with_opaque_refs(
     session: Session,
     project_id: int,
 ) -> None:
-    integration = (
-        IntegrationCredentialRepository(session)
-        .set(
-            project_id=project_id,
-            kind="firecrawl",
-            secret_payload=b"fc-secret",
-            config_json={"label": "Primary Firecrawl"},
+    stored = (
+        AuthRepository(session)
+        .store_credential(
+            provider_key="firecrawl",
+            display_name="Primary Firecrawl",
+            fields={"api_key": "fc-secret"},
+            attach_project_id=project_id,
         )
         .data
     )
@@ -43,8 +43,8 @@ def test_status_wraps_existing_credentials_with_opaque_refs(
     status = AuthRepository(session).status(project_id=project_id, provider_key="firecrawl")
 
     assert [provider.key for provider in status.providers] == ["firecrawl"]
-    assert len(status.connections) == 1
-    connection = status.connections[0]
+    assert len(status.accounts) == 1
+    connection = status.accounts[0]
     assert connection.credential_ref.startswith("cred_")
     assert connection.provider_key == "firecrawl"
     assert connection.status == "connected"
@@ -52,10 +52,29 @@ def test_status_wraps_existing_credentials_with_opaque_refs(
     assert connection.setup_required is False
 
     credential = session.exec(
-        select(Credential).where(Credential.integration_credential_id == integration.id)
+        select(Credential).where(Credential.credential_ref == stored.credential_ref)
     ).one()
     assert credential.credential_ref == connection.credential_ref
-    assert credential.config_json == {"label": "Primary Firecrawl"}
+    assert credential.display_name == "Primary Firecrawl"
+    assert credential.config_json == {"auth_method_key": "api_key"}
+
+
+def _credential_for_account(
+    session: Session,
+    credential_ref: str,
+) -> Credential:
+    return session.exec(select(Credential).where(Credential.credential_ref == credential_ref)).one()
+
+
+def _integration_for_account(
+    session: Session,
+    credential_ref: str,
+) -> IntegrationCredential:
+    credential = _credential_for_account(session, credential_ref)
+    assert credential.integration_credential_id is not None
+    row = session.get(IntegrationCredential, credential.integration_credential_id)
+    assert row is not None
+    return row
 
 
 def _add_permission_probe_test_provider(session: Session) -> None:
@@ -147,17 +166,17 @@ def test_auth_test_uses_saved_method_for_probe_context_and_evidence(
     assert methods["static-token"].permission_verification is not None
     assert methods["static-token"].permission_verification.evidence_source == "provider_probe"
     oauth = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="permission-probe-test",
         auth_method_key="oauth-import",
-        profile_key="oauth",
+        display_name="oauth",
         fields={"access_token": "identical-token-shape"},
     ).data
     static = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="permission-probe-test",
         auth_method_key="static-token",
-        profile_key="static",
+        display_name="static",
         fields={"access_token": "identical-token-shape"},
     ).data
     monkeypatch.setattr(
@@ -182,7 +201,7 @@ def test_auth_test_uses_saved_method_for_probe_context_and_evidence(
     assert static_result.metadata["evidence"]["grants"] == ["records.read"]
 
     credentials = {
-        credential.profile_key: credential
+        credential.display_name: credential
         for credential in session.exec(select(Credential)).all()
         if credential.provider_key == "permission-probe-test"
     }
@@ -224,50 +243,43 @@ def test_auth_test_uses_saved_method_for_probe_context_and_evidence(
         )
 
 
-def test_cross_method_profile_write_is_rejected_before_replacing_credential(
+def test_account_update_preserves_method_and_duplicate_name_is_rejected(
     session: Session,
     project_id: int,
 ) -> None:
     _add_permission_probe_test_provider(session)
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="permission-probe-test",
         auth_method_key="static-token",
-        profile_key="shared",
+        display_name="shared",
         fields={"access_token": "original-static-token"},
     ).data
-    rotated = repo.store_credential(
-        project_id=project_id,
-        provider_key="permission-probe-test",
-        auth_method_key="static-token",
-        profile_key="shared",
+    rotated = repo.update_credential(
+        credential_ref=stored.credential_ref,
         fields={"access_token": "rotated-static-token"},
+        display_name=None,
     ).data
     assert rotated.credential_ref == stored.credential_ref
 
-    with pytest.raises(ConflictError, match="different auth method"):
+    with pytest.raises(ConflictError, match="already exists"):
         repo.store_credential(
-            project_id=project_id,
+            attach_project_id=project_id,
             provider_key="permission-probe-test",
             auth_method_key="oauth-import",
-            profile_key="shared",
+            display_name="shared",
             fields={"access_token": "replacement-oauth-token"},
         )
 
-    row = session.exec(
-        select(IntegrationCredential).where(
-            IntegrationCredential.project_id == project_id,
-            IntegrationCredential.kind == "permission-probe-test",
-            IntegrationCredential.profile_key == "shared",
-        )
+    credential = session.exec(
+        select(Credential).where(Credential.credential_ref == stored.credential_ref)
     ).one()
-    assert row.id is not None
-    assert row.config_json is not None
-    assert row.config_json["auth_method_key"] == "static-token"
-    assert IntegrationCredentialRepository(session).get_decrypted(row.id) == (
-        b"rotated-static-token"
-    )
+    assert credential.integration_credential_id is not None
+    assert credential.auth_method_key == "static-token"
+    assert IntegrationCredentialRepository(session).get_decrypted(
+        credential.integration_credential_id
+    ) == (b"rotated-static-token")
 
 
 def test_secret_fields_preserve_significant_whitespace(
@@ -277,11 +289,11 @@ def test_secret_fields_preserve_significant_whitespace(
     repo = AuthRepository(session)
     password = "  leading and trailing whitespace\t"
 
-    repo.store_credential(
-        project_id=project_id,
+    stored = repo.store_credential(
+        attach_project_id=project_id,
         provider_key="ftp",
         auth_method_key="ftp-password",
-        profile_key="primary",
+        display_name="primary",
         fields={
             "password": password,
             "host": "ftp.example.com",
@@ -292,32 +304,28 @@ def test_secret_fields_preserve_significant_whitespace(
             "timeout_s": 30,
             "encoding": "utf-8",
         },
-    )
+    ).data
 
-    row = session.exec(
-        select(IntegrationCredential).where(
-            IntegrationCredential.project_id == project_id,
-            IntegrationCredential.kind == "ftp",
-        )
-    ).one()
+    row = _integration_for_account(session, stored.credential_ref)
     assert row.id is not None
     payload = json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id))
     assert payload["password"] == password
 
 
-def test_status_normalizes_stale_failed_credential_from_backing_row(
+def test_status_preserves_failed_account_state(
     session: Session,
     project_id: int,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
-        project_id=project_id,
-        kind="firecrawl",
-        secret_payload=b"fc-secret",
-    )
     repo = AuthRepository(session)
+    repo.store_credential(
+        provider_key="firecrawl",
+        display_name="Firecrawl - Default",
+        fields={"api_key": "fc-secret"},
+        attach_project_id=project_id,
+    )
     status = repo.status(project_id=project_id, provider_key="firecrawl")
     credential = session.exec(
-        select(Credential).where(Credential.credential_ref == status.connections[0].credential_ref)
+        select(Credential).where(Credential.credential_ref == status.accounts[0].credential_ref)
     ).one()
     credential.status = "failed"
     session.add(credential)
@@ -325,8 +333,8 @@ def test_status_normalizes_stale_failed_credential_from_backing_row(
 
     status = repo.status(project_id=project_id, provider_key="firecrawl")
 
-    assert status.connections[0].status == "connected"
-    assert status.connections[0].setup_required is False
+    assert status.accounts[0].status == "failed"
+    assert status.accounts[0].setup_required is True
 
 
 def test_credential_edit_preserves_omitted_secret_and_validates_host(
@@ -335,11 +343,10 @@ def test_credential_edit_preserves_omitted_secret_and_validates_host(
 ) -> None:
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="ftp",
         auth_method_key="ftp-password",
-        profile_key="primary",
-        label="Production FTP",
+        display_name="Production FTP",
         fields={
             "password": "  exact password  ",
             "host": "old.example.test",
@@ -349,7 +356,6 @@ def test_credential_edit_preserves_omitted_secret_and_validates_host(
     ).data
 
     edit = repo.get_credential_edit_state(
-        project_id=project_id,
         credential_ref=stored.credential_ref,
     )
     assert edit.values["host"] == "old.example.test"
@@ -357,44 +363,37 @@ def test_credential_edit_preserves_omitted_secret_and_validates_host(
     assert edit.secret_present == {"password": True}
 
     updated = repo.update_credential(
-        project_id=project_id,
         credential_ref=stored.credential_ref,
-        label="Production FTP",
         fields={"host": "192.0.2.10"},
+        display_name="Production FTP",
     ).data
     assert updated.credential_ref == stored.credential_ref
 
-    row = session.exec(
-        select(IntegrationCredential).where(
-            IntegrationCredential.project_id == project_id,
-            IntegrationCredential.kind == "ftp",
-            IntegrationCredential.profile_key == "primary",
-        )
-    ).one()
+    row = _integration_for_account(session, stored.credential_ref)
     assert row.id is not None
     payload = json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id))
     assert payload["password"] == "  exact password  "
-    assert row.config_json is not None
-    assert row.config_json["host"] == "192.0.2.10"
+    credential = session.exec(
+        select(Credential).where(Credential.credential_ref == stored.credential_ref)
+    ).one()
+    assert credential.config_json["host"] == "192.0.2.10"
 
     with pytest.raises(ValidationError):
         repo.update_credential(
-            project_id=project_id,
             credential_ref=stored.credential_ref,
-            label="Production FTP",
             fields={"host": "ftp://192.0.2.10/public_html"},
+            display_name=None,
         )
     with pytest.raises(ValidationError):
         repo.update_credential(
-            project_id=project_id,
             credential_ref=stored.credential_ref,
-            label="Production FTP",
             fields={"password": ""},
+            display_name=None,
         )
 
     session.refresh(row)
-    assert row.config_json is not None
-    assert row.config_json["host"] == "192.0.2.10"
+    session.refresh(credential)
+    assert credential.config_json["host"] == "192.0.2.10"
     assert (
         json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id))["password"]
         == "  exact password  "
@@ -423,10 +422,10 @@ def test_thrown_auth_test_failure_is_sanitized_and_persisted(
 
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="firecrawl",
         auth_method_key="api_key",
-        profile_key="primary",
+        display_name="primary",
         fields={"api_key": "do-not-store"},
     ).data
     monkeypatch.setattr(
@@ -445,9 +444,9 @@ def test_thrown_auth_test_failure_is_sanitized_and_persisted(
             operation="test.after-failed-auth-test",
         )
     )
-    refreshed = repo.status(project_id=project_id, provider_key="firecrawl").connections[0]
+    refreshed = repo.status(project_id=project_id, provider_key="firecrawl").accounts[0]
     event = session.exec(
-        select(CredentialUsageEvent).where(CredentialUsageEvent.operation == "auth.test")
+        select(CredentialUsageEvent).where(CredentialUsageEvent.operation == "account.test")
     ).one()
 
     assert tested.ok is False
@@ -474,10 +473,10 @@ def test_reddit_auth_test_acquires_core_token_before_connector(
 ) -> None:
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="reddit",
         auth_method_key="client_credentials",
-        profile_key="research",
+        display_name="research",
         fields={
             "client_id": "reddit-client-id",
             "client_secret": "reddit-client-secret",
@@ -505,13 +504,7 @@ def test_reddit_auth_test_acquires_core_token_before_connector(
     assert request.headers["Authorization"].startswith("Basic ")
     assert request.headers["User-Agent"] == "stackos:test-suite:v1"
     assert form == {"grant_type": ["client_credentials"]}
-    row = session.exec(
-        select(IntegrationCredential).where(
-            IntegrationCredential.project_id == project_id,
-            IntegrationCredential.kind == "reddit",
-            IntegrationCredential.profile_key == "research",
-        )
-    ).one()
+    row = _integration_for_account(session, stored.credential_ref)
     assert row.id is not None
     payload = json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id))
     assert payload["access_token"] == "reddit-access-value"
@@ -525,10 +518,10 @@ def test_acquired_client_credential_profile_can_be_edited_without_losing_token(
 ) -> None:
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="reddit",
         auth_method_key="client_credentials",
-        profile_key="editable-research",
+        display_name="editable-research",
         fields={
             "client_id": "reddit-client-id",
             "client_secret": "reddit-client-secret",
@@ -543,7 +536,6 @@ def test_acquired_client_credential_profile_can_be_edited_without_losing_token(
     asyncio.run(repo.test(project_id=project_id, credential_ref=stored.credential_ref))
 
     edit = repo.get_credential_edit_state(
-        project_id=project_id,
         credential_ref=stored.credential_ref,
     )
     assert edit.secret_present == {
@@ -552,22 +544,15 @@ def test_acquired_client_credential_profile_can_be_edited_without_losing_token(
         "user_agent": True,
     }
     updated = repo.update_credential(
-        project_id=project_id,
         credential_ref=stored.credential_ref,
         fields={},
-        label="Editable Reddit",
+        display_name="Editable Reddit",
     ).data
 
     assert updated.status == "connected"
-    assert updated.label == "Editable Reddit"
+    assert updated.display_name == "Editable Reddit"
     assert len(httpx_mock.get_requests()) == 1
-    row = session.exec(
-        select(IntegrationCredential).where(
-            IntegrationCredential.project_id == project_id,
-            IntegrationCredential.kind == "reddit",
-            IntegrationCredential.profile_key == "editable-research",
-        )
-    ).one()
+    row = _integration_for_account(session, stored.credential_ref)
     assert row.id is not None
     payload = json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id))
     assert payload["access_token"] == "reddit-access-value"
@@ -583,10 +568,10 @@ def test_pending_interactive_profile_can_be_edited_without_reentering_secrets(
 ) -> None:
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="google-search-console",
         auth_method_key="oauth2_authorization_code",
-        profile_key="editable-pending",
+        display_name="editable-pending",
         fields={
             "client_id": "google-client-id",
             "client_secret": "google-client-secret",
@@ -595,32 +580,27 @@ def test_pending_interactive_profile_can_be_edited_without_reentering_secrets(
     ).data
 
     edit = repo.get_credential_edit_state(
-        project_id=project_id,
         credential_ref=stored.credential_ref,
     )
     assert edit.secret_present == {"client_id": True, "client_secret": True}
     updated = repo.update_credential(
-        project_id=project_id,
         credential_ref=stored.credential_ref,
         fields={"default_site_url": "https://updated.example.test/"},
-        label="Pending Google",
+        display_name="Pending Google",
     ).data
 
     assert updated.status == "pending"
-    row = session.exec(
-        select(IntegrationCredential).where(
-            IntegrationCredential.project_id == project_id,
-            IntegrationCredential.kind == "google-search-console",
-            IntegrationCredential.profile_key == "editable-pending",
-        )
-    ).one()
+    row = _integration_for_account(session, stored.credential_ref)
     assert row.id is not None
     payload = json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id))
     assert payload["_oauth_application_pending"] == {
         "client_id": "google-client-id",
         "client_secret": "google-client-secret",
     }
-    assert (row.config_json or {})["default_site_url"] == "https://updated.example.test/"
+    credential = session.exec(
+        select(Credential).where(Credential.credential_ref == stored.credential_ref)
+    ).one()
+    assert credential.config_json["default_site_url"] == "https://updated.example.test/"
 
 
 def test_telegram_bot_store_generates_webhook_secret(
@@ -630,62 +610,55 @@ def test_telegram_bot_store_generates_webhook_secret(
     repo = AuthRepository(session)
 
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="telegram-bot",
         auth_method_key="bot-token",
-        profile_key="support",
+        display_name="support",
         fields={"bot_token": "123456:ABC"},
     ).data
 
-    row = session.exec(
-        select(IntegrationCredential).where(
-            IntegrationCredential.project_id == project_id,
-            IntegrationCredential.kind == "telegram-bot",
-        )
-    ).one()
+    row = _integration_for_account(session, stored.credential_ref)
     assert row.id is not None
     payload = json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id).decode())
     assert stored.credential_ref.startswith("cred_")
     assert payload["bot_token"] == "123456:ABC"
     assert isinstance(payload["webhook_secret_token"], str)
     assert len(payload["webhook_secret_token"]) >= 32
-    assert row.config_json is not None
-    assert row.config_json["provider_account_id"] == "123456"
-    assert "webhook_secret_token" not in row.config_json
+    credential = _credential_for_account(session, stored.credential_ref)
+    assert credential.config_json["provider_account_id"] == "123456"
+    assert "webhook_secret_token" not in credential.config_json
 
 
-def test_telegram_bot_token_can_only_claim_one_active_connection(
+def test_telegram_bot_token_can_only_claim_one_active_account(
     session: Session,
     project_id: int,
 ) -> None:
     repo = AuthRepository(session)
 
     first = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="telegram-bot",
         auth_method_key="bot-token",
-        profile_key="support",
+        display_name="support",
         fields={"bot_token": "123456:ABC"},
     ).data
-    replacement = repo.store_credential(
-        project_id=project_id,
-        provider_key="telegram-bot",
-        auth_method_key="bot-token",
-        profile_key="support",
+    replacement = repo.update_credential(
+        credential_ref=first.credential_ref,
         fields={"bot_token": "123456:ROTATED"},
+        display_name=None,
     ).data
 
     assert replacement.credential_ref == first.credential_ref
     with pytest.raises(ConflictError) as exc:
         repo.store_credential(
-            project_id=project_id,
+            attach_project_id=project_id,
             provider_key="telegram-bot",
             auth_method_key="bot-token",
-            profile_key="analytics",
+            display_name="analytics",
             fields={"bot_token": "123456:ROTATED"},
         )
     assert exc.value.data["provider_account_id"] == "123456"
-    assert exc.value.data["existing_profile_key"] == "support"
+    assert exc.value.data["existing_credential_ref"] == first.credential_ref
 
 
 def test_slack_bot_auth_test_syncs_safe_workspace_account(
@@ -696,27 +669,23 @@ def test_slack_bot_auth_test_syncs_safe_workspace_account(
     repo = AuthRepository(session)
 
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="slack-bot",
         auth_method_key="bot-token",
-        profile_key="support",
+        display_name="support",
         fields={
             "bot_token": "xoxb-1234567890-safe-test-token",
             "signing_secret": "slack-signing-secret",
         },
     ).data
-    row = session.exec(
-        select(IntegrationCredential).where(
-            IntegrationCredential.project_id == project_id,
-            IntegrationCredential.kind == "slack-bot",
-        )
-    ).one()
+    row = _integration_for_account(session, stored.credential_ref)
     assert row.id is not None
     payload = json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id).decode())
     assert payload["bot_token"] == "xoxb-1234567890-safe-test-token"
     assert payload["signing_secret"] == "slack-signing-secret"
-    assert "bot_token" not in (row.config_json or {})
-    assert "signing_secret" not in (row.config_json or {})
+    credential = _credential_for_account(session, stored.credential_ref)
+    assert "bot_token" not in credential.config_json
+    assert "signing_secret" not in credential.config_json
 
     httpx_mock.add_response(
         method="POST",
@@ -744,31 +713,30 @@ def test_slack_bot_auth_test_syncs_safe_workspace_account(
     assert "slack-signing-secret" not in rendered
 
 
-def test_failed_credential_profile_can_be_revoked(
+def test_failed_detached_account_can_be_revoked(
     session: Session,
     project_id: int,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
-        project_id=project_id,
-        kind="firecrawl",
-        secret_payload=b"fc-secret",
-    )
     repo = AuthRepository(session)
-    status = repo.status(project_id=project_id, provider_key="firecrawl")
-    credential = session.exec(
-        select(Credential).where(Credential.credential_ref == status.connections[0].credential_ref)
-    ).one()
+    stored = repo.store_credential(
+        provider_key="firecrawl",
+        display_name="Firecrawl - Default",
+        fields={"api_key": "fc-secret"},
+        attach_project_id=project_id,
+    ).data
+    credential = _credential_for_account(session, stored.credential_ref)
     credential.status = "failed"
     session.add(credential)
     session.commit()
 
-    revoked = repo.revoke(
+    repo.detach_account(
         project_id=project_id,
         credential_ref=credential.credential_ref,
-    ).data
+    )
+    revoked = repo.revoke(credential_ref=credential.credential_ref).data
 
-    assert revoked.status == "revoked"
     assert revoked.credential_ref == credential.credential_ref
+    assert revoked.revoked_at is not None
 
 
 def test_openrouter_auth_test_passes_safe_attribution_config(
@@ -778,26 +746,22 @@ def test_openrouter_auth_test_passes_safe_attribution_config(
 ) -> None:
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="openrouter",
         auth_method_key="api_key",
-        profile_key="default",
+        display_name="default",
         fields={
             "api_key": "or-secret",
             "http_referer": "https://stackos.local",
             "app_title": "StackOS",
         },
     ).data
-    row = session.exec(
-        select(IntegrationCredential).where(
-            IntegrationCredential.project_id == project_id,
-            IntegrationCredential.kind == "openrouter",
-        )
-    ).one()
+    row = _integration_for_account(session, stored.credential_ref)
     assert row.id is not None
     assert IntegrationCredentialRepository(session).get_decrypted(row.id) == b"or-secret"
-    assert row.config_json["http_referer"] == "https://stackos.local"
-    assert row.config_json["app_title"] == "StackOS"
+    credential = _credential_for_account(session, stored.credential_ref)
+    assert credential.config_json["http_referer"] == "https://stackos.local"
+    assert credential.config_json["app_title"] == "StackOS"
     httpx_mock.add_response(
         method="GET",
         url="https://openrouter.ai/api/v1/models",
@@ -823,25 +787,21 @@ def test_trackbooth_auth_test_passes_safe_custom_api_url_config(
 ) -> None:
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="trackbooth",
         auth_method_key="api-key",
-        profile_key="local",
+        display_name="local",
         fields={
             "api_key": "tb-secret",
             "api_base_url": "http://localhost:3030",
         },
     ).data
-    row = session.exec(
-        select(IntegrationCredential).where(
-            IntegrationCredential.project_id == project_id,
-            IntegrationCredential.kind == "trackbooth",
-        )
-    ).one()
+    row = _integration_for_account(session, stored.credential_ref)
     assert row.id is not None
     payload = json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id).decode())
     assert payload == {"api_key": "tb-secret"}
-    assert row.config_json["api_base_url"] == "http://localhost:3030"
+    credential = _credential_for_account(session, stored.credential_ref)
+    assert credential.config_json["api_base_url"] == "http://localhost:3030"
 
     httpx_mock.add_response(
         method="GET",
@@ -867,26 +827,22 @@ def test_shopify_auth_test_passes_static_token_and_safe_store_config(
 ) -> None:
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="shopify",
         auth_method_key="admin-api-token",
-        profile_key="primary",
+        display_name="primary",
         fields={
             "admin_api_access_token": "shpat-secret",
             "store_domain": "demo.myshopify.com",
             "api_version": "2026-07",
         },
     ).data
-    row = session.exec(
-        select(IntegrationCredential).where(
-            IntegrationCredential.project_id == project_id,
-            IntegrationCredential.kind == "shopify",
-        )
-    ).one()
+    row = _integration_for_account(session, stored.credential_ref)
     assert row.id is not None
     assert IntegrationCredentialRepository(session).get_decrypted(row.id) == b"shpat-secret"
-    assert row.config_json["store_domain"] == "demo.myshopify.com"
-    assert row.config_json["api_version"] == "2026-07"
+    credential = _credential_for_account(session, stored.credential_ref)
+    assert credential.config_json["store_domain"] == "demo.myshopify.com"
+    assert credential.config_json["api_version"] == "2026-07"
 
     httpx_mock.add_response(
         method="POST",
@@ -920,24 +876,17 @@ def test_cloudflare_auth_test_verifies_token_without_zone_permission(
 ) -> None:
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="cloudflare",
         auth_method_key="api_token",
-        profile_key="primary",
+        display_name="primary",
         fields={"api_token": "cloudflare-secret"},
     ).data
-    row = session.exec(
-        select(IntegrationCredential).where(
-            IntegrationCredential.project_id == project_id,
-            IntegrationCredential.kind == "cloudflare",
-        )
-    ).one()
+    row = _integration_for_account(session, stored.credential_ref)
     assert row.id is not None
     assert IntegrationCredentialRepository(session).get_decrypted(row.id) == b"cloudflare-secret"
-    assert row.config_json == {
-        "auth_method_key": "api_token",
-        "profile_key": "primary",
-    }
+    credential = _credential_for_account(session, stored.credential_ref)
+    assert credential.config_json == {"auth_method_key": "api_token"}
 
     httpx_mock.add_response(
         method="GET",
@@ -963,123 +912,26 @@ def test_cloudflare_auth_test_verifies_token_without_zone_permission(
     assert "cloudflare-secret" not in rendered
 
 
-def test_telegram_status_excludes_global_credentials(
-    session: Session,
-    project_id: int,
-) -> None:
-    global_telegram = (
-        IntegrationCredentialRepository(session)
-        .set(
-            project_id=None,
-            kind="telegram-bot",
-            secret_payload=b'{"bot_token":"global-secret"}',
-            profile_key="global",
-        )
-        .data
-    )
-    IntegrationCredentialRepository(session).set(
-        project_id=None,
-        kind="firecrawl",
-        secret_payload=b"fc-global",
-        profile_key="global",
-    )
-    project_telegram = (
-        IntegrationCredentialRepository(session)
-        .set(
-            project_id=project_id,
-            kind="telegram-bot",
-            secret_payload=b'{"bot_token":"project-secret"}',
-            profile_key="support",
-        )
-        .data
-    )
-    IntegrationCredentialRepository(session).set(
-        project_id=None,
-        kind="slack-bot",
-        secret_payload=b'{"bot_token":"global-slack-secret","signing_secret":"global"}',
-        profile_key="global",
-    )
-    project_slack = (
-        IntegrationCredentialRepository(session)
-        .set(
-            project_id=project_id,
-            kind="slack-bot",
-            secret_payload=b'{"bot_token":"project-slack-secret","signing_secret":"project"}',
-            profile_key="support-slack",
-        )
-        .data
-    )
-
-    repo = AuthRepository(session)
-    telegram = repo.status(project_id=project_id, provider_key="telegram-bot")
-    slack = repo.status(project_id=project_id, provider_key="slack-bot")
-    all_status = repo.status(project_id=project_id)
-
-    assert [connection.profile_key for connection in telegram.connections] == ["support"]
-    assert [connection.profile_key for connection in slack.connections] == ["support-slack"]
-    assert {
-        (connection.provider_key, connection.profile_key) for connection in all_status.connections
-    } == {
-        ("firecrawl", "global"),
-        ("slack-bot", "support-slack"),
-        ("telegram-bot", "support"),
-    }
-
-    global_credential = repo.sync_credential_for_integration(global_telegram.id)
-    with pytest.raises(NotFoundError):
-        asyncio.run(
-            repo.resolve_for_execution(
-                project_id=project_id,
-                provider_key="telegram-bot",
-                credential_ref=global_credential.credential_ref,
-                operation="communications.telegram-bot.message.send",
-            )
-        )
-
-    project_credential = repo.sync_credential_for_integration(project_telegram.id)
-    resolved = asyncio.run(
-        repo.resolve_for_execution(
-            project_id=project_id,
-            provider_key="telegram-bot",
-            credential_ref=project_credential.credential_ref,
-            operation="communications.telegram-bot.message.send",
-        )
-    )
-    assert resolved.integration.profile_key == "support"
-
-    slack_credential = repo.sync_credential_for_integration(project_slack.id)
-    resolved_slack = asyncio.run(
-        repo.resolve_for_execution(
-            project_id=project_id,
-            provider_key="slack-bot",
-            credential_ref=slack_credential.credential_ref,
-            operation="communications.slack-bot.message.send",
-        )
-    )
-    assert resolved_slack.integration.profile_key == "support-slack"
-
-
 def test_usage_and_refresh_events_redact_secret_metadata(
     session: Session,
     project_id: int,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
-        project_id=project_id,
-        kind="firecrawl",
-        secret_payload=b"fc-secret",
-    )
     repo = AuthRepository(session)
-    status = repo.status(project_id=project_id, provider_key="firecrawl")
-    credential = session.exec(
-        select(Credential).where(Credential.credential_ref == status.connections[0].credential_ref)
-    ).one()
+    stored = repo.store_credential(
+        provider_key="firecrawl",
+        display_name="Firecrawl - Default",
+        fields={"api_key": "fc-secret"},
+        attach_project_id=project_id,
+    ).data
+    credential = _credential_for_account(session, stored.credential_ref)
 
     repo.record_usage_event(
         credential=credential,
         provider_key="firecrawl",
-        operation="auth.test",
+        operation="account.test",
         status="ok",
         metadata_json={"access_token": "tok", "nested": {"api_key": "secret"}},
+        project_id=project_id,
     )
     repo.record_refresh_event(
         credential=credential,
@@ -1089,7 +941,9 @@ def test_usage_and_refresh_events_redact_secret_metadata(
     )
     session.commit()
 
-    usage = session.exec(select(CredentialUsageEvent)).one()
+    usage = session.exec(
+        select(CredentialUsageEvent).where(CredentialUsageEvent.operation == "account.test")
+    ).one()
     refresh = session.exec(select(CredentialRefreshEvent)).one()
 
     assert usage.metadata_json == {
@@ -1118,21 +972,21 @@ def test_auth_test_redacts_vendor_controlled_text_fields(
                 "metadata": {"access_token": "tok-secret"},
             }
 
-    IntegrationCredentialRepository(session).set(
-        project_id=project_id,
-        kind="firecrawl",
-        secret_payload=b"fc-secret",
-    )
+    repo = AuthRepository(session)
+    stored = repo.store_credential(
+        provider_key="firecrawl",
+        display_name="Firecrawl - Default",
+        fields={"api_key": "fc-secret"},
+        attach_project_id=project_id,
+    ).data
     monkeypatch.setattr(
         "stackos.auth_providers.repository.integration_class_for",
         lambda kind: _TextLeakIntegration if kind == "firecrawl" else None,
     )
-    status = AuthRepository(session).status(project_id=project_id, provider_key="firecrawl")
-
     out = asyncio.run(
-        AuthRepository(session).test(
+        repo.test(
             project_id=project_id,
-            credential_ref=status.connections[0].credential_ref,
+            credential_ref=stored.credential_ref,
         )
     ).data
 

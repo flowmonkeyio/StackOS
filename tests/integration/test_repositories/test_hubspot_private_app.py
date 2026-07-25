@@ -20,10 +20,10 @@ def test_hubspot_private_app_auth_test_persists_only_provider_probe_evidence(
     token = "hubspot-private-token-canary"
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key="hubspot",
         auth_method_key="private_app_token",
-        profile_key="private-app",
+        display_name="private-app",
         fields={"access_token": token},
     ).data
     httpx_mock.add_response(

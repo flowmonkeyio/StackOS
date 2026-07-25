@@ -6,6 +6,7 @@ from stackos.integrations import integration_class_for
 
 from .repository import AuthRepository
 from .schema import (
+    AccountOut,
     AuthCredentialEditOut,
     AuthCredentialSetOut,
     AuthFieldOut,
@@ -15,12 +16,12 @@ from .schema import (
     AuthStartOut,
     AuthStatusOut,
     AuthTestOut,
-    CredentialConnectionOut,
     OAuthCallbackOut,
     ResolvedCredential,
 )
 
 __all__ = [
+    "AccountOut",
     "AuthCredentialEditOut",
     "AuthCredentialSetOut",
     "AuthFieldOut",
@@ -31,7 +32,6 @@ __all__ = [
     "AuthStartOut",
     "AuthStatusOut",
     "AuthTestOut",
-    "CredentialConnectionOut",
     "OAuthCallbackOut",
     "ResolvedCredential",
     "integration_class_for",

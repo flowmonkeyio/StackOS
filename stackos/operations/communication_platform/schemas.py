@@ -24,8 +24,14 @@ class CommunicationProfileUpsertInput(MCPInput):
                     "voice": "Calm, explicit, and concise.",
                 },
                 "provider_facets": {
-                    "telegram-bot": {"auth_profile_key": "support-bot"},
-                    "slack-bot": {"bot_user_id": "U123"},
+                    "telegram-bot": {
+                        "credential_ref": "cred_...",
+                        "ingress_enabled": True,
+                    },
+                    "slack-bot": {
+                        "bot_user_id": "U123",
+                        "ingress_enabled": False,
+                    },
                 },
                 "send_policy": {
                     "mode": "explicit-targets",

@@ -98,7 +98,7 @@ def _bridge_compact_structured(tool_name: str, structured: dict[str, Any]) -> di
         "workspace.connect",
     }:
         return _bridge_compact_workspace(structured)
-    if tool_name == "auth.status":
+    if tool_name in {"account.list", "connection.list"}:
         return _bridge_compact_auth_status(structured)
     if tool_name == "toolProfile.resolve":
         return _bridge_compact_tool_profile_resolve(structured)
@@ -197,38 +197,37 @@ def _bridge_compact_workspace(structured: dict[str, Any]) -> dict[str, Any]:
 
 
 def _bridge_compact_auth_status(structured: dict[str, Any]) -> dict[str, Any]:
-    connections = [
-        _bridge_compact_connection(item)
-        for item in structured.get("connections", [])
+    accounts = [
+        _bridge_compact_account(item)
+        for item in structured.get("accounts", [])
         if isinstance(item, dict)
     ]
     by_provider: dict[str, list[dict[str, Any]]] = {}
-    for connection in connections:
-        key = str(connection.get("provider_key") or "")
-        by_provider.setdefault(key, []).append(connection)
+    for account in accounts:
+        key = str(account.get("provider_key") or "")
+        by_provider.setdefault(key, []).append(account)
     providers: list[dict[str, Any]] = []
     for provider in structured.get("providers", []):
         if not isinstance(provider, dict):
             continue
         key = str(provider.get("key") or "")
-        provider_connections = by_provider.get(key, [])
+        provider_accounts = by_provider.get(key, [])
         providers.append(
             {
                 "key": key,
                 "name": provider.get("name"),
                 "auth_type": provider.get("auth_type"),
-                "status": "connected" if provider_connections else "missing",
+                "status": (
+                    "connected"
+                    if any(item.get("status") == "connected" for item in provider_accounts)
+                    else "missing"
+                ),
                 "credential_refs": [
                     item["credential_ref"]
-                    for item in provider_connections
+                    for item in provider_accounts
                     if isinstance(item.get("credential_ref"), str)
                 ],
-                "profile_keys": [
-                    item["profile_key"]
-                    for item in provider_connections
-                    if isinstance(item.get("profile_key"), str)
-                ],
-                "setup_required": not bool(provider_connections),
+                "setup_required": not bool(provider_accounts),
                 "setup": _bridge_provider_setup(
                     provider_key=key,
                     project_id=_bridge_as_int(structured.get("project_id")),
@@ -240,7 +239,7 @@ def _bridge_compact_auth_status(structured: dict[str, Any]) -> dict[str, Any]:
         "project_id": structured.get("project_id"),
         "provider_key": structured.get("provider_key"),
         "providers": providers,
-        "connections": connections,
+        "accounts": accounts,
     }
 
 
@@ -248,17 +247,17 @@ def _bridge_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 
 
-def _bridge_compact_connection(connection: dict[str, Any]) -> dict[str, Any]:
-    account = _bridge_dict(connection.get("account"))
+def _bridge_compact_account(account: dict[str, Any]) -> dict[str, Any]:
+    provider_account = _bridge_dict(account.get("account"))
     return {
-        "credential_ref": connection.get("credential_ref"),
-        "provider_key": connection.get("provider_key"),
-        "profile_key": connection.get("profile_key"),
-        "status": connection.get("status"),
-        "auth_type": connection.get("auth_type"),
+        "credential_ref": account.get("credential_ref"),
+        "provider_key": account.get("provider_key"),
         "display_name": account.get("display_name"),
-        "provider_account_id": account.get("provider_account_id"),
-        "setup_required": bool(connection.get("setup_required", False)),
+        "status": account.get("status"),
+        "auth_type": account.get("auth_type"),
+        "provider_account_id": provider_account.get("provider_account_id"),
+        "project_ids": account.get("project_ids") or [],
+        "setup_required": bool(account.get("setup_required", False)),
     }
 
 
@@ -300,9 +299,8 @@ def _bridge_compact_tool_profile_resolve(structured: dict[str, Any]) -> dict[str
         "credential": {
             "credential_ref": credential.get("credential_ref"),
             "provider_key": credential.get("provider_key"),
-            "profile_key": credential.get("profile_key"),
             "status": credential.get("status"),
-            "display_name": account.get("display_name"),
+            "display_name": credential.get("display_name"),
             "provider_account_id": account.get("provider_account_id"),
             "setup_required": bool(credential.get("setup_required", False)),
         }
@@ -313,7 +311,7 @@ def _bridge_compact_tool_profile_resolve(structured: dict[str, Any]) -> dict[str
             "key": profile.get("key"),
             "ref": profile.get("ref"),
             "enabled": profile.get("enabled"),
-            "auth_profile_key": profile.get("auth_profile_key"),
+            "credential_ref": profile.get("credential_ref"),
             "identity": {
                 "display_name": identity.get("display_name"),
                 "purpose": identity.get("purpose"),

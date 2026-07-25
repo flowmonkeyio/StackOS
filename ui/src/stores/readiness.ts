@@ -147,9 +147,9 @@ export const useReadinessStore = defineStore('readiness', () => {
   ): Promise<ReadinessCheck> {
     try {
       const auth = await (authStatus ??
-        apiFetch<SchemaAuthStatusOut>(`/api/v1/projects/${id}/auth/status`))
+        apiFetch<SchemaAuthStatusOut>(`/api/v1/projects/${id}/connections/accounts`))
       const providers = auth.providers ?? []
-      const active = (auth.connections ?? []).filter((c) => c.revoked_at == null)
+      const active = (auth.accounts ?? []).filter((c) => c.revoked_at == null)
       const connected = active.filter((c) => c.status === 'connected' || c.status === 'used')
       let state: ReadinessState = 'ready'
       let hint = 'No external services required.'

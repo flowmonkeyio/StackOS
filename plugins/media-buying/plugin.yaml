@@ -311,7 +311,7 @@ providers:
       connection_setup: project-local-plugin-required
       setup_note: Custom media tools need a project-local plugin that declares the endpoint, method, allowlisted host, auth injection, timeout, and response contract.
       setup:
-        credential_label: Project-local endpoint/auth profile
+        credential_label: Project-local endpoint/auth Account
         setup_note: No public vendor registration exists. Install a project-local media plugin that declares endpoint, auth injection, allowlisted host, timeout, and response contract.
         fallback_url: http://127.0.0.1:5180/
         fallback_reason: Custom media providers are project-local; use StackOS extension docs and the local Connections UI.

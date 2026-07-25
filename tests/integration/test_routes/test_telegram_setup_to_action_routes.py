@@ -37,11 +37,11 @@ def _telegram_reply_plan_json() -> dict:
 
 def _store_credential(api: TestClient, project_id: int) -> str:
     response = api.post(
-        f"/api/v1/projects/{project_id}/auth/telegram-bot/credentials",
+        "/api/v1/auth/accounts/telegram-bot",
         json={
             "auth_method_key": "bot-token",
-            "profile_key": "support",
-            "label": "Support Bot",
+            "display_name": "Telegram - Support Bot",
+            "attach_project_id": project_id,
             "fields": {
                 "bot_token": "123456:ABC",
                 "webhook_secret_token": "telegram-secret",
@@ -120,7 +120,7 @@ def test_telegram_setup_ingress_claim_link_and_reply_action(
                 },
                 "provider_facets": {
                     "telegram-bot": {
-                        "auth_profile_key": "support",
+                        "credential_ref": credential_ref,
                         "bot_username": "support_bot",
                         "ingress_mode": "webhook",
                         "allowed_updates": ["message", "callback_query"],

@@ -12,6 +12,7 @@ from typing import Any, Literal
 from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
     command_matches,
+    is_stackos_bridge_command,
     resolve_bridge_command,
     token_preflight,
 )
@@ -79,6 +80,8 @@ def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
             blocking=True,
             config_path=str(path),
             repair=RESTART_REPAIR,
+            selected=True,
+            managed=False,
         )
     expected_command = resolve_bridge_command(runtime=HOST_KEY)
     if command_matches(expected_command, command):
@@ -110,6 +113,8 @@ def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
                     available=True,
                     config_path=str(path),
                     command=command,
+                    selected=True,
+                    managed=True,
                 )
             return HostMcpResult(
                 host_key=HOST_KEY,
@@ -124,6 +129,8 @@ def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
                 config_path=str(path),
                 command=command,
                 repair="Restart Claude Desktop so it reloads claude_desktop_config.json.",
+                selected=True,
+                managed=True,
             )
         return HostMcpResult(
             host_key=HOST_KEY,
@@ -134,18 +141,35 @@ def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
             available=True,
             config_path=str(path),
             command=command,
+            selected=True,
+            managed=True,
         )
+    managed = is_stackos_bridge_command(command)
     return HostMcpResult(
         host_key=HOST_KEY,
         surface=SURFACE,
-        status="registered_stale",
-        message="Claude Desktop has a StackOS MCP entry, but it is stale.",
+        status="registered_stale" if managed else "registered_unmanaged",
+        message=(
+            "Claude Desktop has a stale StackOS-owned MCP entry."
+            if managed
+            else (
+                "Claude Desktop has a stackos entry that StackOS does not own; "
+                "it was left unchanged."
+            )
+        ),
         ok=False,
         available=True,
         blocking=True,
         config_path=str(path),
-        command=command,
-        repair=RESTART_REPAIR,
+        command=command if managed else [],
+        repair=(
+            RESTART_REPAIR
+            if managed
+            else "Review the Claude Desktop entry before connecting StackOS."
+        ),
+        warnings=[] if managed else ["unmanaged Claude Desktop MCP entry redacted"],
+        selected=True,
+        managed=managed,
     )
 
 
@@ -169,6 +193,8 @@ def register(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult
     current = inspect(home, server_name=server_name)
     if current.status in {"registered_current", "restart_required"}:
         return current
+    if current.selected and not current.managed:
+        return current
     command = resolve_bridge_command(runtime=HOST_KEY)
     ok, error = upsert_mcp_server(
         path,
@@ -191,6 +217,8 @@ def register(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult
             available=True,
             config_path=str(path),
             command=command,
+            selected=True,
+            managed=True,
         )
     mark_restart_required(
         HOST_KEY,
@@ -210,6 +238,8 @@ def register(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult
         config_path=str(path),
         command=command,
         repair="Restart Claude Desktop so it reloads claude_desktop_config.json.",
+        selected=True,
+        managed=True,
     )
 
 
@@ -220,6 +250,9 @@ def remove(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
             path,
             message="Claude Desktop not found; skipped Claude Desktop MCP removal.",
         )
+    current = inspect(home, server_name=server_name)
+    if current.selected and not current.managed:
+        return current
     ok, error, removed = remove_mcp_server(path, server_name)
     if not ok:
         return _config_error(path, error, status="remove_failed")

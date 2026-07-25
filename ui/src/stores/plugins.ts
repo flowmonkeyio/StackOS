@@ -3,14 +3,13 @@ import { defineStore } from 'pinia'
 
 import type {
   SchemaActionOut,
+  SchemaAccountOut,
   SchemaAuthCredentialEditOut,
   SchemaAuthCredentialSetRequest,
   SchemaAuthCredentialUpdateRequest,
   SchemaAuthProviderOut,
-  SchemaAuthRevokeRequest,
   SchemaAuthStartRequest,
   SchemaAuthStatusOut,
-  SchemaAuthTestRequest,
   SchemaCapabilityOut,
   SchemaCatalogOut,
   SchemaPluginCatalogOut,
@@ -30,13 +29,15 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
   const capabilities = ref<SchemaCapabilityOut[]>([])
   const providers = ref<SchemaProviderOut[]>([])
   const authProviders = ref<SchemaAuthProviderOut[]>([])
+  const globalAccountsStatus = ref<SchemaAuthStatusOut | null>(null)
   const authStatus = ref<SchemaAuthStatusOut | null>(null)
   const actions = ref<SchemaActionOut[]>([])
   const resources = ref<SchemaResourceOut[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
   let pluginRefreshSequence = 0
-  let authRefreshSequence = 0
+  let connectionRefreshSequence = 0
+  let accountRefreshSequence = 0
   let catalogRefreshSequence = 0
 
   const enabledPlugins = computed(() =>
@@ -125,7 +126,7 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
   }
 
   async function refreshAuth(projectId: number, options: { silent?: boolean } = {}): Promise<void> {
-    const requestSequence = ++authRefreshSequence
+    const requestSequence = ++connectionRefreshSequence
     if (!options.silent) loading.value = true
     error.value = null
     if (!options.silent) {
@@ -134,121 +135,150 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     }
     try {
       const status = await apiFetch<SchemaAuthStatusOut>(
-        `/api/v1/projects/${projectId}/auth/status`,
+        `/api/v1/projects/${projectId}/connections/accounts`,
       )
-      // Auth status is the canonical provider inventory. Keep the fallback for
-      // older daemons that returned connections without embedding providers.
-      const nextAuthProviders = status.providers.length
-        ? status.providers
-        : await apiFetch<SchemaAuthProviderOut[]>('/api/v1/auth/providers')
-      if (requestSequence !== authRefreshSequence) return
+      const nextAuthProviders = status.providers
+      if (requestSequence !== connectionRefreshSequence) return
       authProviders.value = nextAuthProviders
       authStatus.value = status
     } catch (err) {
-      if (requestSequence === authRefreshSequence) {
+      if (requestSequence === connectionRefreshSequence) {
         error.value = formatApiError(err, 'failed to load connections')
       }
     } finally {
-      if (!options.silent && requestSequence === authRefreshSequence) loading.value = false
+      if (!options.silent && requestSequence === connectionRefreshSequence) loading.value = false
+    }
+  }
+
+  async function refreshAccounts(options: { silent?: boolean } = {}): Promise<void> {
+    const requestSequence = ++accountRefreshSequence
+    if (!options.silent) loading.value = true
+    error.value = null
+    if (!options.silent) globalAccountsStatus.value = null
+    try {
+      const status = await apiFetch<SchemaAuthStatusOut>('/api/v1/auth/accounts')
+      if (requestSequence !== accountRefreshSequence) return
+      authProviders.value = status.providers
+      globalAccountsStatus.value = status
+    } catch (err) {
+      if (requestSequence === accountRefreshSequence) {
+        error.value = formatApiError(err, 'failed to load accounts')
+      }
+    } finally {
+      if (!options.silent && requestSequence === accountRefreshSequence) loading.value = false
     }
   }
 
   async function storeCredential(
-    projectId: number,
     providerKey: string,
     body: SchemaAuthCredentialSetRequest,
   ): Promise<SchemaWriteResponseAuthCredentialSetOut> {
     error.value = null
     const response = await apiFetch<SchemaWriteResponseAuthCredentialSetOut>(
-      `/api/v1/projects/${projectId}/auth/${providerKey}/credentials`,
+      `/api/v1/auth/accounts/${providerKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       },
     )
-    await refreshAuth(projectId, { silent: true })
+    await refreshAccounts({ silent: true })
     return response
   }
 
-  async function getCredential(
-    projectId: number,
-    credentialRef: string,
-  ): Promise<SchemaAuthCredentialEditOut> {
+  async function getCredential(credentialRef: string): Promise<SchemaAuthCredentialEditOut> {
     error.value = null
     return apiFetch<SchemaAuthCredentialEditOut>(
-      `/api/v1/projects/${projectId}/auth/credentials/${encodeURIComponent(credentialRef)}`,
+      `/api/v1/auth/accounts/${encodeURIComponent(credentialRef)}`,
     )
   }
 
   async function updateCredential(
-    projectId: number,
     credentialRef: string,
     body: SchemaAuthCredentialUpdateRequest,
   ): Promise<SchemaWriteResponseAuthCredentialSetOut> {
     error.value = null
     const response = await apiFetch<SchemaWriteResponseAuthCredentialSetOut>(
-      `/api/v1/projects/${projectId}/auth/credentials/${encodeURIComponent(credentialRef)}`,
+      `/api/v1/auth/accounts/${encodeURIComponent(credentialRef)}`,
       {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       },
     )
-    await refreshAuth(projectId, { silent: true })
+    await refreshAccounts({ silent: true })
     return response
   }
 
   async function startCredential(
-    projectId: number,
     providerKey: string,
     body: SchemaAuthStartRequest,
   ): Promise<SchemaWriteResponseAuthStartOut> {
     error.value = null
     const response = await apiFetch<SchemaWriteResponseAuthStartOut>(
-      `/api/v1/projects/${projectId}/auth/${providerKey}/start`,
+      `/api/v1/auth/accounts/${providerKey}/start`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       },
     )
-    await refreshAuth(projectId, { silent: true })
+    await refreshAccounts({ silent: true })
     return response
   }
 
   async function testCredential(
-    projectId: number,
-    body: SchemaAuthTestRequest,
+    credentialRef: string,
   ): Promise<SchemaWriteResponseAuthTestOut> {
     error.value = null
     const response = await apiFetch<SchemaWriteResponseAuthTestOut>(
-      `/api/v1/projects/${projectId}/auth/test`,
+      `/api/v1/auth/accounts/${encodeURIComponent(credentialRef)}/test`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
       },
     )
-    await refreshAuth(projectId, { silent: true })
+    await refreshAccounts({ silent: true })
     return response
   }
 
   async function revokeCredential(
-    projectId: number,
-    body: SchemaAuthRevokeRequest,
+    credentialRef: string,
   ): Promise<SchemaWriteResponseAuthRevokeOut> {
     error.value = null
     const response = await apiFetch<SchemaWriteResponseAuthRevokeOut>(
-      `/api/v1/projects/${projectId}/auth/revoke`,
+      `/api/v1/auth/accounts/${encodeURIComponent(credentialRef)}/revoke`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
       },
     )
-    await refreshAuth(projectId, { silent: true })
+    await refreshAccounts({ silent: true })
     return response
+  }
+
+  async function attachAccount(projectId: number, credentialRef: string): Promise<SchemaAccountOut> {
+    error.value = null
+    const response = await apiFetch<{ data: SchemaAccountOut }>(
+      `/api/v1/projects/${projectId}/connections/accounts/${encodeURIComponent(credentialRef)}`,
+      { method: 'POST' },
+    )
+    await Promise.all([
+      refreshAccounts({ silent: true }),
+      refreshAuth(projectId, { silent: true }),
+    ])
+    return response.data
+  }
+
+  async function detachAccount(projectId: number, credentialRef: string): Promise<SchemaAccountOut> {
+    error.value = null
+    const response = await apiFetch<{ data: SchemaAccountOut }>(
+      `/api/v1/projects/${projectId}/connections/accounts/${encodeURIComponent(credentialRef)}`,
+      { method: 'DELETE' },
+    )
+    await Promise.all([
+      refreshAccounts({ silent: true }),
+      refreshAuth(projectId, { silent: true }),
+    ])
+    return response.data
   }
 
   function actionsFor(pluginSlug: string): SchemaActionOut[] {
@@ -273,6 +303,7 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     capabilities,
     providers,
     authProviders,
+    globalAccountsStatus,
     authStatus,
     actions,
     resources,
@@ -282,12 +313,15 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     refreshPlugins,
     refresh,
     refreshAuth,
+    refreshAccounts,
     storeCredential,
     getCredential,
     updateCredential,
     startCredential,
     testCredential,
     revokeCredential,
+    attachAccount,
+    detachAccount,
     actionsFor,
     capabilitiesFor,
     providersFor,

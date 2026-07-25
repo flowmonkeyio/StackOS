@@ -159,13 +159,18 @@ registered as provider-specific MCP tools.
 ## Auth Flow
 
 1. A provider declares an auth type and scopes.
-2. A project connects an account through `auth.start` or a local credential
-   ingestion path.
-3. Tokens are encrypted and stored server-side.
-4. Agents query `auth.status` and `auth.test` through `toolbox.call` for safe
-   state.
-5. Tools resolve credentials by provider/account reference at execution time.
-6. Every use writes credential usage metadata.
+2. A local operator creates a reusable global Account through `account.start`
+   or the local credential ingestion path and gives it a human-readable name.
+3. StackOS encrypts tokens and keys in Account backing storage; Account
+   identity and safe lifecycle state remain global.
+4. Projects create explicit Connections by attaching selected Accounts. An
+   Account may be attached to multiple projects without duplicating secrets.
+5. Agents query `account.list`, `connection.list`, and `account.test` through
+   `toolbox.call` for sanitized state.
+6. Tools resolve an exact attached `credential_ref` at execution time. Project
+   communication profiles and webhook ingress remain project-bound and carry
+   that exact Account ref.
+7. Every use writes credential usage metadata.
 
 No API key or OAuth token should appear in prompts, run-plan inputs, action
 arguments, UI JSON, or MCP responses.

@@ -37,11 +37,11 @@ def _mock_action_plan_json() -> dict[str, Any]:
 
 def _store_mock_credential(api: TestClient, project_id: int) -> str:
     credential = api.post(
-        f"/api/v1/projects/{project_id}/auth/mock-provider/credentials",
+        "/api/v1/auth/accounts/mock-provider",
         json={
             "auth_method_key": "api_key",
-            "profile_key": "primary",
-            "label": "Mock CLI Primary",
+            "display_name": "Mock CLI Primary",
+            "attach_project_id": project_id,
             "fields": {"api_key": "mock-cli-secret"},
         },
     )

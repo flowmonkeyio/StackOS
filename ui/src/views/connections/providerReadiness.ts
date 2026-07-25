@@ -1,4 +1,4 @@
-import type { SchemaAuthProviderOut, SchemaCredentialConnectionOut } from '@/api'
+import type { SchemaAccountOut, SchemaAuthProviderOut } from '@/api'
 
 export type CapabilityReadinessState =
   | 'ready'
@@ -31,7 +31,7 @@ const IDENTIFIER_LABELS: Record<string, string> = {
 
 export function providerCapabilityReadiness(
   provider: SchemaAuthProviderOut,
-  connection: SchemaCredentialConnectionOut,
+  connection: SchemaAccountOut,
 ): CapabilityReadiness[] {
   const config = recordValue(provider.config_json)
   const groups = recordValue(config?.readiness_groups)
@@ -107,7 +107,7 @@ function readinessState({
   prerequisites,
   permissionVerification,
 }: {
-  connection: SchemaCredentialConnectionOut
+  connection: SchemaAccountOut
   optionalBundle: boolean
   requiredScopes: string[]
   missingScopes: string[]

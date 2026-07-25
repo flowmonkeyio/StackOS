@@ -91,10 +91,10 @@ def test_provider_enforced_static_probe_persists_account_without_inventing_grant
     token_canary = next(iter(fields.values()))
     repo = AuthRepository(session)
     stored = repo.store_credential(
-        project_id=project_id,
+        attach_project_id=project_id,
         provider_key=provider_key,
         auth_method_key=method_key,
-        profile_key=f"{provider_key}-static",
+        display_name=f"{provider_key}-static",
         fields=fields,
     ).data
     httpx_mock.add_response(method="GET", json=response)

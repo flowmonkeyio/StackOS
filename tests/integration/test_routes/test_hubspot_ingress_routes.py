@@ -40,10 +40,10 @@ def _store_hubspot_ingress_profile(
     engine = api.app.state.engine  # type: ignore[attr-defined]
     with Session(engine) as session:
         stored = AuthRepository(session).store_credential(
-            project_id=project_id,
+            attach_project_id=project_id,
             provider_key="hubspot",
             auth_method_key="oauth2_authorization_code",
-            profile_key=_PROFILE_KEY,
+            display_name=_PROFILE_KEY,
             fields={
                 "client_id": "hubspot-app-client-id",
                 "client_secret": _CLIENT_SECRET,
@@ -89,21 +89,22 @@ def _store_hubspot_ingress_profile(
         return credential.credential_ref
 
 
-def _canonical_url(project_id: int) -> str:
-    return f"{_PUBLIC_BASE_URL}/api/v1/ingress/hubspot/{project_id}/{_PROFILE_KEY}"
+def _canonical_url(project_id: int, credential_ref: str) -> str:
+    return f"{_PUBLIC_BASE_URL}/api/v1/ingress/hubspot/{project_id}/{credential_ref}"
 
 
 def _v3_headers(
     raw_body: bytes,
     *,
     project_id: int,
+    credential_ref: str,
     canonical_url: str | None = None,
     timestamp_ms: int | None = None,
 ) -> dict[str, str]:
     timestamp = str(timestamp_ms if timestamp_ms is not None else int(time.time() * 1_000))
     source = (
         b"POST"
-        + (canonical_url or _canonical_url(project_id)).encode("utf-8")
+        + (canonical_url or _canonical_url(project_id, credential_ref)).encode("utf-8")
         + raw_body
         + timestamp.encode("utf-8")
     )
@@ -121,12 +122,13 @@ def _v2_headers(
     raw_body: bytes,
     *,
     project_id: int,
+    credential_ref: str,
     canonical_url: str | None = None,
 ) -> dict[str, str]:
     source = (
         _CLIENT_SECRET.encode("utf-8")
         + b"POST"
-        + (canonical_url or _canonical_url(project_id)).encode("utf-8")
+        + (canonical_url or _canonical_url(project_id, credential_ref)).encode("utf-8")
         + raw_body
     )
     return {
@@ -140,13 +142,14 @@ def _post_without_bearer(
     api: TestClient,
     project_id: int,
     *,
+    credential_ref: str,
     raw_body: bytes,
     headers: dict[str, str],
 ) -> Any:
     original_auth = api.headers.pop("Authorization", None)
     try:
         return api.post(
-            f"/api/v1/ingress/hubspot/{project_id}/{_PROFILE_KEY}",
+            f"/api/v1/ingress/hubspot/{project_id}/{credential_ref}",
             content=raw_body,
             headers={"Host": "temporary-tunnel.example", **headers},
         )
@@ -260,14 +263,19 @@ def test_v3_batch_uses_safe_refs_exact_allowlist_and_never_starts_execution(
     response = _post_without_bearer(
         api,
         project_id,
+        credential_ref=credential_ref,
         raw_body=raw_body,
-        headers=_v3_headers(raw_body, project_id=project_id),
+        headers=_v3_headers(
+            raw_body,
+            project_id=project_id,
+            credential_ref=credential_ref,
+        ),
     )
 
     assert response.status_code == 200, response.text
     assert response.json() == {
         "ok": True,
-        "profile_key": _PROFILE_KEY,
+        "profile_key": credential_ref,
         "received": 2,
         "request_created": 1,
         "request_deduped": 0,
@@ -299,7 +307,6 @@ def test_v3_batch_uses_safe_refs_exact_allowlist_and_never_starts_execution(
         "subscription-201",
         "company-301",
         "customer-value-must-not-be-stored@example.test",
-        credential_ref,
     ):
         assert provider_identifier not in public_records
     assert "provider-object:" in public_records
@@ -313,7 +320,7 @@ def test_v3_replay_dedupes_the_request_and_preserves_the_first_event(
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_hubspot_ingress_profile(
+    credential_ref = _store_hubspot_ingress_profile(
         api,
         project_id,
         event_allowlist=["contact.propertyChange"],
@@ -326,8 +333,13 @@ def test_v3_replay_dedupes_the_request_and_preserves_the_first_event(
         response = _post_without_bearer(
             api,
             project_id,
+            credential_ref=credential_ref,
             raw_body=raw_body,
-            headers=_v3_headers(raw_body, project_id=project_id),
+            headers=_v3_headers(
+                raw_body,
+                project_id=project_id,
+                credential_ref=credential_ref,
+            ),
         )
         assert response.status_code == 200, response.text
         assert response.json()[expected_status] == 1
@@ -342,18 +354,23 @@ def test_v3_rejects_bad_or_expired_signatures_before_any_write(
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_hubspot_ingress_profile(
+    credential_ref = _store_hubspot_ingress_profile(
         api,
         project_id,
         event_allowlist=["contact.creation"],
     )
     raw_body = json.dumps([_subscription_event(subscription_type="contact.creation")]).encode()
-    bad_headers = _v3_headers(raw_body, project_id=project_id)
+    bad_headers = _v3_headers(
+        raw_body,
+        project_id=project_id,
+        credential_ref=credential_ref,
+    )
     bad_headers["X-HubSpot-Signature-V3"] = "invalid-signature"
 
     bad = _post_without_bearer(
         api,
         project_id,
+        credential_ref=credential_ref,
         raw_body=raw_body,
         headers=bad_headers,
     )
@@ -361,10 +378,12 @@ def test_v3_rejects_bad_or_expired_signatures_before_any_write(
     expired = _post_without_bearer(
         api,
         project_id,
+        credential_ref=credential_ref,
         raw_body=raw_body,
         headers=_v3_headers(
             raw_body,
             project_id=project_id,
+            credential_ref=credential_ref,
             timestamp_ms=expired_at,
         ),
     )
@@ -381,7 +400,7 @@ def test_v3_signs_the_configured_https_url_not_the_untrusted_host_header(
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_hubspot_ingress_profile(
+    credential_ref = _store_hubspot_ingress_profile(
         api,
         project_id,
         event_allowlist=["contact.creation"],
@@ -391,21 +410,28 @@ def test_v3_signs_the_configured_https_url_not_the_untrusted_host_header(
     wrong = _post_without_bearer(
         api,
         project_id,
+        credential_ref=credential_ref,
         raw_body=raw_body,
         headers=_v3_headers(
             raw_body,
             project_id=project_id,
+            credential_ref=credential_ref,
             canonical_url=(
                 f"https://temporary-tunnel.example/api/v1/ingress/hubspot/"
-                f"{project_id}/{_PROFILE_KEY}"
+                f"{project_id}/{credential_ref}"
             ),
         ),
     )
     correct = _post_without_bearer(
         api,
         project_id,
+        credential_ref=credential_ref,
         raw_body=raw_body,
-        headers=_v3_headers(raw_body, project_id=project_id),
+        headers=_v3_headers(
+            raw_body,
+            project_id=project_id,
+            credential_ref=credential_ref,
+        ),
     )
 
     assert wrong.status_code == 403
@@ -417,7 +443,7 @@ def test_v3_validates_the_whole_batch_and_connection_binding_before_writes(
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_hubspot_ingress_profile(
+    credential_ref = _store_hubspot_ingress_profile(
         api,
         project_id,
         event_allowlist=["contact.creation"],
@@ -435,8 +461,13 @@ def test_v3_validates_the_whole_batch_and_connection_binding_before_writes(
     response = _post_without_bearer(
         api,
         project_id,
+        credential_ref=credential_ref,
         raw_body=raw_body,
-        headers=_v3_headers(raw_body, project_id=project_id),
+        headers=_v3_headers(
+            raw_body,
+            project_id=project_id,
+            credential_ref=credential_ref,
+        ),
     )
 
     assert response.status_code == 403
@@ -450,7 +481,7 @@ def test_v3_rejects_malformed_oversized_and_overlarge_batches_without_writes(
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_hubspot_ingress_profile(
+    credential_ref = _store_hubspot_ingress_profile(
         api,
         project_id,
         event_allowlist=["contact.creation"],
@@ -459,8 +490,13 @@ def test_v3_rejects_malformed_oversized_and_overlarge_batches_without_writes(
     malformed_response = _post_without_bearer(
         api,
         project_id,
+        credential_ref=credential_ref,
         raw_body=malformed,
-        headers=_v3_headers(malformed, project_id=project_id),
+        headers=_v3_headers(
+            malformed,
+            project_id=project_id,
+            credential_ref=credential_ref,
+        ),
     )
 
     large_payload = [
@@ -475,14 +511,20 @@ def test_v3_rejects_malformed_oversized_and_overlarge_batches_without_writes(
     large_response = _post_without_bearer(
         api,
         project_id,
+        credential_ref=credential_ref,
         raw_body=large_body,
-        headers=_v3_headers(large_body, project_id=project_id),
+        headers=_v3_headers(
+            large_body,
+            project_id=project_id,
+            credential_ref=credential_ref,
+        ),
     )
 
     oversized = b" " * 1_000_001
     oversized_response = _post_without_bearer(
         api,
         project_id,
+        credential_ref=credential_ref,
         raw_body=oversized,
         headers={"Content-Type": "application/json"},
     )
@@ -500,7 +542,7 @@ def test_v3_workflow_action_is_allowlisted_deduped_redacted_and_nonexecuting(
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_hubspot_ingress_profile(
+    credential_ref = _store_hubspot_ingress_profile(
         api,
         project_id,
         workflow_action_allowlist=["9001"],
@@ -512,8 +554,13 @@ def test_v3_workflow_action_is_allowlisted_deduped_redacted_and_nonexecuting(
         _post_without_bearer(
             api,
             project_id,
+            credential_ref=credential_ref,
             raw_body=raw_body,
-            headers=_v3_headers(raw_body, project_id=project_id),
+            headers=_v3_headers(
+                raw_body,
+                project_id=project_id,
+                credential_ref=credential_ref,
+            ),
         )
         for _ in range(2)
     ]
@@ -553,7 +600,7 @@ def test_v3_nonallowlisted_definition_continues_without_creating_agent_work(
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_hubspot_ingress_profile(
+    credential_ref = _store_hubspot_ingress_profile(
         api,
         project_id,
         workflow_action_allowlist=["9001"],
@@ -563,8 +610,13 @@ def test_v3_nonallowlisted_definition_continues_without_creating_agent_work(
     response = _post_without_bearer(
         api,
         project_id,
+        credential_ref=credential_ref,
         raw_body=raw_body,
-        headers=_v3_headers(raw_body, project_id=project_id),
+        headers=_v3_headers(
+            raw_body,
+            project_id=project_id,
+            credential_ref=credential_ref,
+        ),
     )
 
     assert response.status_code == 200, response.text
@@ -581,7 +633,7 @@ def test_legacy_v2_workflow_action_signature_is_rejected(
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_hubspot_ingress_profile(
+    credential_ref = _store_hubspot_ingress_profile(
         api,
         project_id,
         workflow_action_allowlist=["9001"],
@@ -591,8 +643,13 @@ def test_legacy_v2_workflow_action_signature_is_rejected(
     response = _post_without_bearer(
         api,
         project_id,
+        credential_ref=credential_ref,
         raw_body=workflow_body,
-        headers=_v2_headers(workflow_body, project_id=project_id),
+        headers=_v2_headers(
+            workflow_body,
+            project_id=project_id,
+            credential_ref=credential_ref,
+        ),
     )
 
     assert response.status_code == 403
@@ -625,13 +682,13 @@ def test_generic_ingress_routes_expose_one_manual_hubspot_setup_url(
     assert routes == [
         {
             "provider_key": "hubspot",
-            "profile_key": _PROFILE_KEY,
+            "profile_key": credential_ref,
             "profile_ref": credential_ref,
             "profile_resource_key": "credential",
-            "ingress_path": (f"/api/v1/ingress/hubspot/{project_id}/{_PROFILE_KEY}"),
-            "ingress_url": _canonical_url(project_id),
+            "ingress_path": (f"/api/v1/ingress/hubspot/{project_id}/{credential_ref}"),
+            "ingress_url": _canonical_url(project_id, credential_ref),
             "local_url": (
-                f"http://127.0.0.1:5180/api/v1/ingress/hubspot/{project_id}/{_PROFILE_KEY}"
+                f"http://127.0.0.1:5180/api/v1/ingress/hubspot/{project_id}/{credential_ref}"
             ),
             "remote_status": "manual_provider_update_required",
             "notes": [
@@ -647,7 +704,7 @@ def test_generic_ingress_routes_expose_one_manual_hubspot_setup_url(
                     "Copy this URL into the HubSpot app Webhooks Target URL. Use the same "
                     "URL as actionUrl only for explicitly allowlisted custom workflow actions."
                 ),
-                "url": _canonical_url(project_id),
+                "url": _canonical_url(project_id, credential_ref),
                 "provider_fields": [
                     "Webhooks Target URL",
                     "Custom workflow action actionUrl",

@@ -36,7 +36,7 @@ Provider key: `ftp`. Connector key: `ftp`. The `ftp-password` auth method stores
   `allow_insecure` gate.
 - `passive_mode` defaults to `true`, timeout to 30 seconds, and filename
   encoding to UTF-8.
-- `auth.test` logs in and calls `PWD`; it does not upload, download, delete, or
+- `account.test` logs in and calls `PWD`; it does not upload, download, delete, or
   return the password or raw protocol transcript.
 
 ## Executable actions

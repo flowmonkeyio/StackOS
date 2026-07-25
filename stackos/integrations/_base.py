@@ -72,8 +72,7 @@ class IntegrationCallResult:
 class BaseIntegration:
     """Mixin-style base class shared by every integration wrapper."""
 
-    #: Human-readable kind label; matches the
-    #: ``integration_credentials.kind`` column.
+    #: Stable provider key used to resolve this wrapper from an Account.
     kind: str = "unknown"
 
     #: Default qps if no project budget overrides it.

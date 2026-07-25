@@ -103,6 +103,22 @@ def install(
         bool,
         typer.Option("--mcp-only", help="Only register the MCP server."),
     ] = False,
+    mcp_host: Annotated[
+        str | None,
+        typer.Option(
+            "--mcp-host",
+            help=(
+                "Connect one AI tool: codex, claude-code, claude-desktop, gemini-cli, or hermes."
+            ),
+        ),
+    ] = None,
+    mcp_profile: Annotated[
+        str | None,
+        typer.Option(
+            "--mcp-profile",
+            help="Target an existing Hermes profile (default: Hermes default profile).",
+        ),
+    ] = None,
     plugins_only: Annotated[
         bool,
         typer.Option("--plugins-only", help="Only mirror plugins and register marketplace."),
@@ -146,6 +162,28 @@ def install(
     if force and not launchd:
         typer.echo("error: --force is only valid with --launchd.", err=True)
         raise typer.Exit(code=2)
+    supported_mcp_hosts = {
+        "codex",
+        "claude-code",
+        "claude-desktop",
+        "gemini-cli",
+        "hermes",
+    }
+    if mcp_host is not None and mcp_host not in supported_mcp_hosts:
+        typer.echo(
+            "error: --mcp-host must be one of: " + ", ".join(sorted(supported_mcp_hosts)),
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    if mcp_host is not None and not mcp_only:
+        typer.echo("error: --mcp-host requires --mcp-only.", err=True)
+        raise typer.Exit(code=2)
+    if mcp_profile is not None and mcp_host != "hermes":
+        typer.echo(
+            "error: --mcp-profile is valid only with --mcp-host hermes.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
     do_skills = skills_only or not (mcp_only or plugins_only)
     do_mcp = mcp_only or not (skills_only or plugins_only)
     do_plugins = plugins_only or not (skills_only or mcp_only)
@@ -165,8 +203,8 @@ def install(
     if not (skills_only or mcp_only or plugins_only):
         from stackos.db.migrate import upgrade_to_head
 
-        result = upgrade_to_head(settings)
-        if result.stamped_existing_schema:
+        migration_result = upgrade_to_head(settings)
+        if migration_result.stamped_existing_schema:
             typer.echo("==> Database schema stamped at alembic head")
         typer.echo(f"==> Database schema ready: {settings.db_path}")
         browser_ok, browser_message = installer.ensure_chromium_runtime(
@@ -191,7 +229,16 @@ def install(
         typer.echo(f"==> {msg}")
 
     if do_mcp:
-        ok, messages = installer.repair_mcp_hosts(home=home)
+        if mcp_host is not None:
+            from stackos.host_mcp import register_host
+
+            host_result = register_host(mcp_host, home=home, profile=mcp_profile)
+            ok = not host_result.blocking
+            messages = [host_result.message]
+            if host_result.repair and host_result.blocking:
+                messages.append(host_result.repair)
+        else:
+            ok, messages = installer.repair_mcp_hosts(home=home)
         for msg in messages:
             typer.echo(f"==> {msg}")
         if not ok:
@@ -304,7 +351,7 @@ def rotate_seed(
         stage_seed_rotation,
     )
     from stackos.db.connection import make_engine
-    from stackos.db.models import IntegrationCredential, PayloadSecret
+    from stackos.db.models import Credential, IntegrationCredential, PayloadSecret
 
     settings = get_settings()
     settings.ensure_dirs()
@@ -316,18 +363,30 @@ def rotate_seed(
             from sqlmodel import select
 
             credential_rows = list(session.exec(select(IntegrationCredential)).all())
+            account_by_backing = {
+                account.integration_credential_id: account
+                for account in session.exec(select(Credential)).all()
+                if account.integration_credential_id is not None
+            }
             payload_secret_rows = list(session.exec(select(PayloadSecret)).all())
-            row_dicts = [
-                {
-                    "id": r.id,
-                    "storage_kind": "integration_credential",
-                    "project_id": r.project_id,
-                    "kind": r.kind,
-                    "encrypted_payload": r.encrypted_payload,
-                    "nonce": r.nonce,
-                }
-                for r in credential_rows
-            ] + [
+            credential_row_dicts: list[dict[str, object]] = []
+            for row in credential_rows:
+                account = account_by_backing.get(row.id) if row.id is not None else None
+                if row.id is None or account is None:
+                    raise RuntimeError(
+                        "seed rotation found a credential backing row without an Account"
+                    )
+                credential_row_dicts.append(
+                    {
+                        "id": row.id,
+                        "storage_kind": "integration_credential",
+                        "credential_ref": account.credential_ref,
+                        "provider_key": account.provider_key,
+                        "encrypted_payload": row.encrypted_payload,
+                        "nonce": row.nonce,
+                    }
+                )
+            row_dicts = credential_row_dicts + [
                 {
                     "id": r.id,
                     "storage_kind": "payload_secret",
@@ -340,14 +399,20 @@ def rotate_seed(
             ]
             new_seed, rotated = reencrypt_rows_for_seed_rotation(settings.seed_path, rows=row_dicts)
             stage_seed_rotation(settings.seed_path, new_seed)
-            id_to_row = {("integration_credential", r.id): r for r in credential_rows} | {
-                ("payload_secret", r.id): r for r in payload_secret_rows
-            }
+            id_to_row: dict[tuple[str, int], IntegrationCredential | PayloadSecret] = {}
+            for credential_row in credential_rows:
+                if credential_row.id is None:
+                    raise RuntimeError("seed rotation found an unsaved credential row")
+                id_to_row[("integration_credential", credential_row.id)] = credential_row
+            for payload_secret_row in payload_secret_rows:
+                if payload_secret_row.id is None:
+                    raise RuntimeError("seed rotation found an unsaved payload secret row")
+                id_to_row[("payload_secret", payload_secret_row.id)] = payload_secret_row
             for rotated_row in rotated:
-                row = id_to_row[(rotated_row["storage_kind"], rotated_row["id"])]
-                row.encrypted_payload = rotated_row["encrypted_payload"]
-                row.nonce = rotated_row["nonce"]
-                session.add(row)
+                target_row = id_to_row[(rotated_row["storage_kind"], rotated_row["id"])]
+                target_row.encrypted_payload = rotated_row["encrypted_payload"]
+                target_row.nonce = rotated_row["nonce"]
+                session.add(target_row)
             session.commit()
             db_committed = True
         commit_staged_seed_rotation(settings.seed_path)

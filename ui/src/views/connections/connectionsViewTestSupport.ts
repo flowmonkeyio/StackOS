@@ -30,7 +30,6 @@ export function authConnection({
   credentialRef = 'cred_firecrawl',
   authType = 'api-key',
   authMethodKey = 'api_key',
-  profileKey = 'default',
   label = 'Primary Firecrawl',
   account = null,
   scopes = [],
@@ -44,7 +43,6 @@ export function authConnection({
   credentialRef?: string
   authType?: string
   authMethodKey?: string
-  profileKey?: string
   label?: string
   account?: Record<string, unknown> | null
   scopes?: string[]
@@ -53,19 +51,19 @@ export function authConnection({
   lastTestedAt?: string | null
 }) {
   return {
+    credential_id: 1,
     credential_ref: credentialRef,
-    project_id: 1,
     provider_key: providerKey,
+    display_name: label,
     auth_type: authType,
     auth_method_key: authMethodKey,
-    profile_key: profileKey,
-    label,
     status: status ?? (revokedAt ? 'revoked' : 'connected'),
     expires_at: expiresAt,
     last_tested_at: lastTestedAt,
     revoked_at: revokedAt,
     scopes,
     account,
+    project_ids: [1],
     setup_required: setupRequired ?? (revokedAt !== null || status === 'failed'),
   }
 }

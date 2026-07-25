@@ -10,9 +10,6 @@ from sqlmodel import Session
 from stackos.actions import (
     ActionRepository,
 )
-from stackos.repositories.projects import (
-    IntegrationCredentialRepository,
-)
 
 
 def _trackbooth_credential_ref(
@@ -20,24 +17,38 @@ def _trackbooth_credential_ref(
     project_id: int,
     *,
     api_base_url: str = "https://trackbooth.local.test",
-    profile_key: str = "default",
+    account_name: str = "Trackbooth - Default",
 ) -> str:
     from stackos.auth_providers import AuthRepository
     from stackos.repositories.plugins import PluginRepository
 
     PluginRepository(session).get_plugin("trackbooth")
-    IntegrationCredentialRepository(session).set(
-        project_id=project_id,
-        kind="trackbooth",
-        profile_key=profile_key,
-        secret_payload=b'{"api_key":"tb-test-key"}',
-        config_json={"label": "Trackbooth test", "api_base_url": api_base_url},
+    repo = AuthRepository(session)
+    existing = next(
+        (
+            account
+            for account in repo.status(
+                project_id=None,
+                provider_key="trackbooth",
+            ).accounts
+            if account.display_name == account_name
+        ),
+        None,
     )
-    status = AuthRepository(session).status(project_id=project_id, provider_key="trackbooth")
-    for connection in status.connections:
-        if connection.profile_key == profile_key:
-            return connection.credential_ref
-    raise AssertionError(f"missing Trackbooth credential profile {profile_key!r}")
+    if existing is not None:
+        repo.attach_account(
+            project_id=project_id,
+            credential_ref=existing.credential_ref,
+            attached_by="test-fixture",
+        )
+        return existing.credential_ref
+    return repo.store_credential(
+        provider_key="trackbooth",
+        auth_method_key="api-key",
+        display_name=account_name,
+        fields={"api_key": "tb-test-key", "api_base_url": api_base_url},
+        attach_project_id=project_id,
+    ).data.credential_ref
 
 
 def _trackbooth_links_create_detail() -> dict:

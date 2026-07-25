@@ -27,6 +27,7 @@ from stackos.db.model_auth import (
     IntegrationBudget,
     IntegrationCredential,
     OAuthState,
+    ProjectCredential,
 )
 from stackos.db.model_browser import BrowserActionReceipt, BrowserProfile, BrowserSession
 from stackos.db.model_context import (
@@ -165,6 +166,7 @@ __all__ = [
     "Plugin",
     "PluginSource",
     "Project",
+    "ProjectCredential",
     "ProjectEvent",
     "ProjectPlugin",
     "ProjectWorkflowTemplate",

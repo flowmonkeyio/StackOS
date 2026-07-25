@@ -150,7 +150,7 @@ def test_cli_ops_call_forwards_communication_profile_setup(
         json.dumps(
             {
                 "key": "support-bot",
-                "auth_profile_key": "support",
+                "provider_facets": {"telegram-bot": {"credential_ref": "cred_telegram_support"}},
                 "identity": {
                     "display_name": "Support Bot",
                     "purpose": "Handle support requests from approved Telegram users.",
@@ -191,7 +191,9 @@ def test_cli_ops_call_forwards_communication_profile_setup(
             {
                 "arguments": {
                     "key": "support-bot",
-                    "auth_profile_key": "support",
+                    "provider_facets": {
+                        "telegram-bot": {"credential_ref": "cred_telegram_support"}
+                    },
                     "identity": {
                         "display_name": "Support Bot",
                         "purpose": "Handle support requests from approved Telegram users.",
