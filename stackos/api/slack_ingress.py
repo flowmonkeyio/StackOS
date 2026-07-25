@@ -38,6 +38,7 @@ from stackos.communications import (
     evaluate_inbound_policy,
     process_inbound_event,
     provider_ingress_enabled,
+    validate_communication_profile_ingress_ownership,
 )
 from stackos.communications.provider_ids import (
     slack_message_ref as _message_ref,
@@ -51,7 +52,7 @@ from stackos.communications.provider_ids import (
 from stackos.communications.provider_ids import (
     slack_thread_ref as _thread_ref,
 )
-from stackos.repositories.base import ValidationError
+from stackos.repositories.base import RepositoryError, ValidationError
 
 router = APIRouter(prefix="/api/v1/ingress/slack", tags=["slack-ingress"])
 
@@ -214,6 +215,24 @@ def _require_slack_profile(
     credential_ref = str(slack_facet.get("credential_ref") or "").strip()
     if not credential_ref:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid Slack signature")
+    try:
+        AuthRepository(session).require_attached_account(
+            project_id=project_id,
+            credential_ref=credential_ref,
+            provider_key="slack-bot",
+        )
+        validate_communication_profile_ingress_ownership(
+            session,
+            project_id=project_id,
+            profile_ref=f"communication-profile:{profile_key}",
+            provider_facets={"slack-bot": dict(slack_facet)},
+            profile_enabled=True,
+        )
+    except RepositoryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="invalid Slack signature",
+        ) from exc
     return SlackProfile(key=profile_key, credential_ref=credential_ref, data=data)
 
 

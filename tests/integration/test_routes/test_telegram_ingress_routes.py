@@ -24,6 +24,8 @@ def _store_telegram_profile(
     visibility_policy: dict | None = None,
     ingress_mode: str = "webhook",
     ingress_enabled: bool = True,
+    bot_token: str = "123456:ABC",
+    webhook_secret_token: str = "telegram-secret",
 ) -> str:
     engine = api.app.state.engine  # type: ignore[attr-defined]
     with Session(engine) as session:
@@ -35,8 +37,8 @@ def _store_telegram_profile(
                     auth_method_key="bot-token",
                     display_name=f"Telegram - {profile_key}",
                     fields={
-                        "bot_token": "123456:ABC",
-                        "webhook_secret_token": "telegram-secret",
+                        "bot_token": bot_token,
+                        "webhook_secret_token": webhook_secret_token,
                         "api_base_url": "http://127.0.0.1:8081",
                     },
                     attach_project_id=project_id,
@@ -791,7 +793,7 @@ def test_telegram_ingress_scopes_same_update_id_per_communication_profile(
     api: TestClient,
     project_id: int,
 ) -> None:
-    credential_ref = _store_telegram_profile(
+    _store_telegram_profile(
         api,
         project_id,
         profile_key="support-bot",
@@ -800,14 +802,18 @@ def test_telegram_ingress_scopes_same_update_id_per_communication_profile(
         api,
         project_id,
         profile_key="analytics-bot",
-        credential_ref=credential_ref,
+        bot_token="654321:XYZ",
+        webhook_secret_token="analytics-secret",
     )
     original_auth = api.headers.pop("Authorization", None)
     try:
-        for profile_key in ("support-bot", "analytics-bot"):
+        for profile_key, secret in (
+            ("support-bot", "telegram-secret"),
+            ("analytics-bot", "analytics-secret"),
+        ):
             response = api.post(
                 f"/api/v1/ingress/telegram/{project_id}/{profile_key}",
-                headers={"X-Telegram-Bot-Api-Secret-Token": "telegram-secret"},
+                headers={"X-Telegram-Bot-Api-Secret-Token": secret},
                 json={
                     "update_id": 465,
                     "message": {
@@ -837,6 +843,55 @@ def test_telegram_ingress_scopes_same_update_id_per_communication_profile(
         "telegram-update:support-bot:465",
     ]
     assert events.total_estimate == 2
+
+
+def test_telegram_ingress_rejects_ambiguous_account_owner_without_writes(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    credential_ref = _store_telegram_profile(
+        api,
+        project_id,
+        profile_key="primary-bot",
+    )
+    _store_telegram_profile(
+        api,
+        project_id,
+        profile_key="duplicate-bot",
+        credential_ref=credential_ref,
+    )
+    original_auth = api.headers.pop("Authorization", None)
+    try:
+        for profile_key in ("primary-bot", "duplicate-bot"):
+            response = api.post(
+                f"/api/v1/ingress/telegram/{project_id}/{profile_key}",
+                headers={"X-Telegram-Bot-Api-Secret-Token": "telegram-secret"},
+                json={
+                    "update_id": 466,
+                    "message": {
+                        "message_id": 17,
+                        "chat": {"id": 999, "type": "private", "username": "ada"},
+                        "from": {"id": 555, "username": "ada"},
+                        "text": "should fail closed",
+                    },
+                },
+            )
+            assert response.status_code == 403, response.text
+            assert response.json()["detail"] == "invalid Telegram secret"
+    finally:
+        if original_auth is not None:
+            api.headers["Authorization"] = original_auth
+
+    engine = api.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        requests = AgentRequestRepository(session).list(project_id=project_id)
+        events = ResourceRepository(session).query_records(
+            project_id=project_id,
+            plugin_slug="communications",
+            resource_key="communication-event",
+        )
+    assert requests.total_estimate == 0
+    assert events.items == []
 
 
 def test_telegram_ingress_rejects_unknown_profile_without_leaking_lookup(

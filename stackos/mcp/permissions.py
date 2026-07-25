@@ -129,6 +129,7 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "communicationContext.query",
         "communicationMembership.list",
         "communicationMembership.upsert",
+        "communicationProfile.accountUsage",
         "communicationProfile.get",
         "communicationProfile.list",
         "communicationProfile.upsert",

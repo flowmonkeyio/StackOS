@@ -38,6 +38,7 @@ from .payloads import (
 from .policy import (
     _enforce_allowed_updates,
     _enforce_profile_chat,
+    _enforce_telegram_ingress_profile,
     _enforce_telegram_profile,
 )
 from .refs import _message_ref_parts, _resolve_message_ref
@@ -198,7 +199,7 @@ class TelegramBotActionConnector:
                     metadata={"telegram_method": "getUpdates"},
                 )
             case "webhook.set":
-                profile = _enforce_telegram_profile(request)
+                profile = _enforce_telegram_ingress_profile(request)
                 body_json = _webhook_set_payload(request, profile)
                 # Telegram setWebhook:
                 # https://core.telegram.org/bots/api#setwebhook
@@ -216,7 +217,7 @@ class TelegramBotActionConnector:
                     metadata={"telegram_method": "setWebhook"},
                 )
             case "webhook.delete":
-                _enforce_telegram_profile(request)
+                _enforce_telegram_ingress_profile(request)
                 # Telegram deleteWebhook:
                 # https://core.telegram.org/bots/api#deletewebhook
                 status, body, headers = await send_json(

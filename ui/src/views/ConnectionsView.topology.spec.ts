@@ -193,16 +193,19 @@ describe('ConnectionsView ingress and topology', () => {
     expect(wrapper.text()).toContain('Slack')
     // Channels — surface with audience and plain-language sensitivity.
     expect(wrapper.text()).toContain('Roadmap channel')
-    expect(wrapper.text()).toContain('Internal roadmap planning and critical architecture alignment.')
+    expect(wrapper.text()).toContain(
+      'Internal roadmap planning and critical architecture alignment.',
+    )
     expect(wrapper.text()).toContain('Internal')
     // Destinations — named target resolving to a channel.
     expect(wrapper.text()).toContain('Slack #roadmap')
     expect(wrapper.text()).toContain('slack-channel:C123')
     // Connectivity — per-bot route status, humanized.
     expect(wrapper.text()).toContain('Manual update needed')
-    // Overview — reachable ingress can still need an operator action for one provider route.
-    expect(wrapper.text()).toContain('Slack webhook needs manual update')
-    expect(wrapper.text()).toContain('workspace-slack needs its webhook URL copied')
+    // Provider attention is scoped to the exact route instead of a project-wide warning.
+    expect(wrapper.text()).toContain('Slack requires manual webhook update')
+    expect(wrapper.text()).toContain('I’ve updated Slack')
+    expect(wrapper.text()).not.toContain('workspace-slack needs its webhook URL copied')
   })
 
   it('configures local-tunnel connectivity and runs a discovery pass', async () => {
@@ -449,6 +452,25 @@ describe('ConnectionsView ingress and topology', () => {
       arguments: {
         apply_provider_webhooks: true,
         dry_run_provider_webhooks: false,
+      },
+    })
+    await clickButton(wrapper, 'I’ve updated Slack')
+    await vi.waitFor(() =>
+      expect(
+        posted.some((call) =>
+          call.url.endsWith('/operations/ingressEndpoint.confirmManualUpdate/call'),
+        ),
+      ).toBe(true),
+    )
+    const confirmation = posted.find((call) =>
+      call.url.endsWith('/operations/ingressEndpoint.confirmManualUpdate/call'),
+    )
+    expect(confirmation?.body).toMatchObject({
+      arguments: {
+        provider_key: 'slack-bot',
+        profile_key: 'slack-bot',
+        ingress_url: 'https://stackos.example.com/api/v1/ingress/slack/1/slack-bot',
+        response_mode: 'raw',
       },
     })
   })

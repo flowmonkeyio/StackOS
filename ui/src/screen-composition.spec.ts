@@ -52,13 +52,13 @@ describe('desktop screen composition contract', () => {
     expect(stories).toContain('Latest recorded outcome')
     expect(stories).toContain('Resolve in Attention')
     expect(stories).toContain('View outcome timeline')
-    expect(stories).not.toContain("update:view-mode")
+    expect(stories).not.toContain('update:view-mode')
   })
 
   it('defaults Activity to grouped outcomes with raw audit on demand', () => {
     const text = source('views/ActivityView.vue')
 
-    expect(text).toContain("const filter = ref<Category>(routeCategory())")
+    expect(text).toContain('const filter = ref<Category>(routeCategory())')
     expect(text).toContain(": 'outcomes'")
     expect(text).toContain('Related adjacent changes are grouped into one episode.')
     expect(text).toContain('Show raw audit')
@@ -77,13 +77,15 @@ describe('desktop screen composition contract', () => {
 
   it('opens Connections on services and groups messaging and diagnostics', () => {
     const text = source('views/ConnectionsView.vue')
+    const connectivity = source('views/connections/ConnectivityPanel.vue')
     const addPanel = source('views/accounts/AddAccountPanel.vue')
     const accounts = source('views/AccountsView.vue')
 
     expect(text).toContain("const activeSection = ref<ConnectionSection>('services')")
     expect(text).toContain("label: 'Messaging setup'")
     expect(text).toContain("label: 'Advanced'")
-    expect(text).toContain('webhook needs manual update')
+    expect(text).not.toContain('webhook needs manual update')
+    expect(connectivity).toContain('I’ve updated Slack')
     expect(addPanel).toContain('Credentials stay in the local daemon')
     expect(addPanel).toContain('Save and verify')
     expect(accounts).toContain('Set up provider Accounts once')

@@ -834,6 +834,7 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "account.test" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "communicationProfile.list" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "communicationProfile.get" in _AGENT_SETUP_TOOLBOX_NAMES
+    assert "communicationProfile.accountUsage" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "communicationProfile.upsert" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "communication.send" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "communication.reply" in _AGENT_SETUP_TOOLBOX_NAMES

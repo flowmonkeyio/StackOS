@@ -29,6 +29,7 @@ defineEmits<{
   (e: 'refresh'): void
   (e: 'configure'): void
   (e: 'sync'): void
+  (e: 'confirm-manual', route: IngressEndpointRoute): void
 }>()
 
 const driverLabel = (): string => {
@@ -37,6 +38,10 @@ const driverLabel = (): string => {
   if (driver === 'public-url') return 'Public URL'
   return driver ?? 'Not configured'
 }
+
+const localTunnelIsStale = (): boolean =>
+  props.ingressStatus?.endpoint?.driver === 'local-tunnel' &&
+  props.ingressStatus?.endpoint_fresh === false
 
 function routeKey(route: IngressEndpointRoute): string {
   return `${route.provider_key}:${route.profile_key}`
@@ -70,10 +75,7 @@ async function copyRouteUrl(route: IngressEndpointRoute): Promise<void> {
 </script>
 
 <template>
-  <section
-    class="space-y-3"
-    aria-label="Connectivity"
-  >
+  <section class="space-y-3" aria-label="Connectivity">
     <UiSectionHeader
       title="Connectivity"
       description="The public address Slack and Telegram use to reach your bots. Each bot gets its own inbound route."
@@ -85,12 +87,7 @@ async function copyRouteUrl(route: IngressEndpointRoute): Promise<void> {
           :status="ingressStatus?.ready ? 'ok' : 'degraded'"
           :label="ingressStatus?.ready ? 'Reachable' : 'Not reachable'"
         />
-        <UiButton
-          size="sm"
-          variant="secondary"
-          icon-left="settings"
-          @click="$emit('configure')"
-        >
+        <UiButton size="sm" variant="secondary" icon-left="settings" @click="$emit('configure')">
           Set up
         </UiButton>
         <UiButton
@@ -99,6 +96,12 @@ async function copyRouteUrl(route: IngressEndpointRoute): Promise<void> {
           variant="secondary"
           icon-left="bolt"
           :loading="syncing"
+          :disabled="localTunnelIsStale()"
+          :title="
+            localTunnelIsStale()
+              ? 'Refresh the local tunnel before syncing provider webhooks.'
+              : undefined
+          "
           @click="$emit('sync')"
         >
           Sync to providers
@@ -115,37 +118,32 @@ async function copyRouteUrl(route: IngressEndpointRoute): Promise<void> {
       </template>
     </UiSectionHeader>
 
-    <UiCallout
-      v-if="message"
-      :tone="message.tone"
-    >
+    <UiCallout v-if="message" :tone="message.tone">
       {{ message.text }}
     </UiCallout>
 
-    <UiCallout
-      v-else-if="!ingressStatus?.ready"
-      tone="info"
-    >
+    <UiCallout v-else-if="localTunnelIsStale()" tone="warning">
+      This local tunnel is stale. Choose <strong>Set up</strong> to refresh it before syncing or
+      confirming provider webhooks.
+    </UiCallout>
+
+    <UiCallout v-else-if="ingressStatus?.blocked_uses?.length" tone="warning">
+      <strong>Repair or disable the affected bot profile before syncing webhooks.</strong>
+      {{ ingressStatus.blocked_uses[0]?.repair_message }}
+    </UiCallout>
+
+    <UiCallout v-else-if="!ingressStatus?.ready" tone="info">
       Inbound messaging isn’t reachable yet. Bots can still send replies, but they won’t receive new
       messages until a public address is set. Choose <strong>Set up</strong> to add one, then
       <strong>Sync to providers</strong> to register each bot’s webhook.
     </UiCallout>
 
-    <UiCard
-      v-if="loading"
-      aria-label="Loading connectivity"
-    >
-      <UiSkeleton
-        shape="line"
-        :lines="3"
-      />
+    <UiCard v-if="loading" aria-label="Loading connectivity">
+      <UiSkeleton shape="line" :lines="3" />
     </UiCard>
 
     <template v-else>
-      <UiCard
-        section
-        aria-label="Public endpoint"
-      >
+      <UiCard section aria-label="Public endpoint">
         <template #header>
           <div class="flex min-w-0 items-center gap-3">
             <UiMedallion
@@ -153,9 +151,7 @@ async function copyRouteUrl(route: IngressEndpointRoute): Promise<void> {
               shape="square"
               :tone="ingressStatus?.ready ? 'success' : 'warning'"
             />
-            <h4 class="t-h3 text-fg-strong">
-              Public endpoint
-            </h4>
+            <h4 class="t-h3 text-fg-strong">Public endpoint</h4>
           </div>
         </template>
         <UiDescriptionList
@@ -171,14 +167,8 @@ async function copyRouteUrl(route: IngressEndpointRoute): Promise<void> {
         />
       </UiCard>
 
-      <section
-        class="space-y-3"
-        aria-label="Bot routes"
-      >
-        <UiSectionHeader
-          title="Bot routes"
-          as="h4"
-        >
+      <section class="space-y-3" aria-label="Bot routes">
+        <UiSectionHeader title="Bot routes" as="h4">
           <template #actions>
             <UiCountBadge :value="ingressStatus?.routes?.length ?? 0" />
           </template>
@@ -193,19 +183,9 @@ async function copyRouteUrl(route: IngressEndpointRoute): Promise<void> {
           framed
         />
 
-        <UiCard
-          v-else
-          section
-          :padded="false"
-          class="overflow-hidden"
-          aria-label="Route list"
-        >
+        <UiCard v-else section :padded="false" class="overflow-hidden" aria-label="Route list">
           <ul class="divide-y divide-border-subtle">
-            <li
-              v-for="route in ingressStatus.routes"
-              :key="routeKey(route)"
-              class="px-4 py-3"
-            >
+            <li v-for="route in ingressStatus.routes" :key="routeKey(route)" class="px-4 py-3">
               <div class="flex min-w-0 flex-wrap items-center justify-between gap-3">
                 <div class="flex min-w-0 flex-wrap items-center gap-2">
                   <h5 class="min-w-0 truncate text-sm font-medium text-fg-strong">
@@ -218,16 +198,35 @@ async function copyRouteUrl(route: IngressEndpointRoute): Promise<void> {
                     {{ routeStatusLabel(route) }}
                   </UiBadge>
                 </div>
-                <UiButton
+                <div
                   v-if="routeNeedsManualProviderUpdate(route) && routeActionUrl(route)"
-                  size="sm"
-                  variant="secondary"
-                  icon-left="copy"
-                  :aria-label="`Copy ${providerLabel(route.provider_key)} webhook URL`"
-                  @click="copyRouteUrl(route)"
+                  class="flex flex-wrap items-center gap-1.5"
                 >
-                  {{ route.next_action?.label ?? 'Copy webhook URL' }}
-                </UiButton>
+                  <UiButton
+                    size="sm"
+                    variant="secondary"
+                    icon-left="copy"
+                    :aria-label="`Copy ${providerLabel(route.provider_key)} webhook URL`"
+                    @click="copyRouteUrl(route)"
+                  >
+                    {{ route.next_action?.label ?? 'Copy webhook URL' }}
+                  </UiButton>
+                  <UiButton
+                    v-if="route.provider_key === 'slack-bot'"
+                    size="sm"
+                    variant="primary"
+                    :loading="syncing"
+                    :disabled="localTunnelIsStale()"
+                    :title="
+                      localTunnelIsStale()
+                        ? 'Refresh the local tunnel before confirming this Slack URL.'
+                        : undefined
+                    "
+                    @click="$emit('confirm-manual', route)"
+                  >
+                    I’ve updated Slack
+                  </UiButton>
+                </div>
               </div>
               <p class="mt-1 break-all font-mono text-2xs text-fg-subtle">
                 {{ routeUrl(route) ?? '—' }}
@@ -247,10 +246,7 @@ async function copyRouteUrl(route: IngressEndpointRoute): Promise<void> {
                 v-if="route.notes?.length"
                 class="mt-2 list-disc space-y-1 pl-5 text-xs text-fg-muted"
               >
-                <li
-                  v-for="note in route.notes"
-                  :key="note"
-                >
+                <li v-for="note in route.notes" :key="note">
                   {{ note }}
                 </li>
               </ul>

@@ -18,7 +18,6 @@ import DestinationsPanel from './connections/DestinationsPanel.vue'
 import HandoffRulesPanel from './connections/HandoffRulesPanel.vue'
 import SlackBotSidePanel from './connections/SlackBotSidePanel.vue'
 import TelegramProfileSidePanel from './connections/TelegramProfileSidePanel.vue'
-import { providerLabel } from './connections/formatters'
 import { useCommunicationTopology } from './connections/useCommunicationTopology'
 import { useConnectionCredentials } from './connections/useConnectionCredentials'
 import { useIngressEndpointEditor } from './connections/useIngressEndpointEditor'
@@ -126,7 +125,6 @@ const {
   panelOpen: ingressSetupOpen,
   message: ingressMessage,
   form: ingressForm,
-  manualRoutes: manualIngressRoutes,
   load: loadIngressStatus,
   reset: resetIngressStatus,
   openPanel: openIngressSetup,
@@ -376,28 +374,17 @@ onBeforeRouteUpdate((to) => {
       :breadcrumbs="[{ label: 'Connections' }]"
     >
       <template #actions>
-        <UiButton
-          variant="primary"
-          size="sm"
-          icon-left="plus"
-          @click="openAddConnection()"
-        >
+        <UiButton variant="primary" size="sm" icon-left="plus" @click="openAddConnection()">
           Add connection
         </UiButton>
       </template>
     </ProjectPageHeader>
 
-    <UiCallout
-      v-if="error"
-      tone="danger"
-    >
+    <UiCallout v-if="error" tone="danger">
       {{ error }}
     </UiCallout>
 
-    <UiCallout
-      v-if="oauthReturnMessage"
-      :tone="oauthReturnMessage.tone"
-    >
+    <UiCallout v-if="oauthReturnMessage" :tone="oauthReturnMessage.tone">
       {{ oauthReturnMessage.text }}
     </UiCallout>
 
@@ -408,9 +395,7 @@ onBeforeRouteUpdate((to) => {
     >
       <div class="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
         <div>
-          <p class="t-overline text-fg-subtle">
-            Connection state
-          </p>
+          <p class="t-overline text-fg-subtle">Connection state</p>
           <h2
             id="connection-state-title"
             class="mt-1 text-xl font-semibold tracking-tight text-fg-strong"
@@ -432,13 +417,8 @@ onBeforeRouteUpdate((to) => {
             </template>
           </p>
         </div>
-        <div
-          v-if="attentionConnections.length > 0"
-          class="flex flex-wrap gap-2 lg:justify-end"
-        >
-          <UiButton @click="setActiveSection('services')">
-            Review services
-          </UiButton>
+        <div v-if="attentionConnections.length > 0" class="flex flex-wrap gap-2 lg:justify-end">
+          <UiButton @click="setActiveSection('services')"> Review services </UiButton>
         </div>
       </div>
       <div class="grid border-t border-border-subtle bg-bg-surface-alt sm:grid-cols-4">
@@ -447,31 +427,45 @@ onBeforeRouteUpdate((to) => {
           class="focus-ring-inset border-b border-border-subtle px-4 py-3 text-left transition hover:bg-bg-surface sm:border-b-0 sm:border-r"
           @click="setActiveSection('services')"
         >
-          <span class="block text-2xs font-medium uppercase tracking-wide text-fg-subtle">Services</span>
-          <span class="mt-1 block text-sm font-semibold text-fg-strong">{{ connectedServiceCount }} connected</span>
+          <span class="block text-2xs font-medium uppercase tracking-wide text-fg-subtle"
+            >Services</span
+          >
+          <span class="mt-1 block text-sm font-semibold text-fg-strong"
+            >{{ connectedServiceCount }} connected</span
+          >
         </button>
         <button
           type="button"
           class="focus-ring-inset border-b border-border-subtle px-4 py-3 text-left transition hover:bg-bg-surface sm:border-b-0 sm:border-r"
           @click="setActiveSection('bots')"
         >
-          <span class="block text-2xs font-medium uppercase tracking-wide text-fg-subtle">Messaging identities</span>
-          <span class="mt-1 block text-sm font-semibold text-fg-strong">{{ communicationProfiles.length }} configured</span>
+          <span class="block text-2xs font-medium uppercase tracking-wide text-fg-subtle"
+            >Messaging identities</span
+          >
+          <span class="mt-1 block text-sm font-semibold text-fg-strong"
+            >{{ communicationProfiles.length }} configured</span
+          >
         </button>
         <button
           type="button"
           class="focus-ring-inset border-b border-border-subtle px-4 py-3 text-left transition hover:bg-bg-surface sm:border-b-0 sm:border-r"
           @click="setActiveSection('channels')"
         >
-          <span class="block text-2xs font-medium uppercase tracking-wide text-fg-subtle">Places</span>
-          <span class="mt-1 block text-sm font-semibold text-fg-strong">{{ communicationSurfaces.length }} visible</span>
+          <span class="block text-2xs font-medium uppercase tracking-wide text-fg-subtle"
+            >Places</span
+          >
+          <span class="mt-1 block text-sm font-semibold text-fg-strong"
+            >{{ communicationSurfaces.length }} visible</span
+          >
         </button>
         <button
           type="button"
           class="focus-ring-inset px-4 py-3 text-left transition hover:bg-bg-surface"
           @click="setActiveSection('connectivity')"
         >
-          <span class="block text-2xs font-medium uppercase tracking-wide text-fg-subtle">Inbound messaging</span>
+          <span class="block text-2xs font-medium uppercase tracking-wide text-fg-subtle"
+            >Inbound messaging</span
+          >
           <span
             class="mt-1 block text-sm font-semibold"
             :class="ingressStatus?.ready ? 'text-success-fg' : 'text-warning-fg'"
@@ -491,24 +485,6 @@ onBeforeRouteUpdate((to) => {
       <UiSkeleton class="h-7 w-72 max-w-full" />
       <UiSkeleton class="h-4 w-full max-w-2xl" />
     </section>
-
-    <UiCallout
-      v-if="manualIngressRoutes.length > 0"
-      tone="warning"
-      :title="`${providerLabel(manualIngressRoutes[0].provider_key)} webhook needs manual update`"
-    >
-      {{ manualIngressRoutes[0].profile_key }} needs its webhook URL copied into the provider
-      console.
-      <template #actions>
-        <UiButton
-          variant="secondary"
-          size="sm"
-          @click="setActiveSection('connectivity')"
-        >
-          Review connectivity
-        </UiButton>
-      </template>
-    </UiCallout>
 
     <div class="flex flex-col gap-5 lg:flex-row lg:items-start">
       <SubNav
@@ -541,11 +517,7 @@ onBeforeRouteUpdate((to) => {
           />
         </div>
 
-        <div
-          role="tabpanel"
-          aria-labelledby="cs-subnav-bots"
-          :hidden="activeSection !== 'bots'"
-        >
+        <div role="tabpanel" aria-labelledby="cs-subnav-bots" :hidden="activeSection !== 'bots'">
           <BotsPanel
             :bots="communicationProfiles"
             :telegram-connections="telegramConnections"
@@ -603,13 +575,14 @@ onBeforeRouteUpdate((to) => {
           :hidden="activeSection !== 'connectivity'"
         >
           <ConnectivityPanel
-            :ingress-status="ingressStatus"
+            :ingress-status="ingressStatus ?? null"
             :loading="communicationSetupLoading"
             :syncing="busyAction === 'ingress:sync'"
             :message="ingressMessage ?? communicationSetupMessage"
             @refresh="loadCommunicationSetup"
             @configure="openIngressSetup"
             @sync="syncIngress"
+            @confirm-manual="syncIngress"
           />
         </div>
 

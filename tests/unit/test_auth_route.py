@@ -192,6 +192,93 @@ def test_ui_token_can_call_ingress_setup_operation(
     assert resp.json()["data"]["public_base_url"] == "https://stackos.example.com"
 
 
+def test_ui_token_can_confirm_one_exact_current_slack_route(
+    client: TestClient,
+    auth_token: str,
+) -> None:
+    project_id = _create_project(client, auth_token)
+    ui_token = derive_ui_token(auth_token)
+    headers = {"authorization": f"Bearer {ui_token}"}
+
+    stored = client.post(
+        "/api/v1/auth/accounts/slack-bot",
+        headers=headers,
+        json={
+            "auth_method_key": "bot-token",
+            "display_name": "Slack - Support",
+            "attach_project_id": project_id,
+            "fields": {
+                "bot_token": "xoxb-test-token",
+                "signing_secret": "slack-signing-secret",
+            },
+        },
+    )
+    assert stored.status_code == 201, stored.text
+    credential_ref = stored.json()["data"]["credential_ref"]
+
+    profile = client.post(
+        "/api/v1/operations/communicationProfile.upsert/call",
+        headers=headers,
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "key": "support",
+                "identity": {"display_name": "Support Slack"},
+                "provider_facets": {
+                    "slack-bot": {
+                        "credential_ref": credential_ref,
+                        "ingress_enabled": True,
+                    }
+                },
+            }
+        },
+    )
+    assert profile.status_code == 200, profile.text
+
+    configured = client.post(
+        "/api/v1/operations/ingressEndpoint.configure/call",
+        headers=headers,
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "driver": "public-url",
+                "public_base_url": "https://stackos.example.com",
+            }
+        },
+    )
+    assert configured.status_code == 200, configured.text
+
+    synced = client.post(
+        "/api/v1/operations/ingressEndpoint.sync/call",
+        headers=headers,
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "apply_provider_webhooks": False,
+                "response_mode": "raw",
+            }
+        },
+    )
+    assert synced.status_code == 200, synced.text
+    route = synced.json()["data"]["routes"][0]
+
+    confirmed = client.post(
+        "/api/v1/operations/ingressEndpoint.confirmManualUpdate/call",
+        headers=headers,
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "provider_key": "slack-bot",
+                "profile_key": "support",
+                "ingress_url": route["ingress_url"],
+                "response_mode": "raw",
+            }
+        },
+    )
+    assert confirmed.status_code == 200, confirmed.text
+    assert confirmed.json()["data"]["routes"][0]["remote_status"] == ("manual_provider_confirmed")
+
+
 def test_ui_token_cannot_update_tracker_task_status(client: TestClient, auth_token: str) -> None:
     """Tracker lifecycle remains agent/controller-owned, not browser-owned."""
     project_id = _create_project(client, auth_token)

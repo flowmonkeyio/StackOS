@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia'
 import type { SchemaAccountOut, SchemaAuthProviderOut } from '@/api'
 import { useConnectionForm } from '@/composables/useConnectionForm'
 import { formatApiError } from '@/lib/client'
+import { callOperation } from '@/lib/operations'
 import { useStackOsCatalogStore } from '@/stores/plugins'
 import {
   connectionActionKey,
@@ -22,6 +23,23 @@ import type {
 export type AccountRow = Omit<SchemaAccountOut, 'project_ids'> & {
   id: string
   project_ids: number[]
+}
+
+export interface CommunicationAccountUse {
+  project_id: number
+  profile_ref: string
+  profile_key: string
+  profile_display_name: string
+  provider_key: string
+  credential_ref: string | null
+  profile_enabled: boolean
+  ingress_enabled: boolean
+  owns_provider_ingress: boolean
+  binding_state: string
+  repair_message: string
+  attention_required: boolean
+  attention_message: string | null
+  ingress_url: string | null
 }
 
 export function useAccountCredentials(attachProjectId: ComputedRef<number | null>) {
@@ -59,6 +77,7 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
   const pendingRevoke = ref<AccountRow | null>(null)
   const editingCredentialRef = ref<string | null>(null)
   const editingSecretPresent = ref<Record<string, boolean>>({})
+  const communicationAccountUses = ref<CommunicationAccountUse[]>([])
   const editing = computed(() => editingCredentialRef.value !== null)
 
   const accounts = computed<AccountRow[]>(() =>
@@ -90,7 +109,11 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
   })
 
   async function load(): Promise<void> {
-    await catalogStore.refreshAccounts()
+    const [, usage] = await Promise.all([
+      catalogStore.refreshAccounts(),
+      callOperation<{ uses: CommunicationAccountUse[] }>('communicationProfile.accountUsage', {}),
+    ])
+    communicationAccountUses.value = usage.uses ?? []
   }
 
   function ensureSelectableProvider(): void {
@@ -460,6 +483,7 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
     setDisplayNameValue,
     setSelectedProvider: selectProvider,
     accounts,
+    communicationAccountUses,
     visibleAuthProviders,
     providerOptions,
     selectedProvider,

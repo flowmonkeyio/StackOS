@@ -62,11 +62,17 @@ async def call_operation(
 ) -> JSONResponse:
     """Call one REST-enabled operation through the shared dispatcher."""
     registry = build_operation_registry()
+    spec = registry.get(operation_name, surface="rest")
     normalized_client_surface = (
         client_surface.strip().lower() if isinstance(client_surface, str) else None
     )
     if normalized_client_surface not in {"cli"}:
         normalized_client_surface = None
+    generic_operation_path = f"/api/v1/operations/{operation_name}/call"
+    trusted_local_admin = bool(
+        spec.grant_policy == "local-admin-auth-write"
+        and spec.surfaces.rest.path == generic_operation_path
+    )
     result = await OperationDispatcher(registry).dispatch(
         operation_name,
         payload.arguments,
@@ -74,6 +80,7 @@ async def call_operation(
         surface="rest",
         client_surface=normalized_client_surface,
         settings=settings,
+        trusted_local_admin=trusted_local_admin,
     )
     if result.duration_ms >= 100:
         get_logger("stackos.api.operations").warning(

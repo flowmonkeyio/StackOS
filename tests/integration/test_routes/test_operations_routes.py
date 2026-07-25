@@ -1571,6 +1571,57 @@ def test_operation_rest_ingress_endpoint_syncs_provider_routes(
     assert fetched_profile.json()["provider_facets"]["slack-bot"]["ingress_url"].endswith(
         f"/api/v1/ingress/slack/{project_id}/support"
     )
+    slack_route = next(
+        route for route in synced.json()["data"]["routes"] if route["provider_key"] == "slack-bot"
+    )
+    rejected_confirmation = api.post(
+        "/api/v1/operations/ingressEndpoint.confirmManualUpdate/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "provider_key": "slack-bot",
+                "profile_key": "support",
+                "ingress_url": f"{slack_route['ingress_url']}/stale",
+                "response_mode": "raw",
+            }
+        },
+    )
+    assert rejected_confirmation.status_code == 422, rejected_confirmation.text
+
+    confirmed = api.post(
+        "/api/v1/operations/ingressEndpoint.confirmManualUpdate/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "provider_key": "slack-bot",
+                "profile_key": "support",
+                "ingress_url": slack_route["ingress_url"],
+                "response_mode": "raw",
+            }
+        },
+    )
+    assert confirmed.status_code == 200, confirmed.text
+    confirmed_route = next(
+        route
+        for route in confirmed.json()["data"]["routes"]
+        if route["provider_key"] == "slack-bot"
+    )
+    assert confirmed_route["remote_status"] == "manual_provider_confirmed"
+    assert confirmed_route["action_required"] is False
+
+    refreshed_profile = api.post(
+        "/api/v1/operations/communicationProfile.get/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "key": "support",
+                "response_mode": "raw",
+            }
+        },
+    )
+    assert refreshed_profile.status_code == 200, refreshed_profile.text
+    slack_facet = refreshed_profile.json()["provider_facets"]["slack-bot"]
+    assert slack_facet["manual_ingress_confirmation"]["ingress_url"] == slack_route["ingress_url"]
 
     fetched_bot = api.post(
         "/api/v1/operations/communicationProfile.get/call",

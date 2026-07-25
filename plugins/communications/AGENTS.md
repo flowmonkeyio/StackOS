@@ -62,8 +62,10 @@ does not run an assistant, classify intent, or decide workflows.
   optional structured command intents. Commands are not plain strings; each
   command may carry guidance/configuration for the operating agent. Telegram
   profile facets store only safe Telegram-specific refs/settings such as
-  `credential_ref`, bot username, webhook settings, allowed updates, and
-  provider id maps.
+  `credential_ref`, bot username, explicit `ingress_enabled` intent, allowed
+  updates, and provider id maps. Public ingress URLs, webhook host policy, and
+  ingress refs are daemon-owned fields derived by `ingressEndpoint`; normal
+  profile setup must not supply them.
 - Each Telegram communication profile binds to one global Account through
   `credential_ref`. The Account must be explicitly attached to the profile's
   project; never fall back to another Account or a provider-wide token.
@@ -85,8 +87,10 @@ does not run an assistant, classify intent, or decide workflows.
   `ingressEndpoint.status` for project-level public ingress setup. The endpoint
   is generic; local tunnel provider settings belong only under `driver_config`.
 - Telegram webhook set/delete/info actions are executable through
-  `action.execute`; they must resolve the communication profile and daemon-held credential
-  server-side.
+  `action.execute`; they must resolve the communication profile and daemon-held
+  credential server-side. Set/delete require the exact attached,
+  inbound-enabled singleton owner; outbound-only Account reuse cannot mutate
+  the upstream bot's webhook.
 - Visibility is not activation. A communication profile may observe/store messages from
   any reachable chat/channel as context, but StackOS creates an `agent_request`
   or sends a reply only when trigger policy matches and invoker access policy

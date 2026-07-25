@@ -87,14 +87,10 @@ function botProviderLabel(bot: CommunicationProfile): string {
 function userCount(bot: CommunicationProfile): number {
   return bot.access_policy.allowed_user_refs?.length ?? 0
 }
-
 </script>
 
 <template>
-  <section
-    class="space-y-3"
-    aria-label="Bots"
-  >
+  <section class="space-y-3" aria-label="Bots">
     <UiSectionHeader
       title="Bots"
       description="A bot is a messaging identity for your agents — who can trigger it, what it can do, and how it replies. Secrets stay in the linked connection."
@@ -126,10 +122,7 @@ function userCount(bot: CommunicationProfile): number {
       </template>
     </UiSectionHeader>
 
-    <UiCallout
-      v-if="!hasMessagingConnection && bots.length === 0"
-      tone="info"
-    >
+    <UiCallout v-if="!hasMessagingConnection && bots.length === 0" tone="info">
       Connect a Slack or Telegram bot first, then give it an identity and access rules here.
       <template #actions>
         <UiButton
@@ -151,21 +144,12 @@ function userCount(bot: CommunicationProfile): number {
       </template>
     </UiCallout>
 
-    <UiCallout
-      v-else-if="message"
-      :tone="message.tone"
-    >
+    <UiCallout v-else-if="message" :tone="message.tone">
       {{ message.text }}
     </UiCallout>
 
-    <UiCard
-      v-if="loading"
-      aria-label="Loading bots"
-    >
-      <UiSkeleton
-        shape="line"
-        :lines="3"
-      />
+    <UiCard v-if="loading" aria-label="Loading bots">
+      <UiSkeleton shape="line" :lines="3" />
     </UiCard>
 
     <UiCard
@@ -180,14 +164,11 @@ function userCount(bot: CommunicationProfile): number {
           v-for="bot in bots"
           :key="bot.profile_ref"
           class="px-4 py-3"
+          :class="bot.binding_status === 'repair-required' ? 'bg-warning-subtle' : ''"
         >
           <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
             <div class="flex min-w-0 items-center gap-3 lg:flex-1">
-              <UiMedallion
-                icon="chat"
-                tone="info"
-                class="shrink-0"
-              />
+              <UiMedallion icon="chat" tone="info" class="shrink-0" />
               <div class="min-w-0">
                 <div class="flex flex-wrap items-center gap-2">
                   <h4 class="truncate text-sm font-medium text-fg-strong">
@@ -196,14 +177,8 @@ function userCount(bot: CommunicationProfile): number {
                   <UiBadge tone="accent">
                     {{ botProviderLabel(bot) }}
                   </UiBadge>
-                  <StatusBadge
-                    domain="step"
-                    :status="bot.enabled ? 'enabled' : 'disabled'"
-                  />
-                  <UiBadge
-                    v-if="isTelegram(bot)"
-                    variant="outline"
-                  >
+                  <StatusBadge domain="step" :status="bot.enabled ? 'enabled' : 'disabled'" />
+                  <UiBadge v-if="isTelegram(bot)" variant="outline">
                     {{ telegramProfileIngressMode(bot) }}
                   </UiBadge>
                 </div>
@@ -229,20 +204,13 @@ function userCount(bot: CommunicationProfile): number {
                 </dd>
               </div>
               <div>
-                <dt class="text-fg-subtle">
-                  Users
-                </dt>
+                <dt class="text-fg-subtle">Users</dt>
                 <dd class="mt-0.5 font-medium tabular-nums text-fg-default">
                   {{ userCount(bot) }}
                 </dd>
               </div>
-              <div
-                v-if="isTelegram(bot)"
-                class="min-w-0 lg:max-w-48"
-              >
-                <dt class="text-fg-subtle">
-                  Commands
-                </dt>
+              <div v-if="isTelegram(bot)" class="min-w-0 lg:max-w-48">
+                <dt class="text-fg-subtle">Commands</dt>
                 <dd class="mt-0.5 truncate font-mono text-2xs text-fg-default">
                   {{ commandSummary(telegramCommands(bot)) }}
                 </dd>
@@ -259,14 +227,18 @@ function userCount(bot: CommunicationProfile): number {
               >
                 Configure
               </UiButton>
-              <UiBadge
-                v-else
-                variant="outline"
-              >
-                View only
-              </UiBadge>
+              <UiBadge v-else variant="outline"> View only </UiBadge>
             </div>
           </div>
+          <UiCallout
+            v-if="bot.binding_status === 'repair-required'"
+            tone="warning"
+            density="compact"
+            class="mt-3"
+            title="Account binding needs repair"
+          >
+            {{ bot.binding_issues.map((issue) => issue.message).join(' ') }}
+          </UiCallout>
         </li>
       </ul>
     </UiCard>

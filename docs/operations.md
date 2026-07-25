@@ -419,6 +419,7 @@ index for common core operations, not a replacement for registry discovery.
 - `browser.page.screenshot`
 - `communication.reply`
 - `communication.send`
+- `communicationProfile.accountUsage`
 - `communicationProfile.list`
 - `communicationProfile.get`
 - `communicationProfile.upsert`
@@ -447,6 +448,7 @@ index for common core operations, not a replacement for registry discovery.
 - `learning.create`
 - `learning.query`
 - `ingressEndpoint.configure`
+- `ingressEndpoint.confirmManualUpdate`
 - `ingressEndpoint.refresh`
 - `ingressEndpoint.routes`
 - `ingressEndpoint.sync`

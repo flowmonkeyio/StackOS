@@ -332,7 +332,7 @@ def operation_specs() -> list[OperationSpec]:
             ),
             purpose=(
                 "Permanently revoke daemon-held Account material after it has been "
-                "detached from every project."
+                "detached from every project while retaining a non-executable audit tombstone."
             ),
             when_to_use=("The operator explicitly revokes an Account.",),
             prerequisites=(

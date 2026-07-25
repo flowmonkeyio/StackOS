@@ -12,6 +12,7 @@ import {
 } from './ingressResults'
 import type {
   IngressEndpointOut,
+  IngressEndpointRoute,
   IngressEndpointStatusOut,
   IngressEndpointSyncOut,
   IngressForm,
@@ -151,9 +152,29 @@ export function useIngressEndpointEditor(options: IngressEndpointEditorOptions) 
     }
   }
 
-  async function sync(): Promise<void> {
+  async function sync(manualRoute?: IngressEndpointRoute): Promise<void> {
     options.busyAction.value = 'ingress:sync'
     try {
+      if (manualRoute?.ingress_url) {
+        const confirmed = await callOperation<OperationWriteEnvelope<IngressEndpointStatusOut>>(
+          'ingressEndpoint.confirmManualUpdate',
+          {
+            project_id: options.projectId.value,
+            provider_key: manualRoute.provider_key,
+            profile_key: manualRoute.profile_key,
+            ingress_url: manualRoute.ingress_url,
+            response_mode: 'raw',
+          },
+        )
+        status.value = confirmed.data
+        lastProviderResults.value = []
+        await options.onTopologyChanged()
+        message.value = {
+          tone: 'success',
+          text: 'Slack webhook update confirmed for this route.',
+        }
+        return
+      }
       const synced = await callOperation<OperationWriteEnvelope<IngressEndpointSyncOut>>(
         'ingressEndpoint.sync',
         {

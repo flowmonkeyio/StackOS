@@ -24,6 +24,7 @@ def _store_slack_profile(
     project_id: int,
     *,
     profile_key: str = "support-agent",
+    credential_ref: str | None = None,
     access_policy: dict | None = None,
     trigger_policy: dict | None = None,
     visibility_policy: dict | None = None,
@@ -31,20 +32,21 @@ def _store_slack_profile(
 ) -> str:
     engine = api.app.state.engine  # type: ignore[attr-defined]
     with Session(engine) as session:
-        credential_ref = (
-            AuthRepository(session)
-            .store_credential(
-                provider_key="slack-bot",
-                auth_method_key="bot-token",
-                display_name=f"Slack - {profile_key}",
-                fields={
-                    "bot_token": _TOKEN,
-                    "signing_secret": _SIGNING_SECRET,
-                },
-                attach_project_id=project_id,
+        if credential_ref is None:
+            credential_ref = (
+                AuthRepository(session)
+                .store_credential(
+                    provider_key="slack-bot",
+                    auth_method_key="bot-token",
+                    display_name=f"Slack - {profile_key}",
+                    fields={
+                        "bot_token": _TOKEN,
+                        "signing_secret": _SIGNING_SECRET,
+                    },
+                    attach_project_id=project_id,
+                )
+                .data.credential_ref
             )
-            .data.credential_ref
-        )
         ResourceRepository(session).upsert_record(
             project_id=project_id,
             plugin_slug="communications",
@@ -684,6 +686,55 @@ def test_slack_ingress_rejects_outbound_only_profile_without_writes(
 
     assert response.status_code == 403, response.text  # type: ignore[attr-defined]
     assert response.json()["detail"] == "invalid Slack signature"  # type: ignore[attr-defined]
+    engine = api.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        events = ResourceRepository(session).query_records(
+            project_id=project_id,
+            plugin_slug="communications",
+            resource_key="communication-event",
+        )
+        requests = AgentRequestRepository(session).list(project_id=project_id)
+    assert events.items == []
+    assert requests.total_estimate == 0
+
+
+def test_slack_ingress_rejects_ambiguous_account_owner_without_writes(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    credential_ref = _store_slack_profile(api, project_id, profile_key="primary")
+    _store_slack_profile(
+        api,
+        project_id,
+        profile_key="duplicate",
+        credential_ref=credential_ref,
+    )
+    raw_body = json.dumps(
+        {
+            "type": "event_callback",
+            "team_id": "T123",
+            "event_id": "EvAmbiguousOwner",
+            "event": {
+                "type": "app_mention",
+                "user": "U111",
+                "channel": "C123",
+                "text": "<@U_BOT> should fail closed",
+                "ts": "1770000000.001000",
+            },
+        },
+        separators=(",", ":"),
+    ).encode()
+
+    for profile_key in ("primary", "duplicate"):
+        response = _post_without_bearer(
+            api,
+            f"/api/v1/ingress/slack/{project_id}/{profile_key}",
+            raw_body=raw_body,
+            headers={**_signed_headers(raw_body), "Content-Type": "application/json"},
+        )
+        assert response.status_code == 403, response.text  # type: ignore[attr-defined]
+        assert response.json()["detail"] == "invalid Slack signature"  # type: ignore[attr-defined]
+
     engine = api.app.state.engine  # type: ignore[attr-defined]
     with Session(engine) as session:
         events = ResourceRepository(session).query_records(

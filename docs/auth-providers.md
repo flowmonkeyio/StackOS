@@ -263,8 +263,9 @@ together:
   future StackOS use. It does not claim to invalidate the credential at the
   provider. Remote revocation/rotation remains operator-owned unless a
   separately reviewed provider action explicitly implements it. After recording
-  the redacted revoke audit, StackOS removes the Account identity so its display
-  name can be reused.
+  the redacted revoke audit, StackOS wipes the encrypted backing and retains a
+  hidden, non-executable Account tombstone for historical audit joins. The
+  display name can be reused by a new Account.
 - Changing methods is migration, not rotation. Create a second Account, verify
   it, deliberately rebind consumers to its exact `credential_ref`, then revoke
   the old Account and remotely invalidate its provider credential when
@@ -468,6 +469,10 @@ The dedicated `/accounts` page owns Account lifecycle:
 - diagnostics: `account.test` returns a sanitized result and records the same
   redacted outcome in the credential usage audit; a failed test does not disable
   the stored Account
+- communication usage: the page joins the communications-owned
+  `communicationProfile.accountUsage` read model so a Slack manual-update
+  warning appears only under the exact Account/profile that owns that route;
+  an unattached Account does not create project attention
 
 The project `/projects/{project_id}/connections` page only lists attached
 Accounts, attaches an existing Account, detaches an unused Account, and opens

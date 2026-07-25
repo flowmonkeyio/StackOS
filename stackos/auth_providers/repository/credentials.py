@@ -509,36 +509,17 @@ class CredentialStorageMixin:
                     "next_action": "Rebind or disable the active context before detaching.",
                 },
             )
-        from stackos.repositories.resources import ResourceRepository
+        from stackos.communications import communication_profile_account_uses
 
-        active_profile = (
-            ResourceRepository(self._s)
-            .query_records(
-                project_id=project_id,
-                plugin_slug="communications",
-                resource_key="communication-profile",
-                limit=100,
-            )
-            .items
-        )
-        for record in active_profile:
-            data = dict(record.data_json or {})
-            if data.get("enabled") is False:
-                continue
-            facets = data.get("provider_facets")
-            if not isinstance(facets, dict):
-                continue
-            if not any(
-                isinstance(facet, dict)
-                and str(facet.get("credential_ref") or "").strip() == credential_ref
-                for facet in facets.values()
-            ):
+        for use in communication_profile_account_uses(self._s, project_id=project_id):
+            if not use["profile_enabled"] or use["credential_ref"] != credential_ref:
                 continue
             raise ConflictError(
                 "Account is used by an active project communication profile",
                 data={
                     "credential_ref": credential_ref,
-                    "profile_ref": record.external_id,
+                    "profile_ref": use["profile_ref"],
+                    "provider_key": use["provider_key"],
                     "next_action": (
                         "Rebind or disable the communication profile before detaching."
                     ),
@@ -575,10 +556,21 @@ class CredentialStorageMixin:
             status="revoked",
             metadata_json={"credential_ref": account_ref},
         )
+        credential.status = "revoked"
+        credential.revoked_at = now
+        credential.expires_at = None
+        credential.integration_credential_id = None
+        credential.display_name_key = f"revoked:{account_ref}"
+        credential.config_json = self._safe_config(
+            {
+                **dict(credential.config_json or {}),
+                "audit_tombstone": True,
+                "secret_material_removed": True,
+            }
+        )
         self._s.flush()
         if row.id is not None:
             IntegrationCredentialRepository(self._s).remove(int(row.id), commit=False)
-        self._s.delete(credential)
         try:
             self._s.commit()
         except IntegrityError as exc:

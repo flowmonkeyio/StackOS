@@ -582,6 +582,9 @@ tools:
   reference maps such as `reply_to_message_refs`, `thread_refs`, and
   `direct_messages_topic_refs`.
 - `communicationProfile.list`: lists safe profiles for a project.
+- `communicationProfile.accountUsage`: derives safe project/profile-to-Account
+  usage for project diagnostics and the local-admin global Accounts inventory.
+  It does not persist a second ownership model or expose credential payloads.
 
 These operations are available through REST, CLI `ops call`, and MCP. The
 browser UI token may call only this narrow setup mutation because it never
@@ -904,6 +907,18 @@ Example fields:
 
 Agents use `ingressEndpoint.routes` to inspect the exact provider webhook URLs
 and `ingressEndpoint.sync` to write safe route metadata into provider profiles.
+Slack manual setup can be attested only for the exact current route URL through
+the local-admin-only `ingressEndpoint.confirmManualUpdate`; changing the endpoint
+invalidates the attestation automatically. Local-tunnel endpoints are considered
+reachable only for a short interval after successful discovery, so a stale
+ngrok URL cannot keep the project in a false-ready state or be synced back to a
+provider. `communicationProfile.upsert` drops every daemon-owned route field,
+including public URL/host policy, nested ingress refs, and
+`manual_ingress_confirmation`; an agent cannot attest to a provider-console
+change or redirect Telegram webhook delivery through normal profile setup.
+Telegram webhook set/delete additionally require the exact inbound-enabled
+profile that owns the attached Account, so an outbound-only profile reusing
+that Account cannot replace the provider's single remote webhook.
 The agent never receives Telegram bot tokens, Slack signing secrets, or webhook
 secret material through this resource.
 
@@ -1472,10 +1487,13 @@ Validation rules:
 - `webhook.set` sends Telegram `setWebhook` with the profile-bound
   `webhook_url`, optional `allowed_updates`, optional `drop_pending_updates`,
   and the daemon-side `webhook_secret_token` as Telegram `secret_token`.
-  Public webhook hosts must be explicitly allowlisted on the communication profile;
-  loopback hosts are only for the official local Bot API server flow.
+  Public webhook host policy is derived only from the project's current
+  `ingressEndpoint` during sync; normal profile setup cannot supply it.
+  Loopback hosts are only for the official local Bot API server flow.
 - `webhook.delete` and `webhook.info` call Telegram `deleteWebhook` and
-  `getWebhookInfo` through the same profile-bound credential.
+  `getWebhookInfo` through the same profile-bound credential. Set/delete
+  require the exact inbound-enabled profile that owns the attached Account;
+  info remains a read-only diagnostic.
 - Returned provider error metadata must redact token-bearing URLs.
 
 ### Slack Actions

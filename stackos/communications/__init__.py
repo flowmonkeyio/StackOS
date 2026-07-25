@@ -21,9 +21,12 @@ from stackos.communications.policy import (
 )
 from stackos.communications.processor import process_inbound_event
 from stackos.communications.profiles import (
+    communication_profile_account_uses,
+    communication_profile_binding_summary,
     communication_profile_record_by_key,
     communication_profile_ref,
     merged_provider_profile,
+    normalize_communication_profile_facets,
     provider_facet,
     provider_ingress_enabled,
     validate_communication_profile_account_bindings,
@@ -42,6 +45,8 @@ __all__ = [
     "NormalizedResourcePatch",
     "NormalizedResourceWrite",
     "candidate_refs",
+    "communication_profile_account_uses",
+    "communication_profile_binding_summary",
     "communication_profile_record_by_key",
     "communication_profile_ref",
     "communication_record_by_external_id",
@@ -52,6 +57,7 @@ __all__ = [
     "evaluate_inbound_event_allowlist",
     "evaluate_inbound_policy",
     "merged_provider_profile",
+    "normalize_communication_profile_facets",
     "process_inbound_event",
     "provider_facet",
     "provider_ingress_enabled",

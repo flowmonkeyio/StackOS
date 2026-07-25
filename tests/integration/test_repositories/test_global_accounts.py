@@ -6,7 +6,7 @@ import pytest
 from sqlmodel import Session, select
 
 from stackos.auth_providers import AuthRepository
-from stackos.db.models import ProjectCredential
+from stackos.db.models import Credential, IntegrationCredential, ProjectCredential
 from stackos.repositories.base import ConflictError, NotFoundError
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.resources import ResourceRepository
@@ -197,7 +197,7 @@ def test_detaching_one_project_does_not_revoke_the_account(
     assert account.project_ids == [second_project_id]
 
 
-def test_revoked_accounts_are_removed_and_the_display_name_can_be_reused(
+def test_revoked_accounts_keep_an_audit_tombstone_and_the_display_name_can_be_reused(
     session: Session,
     project_id: int,
 ) -> None:
@@ -206,10 +206,18 @@ def test_revoked_accounts_are_removed_and_the_display_name_can_be_reused(
     repo.attach_account(project_id=project_id, credential_ref=account_ref)
     repo.detach_account(project_id=project_id, credential_ref=account_ref)
 
+    account_id = repo.get_account(credential_ref=account_ref).credential_id
     repo.revoke(credential_ref=account_ref)
 
-    with pytest.raises(NotFoundError):
-        repo.get_account(credential_ref=account_ref)
+    tombstone = repo.get_account(credential_ref=account_ref)
+    assert tombstone.credential_id == account_id
+    assert tombstone.status == "revoked"
+    assert tombstone.project_ids == []
+    row = session.get(Credential, account_id)
+    assert row is not None
+    assert row.display_name_key == f"revoked:{account_ref}"
+    assert row.integration_credential_id is None
+    assert session.exec(select(IntegrationCredential)).all() == []
     assert all(
         account.credential_ref != account_ref
         for account in repo.status(project_id=None, provider_key="openrouter").accounts

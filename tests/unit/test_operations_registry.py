@@ -8,7 +8,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 199
+    assert len(names) == 201
     assert {
         "action.execute",
         "actionCall.get",
@@ -19,6 +19,8 @@ def test_operation_registry_documents_core_operations() -> None:
         "account.get",
         "account.update",
         "connection.list",
+        "communicationProfile.accountUsage",
+        "ingressEndpoint.confirmManualUpdate",
         "workflowTemplate.authoringGuide",
         "workflowTemplate.describe",
         "resource.query",
@@ -359,6 +361,14 @@ def test_operation_registry_documents_core_operations() -> None:
     assert ingress_sync.read_only is False
     assert ingress_sync.surfaces["rest"].browser_safe is True
     assert ingress_sync.response_policy.allowed_modes == ["compact", "raw"]
+
+    ingress_confirmation = registry.get("ingressEndpoint.confirmManualUpdate").describe_out()
+    assert ingress_confirmation.mutating is True
+    assert ingress_confirmation.surfaces["mcp"].enabled is False
+    assert ingress_confirmation.surfaces["rest"].enabled is True
+    assert ingress_confirmation.surfaces["rest"].browser_safe is True
+    assert ingress_confirmation.surfaces["cli"].enabled is True
+    assert ingress_confirmation.grant_policy == "local-admin-auth-write"
 
     resolver = registry.get("toolProfile.resolve").describe_out()
     assert resolver.surfaces["mcp"].enabled is True

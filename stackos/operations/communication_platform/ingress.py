@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import quote, urlparse
 
@@ -12,9 +13,9 @@ from stackos.actions import ActionRepository
 from stackos.artifacts import redact_secret_text
 from stackos.auth_providers import AuthRepository
 from stackos.communications import (
+    communication_profile_account_uses,
     communication_profile_record_by_key,
     merged_provider_profile,
-    provider_ingress_enabled,
     validate_communication_profile_account_bindings,
     validate_communication_profile_ingress_ownership,
 )
@@ -32,7 +33,9 @@ from .constants import (
     _LOCAL_TUNNEL_PROVIDERS,
 )
 from .schemas import (
+    CommunicationProfileAccountUseOut,
     IngressEndpointConfigureInput,
+    IngressEndpointConfirmManualUpdateInput,
     IngressEndpointOut,
     IngressEndpointRefreshInput,
     IngressEndpointRoutesInput,
@@ -45,10 +48,8 @@ from .schemas import (
     IngressRouteOut,
 )
 from .utils import (
-    _communication_profile_ref,
     _record_by_resource_external_id,
     _require_project,
-    _resource_records,
     _utcnow_iso,
     _validate_no_setup_secrets,
     _validate_profile_key,
@@ -195,6 +196,50 @@ async def ingress_endpoint_sync(
     return WriteEnvelope(data=sync_out, run_id=ctx.run_id, project_id=inp.project_id)
 
 
+async def ingress_endpoint_confirm_manual_update(
+    inp: IngressEndpointConfirmManualUpdateInput,
+    ctx: MCPContext,
+    emitter: ProgressEmitter,
+) -> WriteEnvelope[IngressEndpointStatusOut]:
+    _require_project(ctx.session, inp.project_id)
+    endpoint = _require_ingress_endpoint(ctx.session, project_id=inp.project_id, key=inp.key)
+    endpoint_out = _ingress_endpoint_out(endpoint.id, endpoint.project_id, endpoint.data_json or {})
+    _require_fresh_ingress_endpoint(endpoint_out)
+    route = next(
+        (
+            candidate
+            for candidate in _ingress_routes(ctx.session, endpoint=endpoint_out)
+            if candidate.provider_key == inp.provider_key
+            and candidate.profile_key == inp.profile_key
+            and candidate.ingress_url == inp.ingress_url
+        ),
+        None,
+    )
+    if route is None:
+        raise ValidationError(
+            "Manual ingress confirmation must match the current Slack route exactly",
+            data={
+                "provider_key": inp.provider_key,
+                "profile_key": inp.profile_key,
+                "ingress_url": inp.ingress_url,
+                "next_action": "Refresh route status and confirm the current URL.",
+            },
+        )
+    _sync_communication_profile_route(
+        ctx.session,
+        resources=ResourceRepository(ctx.session),
+        endpoint=endpoint_out,
+        route=route,
+        confirm_manual_update=True,
+    )
+    status_out = await ingress_endpoint_status(
+        IngressEndpointStatusInput(project_id=inp.project_id, key=inp.key),
+        ctx,
+        emitter,
+    )
+    return WriteEnvelope(data=status_out, run_id=ctx.run_id, project_id=inp.project_id)
+
+
 async def ingress_endpoint_status(
     inp: IngressEndpointStatusInput,
     ctx: MCPContext,
@@ -214,19 +259,45 @@ async def ingress_endpoint_status(
             notes=["No ingress endpoint is configured for this project."],
         )
     endpoint_out = _ingress_endpoint_out(endpoint.id, endpoint.project_id, endpoint.data_json or {})
+    blocked_uses = [
+        CommunicationProfileAccountUseOut.model_validate(use)
+        for use in communication_profile_account_uses(
+            ctx.session,
+            project_id=endpoint.project_id,
+        )
+        if use["owns_provider_ingress"] and use["binding_state"] != "ready"
+    ]
     routes = _ingress_routes(ctx.session, endpoint=endpoint_out)
-    ready = bool(endpoint_out.enabled and endpoint_out.public_base_url and routes)
+    endpoint_fresh = _endpoint_is_fresh(endpoint_out)
+    ready = bool(
+        endpoint_out.enabled
+        and endpoint_out.public_base_url
+        and endpoint_fresh
+        and routes
+        and not blocked_uses
+        and not any(route.action_required for route in routes)
+    )
     notes = []
     if not endpoint_out.public_base_url:
         notes.append("Set or refresh public_base_url before syncing provider webhooks.")
     if not routes:
         notes.append("No enabled provider profiles currently expose ingress routes.")
+    if endpoint_out.driver == "local-tunnel" and not endpoint_fresh:
+        notes.append("Refresh the local tunnel before treating inbound messaging as reachable.")
+    if any(route.action_required for route in routes):
+        notes.append("One or more provider routes still require an exact manual update.")
+    notes.extend(
+        f"{use.profile_display_name} ({use.provider_key}): {use.repair_message}"
+        for use in blocked_uses
+    )
     return IngressEndpointStatusOut(
         endpoint=endpoint_out,
         routes=routes,
         configured=True,
         ready=ready,
+        endpoint_fresh=endpoint_fresh,
         notes=notes,
+        blocked_uses=blocked_uses,
     )
 
 
@@ -419,51 +490,71 @@ def _ingress_endpoint_out(
     )
 
 
+def _endpoint_is_fresh(endpoint: IngressEndpointOut) -> bool:
+    if endpoint.driver != "local-tunnel":
+        return True
+    if endpoint.status != "running" or not endpoint.last_refreshed_at:
+        return False
+    try:
+        refreshed = datetime.fromisoformat(endpoint.last_refreshed_at.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if refreshed.tzinfo is None:
+        refreshed = refreshed.replace(tzinfo=UTC)
+    return datetime.now(UTC) - refreshed <= timedelta(minutes=5)
+
+
+def _require_fresh_ingress_endpoint(endpoint: IngressEndpointOut) -> None:
+    if _endpoint_is_fresh(endpoint):
+        return
+    raise ValidationError(
+        "Local tunnel ingress is stale",
+        data={
+            "endpoint_ref": endpoint.endpoint_ref,
+            "last_refreshed_at": endpoint.last_refreshed_at,
+            "next_action": "Refresh the local tunnel before syncing or confirming provider URLs.",
+        },
+    )
+
+
 def _ingress_routes(session: Session, *, endpoint: IngressEndpointOut) -> list[IngressRouteOut]:
     routes: list[IngressRouteOut] = []
-    seen: set[tuple[str, str]] = set()
-    for record in _resource_records(
-        session,
-        project_id=endpoint.project_id,
-        resource_key="communication-profile",
-    ):
-        data = dict(record.data_json or {})
-        profile_key = str(data.get("key") or "")
-        if not profile_key:
+    for use in communication_profile_account_uses(session, project_id=endpoint.project_id):
+        provider_key = str(use["provider_key"])
+        if provider_key not in {"slack-bot", "telegram-bot"}:
             continue
-        profile_ref = str(data.get("profile_ref") or _communication_profile_ref(profile_key))
-        facets = data.get("provider_facets")
-        if not isinstance(facets, dict):
+        if not use["owns_provider_ingress"] or use["binding_state"] != "ready":
             continue
-        slack_facet = facets.get("slack-bot")
-        if isinstance(slack_facet, dict) and provider_ingress_enabled(slack_facet):
-            routes.append(
-                _route_out(
-                    endpoint=endpoint,
-                    provider_key="slack-bot",
-                    profile_key=profile_key,
-                    profile_ref=profile_ref,
-                    profile_resource_key="communication-profile",
-                    remote_status="manual_provider_update_required",
-                )
+        profile_key = str(use["profile_key"])
+        path = _provider_ingress_path(
+            project_id=endpoint.project_id,
+            provider_key=provider_key,
+            profile_key=profile_key,
+        )
+        current_url = _join_base_path(endpoint.public_base_url, path)
+        confirmed = bool(
+            provider_key == "slack-bot"
+            and current_url
+            and use.get("manual_confirmed_url") == current_url
+        )
+        routes.append(
+            _route_out(
+                endpoint=endpoint,
+                provider_key=provider_key,
+                profile_key=profile_key,
+                profile_ref=str(use["profile_ref"]),
+                profile_resource_key="communication-profile",
+                remote_status=(
+                    "manual_provider_confirmed"
+                    if confirmed
+                    else (
+                        "manual_provider_update_required"
+                        if provider_key == "slack-bot"
+                        else "provider_webhook_not_checked"
+                    )
+                ),
             )
-            seen.add(("slack-bot", profile_key))
-        telegram_facet = facets.get("telegram-bot")
-        if isinstance(telegram_facet, dict) and provider_ingress_enabled(telegram_facet):
-            key = ("telegram-bot", profile_key)
-            if key in seen:
-                continue
-            routes.append(
-                _route_out(
-                    endpoint=endpoint,
-                    provider_key="telegram-bot",
-                    profile_key=profile_key,
-                    profile_ref=profile_ref,
-                    profile_resource_key="communication-profile",
-                    remote_status="provider_webhook_not_checked",
-                )
-            )
-            seen.add(key)
+        )
     hubspot_accounts = (
         AuthRepository(session)
         .status(
@@ -624,6 +715,31 @@ async def _sync_ingress_endpoint(
     apply_provider_webhooks: bool,
     dry_run_provider_webhooks: bool,
 ) -> IngressEndpointSyncOut:
+    _require_fresh_ingress_endpoint(endpoint)
+    blocked_uses = [
+        use
+        for use in communication_profile_account_uses(
+            ctx.session,
+            project_id=endpoint.project_id,
+        )
+        if use["owns_provider_ingress"] and use["binding_state"] != "ready"
+    ]
+    if blocked_uses:
+        raise ValidationError(
+            "Provider ingress has communication profiles with invalid Account bindings",
+            data={
+                "blocked_uses": [
+                    {
+                        "profile_ref": use["profile_ref"],
+                        "provider_key": use["provider_key"],
+                        "binding_state": use["binding_state"],
+                        "repair_message": use["repair_message"],
+                    }
+                    for use in blocked_uses
+                ],
+                "next_action": "Repair or disable each profile before syncing provider ingress.",
+            },
+        )
     routes = _ingress_routes(ctx.session, endpoint=endpoint)
     for route in routes:
         if route.profile_resource_key != "communication-profile":
@@ -726,6 +842,7 @@ def _sync_communication_profile_route(
     resources: ResourceRepository,
     endpoint: IngressEndpointOut,
     route: IngressRouteOut,
+    confirm_manual_update: bool = False,
 ) -> bool:
     record = _record_by_resource_external_id(
         session,
@@ -747,11 +864,15 @@ def _sync_communication_profile_route(
             "ingress_endpoint_ref": endpoint.endpoint_ref,
         }
     )
+    if confirm_manual_update:
+        facet["manual_ingress_confirmation"] = {
+            "ingress_url": route.ingress_url,
+            "confirmed_at": _utcnow_iso(),
+            "source": "operator",
+        }
     if route.provider_key == "telegram-bot":
         host = urlparse(route.ingress_url or "").hostname
-        allowed_hosts = {str(item) for item in facet.get("allowed_webhook_hosts") or []}
-        if host:
-            allowed_hosts.add(host.lower())
+        allowed_hosts = [host.lower()] if host else []
         refs = dict(facet.get("refs") or {})
         refs["ingress_url"] = str(route.ingress_url)
         refs["ingress_endpoint_ref"] = endpoint.endpoint_ref
@@ -759,13 +880,13 @@ def _sync_communication_profile_route(
             {
                 "ingress_mode": "webhook",
                 "webhook_base_url": endpoint.public_base_url,
-                "allowed_webhook_hosts": sorted(allowed_hosts),
+                "allowed_webhook_hosts": allowed_hosts,
                 "refs": refs,
                 "webhook_policy": {
                     **dict(facet.get("webhook_policy") or {}),
                     "driver": endpoint.driver,
                     "endpoint_ref": endpoint.endpoint_ref,
-                    "allowed_hosts": sorted(allowed_hosts),
+                    "allowed_hosts": allowed_hosts,
                 },
             }
         )

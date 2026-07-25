@@ -14,12 +14,14 @@ from stackos.repositories.base import Page
 from .context import communication_context_query
 from .ingress import (
     ingress_endpoint_configure,
+    ingress_endpoint_confirm_manual_update,
     ingress_endpoint_refresh,
     ingress_endpoint_routes,
     ingress_endpoint_status,
     ingress_endpoint_sync,
 )
 from .profiles import (
+    communication_profile_account_usage,
     communication_profile_get,
     communication_profile_list,
     communication_profile_upsert,
@@ -46,6 +48,8 @@ from .schemas import (
     CommunicationMembershipListInput,
     CommunicationMembershipOut,
     CommunicationMembershipUpsertInput,
+    CommunicationProfileAccountUsageInput,
+    CommunicationProfileAccountUsageOut,
     CommunicationProfileGetInput,
     CommunicationProfileListInput,
     CommunicationProfileOut,
@@ -62,6 +66,7 @@ from .schemas import (
     CommunicationTargetResolveOut,
     CommunicationTargetUpsertInput,
     IngressEndpointConfigureInput,
+    IngressEndpointConfirmManualUpdateInput,
     IngressEndpointOut,
     IngressEndpointRefreshInput,
     IngressEndpointRoutesInput,
@@ -218,6 +223,52 @@ def operation_specs() -> list[OperationSpec]:
             grant_policy="direct-setup-write",
         ),
         OperationSpec(
+            name="ingressEndpoint.confirmManualUpdate",
+            summary="Confirm one exact current Slack route was updated by the local operator.",
+            input_model=IngressEndpointConfirmManualUpdateInput,
+            output_model=WriteEnvelope[IngressEndpointStatusOut],
+            handler=ingress_endpoint_confirm_manual_update,
+            surfaces=OperationSurfaces(
+                mcp=OperationSurface(enabled=False),
+                rest=OperationSurface(
+                    enabled=True,
+                    browser_safe=True,
+                    path="/api/v1/operations/ingressEndpoint.confirmManualUpdate/call",
+                ),
+                cli=OperationSurface(
+                    enabled=True,
+                    command="ops call ingressEndpoint.confirmManualUpdate",
+                ),
+            ),
+            purpose=(
+                "Use this local-admin action only after the operator copied the exact current "
+                "Slack route into both required provider fields."
+            ),
+            when_to_use=(
+                "The Accounts or project Connectivity UI needs to clear one exact Slack "
+                "manual-update warning after human confirmation.",
+            ),
+            prerequisites=(
+                "The current route URL must match exactly.",
+                "The local tunnel must be fresh when local-tunnel ingress is configured.",
+                "Requires local-admin authority and is not agent-callable through MCP.",
+            ),
+            returns=("Updated ingress status with the exact URL attestation applied.",),
+            examples=(
+                OperationExample(
+                    title="Confirm current Slack route",
+                    arguments={
+                        "project_id": 1,
+                        "provider_key": "slack-bot",
+                        "profile_key": "operator",
+                        "ingress_url": "https://stackos.example.com/api/v1/ingress/slack/1/operator",
+                    },
+                ),
+            ),
+            mutating=True,
+            grant_policy="local-admin-auth-write",
+        ),
+        OperationSpec(
             name="ingressEndpoint.status",
             summary="Inspect ingress endpoint readiness and provider route state.",
             input_model=IngressEndpointStatusInput,
@@ -266,6 +317,8 @@ def operation_specs() -> list[OperationSpec]:
                 "Set Slack or Telegram provider_facets.<provider>.ingress_enabled=false "
                 "for outbound-only Account reuse. One inbound-enabled profile may own "
                 "provider ingress for each Account.",
+                "Do not pass ingress URLs, webhook host policy, ingress refs, or manual "
+                "confirmation state; ingressEndpoint owns and derives those fields.",
             ),
             returns=("A WriteEnvelope with the safe CommunicationProfileOut record.",),
             examples=(
@@ -320,6 +373,38 @@ def operation_specs() -> list[OperationSpec]:
             prerequisites=("Pass project_id.",),
             returns=("A Page of safe CommunicationProfileOut records.",),
             examples=(OperationExample(title="List profiles", arguments={"project_id": 1}),),
+            mutating=False,
+            grant_policy="direct-read",
+        ),
+        OperationSpec(
+            name="communicationProfile.accountUsage",
+            summary="List safe Account usage derived from communication profiles.",
+            input_model=CommunicationProfileAccountUsageInput,
+            output_model=CommunicationProfileAccountUsageOut,
+            handler=communication_profile_account_usage,
+            surfaces=_surfaces(
+                "communicationProfile.accountUsage",
+                "ops call communicationProfile.accountUsage",
+            ),
+            purpose=(
+                "Use this read model to show exactly which project profiles use an Account "
+                "and where provider-specific repair attention belongs."
+            ),
+            when_to_use=(
+                "The Accounts UI needs a global local-admin usage projection.",
+                "A project needs exact communication profile Account binding diagnostics.",
+            ),
+            prerequisites=(
+                "Pass project_id for a project-scoped read; omit it only in local-admin "
+                "Account inventory.",
+            ),
+            returns=("Safe profile-to-Account usage records with no credential payload.",),
+            examples=(
+                OperationExample(
+                    title="List project communication Account usage",
+                    arguments={"project_id": 1},
+                ),
+            ),
             mutating=False,
             grant_policy="direct-read",
         ),

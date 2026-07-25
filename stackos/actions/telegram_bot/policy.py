@@ -7,7 +7,14 @@ from collections.abc import Mapping
 from typing import Any
 
 from stackos.actions.connectors import ActionConnectorRequest
-from stackos.communications import communication_profile_record_by_key, merged_provider_profile
+from stackos.communications import (
+    communication_profile_record_by_key,
+    merged_provider_profile,
+    provider_facet,
+    provider_ingress_enabled,
+    validate_communication_profile_account_bindings,
+    validate_communication_profile_ingress_ownership,
+)
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.base import ValidationError
 
@@ -40,6 +47,34 @@ def _enforce_telegram_profile(request: ActionConnectorRequest) -> dict[str, Any]
         raise ValidationError("Telegram communication profile does not match selected Account")
     if data.get("enabled") is False:
         raise ValidationError("Telegram communication profile is disabled")
+    return data
+
+
+def _enforce_telegram_ingress_profile(request: ActionConnectorRequest) -> dict[str, Any]:
+    """Require the exact attached, inbound-enabled owner before webhook mutation."""
+
+    data = _enforce_telegram_profile(request)
+    if request.session is None:
+        raise ValidationError("Telegram profile enforcement requires a repository session")
+    facet = provider_facet(data, "telegram-bot")
+    if not provider_ingress_enabled(facet):
+        raise ValidationError(
+            "Telegram webhook mutation requires an inbound-enabled communication profile"
+        )
+    profile_ref = str(data.get("profile_ref") or "")
+    validate_communication_profile_account_bindings(
+        request.session,
+        project_id=request.project_id,
+        profile_ref=profile_ref,
+        provider_facets={"telegram-bot": facet},
+    )
+    validate_communication_profile_ingress_ownership(
+        request.session,
+        project_id=request.project_id,
+        profile_ref=profile_ref,
+        provider_facets={"telegram-bot": facet},
+        profile_enabled=True,
+    )
     return data
 
 

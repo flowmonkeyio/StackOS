@@ -29,6 +29,7 @@ class CommunicationProfileUpsertInput(MCPInput):
                         "ingress_enabled": True,
                     },
                     "slack-bot": {
+                        "credential_ref": "cred_...",
                         "bot_user_id": "U123",
                         "ingress_enabled": False,
                     },
@@ -71,6 +72,46 @@ class CommunicationProfileListInput(MCPInput):
     project_id: int
     limit: int | None = None
     after_id: int | None = None
+
+
+class CommunicationProfileAccountUsageInput(MCPInput):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: int | None = None
+
+
+class CommunicationProfileAccountUseOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: int
+    profile_ref: str
+    profile_key: str
+    profile_display_name: str
+    provider_key: str
+    credential_ref: str | None = None
+    profile_enabled: bool
+    ingress_enabled: bool
+    owns_provider_ingress: bool
+    binding_state: Literal[
+        "ready",
+        "unconfigured",
+        "missing_account",
+        "unattached",
+        "provider_mismatch",
+        "not_connected",
+    ]
+    repair_message: str
+    attention_required: bool
+    attention_message: str | None = None
+    ingress_url: str | None = None
+    manual_confirmed_url: str | None = None
+
+
+class CommunicationProfileAccountUsageOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: int | None = None
+    uses: list[CommunicationProfileAccountUseOut] = Field(default_factory=list)
 
 
 class IngressEndpointConfigureInput(MCPInput):
@@ -121,6 +162,16 @@ class IngressEndpointSyncInput(MCPInput):
     key: str = _DEFAULT_INGRESS_KEY
     apply_provider_webhooks: bool = False
     dry_run_provider_webhooks: bool = True
+
+
+class IngressEndpointConfirmManualUpdateInput(MCPInput):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: int
+    key: str = _DEFAULT_INGRESS_KEY
+    provider_key: Literal["slack-bot"]
+    profile_key: str
+    ingress_url: str
 
 
 class IngressEndpointStatusInput(MCPInput):
@@ -198,7 +249,9 @@ class IngressEndpointStatusOut(BaseModel):
     routes: list[IngressRouteOut] = Field(default_factory=list)
     configured: bool = False
     ready: bool = False
+    endpoint_fresh: bool = False
     notes: list[str] = Field(default_factory=list)
+    blocked_uses: list[CommunicationProfileAccountUseOut] = Field(default_factory=list)
 
 
 class CommunicationProfileOut(BaseModel):
@@ -221,6 +274,8 @@ class CommunicationProfileOut(BaseModel):
     handoff_policy: dict[str, Any]
     approval_policy: dict[str, Any]
     metadata_json: dict[str, Any]
+    binding_status: Literal["ready", "repair-required", "disabled"]
+    binding_issues: list[dict[str, str]] = Field(default_factory=list)
 
 
 class CommunicationSurfaceUpsertInput(MCPInput):

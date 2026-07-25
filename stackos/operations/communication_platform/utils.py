@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlmodel import Session, col, select
 
-from stackos.communications import communication_profile_ref
+from stackos.communications import communication_profile_binding_summary, communication_profile_ref
 from stackos.db.models import Plugin, Resource, ResourceRecord
 from stackos.repositories.base import ValidationError
 from stackos.repositories.projects import ProjectRepository
@@ -142,24 +142,33 @@ def _resource_records(
 
 
 def _communication_profile_out(
+    session: Session,
     record_id: int | None,
     project_id: int,
     data: dict[str, Any],
 ) -> CommunicationProfileOut:
     key = str(data.get("key") or "")
+    enabled = bool(data.get("enabled", True))
+    provider_facets = {
+        str(k): dict(v)
+        for k, v in dict(data.get("provider_facets") or {}).items()
+        if isinstance(v, dict)
+    }
+    binding_status, binding_issues = communication_profile_binding_summary(
+        session,
+        project_id=project_id,
+        provider_facets=provider_facets,
+        enabled=enabled,
+    )
     return CommunicationProfileOut(
         record_id=int(record_id or 0),
         project_id=project_id,
         profile_ref=str(data.get("profile_ref") or _communication_profile_ref(key)),
         key=key,
-        enabled=bool(data.get("enabled", True)),
+        enabled=enabled,
         identity=dict(data.get("identity") or {}),
         agent_guidance=dict(data.get("agent_guidance") or {}),
-        provider_facets={
-            str(k): dict(v)
-            for k, v in dict(data.get("provider_facets") or {}).items()
-            if isinstance(v, dict)
-        },
+        provider_facets=provider_facets,
         access_policy=dict(data.get("access_policy") or {}),
         visibility_policy=dict(data.get("visibility_policy") or {}),
         trigger_policy=dict(data.get("trigger_policy") or {}),
@@ -169,6 +178,8 @@ def _communication_profile_out(
         handoff_policy=dict(data.get("handoff_policy") or {}),
         approval_policy=dict(data.get("approval_policy") or {}),
         metadata_json=dict(data.get("metadata_json") or {}),
+        binding_status=binding_status,
+        binding_issues=binding_issues,
     )
 
 

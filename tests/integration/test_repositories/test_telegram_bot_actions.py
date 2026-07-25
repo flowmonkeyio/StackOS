@@ -15,6 +15,7 @@ from stackos.auth_providers import AuthRepository
 from stackos.communications import telegram_callback_button_external_id
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.base import ConflictError, ValidationError
+from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.resources import ResourceRepository
 
 _TOKEN = "123456:ABC"
@@ -89,6 +90,7 @@ def _telegram_profile(
             "telegram-bot": {
                 "credential_ref": credential_ref,
                 "bot_username": "stackos_bot",
+                "ingress_enabled": True,
                 "allowed_updates": ["message", "callback_query"],
                 "refs": {"main": "12345"},
             }
@@ -101,6 +103,7 @@ def _telegram_profile(
                 "credential_ref",
                 "bot_username",
                 "allowed_updates",
+                "ingress_enabled",
                 "refs",
                 "reply_to_message_refs",
                 "thread_refs",
@@ -829,6 +832,71 @@ def test_telegram_webhook_set_rejects_wrong_project_or_profile_url(
             )
         )
     assert "configured StackOS webhook host" in host_exc.value.data["error"]
+    assert httpx_mock.get_requests() == []
+
+
+def test_outbound_only_reused_telegram_account_cannot_mutate_webhook(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _telegram_credential_ref(
+        session,
+        project_id,
+        config_json={"api_base_url": "http://127.0.0.1:8081"},
+    )
+    _telegram_profile(session, project_id, credential_ref=credential_ref)
+    created = ProjectRepository(session).create(
+        slug="telegram-outbound-project",
+        name="Telegram Outbound Project",
+        domain="telegram-outbound.example.test",
+        locale="en-US",
+    )
+    second_project_id = int(created.data.id or 0)
+    assert second_project_id > 0
+    AuthRepository(session).attach_account(
+        project_id=second_project_id,
+        credential_ref=credential_ref,
+    )
+    _telegram_profile(
+        session,
+        second_project_id,
+        key="outbound-bot",
+        credential_ref=credential_ref,
+        profile_overrides={
+            "ingress_enabled": False,
+            "webhook_base_url": "https://evil.example",
+            "allowed_webhook_hosts": ["evil.example"],
+        },
+    )
+
+    attempts = (
+        (
+            "communications.telegram-bot.webhook.set",
+            {
+                "profile_key": "outbound-bot",
+                "webhook_url": (
+                    f"https://evil.example/api/v1/ingress/telegram/{second_project_id}/outbound-bot"
+                ),
+            },
+        ),
+        (
+            "communications.telegram-bot.webhook.delete",
+            {"profile_key": "outbound-bot"},
+        ),
+    )
+    for action_ref, input_json in attempts:
+        with pytest.raises(ConflictError, match="action connector failed") as exc:
+            asyncio.run(
+                ActionRepository(session).execute(
+                    project_id=second_project_id,
+                    action_ref=action_ref,
+                    input_json=input_json,
+                    credential_ref=credential_ref,
+                )
+            )
+        assert "inbound-enabled communication profile" in exc.value.data["error"]
+
     assert httpx_mock.get_requests() == []
 
 

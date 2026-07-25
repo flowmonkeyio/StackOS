@@ -13,6 +13,7 @@ export interface IngressMessage {
 }
 
 const UPDATED_STATUSES = new Set(['remote_webhook_updated'])
+const CONFIRMED_STATUSES = new Set(['manual_provider_confirmed'])
 const DRY_RUN_STATUSES = new Set(['remote_webhook_dry_run'])
 const MANUAL_STATUSES = new Set(['manual_provider_update_required'])
 const SKIPPED_STATUSES = new Set(['skipped'])
@@ -26,7 +27,9 @@ export function endpointHasPublicAddress(endpoint: IngressEndpointOut | null | u
   return Boolean(endpoint?.public_base_url?.trim()) && endpoint?.status !== 'failed'
 }
 
-export function discoveryFailureMessage(endpoint: IngressEndpointOut | null | undefined): string | null {
+export function discoveryFailureMessage(
+  endpoint: IngressEndpointOut | null | undefined,
+): string | null {
   if (endpointHasPublicAddress(endpoint)) return null
   return 'No public address was discovered. Check the local tunnel and try again.'
 }
@@ -38,17 +41,25 @@ export function summarizeProviderResults(results: IngressProviderResult[]): Ingr
     manual: countStatuses(results, MANUAL_STATUSES),
     skipped: countStatuses(results, SKIPPED_STATUSES),
     failed: countStatuses(results, FAILED_STATUSES),
+    confirmed: countStatuses(results, CONFIRMED_STATUSES),
   }
   const parts: string[] = []
 
   if (counts.updated > 0) {
     parts.push(`Synced ${counts.updated} ${plural('provider webhook', counts.updated)}.`)
   }
+  if (counts.confirmed > 0) {
+    parts.push(
+      `Confirmed ${counts.confirmed} manual ${plural('provider update', counts.confirmed)}.`,
+    )
+  }
   if (counts.manual > 0) {
     parts.push(manualProviderSummary(results))
   }
   if (counts.dryRun > 0) {
-    parts.push(`${counts.dryRun} ${plural('provider webhook', counts.dryRun)} checked in dry-run mode.`)
+    parts.push(
+      `${counts.dryRun} ${plural('provider webhook', counts.dryRun)} checked in dry-run mode.`,
+    )
   }
   if (counts.skipped > 0) {
     parts.push(`${counts.skipped} ${plural('provider', counts.skipped)} skipped.`)
@@ -65,7 +76,12 @@ export function summarizeProviderResults(results: IngressProviderResult[]): Ingr
   }
 
   return {
-    tone: counts.failed > 0 || counts.skipped > 0 ? 'danger' : counts.manual > 0 || counts.dryRun > 0 ? 'info' : 'success',
+    tone:
+      counts.failed > 0 || counts.skipped > 0
+        ? 'danger'
+        : counts.manual > 0 || counts.dryRun > 0
+          ? 'info'
+          : 'success',
     text: parts.join(' '),
   }
 }

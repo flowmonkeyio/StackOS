@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from stackos.communications import (
+    communication_profile_account_uses,
+    normalize_communication_profile_facets,
     validate_communication_profile_account_bindings,
     validate_communication_profile_ingress_ownership,
 )
@@ -13,6 +15,9 @@ from stackos.repositories.base import Page, ValidationError
 from stackos.repositories.resources import ResourceRepository
 
 from .schemas import (
+    CommunicationProfileAccountUsageInput,
+    CommunicationProfileAccountUsageOut,
+    CommunicationProfileAccountUseOut,
     CommunicationProfileGetInput,
     CommunicationProfileListInput,
     CommunicationProfileOut,
@@ -27,6 +32,25 @@ from .utils import (
     _validate_no_setup_secrets,
     _validate_profile_key,
 )
+
+
+async def communication_profile_account_usage(
+    inp: CommunicationProfileAccountUsageInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> CommunicationProfileAccountUsageOut:
+    if inp.project_id is not None:
+        _require_project(ctx.session, inp.project_id)
+    return CommunicationProfileAccountUsageOut(
+        project_id=inp.project_id,
+        uses=[
+            CommunicationProfileAccountUseOut.model_validate(item)
+            for item in communication_profile_account_uses(
+                ctx.session,
+                project_id=inp.project_id,
+            )
+        ],
+    )
 
 
 async def communication_profile_upsert(
@@ -45,17 +69,19 @@ async def communication_profile_upsert(
         },
     )
     profile_ref = _communication_profile_ref(inp.key)
+    provider_facets = normalize_communication_profile_facets(inp.provider_facets)
     validate_communication_profile_account_bindings(
         ctx.session,
         project_id=inp.project_id,
         profile_ref=profile_ref,
-        provider_facets=inp.provider_facets,
+        provider_facets=provider_facets,
     )
     validate_communication_profile_ingress_ownership(
         ctx.session,
         project_id=inp.project_id,
         profile_ref=profile_ref,
-        provider_facets=inp.provider_facets,
+        provider_facets=provider_facets,
+        profile_enabled=inp.enabled,
     )
     data_json = {
         "key": inp.key.strip(),
@@ -63,7 +89,7 @@ async def communication_profile_upsert(
         "enabled": inp.enabled,
         "identity": inp.identity,
         "agent_guidance": inp.agent_guidance,
-        "provider_facets": inp.provider_facets,
+        "provider_facets": provider_facets,
         "access_policy": inp.access_policy,
         "visibility_policy": inp.visibility_policy,
         "trigger_policy": inp.trigger_policy,
@@ -84,7 +110,12 @@ async def communication_profile_upsert(
         provenance_json={"source": "communicationProfile.upsert"},
     )
     return WriteEnvelope(
-        data=_communication_profile_out(env.data.id, env.data.project_id, env.data.data_json),
+        data=_communication_profile_out(
+            ctx.session,
+            env.data.id,
+            env.data.project_id,
+            env.data.data_json,
+        ),
         run_id=ctx.run_id,
         project_id=env.project_id,
     )
@@ -105,7 +136,7 @@ async def communication_profile_get(
     )
     if row is None:
         raise ValidationError("communication profile was not found")
-    return _communication_profile_out(row.id, row.project_id, row.data_json or {})
+    return _communication_profile_out(ctx.session, row.id, row.project_id, row.data_json or {})
 
 
 async def communication_profile_list(
@@ -123,7 +154,12 @@ async def communication_profile_list(
     )
     return Page(
         items=[
-            _communication_profile_out(record.id, record.project_id, record.data_json or {})
+            _communication_profile_out(
+                ctx.session,
+                record.id,
+                record.project_id,
+                record.data_json or {},
+            )
             for record in records.items
         ],
         next_cursor=records.next_cursor,

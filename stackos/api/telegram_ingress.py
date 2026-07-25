@@ -33,8 +33,9 @@ from stackos.communications import (
     process_inbound_event,
     provider_ingress_enabled,
     telegram_callback_button_external_id,
+    validate_communication_profile_ingress_ownership,
 )
-from stackos.repositories.base import ValidationError
+from stackos.repositories.base import RepositoryError, ValidationError
 
 router = APIRouter(prefix="/api/v1/ingress/telegram", tags=["telegram-ingress"])
 
@@ -158,12 +159,29 @@ def _require_telegram_profile(
             and credential_ref.strip()
         ):
             profile_ref = str(data.get("profile_ref") or f"communication-profile:{profile_key}")
-            return TelegramProfile(
-                key=profile_key,
-                profile_ref=profile_ref,
-                credential_ref=credential_ref.strip(),
-                data=data,
-            )
+            normalized_ref = credential_ref.strip()
+            try:
+                AuthRepository(session).require_attached_account(
+                    project_id=project_id,
+                    credential_ref=normalized_ref,
+                    provider_key="telegram-bot",
+                )
+                validate_communication_profile_ingress_ownership(
+                    session,
+                    project_id=project_id,
+                    profile_ref=f"communication-profile:{profile_key}",
+                    provider_facets={"telegram-bot": data},
+                    profile_enabled=True,
+                )
+            except RepositoryError:
+                pass
+            else:
+                return TelegramProfile(
+                    key=profile_key,
+                    profile_ref=profile_ref,
+                    credential_ref=normalized_ref,
+                    data=data,
+                )
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid Telegram secret")
 
 

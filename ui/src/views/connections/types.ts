@@ -120,6 +120,12 @@ export interface CommunicationProfile {
   handoff_policy: Record<string, unknown>
   approval_policy: Record<string, unknown>
   metadata_json: Record<string, unknown>
+  binding_status: 'ready' | 'repair-required' | 'disabled'
+  binding_issues: Array<{
+    provider_key: string
+    code: string
+    message: string
+  }>
 }
 
 export interface CommunicationProfileListOut {
@@ -266,8 +272,25 @@ export interface IngressEndpointSyncOut {
 export interface IngressEndpointStatusOut {
   configured?: boolean
   ready?: boolean
+  endpoint_fresh?: boolean
   endpoint?: IngressEndpointOut | null
   routes?: IngressEndpointRoute[]
+  blocked_uses?: Array<{
+    project_id: number
+    profile_ref: string
+    profile_key: string
+    profile_display_name: string
+    provider_key: string
+    credential_ref: string | null
+    profile_enabled: boolean
+    ingress_enabled: boolean
+    owns_provider_ingress: boolean
+    binding_state: string
+    repair_message: string
+    attention_required: boolean
+    attention_message: string | null
+    ingress_url: string | null
+  }>
   notes?: string[]
 }
 

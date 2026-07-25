@@ -180,6 +180,97 @@ describe('AccountsView', () => {
     expect(wrapper.text()).not.toContain('Firecrawl - Archive')
   })
 
+  it('places Slack webhook attention under only the Account and profile that own it', async () => {
+    const slack = authProvider('slack-bot', 'Slack', 'oauth2', [])
+    const usedAccount = {
+      ...authConnection({
+        revokedAt: null,
+        providerKey: 'slack-bot',
+        credentialRef: 'cred_slack_used',
+        authType: 'oauth2',
+        authMethodKey: 'oauth2',
+        label: 'Slack - Operations',
+      }),
+      project_ids: [1],
+    }
+    const spareAccount = {
+      ...authConnection({
+        revokedAt: null,
+        providerKey: 'slack-bot',
+        credentialRef: 'cred_slack_spare',
+        authType: 'oauth2',
+        authMethodKey: 'oauth2',
+        label: 'Slack - Spare',
+      }),
+      project_ids: [],
+    }
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      if (url === '/api/v1/auth/accounts') {
+        return json({
+          project_id: null,
+          provider_key: null,
+          providers: [slack],
+          accounts: [usedAccount, spareAccount],
+        })
+      }
+      if (url === '/api/v1/projects?limit=50') {
+        return json({
+          items: [{ id: 1, name: 'Operations' }],
+          next_cursor: null,
+          total_estimate: 1,
+        })
+      }
+      if (url === '/api/v1/operations/communicationProfile.accountUsage/call') {
+        return json({
+          project_id: null,
+          uses: [
+            {
+              project_id: 1,
+              profile_ref: 'communication-profile:operator',
+              profile_key: 'operator',
+              profile_display_name: 'Operator Slack',
+              provider_key: 'slack-bot',
+              credential_ref: 'cred_slack_used',
+              profile_enabled: true,
+              ingress_enabled: true,
+              owns_provider_ingress: true,
+              binding_state: 'ready',
+              repair_message: '',
+              attention_required: true,
+              attention_message:
+                'Update the Slack Events API and Interactivity URLs for this profile.',
+              ingress_url: 'https://example.test/slack',
+            },
+          ],
+        })
+      }
+      return json({})
+    }) as typeof fetch
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/accounts', component: AccountsView },
+        { path: '/projects/:id/connections', component: { template: '<div />' } },
+      ],
+    })
+    await router.push('/accounts')
+    await router.isReady()
+    const wrapper = mount(
+      { template: '<RouterView />' },
+      { global: { plugins: [router], stubs: { teleport: true } } },
+    )
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Operator Slack needs a Slack webhook'))
+    const accountRows = wrapper.findAll('li.px-4')
+    const usedRow = accountRows.find((row) => row.text().includes('Slack - Operations'))
+    const spareRow = accountRows.find((row) => row.text().includes('Slack - Spare'))
+    expect(usedRow?.text()).toContain('Operator Slack needs a Slack webhook update')
+    expect(usedRow?.text()).toContain('Communication profiles')
+    expect(spareRow?.text()).not.toContain('webhook update')
+  })
+
   it('announces and focuses a missing Account name', async () => {
     const provider = authProvider('firecrawl', 'Firecrawl', 'api-key', apiKeyMethod())
     globalThis.fetch = vi.fn(async (input) => {

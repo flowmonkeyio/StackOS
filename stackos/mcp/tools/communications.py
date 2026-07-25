@@ -17,6 +17,7 @@ def _communication_operations() -> OperationRegistry:
         "localAgentChat.createMessage",
         "communication.send",
         "communication.reply",
+        "communicationProfile.accountUsage",
         "communicationProfile.list",
         "communicationProfile.get",
         "communicationProfile.upsert",

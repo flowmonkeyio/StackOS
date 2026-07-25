@@ -568,7 +568,7 @@ def test_global_account_backing_repair_is_a_healthy_noop(
             == before
         )
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0027_repair_global_account_backings",
+            "0028_cleanup_communication_account_bindings",
         )
     finally:
         conn.close()
@@ -622,6 +622,19 @@ def test_global_account_backing_repair_restores_only_the_missing_backing_link(
             """,
             (now,),
         )
+        conn.executemany(
+            """
+            INSERT INTO action_calls
+            (id, project_id, credential_id, action_key, plugin_slug, provider_key, operation,
+             status, dry_run, idempotency_key, credential_ref, cost_cents, created_at)
+            VALUES (?, 1, NULL, 'test.action', 'test-plugin', ?, 'test',
+                    'success', 0, ?, ?, 0, ?)
+            """,
+            [
+                (22, "different-provider", "unknown-audit-link", "cred_unknown", now),
+                (23, "different-provider", "mismatch-audit-link", "cred_repair", now),
+            ],
+        )
         before = conn.execute("SELECT status, updated_at FROM credentials WHERE id = 1").fetchone()
         conn.execute("UPDATE credentials SET integration_credential_id = NULL WHERE id = 1")
         conn.commit()
@@ -640,7 +653,19 @@ def test_global_account_backing_repair_restores_only_the_missing_backing_link(
         ).fetchone() == (1, *before)
         assert conn.execute(
             "SELECT credential_id, credential_ref FROM action_calls WHERE id = 21"
-        ).fetchone() == (None, "cred_repair")
+        ).fetchone() == (1, "cred_repair")
+        unmatched = conn.execute(
+            """
+            SELECT id, credential_id, metadata_json
+            FROM action_calls WHERE id IN (22, 23) ORDER BY id
+            """
+        ).fetchall()
+        assert [row[:2] for row in unmatched] == [(22, None), (23, None)]
+        assert all(
+            json.loads(row[2])["credential_identity_status"]
+            == "removed-before-account-tombstone-retention"
+            for row in unmatched
+        )
         encrypted = conn.execute(
             "SELECT encrypted_payload, nonce FROM integration_credentials WHERE id = 1"
         ).fetchone()
@@ -656,6 +681,80 @@ def test_global_account_backing_repair_restores_only_the_missing_backing_link(
             == legacy_secret
         )
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+    finally:
+        conn.close()
+
+
+def test_communication_binding_cleanup_removes_aliases_without_inventing_an_account(
+    isolated_alembic: Path,
+) -> None:
+    _run_alembic(["upgrade", "0027_repair_global_account_backings"])
+    now = "2026-07-25 00:00:00"
+    profile = {
+        "key": "support",
+        "profile_ref": "communication-profile:support",
+        "enabled": True,
+        "identity": {"display_name": "Support"},
+        "provider_facets": {
+            "slack-bot": {
+                "auth_profile_key": "default",
+                "team_id": "T123",
+                "ingress_url": "https://stale.example/ingress",
+                "manual_ingress_confirmation": {
+                    "ingress_url": "https://stale.example/ingress",
+                    "source": "legacy-local-state",
+                },
+            }
+        },
+        "access_policy": {"allowed_user_refs": ["slack-user:U123"]},
+    }
+    conn = sqlite3.connect(isolated_alembic)
+    try:
+        _insert_legacy_project(conn, project_id=1, now=now)
+        conn.execute(
+            """
+            INSERT INTO plugins
+            (id, slug, name, version, description, source, manifest_json, created_at, updated_at)
+            VALUES (1, 'communications', 'Communications', '1.0.0', '', 'builtin', '{}', ?, ?)
+            """,
+            (now, now),
+        )
+        conn.execute(
+            """
+            INSERT INTO resources
+            (id, plugin_id, key, name, description, schema_json, created_at, updated_at)
+            VALUES (1, 1, 'communication-profile', 'Profile', '', '{}', ?, ?)
+            """,
+            (now, now),
+        )
+        conn.execute(
+            """
+            INSERT INTO resource_records
+            (id, project_id, resource_id, external_id, title, data_json,
+             provenance_json, created_at, updated_at)
+            VALUES (1, 1, 1, 'communication-profile:support', 'Support', ?, '{}', ?, ?)
+            """,
+            (json.dumps(profile), now, now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    _run_alembic(["upgrade", "head"])
+
+    conn = sqlite3.connect(isolated_alembic)
+    try:
+        cleaned = json.loads(
+            conn.execute("SELECT data_json FROM resource_records WHERE id = 1").fetchone()[0]
+        )
+        facet = cleaned["provider_facets"]["slack-bot"]
+        assert "auth_profile_key" not in facet
+        assert "credential_ref" not in facet
+        assert facet["ingress_enabled"] is True
+        assert "ingress_url" not in facet
+        assert "manual_ingress_confirmation" not in facet
+        assert facet["team_id"] == "T123"
+        assert cleaned["access_policy"] == {"allowed_user_refs": ["slack-user:U123"]}
     finally:
         conn.close()
 

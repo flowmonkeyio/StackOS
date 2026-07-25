@@ -228,6 +228,7 @@ def test_communication_profile_operations_are_registered(mcp_client: MCPClient) 
         "localAgentChat.createMessage",
         "communication.send",
         "communication.reply",
+        "communicationProfile.accountUsage",
         "communicationProfile.list",
         "communicationProfile.get",
         "communicationProfile.upsert",
@@ -386,10 +387,138 @@ def test_ingress_endpoint_mcp_derives_and_syncs_provider_routes(
     assert refreshed_telegram_facet["refs"]["ingress_url"] == (
         f"https://fresh.stackos.example.com/api/v1/ingress/telegram/{project_id}/support-bot"
     )
-    assert refreshed_telegram_facet["allowed_webhook_hosts"] == [
-        "fresh.stackos.example.com",
-        "stackos.example.com",
-    ]
+    assert refreshed_telegram_facet["allowed_webhook_hosts"] == ["fresh.stackos.example.com"]
+
+
+def test_account_usage_is_scoped_to_the_exact_profile(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    credential_ref = _seed_slack_credential(mcp_client, project_id)
+    mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "operator",
+            "identity": {"display_name": "Operator Slack"},
+            "provider_facets": {
+                "slack-bot": {
+                    "credential_ref": credential_ref,
+                    "auth_profile_key": "default",
+                    "ingress_enabled": True,
+                    "ingress_url": (
+                        f"https://stackos.example.com/api/v1/ingress/slack/{project_id}/operator"
+                    ),
+                    "manual_ingress_confirmation": {
+                        "ingress_url": (
+                            f"https://stackos.example.com/api/v1/ingress/slack/"
+                            f"{project_id}/operator"
+                        ),
+                        "source": "forged-agent-input",
+                    },
+                }
+            },
+        },
+    )
+    untrusted_profile = mcp_client.call_tool_structured(
+        "communicationProfile.get",
+        {"project_id": project_id, "key": "operator", "response_mode": "raw"},
+    )
+    untrusted_facet = untrusted_profile["provider_facets"]["slack-bot"]
+    assert "auth_profile_key" not in untrusted_facet
+    assert "manual_ingress_confirmation" not in untrusted_facet
+    assert "ingress_url" not in untrusted_facet
+
+    mcp_client.call_tool_structured(
+        "ingressEndpoint.configure",
+        {
+            "project_id": project_id,
+            "driver": "public-url",
+            "public_base_url": "https://stackos.example.com",
+        },
+    )
+    synced = mcp_client.call_tool_structured(
+        "ingressEndpoint.sync",
+        {
+            "project_id": project_id,
+            "apply_provider_webhooks": False,
+            "response_mode": "raw",
+        },
+    )
+    assert synced["data"]["routes"][0]["remote_status"] == "manual_provider_update_required"
+    usage = mcp_client.call_tool_structured(
+        "communicationProfile.accountUsage",
+        {"response_mode": "raw"},
+    )
+    account_use = next(item for item in usage["uses"] if item["credential_ref"] == credential_ref)
+    assert account_use["project_id"] == project_id
+    assert account_use["profile_ref"] == "communication-profile:operator"
+    assert account_use["binding_state"] == "ready"
+    assert account_use["attention_required"] is True
+
+    profile = mcp_client.call_tool_structured(
+        "communicationProfile.get",
+        {"project_id": project_id, "key": "operator", "response_mode": "raw"},
+    )
+    facet = profile["provider_facets"]["slack-bot"]
+    assert "auth_profile_key" not in facet
+    assert "manual_ingress_confirmation" not in facet
+    assert facet["ingress_url"].endswith(f"/api/v1/ingress/slack/{project_id}/operator")
+
+
+def test_profile_upsert_strips_daemon_owned_telegram_ingress_state(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    credential_ref = _seed_telegram_credential(mcp_client, project_id)
+    poisoned_url = f"https://evil.example/api/v1/ingress/telegram/{project_id}/poisoned-telegram"
+    mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "poisoned-telegram",
+            "identity": {"display_name": "Poisoned Telegram"},
+            "provider_facets": {
+                "telegram-bot": {
+                    "credential_ref": credential_ref,
+                    "ingress_enabled": True,
+                    "ingress_path": f"/api/v1/ingress/telegram/{project_id}/poisoned-telegram",
+                    "ingress_url": poisoned_url,
+                    "ingress_public_base_url": "https://evil.example",
+                    "ingress_driver": "public-url",
+                    "ingress_endpoint_ref": "ingress-endpoint:forged",
+                    "webhook_base_url": "https://evil.example",
+                    "allowed_webhook_hosts": ["evil.example"],
+                    "webhook_policy": {"allowed_hosts": ["evil.example"]},
+                    "refs": {
+                        "main": "telegram-chat:123",
+                        "ingress_url": poisoned_url,
+                        "ingress_endpoint_ref": "ingress-endpoint:forged",
+                    },
+                }
+            },
+        },
+    )
+
+    profile = mcp_client.call_tool_structured(
+        "communicationProfile.get",
+        {"project_id": project_id, "key": "poisoned-telegram", "response_mode": "raw"},
+    )
+    facet = profile["provider_facets"]["telegram-bot"]
+    for field in (
+        "ingress_path",
+        "ingress_url",
+        "ingress_public_base_url",
+        "ingress_driver",
+        "ingress_endpoint_ref",
+        "webhook_base_url",
+        "allowed_webhook_hosts",
+        "webhook_policy",
+    ):
+        assert field not in facet
+    assert facet["refs"] == {"main": "telegram-chat:123"}
 
 
 def test_shared_communication_accounts_allow_outbound_reuse_but_reject_duplicate_ingress_owners(
@@ -636,6 +765,196 @@ def test_shared_communication_accounts_allow_outbound_reuse_but_reject_duplicate
     )
     assert sync_error["code"] == -32008
     assert sync_error["data"]["owner_project_id"] == first_project_id
+    assert provider_calls == []
+
+
+def test_disabled_profile_does_not_retain_shared_account_ingress_ownership(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    first_project_id = int(seeded_project["data"]["id"])
+    second_project = mcp_client.call_tool_structured(
+        "project.create",
+        {
+            "slug": "enabled-ingress-owner",
+            "name": "Enabled Ingress Owner",
+            "domain": "enabled-owner.example",
+            "locale": "en-US",
+        },
+    )
+    second_project_id = int(second_project["data"]["id"])
+    credential_ref = _seed_slack_credential(mcp_client, first_project_id)
+    engine = mcp_client.test_client.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        AuthRepository(session).attach_account(
+            project_id=second_project_id,
+            credential_ref=credential_ref,
+        )
+
+    disabled = mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
+        {
+            "project_id": first_project_id,
+            "key": "disabled-owner",
+            "enabled": False,
+            "identity": {"display_name": "Disabled owner"},
+            "provider_facets": {
+                "slack-bot": {
+                    "credential_ref": credential_ref,
+                    "ingress_enabled": True,
+                }
+            },
+            "response_mode": "raw",
+        },
+    )
+    assert disabled["data"]["binding_status"] == "disabled"
+
+    enabled = mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
+        {
+            "project_id": second_project_id,
+            "key": "enabled-owner",
+            "identity": {"display_name": "Enabled owner"},
+            "provider_facets": {
+                "slack-bot": {
+                    "credential_ref": credential_ref,
+                    "ingress_enabled": True,
+                }
+            },
+            "response_mode": "raw",
+        },
+    )
+    assert enabled["data"]["binding_status"] == "ready"
+
+
+def test_ingress_status_exposes_invalid_account_bindings_and_sync_fails_closed(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    monkeypatch,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    mcp_client.call_tool_structured(
+        "ingressEndpoint.configure",
+        {
+            "project_id": project_id,
+            "driver": "public-url",
+            "public_base_url": "https://stackos.example.com",
+        },
+    )
+    engine = mcp_client.test_client.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        ResourceRepository(session).upsert_record(
+            project_id=project_id,
+            plugin_slug="communications",
+            resource_key="communication-profile",
+            external_id="communication-profile:broken-binding",
+            title="Broken binding",
+            data_json={
+                "key": "broken-binding",
+                "profile_ref": "communication-profile:broken-binding",
+                "enabled": True,
+                "identity": {"display_name": "Broken binding"},
+                "provider_facets": {
+                    "slack-bot": {
+                        "credential_ref": "cred_missing_account",
+                        "ingress_enabled": True,
+                    }
+                },
+            },
+            provenance_json={"source": "legacy-test-bypass"},
+        )
+        session.commit()
+
+    status = mcp_client.call_tool_structured(
+        "ingressEndpoint.status",
+        {"project_id": project_id, "response_mode": "raw"},
+    )
+    assert status["ready"] is False
+    assert status["routes"] == []
+    assert len(status["blocked_uses"]) == 1
+    blocked = status["blocked_uses"][0]
+    assert blocked["profile_ref"] == "communication-profile:broken-binding"
+    assert blocked["binding_state"] == "missing_account"
+    assert "Account" in blocked["repair_message"]
+
+    provider_calls: list[dict[str, object]] = []
+
+    async def unexpected_provider_call(self, **kwargs: object) -> object:
+        provider_calls.append(kwargs)
+        raise AssertionError("provider webhook mutation must not run")
+
+    monkeypatch.setattr(ActionRepository, "execute", unexpected_provider_call)
+    sync_error = mcp_client.call_tool_error(
+        "ingressEndpoint.sync",
+        {
+            "project_id": project_id,
+            "apply_provider_webhooks": True,
+            "response_mode": "raw",
+        },
+    )
+    assert sync_error["message"] == "ValidationError"
+    assert sync_error["data"]["blocked_uses"][0]["profile_ref"] == (
+        "communication-profile:broken-binding"
+    )
+    assert provider_calls == []
+
+
+def test_stale_local_tunnel_blocks_provider_sync_before_mutation(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    monkeypatch,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    credential_ref = _seed_telegram_credential(mcp_client, project_id)
+    mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "stale-tunnel-bot",
+            "identity": {"display_name": "Stale tunnel bot"},
+            "provider_facets": {
+                "telegram-bot": {
+                    "credential_ref": credential_ref,
+                    "ingress_enabled": True,
+                }
+            },
+        },
+    )
+    mcp_client.call_tool_structured(
+        "ingressEndpoint.configure",
+        {
+            "project_id": project_id,
+            "driver": "local-tunnel",
+            "public_base_url": "https://stale.stackos.example.com",
+            "driver_config": {"provider": "ngrok"},
+        },
+    )
+
+    status = mcp_client.call_tool_structured(
+        "ingressEndpoint.status",
+        {"project_id": project_id, "response_mode": "raw"},
+    )
+    assert status["endpoint_fresh"] is False
+    assert status["ready"] is False
+    assert any("refresh the local tunnel" in note.lower() for note in status["notes"])
+
+    provider_calls: list[dict[str, object]] = []
+
+    async def unexpected_provider_call(self, **kwargs: object) -> object:
+        provider_calls.append(kwargs)
+        raise AssertionError("provider webhook mutation must not run")
+
+    monkeypatch.setattr(ActionRepository, "execute", unexpected_provider_call)
+    sync_error = mcp_client.call_tool_error(
+        "ingressEndpoint.sync",
+        {
+            "project_id": project_id,
+            "apply_provider_webhooks": True,
+            "response_mode": "raw",
+        },
+    )
+    assert sync_error["message"] == "ValidationError"
+    assert "refresh the local tunnel" in str(sync_error["data"]["next_action"]).lower()
     assert provider_calls == []
 
 

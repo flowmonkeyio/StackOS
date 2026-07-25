@@ -19,7 +19,11 @@ import {
 } from '@/components/ui'
 import { useProjectsStore } from '@/stores/projects'
 import AddAccountPanel from './accounts/AddAccountPanel.vue'
-import { useAccountCredentials, type AccountRow } from './accounts/useAccountCredentials'
+import {
+  useAccountCredentials,
+  type AccountRow,
+  type CommunicationAccountUse,
+} from './accounts/useAccountCredentials'
 import {
   accountLabel,
   connectionActionKey,
@@ -66,6 +70,7 @@ const {
   setDisplayNameValue,
   setSelectedProvider,
   accounts,
+  communicationAccountUses,
   visibleAuthProviders,
   providerOptions,
   selectedProvider,
@@ -114,6 +119,7 @@ const visibleAccountGroups = computed(() => {
           safeAccountIdentity(account) ?? '',
           account.credential_ref,
           ...account.project_ids.map(projectName),
+          ...accountUses(account).map((usage) => usage.profile_display_name),
         ]
           .join(' ')
           .toLowerCase()
@@ -189,6 +195,22 @@ function groupProjectCount(rows: AccountRow[]): number {
   return new Set(rows.flatMap((account) => account.project_ids)).size
 }
 
+function accountUses(account: AccountRow): CommunicationAccountUse[] {
+  return communicationAccountUses.value.filter(
+    (usage) => usage.credential_ref === account.credential_ref,
+  )
+}
+
+function accountAttention(account: AccountRow): CommunicationAccountUse[] {
+  return accountUses(account).filter((usage) => usage.attention_required)
+}
+
+function accountRepairs(account: AccountRow): CommunicationAccountUse[] {
+  return accountUses(account).filter(
+    (usage) => usage.profile_enabled && usage.binding_state !== 'ready',
+  )
+}
+
 onMounted(load)
 </script>
 
@@ -199,43 +221,22 @@ onMounted(load)
       description="Set up provider Accounts once, then reuse them across projects."
     >
       <template #actions>
-        <UiButton
-          variant="primary"
-          size="sm"
-          icon-left="plus"
-          @click="openAddAccount()"
-        >
+        <UiButton variant="primary" size="sm" icon-left="plus" @click="openAddAccount()">
           Add Account
         </UiButton>
       </template>
     </UiPageHeader>
 
-    <UiCallout
-      v-if="error"
-      tone="danger"
-    >
+    <UiCallout v-if="error" tone="danger">
       {{ error }}
     </UiCallout>
-    <UiCallout
-      v-if="oauthReturnMessage"
-      :tone="oauthReturnMessage.tone"
-    >
+    <UiCallout v-if="oauthReturnMessage" :tone="oauthReturnMessage.tone">
       {{ oauthReturnMessage.text }}
     </UiCallout>
 
-    <div
-      v-if="!initialLoadComplete"
-      class="grid gap-3"
-      aria-label="Loading Accounts"
-    >
-      <UiCard
-        v-for="index in 3"
-        :key="index"
-      >
-        <UiSkeleton
-          shape="line"
-          :lines="3"
-        />
+    <div v-if="!initialLoadComplete" class="grid gap-3" aria-label="Loading Accounts">
+      <UiCard v-for="index in 3" :key="index">
+        <UiSkeleton shape="line" :lines="3" />
       </UiCard>
     </div>
 
@@ -247,12 +248,7 @@ onMounted(load)
       framed
     >
       <template #actions>
-        <UiButton
-          variant="secondary"
-          size="sm"
-          icon-left="refresh-cw"
-          @click="load"
-        >
+        <UiButton variant="secondary" size="sm" icon-left="refresh-cw" @click="load">
           Retry
         </UiButton>
       </template>
@@ -266,12 +262,7 @@ onMounted(load)
       framed
     >
       <template #actions>
-        <UiButton
-          variant="primary"
-          size="sm"
-          icon-left="plus"
-          @click="openAddAccount()"
-        >
+        <UiButton variant="primary" size="sm" icon-left="plus" @click="openAddAccount()">
           Add Account
         </UiButton>
       </template>
@@ -294,20 +285,14 @@ onMounted(load)
         framed
       />
 
-      <div
-        v-else
-        class="grid gap-4"
-      >
+      <div v-else class="grid gap-4">
         <section
           v-for="group in visibleAccountGroups"
           :key="group.providerKey"
           class="min-w-0"
           :aria-labelledby="`account-provider-${group.providerKey}`"
         >
-          <UiCard
-            :padded="false"
-            class="min-w-0 overflow-hidden"
-          >
+          <UiCard :padded="false" class="min-w-0 overflow-hidden">
             <template #header>
               <div class="flex min-w-0 items-center gap-3">
                 <ProviderMark
@@ -358,17 +343,11 @@ onMounted(load)
                       <h3 class="truncate text-sm font-semibold text-fg-strong">
                         {{ account.display_name }}
                       </h3>
-                      <StatusBadge
-                        domain="connection"
-                        :status="connectionStatusKey(account)"
-                      />
+                      <StatusBadge domain="connection" :status="connectionStatusKey(account)" />
                     </div>
                     <p class="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-fg-muted">
                       <span>{{ formatAuthType(account.auth_type) }}</span>
-                      <span
-                        aria-hidden="true"
-                        class="text-fg-subtle"
-                      >·</span>
+                      <span aria-hidden="true" class="text-fg-subtle">·</span>
                       <span :title="formatAbsoluteDateTime(account.last_tested_at)">
                         {{
                           account.last_tested_at
@@ -377,19 +356,13 @@ onMounted(load)
                         }}
                       </span>
                       <template v-if="account.expires_at">
-                        <span
-                          aria-hidden="true"
-                          class="text-fg-subtle"
-                        >·</span>
+                        <span aria-hidden="true" class="text-fg-subtle">·</span>
                         <span :title="formatAbsoluteDateTime(account.expires_at)">
                           expires {{ formatRelativeDateTime(account.expires_at) }}
                         </span>
                       </template>
                       <template v-if="safeAccountIdentity(account)">
-                        <span
-                          aria-hidden="true"
-                          class="text-fg-subtle"
-                        >·</span>
+                        <span aria-hidden="true" class="text-fg-subtle">·</span>
                         <span class="truncate">{{ safeAccountIdentity(account) }}</span>
                       </template>
                     </p>
@@ -432,7 +405,7 @@ onMounted(load)
                 <div class="mt-2 flex min-w-0 flex-wrap items-center justify-between gap-2">
                   <div class="flex min-w-0 flex-wrap items-center gap-1.5">
                     <span class="text-xs text-fg-subtle">
-                      {{ account.project_ids.length === 0 ? 'Not attached' : 'Used by' }}
+                      {{ account.project_ids.length === 0 ? 'Not attached' : 'Attached to' }}
                     </span>
                     <RouterLink
                       v-for="projectId in account.project_ids"
@@ -450,6 +423,65 @@ onMounted(load)
                     {{ account.credential_ref }}
                   </span>
                 </div>
+
+                <div
+                  v-if="accountUses(account).length > 0"
+                  class="mt-2 flex min-w-0 flex-wrap items-center gap-1.5"
+                >
+                  <span class="text-xs text-fg-subtle">Communication profiles</span>
+                  <RouterLink
+                    v-for="usage in accountUses(account)"
+                    :key="`${usage.project_id}:${usage.profile_ref}:${usage.provider_key}`"
+                    :to="`/projects/${usage.project_id}/connections?section=bots`"
+                    class="focus-ring rounded-full border border-border-subtle bg-bg-surface-alt px-2 py-0.5 text-2xs text-fg-muted transition-colors hover:border-border-default hover:text-fg-strong"
+                  >
+                    {{ usage.profile_display_name }} · {{ projectName(usage.project_id) }}
+                  </RouterLink>
+                </div>
+
+                <UiCallout
+                  v-for="usage in accountRepairs(account)"
+                  :key="`repair:${usage.project_id}:${usage.profile_ref}:${usage.provider_key}`"
+                  tone="warning"
+                  density="compact"
+                  class="mt-2"
+                  :title="`${usage.profile_display_name} needs its Account binding repaired`"
+                >
+                  {{ usage.repair_message }}
+                  <template #actions>
+                    <UiButton
+                      size="sm"
+                      variant="secondary"
+                      @click="router.push(`/projects/${usage.project_id}/connections?section=bots`)"
+                    >
+                      Repair profile
+                    </UiButton>
+                  </template>
+                </UiCallout>
+
+                <UiCallout
+                  v-for="usage in accountAttention(account)"
+                  :key="`attention:${usage.project_id}:${usage.profile_ref}`"
+                  tone="warning"
+                  density="compact"
+                  class="mt-2"
+                  :title="`${usage.profile_display_name} needs a Slack webhook update`"
+                >
+                  {{ usage.attention_message }}
+                  <template #actions>
+                    <UiButton
+                      size="sm"
+                      variant="secondary"
+                      @click="
+                        router.push(
+                          `/projects/${usage.project_id}/connections?section=connectivity`,
+                        )
+                      "
+                    >
+                      Review connectivity
+                    </UiButton>
+                  </template>
+                </UiCallout>
 
                 <UiCallout
                   v-if="accountMessages[account.credential_ref]"
@@ -511,7 +543,7 @@ onMounted(load)
       :loading="
         Boolean(
           pendingRevoke &&
-            busyAction === connectionActionKey(pendingRevoke.credential_ref, 'revoke'),
+          busyAction === connectionActionKey(pendingRevoke.credential_ref, 'revoke'),
         )
       "
       @update:model-value="

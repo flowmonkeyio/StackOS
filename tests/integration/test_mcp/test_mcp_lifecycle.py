@@ -27,7 +27,7 @@ EXPECTED_NAMESPACE_COUNTS = {
     "communicationContact": 2,
     "communicationContext": 1,
     "communicationMembership": 2,
-    "communicationProfile": 3,
+    "communicationProfile": 4,
     "communicationRoute": 2,
     "communicationSurface": 2,
     "communicationTarget": 3,
