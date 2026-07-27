@@ -1,5 +1,6 @@
 {
   "seo.ahrefs": { "src": "/images/integrations/ahrefs-icon.png", "kind": "icon" },
+  "utils.aws-s3": { "src": "/images/integrations/s3.png", "kind": "icon" },
   "utils.alibaba-wan": { "src": "/images/integrations/alibaba-wan.png", "kind": "icon" },
   "gtm.apollo": { "src": "/images/integrations/apollo.png", "kind": "icon" },
   "branding.channel-metrics": { "src": "/images/integrations/channel-metrics.svg", "kind": "icon" },

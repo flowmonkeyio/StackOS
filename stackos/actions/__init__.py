@@ -64,6 +64,7 @@ from stackos.actions.repository import (
     ActionValidationOut,
 )
 from stackos.actions.reve_images import ReveImagesActionConnector
+from stackos.actions.s3 import S3ActionConnector
 from stackos.actions.salesforce import SalesforceActionConnector
 from stackos.actions.salesloft import SalesloftActionConnector
 from stackos.actions.serper import SerperActionConnector
@@ -90,6 +91,7 @@ DEFAULT_ACTION_CONNECTORS.register(BytePlusSeedreamImageActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(BytePlusSeedanceVideoActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(FirecrawlActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(FtpActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(S3ActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(CloudflareActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(JinaActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(RedditActionConnector())
@@ -176,6 +178,7 @@ __all__ = [
     "PipedriveActionConnector",
     "RedditActionConnector",
     "ReveImagesActionConnector",
+    "S3ActionConnector",
     "SalesforceActionConnector",
     "SalesloftActionConnector",
     "SerperActionConnector",

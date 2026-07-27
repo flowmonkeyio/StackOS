@@ -15,6 +15,7 @@ import yaml
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from stackos.plugins.builtin_utils_ftp import ftp_action_kwargs, ftp_provider_kwargs
+from stackos.plugins.builtin_utils_s3 import s3_action_kwargs, s3_provider_kwargs
 from stackos.provider_setup import find_provider_setup_secret_paths
 
 _KEY_RE = re.compile(r"^[a-z][a-z0-9_]*(?:[-.][a-z0-9_]+)*$")
@@ -1862,6 +1863,7 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 },
             ),
             ProviderManifest(**ftp_provider_kwargs()),
+            ProviderManifest(**s3_provider_kwargs()),
             ProviderManifest(
                 key="cloudflare",
                 name="Cloudflare DNS",
@@ -4822,6 +4824,7 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 },
             ),
             *[ActionManifest(**kwargs) for kwargs in ftp_action_kwargs()],
+            *[ActionManifest(**kwargs) for kwargs in s3_action_kwargs()],
             ActionManifest(
                 key="cloudflare.zones.list",
                 name="List Cloudflare Zones",

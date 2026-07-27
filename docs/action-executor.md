@@ -332,6 +332,9 @@ cover the migrated clean path for:
 - `sitemap`: `utils.sitemap.fetch`
 - `ftp`: stateless directory listing, recursive multi-path upload/download,
   exact file/directory deletion, directory creation, and remote rename/move
+- `aws-s3`: one-bucket object listing, conditional single/multipart
+  upload/download, exact current-object deletion, directory-marker create,
+  bounded prefix deletion, and non-atomic exact-object copy/delete rename
 - `cloudflare`: zone listing plus individual DNS record list/get/create/edit/replace/delete
 - `reddit`: `utils.reddit.search-subreddit`, `utils.reddit.top-questions`
 - `dataforseo`: `seo.keyword.research`, `seo.serp.analyze`, `seo.paa.extract`

@@ -362,6 +362,22 @@ class CredentialTestingMixin:
                     "encoding": str(config.get("encoding") or "utf-8"),
                 }
             )
+        elif credential.provider_key == "aws-s3":
+            from stackos.integrations.s3 import validate_s3_credential_config
+
+            try:
+                validate_s3_credential_config(config)
+            except ValueError as exc:
+                raise ValidationError(
+                    str(exc),
+                    data={"credential_id": credential.id},
+                ) from exc
+            extra.update(
+                {
+                    "bucket": str(config["bucket"]),
+                    "region": str(config["region"]),
+                }
+            )
         elif credential.provider_key in {"smtp", "imap"}:
             for key in ("host", "port", "tls_mode", "username", "timeout_s"):
                 if key in config and config[key] is not None:

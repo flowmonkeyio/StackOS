@@ -611,10 +611,25 @@ test('GA4 remains unloaded until analytics consent is granted', async ({ page, c
 test('integrations open plugin-first with a custom sort and exact brand assets', async ({ page }) => {
   const integrationCatalog = JSON.parse(
     await readFile(new URL('../app/data/integration-catalog.generated.json', import.meta.url), 'utf8'),
-  ) as { plugins: unknown[]; providers: Array<{ logo?: { src?: string } }> }
+  ) as {
+    plugins: unknown[]
+    providers: Array<{
+      actionCount: number
+      name: string
+      providerKey: string
+      setupNote?: string
+      logo?: { src?: string }
+    }>
+  }
   const pluginCount = integrationCatalog.plugins.length
   const providerCount = integrationCatalog.providers.length
   const providerLogoCount = integrationCatalog.providers.filter((provider) => provider.logo?.src).length
+  expect(integrationCatalog.providers.find(provider => provider.providerKey === 'aws-s3')).toMatchObject({
+    actionCount: 7,
+    name: 'Amazon S3',
+    logo: { src: '/images/integrations/s3.png' },
+    setupNote: 'Prefer temporary least-privilege credentials. Store the access key id, secret access key, optional session token, bucket, and region only in StackOS.',
+  })
 
   await page.context().addCookies([{
     name: 'stackos-analytics-consent',
@@ -662,6 +677,7 @@ test('integrations open plugin-first with a custom sort and exact brand assets',
   expect(logoState.sources).toContain('/images/integrations/salesloft.jpeg')
   expect(logoState.sources).toContain('/images/integrations/outbrain.svg')
   expect(logoState.sources).toContain('/images/integrations/serper.svg')
+  expect(logoState.sources).toContain('/images/integrations/s3.png')
   expect(logoState.sources).toContain('/images/openai.webp')
   expect(logoState.sources).toContain('/images/gemini.webp')
 

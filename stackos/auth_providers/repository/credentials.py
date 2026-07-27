@@ -92,6 +92,16 @@ class CredentialStorageMixin:
                 validate_ftp_credential_config(safe_config)
             except ValueError as exc:
                 raise ValidationError(str(exc), data={"provider_key": "ftp"}) from exc
+        elif provider.key == "aws-s3":
+            from stackos.integrations.s3 import validate_s3_credential_config
+
+            try:
+                validate_s3_credential_config(safe_config)
+            except ValueError as exc:
+                raise ValidationError(
+                    str(exc),
+                    data={"provider_key": "aws-s3"},
+                ) from exc
         safe_config["auth_method_key"] = method.key
         if provider.key == "telegram-bot" and method.key == "bot-token":
             bot_id = telegram_bot_id_from_token(secret_values.get("bot_token"))
@@ -251,6 +261,16 @@ class CredentialStorageMixin:
                 validate_ftp_credential_config(safe_config)
             except ValueError as exc:
                 raise ValidationError(str(exc), data={"provider_key": "ftp"}) from exc
+        elif provider.key == "aws-s3":
+            from stackos.integrations.s3 import validate_s3_credential_config
+
+            try:
+                validate_s3_credential_config(safe_config)
+            except ValueError as exc:
+                raise ValidationError(
+                    str(exc),
+                    data={"provider_key": "aws-s3"},
+                ) from exc
         existing_config = dict(credential.config_json or {})
         existing_config.update(safe_config)
         safe_config = existing_config

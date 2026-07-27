@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 2.1.16 - 2026-07-26
+
+- Added an Amazon S3 connector for one general-purpose bucket with the same
+  seven file-management action categories as FTP where object-store semantics
+  permit: listing, upload, download, object deletion, directory-marker
+  creation, bounded prefix deletion, and exact-object rename.
+- Added daemon-held AWS access-key authentication bound to an exact bucket and
+  region, with AWS IAM and bucket policy determining access; conditional
+  mutations, bounded pagination, multipart upload/copy handling, explicit
+  cleanup uncertainty, versioning facts, and non-atomic move receipts remain
+  explicit.
+- Added manifest-driven MCP, background execution, response-file, grant, audit,
+  package, admin UI, public integration catalog, documentation, and regression
+  coverage for the S3 provider while preserving the existing FTP behavior.
+
 ## 2.1.9 - 2026-07-23
 
 - Added the OAuth-only Linear integration with reviewed GraphQL read/write

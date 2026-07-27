@@ -400,6 +400,74 @@ def test_credential_edit_preserves_omitted_secret_and_validates_host(
     )
 
 
+def test_s3_account_keeps_all_aws_keys_secret_and_preserves_them_on_safe_edit(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = AuthRepository(session)
+    stored = repo.store_credential(
+        attach_project_id=project_id,
+        provider_key="aws-s3",
+        auth_method_key="aws-access-key",
+        display_name="Production S3",
+        fields={
+            "access_key_id": "AKIAEXPLICIT12345678",
+            "secret_access_key": "exact-secret-access-key",
+            "session_token": "exact-session-token",
+            "bucket": "stackos-production",
+            "region": "us-west-2",
+        },
+    ).data
+
+    edit = repo.get_credential_edit_state(credential_ref=stored.credential_ref)
+    assert edit.values == {
+        "bucket": "stackos-production",
+        "region": "us-west-2",
+    }
+    assert edit.secret_present == {
+        "access_key_id": True,
+        "secret_access_key": True,
+        "session_token": True,
+    }
+
+    repo.update_credential(
+        credential_ref=stored.credential_ref,
+        fields={"region": "us-east-2"},
+        display_name=None,
+    )
+    row = _integration_for_account(session, stored.credential_ref)
+    assert row.id is not None
+    assert json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id)) == {
+        "access_key_id": "AKIAEXPLICIT12345678",
+        "secret_access_key": "exact-secret-access-key",
+        "session_token": "exact-session-token",
+    }
+    credential = session.exec(
+        select(Credential).where(Credential.credential_ref == stored.credential_ref)
+    ).one()
+    assert credential.config_json["region"] == "us-east-2"
+    serialized_account = json.dumps(stored.model_dump(mode="json"))
+    assert "AKIAEXPLICIT12345678" not in serialized_account
+    assert "exact-secret-access-key" not in serialized_account
+    assert "exact-session-token" not in serialized_account
+
+    with pytest.raises(ValidationError, match="AWS region identifier"):
+        repo.update_credential(
+            credential_ref=stored.credential_ref,
+            fields={"region": "not a region!"},
+            display_name=None,
+        )
+
+    session.refresh(row)
+    session.refresh(credential)
+    assert credential.config_json["region"] == "us-east-2"
+    assert json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id)) == {
+        "access_key_id": "AKIAEXPLICIT12345678",
+        "secret_access_key": "exact-secret-access-key",
+        "session_token": "exact-session-token",
+    }
+
+
 def test_thrown_auth_test_failure_is_sanitized_and_persisted(
     session: Session,
     project_id: int,

@@ -25,6 +25,17 @@ describe('ProviderMark', () => {
     expect(wrapper.classes()).toContain('provider-mark--dark')
   })
 
+  it('renders the Amazon S3 mark through the shared provider mapping', () => {
+    const wrapper = mount(ProviderMark, {
+      props: { name: 'Amazon S3', providerKey: 'aws-s3', pluginSlug: 'utils' },
+    })
+
+    expect(wrapper.get('img').attributes('src')).toBe('/images/integrations/s3.png')
+    expect(wrapper.classes()).toContain('provider-mark--logo')
+    expect(wrapper.classes()).not.toContain('provider-mark--wordmark')
+    expect(wrapper.classes()).not.toContain('provider-mark--dark')
+  })
+
   it('renders the official white Linear wordmark on a contrast-safe tile', () => {
     const wrapper = mount(ProviderMark, {
       props: { name: 'Linear', providerKey: 'linear', pluginSlug: 'linear', size: 'xs' },

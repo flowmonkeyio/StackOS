@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-07-25T07:16:35.923Z",
+  "generatedAt": "2026-07-27T02:42:28.953Z",
   "source": "StackOS catalog.list after provider catalog synchronization",
   "counts": {
-    "providers": 55,
+    "providers": 56,
     "plugins": 11,
-    "actions": 678,
+    "actions": 685,
     "trackboothActions": 337
   },
   "plugins": [
@@ -219,11 +219,12 @@
       "name": "Utilities",
       "description": "Reusable research, media generation, data, and productivity tools for any workflow.",
       "color": "#9aa7bd",
-      "providerCount": 17,
-      "actionCount": 41,
+      "providerCount": 18,
+      "actionCount": 48,
       "capabilityCount": 8,
       "providerSlugs": [
         "alibaba-wan",
+        "aws-s3",
         "byteplus-ark",
         "cloudflare",
         "firecrawl",
@@ -243,6 +244,7 @@
       ],
       "providerNames": [
         "Alibaba Wan",
+        "Amazon S3",
         "BytePlus ModelArk",
         "Cloudflare DNS",
         "Firecrawl",
@@ -385,6 +387,120 @@
       "primaryUrl": "https://www.alibabacloud.com/help/en/model-studio/",
       "docsUrl": null,
       "setupNote": "Register for Alibaba Cloud, enable Model Studio/DashScope, create API credentials, confirm billing, and store the key in StackOS."
+    },
+    {
+      "key": "utils.aws-s3",
+      "slug": "aws-s3",
+      "providerKey": "aws-s3",
+      "name": "Amazon S3",
+      "description": "Amazon S3 general-purpose bucket connection for bounded object listing, transfer, marker, delete, and exact-object move operations.",
+      "authType": "aws-access-key",
+      "pluginSlug": "utils",
+      "pluginName": "Utilities",
+      "pluginDescription": "Reusable research, media generation, data, and productivity tools for any workflow.",
+      "color": "#9aa7bd",
+      "logo": {
+        "src": "/images/integrations/s3.png",
+        "kind": "icon"
+      },
+      "actionCount": 7,
+      "capabilities": [
+        "File Transfer"
+      ],
+      "actions": [
+        {
+          "key": "utils.s3.directory.create",
+          "name": "Create Amazon S3 Directory Marker",
+          "description": "Create one zero-byte trailing-slash marker object.",
+          "keywords": "Create one zero-byte trailing-slash marker object.",
+          "capability": "file-transfer",
+          "capabilityName": "File Transfer",
+          "risk": "write"
+        },
+        {
+          "key": "utils.s3.file.delete",
+          "name": "Delete Amazon S3 Object",
+          "description": "Delete one exact current object and retain version/delete-marker facts.",
+          "keywords": "Delete one exact current object and retain version/delete-marker facts.",
+          "capability": "file-transfer",
+          "capabilityName": "File Transfer",
+          "risk": "write"
+        },
+        {
+          "key": "utils.s3.directory.delete",
+          "name": "Delete Amazon S3 Prefix",
+          "description": "Delete an empty marker or a bounded current-object prefix set.",
+          "keywords": "Delete an empty marker or a bounded current-object prefix set.",
+          "capability": "file-transfer",
+          "capabilityName": "File Transfer",
+          "risk": "write"
+        },
+        {
+          "key": "utils.s3.file.download",
+          "name": "Download Objects Or Prefixes From Amazon S3",
+          "description": "Download explicit object or prefix mappings to local destinations.",
+          "keywords": "Download explicit object or prefix mappings to local destinations.",
+          "capability": "file-transfer",
+          "capabilityName": "File Transfer",
+          "risk": "write"
+        },
+        {
+          "key": "utils.s3.directory.list",
+          "name": "List Amazon S3 Prefix",
+          "description": "List one bounded page of objects and common prefixes.",
+          "keywords": "List one bounded page of objects and common prefixes.",
+          "capability": "file-transfer",
+          "capabilityName": "File Transfer",
+          "risk": "read"
+        },
+        {
+          "key": "utils.s3.path.rename",
+          "name": "Move Amazon S3 Object",
+          "description": "Copy then conditionally delete one exact current object.",
+          "keywords": "Copy then conditionally delete one exact current object.",
+          "capability": "file-transfer",
+          "capabilityName": "File Transfer",
+          "risk": "write"
+        },
+        {
+          "key": "utils.s3.file.upload",
+          "name": "Upload Files Or Directories To Amazon S3",
+          "description": "Upload explicit local mappings with conditional conflict handling.",
+          "keywords": "Upload explicit local mappings with conditional conflict handling.",
+          "capability": "file-transfer",
+          "capabilityName": "File Transfer",
+          "risk": "write"
+        }
+      ],
+      "links": [
+        {
+          "key": "homepage_url",
+          "label": "Visit tool",
+          "url": "https://aws.amazon.com/s3/",
+          "confidence": "verified"
+        },
+        {
+          "key": "docs_url",
+          "label": "Documentation",
+          "url": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/Welcome.html",
+          "confidence": "verified"
+        },
+        {
+          "key": "signup_url",
+          "label": "Create account",
+          "url": "https://portal.aws.amazon.com/billing/signup",
+          "confidence": "verified"
+        },
+        {
+          "key": "console_url",
+          "label": "Open console",
+          "url": "https://console.aws.amazon.com/s3/",
+          "confidence": "verified"
+        }
+      ],
+      "primaryUrl": "https://aws.amazon.com/s3/",
+      "docsUrl": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/Welcome.html",
+      "setupNote": "Prefer temporary least-privilege credentials. Store the access key id, secret access key, optional session token, bucket, and region only in StackOS."
     },
     {
       "key": "gtm.apollo",

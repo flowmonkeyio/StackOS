@@ -78,3 +78,20 @@ def test_wheel_no_duplicate_entries(built_wheel: Path) -> None:
     """Hatchling warns about dupes via `force-include`; the wheel must be clean."""
     names = _wheel_names(built_wheel)
     assert len(names) == len(set(names)), "wheel contains duplicate zip entries"
+
+
+def test_wheel_includes_s3_runtime_ui_asset_and_sdk_requirements(
+    built_wheel: Path,
+) -> None:
+    names = _wheel_names(built_wheel)
+
+    assert "stackos/actions/s3.py" in names
+    assert "stackos/integrations/s3.py" in names
+    assert "stackos/plugins/builtin_utils_s3.py" in names
+    assert "stackos/ui_dist/images/integrations/s3.png" in names
+
+    with zipfile.ZipFile(built_wheel) as wheel:
+        metadata_name = next(name for name in names if name.endswith(".dist-info/METADATA"))
+        metadata = wheel.read(metadata_name).decode("utf-8")
+    for dependency in ("boto3", "botocore", "s3transfer"):
+        assert f"Requires-Dist: {dependency}" in metadata

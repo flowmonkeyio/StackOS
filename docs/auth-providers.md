@@ -101,6 +101,11 @@ use the closest official homepage/docs/console URL and mark that field
 deep link.
 
 - API-key providers usually have one secret `api_key` field.
+- Amazon S3 uses the provider-declared `aws-access-key` method. Access key id,
+  secret access key, and optional session token are encrypted; bucket and region
+  are safe Account config. The daemon constructs an explicit SDK session without
+  the ambient AWS credential chain, and `account.test` performs a `HeadBucket`
+  reachability probe. AWS IAM and bucket policy determine access.
 - Slack bot providers expose only secret `bot_token` and `signing_secret`
   setup fields. StackOS discovers safe workspace and bot identity metadata with
   Slack `account.test`; communication identity and trigger policy live in project

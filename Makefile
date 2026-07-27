@@ -17,7 +17,7 @@ endif
         install-agent-assets install-skills-codex install-skills-claude \
         install-plugins desktop-install desktop-dev desktop-payload \
         desktop-dist desktop-doctor \
-        install-launchd doctor test test-ui-unit test-ui-e2e migrate lint \
+        install-launchd doctor test test-transfer-connectors test-ui-unit test-ui-e2e migrate lint \
         format typecheck gen-types clean uninstall backup restore \
         rotate-seed rotate-token
 
@@ -79,7 +79,7 @@ desktop-dist: build-ui ## Build unsigned macOS development artifacts
 desktop-doctor: ## Validate desktop scaffold, updater contracts, and lifecycle smoke tests
 	@if [ -d desktop ]; then cd desktop && pnpm run check; else echo "desktop/ not available in this checkout"; exit 0; fi
 
-signoff: lint typecheck ## Before commit/release: setup docs, actions, MCP/REST/CLI, and UI checks
+signoff: lint typecheck test-transfer-connectors ## Before commit/release: setup docs, actions, MCP/REST/CLI, and UI checks
 	$(UV) run pytest tests/unit \
 		tests/integration/test_routes/test_operations_routes.py \
 		tests/integration/test_routes/test_auth_provider_routes.py \
@@ -108,6 +108,21 @@ signoff: lint typecheck ## Before commit/release: setup docs, actions, MCP/REST/
 		-q
 	$(MAKE) test-ui-unit
 	$(MAKE) build-ui
+
+test-transfer-connectors: ## Verify Amazon S3 and FTP contracts, auth, actions, MCP/audit, and packaging
+	$(UV) run pytest \
+		tests/unit/test_connector_contract_docs.py \
+		tests/unit/test_plugin_manifest.py \
+		tests/unit/test_operation_responses.py \
+		tests/integration/test_integrations/test_s3.py \
+		tests/integration/test_integrations/test_ftp.py \
+		tests/integration/test_repositories/test_s3_actions.py \
+		tests/integration/test_repositories/test_ftp_actions.py \
+		tests/integration/test_repositories/test_auth_providers.py \
+		tests/integration/test_mcp/test_mcp_s3_actions.py \
+		tests/integration/test_mcp/test_mcp_ftp_cloudflare_actions.py \
+		tests/integration/test_install_scripts/test_pipx_wheel_layout.py \
+		-q
 
 migrate: ## Run alembic migrations forward
 	$(UV) run alembic upgrade head

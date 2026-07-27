@@ -41,6 +41,7 @@ from stackos.integrations.openrouter import OpenRouterIntegration
 from stackos.integrations.pipedrive import PipedriveIntegration
 from stackos.integrations.reddit import RedditIntegration
 from stackos.integrations.reve_images import ReveImagesIntegration
+from stackos.integrations.s3 import S3Integration
 from stackos.integrations.salesloft import SalesloftIntegration
 from stackos.integrations.serper import SerperIntegration
 from stackos.integrations.shopify import ShopifyIntegration
@@ -62,6 +63,7 @@ REGISTRY: dict[str, type[BaseIntegration]] = {
     "shopify": ShopifyIntegration,
     "firecrawl": FirecrawlIntegration,
     "ftp": FtpIntegration,
+    "aws-s3": S3Integration,
     "cloudflare": CloudflareIntegration,
     "openai-images": OpenAIImagesIntegration,
     "xai-imagine": XAIImagineIntegration,
@@ -133,6 +135,7 @@ __all__ = [
     "PipedriveIntegration",
     "RedditIntegration",
     "ReveImagesIntegration",
+    "S3Integration",
     "SalesloftIntegration",
     "SerperIntegration",
     "ShopifyIntegration",

@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 import stackos.plugins.manifest as manifest_module
 from stackos.plugins.builtin_utils_ftp import ftp_action_kwargs, ftp_provider_kwargs
+from stackos.plugins.builtin_utils_s3 import s3_action_kwargs, s3_provider_kwargs
 from stackos.plugins.manifest import (
     BUILTIN_PLUGIN_MANIFESTS,
     AuthMethodManifest,
@@ -111,6 +112,103 @@ def test_only_ftp_transfers_are_background_actions() -> None:
         for key, execution_mode in execution_modes.items()
         if key not in {"ftp.file.upload", "ftp.file.download"}
     )
+
+
+def test_s3_fragments_return_fresh_plain_data() -> None:
+    first_provider = s3_provider_kwargs()
+    second_provider = s3_provider_kwargs()
+    first_actions = s3_action_kwargs()
+    second_actions = s3_action_kwargs()
+
+    assert isinstance(first_provider, dict)
+    assert all(isinstance(action, dict) for action in first_actions)
+    assert first_provider is not second_provider
+    assert first_actions is not second_actions
+    assert first_actions[0] is not second_actions[0]
+
+    first_provider["config"]["docs"].append("mutated")
+    first_actions[0]["config"]["docs"].append("mutated")
+
+    assert "mutated" not in second_provider["config"]["docs"]
+    assert "mutated" not in second_actions[0]["config"]["docs"]
+
+
+def test_s3_manifest_contract_is_provider_specific_and_bounded() -> None:
+    provider = ProviderManifest(**s3_provider_kwargs())
+    actions = {action["key"]: action for action in s3_action_kwargs()}
+
+    assert provider.key == "aws-s3"
+    assert provider.auth_type == "aws-access-key"
+    assert [method.key for method in provider.auth_methods] == ["aws-access-key"]
+    fields = {field.key: field for field in provider.auth_methods[0].fields}
+    assert set(fields) == {
+        "access_key_id",
+        "secret_access_key",
+        "session_token",
+        "bucket",
+        "region",
+    }
+    for key in ("access_key_id", "secret_access_key", "session_token"):
+        assert fields[key].type == "secret"
+        assert fields[key].secret is True
+    assert fields["bucket"].type == "text"
+    assert fields["region"].type == "text"
+    assert provider.auth_methods[0].permission_verification is not None
+    assert provider.auth_methods[0].permission_verification.evidence_source == "unavailable"
+    assert provider.auth_methods[0].permission_verification.enforcement == "provider_enforced"
+
+    assert set(actions) == {
+        "s3.directory.list",
+        "s3.file.upload",
+        "s3.file.download",
+        "s3.file.delete",
+        "s3.directory.create",
+        "s3.directory.delete",
+        "s3.path.rename",
+    }
+    assert {
+        key
+        for key, action in actions.items()
+        if action["config"].get("execution_mode") == "background"
+    } == {
+        "s3.file.upload",
+        "s3.file.download",
+        "s3.directory.delete",
+        "s3.path.rename",
+    }
+    for key, action in actions.items():
+        assert action["provider"] == "aws-s3"
+        assert action["config"]["connector"] == "aws-s3"
+        assert action["config"]["operation"] == key.removeprefix("s3.")
+        assert action["config"]["requires_credential"] is True
+        assert action["input_schema"]["additionalProperties"] is False
+        assert "docs/integration-contracts/s3.md" in action["config"]["docs"]
+
+    list_schema = actions["s3.directory.list"]["input_schema"]
+    assert list_schema["properties"]["page_size"]["maximum"] == 1000
+    assert {"prefix", "delimiter", "page_size", "cursor"} <= set(list_schema["properties"])
+    download_item = actions["s3.file.download"]["input_schema"]["properties"]["items"]["items"]
+    assert download_item["required"] == ["remote_key", "remote_kind", "local_path"]
+    assert download_item["properties"]["remote_kind"]["enum"] == ["object", "prefix"]
+    directory_delete_schema = actions["s3.directory.delete"]["input_schema"]
+    assert directory_delete_schema["required"] == ["prefix", "recursive", "max_objects"]
+    assert directory_delete_schema["properties"]["max_objects"]["maximum"] == 10_000
+    rename_schema = actions["s3.path.rename"]["input_schema"]
+    assert rename_schema["required"] == [
+        "source_key",
+        "destination_key",
+        "conflict_policy",
+    ]
+    assert set(rename_schema["properties"]) == {
+        "source_key",
+        "destination_key",
+        "conflict_policy",
+    }
+    assert rename_schema["properties"]["conflict_policy"]["enum"] == [
+        "overwrite",
+        "skip",
+        "fail",
+    ]
 
 
 def test_google_actions_use_interactive_oauth_and_declared_scopes() -> None:
@@ -331,6 +429,12 @@ def test_builtin_plugin_manifests_validate() -> None:
     assert ftp_fields["passive_mode"].type == "select"
     assert ftp_fields["timeout_s"].type == "number"
     assert ftp_fields["password"].type == "secret"
+    s3_fields = {field.key: field for field in utils_providers["aws-s3"].auth_methods[0].fields}
+    assert s3_fields["access_key_id"].type == "secret"
+    assert s3_fields["secret_access_key"].type == "secret"
+    assert s3_fields["session_token"].type == "secret"
+    assert s3_fields["bucket"].type == "text"
+    assert s3_fields["region"].type == "text"
     for plugin_manifest in BUILTIN_PLUGIN_MANIFESTS:
         for provider in plugin_manifest.providers:
             for method in provider.auth_methods:
@@ -391,6 +495,17 @@ def test_builtin_plugin_manifests_validate() -> None:
         "source_path",
         "destination_path",
     ]
+    s3_actions = {key: action for key, action in utils_actions.items() if key.startswith("s3.")}
+    assert set(s3_actions) == {
+        "s3.directory.list",
+        "s3.file.upload",
+        "s3.file.download",
+        "s3.file.delete",
+        "s3.directory.create",
+        "s3.directory.delete",
+        "s3.path.rename",
+    }
+    assert all(action.provider == "aws-s3" for action in s3_actions.values())
     assert utils_actions["reddit.search-subreddit"].config["connector"] == "reddit"
     assert all(action.provider != "openrouter" for action in utils.actions)
     assert {capability.key for capability in utils.capabilities} >= {
@@ -809,7 +924,7 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
         for provider in plugin.providers
     ]
 
-    assert len(providers) == 55
+    assert len(providers) == 56
     google_seo_providers = {
         "google-search-console",
         "google-analytics",
@@ -825,6 +940,8 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
         expected_verified_at = (
             "2026-07-22"
             if plugin_slug == "gtm" and provider.key == "hubspot"
+            else "2026-07-26"
+            if plugin_slug == "utils" and provider.key == "aws-s3"
             else "2026-07-15"
             if plugin_slug == "utils" and provider.key in {"ftp", "cloudflare"}
             else "2026-06-17"

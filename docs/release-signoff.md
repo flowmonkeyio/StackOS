@@ -13,6 +13,9 @@ make signoff
 
 - `make lint`
 - `make typecheck`
+- `make test-transfer-connectors` for Amazon S3 and FTP manifest, auth,
+  integration, action, MCP/grant/audit, response-file, regression, and wheel
+  packaging proof
 - targeted pytest coverage for unit contracts, REST operations, CLI mock
   provider execution, REST/CLI/MCP operation parity, auth setup, Telegram
   setup-to-action flow, Slack signed-ingress/action flow, SMTP/IMAP mocked
@@ -35,6 +38,7 @@ touches committed UI assets.
 | Account/profile resolution | Agents see safe Account refs/status only, never secrets, project profiles bind exact attached Accounts, and `toolProfile.resolve` gives repair guidance. | `uv run pytest tests/integration/test_mcp/test_mcp_communications.py::test_tool_profile_resolve_mcp_resolves_telegram_profile_and_credential tests/integration/test_repositories/test_auth_providers.py -q` |
 | Account, OAuth, and Connection lifecycle | Global named Accounts, explicit multi-project attachments, fixed callback/state/PKCE, migration, renewal, scope gates, and sanitized failures stay aligned. | `uv run pytest tests/integration/test_repositories/test_oauth_lifecycle.py tests/integration/test_routes/test_auth_provider_routes.py tests/integration/test_repositories/test_auth_providers.py tests/integration/test_repositories/test_global_accounts.py tests/integration/test_schema.py::test_global_account_migration_preserves_and_reencrypts_legacy_credentials -q`<br>`pnpm --dir ui exec vitest run src/views/AccountsView.spec.ts src/views/ConnectionsView.accounts.spec.ts` |
 | Direct action execution | `action.describe/validate/run` and direct dry-runs use the same connector/auth/audit path. | `uv run pytest tests/integration/test_mcp/test_mcp_actions.py tests/integration/test_routes/test_cli_mock_provider.py -q` |
+| S3 and FTP transfer connectors | Both providers keep their seven explicit file-management action categories while S3 preserves flat-key, AWS-policy authorization, conditional/versioning, bounded-prefix, and non-atomic move semantics. Direct and granted calls retain response-file and audit evidence without secrets. | `make test-transfer-connectors`<br>`pnpm --dir ui exec vitest run src/components/domain/ProviderMark.spec.ts` |
 | Workflow/run-plan execution | `runPlan.validate/create/start/claimStep/recordStep`, step grants, and non-executable warnings behave predictably. | `uv run pytest tests/unit/test_run_plan_schema.py tests/integration/test_mcp/test_mcp_run_plans.py tests/integration/test_mcp/test_mcp_tool_grants.py -q` |
 | Tracker task/ticket workflow | Bulk create/review/update, dependency previews, compact reads, history, and verification stay agent-friendly. | `uv run pytest tests/integration/test_mcp/test_mcp_tracker.py tests/integration/test_repositories/test_tracker.py tests/unit/test_operation_responses.py tests/unit/test_operations_registry.py -q` |
 | Communication delivery | `communicationTarget.resolve`, `communication.send/reply`, dry-run effects, rich-feature rejection, local chat, and stored context field repair are clear. | `uv run pytest tests/integration/test_mcp/test_mcp_communications.py -q` |
@@ -77,8 +81,18 @@ npm --prefix workers/oauth-callback-relay test
 ```
 
 For provider connector changes, `make signoff` includes the integration wrapper
-tests and provider action execution tests. To isolate that slice while fixing a
-connector, run:
+tests and provider action execution tests. Amazon S3 and FTP share an explicit
+focused gate:
+
+```bash
+make test-transfer-connectors
+```
+
+This gate uses deterministic provider fakes and locked SDK models. It does not
+replace the operator-owned disposable live-AWS smoke required before calling
+the S3 connector production-ready.
+
+To isolate the broader provider slice while fixing another connector, run:
 
 ```bash
 uv run pytest tests/integration/test_integrations -q
