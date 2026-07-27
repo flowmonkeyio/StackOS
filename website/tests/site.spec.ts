@@ -628,7 +628,7 @@ test('integrations open plugin-first with a custom sort and exact brand assets',
     actionCount: 7,
     name: 'Amazon S3',
     logo: { src: '/images/integrations/s3.png' },
-    setupNote: 'Prefer temporary least-privilege credentials. Store the access key id, secret access key, optional session token, bucket, and region only in StackOS.',
+    setupNote: 'Prefer temporary least-privilege credentials. Store the access key id, secret access key, optional session token, bucket, optional path, and region only in StackOS.',
   })
 
   await page.context().addCookies([{

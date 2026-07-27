@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 from botocore.exceptions import BotoCoreError, ClientError
 
@@ -30,6 +30,7 @@ from stackos.actions.connectors import (
 from stackos.actions.provider_utils import credential_config, issue, unknown_operation
 from stackos.integrations.s3 import (
     create_s3_client,
+    normalize_s3_prefix,
     parse_s3_credentials,
     validate_s3_credential_config,
 )
@@ -64,8 +65,157 @@ _PART_SIZE_ALIGNMENT = 1024 * 1024
 class _S3Settings:
     bucket: str
     region: str
+    prefix: str
     payload: bytes = field(repr=False)
     secret_values: tuple[str, ...] = field(repr=False)
+
+
+class _ScopedS3Client:
+    """Enforce one Account bucket/prefix boundary around allowed S3 calls."""
+
+    _ALLOWED_METHODS = frozenset(
+        {
+            "abort_multipart_upload",
+            "complete_multipart_upload",
+            "copy_object",
+            "create_multipart_upload",
+            "delete_object",
+            "delete_objects",
+            "get_object",
+            "head_object",
+            "list_objects_v2",
+            "put_object",
+            "upload_part",
+            "upload_part_copy",
+        }
+    )
+
+    def __init__(self, client: Any, *, bucket: str, prefix: str) -> None:
+        self._client = client
+        self._bucket = bucket
+        self._prefix = normalize_s3_prefix(prefix)
+
+    def __getattr__(self, name: str) -> Any:
+        target = getattr(self._client, name)
+        if not callable(target):
+            return target
+        if name not in self._ALLOWED_METHODS:
+            raise AttributeError(f"Amazon S3 method {name!r} is not allowed by the scoped client")
+
+        def call(**kwargs: Any) -> Any:
+            params = self._translate_request(kwargs)
+            response = target(**params)
+            return self._translate_response(name, response)
+
+        return call
+
+    def _translate_request(self, kwargs: Mapping[str, Any]) -> dict[str, Any]:
+        params = dict(kwargs)
+        if params.get("Bucket") != self._bucket:
+            raise ValidationError("Amazon S3 request must use the Account's bound bucket")
+        if "Key" in params:
+            params["Key"] = self._provider_key(params["Key"])
+        if "Prefix" in params:
+            params["Prefix"] = self._provider_key(params["Prefix"])
+        if "CopySource" in params:
+            source = params["CopySource"]
+            if not isinstance(source, Mapping) or source.get("Bucket") != self._bucket:
+                raise ValidationError("Amazon S3 copy source must use the Account's bound bucket")
+            copied_source = dict(source)
+            copied_source["Key"] = self._provider_key(source.get("Key"))
+            params["CopySource"] = copied_source
+        if "Delete" in params:
+            delete = params["Delete"]
+            if not isinstance(delete, Mapping):
+                raise ValidationError("Amazon S3 delete batch must be an object")
+            objects = delete.get("Objects")
+            if not isinstance(objects, list):
+                raise ValidationError("Amazon S3 delete batch must include object keys")
+            translated_objects: list[dict[str, Any]] = []
+            for item in objects:
+                if not isinstance(item, Mapping):
+                    raise ValidationError("Amazon S3 delete batch object must be an object")
+                translated = dict(item)
+                translated["Key"] = self._provider_key(item.get("Key"))
+                translated_objects.append(translated)
+            translated_delete = dict(delete)
+            translated_delete["Objects"] = translated_objects
+            params["Delete"] = translated_delete
+        return params
+
+    def _translate_response(self, method: str, response: Any) -> Any:
+        if not isinstance(response, Mapping):
+            return response
+        translated = dict(response)
+        if method == "list_objects_v2":
+            url_encoded = response.get("EncodingType") == "url"
+            translated["Contents"] = self._translate_key_entries(
+                response.get("Contents"),
+                field_name="Key",
+                url_encoded=url_encoded,
+            )
+            translated["CommonPrefixes"] = self._translate_key_entries(
+                response.get("CommonPrefixes"),
+                field_name="Prefix",
+                url_encoded=url_encoded,
+            )
+            for field_name in ("Prefix", "StartAfter"):
+                if isinstance(response.get(field_name), str):
+                    translated[field_name] = self._logical_key(
+                        response[field_name],
+                        url_encoded=url_encoded,
+                    )
+        elif method == "delete_objects":
+            translated["Deleted"] = self._translate_key_entries(
+                response.get("Deleted"),
+                field_name="Key",
+                url_encoded=False,
+            )
+            translated["Errors"] = self._translate_key_entries(
+                response.get("Errors"),
+                field_name="Key",
+                url_encoded=False,
+            )
+        return translated
+
+    def _translate_key_entries(
+        self,
+        value: Any,
+        *,
+        field_name: str,
+        url_encoded: bool,
+    ) -> list[Any]:
+        if not isinstance(value, list):
+            return []
+        translated: list[Any] = []
+        for item in value:
+            if not isinstance(item, Mapping) or not isinstance(item.get(field_name), str):
+                translated.append(item)
+                continue
+            entry = dict(item)
+            entry[field_name] = self._logical_key(
+                item[field_name],
+                url_encoded=url_encoded,
+            )
+            translated.append(entry)
+        return translated
+
+    def _provider_key(self, value: Any) -> str:
+        if not isinstance(value, str):
+            raise ValidationError("Amazon S3 key or prefix must be a string")
+        provider_key = f"{self._prefix}{value}"
+        if len(provider_key.encode("utf-8")) > 1024:
+            raise ValidationError(
+                "Amazon S3 configured prefix plus key must be at most 1024 UTF-8 bytes"
+            )
+        return provider_key
+
+    def _logical_key(self, value: str, *, url_encoded: bool) -> str:
+        decoded = _decode_listing_text(value, url_encoded=url_encoded)
+        if self._prefix and not decoded.startswith(self._prefix):
+            raise ValidationError("Amazon S3 returned an object outside the configured prefix")
+        logical = decoded[len(self._prefix) :] if self._prefix else decoded
+        return quote(logical, safe="/") if url_encoded else logical
 
 
 @dataclass
@@ -2519,6 +2669,7 @@ def _settings(request: ActionConnectorRequest) -> _S3Settings:
     return _S3Settings(
         bucket=str(config["bucket"]).strip(),
         region=str(config["region"]).strip(),
+        prefix=normalize_s3_prefix(config.get("prefix")),
         payload=request.credential.secret_payload,
         secret_values=tuple(
             value
@@ -2547,18 +2698,26 @@ def _multipart_part_size(size: int, *, minimum: int) -> int:
 
 
 def _read_client(settings: _S3Settings) -> Any:
-    return create_s3_client(
-        payload=settings.payload,
-        region=settings.region,
-        total_max_attempts=3,
+    return _ScopedS3Client(
+        create_s3_client(
+            payload=settings.payload,
+            region=settings.region,
+            total_max_attempts=3,
+        ),
+        bucket=settings.bucket,
+        prefix=settings.prefix,
     )
 
 
 def _mutation_client(settings: _S3Settings) -> Any:
-    return create_s3_client(
-        payload=settings.payload,
-        region=settings.region,
-        total_max_attempts=1,
+    return _ScopedS3Client(
+        create_s3_client(
+            payload=settings.payload,
+            region=settings.region,
+            total_max_attempts=1,
+        ),
+        bucket=settings.bucket,
+        prefix=settings.prefix,
     )
 
 

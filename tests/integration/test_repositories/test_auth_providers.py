@@ -415,6 +415,7 @@ def test_s3_account_keeps_all_aws_keys_secret_and_preserves_them_on_safe_edit(
             "secret_access_key": "exact-secret-access-key",
             "session_token": "exact-session-token",
             "bucket": "stackos-production",
+            "prefix": " data ",
             "region": "us-west-2",
         },
     ).data
@@ -422,6 +423,7 @@ def test_s3_account_keeps_all_aws_keys_secret_and_preserves_them_on_safe_edit(
     edit = repo.get_credential_edit_state(credential_ref=stored.credential_ref)
     assert edit.values == {
         "bucket": "stackos-production",
+        "prefix": "data/",
         "region": "us-west-2",
     }
     assert edit.secret_present == {
@@ -432,7 +434,7 @@ def test_s3_account_keeps_all_aws_keys_secret_and_preserves_them_on_safe_edit(
 
     repo.update_credential(
         credential_ref=stored.credential_ref,
-        fields={"region": "us-east-2"},
+        fields={"prefix": "data/solar", "region": "us-east-2"},
         display_name=None,
     )
     row = _integration_for_account(session, stored.credential_ref)
@@ -446,26 +448,73 @@ def test_s3_account_keeps_all_aws_keys_secret_and_preserves_them_on_safe_edit(
         select(Credential).where(Credential.credential_ref == stored.credential_ref)
     ).one()
     assert credential.config_json["region"] == "us-east-2"
+    assert credential.config_json["prefix"] == "data/solar/"
     serialized_account = json.dumps(stored.model_dump(mode="json"))
     assert "AKIAEXPLICIT12345678" not in serialized_account
     assert "exact-secret-access-key" not in serialized_account
     assert "exact-session-token" not in serialized_account
 
-    with pytest.raises(ValidationError, match="AWS region identifier"):
+    with pytest.raises(ValidationError, match=r"unknown selection|supported AWS"):
         repo.update_credential(
             credential_ref=stored.credential_ref,
-            fields={"region": "not a region!"},
+            fields={"region": "moon-west-1"},
+            display_name=None,
+        )
+    with pytest.raises(ValidationError, match="relative path"):
+        repo.update_credential(
+            credential_ref=stored.credential_ref,
+            fields={"prefix": "../outside"},
             display_name=None,
         )
 
     session.refresh(row)
     session.refresh(credential)
     assert credential.config_json["region"] == "us-east-2"
+    assert credential.config_json["prefix"] == "data/solar/"
     assert json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id)) == {
         "access_key_id": "AKIAEXPLICIT12345678",
         "secret_access_key": "exact-secret-access-key",
         "session_token": "exact-session-token",
     }
+
+
+def test_s3_account_upgrade_preserves_preexisting_noncommercial_region(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = AuthRepository(session)
+    stored = repo.store_credential(
+        attach_project_id=project_id,
+        provider_key="aws-s3",
+        auth_method_key="aws-access-key",
+        display_name="Existing GovCloud S3",
+        fields={
+            "access_key_id": "AKIAGOVEXPLICIT12345",
+            "secret_access_key": "exact-gov-secret",
+            "bucket": "stackos-gov-existing",
+            "prefix": "archive/",
+            "region": "us-west-2",
+        },
+    ).data
+    credential = _credential_for_account(session, stored.credential_ref)
+    credential.config_json = {
+        **credential.config_json,
+        "region": "us-gov-west-1",
+    }
+    session.add(credential)
+    session.commit()
+
+    edit = repo.get_credential_edit_state(credential_ref=stored.credential_ref)
+    assert edit.values["region"] == "us-gov-west-1"
+    repo.update_credential(
+        credential_ref=stored.credential_ref,
+        fields={"prefix": "archive/2026"},
+        display_name=None,
+    )
+
+    session.refresh(credential)
+    assert credential.config_json["region"] == "us-gov-west-1"
+    assert credential.config_json["prefix"] == "archive/2026/"
 
 
 def test_thrown_auth_test_failure_is_sanitized_and_persisted(

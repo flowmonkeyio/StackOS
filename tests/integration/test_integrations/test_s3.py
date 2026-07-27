@@ -11,13 +11,19 @@ import pytest
 from botocore.exceptions import ClientError
 from botocore.session import get_session
 
-from stackos.integrations.s3 import S3Integration, validate_s3_credential_config
+from stackos.integrations.s3 import (
+    AWS_S3_REGIONS,
+    S3Integration,
+    normalize_s3_prefix,
+    validate_s3_credential_config,
+)
 from stackos.mcp.errors import IntegrationDownError
 
 
 class _S3Client:
     response: ClassVar[dict[str, Any]] = {
-        "BucketRegion": "us-west-2",
+        "KeyCount": 0,
+        "IsTruncated": False,
         "ResponseMetadata": {
             "HTTPStatusCode": 200,
             "RequestId": "request-123",
@@ -28,7 +34,7 @@ class _S3Client:
     error: ClassVar[ClientError | None] = None
     calls: ClassVar[list[dict[str, Any]]] = []
 
-    def head_bucket(self, **kwargs: Any) -> dict[str, Any]:
+    def list_objects_v2(self, **kwargs: Any) -> dict[str, Any]:
         self.__class__.calls.append(kwargs)
         if self.__class__.error is not None:
             raise self.__class__.error
@@ -65,7 +71,14 @@ def _payload() -> bytes:
 
 
 def test_locked_botocore_s3_model_has_required_conditional_members() -> None:
-    service = get_session().get_service_model("s3")
+    session = get_session()
+    service = session.get_service_model("s3")
+    endpoint_regions = tuple(
+        region
+        for partition in session.get_available_partitions()
+        for region in session.get_available_regions("s3", partition_name=partition)
+    )
+    assert endpoint_regions == AWS_S3_REGIONS
     expected_members = {
         "ListObjectsV2": {
             "ContinuationToken",
@@ -100,7 +113,7 @@ def test_locked_botocore_s3_model_has_required_conditional_members() -> None:
     assert {"Key", "ETag"} <= set(object_identifier.members)
 
 
-def test_s3_config_rejects_non_general_bucket_and_invalid_region() -> None:
+def test_s3_config_rejects_invalid_bucket_region_and_prefix() -> None:
     with pytest.raises(ValueError, match="general-purpose"):
         validate_s3_credential_config(
             {
@@ -108,22 +121,107 @@ def test_s3_config_rejects_non_general_bucket_and_invalid_region() -> None:
                 "region": "us-west-2",
             }
         )
-    with pytest.raises(ValueError, match="region"):
+    with pytest.raises(ValueError, match="supported AWS"):
         validate_s3_credential_config(
             {
                 "bucket": "valid-bucket",
-                "region": "not a region!",
+                "region": "moon-west-1",
             }
         )
+    for prefix in (
+        "/data",
+        "s3://valid-bucket/data/",
+        r"data\private",
+        "data//private",
+        "data/./private",
+        "data/../private",
+        "data/\nprivate",
+    ):
+        with pytest.raises(ValueError, match="prefix"):
+            validate_s3_credential_config(
+                {
+                    "bucket": "valid-bucket",
+                    "region": "us-west-2",
+                    "prefix": prefix,
+                }
+            )
     validate_s3_credential_config(
         {
             "bucket": "valid-bucket",
             "region": "us-west-2",
+            "prefix": "data",
         }
     )
+    assert normalize_s3_prefix(" data ") == "data/"
+    assert normalize_s3_prefix("") == ""
+    assert "us-east-1" in AWS_S3_REGIONS
+    assert "cn-north-1" in AWS_S3_REGIONS
+    assert "us-gov-west-1" in AWS_S3_REGIONS
+    assert "eusc-de-east-1" in AWS_S3_REGIONS
 
 
-def test_s3_auth_probe_uses_only_explicit_credentials_without_owner_condition(
+def test_s3_auth_probe_lists_configured_prefix_with_only_explicit_credentials(
+    project_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import stackos.integrations.s3 as s3_module
+
+    _reset_fakes()
+    monkeypatch.setattr(s3_module.boto3.session, "Session", _Session)
+
+    async def go() -> dict[str, Any]:
+        async with httpx.AsyncClient() as client:
+            integration = S3Integration(
+                payload=_payload(),
+                project_id=project_id,
+                http=client,
+                bucket="stackos-fixture",
+                region="us-west-2",
+                prefix="data",
+            )
+            return await integration.test_credentials()
+
+    result = asyncio.run(go())
+
+    assert _Session.init_calls == [
+        {
+            "aws_access_key_id": "AKIAEXPLICIT12345678",
+            "aws_secret_access_key": "explicit-secret",
+            "aws_session_token": "temporary-session-token",
+            "region_name": "us-west-2",
+        }
+    ]
+    assert _Session.client_calls[0]["service_name"] == "s3"
+    assert _Session.client_calls[0]["region_name"] == "us-west-2"
+    assert _Session.client_calls[0]["config"].retries == {
+        "mode": "standard",
+        "total_max_attempts": 3,
+    }
+    assert _S3Client.calls == [
+        {
+            "Bucket": "stackos-fixture",
+            "Prefix": "data/",
+            "MaxKeys": 1,
+        }
+    ]
+    assert result == {
+        "ok": True,
+        "vendor": "aws-s3",
+        "status": "ok",
+        "bucket": "stackos-fixture",
+        "prefix": "data/",
+        "region": "us-west-2",
+        "actual_region": "us-west-2",
+        "request_id": "request-123",
+        "extended_request_id": "extended-456",
+    }
+    serialized = json.dumps(result)
+    assert "AKIAEXPLICIT12345678" not in serialized
+    assert "explicit-secret" not in serialized
+    assert "temporary-session-token" not in serialized
+
+
+def test_s3_auth_probe_keeps_legacy_bucket_root_as_empty_prefix(
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -145,35 +243,14 @@ def test_s3_auth_probe_uses_only_explicit_credentials_without_owner_condition(
 
     result = asyncio.run(go())
 
-    assert _Session.init_calls == [
+    assert _S3Client.calls == [
         {
-            "aws_access_key_id": "AKIAEXPLICIT12345678",
-            "aws_secret_access_key": "explicit-secret",
-            "aws_session_token": "temporary-session-token",
-            "region_name": "us-west-2",
+            "Bucket": "stackos-fixture",
+            "Prefix": "",
+            "MaxKeys": 1,
         }
     ]
-    assert _Session.client_calls[0]["service_name"] == "s3"
-    assert _Session.client_calls[0]["region_name"] == "us-west-2"
-    assert _Session.client_calls[0]["config"].retries == {
-        "mode": "standard",
-        "total_max_attempts": 3,
-    }
-    assert _S3Client.calls == [{"Bucket": "stackos-fixture"}]
-    assert result == {
-        "ok": True,
-        "vendor": "aws-s3",
-        "status": "ok",
-        "bucket": "stackos-fixture",
-        "region": "us-west-2",
-        "actual_region": "us-west-2",
-        "request_id": "request-123",
-        "extended_request_id": "extended-456",
-    }
-    serialized = json.dumps(result)
-    assert "AKIAEXPLICIT12345678" not in serialized
-    assert "explicit-secret" not in serialized
-    assert "temporary-session-token" not in serialized
+    assert result["prefix"] == ""
 
 
 @pytest.mark.parametrize(
@@ -212,7 +289,7 @@ def test_s3_auth_probe_returns_sanitized_provider_guidance(
                 "HTTPHeaders": {"x-amz-bucket-region": "eu-west-1"},
             },
         },
-        "HeadBucket",
+        "ListObjectsV2",
     )
 
     async def go() -> None:
@@ -223,9 +300,11 @@ def test_s3_auth_probe_returns_sanitized_provider_guidance(
                 http=client,
                 bucket="stackos-fixture",
                 region="us-west-2",
+                prefix="data/",
             )
             with pytest.raises(IntegrationDownError) as excinfo:
                 await integration.test_credentials()
+            assert excinfo.value.data["stage"] == "list_objects_v2"
             assert excinfo.value.data["reason_code"] == reason_code
             assert excinfo.value.data["aws_error_code"] == code
             assert excinfo.value.data["request_id"] == "request-error"

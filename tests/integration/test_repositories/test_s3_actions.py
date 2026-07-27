@@ -17,7 +17,7 @@ from stackos.actions.connectors import (
     ActionConnectorError,
     ActionConnectorRequest,
 )
-from stackos.actions.s3 import S3ActionConnector, _multipart_part_size
+from stackos.actions.s3 import S3ActionConnector, _multipart_part_size, _ScopedS3Client
 from stackos.auth_providers import AuthRepository
 from stackos.repositories.base import ValidationError
 
@@ -300,7 +300,17 @@ def _request(
     operation: str,
     input_json: dict[str, Any],
     progress_callback: Any = None,
+    prefix: str | None = None,
 ) -> ActionConnectorRequest:
+    fields = {
+        "access_key_id": "AKIAEXPLICIT12345678",
+        "secret_access_key": "s3-secret",
+        "session_token": "s3-session-token",
+        "bucket": "stackos-fixture",
+        "region": "us-west-2",
+    }
+    if prefix is not None:
+        fields["prefix"] = prefix
     stored = (
         AuthRepository(session)
         .store_credential(
@@ -308,13 +318,7 @@ def _request(
             provider_key="aws-s3",
             auth_method_key="aws-access-key",
             display_name=f"S3 {operation} {id(input_json)}",
-            fields={
-                "access_key_id": "AKIAEXPLICIT12345678",
-                "secret_access_key": "s3-secret",
-                "session_token": "s3-session-token",
-                "bucket": "stackos-fixture",
-                "region": "us-west-2",
-            },
+            fields=fields,
         )
         .data
     )
@@ -354,6 +358,203 @@ def _patch_client(
 
     monkeypatch.setattr(s3_module, "create_s3_client", factory)
     return factory_calls
+
+
+def test_s3_scoped_client_translates_url_encoded_list_results_to_logical_paths() -> None:
+    client = _FakeS3()
+    client.list_responses = [
+        _list_response(
+            contents=[
+                {
+                    "Key": "data%20sets/reports/file%20one.csv",
+                    "ETag": '"etag-one"',
+                    "Size": 12,
+                }
+            ],
+            common_prefixes=["data%20sets/reports/archive%20old/"],
+        )
+    ]
+    scoped = _ScopedS3Client(
+        client,
+        bucket="stackos-fixture",
+        prefix="data sets/",
+    )
+
+    response = scoped.list_objects_v2(
+        Bucket="stackos-fixture",
+        Prefix="reports/",
+        EncodingType="url",
+        MaxKeys=100,
+    )
+
+    assert client.calls == [
+        (
+            "list_objects_v2",
+            {
+                "Bucket": "stackos-fixture",
+                "Prefix": "data sets/reports/",
+                "EncodingType": "url",
+                "MaxKeys": 100,
+            },
+        )
+    ]
+    assert response["Contents"][0]["Key"] == "reports/file%20one.csv"
+    assert response["CommonPrefixes"][0]["Prefix"] == "reports/archive%20old/"
+
+
+def test_s3_scoped_client_fails_closed_on_result_outside_configured_prefix() -> None:
+    client = _FakeS3()
+    client.list_responses = [
+        _list_response(
+            contents=[
+                {
+                    "Key": "private/report.csv",
+                    "ETag": '"etag-outside"',
+                    "Size": 12,
+                }
+            ],
+        )
+    ]
+    scoped = _ScopedS3Client(
+        client,
+        bucket="stackos-fixture",
+        prefix="data/",
+    )
+
+    with pytest.raises(ValidationError, match="outside the configured prefix"):
+        scoped.list_objects_v2(
+            Bucket="stackos-fixture",
+            Prefix="reports/",
+            EncodingType="url",
+            MaxKeys=100,
+        )
+
+
+def test_s3_scoped_client_bounds_every_allowed_object_request_shape() -> None:
+    client = _FakeS3()
+    client.objects["data/incoming.csv"] = b"content"
+    scoped = _ScopedS3Client(
+        client,
+        bucket="stackos-fixture",
+        prefix="data/",
+    )
+
+    scoped.get_object(Bucket="stackos-fixture", Key="incoming.csv")
+    scoped.head_object(Bucket="stackos-fixture", Key="incoming.csv")
+    scoped.put_object(Bucket="stackos-fixture", Key="outgoing.csv", Body=b"content")
+    scoped.delete_object(Bucket="stackos-fixture", Key="outgoing.csv")
+    deleted = scoped.delete_objects(
+        Bucket="stackos-fixture",
+        Delete={"Objects": [{"Key": "archive/outgoing.csv", "ETag": '"etag"'}]},
+    )
+    scoped.copy_object(
+        Bucket="stackos-fixture",
+        Key="archive/moved.csv",
+        CopySource={"Bucket": "stackos-fixture", "Key": "incoming.csv"},
+    )
+    scoped.create_multipart_upload(Bucket="stackos-fixture", Key="large.bin")
+    scoped.upload_part(
+        Bucket="stackos-fixture",
+        Key="large.bin",
+        UploadId="upload-123",
+        PartNumber=1,
+        Body=b"part",
+    )
+    scoped.upload_part_copy(
+        Bucket="stackos-fixture",
+        Key="archive/large.bin",
+        UploadId="upload-123",
+        PartNumber=1,
+        CopySource={"Bucket": "stackos-fixture", "Key": "large.bin"},
+        CopySourceRange="bytes=0-3",
+    )
+    scoped.complete_multipart_upload(
+        Bucket="stackos-fixture",
+        Key="large.bin",
+        UploadId="upload-123",
+        MultipartUpload={"Parts": [{"PartNumber": 1, "ETag": '"part-1"'}]},
+    )
+    scoped.abort_multipart_upload(
+        Bucket="stackos-fixture",
+        Key="large.bin",
+        UploadId="upload-123",
+    )
+
+    calls = {operation: params for operation, params in client.calls}
+    assert calls["get_object"]["Key"] == "data/incoming.csv"
+    assert calls["head_object"]["Key"] == "data/incoming.csv"
+    assert calls["put_object"]["Key"] == "data/outgoing.csv"
+    assert calls["delete_object"]["Key"] == "data/outgoing.csv"
+    assert calls["delete_objects"]["Delete"]["Objects"] == [
+        {"Key": "data/archive/outgoing.csv", "ETag": '"etag"'}
+    ]
+    assert deleted["Deleted"][0]["Key"] == "archive/outgoing.csv"
+    assert calls["copy_object"]["Key"] == "data/archive/moved.csv"
+    assert calls["copy_object"]["CopySource"] == {
+        "Bucket": "stackos-fixture",
+        "Key": "data/incoming.csv",
+    }
+    assert calls["create_multipart_upload"]["Key"] == "data/large.bin"
+    assert calls["upload_part"]["Key"] == "data/large.bin"
+    assert calls["upload_part_copy"]["Key"] == "data/archive/large.bin"
+    assert calls["upload_part_copy"]["CopySource"]["Key"] == "data/large.bin"
+    assert calls["complete_multipart_upload"]["Key"] == "data/large.bin"
+    assert calls["abort_multipart_upload"]["Key"] == "data/large.bin"
+
+    with pytest.raises(ValidationError, match="bound bucket"):
+        scoped.copy_object(
+            Bucket="stackos-fixture",
+            Key="archive/blocked.csv",
+            CopySource={"Bucket": "other-bucket", "Key": "incoming.csv"},
+        )
+    with pytest.raises(ValidationError, match="1024 UTF-8 bytes"):
+        scoped.put_object(
+            Bucket="stackos-fixture",
+            Key="x" * 1021,
+            Body=b"too long",
+        )
+
+
+def test_s3_connector_uses_account_prefix_as_logical_listing_root(
+    session: Session,
+    project_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _FakeS3()
+    client.list_responses = [
+        _list_response(
+            contents=[
+                {
+                    "Key": "data/reports/solar.csv",
+                    "ETag": '"solar-etag"',
+                    "Size": 42,
+                }
+            ],
+        )
+    ]
+    _patch_client(monkeypatch, client)
+    request = _request(
+        session,
+        project_id,
+        operation="directory.list",
+        input_json={"prefix": "reports/", "delimiter": "/", "page_size": 100},
+        prefix="data",
+    )
+
+    result = asyncio.run(S3ActionConnector().execute(request))
+
+    assert client.calls[0] == (
+        "list_objects_v2",
+        {
+            "Bucket": "stackos-fixture",
+            "Prefix": "data/reports/",
+            "MaxKeys": 100,
+            "EncodingType": "url",
+            "Delimiter": "/",
+        },
+    )
+    assert result.output_json["prefix"] == "reports/"
+    assert result.output_json["objects"][0]["key"] == "reports/solar.csv"
 
 
 def test_s3_connector_validation_is_provider_specific() -> None:

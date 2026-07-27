@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 2.1.17 - 2026-07-26
+
+- Added an optional validated Amazon S3 path that scopes Account testing and
+  every connector action to one logical object-key root while preserving
+  bucket-root compatibility for existing Accounts.
+- Replaced the bucket-level `HeadBucket` Account test with a one-object
+  `ListObjectsV2` probe at the configured path so prefix-scoped read-only
+  authorization can be verified without unrelated bucket-level permission.
+- Replaced free-text S3 region entry with a provider-owned dropdown of the
+  bundled AWS SDK's supported S3 regions across AWS partitions, added
+  server-side option validation, and preserved existing non-commercial-region
+  Accounts through upgrade.
+
 ## 2.1.16 - 2026-07-26
 
 - Added an Amazon S3 connector for one general-purpose bucket with the same

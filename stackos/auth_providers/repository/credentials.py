@@ -93,9 +93,14 @@ class CredentialStorageMixin:
             except ValueError as exc:
                 raise ValidationError(str(exc), data={"provider_key": "ftp"}) from exc
         elif provider.key == "aws-s3":
-            from stackos.integrations.s3 import validate_s3_credential_config
+            from stackos.integrations.s3 import (
+                normalize_s3_prefix,
+                validate_s3_credential_config,
+            )
 
             try:
+                if "prefix" in safe_config:
+                    safe_config["prefix"] = normalize_s3_prefix(safe_config["prefix"])
                 validate_s3_credential_config(safe_config)
             except ValueError as exc:
                 raise ValidationError(
@@ -262,9 +267,14 @@ class CredentialStorageMixin:
             except ValueError as exc:
                 raise ValidationError(str(exc), data={"provider_key": "ftp"}) from exc
         elif provider.key == "aws-s3":
-            from stackos.integrations.s3 import validate_s3_credential_config
+            from stackos.integrations.s3 import (
+                normalize_s3_prefix,
+                validate_s3_credential_config,
+            )
 
             try:
+                if "prefix" in safe_config:
+                    safe_config["prefix"] = normalize_s3_prefix(safe_config["prefix"])
                 validate_s3_credential_config(safe_config)
             except ValueError as exc:
                 raise ValidationError(
@@ -705,6 +715,35 @@ class CredentialStorageMixin:
         return raw
 
     def _safe_field_value(self, *, field: AuthFieldOut, raw: Any) -> Any:
+        if field.type == "select":
+            if isinstance(raw, bool):
+                value = "true" if raw else "false"
+                normalized: Any = raw
+            elif isinstance(raw, str):
+                value = raw.strip()
+                normalized = value
+            elif isinstance(raw, int | float):
+                value = str(raw)
+                normalized = raw
+            else:
+                value = ""
+                normalized = raw
+            if not value:
+                raise ValidationError(
+                    f"credential field {field.key} must be one declared selection",
+                    data={"field": field.key},
+                )
+            allowed = {
+                str(option.get("value") or "").strip()
+                for option in field.options or []
+                if str(option.get("value") or "").strip()
+            }
+            if allowed and value not in allowed:
+                raise ValidationError(
+                    f"credential field {field.key} includes an unknown selection",
+                    data={"field": field.key, "unknown": [value]},
+                )
+            return normalized
         if field.type in {"multi-select", "multiselect"}:
             if isinstance(raw, str):
                 values = [item.strip() for item in raw.split(",") if item.strip()]

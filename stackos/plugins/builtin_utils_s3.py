@@ -5,6 +5,8 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from stackos.s3_contract import AWS_S3_REGIONS
+
 _S3_CONFLICT_POLICY = {
     "type": "string",
     "enum": ["overwrite", "skip", "fail"],
@@ -259,8 +261,8 @@ _S3_PROVIDER_KWARGS: dict[str, Any] = {
     "key": "aws-s3",
     "name": "Amazon S3",
     "description": (
-        "Amazon S3 general-purpose bucket connection for bounded object listing, "
-        "transfer, marker, delete, and exact-object move operations."
+        "Amazon S3 general-purpose bucket and optional path connection for bounded "
+        "object listing, transfer, marker, delete, and exact-object move operations."
     ),
     "auth_type": "aws-access-key",
     "auth_methods": [
@@ -306,11 +308,27 @@ _S3_PROVIDER_KWARGS: dict[str, Any] = {
                     "description": "One Amazon S3 general-purpose bucket.",
                 },
                 {
+                    "key": "prefix",
+                    "label": "Path",
+                    "type": "path",
+                    "required": False,
+                    "placeholder": "data/",
+                    "description": (
+                        "Optional relative object-key path used as this Account's root. "
+                        "Leave blank for the bucket root."
+                    ),
+                },
+                {
                     "key": "region",
                     "label": "AWS region",
-                    "type": "text",
+                    "type": "select",
                     "required": True,
                     "placeholder": "us-west-2",
+                    "options": [{"value": region, "label": region} for region in AWS_S3_REGIONS],
+                    "description": (
+                        "Amazon S3 region supported by the bundled AWS SDK endpoint model, "
+                        "including commercial, China, GovCloud, and isolated partitions."
+                    ),
                 },
             ],
         }
@@ -318,14 +336,14 @@ _S3_PROVIDER_KWARGS: dict[str, Any] = {
     "config": {
         "setup_note": (
             "Bind one Amazon S3 general-purpose bucket using explicit access-key "
-            "credentials and its AWS region."
+            "credentials, its AWS region, and an optional relative object-key path."
         ),
         "setup": {
             "credential_label": "AWS access key and one S3 bucket",
             "setup_note": (
                 "Prefer temporary least-privilege credentials. Store the access key "
-                "id, secret access key, optional session token, bucket, and region "
-                "only in StackOS."
+                "id, secret access key, optional session token, bucket, optional path, "
+                "and region only in StackOS."
             ),
             "homepage_url": "https://aws.amazon.com/s3/",
             "signup_url": "https://portal.aws.amazon.com/billing/signup",
@@ -352,7 +370,7 @@ _S3_PROVIDER_KWARGS: dict[str, Any] = {
         "docs": [
             "docs/integration-contracts/s3.md",
             "https://docs.aws.amazon.com/AmazonS3/latest/userguide/security-iam.html",
-            "https://docs.aws.amazon.com/AmazonS3/latest/API/API_HeadBucket.html",
+            "https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html",
         ],
     },
 }

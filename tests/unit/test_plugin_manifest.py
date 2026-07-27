@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 import stackos.plugins.manifest as manifest_module
+from stackos.integrations.s3 import AWS_S3_REGIONS
 from stackos.plugins.builtin_utils_ftp import ftp_action_kwargs, ftp_provider_kwargs
 from stackos.plugins.builtin_utils_s3 import s3_action_kwargs, s3_provider_kwargs
 from stackos.plugins.manifest import (
@@ -146,13 +147,19 @@ def test_s3_manifest_contract_is_provider_specific_and_bounded() -> None:
         "secret_access_key",
         "session_token",
         "bucket",
+        "prefix",
         "region",
     }
     for key in ("access_key_id", "secret_access_key", "session_token"):
         assert fields[key].type == "secret"
         assert fields[key].secret is True
     assert fields["bucket"].type == "text"
-    assert fields["region"].type == "text"
+    assert fields["prefix"].type == "path"
+    assert fields["prefix"].required is False
+    assert fields["region"].type == "select"
+    assert fields["region"].options == [
+        {"value": region, "label": region} for region in AWS_S3_REGIONS
+    ]
     assert provider.auth_methods[0].permission_verification is not None
     assert provider.auth_methods[0].permission_verification.evidence_source == "unavailable"
     assert provider.auth_methods[0].permission_verification.enforcement == "provider_enforced"
@@ -434,7 +441,11 @@ def test_builtin_plugin_manifests_validate() -> None:
     assert s3_fields["secret_access_key"].type == "secret"
     assert s3_fields["session_token"].type == "secret"
     assert s3_fields["bucket"].type == "text"
-    assert s3_fields["region"].type == "text"
+    assert s3_fields["prefix"].type == "path"
+    assert s3_fields["region"].type == "select"
+    assert s3_fields["region"].options == [
+        {"value": region, "label": region} for region in AWS_S3_REGIONS
+    ]
     for plugin_manifest in BUILTIN_PLUGIN_MANIFESTS:
         for provider in plugin_manifest.providers:
             for method in provider.auth_methods:

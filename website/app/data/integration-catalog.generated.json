@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-27T02:42:28.953Z",
+  "generatedAt": "2026-07-27T06:03:02.013Z",
   "source": "StackOS catalog.list after provider catalog synchronization",
   "counts": {
     "providers": 56,
@@ -393,7 +393,7 @@
       "slug": "aws-s3",
       "providerKey": "aws-s3",
       "name": "Amazon S3",
-      "description": "Amazon S3 general-purpose bucket connection for bounded object listing, transfer, marker, delete, and exact-object move operations.",
+      "description": "Amazon S3 general-purpose bucket and optional path connection for bounded object listing, transfer, marker, delete, and exact-object move operations.",
       "authType": "aws-access-key",
       "pluginSlug": "utils",
       "pluginName": "Utilities",
@@ -500,7 +500,7 @@
       ],
       "primaryUrl": "https://aws.amazon.com/s3/",
       "docsUrl": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/Welcome.html",
-      "setupNote": "Prefer temporary least-privilege credentials. Store the access key id, secret access key, optional session token, bucket, and region only in StackOS."
+      "setupNote": "Prefer temporary least-privilege credentials. Store the access key id, secret access key, optional session token, bucket, optional path, and region only in StackOS."
     },
     {
       "key": "gtm.apollo",

@@ -376,6 +376,7 @@ class CredentialTestingMixin:
                 {
                     "bucket": str(config["bucket"]),
                     "region": str(config["region"]),
+                    "prefix": str(config.get("prefix") or ""),
                 }
             )
         elif credential.provider_key in {"smtp", "imap"}:

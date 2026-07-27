@@ -21,9 +21,9 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from stackos.integrations._base import BaseIntegration
 from stackos.mcp.errors import IntegrationDownError
+from stackos.s3_contract import AWS_S3_REGIONS, normalize_s3_prefix
 
 _BUCKET_RE = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
-_REGION_RE = re.compile(r"^[a-z]{2,8}(?:-[a-z0-9]+)+-\d+$")
 _RESERVED_BUCKET_PREFIXES = ("xn--", "sthree-", "amzn-s3-demo-")
 _RESERVED_BUCKET_SUFFIXES = (
     "-s3alias",
@@ -68,8 +68,12 @@ def validate_s3_credential_config(config: Mapping[str, Any]) -> None:
     if not isinstance(region_value, str) or not region_value.strip():
         raise ValueError("Amazon S3 region is required")
     region = region_value.strip()
-    if not _REGION_RE.fullmatch(region):
-        raise ValueError("Amazon S3 region must be an AWS region identifier")
+    if region not in AWS_S3_REGIONS:
+        raise ValueError(
+            "Amazon S3 region must be a supported AWS S3 region in the bundled endpoint model"
+        )
+
+    normalize_s3_prefix(config.get("prefix"))
 
 
 def parse_s3_credentials(payload: bytes) -> S3CredentialMaterial:
@@ -202,6 +206,7 @@ def _client_error_data(
     *,
     bucket: str,
     region: str,
+    prefix: str,
 ) -> tuple[str, dict[str, Any]]:
     response = exc.response if isinstance(exc.response, Mapping) else {}
     error = response.get("Error")
@@ -239,8 +244,10 @@ def _client_error_data(
         next_action = "Replace the Account credentials and test again."
     elif code in {"AccessDenied", "Forbidden", "403"} or status == 403:
         reason_code = "access_denied"
-        detail = "Amazon S3 denied bucket access"
-        next_action = "Grant the credential access in AWS IAM or the bucket policy."
+        detail = "Amazon S3 denied listing the configured prefix"
+        next_action = (
+            "Grant s3:ListBucket for the configured prefix in AWS IAM or the bucket policy."
+        )
     else:
         reason_code = "provider_error"
         detail = "Amazon S3 credential test failed"
@@ -248,7 +255,7 @@ def _client_error_data(
 
     return detail, {
         "vendor": "aws-s3",
-        "stage": "head_bucket",
+        "stage": "list_objects_v2",
         "reason_code": reason_code,
         "aws_error_code": code[:160],
         "http_status": status,
@@ -257,6 +264,7 @@ def _client_error_data(
         "configured_region": region,
         "actual_region": actual_region,
         "bucket": bucket,
+        "prefix": prefix,
         "next_action": next_action,
     }
 
@@ -273,12 +281,14 @@ class S3Integration(BaseIntegration):
         *,
         bucket: str,
         region: str,
+        prefix: str = "",
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         config = {
             "bucket": bucket,
             "region": region,
+            "prefix": prefix,
         }
         try:
             validate_s3_credential_config(config)
@@ -293,6 +303,7 @@ class S3Integration(BaseIntegration):
             ) from exc
         self._bucket_name = bucket.strip()
         self._region = region.strip()
+        self._prefix = normalize_s3_prefix(prefix)
         self._client = create_s3_client(
             payload=self.payload,
             region=self._region,
@@ -304,12 +315,17 @@ class S3Integration(BaseIntegration):
 
     def _test_sync(self) -> dict[str, Any]:
         try:
-            response = self._client.head_bucket(Bucket=self._bucket_name)
+            response = self._client.list_objects_v2(
+                Bucket=self._bucket_name,
+                Prefix=self._prefix,
+                MaxKeys=1,
+            )
         except ClientError as exc:
             detail, data = _client_error_data(
                 exc,
                 bucket=self._bucket_name,
                 region=self._region,
+                prefix=self._prefix,
             )
             raise IntegrationDownError(detail, data=data) from exc
         except BotoCoreError as exc:
@@ -317,26 +333,24 @@ class S3Integration(BaseIntegration):
                 "Amazon S3 credential test could not reach AWS",
                 data={
                     "vendor": "aws-s3",
-                    "stage": "head_bucket",
+                    "stage": "list_objects_v2",
                     "reason_code": "transport_error",
                     "error_type": type(exc).__name__,
                     "bucket": self._bucket_name,
+                    "prefix": self._prefix,
                     "configured_region": self._region,
                     "next_action": "Check network access and retry the read-only Account test.",
                 },
             ) from exc
 
         metadata = _response_metadata(response)
-        actual_region = (
-            str(response.get("BucketRegion"))
-            if response.get("BucketRegion")
-            else metadata["bucket_region"] or self._region
-        )
+        actual_region = metadata["bucket_region"] or self._region
         return {
             "ok": True,
             "vendor": "aws-s3",
             "status": "ok",
             "bucket": self._bucket_name,
+            "prefix": self._prefix,
             "region": self._region,
             "actual_region": actual_region,
             "request_id": metadata["request_id"],
@@ -345,9 +359,11 @@ class S3Integration(BaseIntegration):
 
 
 __all__ = [
+    "AWS_S3_REGIONS",
     "S3CredentialMaterial",
     "S3Integration",
     "create_s3_client",
+    "normalize_s3_prefix",
     "parse_s3_credentials",
     "validate_s3_credential_config",
 ]
