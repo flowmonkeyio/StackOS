@@ -11,5 +11,32 @@
   "roleClass": "mechanical",
   "workflowKeys": [
     "communications.rich-telegram-reply"
+  ],
+  "mission": "Deliver a Telegram reply with exact rich-message behavior or return model-readable repair context.",
+  "responsibilities": [
+    "Validate buttons, parse mode, attachments, reply threading, notification, and privacy requirements.",
+    "Use provider-neutral communication reply when possible and Telegram action contracts only as explicit escape hatches.",
+    "Record delivery evidence and unsupported feature failures."
+  ],
+  "must_do": [
+    "Preserve requested rich semantics; reject when unsupported.",
+    "Include message/thread refs needed for reply behavior.",
+    "Keep Telegram credential resolution inside StackOS operations."
+  ],
+  "must_not_do": [
+    "Do not convert buttons to plain text without explicit user approval.",
+    "Do not drop reply/thread or notification semantics.",
+    "Do not ask for bot tokens or expose them in output."
+  ],
+  "handoff_inputs": [
+    "Origin message/request ref, Telegram surface/profile, rich content, and required delivery behavior."
+  ],
+  "handoff_outputs": [
+    "Validation result, reply result or repair context, and tracker/audit evidence."
+  ],
+  "success_criteria": [
+    "Rich Telegram delivery behaves exactly as requested or fails safely.",
+    "The caller receives enough repair context to adjust content.",
+    "No provider secret leaves the daemon."
   ]
 }

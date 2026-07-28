@@ -107,9 +107,7 @@ export const useReadinessStore = defineStore('readiness', () => {
           key: 'daemon',
           label: 'Local service',
           state: dbOk ? 'ready' : 'blocked',
-          hint: dbOk
-            ? 'Running and connected to local storage.'
-            : 'Local storage is unreachable.',
+          hint: dbOk ? 'Running and connected to local storage.' : 'Local storage is unreachable.',
           critical: true,
           to: null,
         },
@@ -190,14 +188,21 @@ export const useReadinessStore = defineStore('readiness', () => {
         count?: number | null
         connected_count?: number | null
         hidden_action_count?: number | null
+        items?: Array<{ state?: string | null }> | null
       }>('integration.list', { project_id: id })
       const count = integ.count ?? 0
       const hidden = integ.hidden_action_count ?? 0
+      const repairRequired = (integ.items ?? []).filter(
+        (item) => item.state === 'repair_required',
+      ).length
       let state: ReadinessState = 'ready'
       let hint = 'Agent actions are available.'
       if (count === 0) {
         state = 'attention'
         hint = 'No integrations enabled yet.'
+      } else if (repairRequired > 0) {
+        state = 'attention'
+        hint = `${repairRequired} integration${repairRequired === 1 ? '' : 's'} need${repairRequired === 1 ? 's' : ''} Account repair.`
       } else if (hidden > 0) {
         state = 'attention'
         hint = `${hidden} action${hidden === 1 ? '' : 's'} unlock once setup is finished.`
@@ -249,10 +254,7 @@ export const useReadinessStore = defineStore('readiness', () => {
 
     const healthChecks = await loadHealthChecks(base)
     checks.value = healthChecks
-    const [connectionsCheck, actionsCheck] = await Promise.all([
-      connectionsPromise,
-      actionsPromise,
-    ])
+    const [connectionsCheck, actionsCheck] = await Promise.all([connectionsPromise, actionsPromise])
     checks.value = actionsCheck
       ? [...healthChecks, connectionsCheck, actionsCheck]
       : [...healthChecks, connectionsCheck]

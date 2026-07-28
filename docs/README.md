@@ -7,13 +7,14 @@ obvious without loading every document.
 
 | Work | Primary Docs |
 | --- | --- |
+| Understanding what StackOS is or evaluating a proposed product change | [`product-direction.md`](./product-direction.md), [`architecture.md`](./architecture.md), [`agent-operating-model.md`](./agent-operating-model.md) |
 | Helping a person take the first steps after installing StackOS | [Public getting-started guide](https://stackos.flowmonkey.io/getting-started); use [`setup.md`](./setup.md) only for the technical install and repair contract |
 | Installing, starting, repairing, or lifecycle-smoke testing StackOS | [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`lifecycle-smoke-verification.md`](./lifecycle-smoke-verification.md), [`security.md`](./security.md) |
 | Adding, repairing, or explaining ChatGPT, Codex, Claude, Gemini, or Hermes host connections | [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`lifecycle-smoke-verification.md`](./lifecycle-smoke-verification.md) |
 | Building the macOS desktop app or installer | [`desktop-distribution.md`](./desktop-distribution.md), [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`security.md`](./security.md), [`release-signoff.md`](./release-signoff.md) |
 | Renaming this repository for release | [`repository-rename.md`](./repository-rename.md), [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md) |
-| Understanding the product model | [`architecture.md`](./architecture.md), [`operations.md`](./operations.md), [`agent-operating-model.md`](./agent-operating-model.md) |
-| Product direction or roadmap priorities | [`product-direction.md`](./product-direction.md), [`architecture.md`](./architecture.md), [`agent-operating-model.md`](./agent-operating-model.md) |
+| Understanding the product model | [`product-direction.md`](./product-direction.md), [`architecture.md`](./architecture.md), [`operations.md`](./operations.md), [`agent-operating-model.md`](./agent-operating-model.md) |
+| Product roadmap priorities | [`product-direction.md`](./product-direction.md), [`architecture.md`](./architecture.md) |
 | Auditing agent-facing flows and release clarity | [`agent-operating-model.md`](./agent-operating-model.md), [`workflow-templates.md`](./workflow-templates.md), [`operations.md`](./operations.md); use [`agent-experience-audit.md`](./agent-experience-audit.md) only as the May 2026 historical baseline |
 | Setting up generic agents or workflow roles | [`agent-presets.md`](./agent-presets.md), [`agent-operating-model.md`](./agent-operating-model.md), [`workflow-templates.md`](./workflow-templates.md), [`task-tracker.md`](./task-tracker.md) |
 | Adding or changing callable behavior | [`operations.md`](./operations.md), [`action-executor.md`](./action-executor.md), [`extending.md`](./extending.md) |
@@ -33,6 +34,10 @@ obvious without loading every document.
 
 ## Canonical Rules
 
+- The Product Thesis, Product Contract, and Product Principles in
+  [`product-direction.md`](./product-direction.md) are the canonical
+  product-level direction. Read them before solution design; the other docs
+  define the implementation contracts for their layers.
 - StackOS stores project state, validates explicit inputs, resolves
   daemon-held credentials, executes configured calls, and records audit.
 - Agents and operators make strategy decisions. In StackOS docs, an agent is

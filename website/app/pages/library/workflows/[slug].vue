@@ -18,10 +18,10 @@ const handoffWorkflows = computed(() => item.handoffs.flatMap((handoff) => {
   return workflow ? [{ ...handoff, workflow }] : []
 }))
 
-useLibrarySeo({ title: `${item.name} workflow — StackOS Library`, description: item.description })
+useSiteSeo({ title: `${item.name} workflow`, description: item.description })
 useSchemaOrg([
   defineWebPage({ name: `${item.name} workflow`, description: item.description }),
-  defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library' }, { name: 'Workflows', item: '/library/workflows' }, { name: item.name, item: route.path }] }),
+  defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library/' }, { name: 'Workflows', item: '/library/workflows/' }, { name: item.name, item: canonicalPath(route.path) }] }),
 ])
 </script>
 

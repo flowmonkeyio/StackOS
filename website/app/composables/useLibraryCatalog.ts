@@ -53,6 +53,13 @@ export interface AgentCatalogItem extends CatalogBase {
   role: string
   roleClass: 'reasoning' | 'mechanical' | 'review'
   workflowKeys: string[]
+  mission: string
+  responsibilities: string[]
+  must_do: string[]
+  must_not_do: string[]
+  handoff_inputs: string[]
+  handoff_outputs: string[]
+  success_criteria: string[]
 }
 
 export interface OrchestratorCatalogItem extends CatalogBase {

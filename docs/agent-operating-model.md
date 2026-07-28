@@ -1,5 +1,10 @@
 # Agent Operating Model
 
+This operating model applies the canonical
+[`Product Contract`](./product-direction.md#product-contract). Read that
+direction first when a delivery would change the division of responsibility
+between agents, operators, workflows, tools, or StackOS core.
+
 In this document, an agent is the MCP/tool consumer that calls StackOS
 operations and plugin actions. It may be a coding agent, automation script, or
 other runtime, and it may separately receive repository filesystem tools from

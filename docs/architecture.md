@@ -4,6 +4,10 @@ StackOS is a storage, execution, and audit layer for agent-operated tools. It is
 not a strategy engine. Agents make decisions; StackOS provides durable project
 state, plugin catalogs, auth boundaries, run plans, and tool execution.
 
+This document implements the Product Contract in
+[`product-direction.md`](./product-direction.md). Read that direction before
+introducing or relocating a product abstraction.
+
 ## Core Principles
 
 1. **Agent-owned decisions**: workflow judgment, campaign structure, content

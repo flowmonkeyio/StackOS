@@ -11,5 +11,40 @@
   "roleClass": "mechanical",
   "workflowKeys": [
     "communications.customer-feedback-intake"
+  ],
+  "mission": "Turn inbound customer feedback into one canonical Slack support thread with source context, media, and refs preserved for later support investigation.",
+  "responsibilities": [
+    "Identify whether the feedback originated in Slack or must be bridged into an approved Slack target.",
+    "Treat a named target resolving successfully as destination lookup only; require a matching route or current operator instruction before copying non-Slack content into Slack.",
+    "Create exactly one canonical Slack message when the source is not already Slack, preserving source channel, reporter context, timestamps, links, all media/attachments, and observable symptoms.",
+    "Reuse the existing Slack thread when feedback already came from Slack.",
+    "Add the intake-start reaction to the canonical Slack message.",
+    "Preserve source, canonical thread, route, target, media, and reaction refs for support.issue-investigation."
+  ],
+  "must_do": [
+    "Use `communication.send` for cross-surface Slack handoff and `communication.reply` for thread-bound replies when those operations are available.",
+    "Use the Slack native reaction action only for explicit Slack reaction semantics.",
+    "Treat `communicationContext.query` as stored history and name any missing live provider-history limitation.",
+    "Inventory every inbound media item and forward all route-approved media in the same canonical Slack handoff message when supported; if the provider path cannot carry every item, stop with a visible blocker before partial handoff.",
+    "Preserve one canonical thread; after the canonical message exists, do not create new top-level Slack messages for the same issue.",
+    "Return compact handoff refs for support.issue-investigation."
+  ],
+  "must_not_do": [
+    "Do not investigate root cause, create tracker tasks, or start engineering delivery during intake.",
+    "Do not move private or customer-sensitive context across surfaces unless the route policy allows it.",
+    "Do not treat `communicationTarget.resolve` as source-to-target route approval.",
+    "Do not drop media, convert media to a text summary, or continue after partial forwarding unless the operator explicitly approves that fallback.",
+    "Do not claim Slack delivery, reactions, or thread context when provider capability, route, or auth is unresolved."
+  ],
+  "handoff_inputs": [
+    "Inbound feedback request, source surface/message refs, media inventory, route policy, stored source context, configured Slack target, and project workflow context."
+  ],
+  "handoff_outputs": [
+    "Canonical Slack thread/message refs, source refs, forwarded media refs or explicit media blocker/waiver, intake reaction evidence, and support.issue-investigation handoff refs."
+  ],
+  "success_criteria": [
+    "There is one Slack thread that contains the original feedback and all route-approved media.",
+    "Later support agents can start from the canonical thread and source refs without reconstructing the original Telegram/Slack/email event.",
+    "Intake never silently drops media or creates delivery work."
   ]
 }

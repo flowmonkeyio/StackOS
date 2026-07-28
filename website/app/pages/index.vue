@@ -1,12 +1,46 @@
 <script setup lang="ts">
 const downloadUrl = useDownloadUrl()
 const { workflows } = useLibraryCatalog()
+const homepageDescription = 'Keep working in Codex, Claude Code, Gemini, and the business tools you already use. StackOS turns requests into clear, trackable workflows on your Mac.'
+const homepageFaq = [
+  {
+    question: 'What does StackOS do?',
+    answer: 'StackOS turns a request from your AI tool into a visible workflow with clear steps, connected tool actions, durable status, and recorded results.',
+  },
+  {
+    question: 'Does StackOS replace Codex, Claude Code, or Gemini?',
+    answer: 'No. You keep working in your preferred AI tool. StackOS gives that tool an organized, permission-aware way to plan the job, use connected apps, and keep the result.',
+  },
+  {
+    question: 'Where does StackOS run?',
+    answer: 'StackOS runs locally on your Mac. It keeps workflow state and credential references local while approved connected providers perform their bounded actions.',
+  },
+] as const
 
-useSeoMeta({
-  title: 'StackOS — Keep AI-powered work organized from start to finish',
-  description:
-    'Keep working in Codex, Claude Code, Gemini, and the business tools you already use. StackOS turns requests into clear, trackable workflows on your Mac.',
+useSiteSeo({
+  title: 'Keep AI-powered work organized from start to finish',
+  description: homepageDescription,
 })
+
+useSchemaOrg([
+  defineWebPage({
+    '@type': 'FAQPage',
+    name: 'StackOS — Keep AI-powered work organized from start to finish',
+    description: homepageDescription,
+  }),
+  defineSoftwareApp({
+    name: 'StackOS',
+    description: homepageDescription,
+    applicationCategory: 'BusinessApplication',
+    operatingSystem: 'macOS',
+    downloadUrl,
+    offers: [],
+  }),
+  ...homepageFaq.map((item) => defineQuestion({
+    question: item.question,
+    answer: item.answer,
+  })),
+])
 </script>
 
 <template>
@@ -85,6 +119,20 @@ useSeoMeta({
       <LazyDomainConstellation hydrate-on-visible />
       <LazyProductGallery hydrate-on-visible />
       <LazyTrustArchitecture hydrate-on-visible />
+      <section class="home-faq section" aria-labelledby="home-faq-title">
+        <div class="shell home-faq__grid">
+          <div>
+            <p class="eyebrow">Direct answers</p>
+            <h2 id="home-faq-title">What to know before you start.</h2>
+          </div>
+          <div class="home-faq__items">
+            <details v-for="item in homepageFaq" :key="item.question">
+              <summary data-faq-question>{{ item.question }}</summary>
+              <p data-faq-answer>{{ item.answer }}</p>
+            </details>
+          </div>
+        </div>
+      </section>
       <LazyInstallCta hydrate-on-visible />
     </main>
 
@@ -248,6 +296,67 @@ useSeoMeta({
   text-transform: uppercase;
 }
 
+.home-faq {
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.home-faq__grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.72fr) minmax(0, 1.28fr);
+  gap: 72px;
+}
+
+.home-faq h2 {
+  max-width: 540px;
+  margin: 12px 0 0;
+  font-size: clamp(42px, 5vw, 70px);
+  line-height: 0.98;
+  letter-spacing: -0.065em;
+}
+
+.home-faq__items {
+  border-top: 1px solid var(--paper-border);
+}
+
+.home-faq details {
+  border-bottom: 1px solid var(--paper-border);
+}
+
+.home-faq summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 24px 0;
+  font-size: 19px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+
+.home-faq summary::after {
+  color: var(--cobalt);
+  content: '+';
+  font-family: var(--font-mono);
+}
+
+.home-faq details[open] summary::after {
+  content: '−';
+}
+
+.home-faq summary::-webkit-details-marker {
+  display: none;
+}
+
+.home-faq details p {
+  max-width: 720px;
+  margin: -5px 0 24px;
+  color: var(--muted-on-paper);
+  font-size: 16px;
+  line-height: 1.7;
+}
+
 @media (max-width: 1220px) {
   .hero {
     min-height: 0;
@@ -311,6 +420,11 @@ useSeoMeta({
 
   .proof-rail span {
     font-size: 9px;
+  }
+
+  .home-faq__grid {
+    grid-template-columns: 1fr;
+    gap: 42px;
   }
 }
 </style>

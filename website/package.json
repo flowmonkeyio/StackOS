@@ -17,6 +17,9 @@
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "typecheck": "nuxt typecheck",
+    "indexnow:dry-run": "node scripts/indexnow.mjs",
+    "indexnow:submit": "node scripts/indexnow.mjs --submit",
+    "test:seo:generated": "node scripts/verify-generated-seo.mjs",
     "test:e2e": "playwright test"
   },
   "dependencies": {

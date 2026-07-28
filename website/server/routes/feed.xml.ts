@@ -1,4 +1,5 @@
 import { queryCollection } from '@nuxt/content/server'
+import { absoluteSiteUrl } from '#shared/utils/siteSeo'
 
 function escapeXml(value: string) {
   return value.replace(/[<>&'\"]/g, (character) => ({
@@ -17,7 +18,7 @@ export default defineEventHandler(async (event) => {
 
   const items = articles.map((article) => {
     const slug = article.stem.split('/').at(-1)
-    const url = `${siteUrl}/library/articles/${slug}`
+    const url = absoluteSiteUrl(siteUrl, `/library/articles/${slug}`)
     return `<item>
       <title>${escapeXml(article.title)}</title>
       <link>${url}</link>
@@ -28,11 +29,12 @@ export default defineEventHandler(async (event) => {
   }).join('\n')
 
   setHeader(event, 'content-type', 'application/rss+xml; charset=utf-8')
+  setHeader(event, 'X-Robots-Tag', 'noindex')
   return `<?xml version="1.0" encoding="UTF-8" ?>
   <rss version="2.0">
     <channel>
       <title>StackOS Library</title>
-      <link>${siteUrl}/library</link>
+      <link>${absoluteSiteUrl(siteUrl, '/library')}</link>
       <description>Practical guides to AI agents, agentic workflows, and connected work.</description>
       <language>en-us</language>
       ${items}

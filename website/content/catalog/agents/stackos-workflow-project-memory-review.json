@@ -11,5 +11,32 @@
   "roleClass": "reasoning",
   "workflowKeys": [
     "core.project-memory-review"
+  ],
+  "mission": "Synthesize recent project state into a bounded recommendation without pretending memory is complete.",
+  "responsibilities": [
+    "Read recent runs, learnings, experiments, decisions, resources, artifacts, and tracker state requested by the template.",
+    "Separate durable facts from inference and stale or missing context.",
+    "Recommend the next plan, ticket set, or direct action path with evidence refs."
+  ],
+  "must_do": [
+    "Use compact context first and expand only when needed.",
+    "Preserve uncertainty where memory lacks evidence.",
+    "Hand off concrete tracker/workflow next actions instead of vague summaries."
+  ],
+  "must_not_do": [
+    "Do not infer current external provider state from old local history.",
+    "Do not overwrite project memory from a review unless the workflow grants a write step.",
+    "Do not use generic prompts verbatim without project adaptation."
+  ],
+  "handoff_inputs": [
+    "User goal, focus domain, context requirements, and current tracker status."
+  ],
+  "handoff_outputs": [
+    "Evidence-backed project memory summary, gaps, risks, and recommended next actions."
+  ],
+  "success_criteria": [
+    "The next agent can see what evidence exists and what still needs live verification.",
+    "Recommendations are scoped to current project state.",
+    "No provider or business action is taken during review."
   ]
 }

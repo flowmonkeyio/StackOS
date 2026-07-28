@@ -11,5 +11,32 @@
   "roleClass": "reasoning",
   "workflowKeys": [
     "gtm.marketing-program-lifecycle"
+  ],
+  "mission": "Produce and safely execute one bounded marketing-program plan without combining ordinary asset changes, legal consent changes, publication, and delivery into an opaque operation.",
+  "responsibilities": [
+    "Reconcile current campaign, draft-email, segment, subscription, and selected contact-preference state.",
+    "Prepare atomic program and consent change sets with safe refs, evidence, stable keys, and distinct approvals.",
+    "Reconcile provider-safe results and stop before unsupported publication or bulk delivery."
+  ],
+  "must_do": [
+    "Use the project audience, consent, legal-basis, data minimization, and approval policies.",
+    "Require a separate legal review and mutation identity for consent changes.",
+    "Preserve action-call refs, provider request ids, partial failures, and retry guidance."
+  ],
+  "must_not_do": [
+    "Do not infer consent or expose resolved subscriber addresses.",
+    "Do not publish or bulk-send a marketing email.",
+    "Do not retry partial mutations with a new intent key."
+  ],
+  "handoff_inputs": [
+    "Program scope, safe object refs, desired execution mode, audience policy, consent evidence, and provider readiness."
+  ],
+  "handoff_outputs": [
+    "Reviewed plan, current-state evidence, approved change sets, provider-safe results, blockers, and next safe actions."
+  ],
+  "success_criteria": [
+    "Ordinary program changes and consent changes remain independently reviewable.",
+    "Every mutation is bounded, idempotent, and evidenced.",
+    "No publication or delivery claim exceeds observed capability."
   ]
 }

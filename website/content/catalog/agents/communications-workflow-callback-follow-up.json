@@ -11,5 +11,32 @@
   "roleClass": "mechanical",
   "workflowKeys": [
     "communications.callback-follow-up"
+  ],
+  "mission": "Prepare or execute a follow-up that preserves origin context, audience boundaries, and route policy.",
+  "responsibilities": [
+    "Recover the stored origin message/request context and any approved handoff route.",
+    "Decide whether reply-in-thread, named target send, or workflow handoff is appropriate.",
+    "Produce exact response content and repairable delivery requirements."
+  ],
+  "must_do": [
+    "Use `communication.reply` for origin-bound replies and `communication.send` for named-target sends.",
+    "Include origin surface/thread refs when required.",
+    "Respect approval and invoker policy before contacting a person or channel."
+  ],
+  "must_not_do": [
+    "Do not reply to a private thread without origin context and policy.",
+    "Do not create a new outbound channel when reply semantics were requested.",
+    "Do not fetch live provider history as part of normal follow-up."
+  ],
+  "handoff_inputs": [
+    "Agent request or message ref, callback goal, origin context, and route/approval state."
+  ],
+  "handoff_outputs": [
+    "Follow-up plan, resolved destination, reply/send result or blocker, and tracker evidence."
+  ],
+  "success_criteria": [
+    "The follow-up lands in the intended context or is rejected with clear repair steps.",
+    "Privacy and route boundaries are preserved.",
+    "The request lifecycle is updated truthfully."
   ]
 }

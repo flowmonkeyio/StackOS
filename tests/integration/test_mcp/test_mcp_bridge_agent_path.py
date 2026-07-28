@@ -14,7 +14,11 @@ from typing import Any
 
 import pytest
 from pytest_httpx import HTTPXMock
+from sqlmodel import Session, select
 
+from stackos.config import Settings
+from stackos.db.connection import make_engine
+from stackos.db.models import Credential
 from stackos.mcp.bridge import _AGENT_VISIBLE_TOOL_ORDER, AgentBridgeProxy
 
 from .conftest import MCPClient
@@ -278,7 +282,7 @@ def test_bridge_compacts_noisy_agent_responses_by_default(mcp_client: MCPClient)
             proxy,
             client,
             "connection.list",
-            {"provider_key": "mock-provider"},
+            {},
             request_id="auth-compact",
         )
     )
@@ -289,6 +293,45 @@ def test_bridge_compacts_noisy_agent_responses_by_default(mcp_client: MCPClient)
             "connection.list",
             {"provider_key": "mock-provider", "response_mode": "standard"},
             request_id="auth-standard",
+        )
+    )
+    missing_connection = _structured(
+        _toolbox_call(
+            proxy,
+            client,
+            "connection.list",
+            {"provider_key": "openai-images"},
+            request_id="auth-missing-provider",
+        )
+    )
+    integration_description = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.describe",
+            {
+                "tool_names": ["integration.list"],
+                "include_schemas": True,
+            },
+            request_id="integration-description",
+        )
+    )
+    integrations = _structured(
+        _toolbox_call(
+            proxy,
+            client,
+            "integration.list",
+            {},
+            request_id="integrations-compact",
+        )
+    )
+    integration_catalog = _structured(
+        _toolbox_call(
+            proxy,
+            client,
+            "integration.list",
+            {"include_unavailable": True},
+            request_id="integrations-catalog",
         )
     )
     resolved_compact = _structured(
@@ -311,15 +354,36 @@ def test_bridge_compacts_noisy_agent_responses_by_default(mcp_client: MCPClient)
     )
     compact_data = _operation_data(compact)
     standard_data = _operation_data(standard)
+    missing_connection_data = _operation_data(missing_connection)
+    integration_data = _operation_data(integrations)
+    integration_catalog_data = _operation_data(integration_catalog)
     resolved_compact_data = _operation_data(resolved_compact)
     resolved_standard_data = _operation_data(resolved_standard)
 
     assert compact["project_id"] == project_id
     assert compact_data["accounts"][0]["credential_ref"].startswith("cred_")
+    assert compact_data["accounts"][0]["provider_key"] == "mock-provider"
     assert compact_data["accounts"][0]["status"] == "connected"
-    assert compact_data["providers"][0]["key"] == "mock-provider"
-    assert "auth_methods" in compact_data["providers"][0]
+    assert missing_connection_data["accounts"] == []
+    assert [provider["key"] for provider in missing_connection_data["providers"]] == [
+        "openai-images"
+    ]
+    assert missing_connection_data["providers"][0]["status"] == "missing"
+    assert missing_connection_data["providers"][0]["setup_required"] is True
+    integration_schema = integration_description["described_tools"][0]["inputSchema"]
+    include_unavailable_schema = integration_schema["properties"]["include_unavailable"]
+    assert include_unavailable_schema["default"] is False
+    assert "setup/catalog" in include_unavailable_schema["description"]
+    ready_provider_keys = {item["provider_key"] for item in integration_data["items"]}
+    catalog_provider_keys = {item["provider_key"] for item in integration_catalog_data["items"]}
+    assert "jina" in ready_provider_keys
+    assert "openai-images" not in ready_provider_keys
+    assert "openai-images" in catalog_provider_keys
+    assert [provider["key"] for provider in compact_data["providers"]] == ["mock-provider"]
+    assert "auth_methods" not in compact_data["providers"][0]
     assert "auth_methods" in standard_data["providers"][0]
+    assert len(json.dumps(compact)) < len(json.dumps(standard))
+    assert len(json.dumps(integrations)) < len(json.dumps(integration_catalog))
     assert resolved_compact["project_id"] == project_id
     assert resolved_compact_data["ready"] is True
     assert resolved_compact_data["credential"]["credential_ref"].startswith("cred_")
@@ -327,6 +391,77 @@ def test_bridge_compacts_noisy_agent_responses_by_default(mcp_client: MCPClient)
     assert "scopes" in resolved_standard_data["credential"]
     assert "mock-secret" not in json.dumps(compact)
     assert "mock-secret" not in json.dumps(resolved_compact)
+
+
+@pytest.mark.parametrize("account_status", ["pending", "repair-required"])
+def test_bridge_integration_list_marks_unready_attached_account_for_repair(
+    mcp_client: MCPClient,
+    mcp_settings: Settings,
+    account_status: str,
+) -> None:
+    project_id = _create_project(mcp_client, f"bridge-repair-{account_status}")
+    workspace_ref = f"path:bridge-repair-{account_status}"
+    workspace_root = f"/tmp/bridge-repair-{account_status}"
+    mcp_client.call_tool_structured(
+        "workspace.connect",
+        {
+            "project_id": project_id,
+            "repo_fingerprint": workspace_ref,
+            "last_known_root": workspace_root,
+        },
+    )
+    response = mcp_client.test_client.post(
+        "/api/v1/auth/accounts/mock-provider",
+        json={
+            "auth_method_key": "api_key",
+            "display_name": f"Mock Provider - {account_status}",
+            "attach_project_id": project_id,
+            "fields": {"api_key": "mock-secret"},
+        },
+        headers=mcp_client._headers(),
+    )
+    response.raise_for_status()
+    credential_ref = response.json()["data"]["credential_ref"]
+
+    engine = make_engine(mcp_settings.db_path)
+    try:
+        with Session(engine) as session:
+            credential = session.exec(
+                select(Credential).where(Credential.credential_ref == credential_ref)
+            ).one()
+            credential.status = account_status
+            session.add(credential)
+            session.commit()
+    finally:
+        engine.dispose()
+
+    proxy, client = _scoped_bridge(
+        mcp_client,
+        cwd=workspace_root,
+        repo_fingerprint=workspace_ref,
+    )
+    _initialize(proxy, client)
+    listed = _structured(
+        _toolbox_call(
+            proxy,
+            client,
+            "integration.list",
+            {
+                "provider_key": "mock-provider",
+                "include_actions": True,
+            },
+            request_id=f"integration-repair-{account_status}",
+        )
+    )
+    data = _operation_data(listed)
+
+    assert data["count"] == 1
+    assert data["ready_count"] == 0
+    assert data["items"][0]["state"] == "repair_required"
+    assert data["items"][0]["connected"] is False
+    assert data["items"][0]["connected_credential_count"] == 0
+    assert data["items"][0]["next_action"]["tool"] == "account.test"
+    assert data["items"][0]["next_action"]["arguments"]["credential_ref"] == credential_ref
 
 
 def test_bridge_scopes_project_from_workspace_and_injects_project_id(

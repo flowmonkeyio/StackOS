@@ -1,5 +1,10 @@
 # StackOS Plugin Distribution
 
+This distribution surface implements the canonical
+[`StackOS Product Contract`](../../docs/product-direction.md#product-contract).
+Changes here must preserve the agent-first, local-first, project-scoped model
+rather than inventing a second workflow or state layer in the host plugin.
+
 This is the plugin-first distribution surface for StackOS. The plugin is
 installed once into Codex and/or Claude Code, then used from any website or
 business repository.

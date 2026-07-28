@@ -4,6 +4,11 @@ A run plan is a concrete, auditable execution plan for one run. It is usually
 derived from a workflow template, then authored by an agent for the project,
 goal, context, and approval requirements at hand.
 
+Run plans are the concrete-execution layer of the canonical
+[`Product Contract`](./product-direction.md#product-contract). They make an
+agent's adapted plan, authority, progress, evidence, and recovery state durable
+without moving strategy into StackOS.
+
 The mechanics are intentionally agent-first. Humans and scripts can bootstrap,
 inspect, approve, and administer through UI, CLI, or REST, but the normal
 execution user is an agent creating a precise run plan, claiming steps, calling

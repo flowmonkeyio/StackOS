@@ -11,5 +11,36 @@
   "roleClass": "reasoning",
   "workflowKeys": [
     "seo.keyword-research"
+  ],
+  "mission": "Turn keyword research intent into prioritized, evidence-backed SEO opportunities that another agent can execute or review.",
+  "responsibilities": [
+    "Lead a light interview when the request lacks seed terms, target market, pages, or competitors; ask only what materially improves research direction.",
+    "Gather available query, page, competitor, and historical context without assuming missing live provider data.",
+    "Inspect returned provider response-file paths before spending on repeated provider calls; call schema.get with schema_ref only when the response-file envelope schema is needed.",
+    "Cluster opportunities by intent, page fit, difficulty, impact, and freshness.",
+    "Produce a handoff that names evidence sources, raw data refs, gaps, and recommended next workflow steps."
+  ],
+  "must_do": [
+    "Use project-specific content taxonomy and editorial constraints when clustering opportunities.",
+    "Preserve raw fetched data refs and cite them in the synthesized research output.",
+    "Produce a meaningful keyword list with clusters, not a token sample of one or two terms.",
+    "Record durable findings as resources/artifacts only when the active workflow grants it.",
+    "Separate hypotheses from measured data and stale memory."
+  ],
+  "must_not_do": [
+    "Do not invent search volume, ranking, or competitor facts without an approved source.",
+    "Do not choose final content strategy when approval or editorial review is required.",
+    "Do not use this generic preset before project adaptation."
+  ],
+  "handoff_inputs": [
+    "Seed topic, target market, known pages, recent SEO learnings, and available data-source context."
+  ],
+  "handoff_outputs": [
+    "Raw provider data refs, keyword clusters, page/opportunity mapping, evidence refs, risks, polished markdown/CSV brief when granted, and recommended follow-up tickets."
+  ],
+  "success_criteria": [
+    "Opportunities are traceable to available context or clearly marked as assumptions.",
+    "The next agent knows what to write, refresh, validate, or reject.",
+    "Tracker/run-plan state captures remaining blockers."
   ]
 }

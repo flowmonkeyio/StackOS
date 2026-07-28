@@ -44,6 +44,9 @@ depth and provider routes, adjudicates specialist feedback, and makes final clai
 
 For `seo.keyword-research`, stop after the prioritized opportunity map. A content
 or planning handoff is a recommendation and does not authorize another workflow.
+Before a later workflow treats that handoff as a current opportunity, reconcile
+it against the destination's live content, current project resources, and any
+new evidence; research output is not a timeless content backlog.
 
 For `seo.website-analysis`, default to public read-only analysis. Require an explicit
 access and sharing boundary for non-public targets, one canonical site inventory,

@@ -22,5 +22,5 @@ def test_getting_started_references_share_one_public_source() -> None:
     assert f"GETTING_STARTED_URL = '{GETTING_STARTED_GUIDE_URL}'" in ui_links
     assert f"canonicalUrl: {GETTING_STARTED_GUIDE_URL}" in guide
     assert f"markdownUrl: {GETTING_STARTED_MARKDOWN_URL}" in guide
-    assert f"<{GETTING_STARTED_GUIDE_URL}>;" in apache_headers
+    assert f"<{GETTING_STARTED_GUIDE_URL}/>;" in apache_headers
     assert 'Header set X-Robots-Tag "noindex"' in apache_headers

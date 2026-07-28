@@ -1,4 +1,6 @@
 import { queryCollection } from '@nuxt/content/server'
+import { isConsolidatedPlugin } from '#shared/utils/integrationRoutePolicy'
+import { canonicalPath } from '#shared/utils/siteSeo'
 import catalog from '../../../app/data/library-catalog.generated.json'
 import integrationCatalog from '../../../app/data/integration-catalog.generated.json'
 
@@ -8,23 +10,25 @@ export default defineEventHandler(async (event) => {
   const { workflows, agents, orchestrators } = catalog
 
   return [
-    { loc: '/getting-started', lastmod: gettingStarted?.updatedAt, changefreq: 'monthly', priority: 1.0 },
-    { loc: '/library', changefreq: 'weekly', priority: 0.9 },
-    { loc: '/library/articles', changefreq: 'weekly', priority: 0.8 },
-    { loc: '/library/workflows', changefreq: 'weekly', priority: 0.8 },
-    { loc: '/library/agents', changefreq: 'monthly', priority: 0.7 },
-    { loc: '/library/orchestrators', changefreq: 'monthly', priority: 0.7 },
-    { loc: '/library/integrations', changefreq: 'weekly', priority: 0.8 },
+    { loc: '/', priority: 1.0 },
+    { loc: canonicalPath('/getting-started'), lastmod: gettingStarted?.updatedAt, priority: 1.0 },
+    { loc: canonicalPath('/library'), priority: 0.9 },
+    { loc: canonicalPath('/library/articles'), priority: 0.8 },
+    { loc: canonicalPath('/library/workflows'), priority: 0.8 },
+    { loc: canonicalPath('/library/agents'), priority: 0.7 },
+    { loc: canonicalPath('/library/orchestrators'), priority: 0.7 },
+    { loc: canonicalPath('/library/integrations'), priority: 0.8 },
     ...articles.map((article) => ({
-      loc: `/library/articles/${article.stem.split('/').at(-1)}`,
+      loc: canonicalPath(`/library/articles/${article.stem.split('/').at(-1)}`),
       lastmod: article.updatedAt,
-      changefreq: 'monthly',
       priority: 0.8,
     })),
-    ...workflows.map((item) => ({ loc: `/library/workflows/${item.slug}`, changefreq: 'monthly', priority: 0.7 })),
-    ...agents.map((item) => ({ loc: `/library/agents/${item.slug}`, changefreq: 'monthly', priority: 0.6 })),
-    ...orchestrators.map((item) => ({ loc: `/library/orchestrators/${item.slug}`, changefreq: 'monthly', priority: 0.7 })),
-    ...integrationCatalog.providers.map((item) => ({ loc: `/library/integrations/${item.slug}`, changefreq: 'monthly', priority: 0.7 })),
-    ...integrationCatalog.plugins.map((item) => ({ loc: `/library/integrations/plugins/${item.slug}`, changefreq: 'monthly', priority: 0.6 })),
+    ...workflows.map((item) => ({ loc: canonicalPath(`/library/workflows/${item.slug}`), priority: 0.7 })),
+    ...agents.map((item) => ({ loc: canonicalPath(`/library/agents/${item.slug}`), priority: 0.6 })),
+    ...orchestrators.map((item) => ({ loc: canonicalPath(`/library/orchestrators/${item.slug}`), priority: 0.7 })),
+    ...integrationCatalog.providers.map((item) => ({ loc: canonicalPath(`/library/integrations/${item.slug}`), priority: 0.7 })),
+    ...integrationCatalog.plugins
+      .filter((item) => !isConsolidatedPlugin(item.slug))
+      .map((item) => ({ loc: canonicalPath(`/library/integrations/plugins/${item.slug}`), priority: 0.6 })),
   ]
 })

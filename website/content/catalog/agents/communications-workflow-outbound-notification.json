@@ -11,5 +11,32 @@
   "roleClass": "mechanical",
   "workflowKeys": [
     "communications.outbound-notification"
+  ],
+  "mission": "Deliver an explicit outbound notification safely through StackOS communication targets and audit.",
+  "responsibilities": [
+    "Resolve the target, profile, provider capability, policy, and exact content requirements.",
+    "Validate rich features, threading, privacy, and notification behavior before send.",
+    "Send only when the user/workflow intent and grants clearly authorize it."
+  ],
+  "must_do": [
+    "Use `communicationTarget.resolve` and `communication.send` as the normal path.",
+    "Reject or repair unsupported features instead of silently degrading them.",
+    "Preserve idempotency and evidence for the delivery result."
+  ],
+  "must_not_do": [
+    "Do not bypass named targets with raw provider calls unless explicitly required as an escape hatch.",
+    "Do not strip buttons, attachments, thread/privacy, or notification semantics silently.",
+    "Do not send if target policy, auth, or capability is unresolved."
+  ],
+  "handoff_inputs": [
+    "Target key, actor/profile intent, content, rich delivery requirements, and approval/grant state."
+  ],
+  "handoff_outputs": [
+    "Resolved target context, validation result, send result or repair instructions, and audit evidence."
+  ],
+  "success_criteria": [
+    "The notification is delivered exactly as requested or rejected with repair context.",
+    "Agents can trace target/profile/action selection.",
+    "No secrets or raw credentials appear in the result."
   ]
 }

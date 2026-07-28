@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 2.1.18 - 2026-07-28
+
+- Clarified the product contract and agent operating model, then synchronized
+  branding workflows, presets, project-local agents, and orchestrator guidance
+  around sequential, evidence-led content delivery and independent review.
+- Improved agent-facing integration readiness so normal discovery favors
+  executable actions and attached Accounts that need repair surface targeted,
+  non-secret repair guidance in both MCP responses and the generic UI.
+- Reworked the public Library and static-site release path around shared route
+  and SEO ownership, generated public agent contracts, stricter static-output
+  validation, and five new evidence-reviewed articles.
+
 ## 2.1.17 - 2026-07-26
 
 - Added an optional validated Amazon S3 path that scopes Account testing and

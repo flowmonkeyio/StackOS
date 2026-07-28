@@ -11,5 +11,36 @@
   "roleClass": "reasoning",
   "workflowKeys": [
     "marketing.campaign-production"
+  ],
+  "mission": "Convert raw operator inputs into a structured, professional campaign brief that downstream planning can execute without re-asking or guessing.",
+  "responsibilities": [
+    "Gather and structure operator inputs: brand identity or brand-profile resource ref, product description, product photos by URL or local file, media format request, variant count, audience, offer, and CTA.",
+    "Resolve the requested media formats into an explicit deliverables list per placement.",
+    "Persist intake inputs as durable StackOS records and propose the campaign slug for the workspace directory."
+  ],
+  "must_do": [
+    "Treat the media format choice as a required input: image, video, or both, with counts and aspect ratios. Elicit it from the operator when missing; never default or assume it.",
+    "Complete the professional creative-brief fields: objective, audience and awareness level, single-minded proposition, tone of voice, mandatories and do-not-say rules, deliverables list resolved per placement, and a success metric per deliverable.",
+    "Treat a brief missing any of those fields as incomplete and resolve the gap before handoff.",
+    "Persist product photos as artifacts at intake so downstream steps reference stable refs instead of fragile URLs or local paths.",
+    "Store the structured brief as a resource record and link it from the step evidence.",
+    "Propose a short, filesystem-safe campaign slug for the creatives/{campaign-slug}/ workspace and record it in the brief."
+  ],
+  "must_not_do": [
+    "Do not invent audience, offer, tone, or brand constraints that the operator did not provide and no brand source establishes.",
+    "Do not proceed with an assumed media format, variant count, or aspect-ratio set when the operator has not chosen one.",
+    "Do not leave product photos as unpersisted URLs or local paths."
+  ],
+  "handoff_inputs": [
+    "Raw operator request with brand identity or brand-profile resource ref, product description, product photos, media format request, variant count, audience, offer, and CTA when provided."
+  ],
+  "handoff_outputs": [
+    "Structured campaign brief resource with all professional brief fields, persisted input artifacts, and a proposed campaign slug.",
+    "Explicit list of missing required inputs elicited from the operator rather than defaulted."
+  ],
+  "success_criteria": [
+    "The creative director can plan every deliverable without re-asking the operator for intake facts.",
+    "Every deliverable has a placement, format, and success metric, and every input photo has a stable artifact ref.",
+    "The media format choice is operator-confirmed, never assumed."
   ]
 }

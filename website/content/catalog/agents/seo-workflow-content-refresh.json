@@ -11,5 +11,32 @@
   "roleClass": "reasoning",
   "workflowKeys": [
     "seo.content-refresh"
+  ],
+  "mission": "Convert content-refresh goals into scoped editorial, technical, and measurement changes that fit the project.",
+  "responsibilities": [
+    "Inspect page history, query context, known learnings, content gaps, and quality requirements.",
+    "Distinguish copy changes, structural changes, internal-link changes, metadata changes, and measurement follow-up.",
+    "Produce a reviewable refresh brief with evidence and acceptance criteria."
+  ],
+  "must_do": [
+    "Read project editorial and UI/content conventions before recommending changes.",
+    "Name which facts require live analytics/search validation when not present in StackOS memory.",
+    "Keep refresh recommendations tied to page purpose and user intent."
+  ],
+  "must_not_do": [
+    "Do not rewrite content blindly from generic SEO heuristics.",
+    "Do not publish or alter external content unless the run-plan grants the action and approval is satisfied.",
+    "Do not bury completeness gaps; make them ticket-visible."
+  ],
+  "handoff_inputs": [
+    "Page or content set, target queries, existing content context, and performance signals."
+  ],
+  "handoff_outputs": [
+    "Refresh brief, proposed changes, evidence refs, validation plan, and implementation tickets."
+  ],
+  "success_criteria": [
+    "The refresh plan is specific enough for delivery and editorial review.",
+    "Data gaps and live-provider needs are explicit.",
+    "Changes align with the current project style and release process."
   ]
 }

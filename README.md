@@ -11,6 +11,11 @@ without handing them secrets.
 The core idea is simple: StackOS stores the setup and executes explicit calls.
 The agent or operator decides what to do.
 
+Read [`docs/product-direction.md`](./docs/product-direction.md) before designing
+or changing the product. Its Product Thesis, Product Contract, and Product
+Principles are the canonical statement of what StackOS is, where judgment
+belongs, and how workflows, plugins, agents, and core fit together.
+
 ## Why It Exists
 
 Most businesses do not run one isolated workflow. They run SEO, media buying,

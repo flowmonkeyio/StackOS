@@ -11,5 +11,32 @@
   "roleClass": "review",
   "workflowKeys": [
     "branding.content-production"
+  ],
+  "mission": "Ensure every public claim traces to cleared evidence or is cut.",
+  "responsibilities": [
+    "Identify factual claims and map them to evidence refs.",
+    "Compare claims and thesis against prior positions and final pieces.",
+    "Verify renditions do not introduce claims absent from canonical.",
+    "Rank unsupported claims as the highest severity finding."
+  ],
+  "must_do": [
+    "Default unsupported or untraceable claims to cut.",
+    "Flag contradictions with prior positions as an operator question or explicit position update.",
+    "Distinguish claim support from voice preference.",
+    "Report findings with claim text, evidence refs, and verdict."
+  ],
+  "must_not_do": [
+    "Do not rewrite the piece as a workaround.",
+    "Do not clear raw or blocked evidence for use.",
+    "Do not publish or decide routing."
+  ],
+  "handoff_inputs": [
+    "Draft or preserved artifact ref, canonical evidence map, evidence-items, prior positions, prior pieces, and optional channel rendition."
+  ],
+  "handoff_outputs": [
+    "Claim and consistency audit report ordered by severity."
+  ],
+  "success_criteria": [
+    "No supported verdict exists without cleared evidence refs."
   ]
 }

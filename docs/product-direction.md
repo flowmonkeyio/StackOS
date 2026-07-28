@@ -1,10 +1,13 @@
-# StackOS Product Roadmap
+# StackOS Product Direction
 
-Date: 2026-06-23
+Last reviewed: 2026-07-26
 
-This roadmap describes what StackOS should build next. It is intentionally
-practical: polish the local runtime, make setup reliable, give agents better
-operating tools, and then expand the workflow and integration surface.
+This is the canonical product direction and roadmap for StackOS. The Product
+Thesis, Product Contract, and Product Principles define what the product is and
+how to evaluate delivery. Priority Order and Sequencing describe what to build
+next. Read the product contract before solution design, then use
+[`architecture.md`](./architecture.md) and the routed implementation docs for
+the affected layer.
 
 ## Product Thesis
 
@@ -25,6 +28,119 @@ Install once
 
 The UI is not a workflow-builder clone. It is a local desktop console for setup,
 readiness, visibility, approvals, recovery, and audit.
+
+## Product Contract
+
+### Responsibilities
+
+- Operators own goals, material preferences, approval, and business risk.
+- Main agents own interpretation, workflow adaptation, sequencing, specialist
+  delegation, cross-step and cross-run coherence, and final claims.
+- Specialist agents own bounded reasoning, production, or review contracts.
+  Their findings are inputs for main-agent adjudication, not product policy.
+- StackOS owns project scope, durable state, validation, scoped authority,
+  daemon-held credentials, explicit execution, recovery state, and audit.
+- Connectors own provider transport and protocol semantics. They do not invent
+  workflow logic or business decisions.
+
+### Product Layers
+
+StackOS uses one connected operating model:
+
+1. **Project**: the business/workspace boundary for durable context, setup,
+   enabled plugins, account bindings, workflows, runs, records, and audit.
+2. **Plugin**: a domain package contributing capabilities, providers, actions,
+   resource schemas, workflows, presets, and generic UI metadata.
+3. **Workflow template**: reusable operating setup for a valuable job,
+   including method, context, roles, tools, boundaries, outputs, recovery, and
+   safe stopping points.
+4. **Project extension and resources**: durable project-specific truth such as
+   sources, policies, profiles, routes, and channel rules.
+5. **Run plan**: one concrete execution with current inputs, steps, grants,
+   state, evidence, and recovery history.
+6. **Operations and actions**: explicit callable behavior. MCP, REST, CLI, and
+   UI are adapters over shared contracts rather than separate behavior owners.
+7. **Tracker, resources, artifacts, and audit**: durable navigation, evidence,
+   and recovery across sessions without turning chat or scratch files into
+   hidden state.
+
+[`architecture.md`](./architecture.md) is the detailed contract for these
+layers.
+
+### Guidance Activation
+
+Reusable guidance becomes concrete in this order:
+
+```text
+product direction and project rules
+-> effective workflow template and project extension
+-> resolved main-agent skill preset
+-> project-local orchestrator adaptation
+-> project-adapted specialist preset
+-> current run/step context
+-> current operator request and feedback
+```
+
+Later layers adapt earlier ones; they do not silently discard them. A resumed,
+handed-off, or compacted session must rehydrate this stack before continuing.
+A materialized local agent file is a reusable role adaptation, not the complete
+prompt for a workflow occurrence.
+
+### Workflow Boundary
+
+A workflow is an organized, reusable operating method. It is not hidden
+automation, a rigid script, or a request for a bespoke application. It should
+reduce rediscovery by making the job, context, responsibilities, tools, outputs,
+evidence, approvals, recovery, and stopping boundary clear while leaving
+current judgment with the agent and operator.
+
+StackOS should not require new core code, a custom UI, or a semantic quality
+gate for every workflow. Code enforces shared safety and integrity boundaries
+such as schemas, permissions, credential isolation, idempotency, and audit.
+Plugins, workflows, presets, project context, and agents organize domain method
+and quality.
+
+Core stays domain-agnostic. Engineering, branding, SEO, media buying, GTM,
+publishing, communications, and other business methods belong in plugins. A
+domain need should become a core primitive only when it demonstrates an
+independently reusable platform gap with a clear owner and consumers.
+
+### Product-Aligned Delivery
+
+Before proposing a new abstraction or implementation:
+
+1. Restate the operator outcome and side-effect boundary.
+2. Read this product contract and the canonical docs for the affected layer.
+3. Inspect the current workflow, presets, project adaptations, operations,
+   resources, canonical owner, active consumers, and established tests.
+4. Reuse or adapt the existing product model when it can own the requirement.
+5. Place each fact in the right layer: core, plugin, workflow, project
+   extension/resource, run input, or project-local guidance.
+6. Trace setup, execution, inspection, recovery, upgrade, and removal when the
+   change affects those lifecycle surfaces.
+7. Introduce a new primitive only after naming the demonstrated gap, rejected
+   project-native alternatives, canonical owner, consumers, and migration or
+   removal boundary.
+
+Starting from an isolated request and inventing a parallel model before
+inspecting StackOS is a product failure even when the code is locally correct.
+A product-aligned delivery strengthens one operating model, keeps durable truth
+under one owner, activates relevant guidance for agents, and proves the actual
+user and agent flow.
+
+### Non-Goals
+
+StackOS is not:
+
+- a visual workflow-builder clone;
+- a collection of bespoke applications or core routes for each workflow;
+- a strategy engine that chooses business policy inside tools or connectors;
+- a code-enforced editorial, creative, or strategic judgment system;
+- a second agent runtime or a source of implicit filesystem access;
+- a global active-project singleton;
+- a place to expose provider credentials to agents;
+- a set of duplicate registries, helper layers, or workflow-specific state
+  stores that compete with the canonical product model.
 
 ## Priority Order
 

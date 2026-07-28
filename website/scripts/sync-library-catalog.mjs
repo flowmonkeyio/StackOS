@@ -24,6 +24,36 @@ function cleanText(value = '') {
   return String(value).replace(/\s+/g, ' ').trim()
 }
 
+function normalizeText(value) {
+  const values = Array.isArray(value) ? value : [value]
+  return values
+    .filter((item) => typeof item === 'string')
+    .map((item) => cleanText(item))
+    .filter(Boolean)
+    .join(' ')
+}
+
+function normalizeTextList(value) {
+  const values = Array.isArray(value) ? value : [value]
+  return values
+    .filter((item) => typeof item === 'string')
+    .map((item) => cleanText(item))
+    .filter(Boolean)
+}
+
+function publicAgentContract(agent) {
+  const contract = agent?.prompt_contract || {}
+  return {
+    mission: normalizeText(contract.mission),
+    responsibilities: normalizeTextList(contract.responsibilities),
+    must_do: normalizeTextList(contract.must_do),
+    must_not_do: normalizeTextList(contract.must_not_do),
+    handoff_inputs: normalizeTextList(contract.handoff_inputs),
+    handoff_outputs: normalizeTextList(contract.handoff_outputs),
+    success_criteria: normalizeTextList(contract.success_criteria),
+  }
+}
+
 function shortText(value, max = 170) {
   const text = cleanText(value)
   if (text.length <= max) return text
@@ -114,6 +144,12 @@ for (const agent of agentDocs) {
   if (!['reasoning', 'mechanical', 'review'].includes(agent.role_class)) {
     catalogErrors.push(`${agent.key}: missing or invalid role_class`)
   }
+  const contract = publicAgentContract(agent)
+  for (const [field, value] of Object.entries(contract)) {
+    if (!value || (Array.isArray(value) && !value.length)) {
+      catalogErrors.push(`${agent.key}: missing public prompt_contract.${field}`)
+    }
+  }
 }
 
 if (catalogErrors.length) {
@@ -182,6 +218,7 @@ const agents = agentDocs
   .map((agent) => {
     const domain = agent.domain || agent.key.split('.')[0]
     const domainMeta = domainCopy[domain] || { audience: 'Operations teams', color: '#8ea6ff' }
+    const contract = publicAgentContract(agent)
     return {
       key: agent.key,
       slug: slugify(agent.key),
@@ -194,6 +231,13 @@ const agents = agentDocs
       role: humanize(agent.role || agent.key.split('.').at(-1)),
       roleClass: agent.role_class,
       workflowKeys: agent.applies_to_workflows || [],
+      mission: contract.mission,
+      responsibilities: contract.responsibilities,
+      must_do: contract.must_do,
+      must_not_do: contract.must_not_do,
+      handoff_inputs: contract.handoff_inputs,
+      handoff_outputs: contract.handoff_outputs,
+      success_criteria: contract.success_criteria,
     }
   })
   .sort((a, b) => a.name.localeCompare(b.name))

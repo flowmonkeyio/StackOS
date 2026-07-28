@@ -27,6 +27,7 @@ from stackos.mcp.bridge import (
     _bridge_toolbox_describe,
 )
 from stackos.mcp.bridge.catalog import _bridge_toolbox_specs
+from stackos.mcp.bridge.response import _bridge_compact_auth_status
 from stackos.mcp.contract import verb_is_mutating
 from stackos.mcp.permissions import SKILL_TOOL_GRANTS, SYSTEM_SKILL
 from stackos.mcp.server import STACKOS_MCP_INSTRUCTIONS, ToolRegistry
@@ -620,6 +621,112 @@ def test_bridge_forwards_policy_default_response_mode() -> None:
     )
 
     assert forwarded["response_mode"] == "raw"
+
+
+def test_bridge_compact_connections_keep_only_attached_or_explicit_provider_rows() -> None:
+    structured = {
+        "project_id": 7,
+        "provider_key": None,
+        "providers": [
+            {
+                "key": "mock-provider",
+                "name": "Mock Provider",
+                "auth_type": "api_key",
+            },
+            {
+                "key": "openai-images",
+                "name": "OpenAI Images",
+                "auth_type": "api_key",
+            },
+        ],
+        "accounts": [],
+    }
+
+    compact = _bridge_compact_auth_status(structured, attached_only=True)
+    assert compact["providers"] == []
+
+    targeted = _bridge_compact_auth_status(
+        {**structured, "provider_key": "openai-images"},
+        attached_only=True,
+    )
+    assert targeted["accounts"] == []
+    assert [provider["key"] for provider in targeted["providers"]] == ["openai-images"]
+    assert targeted["providers"][0]["status"] == "missing"
+    assert targeted["providers"][0]["setup_required"] is True
+
+
+def test_bridge_compact_connections_preserve_account_lifecycle_and_metadata_fallback() -> None:
+    compact = _bridge_compact_auth_status(
+        {
+            "project_id": 7,
+            "provider_key": None,
+            "providers": [
+                {
+                    "key": "mock-provider",
+                    "name": "Mock Provider",
+                    "auth_type": "api_key",
+                }
+            ],
+            "accounts": [
+                {
+                    "credential_ref": "cred_mock_pending",
+                    "provider_key": "mock-provider",
+                    "display_name": "Pending Mock",
+                    "status": "pending",
+                    "auth_type": "api_key",
+                },
+                {
+                    "credential_ref": "cred_mock_connected",
+                    "provider_key": "mock-provider",
+                    "display_name": "Connected Mock",
+                    "status": "connected",
+                    "auth_type": "api_key",
+                },
+                {
+                    "credential_ref": "cred_local_pending",
+                    "provider_key": "project-local",
+                    "display_name": "Project Local",
+                    "status": "pending",
+                    "auth_type": "oauth2",
+                },
+            ],
+        },
+        attached_only=True,
+    )
+
+    assert [provider["key"] for provider in compact["providers"]] == [
+        "mock-provider",
+        "project-local",
+    ]
+    assert compact["providers"][0]["status"] == "connected"
+    assert compact["providers"][0]["credential_refs"] == [
+        "cred_mock_pending",
+        "cred_mock_connected",
+    ]
+    assert compact["providers"][1]["name"] == "project-local"
+    assert compact["providers"][1]["auth_type"] == "oauth2"
+    assert compact["providers"][1]["status"] == "pending"
+    assert compact["providers"][1]["setup_required"] is False
+
+    for lifecycle in ("pending", "repair-required"):
+        projected = _bridge_compact_auth_status(
+            {
+                "project_id": 7,
+                "provider_key": None,
+                "providers": [],
+                "accounts": [
+                    {
+                        "credential_ref": f"cred_{lifecycle}",
+                        "provider_key": "project-local",
+                        "display_name": "Project Local",
+                        "status": lifecycle,
+                        "auth_type": "oauth2",
+                    }
+                ],
+            },
+            attached_only=True,
+        )
+        assert projected["providers"][0]["status"] == lifecycle
 
 
 def test_bridge_caches_run_token_and_step_grants() -> None:

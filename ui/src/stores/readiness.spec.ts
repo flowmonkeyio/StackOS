@@ -44,7 +44,11 @@ describe('readiness supervision projection', () => {
       'connections',
       'actions',
     ])
-    expect(store.checks.filter((check) => check.to).every((check) => check.to?.startsWith('/projects/7/'))).toBe(true)
+    expect(
+      store.checks
+        .filter((check) => check.to)
+        .every((check) => check.to?.startsWith('/projects/7/')),
+    ).toBe(true)
   })
 
   it('keeps a failed local service probe explicit and blocking', async () => {
@@ -65,6 +69,37 @@ describe('readiness supervision projection', () => {
     expect(store.blocker).toMatchObject({ key: 'daemon', state: 'blocked' })
   })
 
+  it('keeps repair-required integrations out of the ready actions state', async () => {
+    mockedApiFetch.mockImplementation(async (url) => {
+      if (url === '/api/v1/health') {
+        return { db_status: 'ok', scheduler_running: true }
+      }
+      if (url === '/api/v1/projects/7/connections/accounts') {
+        return {
+          providers: [{ provider_key: 'mock-provider' }],
+          accounts: [{ status: 'repair-required', revoked_at: null }],
+        }
+      }
+      throw new Error(`unexpected URL ${url}`)
+    })
+    mockedCallOperation.mockResolvedValue({
+      count: 1,
+      connected_count: 0,
+      ready_count: 0,
+      hidden_action_count: 0,
+      items: [{ provider_key: 'mock-provider', state: 'repair_required' }],
+    })
+
+    const store = useReadinessStore()
+    await store.refresh(7)
+
+    expect(store.checks.find((check) => check.key === 'actions')).toMatchObject({
+      state: 'attention',
+      hint: '1 integration needs Account repair.',
+      to: '/projects/7/plugins',
+    })
+  })
+
   it('can skip the expensive action inventory on the Home fast path', async () => {
     mockedApiFetch.mockImplementation(async (url) => {
       if (url === '/api/v1/health') {
@@ -82,11 +117,7 @@ describe('readiness supervision projection', () => {
     const store = useReadinessStore()
     await store.refresh(7, { authStatus: sharedAuth, includeActions: false })
 
-    expect(store.checks.map((check) => check.key)).toEqual([
-      'daemon',
-      'automation',
-      'connections',
-    ])
+    expect(store.checks.map((check) => check.key)).toEqual(['daemon', 'automation', 'connections'])
     expect(mockedCallOperation).not.toHaveBeenCalled()
     expect(mockedApiFetch).toHaveBeenCalledTimes(1)
   })

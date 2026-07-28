@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { Background } from '@vue-flow/background'
 import { VueFlow, type Edge, type Node } from '@vue-flow/core'
+import '@vue-flow/core/dist/style.css'
+import '@vue-flow/core/dist/theme-default.css'
 
 import { productWorkflows, type FlowStatus, type ProductFlowStep } from '~/data/workflows'
 
@@ -22,8 +24,10 @@ function hostLogo(host: string) {
 
 const activeKey = ref(productWorkflows[0]?.key ?? '')
 const isNarrow = ref(false)
+const prefersReducedMotion = ref(false)
 const progress = ref(-2)
 let mediaQuery: MediaQueryList | undefined
+let motionQuery: MediaQueryList | undefined
 let cycleTimer: ReturnType<typeof setInterval> | undefined
 
 const activeWorkflow = computed(
@@ -100,7 +104,7 @@ const edges = computed<Edge[]>(() =>
       id: `${flowSteps.value[index]?.id}-${step.id}`,
       source: flowSteps.value[index]?.id ?? '',
       target: step.id,
-      animated: status === 'active',
+      animated: status === 'active' && !prefersReducedMotion.value,
       class: `product-flow-edge product-flow-edge--${status}`,
       style: {
         stroke: status === 'done' ? '#74dca5' : status === 'active' ? '#7892ff' : '#3d4656',
@@ -127,15 +131,27 @@ function syncViewport(event?: MediaQueryListEvent) {
   isNarrow.value = event?.matches ?? mediaQuery?.matches ?? false
 }
 
+function syncMotion(event?: MediaQueryListEvent) {
+  prefersReducedMotion.value = event?.matches ?? motionQuery?.matches ?? false
+  if (cycleTimer) {
+    clearInterval(cycleTimer)
+    cycleTimer = undefined
+  }
+  if (!prefersReducedMotion.value) cycleTimer = setInterval(advanceCycle, 1800)
+}
+
 onMounted(() => {
   mediaQuery = window.matchMedia('(max-width: 760px)')
+  motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
   syncViewport()
+  syncMotion()
   mediaQuery.addEventListener('change', syncViewport)
-  cycleTimer = setInterval(advanceCycle, 1800)
+  motionQuery.addEventListener('change', syncMotion)
 })
 
 onBeforeUnmount(() => {
   mediaQuery?.removeEventListener('change', syncViewport)
+  motionQuery?.removeEventListener('change', syncMotion)
   if (cycleTimer) clearInterval(cycleTimer)
 })
 </script>
@@ -254,6 +270,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .workflow-section {
+  min-height: 1320px;
   overflow: clip;
 }
 
@@ -583,6 +600,10 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 760px) {
+  .workflow-section {
+    min-height: 2640px;
+  }
+
   .workflow-tabs {
     display: flex;
     overflow-x: auto;

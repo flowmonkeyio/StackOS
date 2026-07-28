@@ -1,6 +1,13 @@
 <script setup lang="ts">
+import { canonicalPath, countLabel } from '#shared/utils/siteSeo'
+import { consolidatedProviderSlug, providerIntegrationPath } from '#shared/utils/integrationRoutePolicy'
+
 const route = useRoute()
 const slug = String(route.params.slug)
+const consolidatedSlug = consolidatedProviderSlug(slug)
+if (consolidatedSlug) {
+  await navigateTo(providerIntegrationPath(consolidatedSlug), { redirectCode: 301, replace: true })
+}
 const catalog = useIntegrationCatalog()
 const plugin = catalog.pluginBySlug(slug)
 
@@ -8,17 +15,17 @@ if (!plugin) throw createError({ statusCode: 404, statusMessage: 'Integration pl
 
 const providers = catalog.providersForPlugin(slug)
 
-useLibrarySeo({
-  title: `${plugin.name} integrations — ${plugin.providerCount} providers | StackOS`,
-  description: `${plugin.description} Browse ${plugin.providerCount} providers and ${plugin.actionCount} supported actions in the StackOS ${plugin.name} plugin.`,
+useSiteSeo({
+  title: `${plugin.name} integrations — ${countLabel(plugin.providerCount, 'provider')}`,
+  description: `${plugin.description} Browse ${countLabel(plugin.providerCount, 'provider')} and ${countLabel(plugin.actionCount, 'supported action')} in the StackOS ${plugin.name} plugin.`,
 })
 
 useSchemaOrg([
   defineWebPage({ '@type': 'CollectionPage', name: `${plugin.name} integrations`, description: plugin.description }),
-  defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library' }, { name: 'Integrations', item: '/library/integrations' }, { name: plugin.name, item: route.path }] }),
+  defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library/' }, { name: 'Integrations', item: '/library/integrations/' }, { name: plugin.name, item: canonicalPath(route.path) }] }),
 ])
 
-useHead({ script: [{ key: 'plugin-integrations-list', type: 'application/ld+json', innerHTML: JSON.stringify({ '@context': 'https://schema.org', '@type': 'ItemList', name: `${plugin.name} integrations`, numberOfItems: providers.length, itemListElement: providers.map((provider, index) => ({ '@type': 'ListItem', position: index + 1, name: provider.name, url: `/library/integrations/${provider.slug}` })) }) }] })
+useHead({ script: [{ key: 'plugin-integrations-list', type: 'application/ld+json', innerHTML: JSON.stringify({ '@context': 'https://schema.org', '@type': 'ItemList', name: `${plugin.name} integrations`, numberOfItems: providers.length, itemListElement: providers.map((provider, index) => ({ '@type': 'ListItem', position: index + 1, name: provider.name, url: providerIntegrationPath(provider.slug) })) }) }] })
 </script>
 
 <template>
@@ -28,7 +35,7 @@ useHead({ script: [{ key: 'plugin-integrations-list', type: 'application/ld+json
         <p class="library-kicker">StackOS plugin</p>
         <h1>{{ plugin.name }}</h1>
         <p>{{ plugin.description }}</p>
-        <div class="plugin-detail-hero__stats"><span><strong>{{ plugin.providerCount }}</strong> providers</span><span><strong>{{ plugin.actionCount }}</strong> supported actions</span><span><strong>{{ plugin.capabilityCount }}</strong> capabilities</span></div>
+        <div class="plugin-detail-hero__stats"><span><strong>{{ plugin.providerCount }}</strong> {{ plugin.providerCount === 1 ? 'provider' : 'providers' }}</span><span><strong>{{ plugin.actionCount }}</strong> supported {{ plugin.actionCount === 1 ? 'action' : 'actions' }}</span><span><strong>{{ plugin.capabilityCount }}</strong> {{ plugin.capabilityCount === 1 ? 'capability' : 'capabilities' }}</span></div>
       </div>
     </section>
 

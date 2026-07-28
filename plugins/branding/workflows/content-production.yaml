@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: branding.content-production
 name: Branding Content Production
-version: 0.4.0
+version: 0.4.3
 description: End-to-end journalist-led branding workflow that turns a topic, evidence, research, or current work into a voice-consistent canonical piece, optional generated image set, executable channel publication jobs, automated publishing, and durable content memory.
 domain: branding
 owner:
@@ -373,7 +373,7 @@ policies:
     description: Final work must be discoverable later through StackOS resources; artifacts hold blobs, but content-piece stores the queryable index and refs.
   - key: orchestrator_gates_feedback
     kind: quality
-    description: Review findings are advisory claims. The orchestrator classifies each as blocker, repair, preference, or out-of-scope/unsupported and changes the deliverable only for evidence-backed blockers and repairs.
+    description: Review findings and verdict labels are advisory claims. The orchestrator inspects their cited evidence, rejects unsupported ready verdicts, classifies each finding as blocker, repair, preference, or out-of-scope/unsupported, and changes the deliverable only for evidence-backed blockers and repairs.
   - key: intent_scoped_terminal_condition
     kind: boundary
     description: packet_only completes after the final content-piece and reviewed packet are retrieval-ready with publication skipped; stage or publish completes after only the named jobs are attempted and their distribution state is recorded. Closeout does not authorize unrelated follow-up work.
@@ -446,6 +446,9 @@ steps:
     purpose: Propose one to three piece ideas, select the structure, name target channels, and decide whether images are needed.
     instructions:
       - Propose a small set of angles with thesis, audience, evidence basis, follow-up potential, and risk.
+      - Compare the nearest prior pieces to distinguish a genuinely new topic from an existing position that should be strengthened, refreshed, or held; do not select an angle from keyword research alone.
+      - Let the evidence and selected thesis determine the form. In a sequential batch, compare completed earlier articles across topic ownership, macro structure, rhetorical frame, caveat placement, cadence, opening, and ending; do not reuse their chassis merely because the pieces share a workflow.
+      - Record claim risks and evidence limits as semantic constraints, not ready-to-copy disclaimer sentences, headings, or conclusions, unless an exact source or legal phrase is required.
       - Select channels from requested targets and channel charters; do not fan out mechanically.
       - Record why the selected structure, channel set, and image plan fit the evidence and operator intent.
     depends_on:
@@ -473,12 +476,15 @@ steps:
     success_criteria:
       - Each idea names thesis, audience, structure, evidence, research basis, follow-up potential, and risk.
       - Selected channels and image needs are explicit; no-image decisions include a rationale.
+      - Prior-work differentiation covers rhetorical form and cadence as well as topic and outline, while evidence limits remain semantic constraints rather than scripted public copy.
       - The selected angle produces an initial content memory index with topic tags, position refs, evidence refs, and follow-up hooks to carry forward.
   - id: draft-canonical
     title: Draft Canonical
     purpose: Write the canonical piece in the adapted operator voice from the selected angle and evidence pack.
     instructions:
       - Draft only from the selected angle, cleared evidence, brand profile, and channel-independent canonical structure.
+      - Treat angle risks and evidence limits as meaning constraints rather than mandatory wording; do not copy planning-language caveats into public prose by default.
+      - Compare the actual draft with named representative work and completed earlier sequential articles for repeated opening moves, caveat or contrast syntax, transition and sentence cadence, section logic, and conclusion moves; repair avoidable clusters before review.
       - Mark position changes explicitly instead of silently contradicting prior positions.
       - Keep iterative scratch outside durable StackOS artifacts unless the workflow intentionally preserves it.
     depends_on:
@@ -486,6 +492,7 @@ steps:
     context_refs:
       - brand_profiles
       - positions
+      - prior_pieces
     resource_refs:
       - content_piece
       - evidence_items
@@ -497,6 +504,7 @@ steps:
       - canonical_draft_artifact
     success_criteria:
       - The draft uses the selected structure and avoids facts absent from the interview pack, research pack, or supporting artifacts.
+      - The actual prose preserves necessary evidence limits without reusing an avoidable rhetorical chassis from representative or completed earlier work.
       - Position changes are marked as explicit stance updates, not accidental contradictions.
       - The draft ref or intentionally preserved artifact ref is written back to the content-piece memory index; normal draft iteration stays in project-local working state.
   - id: editorial-review
@@ -504,6 +512,10 @@ steps:
     purpose: Run one compact review pass for factual support, prior-position consistency, voice, and channel form.
     instructions:
       - Review factual support, prior-position consistency, voice fit, and channel form as separate findings.
+      - Compare the actual prose with named representative prior work and, for a later item in a sequential batch, with every completed earlier article supplied for that invocation.
+      - Name the closest prior comparison and inspect repeated opening moves, caveat or disclaimer machinery, contrast syntax, transition and sentence cadence, section logic, conclusion moves, and prior-work overlap; different outlines or artifact types alone do not prove distinction.
+      - Treat individually accurate caveats as a voice repair when their cumulative rhetoric creates a repeated generated chassis.
+      - Return ready only when the review cites concrete comparative evidence, states the pattern clusters checked, and leaves no unresolved blocker or repair; if drift originated in the selected angle or structure, name that earliest affected decision.
       - Cut unsupported claims or return them as explicit questions.
       - Classify every finding as blocker, repair, preference, or out-of-scope/unsupported and cite its evidence, profile, position, or channel-contract basis.
       - Attach review refs to the content-piece review log.
@@ -530,7 +542,8 @@ steps:
       - editorial_review_report
     success_criteria:
       - Unsupported claims are cut or sent back as questions.
-      - Voice findings cite profile, exemplar, or channel-charter basis.
+      - Voice findings cite the profile, named exemplars, completed earlier sequential work when applicable, the closest comparison, and concrete prose-level evidence.
+      - A ready verdict demonstrates that opening, caveat and contrast language, cadence, transitions, section logic, and ending were checked and that no repair remains unresolved.
       - Contradictions with prior positions are resolved or escalated.
       - Claim, voice, and position-consistency review refs are attached to the content-piece review log.
   - id: sanitization-review
@@ -924,6 +937,7 @@ failure_handling:
   - If the selected interview path does not produce enough facts or first-hand perspective, ask bounded follow-up questions instead of drafting from vibe.
   - If research sources conflict, present the conflict and ask whether to narrow the claim, collect more evidence, or change the angle.
   - If prior positions conflict with the selected thesis, stop and ask whether this is an error or a position update.
+  - If operator feedback changes the voice, framing, angle, evidence boundary, or intended form, return to the earliest affected decision and rerun only its dependent work and independent reviews; do not patch the final copy while preserving a rejected upstream choice.
   - If image generation is selected but provider setup, configured budget, or acceptance criteria are missing, continue with operator-supplied media or a text-only packet and record the reason.
   - If sanitization blocks a claim or image brief, repair from cleared evidence or stop before packets.
   - If the final content memory index cannot be written to content-piece, stop before publication; do not treat artifacts alone as durable memory.

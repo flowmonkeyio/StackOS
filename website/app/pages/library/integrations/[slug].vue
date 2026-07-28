@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { canonicalPath, countLabel } from '#shared/utils/siteSeo'
+import { pluginIntegrationPath } from '#shared/utils/integrationRoutePolicy'
+
 const route = useRoute()
 const slug = String(route.params.slug)
 const catalog = useIntegrationCatalog()
@@ -27,8 +30,31 @@ const capabilityOptions = computed(() => {
 })
 const related = computed(() => catalog.providers.filter((item) => item.pluginSlug === provider.pluginSlug && item.slug !== provider.slug).slice(0, 3))
 const providerCapabilityAnswer = provider.capabilities.length
-  ? `${provider.actionCount} ${provider.name} actions across ${provider.capabilities.join(', ')}`
+  ? `${countLabel(provider.actionCount, `${provider.name} action`)} across ${provider.capabilities.join(', ')}`
   : `the ${provider.name} provider through the ${provider.pluginName} plugin`
+const authLabels: Record<string, string> = {
+  none: 'No external account required',
+  oauth: 'OAuth connection',
+  api_key: 'API key',
+  api_token: 'API token',
+  basic: 'Username and password',
+  local: 'Local StackOS service',
+}
+const authLabel = authLabels[provider.authType] || provider.authType.replaceAll('_', ' ')
+const actionRiskCounts = computed(() => provider.actions.reduce((counts, action) => {
+  counts[action.risk] = (counts[action.risk] || 0) + 1
+  return counts
+}, {} as Record<string, number>))
+const integrationFaq = [
+  {
+    question: `What can the ${provider.name} integration do in StackOS?`,
+    answer: `The current catalog includes ${providerCapabilityAnswer}. The exact actions used depend on the workflow and approval rules.`,
+  },
+  {
+    question: `Does StackOS replace ${provider.name}?`,
+    answer: `No. ${provider.name} remains the tool that performs its part of the job. StackOS organizes the workflow, keeps status and dependencies visible, and calls the tool only when the plan reaches the right approved action.`,
+  },
+]
 
 function riskLabel(risk: string) {
   if (risk === 'read') return 'Reads data'
@@ -39,14 +65,14 @@ function riskLabel(risk: string) {
 
 watch([actionSearch, selectedCapability], () => { visibleLimit.value = 36 })
 
-useLibrarySeo({
-  title: `${provider.name} integration for AI agents and workflows | StackOS`,
+useSiteSeo({
+  title: `${provider.name} integration for AI agents and workflows`,
   description: `${provider.description} Explore ${provider.actionCount} supported ${provider.name} actions and see how it fits into StackOS workflows.`,
 })
 
 useSchemaOrg([
   defineWebPage({ name: `${provider.name} integration`, description: provider.description }),
-  defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library' }, { name: 'Integrations', item: '/library/integrations' }, { name: provider.name, item: route.path }] }),
+  defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library/' }, { name: 'Integrations', item: '/library/integrations/' }, { name: provider.name, item: canonicalPath(route.path) }] }),
 ])
 
 const softwareSchema = {
@@ -60,10 +86,7 @@ const softwareSchema = {
 
 useHead({ script: [
   { key: 'integration-software', type: 'application/ld+json', innerHTML: JSON.stringify(softwareSchema) },
-  { key: 'integration-faq', type: 'application/ld+json', innerHTML: JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: [
-    { '@type': 'Question', name: `What can the ${provider.name} integration do in StackOS?`, acceptedAnswer: { '@type': 'Answer', text: `The current catalog includes ${providerCapabilityAnswer}. The exact actions used depend on the workflow and approval rules.` } },
-    { '@type': 'Question', name: `Does StackOS replace ${provider.name}?`, acceptedAnswer: { '@type': 'Answer', text: `No. ${provider.name} remains the tool that performs its part of the job. StackOS organizes the workflow, keeps status and dependencies visible, and calls the tool only when the plan reaches the right approved action.` } },
-  ] }) },
+  { key: 'integration-faq', type: 'application/ld+json', innerHTML: JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: integrationFaq.map((item) => ({ '@type': 'Question', name: item.question, acceptedAnswer: { '@type': 'Answer', text: item.answer } })) }) },
 ] })
 </script>
 
@@ -78,7 +101,7 @@ useHead({ script: [
           </div>
           <p>{{ provider.description }}</p>
           <div class="integration-detail-hero__meta">
-            <span><strong>{{ provider.actionCount }}</strong> supported actions</span>
+            <span><strong>{{ provider.actionCount }}</strong> supported {{ provider.actionCount === 1 ? 'action' : 'actions' }}</span>
             <span><strong>{{ provider.capabilities.length }}</strong> capability groups</span>
           </div>
         </div>
@@ -89,6 +112,38 @@ useHead({ script: [
             <a v-for="link in provider.links.slice(0, 4)" :key="link.url" :href="link.url" target="_blank" rel="noopener noreferrer">{{ link.label }} <span aria-hidden="true">↗</span></a>
           </div>
         </aside>
+      </div>
+    </section>
+
+    <section class="integration-facts" :data-provider-facts="provider.slug">
+      <div class="shell">
+        <div class="library-section__heading">
+          <div><p class="eyebrow">Connection facts</p><h2>What the {{ provider.name }} connector actually exposes.</h2></div>
+          <p>These details come from the current StackOS provider manifest and action catalog. They describe the available connection—not a promise that every workflow will use every action.</p>
+        </div>
+        <dl class="integration-facts__grid">
+          <div>
+            <dt>Connection method</dt>
+            <dd>{{ authLabel }}</dd>
+          </div>
+          <div>
+            <dt>Setup</dt>
+            <dd>{{ provider.setupNote || `Configure ${provider.name} before a workflow calls it.` }}</dd>
+          </div>
+          <div>
+            <dt>Capability groups</dt>
+            <dd>{{ provider.capabilities.length ? provider.capabilities.join(', ') : 'No callable capability groups published yet.' }}</dd>
+          </div>
+          <div>
+            <dt>Action boundaries</dt>
+            <dd>
+              <span v-if="actionRiskCounts.read">{{ countLabel(actionRiskCounts.read, 'read action') }}</span>
+              <span v-if="actionRiskCounts.write">{{ countLabel(actionRiskCounts.write, 'write action') }}</span>
+              <span v-if="actionRiskCounts.cost">{{ countLabel(actionRiskCounts.cost, 'cost-bearing action') }}</span>
+              <span v-if="!provider.actions.length">No callable actions published yet.</span>
+            </dd>
+          </div>
+        </dl>
       </div>
     </section>
 
@@ -105,7 +160,7 @@ useHead({ script: [
             <button :class="{ 'is-active': selectedCapability === 'all' }" type="button" @click="selectedCapability = 'all'">All <span>{{ provider.actionCount }}</span></button>
             <button v-for="capability in capabilityOptions" :key="capability.key" :class="{ 'is-active': selectedCapability === capability.key }" type="button" @click="selectedCapability = capability.key">{{ capability.name }} <span>{{ capability.count }}</span></button>
           </div>
-          <p>{{ filteredActions.length }} matching actions</p>
+          <p>{{ countLabel(filteredActions.length, 'matching action') }}</p>
         </div>
 
         <div v-if="visibleActions.length" class="integration-action-grid">
@@ -135,8 +190,19 @@ useHead({ script: [
 
     <section v-if="related.length" class="related-section">
       <div class="shell">
-        <div class="library-section__heading"><div><p class="eyebrow eyebrow--dark">More from {{ provider.pluginName }}</p><h2>Related integrations.</h2></div><NuxtLink :to="`/library/integrations/plugins/${provider.pluginSlug}`">See the plugin →</NuxtLink></div>
+        <div class="library-section__heading"><div><p class="eyebrow eyebrow--dark">More from {{ provider.pluginName }}</p><h2>Related integrations.</h2></div><NuxtLink :to="pluginIntegrationPath(provider.pluginSlug)">See the plugin →</NuxtLink></div>
         <div class="integration-related-grid"><IntegrationCard v-for="item in related" :key="item.key" :provider="item" /></div>
+      </div>
+    </section>
+
+    <section class="integration-faq" aria-labelledby="integration-faq-title">
+      <div class="detail-body__narrow">
+        <p class="eyebrow">Common questions</p>
+        <h2 id="integration-faq-title">{{ provider.name }} and StackOS.</h2>
+        <details v-for="item in integrationFaq" :key="item.question">
+          <summary>{{ item.question }}</summary>
+          <p>{{ item.answer }}</p>
+        </details>
       </div>
     </section>
   </LibraryFrame>
@@ -158,6 +224,12 @@ useHead({ script: [
 .integration-detail-hero aside > div { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
 .integration-detail-hero aside a { padding: 8px 10px; color: var(--paper); font-size: 12px; font-weight: 700; text-decoration: none; background: rgb(255 255 255 / 5%); border: 1px solid rgb(255 255 255 / 9%); border-radius: 8px; }
 .integration-actions { padding: 95px 0 110px; background: var(--paper); }
+.integration-facts { padding: 92px 0; color: var(--paper); background: #0d1017; }
+.integration-facts__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 44px 0 0; }
+.integration-facts__grid > div { padding: 22px; background: #151a24; border: 1px solid rgb(255 255 255 / 9%); border-radius: 14px; }
+.integration-facts dt { color: color-mix(in srgb, var(--integration-color) 72%, white); font-family: var(--font-mono); font-size: 10px; letter-spacing: .07em; text-transform: uppercase; }
+.integration-facts dd { margin: 12px 0 0; color: var(--ink-soft); font-size: 15px; line-height: 1.65; }
+.integration-facts dd span { display: block; }
 .integration-action-tools { display: grid; grid-template-columns: minmax(280px, .65fr) minmax(0, 1fr) auto; gap: 15px; align-items: center; margin: 50px 0 22px; padding: 13px; background: #e8e6dc; border: 1px solid var(--paper-border); border-radius: 15px; }
 .integration-action-tools label > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
 .integration-action-tools input { width: 100%; min-height: 46px; padding: 0 14px; color: var(--ink); font: inherit; font-size: 15px; background: #f8f7f2; border: 1px solid var(--paper-border); border-radius: 9px; }
@@ -182,7 +254,13 @@ useHead({ script: [
 .integration-answer h2 { margin: 9px 0 20px; font-size: clamp(36px, 4.5vw, 60px); line-height: 1; letter-spacing: -.06em; }
 .integration-answer p { color: #4f504b; font-size: 18px; line-height: 1.72; }
 .integration-related-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 15px; }
+.integration-faq { padding: 92px 0; background: var(--paper); }
+.integration-faq h2 { margin: 9px 0 30px; font-size: clamp(36px, 4.5vw, 58px); letter-spacing: -.055em; }
+.integration-faq details { border-top: 1px solid var(--paper-border); }
+.integration-faq details:last-child { border-bottom: 1px solid var(--paper-border); }
+.integration-faq summary { padding: 20px 0; font-size: 18px; font-weight: 720; cursor: pointer; }
+.integration-faq details p { margin: -4px 0 22px; color: var(--muted-on-paper); font-size: 16px; line-height: 1.7; }
 @media (max-width: 1050px) { .integration-action-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 900px) { .integration-detail-hero__grid { grid-template-columns: 1fr; gap: 36px; } .integration-action-tools { grid-template-columns: 1fr; } .integration-action-tools > p { white-space: normal; } .integration-related-grid { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 640px) { .integration-detail-hero { padding-top: 60px; } .integration-detail-hero__identity { align-items: start; } .integration-detail-hero h1 { font-size: clamp(43px, 12vw, 62px); } .integration-action-grid { grid-template-columns: 1fr; } .integration-action-grid article { min-height: 154px; } .integration-related-grid { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .integration-detail-hero { padding-top: 60px; } .integration-detail-hero__identity { align-items: start; } .integration-detail-hero h1 { font-size: clamp(43px, 12vw, 62px); } .integration-facts__grid { grid-template-columns: 1fr; } .integration-action-grid { grid-template-columns: 1fr; } .integration-action-grid article { min-height: 154px; } .integration-related-grid { grid-template-columns: 1fr; } }
 </style>

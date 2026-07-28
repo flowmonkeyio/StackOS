@@ -1,4 +1,6 @@
-interface LibrarySeoOptions {
+import { absoluteSiteUrl, brandTitle, normalizeSubjectTitle } from '#shared/utils/siteSeo'
+
+interface SiteSeoOptions {
   title: string
   description: string
   type?: 'website' | 'article'
@@ -6,34 +8,36 @@ interface LibrarySeoOptions {
   updatedAt?: string
 }
 
-export function useLibrarySeo(options: LibrarySeoOptions) {
+export function useSiteSeo(options: SiteSeoOptions) {
   const route = useRoute()
   const config = useRuntimeConfig()
-  const canonical = computed(() => new URL(route.path, config.public.siteUrl as string).toString())
+  const subjectTitle = computed(() => normalizeSubjectTitle(options.title))
+  const socialTitle = computed(() => brandTitle(subjectTitle.value))
+  const canonical = computed(() => absoluteSiteUrl(config.public.siteUrl as string, route.path))
 
   useHead({
     link: [{ rel: 'canonical', href: canonical }],
   })
 
   useSeoMeta({
-    title: options.title,
+    title: subjectTitle,
     description: options.description,
-    ogTitle: options.title,
+    ogTitle: socialTitle,
     ogDescription: options.description,
     ogType: options.type || 'website',
     ogUrl: canonical,
     twitterCard: 'summary_large_image',
-    twitterTitle: options.title,
+    twitterTitle: socialTitle,
     twitterDescription: options.description,
     articlePublishedTime: options.publishedAt,
     articleModifiedTime: options.updatedAt,
   })
 
   defineOgImageComponent('StackOS' as any, {
-    title: options.title,
+    title: subjectTitle,
     description: options.description,
     colorMode: 'dark',
   })
 
-  return { canonical }
+  return { canonical, subjectTitle, socialTitle }
 }

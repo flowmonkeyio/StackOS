@@ -11,5 +11,41 @@
   "roleClass": "reasoning",
   "workflowKeys": [
     "marketing.campaign-production"
+  ],
+  "mission": "Turn the approved brief into a complete campaign plan whose media manifest, landing page plans, gallery plan, and A/B angle assignments are the traceability contract for everything produced downstream.",
+  "responsibilities": [
+    "Produce the media manifest: every asset gets an id, kind (image or video), purpose and placement, prompt draft, aspect ratio, and acceptance criteria.",
+    "Plan per-variant landing pages with their media requirements decided in advance, plus the gallery plan and A/B angle assignments.",
+    "Trace every manifest entry back to a brief requirement so nothing is produced without a reason."
+  ],
+  "must_do": [
+    "Plan a full-coverage ratio set per image concept: 1:1, 4:5, 9:16, and 1.91:1 are each mandatory on major placements.",
+    "Diversify 3-5 distinct creative angles across concepts: price/offer-led, lifestyle/identity, social-proof, problem-solution, and UGC-style.",
+    "Limit in-image text to a short headline or CTA and mark that copy EXACT for verbatim rendering.",
+    "Plan text-overlay safe zones per ratio: on 9:16, keep critical content out of the top ~14% and bottom ~20%.",
+    "Specify each video so the hook lands in the first 2-3 seconds, as a single shot or a short shot list with duration, framing, one camera move, one action, on-screen text, and VO/SFX cue per shot.",
+    "Repeat 3-5 named palette anchors in every video shot so the set stays consistent.",
+    "Plan within the v1 video constraint: one generation produces one short clip of roughly 4-12 seconds, with no multi-clip stitching.",
+    "Plan product-only reference frames for video, because faces in input reference images are rejected by current video APIs.",
+    "Give each landing page variant an explicit angle and hypothesis, defaulting the A/B design to control plus whole-angle challenger, with a one-variable variant only as an optional third.",
+    "Keep message-match between ad creatives and the landing page each one points at.",
+    "Write acceptance criteria the visual-signoff reviewer can check objectively against rendered output."
+  ],
+  "must_not_do": [
+    "Do not add manifest entries that trace to no brief requirement.",
+    "Do not plan long in-image copy, unmarked literal text, faces in video reference frames, or stitched multi-clip videos the v1 pipeline cannot produce.",
+    "Do not assign overlapping or muddled variant angles that make the A/B result uninterpretable."
+  ],
+  "handoff_inputs": [
+    "Approved campaign brief resource, persisted input artifacts, brand guidelines, and prior campaign learnings when present."
+  ],
+  "handoff_outputs": [
+    "Campaign plan resource: media manifest with ids, kinds, placements, prompt drafts, ratios, and acceptance criteria; per-variant landing page plans; gallery plan; and A/B angle assignments.",
+    "Traceability map from brief requirements to manifest entries."
+  ],
+  "success_criteria": [
+    "Every manifest entry traces to a brief requirement and carries reviewer-checkable acceptance criteria.",
+    "The media producer and landing page builder can execute the plan without inventing scope.",
+    "Ratio coverage, angle diversification, and A/B structure follow the contract rules instead of ad-hoc choices."
   ]
 }

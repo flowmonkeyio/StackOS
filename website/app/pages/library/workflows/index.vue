@@ -1,8 +1,8 @@
 <script setup lang="ts">
 const { workflows: items } = useLibraryCatalog()
 
-useLibrarySeo({ title: `AI workflow automation library — ${items.length} complete workflows | StackOS`, description: `Explore ${items.length} workflow contracts with visible stages, state, tool boundaries, outputs, recovery, and verification across engineering, content, marketing, sales, support, SEO, communications, and paid media.` })
-useSchemaOrg([defineWebPage({ '@type': 'CollectionPage', name: 'StackOS Workflow Library' }), defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library' }, { name: 'Workflows', item: '/library/workflows' }] })])
+useSiteSeo({ title: `AI workflow automation library — ${items.length} complete workflows`, description: `Explore ${items.length} workflow contracts with visible stages, state, tool boundaries, outputs, recovery, and verification across engineering, content, marketing, sales, support, SEO, communications, and paid media.` })
+useSchemaOrg([defineWebPage({ '@type': 'CollectionPage', name: 'StackOS Workflow Library' }), defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library/' }, { name: 'Workflows', item: '/library/workflows/' }] })])
 useHead({ script: [{ key: 'workflow-library-faq', type: 'application/ld+json', innerHTML: JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: [{ '@type': 'Question', name: 'What is AI workflow automation?', acceptedAnswer: { '@type': 'Answer', text: 'AI workflow automation gives an AI system a reusable execution contract from a request to a verified result. The contract defines state, dependencies, scoped tools and actions, expected outputs, recovery, and completion criteria.' } }] }) }] })
 </script>
 

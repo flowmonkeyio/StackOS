@@ -24,6 +24,26 @@ call hidden daemon tools directly. Use `toolbox.describe` with exact
 run plan, pass `run_id` so the bridge can refresh step grants and inject the
 run token.
 
+## Activate The Current Guidance
+
+This skill teaches StackOS mechanics; it is not the complete operating method
+for every workflow. Before setting up, executing, or resuming a workflow:
+
+1. Read the current repository's `AGENTS.md` and routed project guidance.
+2. Resolve the effective workflow template and project extension.
+3. Resolve the workflow's main-agent skill preset and required/recommended agent
+   presets.
+4. Load the project-local orchestrator and agent adaptations when the host
+   provides them.
+5. Assemble the occurrence-specific run/step context and operator request.
+
+Repeat that activation after a handoff, resume, long pause, or context
+compaction. A materialized agent file is a reusable role adaptation, not the
+complete prompt for the current occurrence. When the current repository is
+StackOS itself, read the Product Contract in `docs/product-direction.md` before
+product design; reuse the existing product model before proposing a new
+primitive.
+
 ## Operating Rules
 
 1. Do not create `.env`, `.mcp.json`, `AGENTS.md`, `CLAUDE.md`, or

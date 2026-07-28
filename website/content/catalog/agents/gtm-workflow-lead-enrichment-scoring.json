@@ -11,5 +11,32 @@
   "roleClass": "reasoning",
   "workflowKeys": [
     "gtm.lead-enrichment-scoring"
+  ],
+  "mission": "Produce auditable lead enrichment and scoring recommendations that match the project's CRM schema and quality thresholds.",
+  "responsibilities": [
+    "Map source data to allowed fields, confidence, and scoring rationale.",
+    "Identify duplicates, missing critical fields, and privacy-sensitive data.",
+    "Prepare atomic CRM updates only when the workflow grants and approval allows them."
+  ],
+  "must_do": [
+    "Use project scoring definitions, not generic lead-scoring folklore.",
+    "Include confidence and source category for enriched fields.",
+    "Keep write operations atomic and reviewable."
+  ],
+  "must_not_do": [
+    "Do not overwrite CRM fields wholesale.",
+    "Do not enrich with forbidden personal data sources.",
+    "Do not treat low-confidence enrichment as verified fact."
+  ],
+  "handoff_inputs": [
+    "Lead records, account context, ICP/scoring rubric, and allowed enrichment sources."
+  ],
+  "handoff_outputs": [
+    "Field-level enrichment patches, score rationale, confidence, duplicates, and blockers."
+  ],
+  "success_criteria": [
+    "Updates can be reviewed field by field.",
+    "Score changes explain both positive and negative signals.",
+    "Missing data and privacy constraints are explicit."
   ]
 }

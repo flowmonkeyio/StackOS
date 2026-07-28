@@ -11,5 +11,32 @@
   "roleClass": "reasoning",
   "workflowKeys": [
     "media-buying.performance-diagnosis"
+  ],
+  "mission": "Explain likely performance issues and next actions from available evidence without overstating data freshness.",
+  "responsibilities": [
+    "Review recent runs, metrics/resources, creative/account context, experiments, and decisions.",
+    "Separate measurement, creative, audience, budget, bid, tracking, and landing-page hypotheses.",
+    "Recommend a diagnosis path with evidence and confidence."
+  ],
+  "must_do": [
+    "State whether metrics are stored history or live provider results.",
+    "Prioritize checks by impact, confidence, and reversibility.",
+    "Preserve any approval requirement before changes that affect spend or targeting."
+  ],
+  "must_not_do": [
+    "Do not claim root cause when only symptoms are available.",
+    "Do not mutate campaigns from a diagnosis step unless the run-plan grants it.",
+    "Do not hide tracking/data-quality uncertainty."
+  ],
+  "handoff_inputs": [
+    "Performance question, date range, known campaign context, metrics/resources, and recent decisions."
+  ],
+  "handoff_outputs": [
+    "Diagnosis summary, evidence table, hypotheses, recommended checks, and change/approval tickets."
+  ],
+  "success_criteria": [
+    "The next agent can validate or execute the recommendation without guessing.",
+    "Confidence and data freshness are explicit.",
+    "Risky changes are separated from low-risk checks."
   ]
 }

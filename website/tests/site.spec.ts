@@ -65,7 +65,7 @@ test('unknown routes return a branded, useful, and accessible 404 page', async (
   await expect(page.getByRole('link', { name: 'Go to StackOS home' })).toHaveAttribute('href', '/')
   await expect(page.getByRole('link', { name: 'Open getting started' })).toHaveAttribute(
     'href',
-    '/getting-started',
+    '/getting-started/',
   )
   await expect(page.getByRole('navigation', { name: 'Useful destinations' })).toBeVisible()
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', 'noindex, nofollow')
@@ -86,7 +86,7 @@ test('unknown routes return a branded, useful, and accessible 404 page', async (
   expect(htaccess).toContain('ErrorDocument 404 /404.html')
   expect(htaccess).toContain('AddType application/x-apple-diskimage .dmg')
   expect(htaccess).toContain(
-    'Header set Link "<https://stackos.flowmonkey.io/getting-started>; rel=canonical"',
+    'Header set Link "<https://stackos.flowmonkey.io/getting-started/>; rel=canonical"',
   )
   expect(htaccess).not.toContain('rel=\\\"canonical\\\"')
 
@@ -128,7 +128,7 @@ test('getting-started is a designed, user-first guide with one canonical Markdow
 
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
     'href',
-    'https://stackos.flowmonkey.io/getting-started',
+    'https://stackos.flowmonkey.io/getting-started/',
   )
   await expect(page).toHaveTitle('Getting started with StackOS after installation | StackOS')
   const structuredData = await page.locator('script[type="application/ld+json"]').allTextContents()
@@ -140,7 +140,7 @@ test('getting-started is a designed, user-first guide with one canonical Markdow
   expect(markdownResponse.headers()['content-type']).toContain('text/markdown')
   expect(markdownResponse.headers()['x-robots-tag']).toBe('noindex')
   expect(markdownResponse.headers().link).toBe(
-    '<https://stackos.flowmonkey.io/getting-started>; rel="canonical"',
+    '<https://stackos.flowmonkey.io/getting-started/>; rel="canonical"',
   )
   const markdown = await markdownResponse.text()
   expect(markdown).toContain('title: StackOS is installed. What happens next?')
@@ -303,7 +303,7 @@ test('library exposes workflows, articles, cross-links, and production metadata'
   await expect(page.getByRole('heading', { level: 2, name: /Three parts.*One complete job/ })).toBeVisible()
 
   const canonical = page.locator('link[rel="canonical"]')
-  await expect(canonical).toHaveAttribute('href', 'https://stackos.flowmonkey.io/library')
+  await expect(canonical).toHaveAttribute('href', 'https://stackos.flowmonkey.io/library/')
   await expect(page.locator('script[type="application/ld+json"]').first()).toBeAttached()
 
   await page.goto('/library/workflows/branding-content-production')
@@ -314,7 +314,7 @@ test('library exposes workflows, articles, cross-links, and production metadata'
   await expect(page.getByRole('heading', { level: 2, name: 'Useful even when the whole path cannot run.' })).toBeVisible()
   await expect(page.getByText('Live plan')).toHaveCount(0)
   await expect(page.getByText('Works across connected apps')).toHaveCount(0)
-  await expect(page.getByRole('link', { name: /Branding Narrative Writer/ })).toHaveAttribute('href', '/library/agents/branding-narrative-writer')
+  await expect(page.getByRole('link', { name: /Branding Narrative Writer/ })).toHaveAttribute('href', '/library/agents/branding-narrative-writer/')
 
   await page.goto('/library/articles/what-is-an-agentic-workflow')
   await expect(page.getByRole('heading', { level: 1 })).toContainText('What is an agentic workflow')
@@ -324,7 +324,7 @@ test('library exposes workflows, articles, cross-links, and production metadata'
   ).toBeVisible()
 
   if (test.info().project.name.startsWith('mobile')) {
-    await expect(page.locator('.workflow-map__mobile').getByText('Interview Capture')).toBeVisible()
+    await expect(page.locator('[data-workflow-stage]').filter({ hasText: 'Interview Capture' })).toBeVisible()
   }
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
@@ -458,42 +458,26 @@ test('article tables remain structured and contained at every viewport', async (
   expect(pageOverflow).toBeLessThanOrEqual(1)
 })
 
-test('workflow maps keep a readable, connected layout when stage copy is long', async ({ page }) => {
-  await page.goto('/library/workflows/branding-content-production')
+test('workflow maps remain readable, connected, and server-rendered when stage copy is long', async ({ page }) => {
+  await page.goto('/library/workflows/branding-content-production/')
   const map = page.locator('.workflow-map')
   await expect(map).toBeVisible()
+  await expect(map.locator('[data-workflow-stage]')).toHaveCount(10)
+  await expect(map.locator('.vue-flow')).toHaveCount(0)
 
-  if (test.info().project.name.startsWith('mobile')) {
-    await expect(map.locator('.workflow-map__canvas')).toBeHidden()
-    await expect(map.locator('.workflow-map__mobile li')).toHaveCount(10)
-
-    const typography = await map.locator('.workflow-map__mobile li').first().evaluate((item) => ({
-      title: Number.parseFloat(getComputedStyle(item.querySelector('strong')!).fontSize),
-      summary: Number.parseFloat(getComputedStyle(item.querySelector('p')!).fontSize),
-      status: Number.parseFloat(getComputedStyle(item.querySelector('b')!).fontSize),
-    }))
-    expect(typography).toEqual({ title: 19, summary: 16, status: 11 })
-    return
-  }
-
-  const nodes = map.locator('.workflow-node')
-  await expect(nodes).toHaveCount(10)
-
-  const layout = await nodes.evaluateAll((items) => {
+  const layout = await map.locator('[data-workflow-stage]').evaluateAll((items) => {
     const boxes = items.map((item) => {
       const rect = item.getBoundingClientRect()
       const title = item.querySelector('h3')!
       const summary = item.querySelector('p')!
-      const scale = rect.width / 264
       return {
         left: rect.left,
         right: rect.right,
         top: rect.top,
         bottom: rect.bottom,
-        width: rect.width,
         height: rect.height,
-        effectiveTitleSize: Number.parseFloat(getComputedStyle(title).fontSize) * scale,
-        effectiveSummarySize: Number.parseFloat(getComputedStyle(summary).fontSize) * scale,
+        titleSize: Number.parseFloat(getComputedStyle(title).fontSize),
+        summarySize: Number.parseFloat(getComputedStyle(summary).fontSize),
         titleColor: getComputedStyle(title).color,
       }
     })
@@ -501,31 +485,18 @@ test('workflow maps keep a readable, connected layout when stage copy is long', 
     const overlaps = boxes.some((box, index) => boxes.slice(index + 1).some((other) =>
       box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top,
     ))
-    const rowTops = [...new Set(boxes.map((box) => Math.round(box.top)))].sort((a, b) => a - b)
-    const rowGaps = rowTops.slice(1).map((top, index) => {
-      const previousRowBottom = Math.max(...boxes
-        .filter((box) => Math.abs(box.top - rowTops[index]!) < 3)
-        .map((box) => box.bottom))
-      return top - previousRowBottom
-    })
-
-    return { boxes, overlaps, rowGaps }
+    return { boxes, overlaps }
   })
 
   expect(layout.overlaps).toBe(false)
-  expect(Math.max(...layout.boxes.map((box) => box.height)) - Math.min(...layout.boxes.map((box) => box.height))).toBeLessThan(1)
-  expect(Math.min(...layout.rowGaps)).toBeGreaterThan(30)
-  expect(Math.min(...layout.boxes.map((box) => box.effectiveTitleSize))).toBeGreaterThanOrEqual(18)
-  expect(Math.min(...layout.boxes.map((box) => box.effectiveSummarySize))).toBeGreaterThanOrEqual(13)
+  expect(Math.min(...layout.boxes.map((box) => box.titleSize))).toBeGreaterThanOrEqual(20)
+  expect(Math.min(...layout.boxes.map((box) => box.summarySize))).toBeGreaterThanOrEqual(14)
   expect(layout.boxes.every((box) => box.titleColor === 'rgb(243, 241, 234)')).toBe(true)
 
-  const edges = map.locator('.vue-flow__edge-path')
-  await expect(edges).toHaveCount(9)
-  const edgeState = await edges.evaluateAll((paths) => paths.map((path) => ({
-    length: (path as SVGPathElement).getTotalLength(),
-    dash: getComputedStyle(path).strokeDasharray,
-  })))
-  expect(edgeState.every((edge) => edge.length > 10 && (edge.dash === 'none' || edge.dash === ''))).toBe(true)
+  const connectorDisplay = await map.locator('[data-workflow-stage]').first().evaluate((item) =>
+    getComputedStyle(item, '::after').display,
+  )
+  expect(connectorDisplay).toBe(test.info().project.name.startsWith('mobile') ? 'none' : 'block')
 
   const markerAlignment = await page.locator('.detail-list li').first().evaluate((item) => {
     const style = getComputedStyle(item)
@@ -540,7 +511,7 @@ test('workflow maps keep a readable, connected layout when stage copy is long', 
 test('generated visuals use one readable type system in cards and article heroes', async ({ page }) => {
   await page.goto('/library/articles')
   const compact = page.locator(
-    '.article-card[href="/library/articles/ai-agent-vs-workflow-vs-orchestrator"] .generated-visual.is-compact',
+    '.article-card[href="/library/articles/ai-agent-vs-workflow-vs-orchestrator/"] .generated-visual.is-compact',
   )
   await expect(compact).toBeVisible()
 
@@ -608,11 +579,11 @@ test('GA4 remains unloaded until analytics consent is granted', async ({ page, c
   expect(queuedCommandType).toBe('[object Arguments]')
 })
 
-test('integrations open plugin-first with a custom sort and exact brand assets', async ({ page }) => {
+test('integrations open provider-first with flat discovery, consolidated plugins, and exact brand assets', async ({ page }) => {
   const integrationCatalog = JSON.parse(
     await readFile(new URL('../app/data/integration-catalog.generated.json', import.meta.url), 'utf8'),
   ) as {
-    plugins: unknown[]
+    plugins: Array<{ slug: string }>
     providers: Array<{
       actionCount: number
       name: string
@@ -621,7 +592,8 @@ test('integrations open plugin-first with a custom sort and exact brand assets',
       logo?: { src?: string }
     }>
   }
-  const pluginCount = integrationCatalog.plugins.length
+  const consolidatedPlugins = new Set(['core', 'shopify', 'trackbooth'])
+  const visiblePluginCount = integrationCatalog.plugins.filter((plugin) => !consolidatedPlugins.has(plugin.slug)).length
   const providerCount = integrationCatalog.providers.length
   const providerLogoCount = integrationCatalog.providers.filter((provider) => provider.logo?.src).length
   expect(integrationCatalog.providers.find(provider => provider.providerKey === 'aws-s3')).toMatchObject({
@@ -637,10 +609,11 @@ test('integrations open plugin-first with a custom sort and exact brand assets',
     domain: '127.0.0.1',
     path: '/',
   }])
-  await page.goto('/library/integrations')
+  await page.goto('/library/integrations/')
 
-  await expect(page.locator('.integration-search__view .is-active')).toHaveText('Plugins')
-  await expect(page.locator('.integration-plugin')).toHaveCount(pluginCount)
+  await expect(page.locator('.integration-search__view .is-active')).toHaveText('Providers')
+  await expect(page.getByRole('heading', { level: 2, name: 'All integrations' })).toBeVisible()
+  await expect(page.locator('.integration-card')).toHaveCount(providerCount)
   await expect(page.locator('.integrations-hero__map .integration-mark img')).toHaveCount(8)
   await expect(page.locator('.integrations-hero__map .integration-mark b')).toHaveCount(0)
 
@@ -648,10 +621,7 @@ test('integrations open plugin-first with a custom sort and exact brand assets',
   await expect(sort).toHaveText(/A–Z/)
   await sort.click()
   await page.getByRole('option', { name: 'Most actions' }).click()
-  await expect(page.locator('.integration-plugin h2').first()).toHaveText('Trackbooth')
-
-  await page.getByRole('button', { name: 'Providers' }).click()
-  await expect(page.locator('.integration-card')).toHaveCount(providerCount)
+  await expect(page.locator('.integration-card h2').first()).toHaveText('Trackbooth')
   await expect(page.locator('.integration-card .integration-mark img')).toHaveCount(providerLogoCount)
   await page.waitForFunction(() => Array.from(
     document.querySelectorAll<HTMLImageElement>('.integration-card .integration-mark img'),
@@ -681,6 +651,16 @@ test('integrations open plugin-first with a custom sort and exact brand assets',
   expect(logoState.sources).toContain('/images/openai.webp')
   expect(logoState.sources).toContain('/images/gemini.webp')
 
+  await page.getByRole('button', { name: 'Plugins' }).click()
+  await expect(page.locator('.integration-plugin')).toHaveCount(visiblePluginCount)
+  for (const slug of consolidatedPlugins) {
+    await expect(page.locator(`.integration-plugin[href="/library/integrations/plugins/${slug}/"]`)).toHaveCount(0)
+  }
+  const linearPlugin = page.locator('.integration-plugin').filter({ hasText: 'Linear' })
+  await expect(linearPlugin).toContainText('1 provider')
+  await expect(linearPlugin).not.toContainText('1 providers')
+
+  await page.getByRole('button', { name: 'Providers' }).click()
   await page.locator('#integration-query').fill('Linear')
   await expect(page.locator('.integration-card')).toHaveCount(1)
   await expect(page.locator('.integration-card h2')).toHaveText('Linear')
@@ -699,25 +679,24 @@ test('integrations open plugin-first with a custom sort and exact brand assets',
   expect(overflow).toBeLessThanOrEqual(1)
 })
 
-test('integration detail uses a readable logo, compact actions, and a connected Vue Flow path', async ({ page }) => {
-  await page.goto('/library/integrations/ghost')
+test('integration detail uses a readable logo, compact actions, and a server-rendered route path', async ({ page }) => {
+  await page.goto('/library/integrations/ghost/')
 
   await expect(page.getByRole('heading', { level: 1, name: 'Ghost' })).toBeVisible()
   const heroLogo = page.locator('.integration-detail-hero .integration-mark img')
   await expect(heroLogo).toHaveAttribute('src', '/images/integrations/ghost.png')
   expect(await heroLogo.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true)
 
-  await expect(page.locator('.integration-route-node')).toHaveCount(4)
-  await expect(page.locator('.integration-route-flow .vue-flow__edge-path')).toHaveCount(3)
-  await expect(page.locator('.integration-route-node').nth(0)).toContainText('Your request')
-  await expect(page.locator('.integration-route-node').nth(1)).toContainText('StackOS plan')
-  await expect(page.locator('.integration-route-node').nth(2)).toContainText('Ghost')
-  await expect(page.locator('.integration-route-node').nth(3)).toContainText('Checked result')
+  const routeSteps = page.locator('.integration-route-flow li')
+  await expect(routeSteps).toHaveCount(4)
+  await expect(page.locator('.integration-route-flow .vue-flow')).toHaveCount(0)
+  await expect(routeSteps.nth(0)).toContainText('Your request')
+  await expect(routeSteps.nth(1)).toContainText('StackOS plan')
+  await expect(routeSteps.nth(2)).toContainText('Ghost')
+  await expect(routeSteps.nth(3)).toContainText('Checked result')
 
-  if (test.info().project.name.startsWith('mobile')) {
-    await expect(page.locator('.integration-route-flow')).toHaveClass(/is-compact/)
-  } else {
-    await page.goto('/library/integrations/trackbooth')
+  if (!test.info().project.name.startsWith('mobile')) {
+    await page.goto('/library/integrations/trackbooth/')
     const actionCards = page.locator('.integration-action-grid article')
     await expect(actionCards).toHaveCount(36)
     const firstThree = await actionCards.evaluateAll((cards) => cards.slice(0, 3).map((card) => {
@@ -733,7 +712,18 @@ test('integration detail uses a readable logo, compact actions, and a connected 
 })
 
 test('plugin provider chips keep the overflow count aligned', async ({ page }) => {
-  await page.goto('/library/integrations')
+  await page.context().addCookies([{
+    name: 'stackos-analytics-consent',
+    value: 'denied',
+    domain: '127.0.0.1',
+    path: '/',
+  }])
+  await page.goto('/library/integrations/')
+  await page.waitForLoadState('networkidle')
+  const viewToggle = page.locator('.integration-search__view')
+  await expect(viewToggle.locator('.is-active')).toHaveText('Providers')
+  await viewToggle.getByRole('button', { name: 'Plugins', exact: true }).click()
+  await expect(viewToggle.locator('.is-active')).toHaveText('Plugins')
   const card = page.locator('.integration-plugin').filter({ hasText: 'Branding' })
   const providerRow = card.locator('.integration-plugin__providers')
   const more = card.locator('.integration-plugin__more')
@@ -746,6 +736,90 @@ test('plugin provider chips keep the overflow count aligned', async ({ page }) =
   })
   expect(alignment.topDelta).toBeLessThan(1)
   expect(alignment.rowHeight).toBeLessThanOrEqual(alignment.countHeight + 1)
+})
+
+test('critical crawl paths remain useful without JavaScript', async ({ browser }, testInfo) => {
+  test.skip(!testInfo.project.name.startsWith('desktop'), 'One no-JavaScript crawl pass is sufficient')
+
+  const integrationCatalog = JSON.parse(
+    await readFile(new URL('../app/data/integration-catalog.generated.json', import.meta.url), 'utf8'),
+  ) as { providers: unknown[] }
+  const context = await browser.newContext({
+    baseURL: 'http://127.0.0.1:3004',
+    javaScriptEnabled: false,
+    viewport: { width: 1440, height: 900 },
+  })
+  const crawlPage = await context.newPage()
+
+  try {
+    await crawlPage.goto('/library/integrations/')
+    await expect(crawlPage.getByRole('heading', { level: 2, name: 'All integrations' })).toBeVisible()
+    await expect(crawlPage.locator('.integration-card')).toHaveCount(integrationCatalog.providers.length)
+    await expect(crawlPage.locator('link[rel="canonical"]')).toHaveAttribute(
+      'href',
+      'https://stackos.flowmonkey.io/library/integrations/',
+    )
+
+    await crawlPage.goto('/library/workflows/branding-content-production/')
+    await expect(crawlPage.locator('[data-workflow-stage]')).toHaveCount(10)
+    await expect(crawlPage.locator('.vue-flow')).toHaveCount(0)
+
+    await crawlPage.goto('/library/integrations/trackbooth/')
+    await expect(crawlPage.locator('[data-provider-facts="trackbooth"]')).toBeVisible()
+    await expect(crawlPage.locator('.integration-route-flow li')).toHaveCount(4)
+
+    await crawlPage.goto('/library/agents/branding-narrative-writer/')
+    await expect(crawlPage.locator('[data-agent-contract="branding-narrative-writer"]')).toBeVisible()
+  } finally {
+    await context.close()
+  }
+})
+
+test('SEO-critical pages keep cumulative layout shift within the good threshold', async ({ page }, testInfo) => {
+  await page.context().addCookies([{
+    name: 'stackos-analytics-consent',
+    value: 'denied',
+    domain: '127.0.0.1',
+    path: '/',
+  }])
+  await page.addInitScript(() => {
+    const state = { cls: 0, lcp: 0 }
+    ;(window as any).__stackosSeoPerformance = state
+
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries() as any[]) {
+        if (!entry.hadRecentInput) state.cls += entry.value
+      }
+    }).observe({ type: 'layout-shift', buffered: true })
+
+    new PerformanceObserver((list) => {
+      const entries = list.getEntries()
+      state.lcp = entries.at(-1)?.startTime || state.lcp
+    }).observe({ type: 'largest-contentful-paint', buffered: true })
+  })
+
+  const results: Array<{ path: string; cls: number; lcp: number }> = []
+  for (const path of [
+    '/',
+    '/library/workflows/branding-content-production/',
+    '/library/integrations/trackbooth/',
+  ]) {
+    await page.goto(path, { waitUntil: 'networkidle' })
+    await page.evaluate(async () => {
+      await document.fonts.ready
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+    })
+    await page.waitForTimeout(750)
+    const metrics = await page.evaluate(() => (window as any).__stackosSeoPerformance as { cls: number; lcp: number })
+    results.push({ path, cls: metrics.cls, lcp: metrics.lcp })
+    expect(metrics.cls, `${path} CLS at ${testInfo.project.name}`).toBeLessThanOrEqual(0.1)
+  }
+
+  console.info(`SEO_PERFORMANCE ${testInfo.project.name} ${JSON.stringify(results)}`)
+  await testInfo.attach(`seo-performance-${testInfo.project.name}.json`, {
+    body: Buffer.from(JSON.stringify(results, null, 2)),
+    contentType: 'application/json',
+  })
 })
 
 test('library has no serious accessibility violations', async ({ page }) => {

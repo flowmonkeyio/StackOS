@@ -7,8 +7,8 @@ if (!item) throw createError({ statusCode: 404, statusMessage: 'Orchestrator not
 
 const relatedWorkflows = computed(() => workflows.filter((workflow) => item.workflowKeys.includes(workflow.key)))
 
-useLibrarySeo({ title: `${item.name} — AI workflow orchestrator`, description: item.description })
-useSchemaOrg([defineWebPage({ name: item.name, description: item.description }), defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library' }, { name: 'Orchestrators', item: '/library/orchestrators' }, { name: item.name, item: route.path }] })])
+useSiteSeo({ title: `${item.name} — AI workflow orchestrator`, description: item.description })
+useSchemaOrg([defineWebPage({ name: item.name, description: item.description }), defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library/' }, { name: 'Orchestrators', item: '/library/orchestrators/' }, { name: item.name, item: canonicalPath(route.path) }] })])
 </script>
 
 <template>

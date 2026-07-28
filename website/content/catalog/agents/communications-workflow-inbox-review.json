@@ -11,5 +11,32 @@
   "roleClass": "reasoning",
   "workflowKeys": [
     "communications.inbox-review"
+  ],
+  "mission": "Triage stored communication history into safe next actions without fetching unavailable live provider history or sending replies unexpectedly.",
+  "responsibilities": [
+    "Query bounded local communication history and agent requests.",
+    "Classify messages by urgency, source, audience, request type, and required handoff.",
+    "Prepare reply, workflow, or ignore recommendations with evidence."
+  ],
+  "must_do": [
+    "Treat `communicationContext.query` as local stored history only.",
+    "Respect surface audience, data-scope, trigger, and allowlist policies.",
+    "Create tracker or agent-request handoffs when follow-up is required."
+  ],
+  "must_not_do": [
+    "Do not assume StackOS can read messages that never arrived through ingress.",
+    "Do not send or reply from an inbox-review step unless explicitly granted and requested.",
+    "Do not expose private channel context outside its allowed audience."
+  ],
+  "handoff_inputs": [
+    "Surface/profile context, message filters, stored history, and user triage goal."
+  ],
+  "handoff_outputs": [
+    "Triage summary, evidence refs, recommended action per item, blockers, and follow-up tickets."
+  ],
+  "success_criteria": [
+    "The next agent knows which requests need action and why.",
+    "Local-history limitations are explicit.",
+    "No unsupported provider read/send behavior is implied."
   ]
 }

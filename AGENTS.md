@@ -5,6 +5,23 @@ context, workflow templates, run plans, resources, artifacts, auth references,
 and audit records. The agent decides what to do; StackOS persists the setup and
 executes explicit tool calls.
 
+## Product Contract First
+
+Before designing or changing StackOS code, docs, workflows, presets, plugins,
+operations, UI, setup, or agent guidance, read
+[`docs/product-direction.md`](./docs/product-direction.md), especially its
+Product Thesis, Product Contract, and Product Principles. It is the canonical
+product-level direction and roadmap. Use the routed implementation docs below
+for the affected layer, but do not invent a parallel product model from an
+isolated request.
+
+Before adding an abstraction, identify the current canonical owner, active
+consumers, project-native alternatives, and the demonstrated gap. Core remains
+generic; domain method belongs in plugins and workflows; project facts belong
+in project extensions or resources; run-specific choices belong in the run.
+Code enforces shared safety and integrity boundaries, not the editorial,
+strategic, or operating judgment of each workflow.
+
 ## Read First
 
 Use [`docs/README.md`](./docs/README.md) as the documentation router. For common
@@ -12,6 +29,7 @@ work, start here:
 
 | Work | Read |
 | --- | --- |
+| Understanding the product or evaluating a new product direction | [`docs/product-direction.md`](./docs/product-direction.md), [`docs/architecture.md`](./docs/architecture.md), [`docs/agent-operating-model.md`](./docs/agent-operating-model.md) |
 | Setup, local start, autostart, or repair | [`docs/setup.md`](./docs/setup.md), [`docs/upgrade.md`](./docs/upgrade.md), [`docs/security.md`](./docs/security.md) |
 | Architecture or execution model | [`docs/architecture.md`](./docs/architecture.md), [`docs/operations.md`](./docs/operations.md), [`docs/agent-operating-model.md`](./docs/agent-operating-model.md) |
 | Callable operations or action execution | [`docs/operations.md`](./docs/operations.md), [`docs/action-executor.md`](./docs/action-executor.md), [`docs/extending.md`](./docs/extending.md) |
@@ -20,6 +38,33 @@ work, start here:
 | Provider contract reviews | [`docs/integration-contracts/AGENTS.md`](./docs/integration-contracts/AGENTS.md), [`docs/integration-contracts/`](./docs/integration-contracts/) |
 | UI work | [`docs/ui-design-system.md`](./docs/ui-design-system.md), [`docs/ui-component-inventory.md`](./docs/ui-component-inventory.md) |
 | Before-commit/release signoff | [`docs/release-signoff.md`](./docs/release-signoff.md) |
+
+## Workflow Guidance Activation
+
+When a request selects, sets up, resumes, or changes a StackOS workflow, the
+main agent must activate the full guidance stack before execution:
+
+1. Read the product contract, project rules, and relevant project-local docs.
+2. Resolve the effective workflow template and project extension/resources.
+3. Resolve the workflow's required main-agent skill preset and agent presets.
+4. Load the project-local orchestrator adaptation and the applicable
+   project-adapted specialist contracts.
+5. Assemble the current run/step context and then apply the operator request.
+
+Do this again after a long pause, handoff, resume, or context compaction. Do not
+continue from conversational memory when the effective workflow and durable
+state can be re-read. The main agent owns integration, cross-run or batch
+coherence, feedback routing, and final claims; specialist outputs are bounded
+evidence and recommendations.
+
+Project-local main-agent mappings:
+
+- `engineering.tracked-delivery` ->
+  [`.codex/orchestrator/sdlc-delivery-orchestrator.md`](./.codex/orchestrator/sdlc-delivery-orchestrator.md)
+- `branding.brand-foundation-setup` and `branding.content-production` ->
+  [`.codex/orchestrator/branding-content-orchestrator.md`](./.codex/orchestrator/branding-content-orchestrator.md)
+- `seo.keyword-research` and `seo.website-analysis` ->
+  [`.codex/orchestrator/workflow-orchestrator.md`](./.codex/orchestrator/workflow-orchestrator.md)
 
 ## Core Rules
 
@@ -53,6 +98,12 @@ work, start here:
   `.codex/orchestrator/sdlc-delivery-orchestrator.md` and is adapted from the
   `stackos.sdlc.delivery-orchestrator` skill preset; it is guidance for the
   main agent, not a subagent role.
+- Project-local branding agents are adapted from
+  `plugins/branding/agent-presets/branding.yaml`; their main-agent guidance
+  lives in `.codex/orchestrator/branding-content-orchestrator.md`. Project-local
+  SEO agents are adapted from `plugins/seo/agent-presets/seo.yaml`; their
+  main-agent guidance lives in `.codex/orchestrator/workflow-orchestrator.md`.
+  Keep local versions and source-preset references synchronized.
 - Provider credentials stay daemon-held. Agents receive safe provider/account
   refs, auth-method keys, status, scopes, diagnostics, and opaque
   `credential_ref` values; `action.run` and `action.execute` resolve provider

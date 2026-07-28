@@ -8,7 +8,7 @@ updatedAt: '2026-07-14'
 author: StackOS team
 readingTime: 6 min read
 estimatedTime: About 10 minutes
-canonicalUrl: https://stackos.flowmonkey.io/getting-started
+canonicalUrl: https://stackos.flowmonkey.io/getting-started/
 markdownUrl: https://stackos.flowmonkey.io/getting-started.md
 ---
 
@@ -138,7 +138,7 @@ Open the **Connections** link for that project, add only the service named there
 
 ## Let your AI read along
 
-You can tell your AI, “Open the StackOS getting-started guide and help me follow it.” It can fetch the same source used by this page and should send you back to [this website guide](https://stackos.flowmonkey.io/getting-started) whenever you want to read it yourself.
+You can tell your AI, “Open the StackOS getting-started guide and help me follow it.” It can fetch the same source used by this page and should send you back to [this website guide](https://stackos.flowmonkey.io/getting-started/) whenever you want to read it yourself.
 
 The same guide is also available as a [plain Markdown file](https://stackos.flowmonkey.io/getting-started.md) for tools that prefer text.
 

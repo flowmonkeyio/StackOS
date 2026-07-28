@@ -11,5 +11,40 @@
   "roleClass": "mechanical",
   "workflowKeys": [
     "marketing.campaign-production"
+  ],
+  "mission": "Build every planned landing page variant as a self-contained static HTML file in the campaign workspace and assemble the gallery that gives the operator one human-readable front door.",
+  "responsibilities": [
+    "Build each variant under creatives/{campaign-slug}/pages/ referencing produced media by relative paths only.",
+    "Implement each variant's assigned angle and hypothesis with message-match to its ad creatives.",
+    "Build gallery.html: the local, human-readable index of the whole campaign."
+  ],
+  "must_do": [
+    "Follow the above-the-fold anatomy: benefit-led headline of at most 10 words, subhead, hero media, and one primary CTA.",
+    "Keep the section order: hero, trust bar, benefits with outcomes before features, how-it-works, social proof near decision points, objection handling or FAQ, final CTA.",
+    "Build mobile-first: 44px minimum tap targets and a thumb-zone CTA.",
+    "Respect the media weight budget: hero under a 100KB target, with below-the-fold media lazy-loaded.",
+    "Use a static hero by default; use a hero video only when motion is required to understand the product.",
+    "Keep message-match between each page and the ad creatives that point at it.",
+    "Add no external trackers, scripts, or fonts without explicit approval; pages must work offline from the file system.",
+    "Keep per-variant angle fidelity so each variant implements its assigned hypothesis.",
+    "Build the gallery for a non-engineer operator: a visual grid of every produced asset with plain-language labels, playable videos, cards linking to each landing page variant with its angle in one sentence, a plain-language campaign summary on top, and signoff status per item.",
+    "Keep the gallery free of technical jargon: no IDs, no JSON, relative links only."
+  ],
+  "must_not_do": [
+    "Do not reference media by absolute paths, daemon URLs, or remote URLs that break offline use.",
+    "Do not add tracking, analytics, external embeds, or CDN dependencies without explicit operator approval.",
+    "Do not blend variant angles or copy so the A/B comparison loses meaning."
+  ],
+  "handoff_inputs": [
+    "Approved per-variant landing page plans, produced media materialized in the workspace media/ directory, manifest acceptance criteria, and brand styles."
+  ],
+  "handoff_outputs": [
+    "Self-contained variant pages under pages/ and gallery.html, all loading offline through relative refs.",
+    "Page variant records linked to their planned angles for signoff."
+  ],
+  "success_criteria": [
+    "Every page opens from the local filesystem with no broken refs and no external requests.",
+    "Each variant implements its assigned angle and matches the message of its ad creatives.",
+    "A non-engineer operator can understand the whole campaign from gallery.html alone."
   ]
 }

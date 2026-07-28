@@ -41,6 +41,12 @@ def _bridge_forward_arguments(
         and "verbose" not in forwarded
     ):
         forwarded["verbose"] = True
+    if (
+        tool_name == "integration.list"
+        and _bridge_tool_accepts_field(catalog, tool_name, "include_unavailable")
+        and "include_unavailable" not in forwarded
+    ):
+        forwarded["include_unavailable"] = False
     return forwarded
 
 
@@ -79,9 +85,18 @@ def _bridge_compact_tool_response(
     structured = result.get("structuredContent")
     if not isinstance(structured, dict):
         return response_text
-    if isinstance(structured.get("operation"), str) and isinstance(structured.get("status"), str):
-        return response_text
-    compact = _bridge_compact_structured(tool_name, structured)
+    operation_envelope = isinstance(structured.get("operation"), str) and isinstance(
+        structured.get("status"), str
+    )
+    compact: dict[str, Any] | None
+    if operation_envelope:
+        data = structured.get("data")
+        if tool_name != "connection.list" or not isinstance(data, dict):
+            return response_text
+        compact = dict(structured)
+        compact["data"] = _bridge_compact_auth_status(data, attached_only=True)
+    else:
+        compact = _bridge_compact_structured(tool_name, structured)
     if compact is None:
         return response_text
     text = json.dumps(compact, default=str, sort_keys=True)
@@ -99,7 +114,10 @@ def _bridge_compact_structured(tool_name: str, structured: dict[str, Any]) -> di
     }:
         return _bridge_compact_workspace(structured)
     if tool_name in {"account.list", "connection.list"}:
-        return _bridge_compact_auth_status(structured)
+        return _bridge_compact_auth_status(
+            structured,
+            attached_only=tool_name == "connection.list",
+        )
     if tool_name == "toolProfile.resolve":
         return _bridge_compact_tool_profile_resolve(structured)
     if tool_name == "communicationProfile.list":
@@ -196,7 +214,11 @@ def _bridge_compact_workspace(structured: dict[str, Any]) -> dict[str, Any]:
     return compact_data
 
 
-def _bridge_compact_auth_status(structured: dict[str, Any]) -> dict[str, Any]:
+def _bridge_compact_auth_status(
+    structured: dict[str, Any],
+    *,
+    attached_only: bool = False,
+) -> dict[str, Any]:
     accounts = [
         _bridge_compact_account(item)
         for item in structured.get("accounts", [])
@@ -206,22 +228,42 @@ def _bridge_compact_auth_status(structured: dict[str, Any]) -> dict[str, Any]:
     for account in accounts:
         key = str(account.get("provider_key") or "")
         by_provider.setdefault(key, []).append(account)
+    provider_rows = {
+        str(provider.get("key") or ""): provider
+        for provider in structured.get("providers", [])
+        if isinstance(provider, dict)
+    }
+    provider_keys = list(by_provider) if attached_only else list(provider_rows)
+    requested_provider_key = str(structured.get("provider_key") or "")
+    if (
+        attached_only
+        and requested_provider_key in provider_rows
+        and requested_provider_key not in provider_keys
+    ):
+        provider_keys.append(requested_provider_key)
     providers: list[dict[str, Any]] = []
-    for provider in structured.get("providers", []):
-        if not isinstance(provider, dict):
-            continue
-        key = str(provider.get("key") or "")
+    for key in provider_keys:
+        provider = provider_rows.get(key, {})
         provider_accounts = by_provider.get(key, [])
+        first_account = provider_accounts[0] if provider_accounts else {}
+        account_statuses = [
+            str(account["status"])
+            for account in provider_accounts
+            if isinstance(account.get("status"), str) and account["status"]
+        ]
+        provider_status = (
+            "connected"
+            if "connected" in account_statuses
+            else account_statuses[0]
+            if account_statuses
+            else "missing"
+        )
         providers.append(
             {
                 "key": key,
-                "name": provider.get("name"),
-                "auth_type": provider.get("auth_type"),
-                "status": (
-                    "connected"
-                    if any(item.get("status") == "connected" for item in provider_accounts)
-                    else "missing"
-                ),
+                "name": provider.get("name") or key,
+                "auth_type": provider.get("auth_type") or first_account.get("auth_type"),
+                "status": provider_status,
                 "credential_refs": [
                     item["credential_ref"]
                     for item in provider_accounts

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 const { data: articles } = await useAsyncData('all-library-articles', () => queryCollection('articles').order('publishedAt', 'DESC').all())
 
-useLibrarySeo({ title: 'StackOS articles — Practical guides to AI agents and agentic workflows', description: 'Practical guides grounded in firsthand workflow work, primary sources, and specific implementation evidence across AI agents, orchestration, security, and connected tools.' })
-useSchemaOrg([defineWebPage({ '@type': 'CollectionPage', name: 'StackOS Articles' }), defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library' }, { name: 'Articles', item: '/library/articles' }] })])
+useSiteSeo({ title: 'Practical guides to AI agents and agentic workflows', description: 'Practical guides grounded in firsthand workflow work, primary sources, and specific implementation evidence across AI agents, orchestration, security, and connected tools.' })
+useSchemaOrg([defineWebPage({ '@type': 'CollectionPage', name: 'StackOS Articles' }), defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library/' }, { name: 'Articles', item: '/library/articles/' }] })])
 
 function articleSlug(stem: string) { return stem.split('/').at(-1) || stem }
 </script>

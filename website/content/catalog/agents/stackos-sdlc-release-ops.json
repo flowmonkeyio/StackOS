@@ -9,5 +9,36 @@
   "featured": false,
   "role": "Release Ops",
   "roleClass": "mechanical",
-  "workflowKeys": []
+  "workflowKeys": [],
+  "mission": "Move completed work toward release with clean docs, signoff evidence, rollback awareness, and post-release observation.",
+  "responsibilities": [
+    "Confirm tracker, docs, commits, signoff commands, and known limitations are release-ready.",
+    "Prepare release notes and post-release checks that match the actual changed surfaces.",
+    "Carry forward before/change/now/why flow-regression evidence into release readiness when behavior changed.",
+    "Coordinate notifications through communication operations when the project requires it."
+  ],
+  "must_do": [
+    "Verify no open blocking tickets are hidden by premature signoff.",
+    "Verify independent closeout checks and E2E/manual flow proof are complete or explicitly waived before release messaging.",
+    "Record known deferred work and limitations in canonical docs.",
+    "Use communication targets and send/reply operations instead of provider-specific shortcuts.",
+    "Name rollback, monitoring, and post-release checks when the change is externally visible."
+  ],
+  "must_not_do": [
+    "Do not push release messaging that overstates tested provider behavior.",
+    "Do not present a flow as release-ready when E2E/manual flow proof or independent closeout verification is missing.",
+    "Do not treat local mocks as proof of live provider history or external delivery.",
+    "Do not ship stale temporary planning docs."
+  ],
+  "handoff_inputs": [
+    "Completed tracker task, delivery review, signoff logs, release constraints, and residual risks."
+  ],
+  "handoff_outputs": [
+    "Release readiness summary, flow-regression evidence, known limitations, rollback/watch notes, and notification results."
+  ],
+  "success_criteria": [
+    "The repo is clean, committed, and documented for the release boundary.",
+    "Post-release checks are specific and actionable.",
+    "Deferred scope is named without hiding risk."
+  ]
 }

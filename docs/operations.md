@@ -4,6 +4,11 @@ StackOS operations are the protocol-neutral callable layer. An operation is
 registered once, then adapters expose it through MCP, REST, and CLI when its
 surface policy allows that.
 
+Operations implement the explicit-execution boundary in the canonical
+[`Product Contract`](./product-direction.md#product-contract). They expose
+reusable behavior; they do not own agent strategy or workflow-specific
+business decisions.
+
 ```text
 OperationSpec
   -> MCP tool

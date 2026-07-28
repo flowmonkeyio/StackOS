@@ -12,7 +12,14 @@ can read the StackOS plugin catalog:
 
 ```bash
 pnpm --dir website generate
+pnpm --dir website test:seo:generated
 ```
+
+The generated SEO contract is a release gate. It checks every generated HTML
+route, sitemap entry, RSS URL, title/social pair, homepage schema node,
+integration link, public agent contract, host rule, CSS delivery mode, and
+IndexNow safety boundary. A successful Nuxt build without this check is not a
+website release candidate.
 
 When the release changes a public integration, refresh the generated integration
 catalog from the current source-backed StackOS daemon before generating:
@@ -68,9 +75,11 @@ Confirm that `index.html`, `.htaccess`, `getting-started`,
 `getting-started.md`, `_nuxt`, `library`, `robots.txt`, and `sitemap.xml` are
 directly inside the remote document root. Some FTP clients hide dotfiles;
 explicitly include `.htaccess` because it gives the Markdown guide its content
-type, `noindex` directive, and canonical response header, and serves desktop
-DMGs with the macOS disk-image media type. It also routes missing paths to the
-generated branded `404.html` while preserving the HTTP 404 status.
+type, `noindex` directive, and canonical response header, serves desktop DMGs
+with the macOS disk-image media type, enforces the three integration
+consolidation redirects, and adds the public security-header policy. It also
+routes missing paths to the generated branded `404.html` while preserving the
+HTTP 404 status.
 
 After replacing an existing release, open Hostinger hPanel → Cache Manager and
 use **Purge All**. If Hostinger CDN is enabled, flush its cache too. Use the
@@ -90,6 +99,7 @@ public_html/
 ├── robots.txt
 ├── sitemap.xml
 ├── feed.xml
+├── 1a9b7d83c6b1250e4023904947fa6660.txt  # public IndexNow key
 ├── _nuxt/
 ├── fonts/
 ├── images/
@@ -141,26 +151,109 @@ Nuxt has generated real HTML files for the public routes, including nested
 library pages. Rewriting all URLs to the homepage would break correct 404
 responses and weaken search indexing.
 
-After deployment, verify:
+Public HTML routes use a trailing slash as the canonical contract because the
+static export stores each route as a directory containing `index.html`.
+Canonicals, `og:url`, JSON-LD URLs, the sitemap, RSS article links, and internal
+links must all use that same form. Real files such as `/feed.xml`,
+`/getting-started.md`, images, CSS, JavaScript, and DMGs do not gain a trailing
+slash. LiteSpeed's `DirectorySlash` performs the one allowed redirect from a
+historical slashless HTML URL to its canonical directory URL.
+
+The permanent consolidation map is deliberately limited to:
+
+| Historical URL | Canonical URL |
+| --- | --- |
+| `/library/integrations/plugins/core/` | `/library/integrations/local-daemon/` |
+| `/library/integrations/plugins/shopify/` | `/library/integrations/shopify/` |
+| `/library/integrations/plugins/trackbooth/` | `/library/integrations/trackbooth/` |
+
+Do not generalize this rule to every one-provider plugin. The Linear plugin page
+remains a distinct public route.
+
+The sitemap's `lastmod` values come only from source-owned guide/article
+`updatedAt` fields. Static catalog routes intentionally omit `lastmod`; build
+time is not content freshness. Every sitemap entry has an explicit priority,
+although Google may choose not to use that hint.
+
+The RSS feed remains public for readers but must return
+`X-Robots-Tag: noindex` and remain outside the sitemap. The host policy also
+emits HSTS without `preload`, `X-Content-Type-Options: nosniff`,
+`Referrer-Policy: strict-origin-when-cross-origin`, a restrictive
+`Permissions-Policy`, and `X-Frame-Options: DENY`. Do not add or tighten CSP in
+the same release without a separate script/style/provider audit.
+
+After an authorized deployment and cache purge, verify:
 
 - `/`
-- `/getting-started` renders the designed guide and has its canonical URL,
+- `/getting-started` redirects once to `/getting-started/`
+- `/getting-started/` returns `200`, self-canonicalizes, and has its
   Article schema, and Breadcrumb schema
 - `/getting-started.md` returns the canonical Markdown as `text/markdown`, an
   `X-Robots-Tag: noindex` header, and a `Link` header pointing to
-  `/getting-started` as canonical
-- `/library`
-- `/library/integrations`
+  `/getting-started/` as canonical
+- `/library/`
+- `/library/integrations/` contains a server-rendered direct link to every
+  provider
+- all three consolidation redirects above, plus the retained
+  `/library/integrations/plugins/linear/` route
 - at least one article, workflow, agent, orchestrator, and integration detail
   page
 - `/robots.txt`
 - `/sitemap.xml`
 - `/feed.xml`
+- `/1a9b7d83c6b1250e4023904947fa6660.txt`
 - `/StackOS/stackos-latest-mac-arm64.dmg` returns
   `application/x-apple-diskimage`
 - a nonexistent URL returns HTTP 404 and displays `404.html`
 - page source contains the production canonical URL
+- document, Open Graph, and Twitter titles match and contain one brand suffix
+- the homepage has one Organization, one SoftwareApplication, and visible
+  questions matching its FAQPage data
+- the expected security headers are present on HTML responses
 - HTTPS is enabled and forced
+
+Useful post-deploy probes:
+
+```bash
+curl -sSIL --max-redirs 5 https://stackos.flowmonkey.io/library
+curl -sSIL --max-redirs 5 https://stackos.flowmonkey.io/library/integrations/plugins/core
+curl -sSIL --max-redirs 5 https://stackos.flowmonkey.io/library/integrations/plugins/shopify
+curl -sSIL --max-redirs 5 https://stackos.flowmonkey.io/library/integrations/plugins/trackbooth
+curl -sSI https://stackos.flowmonkey.io/feed.xml
+curl -sS https://stackos.flowmonkey.io/sitemap.xml
+```
+
+These probes are production evidence only. Local generation cannot prove
+LiteSpeed header/redirect behavior, Google recrawl/indexing, or field CrUX.
+
+## IndexNow
+
+The repository owns the public key file and a sitemap-driven client. It is not
+called by `dev`, `build`, `generate`, tests, or deployment automatically.
+Prepare and inspect the exact payload locally with:
+
+```bash
+pnpm --dir website indexnow:dry-run
+```
+
+Submission is an external write. Run it only after the matching artifact and
+key file are live, after production canonical/header checks pass, and after the
+operator explicitly authorizes the submission:
+
+```bash
+INDEXNOW_ALLOW_SUBMIT=1 pnpm --dir website indexnow:submit
+```
+
+Both `--submit` (embedded in the package command) and
+`INDEXNOW_ALLOW_SUBMIT=1` are required. Record the provider response with the
+release evidence. Search Console validation/request-indexing is a separate
+operator-owned action; deployment or content approval does not imply it.
+
+If a deployed website candidate fails the route/header/schema checks, restore
+the prior static artifact and its matching `.htaccess` together, purge
+Hostinger/CDN caches, and repeat the post-deploy matrix. Keep already released
+permanent consolidation redirects unless a reviewed migration explicitly
+retires them.
 
 When the production domain changes, rebuild with the new
 `NUXT_PUBLIC_SITE_URL` before uploading the replacement artifact.

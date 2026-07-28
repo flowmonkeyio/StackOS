@@ -144,6 +144,19 @@ def _bridge_agent_tool_schema(
     injected_fields: set[str],
 ) -> dict[str, Any]:
     clone = _bridge_relax_injected_schema(tool, injected_fields=injected_fields)
+    if clone.get("name") == "integration.list":
+        schema = clone.get("inputSchema")
+        properties = schema.get("properties") if isinstance(schema, dict) else None
+        include_unavailable = (
+            properties.get("include_unavailable") if isinstance(properties, dict) else None
+        )
+        if isinstance(include_unavailable, dict):
+            include_unavailable["default"] = False
+            include_unavailable["description"] = (
+                "Agent bridge default: false, returning the current ready/repair view. "
+                "Set true for deliberate provider setup/catalog inventory, including "
+                "disconnected providers and hidden actions."
+            )
     if clone.get("name") in _AGENT_COMPACT_DEFAULT_TOOL_NAMES:
         clone = _bridge_add_response_mode_schema(clone)
     return clone

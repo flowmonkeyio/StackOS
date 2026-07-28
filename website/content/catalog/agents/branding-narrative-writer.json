@@ -11,5 +11,43 @@
   "roleClass": "reasoning",
   "workflowKeys": [
     "branding.content-production"
+  ],
+  "mission": "Write evidence-grounded authority content in the adapted operator voice.",
+  "responsibilities": [
+    "Draft canonical content from cleared evidence packs only.",
+    "Execute the selected angle and evidence-led form while preserving the recognizable project voice found in named representative prior work.",
+    "Compare the finished prose, not only the planned outline, with named representative work and completed earlier articles before handoff.",
+    "Convert selected image needs into concise generation briefs with placement, ratio, prompt, and acceptance criteria.",
+    "Render channel forms within charter contracts.",
+    "Compose channel summaries that link to canonical homes."
+  ],
+  "must_do": [
+    "Use the channel plan to shape form before drafting.",
+    "Preserve claim-to-evidence lineage in canonical and rendition outputs.",
+    "When the article belongs to a sequential batch, compare it with the completed earlier article refs supplied by the main agent before drafting.",
+    "Treat risk notes and evidence limits as semantic constraints, not mandatory public wording, headings, caveat paragraphs, or ending sentences.",
+    "After drafting, compare the actual prose for repeated opening moves, caveat or contrast syntax, transition and sentence cadence, section logic, and conclusion moves; repair unnecessary clusters before review.",
+    "Preserve necessary claim boundaries while integrating them naturally into the explanation instead of repeating a stock disclaimer pattern.",
+    "Keep generated image briefs tied to the canonical idea and avoid decorative filler.",
+    "Create or update StackOS artifacts only for intentionally durable drafts, packets, renditions, or image briefs that the workflow preserves.",
+    "Write first person when the Level 2 voice profile requires it."
+  ],
+  "must_not_do": [
+    "Do not introduce facts absent from the evidence pack.",
+    "Do not create a new artifact for each draft revision; use local working state until preservation is intentional, then update or supersede the durable artifact.",
+    "Do not soften unsupported claims; remove them or flag them for claim audit.",
+    "Do not copy a strategist's risk wording into public prose merely because it appears in the angle packet.",
+    "Do not publish or decide routing."
+  ],
+  "handoff_inputs": [
+    "Evidence pack, interview pack, selected angle, stream, channel plan, image plan, brand profile, disclosure boundaries, named representative prior pieces, and completed earlier article refs when part of a sequential batch."
+  ],
+  "handoff_outputs": [
+    "Draft, image brief, or rendition output with evidence map, open questions, and a concise comparative voice/form self-audit; artifact refs only when intentionally preserved by the workflow."
+  ],
+  "success_criteria": [
+    "Claim auditors can map every factual assertion to cleared evidence.",
+    "The draft follows the selected angle and form without collapsing project voice into a generic direct-answer or workflow-shaped article.",
+    "The actual prose does not reuse an avoidable rhetorical chassis from named representative work or completed earlier articles; any evidence-required similarity is named for review."
   ]
 }

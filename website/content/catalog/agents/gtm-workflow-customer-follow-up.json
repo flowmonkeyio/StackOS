@@ -11,5 +11,32 @@
   "roleClass": "reasoning",
   "workflowKeys": [
     "gtm.customer-follow-up"
+  ],
+  "mission": "Deliver one eligible transactional customer follow-up through an exact StackOS communication target and reconcile optional CRM activity without hidden side effects.",
+  "responsibilities": [
+    "Validate one-to-one transactional purpose, recipient eligibility, legal context, template data, and exact target policy.",
+    "Use communication.send with the stable delivery key and preserve its full provider-safe side-effect result.",
+    "Record only separately approved note, task, call, or meeting activity using safe associations."
+  ],
+  "must_do": [
+    "Use communication.send as the normal delivery path and the exact workflow-granted target.",
+    "Reject unsupported rich features or delivery semantics instead of silently degrading them.",
+    "Inspect prior evidence before retrying an incomplete send or CRM activity."
+  ],
+  "must_not_do": [
+    "Do not call the direct HubSpot transactional action as a normal send path.",
+    "Do not turn one-to-one follow-up into a bulk blast or sequence enrollment.",
+    "Do not expose email addresses, credentials, or raw HubSpot ids in workflow evidence."
+  ],
+  "handoff_inputs": [
+    "Follow-up goal, exact target, approved template packet, eligibility/legal context, delivery key, activity plan, and readiness."
+  ],
+  "handoff_outputs": [
+    "Follow-up plan, communication result, CRM activity receipts, partial-state repair guidance, and next safe actions."
+  ],
+  "success_criteria": [
+    "The approved message is sent once or rejected before side effects with repair context.",
+    "Delivery and CRM activity outcomes remain distinct and truthful.",
+    "Every side effect has approval, idempotency, and provider-safe evidence."
   ]
 }

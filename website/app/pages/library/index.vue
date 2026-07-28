@@ -10,14 +10,14 @@ const { data: articles } = await useAsyncData('library-featured-articles', () =>
   queryCollection('articles').where('featured', '=', true).order('publishedAt', 'DESC').limit(4).all(),
 )
 
-useLibrarySeo({
-  title: 'AI workflow library — Workflows, agents, orchestration, and practical guides | StackOS',
+useSiteSeo({
+  title: 'AI workflow library — Workflows, agents, orchestration, and practical guides',
   description: 'Explore StackOS workflows, specialist agents, orchestrators, integrations, and practical guides grounded in visible state, evidence, and verification.',
 })
 
 useSchemaOrg([
   defineWebPage({ '@type': 'CollectionPage', name: 'StackOS Library', description: 'Workflows, agents, orchestrators, integrations, and practical guides for AI-powered work.' }),
-  defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library' }] }),
+  defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library/' }] }),
 ])
 
 useHead({ script: [{ key: 'library-faq', type: 'application/ld+json', innerHTML: JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: [{ '@type': 'Question', name: 'What is in the StackOS AI workflow library?', acceptedAnswer: { '@type': 'Answer', text: 'The StackOS Library documents complete agentic workflows, the focused AI agents inside them, the orchestrators that coordinate each job, and practical implementation guides.' } }] }) }] })

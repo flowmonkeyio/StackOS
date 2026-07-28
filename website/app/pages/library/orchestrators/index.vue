@@ -1,8 +1,8 @@
 <script setup lang="ts">
 const { orchestrators: items } = useLibraryCatalog()
 
-useLibrarySeo({ title: 'AI agent orchestration — Reasoning across complete workflows | StackOS', description: 'See how AI orchestrators choose the next valid step, assemble context, delegate bounded work, gate feedback, recover, and verify the result.' })
-useSchemaOrg([defineWebPage({ '@type': 'CollectionPage', name: 'StackOS Orchestrator Library' }), defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library' }, { name: 'Orchestrators', item: '/library/orchestrators' }] })])
+useSiteSeo({ title: 'AI agent orchestration — Reasoning across complete workflows', description: 'See how AI orchestrators choose the next valid step, assemble context, delegate bounded work, gate feedback, recover, and verify the result.' })
+useSchemaOrg([defineWebPage({ '@type': 'CollectionPage', name: 'StackOS Orchestrator Library' }), defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library/' }, { name: 'Orchestrators', item: '/library/orchestrators/' }] })])
 useHead({ script: [{ key: 'orchestrator-library-faq', type: 'application/ld+json', innerHTML: JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: [{ '@type': 'Question', name: 'What is AI agent orchestration?', acceptedAnswer: { '@type': 'Answer', text: 'AI agent orchestration reasons over workflow state, chooses the next valid step, assembles context, delegates bounded work, gates feedback, handles recovery, and checks the result.' } }] }) }] })
 </script>
 

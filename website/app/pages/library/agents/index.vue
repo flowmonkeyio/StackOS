@@ -1,8 +1,8 @@
 <script setup lang="ts">
 const { agents: items } = useLibraryCatalog()
 
-useLibrarySeo({ title: `AI agents for business — ${items.length} specialist roles | StackOS`, description: `Explore ${items.length} bounded AI agent roles for research, planning, creation, review, and verification, each with a clear context, tool, output, and handoff contract.` })
-useSchemaOrg([defineWebPage({ '@type': 'CollectionPage', name: 'StackOS Agent Library' }), defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library' }, { name: 'Agents', item: '/library/agents' }] })])
+useSiteSeo({ title: `AI agents for business — ${items.length} specialist roles`, description: `Explore ${items.length} bounded AI agent roles for research, planning, creation, review, and verification, each with a clear context, tool, output, and handoff contract.` })
+useSchemaOrg([defineWebPage({ '@type': 'CollectionPage', name: 'StackOS Agent Library' }), defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library/' }, { name: 'Agents', item: '/library/agents/' }] })])
 useHead({ script: [{ key: 'agent-library-faq', type: 'application/ld+json', innerHTML: JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: [{ '@type': 'Question', name: 'What are AI agents for business?', acceptedAnswer: { '@type': 'Answer', text: 'An AI agent for business is a model operating under a role contract for one bounded responsibility. The contract defines relevant context, tools, authority, output, recovery, and when control returns to the orchestrator.' } }] }) }] })
 </script>
 

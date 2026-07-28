@@ -1,14 +1,17 @@
 <script setup lang="ts">
+import { countLabel } from '#shared/utils/siteSeo'
+import { pluginIntegrationPath } from '#shared/utils/integrationRoutePolicy'
 import type { IntegrationPlugin } from '~/composables/useIntegrationCatalog'
 
-defineProps<{ plugin: IntegrationPlugin }>()
+const props = defineProps<{ plugin: IntegrationPlugin }>()
+const destination = computed(() => pluginIntegrationPath(props.plugin.slug))
 </script>
 
 <template>
-  <NuxtLink class="integration-plugin" :to="`/library/integrations/plugins/${plugin.slug}`" :style="{ '--plugin-color': plugin.color }">
+  <NuxtLink class="integration-plugin" :to="destination" :style="{ '--plugin-color': plugin.color }">
     <div>
       <span>StackOS plugin</span>
-      <b>{{ plugin.providerCount }} providers</b>
+      <b>{{ countLabel(plugin.providerCount, 'provider') }}</b>
     </div>
     <h2>{{ plugin.name }}</h2>
     <p>{{ plugin.description }}</p>
@@ -18,7 +21,7 @@ defineProps<{ plugin: IntegrationPlugin }>()
       </div>
       <span v-if="plugin.providerCount > 4" class="integration-plugin__more">+{{ plugin.providerCount - 4 }}</span>
     </div>
-    <footer><strong>{{ plugin.actionCount }} actions</strong><b aria-hidden="true">→</b></footer>
+    <footer><strong>{{ countLabel(plugin.actionCount, 'action') }}</strong><b aria-hidden="true">→</b></footer>
   </NuxtLink>
 </template>
 

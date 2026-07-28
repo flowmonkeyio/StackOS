@@ -8,7 +8,7 @@ const { data: guide } = await useAsyncData('getting-started-guide', () =>
 
 if (!guide.value) throw createError({ statusCode: 404, statusMessage: 'Getting-started guide not found' })
 
-useLibrarySeo({
+useSiteSeo({
   title: guide.value.seoTitle,
   description: guide.value.description,
   type: 'article',
@@ -28,7 +28,7 @@ useSchemaOrg([
   defineBreadcrumb({
     itemListElement: [
       { name: 'Home', item: '/' },
-      { name: 'Getting started', item: route.path },
+      { name: 'Getting started', item: canonicalPath(route.path) },
     ],
   }),
 ])

@@ -1,5 +1,15 @@
 ErrorDocument 404 /404.html
 
+<IfModule mod_dir.c>
+  DirectorySlash On
+</IfModule>
+
+<IfModule mod_alias.c>
+  RedirectMatch 301 ^/library/integrations/plugins/core/?$ /library/integrations/local-daemon/
+  RedirectMatch 301 ^/library/integrations/plugins/shopify/?$ /library/integrations/shopify/
+  RedirectMatch 301 ^/library/integrations/plugins/trackbooth/?$ /library/integrations/trackbooth/
+</IfModule>
+
 <IfModule mod_mime.c>
   AddType text/markdown .md
   AddType application/x-apple-diskimage .dmg
@@ -7,8 +17,18 @@ ErrorDocument 404 /404.html
 </IfModule>
 
 <IfModule mod_headers.c>
+  Header always set Strict-Transport-Security "max-age=31536000"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set Permissions-Policy "camera=(), geolocation=(), microphone=(), payment=(), usb=()"
+  Header always set X-Frame-Options "DENY"
+
+  <Files "feed.xml">
+    Header set X-Robots-Tag "noindex"
+  </Files>
+
   <Files "getting-started.md">
     Header set X-Robots-Tag "noindex"
-    Header set Link "<https://stackos.flowmonkey.io/getting-started>; rel=canonical"
+    Header set Link "<https://stackos.flowmonkey.io/getting-started/>; rel=canonical"
   </Files>
 </IfModule>

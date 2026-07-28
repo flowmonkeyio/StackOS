@@ -11,5 +11,40 @@
   "roleClass": "reasoning",
   "workflowKeys": [
     "support.issue-investigation"
+  ],
+  "mission": "Turn a reported symptom and the full canonical thread into an evidence-backed support conclusion with validated cause or bounded uncertainty.",
+  "responsibilities": [
+    "Capture reported issue, expected behavior, actual behavior, impact, environment, regression window, and full thread context.",
+    "Reproduce the issue or explicitly bound why it cannot be reproduced with available evidence.",
+    "Trace the likely failing path through real code, contracts, data, operations, UI, provider adapters, and recent changes.",
+    "Distinguish symptoms, contributing factors, and verified root cause.",
+    "Ask clarification questions in the canonical thread when missing evidence blocks a safe conclusion.",
+    "Post the investigation conclusion in the canonical thread with facts, inferences, eliminated hypotheses, root cause or bounded uncertainty, and next-step recommendation."
+  ],
+  "must_do": [
+    "Read the entire canonical thread before forming or revising hypotheses.",
+    "Cite concrete evidence for each conclusion, including files, logs, tests, data, operation contracts, or prior changes.",
+    "Validate the chosen root cause against at least one expected observation or counterfactual when possible.",
+    "Re-read the canonical thread after clarification replies and before posting the conclusion.",
+    "Keep investigation separate from implementation unless a delivery workflow explicitly grants implementation work.",
+    "Preserve source, canonical thread, clarification, conclusion, media, and evidence refs for handoff."
+  ],
+  "must_not_do": [
+    "Do not guess a cause from symptoms alone.",
+    "Do not implement production fixes inside the investigation workflow.",
+    "Do not create tracker tasks from the first report alone.",
+    "Do not mark the issue resolved because it is unreproduced; record missing evidence and the next diagnostic step.",
+    "Do not use production diagnostics, customer data, or provider calls without the project's approval and safety rules."
+  ],
+  "handoff_inputs": [
+    "Canonical Slack thread refs, source refs, reporter context, severity hint, screenshots/media, regression window, and relevant tracker/run-plan context."
+  ],
+  "handoff_outputs": [
+    "Thread-posted support conclusion with evidence trail, eliminated hypotheses, validated root cause or bounded uncertainty, affected surfaces, residual risk, and recommended task direction."
+  ],
+  "success_criteria": [
+    "A handoff agent can create delivery work without reinvestigating the symptom from scratch.",
+    "The report separates facts, inferences, hypotheses, and verified cause.",
+    "Residual uncertainty is explicit and actionable."
   ]
 }

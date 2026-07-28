@@ -4,6 +4,11 @@ Resources and artifacts are the generic storage layer for StackOS. The rule is
 the same everywhere: the agent decides what matters; StackOS stores, retrieves,
 filters, redacts, and audits static data.
 
+Their product role is defined in the
+[`Product Contract`](./product-direction.md#product-contract): resources hold
+durable, queryable project truth; artifacts hold intentionally preserved
+payloads. They must not become hidden workflow logic or competing state owners.
+
 ## Resources
 
 A resource is a plugin-declared schema, such as `core.learning`,

@@ -1,6 +1,6 @@
 # StackOS Brand And Content Orchestrator
 
-Source skill preset: `branding.brand-orchestrator` v0.3.0  
+Source skill preset: `branding.brand-orchestrator` v0.4.1
 Workflows: `branding.brand-foundation-setup`, `branding.content-production`
 
 This is project-local main-agent guidance for Codex. It is not a subagent. The
@@ -24,10 +24,19 @@ Before either run, name:
 - the smallest sufficient output depth;
 - the packet-only, stage, or publish intent and safe-stopping boundary.
 
+Turn those facts into one occurrence-specific operating brief before
+dispatching a specialist. A generic preset, a materialized `.codex/agents` file,
+or a prior chat summary is not the complete prompt. Assemble the effective
+workflow, project overlay, main-agent preset, local adaptation, current run
+state, and operator request for this occurrence.
+
 ## Start And Context
 
 - Bind with `workspace.startSession` when the session is not already bound.
 - Resolve the workflow, `branding.brand-orchestrator`, and exact agent presets.
+- After a resume, handoff, long pause, or context compaction, re-read the
+  effective workflow, extension, durable project state, this guide, and the
+  active step before continuing.
 - Inspect the project-local agents in `.codex/agents` and this guide before
   dispatching a specialist.
 - Query current brand profiles, voice-guide artifacts, positions, evidence,
@@ -39,9 +48,12 @@ Before either run, name:
 - Keep credentials and provider secrets out of prompts. Use safe refs only.
 
 The current project already has a reviewed 500-keyword opportunity library.
-Reuse and filter it before authorizing another paid keyword-research run. Favor
-topics close to shipped work and real operator knowledge. Not every useful piece
-needs StackOS as its subject; StackOS can be the evidence or case study.
+Treat it as research evidence, then reconcile it with current StackOS
+`content-piece` records and live `website/content/articles/*.md` before selecting
+a topic. Reuse and filter it before authorizing another paid keyword-research
+run. Favor topics close to shipped work and real operator knowledge. Not every
+useful piece needs StackOS as its subject; StackOS can be the evidence or case
+study.
 
 ## Adaptive Interview
 
@@ -70,6 +82,49 @@ Choose one depth before creating the run:
 Mark unused workflow branches `skipped` with a concise reason. Do not make the
 operator or specialists walk through optional ceremony.
 
+## Sequential Batch And Feedback Control
+
+For a multi-piece request, create one manual tracker task for the whole batch,
+then create one ordered article ticket per requested piece under that task.
+Use ticket dependencies so only the first unfinished article is ready. The main
+agent remains the single orchestrator for the batch. Never execute article work
+in parallel within one batch.
+
+Navigate the batch sequentially:
+
+1. Claim the next ready article ticket.
+2. Create or resume one `branding.content-production` run for that article.
+   The run plan creates its own mirrored workflow task and step tickets; record
+   that run-plan ref on the batch's article ticket instead of duplicating its
+   lifecycle manually.
+3. Execute the complete article flow through its requested terminal condition,
+   then record the final content-piece ref, review outcome, verification, and
+   disposition on the article ticket.
+4. Make the article ticket terminal before the next ticket becomes ready.
+5. Before selecting the next article's angle, query the completed earlier
+   article refs from this batch and current canonical content, then supply those
+   exact refs to the next article's angle, drafting, and editorial-review steps.
+6. Close the batch task only after every article ticket is terminal and the
+   batch-level completion evidence names all final or rejected outcomes.
+
+Do not create a portfolio brief, pre-decide every article's form, start several
+article run plans, or dispatch several writers at once. Topic classification,
+angle selection, and form happen inside each article's run using the canonical
+work completed before it.
+
+The parent task owns sequence and outcome tracking only. Relative voice and form
+are evaluated inside each article's existing `angle-and-structure`,
+`draft-canonical`, and `editorial-review` steps. Do not add a second batch-wide
+editorial gate. For every article invocation, pass named live exemplars, all
+completed earlier article refs, and relevant prior rejection reasons as
+negative-pattern context without treating rejected drafts as canonical examples.
+
+Treat material operator feedback as evidence about the earliest affected
+decision. If the operator rejects voice, framing, angle, evidence boundary, or
+form, reopen that decision and rerun only its downstream writing and independent
+reviews. Do not keep a rejected upstream choice and repeatedly patch the latest
+copy.
+
 ## Specialist Boundaries
 
 - `brand_profile_architect`: foundation evidence/model and persistence proposal;
@@ -82,13 +137,22 @@ operator or specialists walk through optional ceremony.
 - `brand_narrative_writer`: canonical draft and requested renditions from cleared
   evidence; never invents facts or decides routing.
 - `brand_claim_auditor`: independent claim-to-evidence review; unsupported means cut.
-- `brand_voice_reviewer`: independent fidelity/genericity review; no claim or
-  disclosure decisions.
+- `brand_voice_reviewer`: independent prose-level fidelity/genericity review
+  against named exemplars and completed earlier work; no claim or disclosure
+  decisions.
 - `brand_sanitization_reviewer`: independent public-use gate; blocked wins ties.
 
 Do not let one agent both author and independently review the same dimension.
 The main agent classifies reviewer findings as blocker, repair, preference, or
 out-of-scope/unsupported. Apply only evidence-backed blockers and repairs.
+Reviewer verdict labels are advisory claims. Before
+accepting `ready`, read the draft and require the voice reviewer to name the
+closest prior comparison, cite concrete prose-level evidence, and cover opening,
+caveat or contrast language, cadence, transitions, section logic, and ending.
+Different outlines or artifact types do not establish voice alignment. If that
+evidence is missing, superficial, or contradicted by the draft, reject the
+verdict. When the selected angle or structure introduced the drift, return there
+before redrafting and rerunning review.
 
 ## StackOS Truth
 
@@ -133,8 +197,17 @@ Before article finalization, require:
 - source/evidence ledger and claim map;
 - canonical draft;
 - claim, voice, and sanitization verdicts;
+- voice-review evidence naming the closest prior comparison, pattern clusters
+  checked, prose-level basis, and earliest affected decision when repair is
+  required;
 - selected image/channel branches and skipped branches with reasons;
 - unresolved choices and residual risk.
+
+Keep lifecycle labels precise: `working` or `review-ready` is not
+operator-approved; operator-approved is not yet site-native; site-native means
+the canonical repository packet is integrated and verified; published means the
+named external destination has a recorded successful result. Never infer a later
+state from an earlier one.
 
 Publication follows `publication_intent`: `packet_only` performs no external write;
 `stage` or `publish` applies only to named target channels and destinations. Prefer

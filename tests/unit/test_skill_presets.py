@@ -172,6 +172,11 @@ def test_branding_skill_preset_names_evidence_lock_and_level2_boundary() -> None
     assert "readiness.check" in loaded.preset.recommended_tools
     assert "agentPreset.resolveForWorkflow" in loaded.preset.recommended_tools
     assert "skillPreset.resolveForWorkflow" in loaded.preset.recommended_tools
+    assert "tracker.createTask" in loaded.preset.recommended_tools
+    assert "tracker.createTicket" in loaded.preset.recommended_tools
+    assert "tracker.next" in loaded.preset.recommended_tools
+    assert "tracker.updateTask" in loaded.preset.recommended_tools
+    assert "tracker.updateTicket" in loaded.preset.recommended_tools
     assert "workflow_agent_requirements" in loaded.preset.project_adaptation.prompt_assembly_order
     assert "stackos:stackos" in refs
     assert "Level 2 branding overlay" in conditional_refs
@@ -198,6 +203,14 @@ def test_branding_skill_preset_names_evidence_lock_and_level2_boundary() -> None
     assert "evidence-backed blockers and repairs" in contract_text
     assert "next-workflow handoff" in contract_text
     assert "current tracker/run-plan context" in " ".join(contract.must_do)
+    assert "one manual tracker task for the batch" in contract_text
+    assert "exactly one content-production run at a time" in contract_text
+    assert "Never execute article work in parallel" in contract_text
+    assert "Do not create a separate portfolio brief" in contract_text
+    assert "ready label is a claim" in contract_text
+    assert "Keep coherence adjudication inside each article's existing angle" in contract_text
+    assert "Do not add a batch-wide editorial review" in contract_text
+    assert "parent batch task owns sequence and outcome tracking" in contract_text
     assert loaded.preset.metadata_json["evidence_lock"]["required_before_finalization"] is True
 
 

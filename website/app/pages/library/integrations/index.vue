@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { countLabel } from '#shared/utils/siteSeo'
+import { isConsolidatedPlugin, providerIntegrationPath } from '#shared/utils/integrationRoutePolicy'
 import type { IntegrationPlugin, IntegrationProvider } from '~/composables/useIntegrationCatalog'
 
 const catalog = useIntegrationCatalog()
@@ -15,7 +17,7 @@ const heroProviderKeys = new Set([
 const heroProviders = catalog.providers.filter((provider) => heroProviderKeys.has(provider.key))
 const search = ref('')
 const searchInput = ref<HTMLInputElement | null>(null)
-const view = ref<'providers' | 'plugins'>('plugins')
+const view = ref<'providers' | 'plugins'>('providers')
 const selectedPlugin = ref('all')
 const sort = ref<'name' | 'actions'>('name')
 
@@ -51,7 +53,10 @@ const filteredProviders = computed(() => {
   const items = catalog.providers.filter(providerMatches)
   return [...items].sort((a, b) => sort.value === 'actions' ? b.actionCount - a.actionCount || a.name.localeCompare(b.name) : a.name.localeCompare(b.name))
 })
-const filteredPlugins = computed(() => [...catalog.plugins.filter(pluginMatches)].sort((a, b) => sort.value === 'actions' ? b.actionCount - a.actionCount || a.name.localeCompare(b.name) : a.name.localeCompare(b.name)))
+const filteredPlugins = computed(() => [...catalog.plugins
+  .filter((plugin) => !isConsolidatedPlugin(plugin.slug))
+  .filter(pluginMatches)]
+  .sort((a, b) => sort.value === 'actions' ? b.actionCount - a.actionCount || a.name.localeCompare(b.name) : a.name.localeCompare(b.name)))
 const resultCount = computed(() => view.value === 'providers' ? filteredProviders.value.length : filteredPlugins.value.length)
 
 function selectPlugin(slug: string) {
@@ -69,18 +74,18 @@ function focusSearch(event: KeyboardEvent) {
 onMounted(() => window.addEventListener('keydown', focusSearch))
 onBeforeUnmount(() => window.removeEventListener('keydown', focusSearch))
 
-useLibrarySeo({
-  title: `${catalog.counts.providers} AI integrations for agents and workflows | StackOS`,
+useSiteSeo({
+  title: `${catalog.counts.providers} AI integrations for agents and workflows`,
   description: `Search ${catalog.counts.providers} tools across ${catalog.counts.plugins} StackOS plugins, with ${catalog.counts.actions} supported actions for communication, publishing, SEO, commerce, advertising, research, and more.`,
 })
 
 useSchemaOrg([
   defineWebPage({ '@type': 'CollectionPage', name: 'StackOS integrations library', description: 'Search the tools and supported actions StackOS workflows can use.' }),
-  defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library' }, { name: 'Integrations', item: '/library/integrations' }] }),
+  defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library/' }, { name: 'Integrations', item: '/library/integrations/' }] }),
 ])
 
 useHead({ script: [
-  { key: 'integrations-list', type: 'application/ld+json', innerHTML: JSON.stringify({ '@context': 'https://schema.org', '@type': 'ItemList', name: 'StackOS integrations', numberOfItems: catalog.counts.providers, itemListElement: catalog.providers.map((provider, index) => ({ '@type': 'ListItem', position: index + 1, name: provider.name, url: `/library/integrations/${provider.slug}` })) }) },
+  { key: 'integrations-list', type: 'application/ld+json', innerHTML: JSON.stringify({ '@context': 'https://schema.org', '@type': 'ItemList', name: 'StackOS integrations', numberOfItems: catalog.counts.providers, itemListElement: catalog.providers.map((provider, index) => ({ '@type': 'ListItem', position: index + 1, name: provider.name, url: providerIntegrationPath(provider.slug) })) }) },
   { key: 'integrations-faq', type: 'application/ld+json', innerHTML: JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: [
     { '@type': 'Question', name: 'What tools can StackOS work with?', acceptedAnswer: { '@type': 'Answer', text: `StackOS currently documents ${catalog.counts.providers} providers across ${catalog.counts.plugins} plugins, including communication, publishing, SEO, commerce, advertising, research, media, and local tools.` } },
     { '@type': 'Question', name: 'Do I need to replace my existing tools?', acceptedAnswer: { '@type': 'Answer', text: 'No. Keep the tools your team already uses. You start the request in your AI. The AI chooses the next step, StackOS scopes and records the call, and the connected provider performs the action.' } },
@@ -139,7 +144,10 @@ useHead({ script: [
         </div>
 
         <div class="integration-results">
-          <p><strong>{{ resultCount }}</strong> {{ view === 'providers' ? 'providers' : 'plugins' }} found<span v-if="query"> for “{{ search.trim() }}”</span></p>
+          <div>
+            <h2 v-if="view === 'providers'">All integrations</h2>
+            <p><strong>{{ countLabel(resultCount, view === 'providers' ? 'provider' : 'plugin') }}</strong> found<span v-if="query"> for “{{ search.trim() }}”</span></p>
+          </div>
           <button v-if="query || selectedPlugin !== 'all'" type="button" @click="search = ''; selectedPlugin = 'all'">Clear filters</button>
         </div>
 
@@ -196,6 +204,7 @@ useHead({ script: [
 .integration-filters button.is-active { color: var(--paper); background: rgb(255 255 255 / 8%); border-color: rgb(255 255 255 / 18%); }
 .integration-filters > p { margin: 10px 0 0; color: var(--ink-muted); font-size: 13px; }
 .integration-results { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: 40px 0 17px; }
+.integration-results h2 { margin: 0 0 6px; color: var(--paper); font-size: 24px; letter-spacing: -.04em; }
 .integration-results p { margin: 0; color: var(--ink-muted); font-size: 13px; }
 .integration-results strong { color: var(--paper); }
 .integration-results button { color: var(--cobalt-soft); font-size: 12px; background: none; border: 0; cursor: pointer; }

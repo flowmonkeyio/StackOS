@@ -37,6 +37,16 @@ Normal agents may use:
 
 - `account.list`: list global Accounts and sanitized provider metadata.
 - `connection.list`: list Accounts explicitly attached to the current project.
+  The normal compact agent-bridge response keeps only provider metadata used by
+  those Connections instead of projecting the global provider catalog.
+- `integration.list`: through the normal agent bridge, omitted
+  `include_unavailable` is forwarded as `false`, so discovery contains connected
+  providers, executable integrations available without a Connection, and
+  attached providers whose non-connected Account is required by an integration
+  action and needs repair. Repair rows report
+  `repair_required`, are excluded from `ready_count`, and include a targeted
+  Account repair action. Pass
+  `include_unavailable=true` only for deliberate provider setup/catalog work.
 - `account.test`: run a daemon-side health probe and return a sanitized result.
 - `toolProfile.resolve`: resolve one attached provider/Account tuple for
   execution without dumping the broader Account catalog into context.

@@ -198,8 +198,15 @@ def test_codex_local_branding_agents_track_branding_presets() -> None:
     orchestrator_text = (
         REPO_ROOT / ".codex/orchestrator/branding-content-orchestrator.md"
     ).read_text(encoding="utf-8")
-    assert "Source skill preset: `branding.brand-orchestrator` v0.3.0" in orchestrator_text
+    assert "Source skill preset: `branding.brand-orchestrator` v0.4.1" in orchestrator_text
     assert "not a subagent" in orchestrator_text
+    assert "Sequential Batch And Feedback Control" in orchestrator_text
+    assert "one ordered article ticket" in orchestrator_text
+    assert "Do not create a portfolio brief" in orchestrator_text
+    assert "The parent task owns sequence and outcome tracking only" in orchestrator_text
+    assert "Do not add a second batch-wide" in orchestrator_text
+    assert "editorial gate" in orchestrator_text
+    assert "Reviewer verdict labels are advisory claims" in orchestrator_text
     assert "There is no catch-all `ready` alias" in orchestrator_text
     assert "Do not merge foundation design and article production" in orchestrator_text
     assert "interview_mode" in orchestrator_text
@@ -495,8 +502,22 @@ def test_branding_agent_presets_enforce_role_separation_and_adaptation() -> None
     )
     voice_text = " ".join(
         [
+            *voice.preset.prompt_contract.responsibilities,
             *voice.preset.prompt_contract.must_do,
+            *voice.preset.prompt_contract.must_not_do,
             *voice.preset.prompt_contract.handoff_outputs,
+            *voice.preset.prompt_contract.success_criteria,
+            *voice.preset.prompt_contract.self_check,
+        ]
+    )
+    writer_text = " ".join(
+        [
+            *writer.preset.prompt_contract.responsibilities,
+            *writer.preset.prompt_contract.must_do,
+            *writer.preset.prompt_contract.must_not_do,
+            *writer.preset.prompt_contract.handoff_outputs,
+            *writer.preset.prompt_contract.success_criteria,
+            *writer.preset.prompt_contract.self_check,
         ]
     )
     strategist_text = " ".join(
@@ -542,6 +563,17 @@ def test_branding_agent_presets_enforce_role_separation_and_adaptation() -> None
     assert "artifact clutter" in curator_text
     assert "stop at the evidence handoff" in curator_text
     assert "out-of-scope/unsupported" in voice_text
+    assert "completed earlier article refs" in " ".join(voice.preset.prompt_contract.must_do)
+    assert "completed earlier batch articles" in " ".join(
+        strategist.preset.prompt_contract.responsibilities
+    )
+    assert "semantic constraints" in strategist_text
+    assert "ready-to-copy disclaimer sentences" in strategist_text
+    assert "compare the actual prose" in writer_text
+    assert "stock disclaimer pattern" in writer_text
+    assert "closest prior piece" in voice_text
+    assert "cumulative voice cost" in voice_text
+    assert "different outline" in voice_text
     assert "Do not create a new artifact for each draft revision" in " ".join(
         writer.preset.prompt_contract.must_not_do
     )

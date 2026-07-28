@@ -11,5 +11,36 @@
   "roleClass": "mechanical",
   "workflowKeys": [
     "support.delivery-task-handoff"
+  ],
+  "mission": "Create delivery-ready tracker work only after a same-thread operator instruction, then acknowledge the handoff in the canonical thread.",
+  "responsibilities": [
+    "Confirm the operator instruction belongs to the same canonical support thread as the investigation conclusion.",
+    "Convert the conclusion into a task with root cause or bounded uncertainty, affected surfaces, fix direction, acceptance criteria, verification expectations, and chat refs.",
+    "Create appropriately scoped tickets and dependencies for engineering.tracked-delivery.",
+    "Post a concise task handoff reply and add a semantically matching task-created reaction."
+  ],
+  "must_do": [
+    "Re-read the canonical thread before creating the task.",
+    "Require conclusion, instruction, canonical thread, source, and media refs before task creation.",
+    "Preserve safe chat refs in tracker `references_json`, `source_json`, `context_json`, or `metadata_json`.",
+    "Make uncertainty explicit rather than disguising diagnostics as confirmed root cause.",
+    "Hand off implementation to engineering.tracked-delivery."
+  ],
+  "must_not_do": [
+    "Do not create tasks from side-channel instructions without same-thread confirmation.",
+    "Do not implement fixes in the handoff workflow.",
+    "Do not create workaround-only tasks that mask the symptom while leaving the cause alive.",
+    "Do not claim delivery has started unless a delivery run or tracker pick actually exists."
+  ],
+  "handoff_inputs": [
+    "Support conclusion refs, canonical thread refs, operator instruction ref, source/media refs, severity, and delivery expectations."
+  ],
+  "handoff_outputs": [
+    "Delivery-ready task/tickets, task handoff reply evidence, task-created reaction evidence, and engineering.tracked-delivery handoff refs."
+  ],
+  "success_criteria": [
+    "Engineering delivery can start from the task without reconstructing chat history.",
+    "The task contains cause, fix direction, acceptance criteria, verification expectations, and preserved refs.",
+    "The canonical thread shows that task creation happened and where delivery continues."
   ]
 }

@@ -1,5 +1,10 @@
 # Branding Plugin
 
+This domain package follows the canonical
+[`StackOS Product Contract`](../../docs/product-direction.md#product-contract).
+The workflow organizes editorial method and agent guidance; it does not move
+content strategy into core or require code gates for every editorial judgment.
+
 `branding` is the generic Level 1 authority-content plugin. It provides schemas,
 two workflow templates, agent presets, and the main-agent orchestration preset for
 evidence-grounded content production and automated channel publication.
@@ -63,3 +68,13 @@ workflow. StackOS resources remain the single source of truth; local files may
 hold scratch iteration or mirror durable artifacts, but they should not replace
 evidence, content-piece, routing, execution intent, publication jobs, distribution
 records, or channel memory.
+
+For related pieces, the main agent creates one parent tracker task with ordered
+article tickets and runs one complete `branding.content-production` invocation
+at a time. Each later invocation receives current canonical work and all
+completed earlier article refs; its own angle, draft, and editorial-review steps
+own relative voice and form. The parent task tracks sequence and outcomes, not a
+separate portfolio brief or batch-wide editorial gate. The keyword library is
+evidence, not an evergreen backlog, and a material operator correction should
+reopen the earliest affected workflow decision rather than trigger repeated
+surface edits.

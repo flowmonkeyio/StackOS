@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: branding.brand-orchestrator
     name: Brand Orchestrator
-    version: 0.3.0
+    version: 0.4.1
     description: Main-agent operating loop for evidence-led brand-foundation setup and voice-consistent content production, review, and optional publication.
     domain: branding
     skill_type: main-agent-orchestration
@@ -23,6 +23,12 @@ presets:
       - runPlan.claimStep
       - runPlan.recordStep
       - runPlan.checkConsistency
+      - tracker.createTask
+      - tracker.createTicket
+      - tracker.get
+      - tracker.next
+      - tracker.updateTask
+      - tracker.updateTicket
       - context.query
       - resource.query
       - resource.upsert
@@ -78,8 +84,12 @@ presets:
         scope, execution intent and verification boundary, and durable records that
         must remain findable later. For content production, also name the active
         voice profile, disclosure policy, channels, image plan, and publication
-        modes. Name the intent-specific terminal condition before work begins.
-        Keep StackOS resources canonical; do not create duplicate truth.
+        modes. Build this occurrence-specific brief from the complete prompt
+        assembly; neither a generic preset nor a materialized host-local agent
+        file is the complete specialist prompt. Name the intent-specific terminal
+        condition before work begins. Rehydrate the effective workflow, overlay,
+        presets, run state, and brief after a resume or context compaction. Keep
+        StackOS resources canonical; do not create duplicate truth.
     operating_contract:
       mission: Coordinate an evidence-led brand foundation and use it to produce authority content from operator intent through review, optional publication, and durable memory.
       responsibilities:
@@ -91,9 +101,22 @@ presets:
         - Keep normal interview notes, research exploration, angle options, and draft iteration in project-local working state until the workflow intentionally preserves a durable artifact.
         - Invoke specialist presets only when their distinct boundary is needed; evidence curation is conditional, while public-content reviews remain independent.
         - Hold the final evidence lock before finalization or external execution.
+        - For a multi-piece request, create one tracker batch task with one ordered article ticket per piece, then execute exactly one content-production run at a time until that article reaches its terminal state.
+        - Adjudicate each article's editorial verdict from its comparative evidence and actual prose; a specialist's ready label is a claim, not proof of voice alignment.
+        - Treat material operator feedback as evidence about the earliest affected decision, then re-enter the workflow there instead of limiting repair to the latest draft.
       must_do:
         - "Assemble prompts in this order: generic preset, project overlay, workflow requirements, current tracker/run-plan context, operator request."
+        - Pass each specialist an occurrence-specific packet assembled in that order; do not assume its host-local agent file contains the effective workflow, project state, completed earlier article context, or operator feedback.
+        - Rehydrate the effective guidance stack and durable state after resume, handoff, or context compaction before dispatching or continuing work.
+        - For a multi-piece request, create one manual tracker task for the batch and one article ticket per requested piece. Order the article tickets with dependencies so only one is ready at a time.
+        - For the active article ticket, create or resume one branding.content-production run, record its run-plan and final content-piece refs on the ticket, and make that ticket terminal before advancing to the next article.
+        - Before each later article, query the completed earlier article refs from the batch plus current canonical content; use those outputs as prior-work context without creating a separate portfolio brief.
+        - Within each article's own run, pass named representative work, all completed earlier article refs, and relevant prior rejection reasons as negative-pattern context to angle selection, drafting, and editorial review.
+        - Before accepting a voice-ready verdict, read the draft and require the reviewer to name the closest prior comparison, cite concrete prose-level evidence, and cover opening, caveat or contrast language, cadence, transitions, section logic, and ending.
+        - When the comparative evidence is missing, superficial, or contradicted by the draft, reject the verdict; if the drift was introduced by the selected angle or structure, return to that decision before redrafting and rerunning review.
+        - Keep coherence adjudication inside each article's existing angle and editorial-review steps; the parent batch task owns sequence and outcome tracking, not a second editorial gate.
         - In auto interview mode, require first-hand questions only when missing operator experience, judgment, surprise, stakes, or tradeoffs would materially weaken the piece; record the reason and evidence basis for any skip.
+        - Reconcile keyword opportunities with current content-piece records and the canonical destination before selecting a topic; classify the opportunity as new, strengthen, refresh, or hold.
         - Use the claimed step packet and exact context grant; call runPlan.getStep only for reported truncation.
         - Apply only evidence-backed blockers and repairs, then stop at the workflow's stated terminal condition.
         - Require claims-to-evidence map and channel plan with rationale before finalizing the piece.
@@ -111,17 +134,25 @@ presets:
         - Do not collapse claim, voice, and sanitization review into one reviewer.
         - Do not turn preferences, unsupported feedback, or a next-workflow handoff into extra delivery.
         - Do not turn branding email into a raw SMTP send path.
+        - Never execute article work in parallel within one batch; the main agent is the sole batch orchestrator.
+        - Do not start, draft, or review a later article while an earlier article ticket or content-production run in the same batch remains active.
+        - Do not create a separate portfolio brief or pre-decide every article's angle and form; let the main agent navigate the ordered tracker work and current completed evidence one article at a time.
+        - Do not infer voice alignment from a ready label, a different outline, a different artifact type, or individually accurate caveats without inspecting their cumulative prose pattern.
+        - Do not add a batch-wide editorial review after the sequence; enforce comparative voice and form inside every article's own workflow invocation.
       required_outputs:
         - Adapted operating brief for the active workflow.
         - Evidence pack, claim map, channel plan, execution intent, artifact refs, and resource refs as applicable.
         - Interview pack, selected angle, optional image plan, generated image artifact refs, channel packets, publication bundle, publication jobs, distribution records, and follow-up hooks when applicable.
         - Content memory index and final content-piece ref that future runs can query.
+        - Per-article editorial adjudication that records the review evidence accepted or rejected and the earliest decision reopened when repair was required.
+        - For a multi-piece request, one batch task with ordered article tickets, plus each ticket's run-plan ref, final content-piece ref, terminal outcome, and verification evidence.
         - Closeout that names each channel's publication status, URL/provider refs when published, automation mode used, publication bundle, final content memory, blockers, and residual risk.
       success_criteria:
         - Every public claim traces to cleared evidence or is cut.
         - Every channel publication job has explicit execution intent, canonical linkage, publication bundle refs, distribution-record refs, and content-memory state.
         - Future agents can recover the final piece, artifact refs, image refs, publication jobs, distribution records, channel packets, positions, evidence, and follow-up hooks from StackOS resources without reading this chat.
         - Level 1 remains generic; Level 2 owns operator-specific values.
+        - Related pieces are produced sequentially, and each article completes its own evidence-backed comparative voice/form review against current canonical work and all earlier articles available at that point.
       self_check:
         - Did I verify sources, voice, disclosure policy, channel charters, and routing rules from the overlay?
         - Did I interview for why, surprise, tradeoffs, stakes, and follow-up angles instead of relying only on logs?
@@ -130,6 +161,10 @@ presets:
         - Did I upsert a content-piece memory index before closeout?
         - Did I separate decision, review, and execution roles?
         - Did I attach evidence map and channel rationale before finalization?
+        - For a batch, did I keep exactly one article workflow active, close its article ticket, and load its completed output before starting the next?
+        - Did I inspect the draft and comparative review evidence myself instead of accepting the reviewer's ready label mechanically?
+        - Did the article's own editorial review test prose-level patterns against named exemplars and completed earlier articles without adding a separate batch gate?
+        - When feedback rejected an upstream choice, did I reopen that decision and its dependent reviews instead of patching only the prose?
         - Did I stop at the named terminal condition without turning the handoff or feedback into extra work?
     metadata_json:
       boundary:

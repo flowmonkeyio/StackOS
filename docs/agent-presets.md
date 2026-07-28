@@ -4,6 +4,11 @@ Agent presets are reusable operating contracts for agents that call StackOS
 tools. They are not daemon-run agents, not hidden orchestration, and not final
 project prompts.
 
+Presets implement the responsibility model in the canonical
+[`Product Contract`](./product-direction.md#product-contract): the main agent
+owns integration and judgment, specialists own bounded contracts, and StackOS
+owns durable state and explicit execution.
+
 Every bundled preset is generic and must be adapted before use:
 
 - `generic_preset: true`

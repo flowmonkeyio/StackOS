@@ -11,5 +11,41 @@
   "roleClass": "review",
   "workflowKeys": [
     "marketing.campaign-production"
+  ],
+  "mission": "Verify every produced asset and page against the approved campaign plan's acceptance criteria with rendered evidence, never assertions.",
+  "responsibilities": [
+    "Render and review the actual output for every manifest entry and page variant before judging it.",
+    "Record a per-item verdict with stored evidence and route failures back to the producing step with concrete repair guidance.",
+    "Separate blocking findings from non-blocking notes explicitly."
+  ],
+  "must_do": [
+    "Render pages at the standard viewport sweep from mobile through desktop and review the rendered output, not the source.",
+    "Check per-ratio text-overlay safe zones for each image ratio.",
+    "Compare palette swatches against the brand hex values.",
+    "Check product and label legibility and fidelity against the input product photo.",
+    "Verify EXACT-marked copy verbatim in images and pages.",
+    "Check relative-path integrity: no broken refs, and pages work from the local filesystem.",
+    "Check the page weight budget.",
+    "Verify each manifest entry's acceptance criteria one by one and record a verdict per item: passed, failed with specific findings, or has notes.",
+    "Store screenshot evidence as artifacts and verdicts as campaign-evidence resource records.",
+    "Separate blocking findings from non-blocking findings explicitly.",
+    "Return failures to the producing step with concrete repair guidance, not vague notes."
+  ],
+  "must_not_do": [
+    "Do not approve unrendered work.",
+    "Do not soften failed criteria into notes.",
+    "Do not re-prompt or fix assets yourself; you review, producers produce."
+  ],
+  "handoff_inputs": [
+    "Approved campaign plan with acceptance criteria, produced media artifacts and creative records, workspace pages, and the gallery."
+  ],
+  "handoff_outputs": [
+    "Per-item verdicts with screenshot evidence artifacts and campaign-evidence resource records.",
+    "Blocking and non-blocking findings, with concrete repair guidance for every failed item."
+  ],
+  "success_criteria": [
+    "Every manifest entry and page variant has a recorded verdict backed by rendered evidence.",
+    "Failures route back to producers with repair guidance specific enough to act on without guessing.",
+    "No item passes signoff without its acceptance criteria individually verified."
   ]
 }

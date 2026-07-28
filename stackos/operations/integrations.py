@@ -189,6 +189,7 @@ def _integration_item(
     state = _integration_state(
         provider=provider,
         connected=bool(connected_credentials),
+        repair_required=bool(credentials) and not connected_credentials and bool(required_actions),
         actions=actions,
         exposed_actions=exposed_actions,
         executable_actions=executable_actions,
@@ -209,6 +210,24 @@ def _integration_item(
             ui_url=integration_setup_url(project_id, provider.key),
             setup=setup,
         )
+    elif state == "repair_required":
+        next_action = next(
+            (
+                row.exposure.next_action
+                for row in actions
+                if row.exposure.next_action is not None
+                and row.exposure.next_action.tool == "account.test"
+            ),
+            None,
+        )
+        if next_action is None:
+            next_action = ActionExposureNextActionOut(
+                tool="connection.list",
+                reason=f"Attached Account for provider {provider.key!r} needs repair.",
+                arguments={"project_id": project_id, "provider_key": provider.key},
+                ui_url=integration_setup_url(project_id, provider.key),
+                setup=setup,
+            )
     elif state == "provider_disabled":
         next_action = ActionExposureNextActionOut(
             tool="provider.describe",
@@ -246,6 +265,7 @@ def _integration_state(
     *,
     provider: ProviderOut,
     connected: bool,
+    repair_required: bool,
     actions: list[ActionOut],
     exposed_actions: list[ActionOut],
     executable_actions: list[ActionOut],
@@ -257,6 +277,8 @@ def _integration_state(
         if exposed_actions and not executable_actions:
             return "connected_blocked"
         return "connected"
+    if repair_required:
+        return "repair_required"
     if hidden_actions and exposed_actions:
         return "partially_available"
     if hidden_actions:

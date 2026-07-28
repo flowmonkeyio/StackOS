@@ -4,6 +4,12 @@ Add new behavior through plugins, workflow templates, providers, actions, and
 generic UI renderers. Core changes should be reserved for primitives that every
 domain can use.
 
+Start with the canonical
+[`Product Contract`](./product-direction.md#product-contract), then inspect the
+existing owner and consumers before designing a new extension. A new
+abstraction requires a demonstrated gap; an isolated workflow request is not
+by itself evidence that core needs a new primitive.
+
 ## Add A Plugin
 
 Create a plugin manifest under `plugins/<slug>/plugin.yaml` with:

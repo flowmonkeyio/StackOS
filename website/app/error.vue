@@ -9,7 +9,7 @@ const props = defineProps<{
 const statusCode = computed(() => props.error?.statusCode || 500)
 const isNotFound = computed(() => statusCode.value === 404)
 const pageTitle = computed(() =>
-  isNotFound.value ? 'Page not found | StackOS' : 'Something went wrong | StackOS',
+  isNotFound.value ? 'Page not found' : 'Something went wrong',
 )
 const headline = computed(() =>
   isNotFound.value
@@ -46,7 +46,7 @@ useSeoMeta({
               Go to StackOS home
               <span aria-hidden="true">→</span>
             </a>
-            <a class="button button--ghost" href="/getting-started">
+            <a class="button button--ghost" href="/getting-started/">
               Open getting started
               <span aria-hidden="true">→</span>
             </a>
@@ -77,12 +77,12 @@ useSeoMeta({
                 <strong>Home</strong>
                 <small>See what StackOS does</small>
               </a>
-              <a href="/getting-started">
+              <a href="/getting-started/">
                 <span>02</span>
                 <strong>Getting started</strong>
                 <small>Take the next step after install</small>
               </a>
-              <a href="/library">
+              <a href="/library/">
                 <span>03</span>
                 <strong>Library</strong>
                 <small>Explore workflows and guides</small>

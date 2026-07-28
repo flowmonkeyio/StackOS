@@ -1,33 +1,40 @@
 <template>
-  <ClientOnly>
-    <ProductWorkflowVisual />
-    <template #fallback>
-      <section id="workflow" class="workflow-fallback section section--ink" aria-labelledby="workflow-fallback-title">
-        <div class="shell">
-          <div class="section-heading section-heading--wide">
-            <div>
-              <p class="eyebrow eyebrow--dark">Keep your AI tool. Add a complete way of working.</p>
-              <h2 id="workflow-fallback-title">One request becomes<br /><em>a plan you can watch.</em></h2>
+  <div class="product-workflow-shell">
+    <ClientOnly>
+      <ProductWorkflowVisual />
+      <template #fallback>
+        <section id="workflow" class="workflow-fallback section section--ink" aria-labelledby="workflow-fallback-title">
+          <div class="shell">
+            <div class="section-heading section-heading--wide">
+              <div>
+                <p class="eyebrow eyebrow--dark">Keep your AI tool. Add a complete way of working.</p>
+                <h2 id="workflow-fallback-title">One request becomes<br /><em>a plan you can watch.</em></h2>
+              </div>
+              <p>
+                Ask in Codex, Claude Code, Gemini, or another AI tool. StackOS shows you the full
+                plan, then keeps every step and result connected.
+              </p>
             </div>
-            <p>
-              Ask in Codex, Claude Code, Gemini, or another AI tool. StackOS shows you the full
-              plan, then keeps every step and result connected.
-            </p>
+            <ol aria-label="StackOS workflow journey">
+              <li><span>01</span><strong>Ask in your AI tool</strong><code>Request received</code></li>
+              <li><span>02</span><strong>See the full plan</strong><code>Ready to review</code></li>
+              <li><span>03</span><strong>Approve the work</strong><code>Ready to start</code></li>
+              <li><span>04</span><strong>Watch each step move</strong><code>Working</code></li>
+              <li><span>05</span><strong>Keep the result</strong><code>Complete</code></li>
+            </ol>
           </div>
-          <ol aria-label="StackOS workflow journey">
-            <li><span>01</span><strong>Ask in your AI tool</strong><code>Request received</code></li>
-            <li><span>02</span><strong>See the full plan</strong><code>Ready to review</code></li>
-            <li><span>03</span><strong>Approve the work</strong><code>Ready to start</code></li>
-            <li><span>04</span><strong>Watch each step move</strong><code>Working</code></li>
-            <li><span>05</span><strong>Keep the result</strong><code>Complete</code></li>
-          </ol>
-        </div>
-      </section>
-    </template>
-  </ClientOnly>
+        </section>
+      </template>
+    </ClientOnly>
+  </div>
 </template>
 
 <style scoped>
+.product-workflow-shell,
+.workflow-fallback {
+  min-height: 1320px;
+}
+
 .workflow-fallback ol {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -69,6 +76,11 @@
 }
 
 @media (max-width: 800px) {
+  .product-workflow-shell,
+  .workflow-fallback {
+    min-height: 2640px;
+  }
+
   .workflow-fallback ol {
     grid-template-columns: 1fr;
   }

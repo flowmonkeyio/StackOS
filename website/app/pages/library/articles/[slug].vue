@@ -13,7 +13,7 @@ const relatedWorkflows = computed(() => allWorkflows.filter((entry) => article.v
 const relatedAgents = computed(() => allAgents.filter((entry) => article.value!.relatedAgents?.includes(entry.slug)))
 const config = useRuntimeConfig()
 
-useLibrarySeo({ title: `${article.value.title} — StackOS`, description: article.value.description, type: 'article', publishedAt: article.value.publishedAt, updatedAt: article.value.updatedAt })
+useSiteSeo({ title: article.value.title, description: article.value.description, type: 'article', publishedAt: article.value.publishedAt, updatedAt: article.value.updatedAt })
 useSchemaOrg([
   defineArticle({
     headline: article.value.title,
@@ -23,7 +23,7 @@ useSchemaOrg([
     author: { '@type': 'Organization', name: article.value.author },
     image: article.value.heroImage?.src || `${config.public.siteUrl}/images/plugins.png`,
   }),
-  defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library' }, { name: 'Articles', item: '/library/articles' }, { name: article.value.title, item: route.path }] }),
+  defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library/' }, { name: 'Articles', item: '/library/articles/' }, { name: article.value.title, item: canonicalPath(route.path) }] }),
 ])
 
 function articleSlug(stem: string) { return stem.split('/').at(-1) || stem }

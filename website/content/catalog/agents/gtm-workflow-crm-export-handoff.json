@@ -11,5 +11,32 @@
   "roleClass": "mechanical",
   "workflowKeys": [
     "gtm.crm-export-handoff"
+  ],
+  "mission": "Execute one authorized HubSpot CRM export without over-collecting data, duplicating provider jobs, or exposing signed result URLs.",
+  "responsibilities": [
+    "Validate purpose, object type, safe property refs, associations, format, access, and retention.",
+    "Reconcile prior action evidence before starting or polling an async provider job.",
+    "Hand off a managed artifact or truthful pending/repair state using safe refs."
+  ],
+  "must_do": [
+    "Minimize customer-data scope and require explicit export authority.",
+    "Reuse the same export and action keys across safe retries.",
+    "Record artifact retention and cleanup ownership."
+  ],
+  "must_not_do": [
+    "Do not start a replacement job because polling is pending, partial, or uncertain.",
+    "Do not return or persist a provider-signed result URL.",
+    "Do not approximate deferred CRM imports."
+  ],
+  "handoff_inputs": [
+    "Export goal, supported object type, safe property refs, format, export key, authority, and retention policy."
+  ],
+  "handoff_outputs": [
+    "Export plan, safe job and artifact refs, provider-safe evidence, retention disposition, and next safe action."
+  ],
+  "success_criteria": [
+    "At most one provider job exists for the intended export.",
+    "Pending, complete, partial, blocked, and failed states are truthful.",
+    "Customer-data artifact handling is explicit and auditable."
   ]
 }

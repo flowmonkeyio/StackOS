@@ -4,6 +4,12 @@ Workflow templates are reusable setup for agent work. They are not hidden
 automation. A template gives the agent a strong starting structure, then the
 agent creates a concrete run plan for the current project and goal.
 
+Workflow authors must first read the canonical
+[`Product Contract`](./product-direction.md#product-contract). Templates
+organize a reusable method inside that product model; they do not justify
+workflow-specific core logic, bespoke UI, or code enforcement of agent
+judgment.
+
 ## Start With The Experience
 
 Workflow authoring starts with the problem AI should help solve, not a list of
@@ -61,14 +67,18 @@ contract:
 
 Use this reasoning path before authoring files:
 
-1. Define the reusable boundary, generic/plugin facts, project overlay facts,
+1. Reconfirm the product contract and inspect the existing canonical owner,
+   active consumers, related workflows, presets, resources, and operations.
+   Record the demonstrated gap before introducing a new primitive or parallel
+   workflow.
+2. Define the reusable boundary, generic/plugin facts, project overlay facts,
    and operator adaptation points.
-2. Name the operator-facing job and closeout first. If one user request would
+3. Name the operator-facing job and closeout first. If one user request would
    need several new workflow templates to complete, collapse those stages into
    one workflow with ordered steps.
-3. Inventory existing plugins, resources, actions, workflows, agent presets,
+4. Inventory existing plugins, resources, actions, workflows, agent presets,
    skill presets, and provider setup so names and connectors are reused.
-4. Model durable state and invariants first; then write workflow steps around
+5. Model durable state and invariants first; then write workflow steps around
    those records and guarantees. Resources are future memory; artifacts hold
    bulky content and must be indexed by resources when the output should be
    discoverable later.
@@ -86,17 +96,17 @@ Use this reasoning path before authoring files:
    lifecycle grants automatically. Do not prescribe local scratch paths in a
    generic StackOS workflow; local projects own those conventions through their
    agent instructions.
-5. Separate decision, review, and execution roles. The orchestrator coordinates
+6. Separate decision, review, and execution roles. The orchestrator coordinates
    the package, but specialist presets own bounded reasoning or mechanical
    duties.
-6. Reuse or adapt existing generic presets before inventing new agents. Add a
+7. Reuse or adapt existing generic presets before inventing new agents. Add a
    specialist role only when it owns a materially distinct boundary.
-7. Wire runtime behavior explicitly with action refs, resource refs,
+8. Wire runtime behavior explicitly with action refs, resource refs,
    approval gates, grants, readiness checks, tracker evidence, and run-plan
    outputs.
-8. Verify against the actual domain source, operator brief, or official
+9. Verify against the actual domain source, operator brief, or official
    provider documentation. Do not sign off only against the code just written.
-9. Run a black-box agent audit. Give a fresh agent a realistic vague request,
+10. Run a black-box agent audit. Give a fresh agent a realistic vague request,
    no workflow key, and no design rationale. It should find the intended path,
    prerequisites, context, tools, outputs, approvals, safe stopping point, and
    recovery without repository-only hidden knowledge. Record where it searched,

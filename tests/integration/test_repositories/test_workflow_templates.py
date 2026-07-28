@@ -147,6 +147,7 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     foundation_outputs = {item.key: item for item in branding_foundation_described.spec.outputs}
     assert "out_of_scope" in foundation_outputs["voice_review_report"].schema_data["required"]
     assert branding_content_described.summary.plugin_slug == "branding"
+    assert branding_content_described.spec.version == "0.4.3"
     assert branding_content_described.spec.metadata_json["default_branding_workflow"] is True
     assert branding_content_described.spec.metadata_json["workflow_family"] == (
         "content-production"
@@ -205,6 +206,19 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     branding_content_steps = {step.id: step for step in branding_content_described.spec.steps}
     assert branding_content_steps["produce-optional-images"].action_refs == ["image_generate"]
     assert branding_content_steps["angle-and-structure"].depends_on == ["research-fact-collection"]
+    assert "prior_pieces" in branding_content_steps["draft-canonical"].context_refs
+    assert "semantic constraints" in " ".join(
+        branding_content_steps["angle-and-structure"].instructions
+    )
+    assert "Compare the actual draft" in " ".join(
+        branding_content_steps["draft-canonical"].instructions
+    )
+    assert "Name the closest prior comparison" in " ".join(
+        branding_content_steps["editorial-review"].instructions
+    )
+    assert "no repair remains unresolved" in " ".join(
+        branding_content_steps["editorial-review"].success_criteria
+    )
     assert "research_source_traceability" in {
         item.key for item in branding_content_described.spec.policies
     }

@@ -4,6 +4,11 @@ Plugins are StackOS domain packages. They let the core stay generic while each
 domain brings its own capabilities, providers, resources, actions, workflow
 templates, and optional navigation.
 
+Read the canonical
+[`Product Contract`](./product-direction.md#product-contract) before adding a
+plugin or moving behavior between plugin and core. Domain method belongs here;
+only reusable, domain-agnostic product primitives belong in core.
+
 ## Manifest
 
 Plugin manifests live at `plugins/<slug>/plugin.yaml`:
