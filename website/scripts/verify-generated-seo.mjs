@@ -293,10 +293,13 @@ if (
   || !notFoundHtml.includes('This page isn’t here. The rest of StackOS is.')
   || !notFoundHtml.includes('Go to StackOS home')
   || !notFoundHtml.includes('Open getting started')
+  || /<script\b[^>]*\bsrc=/i.test(notFoundHtml)
+  || /<script\b[^>]*\btype=(["'])module\1/i.test(notFoundHtml)
+  || /<link\b[^>]*\brel=(["'])modulepreload\1/i.test(notFoundHtml)
 ) {
   addViolation(
     'SEO_ERROR_METADATA',
-    '404.html must be the prerendered branded error page with aligned metadata, recovery links, noindex/nofollow, and no canonical URL',
+    '404.html must be the no-hydration branded error page with aligned metadata, recovery links, noindex/nofollow, and no canonical URL',
   )
 }
 

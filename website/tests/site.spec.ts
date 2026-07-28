@@ -69,6 +69,8 @@ test('unknown routes return a branded, useful, and accessible 404 page', async (
   )
   await expect(page.getByRole('navigation', { name: 'Useful destinations' })).toBeVisible()
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', 'noindex, nofollow')
+  await expect(page.locator('link[rel="canonical"]')).toHaveCount(0)
+  await expect(page.locator('meta[property="og:url"]')).toHaveCount(0)
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   expect(overflow).toBeLessThanOrEqual(1)

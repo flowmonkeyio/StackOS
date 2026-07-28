@@ -147,6 +147,7 @@ export default defineNuxtConfig({
     },
   },
   routeRules: {
+    '/__static-404': { prerender: true, noScripts: true },
     '/getting-started/': { prerender: true },
     '/getting-started.md': {
       prerender: true,
