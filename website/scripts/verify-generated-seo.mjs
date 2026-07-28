@@ -280,14 +280,24 @@ for (const path of htmlFiles) {
 const notFoundHtml = await readIfExists(join(outputRoot, '404.html'))
 const notFoundHead = notFoundHtml.match(/<head\b[^>]*>([\s\S]*?)<\/head>/i)?.[1] || ''
 const notFoundTitle = titleValue(notFoundHead)
+const notFoundDescription = metaValue(notFoundHead, 'description')
 if (
-  !notFoundTitle
-  || !/\|\s*StackOS$/i.test(notFoundTitle)
-  || /(?:\||—)\s*StackOS(?:\s*(?:\||—)\s*StackOS)+$/i.test(notFoundTitle)
+  notFoundTitle !== 'Page not found | StackOS'
   || metaValue(notFoundHead, 'robots') !== 'noindex, nofollow'
   || canonicalValues(notFoundHead).length
+  || metaValue(notFoundHead, 'og:url')
+  || metaValue(notFoundHead, 'og:title') !== notFoundTitle
+  || metaValue(notFoundHead, 'twitter:title') !== notFoundTitle
+  || metaValue(notFoundHead, 'og:description') !== notFoundDescription
+  || metaValue(notFoundHead, 'twitter:description') !== notFoundDescription
+  || !notFoundHtml.includes('This page isn’t here. The rest of StackOS is.')
+  || !notFoundHtml.includes('Go to StackOS home')
+  || !notFoundHtml.includes('Open getting started')
 ) {
-  addViolation('SEO_ERROR_METADATA', '404.html must have one brand suffix, noindex/nofollow, and no canonical')
+  addViolation(
+    'SEO_ERROR_METADATA',
+    '404.html must be the prerendered branded error page with aligned metadata, recovery links, noindex/nofollow, and no canonical URL',
+  )
 }
 
 const expectedIndexableRoutes = new Set(

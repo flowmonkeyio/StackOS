@@ -11,6 +11,7 @@ const isNotFound = computed(() => statusCode.value === 404)
 const pageTitle = computed(() =>
   isNotFound.value ? 'Page not found' : 'Something went wrong',
 )
+const socialTitle = computed(() => `${pageTitle.value} | StackOS`)
 const headline = computed(() =>
   isNotFound.value
     ? 'This page isn’t here. The rest of StackOS is.'
@@ -26,6 +27,10 @@ useSeoMeta({
   title: pageTitle,
   description,
   robots: 'noindex, nofollow',
+  ogTitle: socialTitle,
+  ogDescription: description,
+  twitterTitle: socialTitle,
+  twitterDescription: description,
 })
 </script>
 

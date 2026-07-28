@@ -32,6 +32,13 @@ export default defineNuxtConfig({
     },
   },
   modules: ['@nuxt/content', '@nuxt/image', '@nuxtjs/seo', '@nuxt/scripts'],
+  ogImage: {
+    security: {
+      // A cold static build queues the full library image set. Keep a finite
+      // failure budget while allowing queued Satori renders to complete.
+      renderTimeout: 60_000,
+    },
+  },
   content: {
     build: {
       markdown: {
@@ -121,6 +128,22 @@ export default defineNuxtConfig({
       // Production serves these historical URLs through the exact 301 rules in
       // public/.htaccess. Do not also emit indexable redirect HTML artifacts.
       ignore: consolidatedPluginPaths,
+    },
+    hooks: {
+      'prerender:generate'(route) {
+        // Nuxt intentionally emits 404.html as an empty client fallback. The
+        // production static host needs the branded error page in the initial
+        // response, so skip that fallback and write the shared error component
+        // rendered through the private helper route to the expected filename.
+        if (route.route === '/404.html') route.skip = true
+        if (route.route === '/__static-404') {
+          route.fileName = '404.html'
+          route.contents = route.contents?.replace(
+            /<link\b(?=[^>]*\brel=(["'])canonical\1)[^>]*>/gi,
+            '',
+          )
+        }
+      },
     },
   },
   routeRules: {
