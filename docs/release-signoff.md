@@ -48,7 +48,7 @@ touches committed UI assets.
 | Setup/package smoke | Install, daemon start/doctor, MCP registration, assets, and docs match the release shape. | `make install && make doctor` |
 | AI-tool host lifecycle | Shared canonical states, fail-closed ownership, ChatGPT/Codex capability fallback, explicit Hermes profiles, desktop pre-ready reconciliation, and backend-owned UI labels stay aligned. | `uv run pytest tests/unit/test_host_mcp.py tests/unit/test_claude_mcp.py tests/unit/test_cli_install.py -q`<br>`pnpm --dir ui exec vitest run src/views/home/agentHostPresentation.spec.ts`<br>`node desktop/scripts/test-service-upgrade.cjs` |
 | Local daemon lifecycle | Restart ignores stale pid files and zombie/defunct children, refuses non-StackOS port blockers, and does not leave launchd booted out. | `uv run pytest tests/unit/test_cli_daemon.py -q` |
-| macOS desktop app | Electron metadata, service bridge, update endpoint config, packaged install/repair, and desktop docs stay aligned with the installer contract. | `make desktop-doctor` |
+| macOS desktop app | Electron metadata, service bridge, update endpoint config, frozen payload dependencies, executable packaged CLI, install/repair, and desktop docs stay aligned with the installer contract. | `make desktop-doctor` plus `make desktop-payload` for payload or dependency changes |
 | Visible Chromium runtime | The app ships one signed arm64 `Chromium.app`, no Chrome for Testing/headless shell, and a stable StackOS profile persists a nonce cookie across a visible restart. | `pnpm --dir desktop check` plus installed-app proof |
 
 For a faster local check while iterating on action execution, run the mock
@@ -125,6 +125,14 @@ pnpm --dir desktop run dist:mac:dev
 /Applications/StackOS.app/Contents/Resources/stackos/bin/stackos autostart status --json
 /Applications/StackOS.app/Contents/Resources/stackos/bin/stackos restart --timeout 20
 ```
+
+`make desktop-payload` and every macOS distribution build execute the generated
+CLI from an isolated working directory with hostile ambient Python variables.
+Distribution builds repeat the check against the final `.app` bundle. A CLI
+import failure, dependency conflict, source-checkout shadow, or version mismatch
+in the payload must fail before signing. A final-app-only failure must stop the
+release before separate DMG notarization, metadata refresh, alias creation, or
+publication.
 
 The restart smoke must cover a dirty local lifecycle, not just a clean boot:
 stale `daemon.pid`, launchd currently loaded, launchd currently missing, and a

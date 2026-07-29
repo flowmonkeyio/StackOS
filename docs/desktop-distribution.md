@@ -311,9 +311,11 @@ registration, visible Chromium runtime setup, and launchd autostart. It does not
 `auth.token` or `seed.bin`.
 
 Generated payloads are ignored by git. `desktop/scripts/build-stackos-payload.sh`
-builds a wheel, installs it into `desktop/payload/stackos/.venv`, writes
-`build-info.json`, and writes a small `bin/stackos` wrapper that the packaged
-Electron app can run. The payload vendors a standalone CPython runtime under
+builds a wheel, exports the frozen production dependency set from `uv.lock`,
+installs those exact dependencies followed by the wheel without re-resolving
+them, writes `build-info.json`, and writes a small `bin/stackos` wrapper that
+the packaged Electron app can run. A stale lock or dependency conflict fails
+the payload build. The payload vendors a standalone CPython runtime under
 `.venv`, including the standard library, `lib-dynload`, `site-packages`,
 `bin/python`, and `libpython*.dylib`. Desktop payload builds use the same
 Chromium installer helper as normal installs and place its one pinned
@@ -324,7 +326,13 @@ The wrapper sets the
 packaged `PYTHONHOME`, disables bytecode writes,
 ignores user site packages, and clears ambient Python environment variables so
 another Mac does not need uv, Python, Homebrew, the source checkout, or a
-first-run browser download. The app carries one pinned normal Chromium.app and records a composite install key from its
+first-run browser download. It also enables Python safe-path mode so the
+caller's working directory cannot shadow the packaged `stackos` module. Payload
+creation executes the generated CLI from an isolated, deliberately hostile
+Python environment before packaging. The macOS build repeats that smoke after
+electron-builder finishes the signed/notarized `.app` bundle and before the
+separate DMG notarization, metadata refresh, or stable artifact alias. The app carries one
+pinned normal Chromium.app and records a composite install key from its
 app version plus packaged payload build info, so replacing a locally built app
 with the same public version still reruns install/repair once.
 
@@ -467,6 +475,9 @@ spctl --assess --type open --context context:primary-signature --verbose desktop
 xcrun stapler validate desktop/dist/stackos-<version>-mac-arm64.dmg
 PYTHONHOME=/tmp/bad PYTHONPATH=/tmp/bad desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/bin/stackos --version
 ```
+
+The build already runs the packaged CLI smoke and fails closed; the explicit
+command above remains release evidence from the signed artifact.
 
 Standalone payload checks should also confirm no build-machine paths leak into
 the app resources:

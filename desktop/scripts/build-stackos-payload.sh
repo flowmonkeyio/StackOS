@@ -30,9 +30,25 @@ if [[ "${wheel_count}" != "1" ]]; then
 fi
 
 WHEEL_PATH="$(find "${BUILD_DIR}/dist" -name 'stackos-*.whl' -print -quit)"
+LOCKED_REQUIREMENTS_PATH="${BUILD_DIR}/requirements.lock"
 
+"${UV_BIN}" export \
+  --project "${REPO_ROOT}" \
+  --frozen \
+  --no-dev \
+  --no-editable \
+  --no-emit-project \
+  --format requirements.txt \
+  --output-file "${LOCKED_REQUIREMENTS_PATH}"
 "${UV_BIN}" venv "${PAYLOAD_DIR}/.venv" --python "${PYTHON_VERSION}"
-"${UV_BIN}" pip install --python "${PAYLOAD_DIR}/.venv/bin/python" "${WHEEL_PATH}"
+"${UV_BIN}" pip install \
+  --python "${PAYLOAD_DIR}/.venv/bin/python" \
+  --requirements "${LOCKED_REQUIREMENTS_PATH}"
+"${UV_BIN}" pip install \
+  --python "${PAYLOAD_DIR}/.venv/bin/python" \
+  --no-deps \
+  "${WHEEL_PATH}"
+"${UV_BIN}" pip check --python "${PAYLOAD_DIR}/.venv/bin/python"
 find "${PAYLOAD_DIR}/.venv" -path "*/stackos-*.dist-info/direct_url.json" -delete
 
 thin_payload_to_arm64() {
@@ -213,9 +229,13 @@ export PYTHONNOUSERSITE=1
 unset PYTHONPATH
 unset VIRTUAL_ENV
 unset __PYVENV_LAUNCHER__
-exec "${ROOT_DIR}/.venv/bin/python" -B -m stackos "$@"
+exec "${ROOT_DIR}/.venv/bin/python" -P -B -m stackos "$@"
 WRAPPER
 chmod +x "${PAYLOAD_DIR}/bin/stackos"
+
+node "${DESKTOP_DIR}/scripts/verify-stackos-cli.cjs" \
+  "${PAYLOAD_DIR}/bin/stackos" \
+  "${PACKAGE_VERSION}"
 
 find "${PAYLOAD_DIR}/.venv" -type d -name "__pycache__" -prune -exec rm -rf {} +
 find "${PAYLOAD_DIR}/.venv" -name "*.pyc" -delete

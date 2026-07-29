@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 2.1.19 - 2026-07-28
+
+- Fixed macOS desktop packaging to install the frozen production dependency
+  set from `uv.lock` instead of independently resolving the wheel's transitive
+  dependencies, and bounded wheel installs to the supported MCP 1.x SDK.
+- Added fail-closed payload and final-app CLI execution checks that use an
+  isolated working directory and hostile ambient Python environment, preventing
+  incompatible dependencies or checkout shadowing from escaping release.
+
 ## 2.1.18 - 2026-07-28
 
 - Clarified the product contract and agent operating model, then synchronized

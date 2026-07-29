@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import zipfile
+from email.parser import Parser
 from pathlib import Path
 
 import pytest
@@ -78,6 +79,22 @@ def test_wheel_no_duplicate_entries(built_wheel: Path) -> None:
     """Hatchling warns about dupes via `force-include`; the wheel must be clean."""
     names = _wheel_names(built_wheel)
     assert len(names) == len(set(names)), "wheel contains duplicate zip entries"
+
+
+def test_wheel_excludes_unsupported_mcp_major(built_wheel: Path) -> None:
+    """Wheel installs must not resolve against an untested MCP major."""
+    with zipfile.ZipFile(built_wheel) as wheel:
+        metadata_name = next(
+            name for name in wheel.namelist() if name.endswith(".dist-info/METADATA")
+        )
+        metadata = Parser().parsestr(wheel.read(metadata_name).decode("utf-8"))
+
+    mcp_requirements = [
+        requirement
+        for requirement in metadata.get_all("Requires-Dist", [])
+        if requirement.split(";", 1)[0].strip().startswith("mcp")
+    ]
+    assert mcp_requirements == ["mcp<2,>=1.0"]
 
 
 def test_wheel_includes_s3_runtime_ui_asset_and_sdk_requirements(

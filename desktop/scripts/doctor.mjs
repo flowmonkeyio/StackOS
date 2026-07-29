@@ -138,6 +138,8 @@ for (const relativePath of [
   "scripts/build-icons.mjs",
   "scripts/build-stackos-payload.sh",
   "scripts/build-mac.mjs",
+  "scripts/verify-stackos-cli.cjs",
+  "scripts/test-verify-stackos-cli.cjs",
   "scripts/sign-stackos-runtime-mac.cjs",
   "scripts/release-preflight.mjs",
   "scripts/test-updates.cjs",
@@ -178,7 +180,11 @@ mustContain("scripts/build-stackos-payload.sh", "ensure_chromium_runtime");
 mustContain("scripts/build-stackos-payload.sh", "direct_url.json");
 mustContain("scripts/build-stackos-payload.sh", "thin_payload_to_arm64");
 mustContain("scripts/build-stackos-payload.sh", "PYTHONDONTWRITEBYTECODE");
-mustContain("scripts/build-stackos-payload.sh", "python\" -B -m stackos");
+mustContain("scripts/build-stackos-payload.sh", "--no-emit-project");
+mustContain("scripts/build-stackos-payload.sh", "--no-deps");
+mustContain("scripts/build-stackos-payload.sh", "pip check");
+mustContain("scripts/build-stackos-payload.sh", "scripts/verify-stackos-cli.cjs");
+mustContain("scripts/build-stackos-payload.sh", "python\" -P -B -m stackos");
 mustContain("scripts/build-mac.mjs", "STACKOS_UPDATE_URL");
 mustContain("scripts/build-mac.mjs", "STACKOS_REQUIRE_UPDATE_URL");
 mustContain("scripts/build-mac.mjs", "STACKOS_DESKTOP_BUILD_DRY_RUN");
@@ -187,12 +193,16 @@ mustContain("scripts/build-mac.mjs", "identity: null");
 mustContain("scripts/build-mac.mjs", "must use HTTPS unless it is localhost for local testing");
 mustContain("scripts/build-mac.mjs", "scripts/build-stackos-payload.sh");
 mustContain("scripts/build-mac.mjs", "scripts/build-icons.mjs");
+mustContain("scripts/build-mac.mjs", "scripts/verify-stackos-cli.cjs");
 mustContain("scripts/build-mac.mjs", "update-config.json");
 mustContain("scripts/build-mac.mjs", "configuredDmgArches");
 mustContain("scripts/sign-stackos-runtime-mac.cjs", "libpython.*\\.dylib");
 mustContain("scripts/sign-stackos-runtime-mac.cjs", "developerIdIdentities");
 mustContain("scripts/sign-stackos-runtime-mac.cjs", "Mach-O");
 mustContain("scripts/sign-stackos-runtime-mac.cjs", "codesign");
+mustContain("scripts/verify-stackos-cli.cjs", "PYTHONHOME");
+mustContain("scripts/verify-stackos-cli.cjs", "PYTHONPATH");
+mustContain("scripts/verify-stackos-cli.cjs", "--version");
 mustContain("scripts/release-preflight.mjs", "Release preflight");
 mustContain("package.json", "dist:mac:release");
 mustContain("package.json", "STACKOS_REQUIRE_UPDATE_URL=1");

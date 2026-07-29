@@ -390,6 +390,21 @@ if (dynamicConfigNeeded) {
 runStep("bash", ["scripts/build-stackos-payload.sh"]);
 runStep(process.execPath, ["scripts/build-icons.mjs"]);
 runStep(command, args);
+runStep(process.execPath, [
+  "scripts/verify-stackos-cli.cjs",
+  path.join(
+    desktopDir,
+    "dist",
+    "mac-arm64",
+    "StackOS.app",
+    "Contents",
+    "Resources",
+    "stackos",
+    "bin",
+    "stackos"
+  ),
+  pkg.version
+]);
 
 if (releaseIntent && !allowUnsignedRelease && !skipNotarization && notarization.configured) {
   notarizeDmgArtifacts();
