@@ -7,33 +7,34 @@
 // registry detail (operation contracts, presets, skills) lives in the demoted
 // Developer surfaces, not here.
 
-import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, ref } from 'vue'
 
 import { UiBadge, UiButton, UiCard, UiIcon, UiMedallion, UiSkeleton } from '@/components/ui'
+import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
+import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
 import { formatDurationMinutes } from '@/lib/stackos/time'
 import { readinessTone, useReadinessStore, type ReadinessState } from '@/stores/readiness'
 
-const route = useRoute()
-const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
+const { projectId } = useProjectRouteScope()
 const base = computed(() => `/projects/${projectId.value}`)
 
 const readiness = useReadinessStore()
 const loaded = computed(() => readiness.checks.length > 0)
 
 const busy = ref(false)
-async function refresh(): Promise<void> {
-  const id = projectId.value
-  if (!id || Number.isNaN(id)) return
+async function load(nextProjectId: number): Promise<void> {
   busy.value = true
   try {
-    await readiness.refresh(id)
+    await readiness.refresh(nextProjectId)
   } finally {
     busy.value = false
   }
 }
 
-onMounted(refresh)
+const { refresh } = useProjectScopedLoader({
+  projectId,
+  load: ({ projectId }) => load(projectId),
+})
 
 const CHECK_ICON: Record<ReadinessState, string> = {
   ready: 'check-circle',

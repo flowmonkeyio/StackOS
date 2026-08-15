@@ -44,4 +44,33 @@ describe('schedules store', () => {
     expect(exposed.toggle).toBeUndefined()
     expect(exposed.disable).toBeUndefined()
   })
+
+  it('keeps schedules scoped to the newest project request', async () => {
+    const projectOne = deferred<void>()
+    globalThis.fetch = vi.fn(async (input) => {
+      const projectId = String(input).includes('/projects/1/') ? 1 : 2
+      if (projectId === 1) await projectOne.promise
+      return new Response(JSON.stringify([{ ...JOB, id: projectId, project_id: projectId }]), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as typeof fetch
+    const store = useSchedulesStore()
+
+    const older = store.refresh(1)
+    await store.refresh(2)
+    projectOne.resolve()
+    await older
+
+    expect(store.currentProjectId).toBe(2)
+    expect(store.items.map((job) => job.project_id)).toEqual([2])
+  })
 })
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((next) => {
+    resolve = next
+  })
+  return { promise, resolve }
+}

@@ -13,6 +13,7 @@ import {
   UiSkeleton,
 } from '@/components/ui'
 import { usePolling } from '@/composables/usePolling'
+import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { formatAbsoluteDateTime, formatRelativeDateTime } from '@/lib/stackos/time'
 import { useAttentionStore, type AttentionItem, type AttentionKind } from '@/stores/attention'
 
@@ -20,7 +21,7 @@ type AttentionFilter = 'all' | AttentionKind
 
 const route = useRoute()
 const router = useRouter()
-const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
+const { projectId } = useProjectRouteScope(route)
 const base = computed(() => `/projects/${projectId.value}`)
 
 const attention = useAttentionStore()

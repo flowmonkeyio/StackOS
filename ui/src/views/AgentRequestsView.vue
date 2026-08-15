@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
@@ -24,6 +24,8 @@ import {
   UiToolbar,
 } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
+import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
+import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
 import { formatApiError } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
@@ -75,7 +77,7 @@ interface AgentRequestPage {
 
 const route = useRoute()
 
-const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
+const { projectId } = useProjectRouteScope(route)
 const requestedRequestId = computed(() => {
   const value = Number.parseInt(String(route.query.request ?? ''), 10)
   return Number.isNaN(value) ? null : value
@@ -300,9 +302,12 @@ function applyFiltersFromQuery(): void {
   }
 }
 
-onMounted(() => {
-  applyFiltersFromQuery()
-  void fetchRequests()
+useProjectScopedLoader({
+  projectId,
+  load: async () => {
+    applyFiltersFromQuery()
+    await fetchRequests()
+  },
 })
 </script>
 

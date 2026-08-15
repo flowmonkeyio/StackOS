@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import SubNav from '@/components/SubNav.vue'
 import { UiButton, UiCallout, UiConfirmDialog, UiPageShell, UiSkeleton } from '@/components/ui'
+import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
+import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
 import AddAccountPanel from './accounts/AddAccountPanel.vue'
 import { useAccountCredentials } from './accounts/useAccountCredentials'
 import AttachAccountPanel from './connections/AttachAccountPanel.vue'
@@ -49,7 +51,7 @@ const OAUTH_RETURN_STATUSES = new Set<OAuthReturnStatus>([
 const route = useRoute()
 const router = useRouter()
 
-const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
+const { projectId, changesProjectScope } = useProjectRouteScope(route)
 const accountAttachProjectId = computed<number | null>(() => projectId.value)
 const initialLoadComplete = ref(false)
 const {
@@ -126,7 +128,6 @@ const {
   message: ingressMessage,
   form: ingressForm,
   load: loadIngressStatus,
-  reset: resetIngressStatus,
   openPanel: openIngressSetup,
   save: saveIngressSetup,
   sync: syncIngress,
@@ -342,23 +343,15 @@ async function refreshOAuthReturn(statusValue: unknown, providerValue: unknown):
   handleOAuthReturnQuery(statusValue, providerValue)
 }
 
-onMounted(load)
+useProjectScopedLoader({
+  projectId,
+  load,
+})
 onBeforeRouteUpdate((to) => {
-  const nextProjectId = Number.parseInt(String(to.params.id), 10)
-  if (nextProjectId !== projectId.value) {
-    attachPanelOpen.value = false
-    accountPanelOpen.value = false
-    pendingDetach.value = null
-    telegramProfilePanelOpen.value = false
-    slackProfilePanelOpen.value = false
-    ingressSetupOpen.value = false
-    resetIngressStatus()
-    setTimeout(() => void load(), 0)
-    return
-  }
+  if (changesProjectScope(to)) return
   applySectionFromQuery(to.query.section)
   if (oauthReturnStatus(to.query.oauth_status)) {
-    setTimeout(() => void refreshOAuthReturn(to.query.oauth_status, to.query.provider_key), 0)
+    void refreshOAuthReturn(to.query.oauth_status, to.query.provider_key)
     return
   }
   if (typeof to.query.provider_key === 'string') openAddConnection(to.query.provider_key)

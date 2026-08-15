@@ -1,9 +1,8 @@
 <script setup lang="ts">
 // CostBudgetTab — read-only current-month cost and budget visibility.
 
-import { computed, onMounted } from 'vue'
+import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useRoute } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
@@ -17,6 +16,8 @@ import {
   UiSectionHeader,
   UiSparkline,
 } from '@/components/ui'
+import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
+import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
 import { resolveStatus } from '@/design/status'
 import { formatPercent, formatUsd } from '@/lib/stackos/format'
 import {
@@ -28,10 +29,9 @@ import {
 import type { DataTableColumn } from '@/components/types'
 import type { SparklinePoint } from '@/components/ui/UiSparkline.vue'
 
-const route = useRoute()
 const costsStore = useCostsStore()
 
-const projectId = computed<number>(() => Number.parseInt(route.params.id as string, 10))
+const { projectId } = useProjectRouteScope()
 const { cost, budgets, history, hasNoSpendYet, month, loading } = storeToRefs(costsStore)
 
 type IntegrationKindLabels = { [Key in IntegrationKind]: string }
@@ -116,16 +116,18 @@ function budgetTone(budget: IntegrationBudget): 'success' | 'warning' | 'danger'
   return resolveStatus('budget', budgetStatus(budget)).tone as 'success' | 'warning' | 'danger'
 }
 
-async function load(): Promise<void> {
-  if (!projectId.value || Number.isNaN(projectId.value)) return
+async function load(nextProjectId: number): Promise<void> {
   await Promise.all([
-    costsStore.refreshCost(projectId.value),
-    costsStore.refreshBudgets(projectId.value),
-    costsStore.refreshHistory(projectId.value, 12),
+    costsStore.refreshCost(nextProjectId),
+    costsStore.refreshBudgets(nextProjectId),
+    costsStore.refreshHistory(nextProjectId, 12),
   ])
 }
 
-onMounted(load)
+const { refresh } = useProjectScopedLoader({
+  projectId,
+  load: ({ projectId }) => load(projectId),
+})
 </script>
 
 <template>
@@ -136,7 +138,7 @@ onMounted(load)
         variant="secondary"
         icon-left="refresh"
         :loading="loading"
-        @click="load"
+        @click="refresh"
       >
         Refresh
       </UiButton>

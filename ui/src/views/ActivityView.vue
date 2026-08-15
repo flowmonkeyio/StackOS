@@ -14,6 +14,7 @@ import {
   UiSkeleton,
 } from '@/components/ui'
 import { usePolling } from '@/composables/usePolling'
+import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { apiFetch } from '@/lib/client'
 import { eventActor, humanizeEvent, resolveEventVisual } from '@/lib/stackos/events'
 import {
@@ -33,7 +34,7 @@ interface ActivityEpisode {
 }
 
 const route = useRoute()
-const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
+const { projectId } = useProjectRouteScope(route)
 const base = computed(() => `/projects/${projectId.value}`)
 const PAGE_SIZE = 50
 

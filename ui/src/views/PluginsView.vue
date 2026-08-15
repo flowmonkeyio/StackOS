@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
-import { onBeforeRouteUpdate, useRoute } from 'vue-router'
 
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import {
@@ -18,6 +17,8 @@ import {
   UiSelect,
   UiSkeleton,
 } from '@/components/ui'
+import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
+import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
 import { useStackOsCatalogStore } from '@/stores/plugins'
 
 import PluginDirectoryCard from './plugins/PluginDirectoryCard.vue'
@@ -32,11 +33,10 @@ import {
 
 type CatalogView = 'plugins' | 'providers'
 
-const route = useRoute()
 const catalogStore = useStackOsCatalogStore()
 const { plugins, providers, actions, capabilities, loading, error } = storeToRefs(catalogStore)
 
-const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
+const { projectId } = useProjectRouteScope()
 const operationsHref = computed(() => `/projects/${projectId.value}/operations`)
 const search = ref('')
 const view = ref<CatalogView>('plugins')
@@ -65,11 +65,6 @@ const resultCount = computed(() =>
   view.value === 'plugins' ? visiblePlugins.value.length : visibleProviders.value.length,
 )
 
-async function load(): Promise<void> {
-  if (!projectId.value || Number.isNaN(projectId.value)) return
-  await catalogStore.refresh(projectId.value)
-}
-
 function setView(value: string | number): void {
   if (value === 'plugins' || value === 'providers') view.value = value
 }
@@ -78,10 +73,9 @@ function setSort(value: string | number | null): void {
   if (value === 'name' || value === 'actions') sort.value = value
 }
 
-onMounted(load)
-onBeforeRouteUpdate((to) => {
-  const nextProjectId = Number.parseInt(String(to.params.id), 10)
-  if (nextProjectId !== projectId.value) setTimeout(() => void load(), 0)
+useProjectScopedLoader({
+  projectId,
+  load: ({ projectId }) => catalogStore.refresh(projectId),
 })
 </script>
 

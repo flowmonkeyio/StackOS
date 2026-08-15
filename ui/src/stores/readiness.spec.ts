@@ -121,4 +121,57 @@ describe('readiness supervision projection', () => {
     expect(mockedCallOperation).not.toHaveBeenCalled()
     expect(mockedApiFetch).toHaveBeenCalledTimes(1)
   })
+
+  it('does not let previous-project checks or cache replace the new scope', async () => {
+    const projectOne = deferred<void>()
+    let healthRequest = 0
+    mockedApiFetch.mockImplementation(async (url) => {
+      if (url === '/api/v1/health') {
+        healthRequest += 1
+        if (healthRequest === 1) await projectOne.promise
+        return {
+          db_status: 'ok',
+          scheduler_running: true,
+          version: healthRequest === 1 ? 'project-one-waited' : 'project-two-current',
+        }
+      }
+      if (url === '/api/v1/projects/1/connections/accounts') {
+        await projectOne.promise
+        return { providers: [], accounts: [] }
+      }
+      if (url === '/api/v1/projects/2/connections/accounts') {
+        return {
+          providers: [{ provider_key: 'slack' }],
+          accounts: [{ status: 'connected', revoked_at: null }],
+        }
+      }
+      throw new Error(`unexpected URL ${url}`)
+    })
+    mockedCallOperation.mockImplementation(async (_operation, args) => {
+      if (args.project_id === 1) await projectOne.promise
+      return { count: 1, connected_count: 1, hidden_action_count: 0 }
+    })
+    const store = useReadinessStore()
+
+    const older = store.refresh(1)
+    await store.refresh(2)
+    projectOne.resolve()
+    await older
+
+    expect(store.projectId).toBe(2)
+    expect(store.version).toBe('project-two-current')
+    expect(
+      store.checks
+        .filter((check) => check.to)
+        .every((check) => check.to?.startsWith('/projects/2/')),
+    ).toBe(true)
+  })
 })
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((next) => {
+    resolve = next
+  })
+  return { promise, resolve }
+}

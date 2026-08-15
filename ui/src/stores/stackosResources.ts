@@ -9,6 +9,7 @@ import type {
   SchemaResourceRecordOut,
 } from '@/api'
 import { apiFetch, formatApiError } from '@/lib/client'
+import { createProjectRequestGate } from '@/lib/stackos/projectRequestGate'
 
 export const useStackOsResourcesStore = defineStore('stackosResources', () => {
   const resources = ref<SchemaResourceOut[]>([])
@@ -16,11 +17,23 @@ export const useStackOsResourcesStore = defineStore('stackosResources', () => {
   const artifacts = ref<SchemaArtifactOut[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const currentProjectId = ref<number | null>(null)
+  const requests = createProjectRequestGate((projectId) => {
+    resources.value = []
+    records.value = []
+    artifacts.value = []
+    error.value = null
+    currentProjectId.value = projectId
+  })
 
   async function refresh(
     projectId: number,
     filters: { pluginSlug?: string | null; resourceKey?: string | null } = {},
   ): Promise<void> {
+    const request = requests.begin(projectId, 'list')
+    resources.value = []
+    records.value = []
+    artifacts.value = []
     loading.value = true
     error.value = null
     try {
@@ -44,15 +57,37 @@ export const useStackOsResourcesStore = defineStore('stackosResources', () => {
           `/api/v1/projects/${projectId}/artifacts?${artifactParams.toString()}`,
         ),
       ])
+      if (!request.isCurrent()) return
       resources.value = resourceRows
       records.value = recordPage.items
       artifacts.value = artifactPage.items
     } catch (err) {
-      error.value = formatApiError(err, 'failed to load resources')
+      if (request.isCurrent()) {
+        error.value = formatApiError(err, 'failed to load resources')
+      }
     } finally {
-      loading.value = false
+      loading.value = request.finish()
     }
   }
 
-  return { resources, records, artifacts, loading, error, refresh }
+  function reset(): void {
+    requests.invalidate()
+    resources.value = []
+    records.value = []
+    artifacts.value = []
+    loading.value = false
+    error.value = null
+    currentProjectId.value = null
+  }
+
+  return {
+    resources,
+    records,
+    artifacts,
+    loading,
+    error,
+    currentProjectId,
+    refresh,
+    reset,
+  }
 })

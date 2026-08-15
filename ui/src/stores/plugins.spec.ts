@@ -90,6 +90,25 @@ describe('StackOS catalog store auth controls', () => {
     expect(JSON.stringify(postedBodies)).not.toContain('secret')
   })
 
+  it('keeps connector auth state scoped to the newest project request', async () => {
+    const projectOne = deferred<void>()
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      if (url.includes('/projects/1/')) await projectOne.promise
+      const projectId = url.includes('/projects/1/') ? 1 : 2
+      return json(authStatus(projectId))
+    }) as typeof fetch
+    const store = useStackOsCatalogStore()
+
+    const older = store.refreshAuth(1)
+    await store.refreshAuth(2)
+    projectOne.resolve()
+    await older
+
+    expect(store.connectionProjectId).toBe(2)
+    expect(store.authStatus?.project_id).toBe(2)
+  })
+
   it('refreshes catalog lists without calling the aggregate catalog endpoint', async () => {
     const calls: string[] = []
     globalThis.fetch = vi.fn(async (input) => {
@@ -139,12 +158,57 @@ describe('StackOS catalog store auth controls', () => {
     }) as typeof fetch
 
     const store = useStackOsCatalogStore()
-    await store.refreshPlugins(1, { silent: true })
+    const refreshed = await store.refreshPlugins(1, { silent: true })
 
+    expect(refreshed).toBe(true)
     expect(calls).toEqual(['/api/v1/plugins?project_id=1&compact=true'])
     expect(store.loading).toBe(false)
+    expect(store.pluginProjectId).toBe(1)
     expect(store.enabledPlugins.map((row) => row.slug)).toEqual(['utils'])
     expect(store.catalog?.plugins[0].plugin.slug).toBe('utils')
+  })
+
+  it('keeps the last successful plugin scope retryable after a failed silent refresh', async () => {
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      if (url.includes('project_id=1')) return json([plugin('utils', true)])
+      return json({ detail: 'unavailable' }, 503)
+    }) as typeof fetch
+
+    const store = useStackOsCatalogStore()
+    expect(await store.refreshPlugins(1, { silent: true })).toBe(true)
+    expect(await store.refreshPlugins(2, { silent: true })).toBe(false)
+
+    expect(store.pluginProjectId).toBe(1)
+    expect(store.enabledPlugins.map((row) => row.slug)).toEqual(['utils'])
+  })
+
+  it('prevents an older full catalog refresh from replacing a newer plugin scope', async () => {
+    let releaseProjectOne!: () => void
+    const projectOneGate = new Promise<void>((resolve) => {
+      releaseProjectOne = resolve
+    })
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      if (url.includes('project_id=1')) {
+        await projectOneGate
+        return url.includes('/plugins') ? json([plugin('utils', true)]) : json([])
+      }
+      if (url === '/api/v1/plugins?project_id=2&compact=true') {
+        return json([plugin('seo', true)])
+      }
+      return json([])
+    }) as typeof fetch
+
+    const store = useStackOsCatalogStore()
+    const older = store.refresh(1)
+    const newer = store.refreshPlugins(2, { silent: true })
+    await newer
+    releaseProjectOne()
+    await older
+
+    expect(store.pluginProjectId).toBe(2)
+    expect(store.enabledPlugins.map((row) => row.slug)).toEqual(['seo'])
   })
 })
 
@@ -231,4 +295,12 @@ function json(body: unknown, status = 200): Response {
     status,
     headers: { 'content-type': 'application/json' },
   })
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((next) => {
+    resolve = next
+  })
+  return { promise, resolve }
 }

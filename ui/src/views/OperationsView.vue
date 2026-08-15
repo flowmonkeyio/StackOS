@@ -24,6 +24,7 @@ import {
 } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
 import type { UiFactGroup } from '@/components/ui/UiFactGroups.vue'
+import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { apiFetch, formatApiError } from '@/lib/client'
 
 type SurfaceFilter = 'all' | 'mcp' | 'rest' | 'cli'
@@ -32,7 +33,7 @@ type OperationRow = SchemaOperationSummaryOut & { id: string }
 const route = useRoute()
 const router = useRouter()
 
-const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
+const { projectId } = useProjectRouteScope(route)
 const rows = ref<OperationRow[]>([])
 const selected = ref<SchemaOperationDescribeOut | null>(null)
 const detailOpen = ref(false)

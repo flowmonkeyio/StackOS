@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 2.1.20 - 2026-07-29
+
+- Kept the current operating page selected when switching projects, preserving
+  only portable filters while clearing old-project detail selections.
+- Centralized project route scope, scoped loading, and stale-response guards so
+  the selected project renders only its own data, including before pending
+  requests resolve.
+
 ## 2.1.19 - 2026-07-28
 
 - Fixed macOS desktop packaging to install the frozen production dependency

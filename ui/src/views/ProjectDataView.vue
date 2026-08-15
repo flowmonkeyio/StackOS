@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 
@@ -27,6 +27,8 @@ import type {
   SchemaMetricSnapshotOut,
   SchemaProjectEventOut,
 } from '@/api'
+import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
+import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 import { newestFirst } from '@/lib/stackos/time'
 import { useProjectDataStore } from '@/stores/projectData'
@@ -57,7 +59,7 @@ const {
   error,
 } = storeToRefs(projectData)
 
-const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
+const { projectId } = useProjectRouteScope(route)
 
 // The API returns rows ascending; operator tables lead with the latest.
 const timelineNewest = computed(() => newestFirst(timeline.value, (row) => row.occurred_at))
@@ -172,12 +174,10 @@ function setTab(key: string | number): void {
   syncTabToUrl(nextTab)
 }
 
-async function load(): Promise<void> {
-  if (!projectId.value || Number.isNaN(projectId.value)) return
-  await projectData.refresh(projectId.value)
-}
-
-onMounted(load)
+const { refresh } = useProjectScopedLoader({
+  projectId,
+  load: ({ projectId }) => projectData.refresh(projectId),
+})
 onBeforeRouteUpdate((to) => {
   activeTab.value = tabFromQuery(to.query.tab)
 })
@@ -217,7 +217,7 @@ function syncTabToUrl(tab: DataTab): void {
           size="sm"
           icon-left="refresh"
           :loading="loading"
-          @click="load"
+          @click="refresh"
         >
           Refresh
         </UiButton>

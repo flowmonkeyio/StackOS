@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useRoute } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
@@ -14,15 +13,16 @@ import {
   UiPageShell,
   UiSectionHeader,
 } from '@/components/ui'
+import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
+import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
 import type { DataTableColumn } from '@/components/types'
 import type { SchemaCapabilityOut, SchemaProviderOut } from '@/api'
 import { useStackOsCatalogStore } from '@/stores/plugins'
 
-const route = useRoute()
 const catalogStore = useStackOsCatalogStore()
 const { capabilities, providers, actions, loading, error } = storeToRefs(catalogStore)
 
-const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
+const { projectId } = useProjectRouteScope()
 const operationsHref = computed(() => `/projects/${projectId.value}/operations`)
 
 const capabilityColumns: DataTableColumn<SchemaCapabilityOut>[] = [
@@ -39,12 +39,10 @@ const providerColumns: DataTableColumn<SchemaProviderOut>[] = [
   { key: 'description', label: 'Description' },
 ]
 
-async function load(): Promise<void> {
-  if (!projectId.value || Number.isNaN(projectId.value)) return
-  await catalogStore.refresh(projectId.value)
-}
-
-onMounted(load)
+const { refresh } = useProjectScopedLoader({
+  projectId,
+  load: ({ projectId }) => catalogStore.refresh(projectId),
+})
 </script>
 
 <template>
@@ -61,7 +59,7 @@ onMounted(load)
           size="sm"
           icon-left="refresh"
           :loading="loading"
-          @click="load"
+          @click="refresh"
         >
           Refresh
         </UiButton>

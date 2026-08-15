@@ -24,6 +24,7 @@ import type { Tone } from '@/design/status'
 import { listAgentRequests } from '@/lib/stackos/agentRequest'
 import { apiFetch } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
+import { createProjectRequestGate } from '@/lib/stackos/projectRequestGate'
 import { newestFirst } from '@/lib/stackos/time'
 
 export type AttentionKind =
@@ -75,6 +76,11 @@ export const useAttentionStore = defineStore('attention', () => {
   const loading = ref(false)
   const degraded = ref(false)
   const projectId = ref<number | null>(null)
+  const requests = createProjectRequestGate((nextProjectId) => {
+    items.value = []
+    degraded.value = false
+    projectId.value = nextProjectId
+  })
 
   const countsByKind = computed<Record<AttentionKind, number>>(() => {
     const base: Record<AttentionKind, number> = {
@@ -90,12 +96,13 @@ export const useAttentionStore = defineStore('attention', () => {
 
   const total = computed(() => items.value.length)
 
-  async function source<T>(fn: () => Promise<T[]>): Promise<T[]> {
+  async function source<T>(
+    fn: () => Promise<T[]>,
+  ): Promise<{ items: T[]; degraded: boolean }> {
     try {
-      return await fn()
+      return { items: await fn(), degraded: false }
     } catch {
-      degraded.value = true
-      return []
+      return { items: [], degraded: true }
     }
   }
 
@@ -227,9 +234,8 @@ export const useAttentionStore = defineStore('attention', () => {
   }
 
   async function refresh(id: number, options: AttentionRefreshOptions = {}): Promise<void> {
-    projectId.value = id
+    const request = requests.begin(id, 'attention')
     loading.value = true
-    degraded.value = false
     const base = `/projects/${id}`
     try {
       const [a, b, c, d, e] = await Promise.all([
@@ -239,7 +245,15 @@ export const useAttentionStore = defineStore('attention', () => {
         source(() => connections(id, base, options.authStatus)),
         source(() => budgets(id, base)),
       ])
-      const merged = [...a, ...b, ...c, ...d, ...e]
+      if (!request.isCurrent()) return
+      degraded.value = [a, b, c, d, e].some((result) => result.degraded)
+      const merged = [
+        ...a.items,
+        ...b.items,
+        ...c.items,
+        ...d.items,
+        ...e.items,
+      ]
       merged.sort((x, y) => {
         const tone = TONE_RANK[x.tone] - TONE_RANK[y.tone]
         if (tone !== 0) return tone
@@ -249,12 +263,14 @@ export const useAttentionStore = defineStore('attention', () => {
       })
       items.value = merged
     } finally {
-      loading.value = false
+      loading.value = request.finish()
     }
   }
 
   function reset(): void {
+    requests.invalidate()
     items.value = []
+    loading.value = false
     degraded.value = false
     projectId.value = null
   }

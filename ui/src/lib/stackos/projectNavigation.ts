@@ -1,29 +1,38 @@
-import type { LocationQuery, RouteLocationNormalizedLoaded, RouteLocationRaw } from 'vue-router'
+import type { LocationQuery, RouteLocationRaw } from 'vue-router'
 
 const PROJECT_PATH = /^\/projects\/[^/]+(?:\/(.*))?$/
 
-// These values identify an object inside one project. Carrying them to another
-// project creates a confusing empty or incorrect detail state. Surface-level
-// controls such as section, view, status, and focus are intentionally retained.
-const PROJECT_OBJECT_QUERY_KEYS = new Set([
-  'item',
-  'task',
-  'ticket',
-  'request',
-  'run',
-  'run_id',
-  'provider_key',
-  'credential_id',
-  'profile_id',
-  'artifact_id',
-  'resource_id',
-  'action_call_id',
-])
+// Query portability is fail-closed. Each project surface declares only the
+// controls that still mean the same thing after the project scope changes.
+const PORTABLE_QUERY_KEYS_BY_SURFACE: Readonly<Record<string, readonly string[]>> = {
+  activity: ['view'],
+  connections: ['section'],
+  operations: ['operation'],
+  'action-calls': ['plugin_slug', 'action_ref'],
+  'agent-requests': ['attention_status'],
+  tasks: ['view', 'status', 'focus'],
+  'workflow-templates': ['plugin_slug'],
+  data: ['tab'],
+  resources: ['plugin_slug'],
+  runs: ['status'],
+}
 
-function portableQuery(query: LocationQuery): LocationQuery {
-  return Object.fromEntries(
-    Object.entries(query).filter(([key]) => !PROJECT_OBJECT_QUERY_KEYS.has(key)),
-  )
+interface ProjectRouteIdentity {
+  params: {
+    id?: unknown
+  }
+}
+
+interface ProjectSwitchRoute {
+  path: string
+  query: LocationQuery
+  hash: string
+}
+
+function portableQuery(query: LocationQuery, suffix: string): LocationQuery {
+  const surface = suffix.split('/')[0] ?? ''
+  const allowed = new Set(PORTABLE_QUERY_KEYS_BY_SURFACE[surface] ?? [])
+  return Object.fromEntries(Object.entries(query).filter(([key]) => allowed.has(key)))
 }
 
 function portableSuffix(rawSuffix: string): string {
@@ -34,17 +43,33 @@ function portableSuffix(rawSuffix: string): string {
   return segments.join('/')
 }
 
+export function projectIdFromRoute(route: ProjectRouteIdentity): number | null {
+  const raw = route.params.id
+  const value = Array.isArray(raw) ? raw[0] : raw
+  const normalized = String(value ?? '')
+  if (!/^[1-9]\d*$/.test(normalized)) return null
+  const parsed = Number(normalized)
+  return Number.isSafeInteger(parsed) ? parsed : null
+}
+
 export function projectSwitchDestination(
-  route: Pick<RouteLocationNormalizedLoaded, 'path' | 'query' | 'hash'>,
+  route: ProjectSwitchRoute,
   projectId: number,
-): RouteLocationRaw {
+): RouteLocationRaw | null {
   const match = route.path.match(PROJECT_PATH)
-  const suffix = match?.[1] ? portableSuffix(match[1]) : ''
+
+  // Portfolio selection opens that project's home. Other global surfaces stay
+  // put while App.vue updates the local navigation project.
+  if (!match) {
+    return route.path === '/' ? { path: `/projects/${projectId}` } : null
+  }
+
+  const suffix = match[1] ? portableSuffix(match[1]) : ''
   const path = suffix ? `/projects/${projectId}/${suffix}` : `/projects/${projectId}`
 
   return {
     path,
-    query: match ? portableQuery(route.query) : {},
-    hash: match ? route.hash : '',
+    query: portableQuery(route.query, suffix),
+    hash: route.hash,
   }
 }

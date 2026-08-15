@@ -3,6 +3,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import ConnectionsView from './ConnectionsView.vue'
+import type { SchemaAuthProviderOut } from '@/api'
+import { useStackOsCatalogStore } from '@/stores/plugins'
 import {
   authConnection,
   authProvider,
@@ -162,4 +164,93 @@ describe('ConnectionsView provider readiness', () => {
     expect(wrapper.text()).toContain('Manage Account')
     expect(wrapper.text()).not.toContain('Reconnect guidance')
   })
+
+  it('clears the previous project before the new connection request can resolve', async () => {
+    const provider: SchemaAuthProviderOut = {
+      id: 1,
+      plugin_id: 1,
+      plugin_slug: 'utils',
+      key: 'firecrawl',
+      name: 'Firecrawl',
+      description: '',
+      auth_type: 'api-key',
+      auth_methods: [],
+      scopes: [],
+      config_json: {},
+    }
+    const projectTwo = deferred<Response>()
+    const calls: string[] = []
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      calls.push(url)
+      if (url === '/api/v1/auth/accounts') {
+        return json({
+          project_id: null,
+          provider_key: null,
+          providers: [provider],
+          accounts: [],
+        })
+      }
+      if (url === '/api/v1/projects/2/connections/accounts') {
+        return projectTwo.promise
+      }
+      return json({})
+    }) as typeof fetch
+
+    const catalog = useStackOsCatalogStore()
+    catalog.authProviders = [provider]
+    catalog.authStatus = {
+      project_id: 1,
+      provider_key: null,
+      providers: [provider],
+      accounts: [
+        authConnection({
+          revokedAt: null,
+          credentialRef: 'cred_alpha',
+          label: 'Alpha only connection',
+        }),
+      ],
+    }
+    catalog.connectionProjectId = 1
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/connections', component: ConnectionsView }],
+    })
+    await router.push('/projects/2/connections?section=services')
+    await router.isReady()
+
+    const wrapper = mountConnections(router)
+
+    expect(catalog.authStatus).toBeNull()
+    expect(wrapper.text()).not.toContain('Alpha only connection')
+    expect(calls).toContain('/api/v1/projects/2/connections/accounts')
+
+    projectTwo.resolve(
+      json({
+        project_id: 2,
+        provider_key: null,
+        providers: [provider],
+        accounts: [
+          authConnection({
+            revokedAt: null,
+            credentialRef: 'cred_beta',
+            label: 'Beta connection',
+          }),
+        ],
+      }),
+    )
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Beta connection'))
+
+    expect(wrapper.text()).not.toContain('Alpha only connection')
+    wrapper.unmount()
+  })
 })
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((next) => {
+    resolve = next
+  })
+  return { promise, resolve }
+}

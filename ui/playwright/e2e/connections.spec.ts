@@ -62,6 +62,57 @@ test.describe('Connections — reusable Account lifecycle', () => {
     errors.assertNone()
   })
 
+  test('keeps Connections selected and reloads only the selected project data', async ({
+    page,
+  }) => {
+    const errors = trackConsoleErrors(page)
+    const alpha = await createProject({
+      name: 'Connections Alpha',
+      slug: 'connections-alpha',
+      domain: 'connections-alpha.example.test',
+    })
+    const beta = await createProject({
+      name: 'Connections Beta',
+      slug: 'connections-beta',
+      domain: 'connections-beta.example.test',
+    })
+    await storeAccount({
+      providerKey: 'ftp',
+      authMethodKey: 'ftp-password',
+      displayName: 'Alpha FTP',
+      attachProjectId: alpha.id,
+      fields: {
+        host: 'alpha.example.test',
+        username: 'deploy',
+        password: 'alpha-test-secret',
+        tls_mode: 'none',
+      },
+    })
+
+    await page.goto(`/projects/${alpha.id}/connections?section=services`)
+    await expect(page.getByRole('heading', { level: 1, name: 'Connections' })).toBeVisible()
+    await expect(page.getByText('Alpha FTP', { exact: true })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Switch project' }).click()
+    await page.getByRole('option', { name: /Connections Beta/ }).click()
+
+    await expect(page).toHaveURL(
+      new RegExp(`/projects/${beta.id}/connections\\?section=services$`),
+    )
+    await expect(page.getByRole('heading', { level: 1, name: 'Connections' })).toBeVisible()
+    await expect(page.getByText('No services connected')).toBeVisible()
+    await expect(page.getByText('Alpha FTP', { exact: true })).toHaveCount(0)
+
+    await page.getByRole('button', { name: 'Switch project' }).click()
+    await page.getByRole('option', { name: /Connections Alpha/ }).click()
+
+    await expect(page).toHaveURL(
+      new RegExp(`/projects/${alpha.id}/connections\\?section=services$`),
+    )
+    await expect(page.getByText('Alpha FTP', { exact: true })).toBeVisible()
+    errors.assertNone()
+  })
+
   test('renders manifest-driven OAuth readiness and setup guidance accessibly', async ({
     page,
   }) => {

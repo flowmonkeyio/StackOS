@@ -33,7 +33,7 @@ describe('attention supervision projection', () => {
       ],
       next_cursor: null,
       total_estimate: 1,
-    } as never)
+    } as Awaited<ReturnType<typeof listAgentRequests>>)
     mockedCallOperation.mockResolvedValue({ blocked_ticket_count: 1 })
     mockedApiFetch.mockImplementation(async (url) => {
       if (url.includes('/runs?status=failed')) {
@@ -111,4 +111,47 @@ describe('attention supervision projection', () => {
     expect(store.items).toHaveLength(1)
     expect(store.items[0]).toMatchObject({ kind: 'blocked', title: '2 tasks are blocked' })
   })
+
+  it('does not let the previous project replace newer attention state', async () => {
+    const projectOne = deferred<void>()
+    mockedListAgentRequests.mockImplementation(async (args) => {
+      if (args.project_id === 1) await projectOne.promise
+      return { items: [], next_cursor: null, total_estimate: 0 }
+    })
+    mockedCallOperation.mockImplementation(async (_operation, args) => {
+      const projectId = Number(args.project_id)
+      if (projectId === 1) await projectOne.promise
+      return { blocked_ticket_count: projectId }
+    })
+    mockedApiFetch.mockImplementation(async (url) => {
+      const projectId = url.includes('/projects/1/') ? 1 : 2
+      if (projectId === 1) await projectOne.promise
+      if (url.includes('/runs?status=failed')) return { items: [] }
+      if (url.endsWith('/connections/accounts')) return { accounts: [] }
+      if (url.endsWith('/budgets')) return []
+      if (url.includes('/cost?month=')) return { by_integration: {} }
+      throw new Error(`unexpected URL ${url}`)
+    })
+    const store = useAttentionStore()
+
+    const older = store.refresh(1)
+    await store.refresh(2)
+    projectOne.resolve()
+    await older
+
+    expect(store.projectId).toBe(2)
+    expect(store.items).toHaveLength(1)
+    expect(store.items[0]).toMatchObject({
+      title: '2 tasks are blocked',
+      to: '/projects/2/tasks?focus=blocked',
+    })
+  })
 })
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((next) => {
+    resolve = next
+  })
+  return { promise, resolve }
+}

@@ -147,6 +147,11 @@ test for cross-feature wiring, loading, and error-state truthfulness.
 
 | File | Current ownership decision | Next safe seam |
 |---|---|---|
+| `composables/useProjectNavigation.ts` | Sole app-shell project selection lifecycle: route scope, navigation fallback, navigate-before-commit ordering, scoped plugin navigation, and project-keyed route remount state. | Keep feature data loading and route-query interpretation out. The route remains authoritative on project pages; the Projects store selection is only a global-page/navigation fallback. |
+| `composables/useProjectRouteScope.ts` | Canonical project-route identity for views: strict project id parsing, project/global classification, and the route-view scope key. | All project views consume this contract; do not parse `route.params.id` locally or add page-specific project-switch handlers. |
+| `composables/useProjectScopedLoader.ts` | Mount/manual-refresh lifecycle for project views keyed by `useProjectRouteScope`. | Keep feature-specific request/query logic in the owning feature composable or store. Root project-key remounting owns scope changes. |
+| `lib/stackos/projectRequestGate.ts` | Latest-wins commit boundary for project-scoped Pinia requests, including cross-project invalidation and parallel operation loading. | Use only in shared stores whose state survives routed component unmounts; component-local state relies on the keyed route lifecycle. |
+| `components/ProjectSwitcher.vue` | Presentational project dropdown with local open/close interaction and one `select` intent. | Keep router, store, catalog, and project lifecycle access in `useProjectNavigation`. |
 | `views/AccountsView.vue` | Global Account inventory, filtering, edit/test/revoke dispatch, and reusable creation-panel composition. | Keep project attachment concerns out; those belong to Connections. |
 | `views/accounts/useAccountCredentials.ts` | Global Account create/edit/test/revoke lifecycle with schema-driven fields and field-level validation. | Keep routing out and preserve the reusable panel contract. |
 | `views/accounts/AddAccountPanel.vue` | Reusable Account creation shell used by Accounts and project Connections; service selection, Account naming, auth method, and schema-driven credential fields stay cohesive. | Promote field rendering only if another feature adopts the same auth schema contract. |

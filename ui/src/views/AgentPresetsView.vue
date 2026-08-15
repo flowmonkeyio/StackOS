@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
+import { computed, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
 import InspectableDetailDrawer from '@/components/InspectableDetailDrawer.vue'
@@ -19,6 +19,8 @@ import {
   UiToolbar,
 } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
+import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
+import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
 import { formatApiError } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
 import { sanitizeForDisplay } from '@/lib/stackos/json'
@@ -106,7 +108,7 @@ type PresetRow = AgentPresetSummary & { id: string }
 const route = useRoute()
 const router = useRouter()
 
-const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
+const { projectId } = useProjectRouteScope(route)
 const rows = ref<PresetRow[]>([])
 const selected = ref<AgentPresetDescribeOut | null>(null)
 const detailOpen = ref(false)
@@ -149,10 +151,6 @@ const columns: DataTableColumn<PresetRow>[] = [
   { key: 'name', label: 'Preset' },
   { key: 'applies_to_workflows', label: 'Workflows', widthClass: 'w-28' },
 ]
-
-function parseProjectId(raw: unknown): number {
-  return Number.parseInt(String(Array.isArray(raw) ? raw[0] : raw), 10)
-}
 
 async function loadListFor(nextProjectId = projectId.value): Promise<void> {
   if (!nextProjectId || Number.isNaN(nextProjectId)) return
@@ -221,12 +219,9 @@ function domainLabel(domain?: string | null): string {
   return stackOsPluginLabel(domain)
 }
 
-onMounted(() => loadListFor())
-onBeforeRouteUpdate((to) => {
-  const nextProjectId = parseProjectId(to.params.id)
-  if (nextProjectId !== projectId.value) {
-    void loadListFor(nextProjectId)
-  }
+const { refresh } = useProjectScopedLoader({
+  projectId,
+  load: ({ projectId }) => loadListFor(projectId),
 })
 </script>
 
@@ -244,7 +239,7 @@ onBeforeRouteUpdate((to) => {
           size="sm"
           icon-left="refresh"
           :loading="loading"
-          @click="loadListFor()"
+          @click="refresh"
         >
           Refresh
         </UiButton>

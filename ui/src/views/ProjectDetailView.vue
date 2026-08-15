@@ -4,19 +4,21 @@
 // The sidebar owns navigation. This wrapper only gives each project-scoped
 // setup route a focused page title, project meta, and status context.
 
-import { computed, onMounted } from 'vue'
+import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'
 
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import { UiPageShell } from '@/components/ui'
+import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
+import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
 import { useProjectsStore } from '@/stores/projects'
 
 const route = useRoute()
 const projects = useProjectsStore()
 const { items } = storeToRefs(projects)
 
-const projectId = computed<number>(() => Number.parseInt(route.params.id as string, 10))
+const { projectId } = useProjectRouteScope(route)
 const project = computed(() => projects.getById(projectId.value))
 
 // The Home console (project-home) renders its own page chrome, so this shell
@@ -82,7 +84,10 @@ async function ensureLoaded(): Promise<void> {
   if (items.value.length === 0) await projects.refresh()
 }
 
-onMounted(ensureLoaded)
+useProjectScopedLoader({
+  projectId,
+  load: ensureLoaded,
+})
 </script>
 
 <template>

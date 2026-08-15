@@ -7,7 +7,7 @@
 //
 // Wires to read-only run listing/detail endpoints.
 
-import { computed, onMounted } from 'vue'
+import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -35,12 +35,14 @@ import {
 import { useRunsStore, type Run } from '@/stores/runs'
 import { RunKind as RunKindEnum, RunStatus as RunStatusEnum } from '@/api'
 import type { DataTableColumn } from '@/components/types'
+import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
+import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
 
 const route = useRoute()
 const router = useRouter()
 const runsStore = useRunsStore()
 
-const projectId = computed<number>(() => Number.parseInt(route.params.id as string, 10))
+const { projectId } = useProjectRouteScope(route)
 const runId = computed<number | null>(() => {
   const raw = route.params.run_id
   if (!raw || raw === '') return null
@@ -132,14 +134,16 @@ async function loadMore(): Promise<void> {
   await runsStore.loadMore(projectId.value)
 }
 
-async function load(): Promise<void> {
-  if (!projectId.value || Number.isNaN(projectId.value)) return
+async function load(nextProjectId: number): Promise<void> {
   runsStore.reset()
   applyStatusFromQuery()
-  await runsStore.refresh(projectId.value)
+  await runsStore.refresh(nextProjectId)
 }
 
-onMounted(load)
+useProjectScopedLoader({
+  projectId,
+  load: ({ projectId }) => load(projectId),
+})
 </script>
 
 <template>

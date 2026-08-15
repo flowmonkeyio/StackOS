@@ -8,7 +8,6 @@
 // data in place (stable keys, last-good-on-error) so nothing flickers.
 
 import { computed, ref } from 'vue'
-import { useRoute } from 'vue-router'
 
 import { ActivityItem, ProjectPageHeader } from '@/components/domain'
 import StatusBadge from '@/components/StatusBadge.vue'
@@ -28,6 +27,7 @@ import type { Tone } from '@/design/status'
 import { useReadinessStore } from '@/stores/readiness'
 import { useAttentionStore } from '@/stores/attention'
 import { usePolling } from '@/composables/usePolling'
+import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import {
   formatAbsoluteDateTime,
   formatDurationBetween,
@@ -41,8 +41,7 @@ import type {
   SchemaRunOut,
 } from '@/api'
 
-const route = useRoute()
-const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
+const { projectId } = useProjectRouteScope()
 const base = computed(() => `/projects/${projectId.value}`)
 
 const attention = useAttentionStore()

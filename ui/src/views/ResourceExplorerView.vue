@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 
@@ -21,6 +21,8 @@ import {
   UiSelect,
   UiToolbar,
 } from '@/components/ui'
+import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
+import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
 import type { DataTableColumn } from '@/components/types'
 import type { SchemaResourceOut, SchemaResourceRecordOut } from '@/api'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
@@ -40,7 +42,7 @@ const recordsNewest = computed(() =>
   newestFirst(records.value, (record) => record.updated_at ?? record.created_at),
 )
 
-const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
+const { projectId, changesProjectScope } = useProjectRouteScope(route)
 const pluginSlug = ref(String(route.query.plugin_slug ?? ''))
 const resourceKey = ref(String(route.query.resource_key ?? ''))
 const selectedResource = ref<SchemaResourceOut | null>(null)
@@ -105,10 +107,6 @@ const recordColumns: DataTableColumn<SchemaResourceRecordOut>[] = [
   { key: 'title', label: 'Title', cellClass: 'font-medium text-fg-strong', format: (value) => String(value ?? '-') },
   { key: 'updated_at', label: 'Updated', format: (value) => formatDateTime(String(value)) },
 ]
-
-function parseProjectId(raw: unknown): number {
-  return Number.parseInt(String(Array.isArray(raw) ? raw[0] : raw), 10)
-}
 
 function chooseResource(nextResourceKey = resourceKey.value): SchemaResourceOut | null {
   if (selectedResource.value && resources.value.some((resource) => resource.id === selectedResource.value?.id)) {
@@ -181,10 +179,14 @@ function openRecord(row: SchemaResourceRecordOut): void {
   detailOpen.value = true
 }
 
-onMounted(() => loadFor())
+useProjectScopedLoader({
+  projectId,
+  load: ({ projectId }) => loadFor(projectId),
+})
 onBeforeRouteUpdate((to) => {
+  if (changesProjectScope(to)) return
   void loadFor(
-    parseProjectId(to.params.id),
+    projectId.value,
     String(to.query.plugin_slug ?? ''),
     String(to.query.resource_key ?? ''),
   )

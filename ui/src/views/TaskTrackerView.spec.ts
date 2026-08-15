@@ -97,7 +97,7 @@ describe('TaskTrackerView route integration', () => {
     await router.isReady()
 
     const wrapper = mount(
-      { template: '<RouterView />' },
+      { template: '<RouterView :key="$route.params.id" />' },
       {
         global: {
           plugins: [router, createPinia()],
@@ -154,7 +154,7 @@ describe('TaskTrackerView route integration', () => {
     expect(streamMocks.close).toHaveBeenCalled()
   })
 
-  it('reloads reused routes and keeps live cursors scoped to the project', async () => {
+  it('remounts project scope and keeps live cursors scoped to the project', async () => {
     const task7 = trackerTask({ project_id: 7, key: 'shared-task', title: 'Project seven' })
     const task8 = trackerTask({ project_id: 8, key: 'shared-task', title: 'Project eight' })
 
@@ -174,7 +174,7 @@ describe('TaskTrackerView route integration', () => {
     await router.isReady()
 
     const wrapper = mount(
-      { template: '<RouterView />' },
+      { template: '<RouterView :key="$route.params.id" />' },
       {
         global: {
           plugins: [router, createPinia()],
@@ -248,7 +248,7 @@ describe('TaskTrackerView route integration', () => {
     await router.isReady()
 
     const wrapper = mount(
-      { template: '<RouterView />' },
+      { template: '<RouterView :key="$route.params.id" />' },
       {
         global: {
           plugins: [router, createPinia()],

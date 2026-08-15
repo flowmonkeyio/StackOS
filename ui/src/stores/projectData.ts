@@ -20,6 +20,7 @@ import type {
   SchemaProjectEventOut,
 } from '@/api'
 import { apiFetch, formatApiError } from '@/lib/client'
+import { createProjectRequestGate } from '@/lib/stackos/projectRequestGate'
 
 export const useProjectDataStore = defineStore('projectData', () => {
   const timeline = ref<SchemaProjectEventOut[]>([])
@@ -32,8 +33,22 @@ export const useProjectDataStore = defineStore('projectData', () => {
   const artifacts = ref<SchemaArtifactOut[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const currentProjectId = ref<number | null>(null)
+  const requests = createProjectRequestGate((projectId) => {
+    timeline.value = []
+    snapshots.value = []
+    learnings.value = []
+    experiments.value = []
+    observations.value = []
+    decisions.value = []
+    metrics.value = []
+    artifacts.value = []
+    error.value = null
+    currentProjectId.value = projectId
+  })
 
   async function refresh(projectId: number): Promise<void> {
+    const request = requests.begin(projectId, 'all')
     loading.value = true
     error.value = null
     try {
@@ -64,6 +79,7 @@ export const useProjectDataStore = defineStore('projectData', () => {
         apiFetch<SchemaPageResponseMetricSnapshotOut>(`/api/v1/projects/${projectId}/metrics?limit=50`),
         apiFetch<SchemaPageResponseArtifactOut>(`/api/v1/projects/${projectId}/artifacts?limit=50`),
       ])
+      if (!request.isCurrent()) return
       timeline.value = timelinePage.items
       snapshots.value = snapshotPage.items
       learnings.value = learningPage.items
@@ -73,10 +89,27 @@ export const useProjectDataStore = defineStore('projectData', () => {
       metrics.value = metricPage.items
       artifacts.value = artifactPage.items
     } catch (err) {
-      error.value = formatApiError(err, 'failed to load project data')
+      if (request.isCurrent()) {
+        error.value = formatApiError(err, 'failed to load project data')
+      }
     } finally {
-      loading.value = false
+      loading.value = request.finish()
     }
+  }
+
+  function reset(): void {
+    requests.invalidate()
+    timeline.value = []
+    snapshots.value = []
+    learnings.value = []
+    experiments.value = []
+    observations.value = []
+    decisions.value = []
+    metrics.value = []
+    artifacts.value = []
+    loading.value = false
+    error.value = null
+    currentProjectId.value = null
   }
 
   return {
@@ -90,6 +123,8 @@ export const useProjectDataStore = defineStore('projectData', () => {
     artifacts,
     loading,
     error,
+    currentProjectId,
     refresh,
+    reset,
   }
 })

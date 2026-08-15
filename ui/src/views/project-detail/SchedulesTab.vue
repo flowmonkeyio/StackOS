@@ -1,21 +1,21 @@
 <script setup lang="ts">
 // SchedulesTab — read-only scheduled job visibility.
 
-import { computed, onMounted } from 'vue'
+import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useRoute } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { UiButton, UiCallout, UiMetricCard } from '@/components/ui'
+import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
+import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
 import { formatAbsoluteDateTime, formatRelativeDateTime } from '@/lib/stackos/time'
 import { useSchedulesStore, type ScheduledJob } from '@/stores/schedules'
 import type { DataTableColumn } from '@/components/types'
 
-const route = useRoute()
 const schedulesStore = useSchedulesStore()
 
-const projectId = computed<number>(() => Number.parseInt(route.params.id as string, 10))
+const { projectId } = useProjectRouteScope()
 const { items, loading, error } = storeToRefs(schedulesStore)
 
 const enabledCount = computed(() => items.value.filter((job) => job.enabled).length)
@@ -39,12 +39,10 @@ const columns: DataTableColumn<ScheduledJob>[] = [
   { key: 'enabled', label: 'State', widthClass: 'w-24' },
 ]
 
-async function load(): Promise<void> {
-  if (!projectId.value || Number.isNaN(projectId.value)) return
-  await schedulesStore.refresh(projectId.value)
-}
-
-onMounted(load)
+const { refresh } = useProjectScopedLoader({
+  projectId,
+  load: ({ projectId }) => schedulesStore.refresh(projectId),
+})
 </script>
 
 <template>
@@ -55,7 +53,7 @@ onMounted(load)
         variant="secondary"
         icon-left="refresh"
         :loading="loading"
-        @click="load"
+        @click="refresh"
       >
         Refresh
       </UiButton>

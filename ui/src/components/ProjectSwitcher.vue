@@ -6,20 +6,20 @@
 // Behavior:
 //   - Displays the current route project name + chevron in collapsed state
 //   - Click to open dropdown with list of all projects (archived last)
-//   - Selecting a project preserves the current surface and portable filters
+//   - Emits one selection intent; the app shell owns routing and scope reload
 
 import { computed, ref, onBeforeUnmount, onMounted } from 'vue'
-import { storeToRefs } from 'pinia'
-import { useRoute, useRouter } from 'vue-router'
 
 import UiIcon from '@/components/ui/UiIcon.vue'
-import { projectSwitchDestination } from '@/lib/stackos/projectNavigation'
-import { useProjectsStore } from '@/stores/projects'
+import type { Project } from '@/stores/projects'
 
-const projects = useProjectsStore()
-const router = useRouter()
-const route = useRoute()
-const { items, activeProject } = storeToRefs(projects)
+const props = defineProps<{
+  items: Project[]
+  selectedProject: Project | null
+}>()
+const emit = defineEmits<{
+  select: [projectId: number]
+}>()
 
 const open = ref(false)
 const rootEl = ref<HTMLDivElement | null>(null)
@@ -32,23 +32,9 @@ function close(): void {
 }
 
 const sortedItems = computed(() => {
-  const live = [...items.value].filter((p) => p.is_active)
-  const archived = [...items.value].filter((p) => !p.is_active)
+  const live = props.items.filter((p) => p.is_active)
+  const archived = props.items.filter((p) => !p.is_active)
   return [...live, ...archived]
-})
-
-const routeProjectId = computed(() => {
-  const raw = route.params.id
-  const value = Array.isArray(raw) ? raw[0] : raw
-  const parsed = Number.parseInt(String(value ?? ''), 10)
-  return Number.isNaN(parsed) ? null : parsed
-})
-
-const selectedProject = computed(() => {
-  if (routeProjectId.value !== null) {
-    return items.value.find((project) => project.id === routeProjectId.value) ?? activeProject.value
-  }
-  return activeProject.value
 })
 
 function projectInitials(name: string): string {
@@ -60,9 +46,9 @@ function projectInitials(name: string): string {
     .join('')
 }
 
-async function pick(id: number): Promise<void> {
+function pick(id: number): void {
   close()
-  await router.push(projectSwitchDestination(route, id))
+  emit('select', id)
 }
 
 function onClickOutside(e: MouseEvent): void {

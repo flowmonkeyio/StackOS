@@ -1,25 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
-import { createPinia, setActivePinia } from 'pinia'
-import { createRouter, createMemoryHistory } from 'vue-router'
+import { describe, expect, it } from 'vitest'
+import { mount } from '@vue/test-utils'
 
 import ProjectSwitcher from './ProjectSwitcher.vue'
-import { useProjectsStore } from '@/stores/projects'
+import type { Project } from '@/stores/projects'
 
-function makeRouter() {
-  return createRouter({
-    history: createMemoryHistory(),
-    routes: [
-      { path: '/', component: { template: '<div/>' } },
-      { path: '/projects', component: { template: '<div/>' } },
-      { path: '/projects/:id', component: { template: '<div/>' } },
-      { path: '/projects/:id/connections', component: { template: '<div/>' } },
-      { path: '/projects/:id/tasks', component: { template: '<div/>' } },
-    ],
-  })
-}
-
-const sample = [
+const sample: Project[] = [
   {
     id: 1,
     name: 'Alpha',
@@ -47,62 +32,36 @@ const sample = [
 ]
 
 describe('ProjectSwitcher', () => {
-  beforeEach(() => {
-    setActivePinia(createPinia())
-  })
-
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
-
   it('shows the selected project name in the collapsed button', () => {
-    const projects = useProjectsStore()
-    projects.items = sample as never
-    projects.activeProjectId = 1
-    const router = makeRouter()
-    const w = mount(ProjectSwitcher, {
-      global: { plugins: [router] },
-    })
-    expect(w.find('button').text()).toContain('Alpha')
+    const wrapper = renderSwitcher()
+    expect(wrapper.find('button').text()).toContain('Alpha')
   })
 
-  it('opens the dropdown on click and lists every project', async () => {
-    const projects = useProjectsStore()
-    projects.items = sample as never
-    projects.activeProjectId = 1
-    const router = makeRouter()
-    const w = mount(ProjectSwitcher, {
-      global: { plugins: [router] },
-    })
-    await w.find('button').trigger('click')
-    const options = w.findAll('[role="option"]')
-    expect(options.length).toBe(2)
+  it('opens the dropdown and lists live projects before archived projects', async () => {
+    const wrapper = renderSwitcher([sample[1], sample[0]], sample[0])
+    await wrapper.find('button').trigger('click')
+
+    const options = wrapper.findAll('[role="option"]')
+    expect(options).toHaveLength(2)
     expect(options[0].text()).toContain('Alpha')
     expect(options[1].text()).toContain('Beta')
   })
 
   it('clips long project rows instead of allowing horizontal menu overflow', async () => {
-    const projects = useProjectsStore()
-    projects.items = [
-      {
-        ...sample[0],
-        name: 'Project with an extremely long operator-facing name that should truncate',
-        slug: 'project-with-an-extremely-long-slug-that-should-truncate',
-        domain: 'very-long-project-domain-name-that-should-not-stretch-the-dropdown.local',
-      },
-    ] as never
-    projects.activeProjectId = 1
-    const router = makeRouter()
-    const w = mount(ProjectSwitcher, {
-      global: { plugins: [router] },
-    })
+    const project = {
+      ...sample[0],
+      name: 'Project with an extremely long operator-facing name that should truncate',
+      slug: 'project-with-an-extremely-long-slug-that-should-truncate',
+      domain: 'very-long-project-domain-name-that-should-not-stretch-the-dropdown.local',
+    }
+    const wrapper = renderSwitcher([project], project)
 
-    await w.find('button').trigger('click')
+    await wrapper.find('button').trigger('click')
 
-    const listbox = w.get('[role="listbox"]')
+    const listbox = wrapper.get('[role="listbox"]')
     expect(listbox.classes()).toContain('overflow-x-hidden')
 
-    const option = w.get('[role="option"]')
+    const option = wrapper.get('[role="option"]')
     expect(option.classes()).toContain('min-w-0')
     expect(option.classes()).toContain('overflow-hidden')
 
@@ -112,61 +71,36 @@ describe('ProjectSwitcher', () => {
     expect(textColumn.findAll('span').every((row) => row.classes().includes('truncate'))).toBe(true)
   })
 
-  it('uses the routed project as selected without changing local fallback selection', async () => {
-    const projects = useProjectsStore()
-    projects.items = sample as never
-    projects.activeProjectId = 1
-    const router = makeRouter()
-    await router.push('/projects/2/connections')
-    await router.isReady()
-    const w = mount(ProjectSwitcher, {
-      global: { plugins: [router] },
-    })
+  it('renders the selected project supplied by the composition owner', async () => {
+    const wrapper = renderSwitcher(sample, sample[1])
 
-    expect(w.find('button').text()).toContain('Beta')
-    await w.find('button').trigger('click')
-    expect(w.findAll('[role="option"]')[1].attributes('aria-selected')).toBe('true')
-    expect(projects.activeProjectId).toBe(1)
+    expect(wrapper.find('button').text()).toContain('Beta')
+    await wrapper.find('button').trigger('click')
+    expect(wrapper.findAll('[role="option"]')[1].attributes('aria-selected')).toBe('true')
   })
 
-  it('navigates without mutating project lifecycle when an archived project is picked', async () => {
-    const projects = useProjectsStore()
-    projects.items = sample as never
-    projects.activeProjectId = 1
-    const router = makeRouter()
-    await router.push('/projects')
-    const pushSpy = vi.spyOn(router, 'push')
-    const w = mount(ProjectSwitcher, {
-      global: { plugins: [router] },
-    })
-    await w.find('button').trigger('click')
-    const options = w.findAll('[role="option"]')
-    await options[1].trigger('click')
-    await flushPromises()
-    expect((projects as unknown as Record<string, unknown>).activate).toBeUndefined()
-    expect(pushSpy).toHaveBeenCalledWith({ path: '/projects/2', query: {}, hash: '' })
+  it('emits one selection intent without mutating navigation state', async () => {
+    const wrapper = renderSwitcher()
+    await wrapper.find('button').trigger('click')
+    await wrapper.findAll('[role="option"]')[1].trigger('click')
+
+    expect(wrapper.emitted('select')).toEqual([[2]])
   })
 
-  it('keeps the current surface and safe filters when a project is picked', async () => {
-    const projects = useProjectsStore()
-    projects.items = sample as never
-    projects.activeProjectId = 1
-    const router = makeRouter()
-    await router.push('/projects/1/tasks?view=stories&status=in-progress&task=alpha-task')
-    await router.isReady()
-    const pushSpy = vi.spyOn(router, 'push')
-    const w = mount(ProjectSwitcher, {
-      global: { plugins: [router] },
-    })
+  it('shows an honest empty state without a selected project', async () => {
+    const wrapper = renderSwitcher([], null)
+    expect(wrapper.find('button').text()).toContain('No project selected')
 
-    await w.find('button').trigger('click')
-    await w.findAll('[role="option"]')[1].trigger('click')
-    await flushPromises()
-
-    expect(pushSpy).toHaveBeenCalledWith({
-      path: '/projects/2/tasks',
-      query: { view: 'stories', status: 'in-progress' },
-      hash: '',
-    })
+    await wrapper.find('button').trigger('click')
+    expect(wrapper.text()).toContain('No projects yet.')
   })
 })
+
+function renderSwitcher(
+  items = sample,
+  selectedProject: Project | null = sample[0],
+) {
+  return mount(ProjectSwitcher, {
+    props: { items, selectedProject },
+  })
+}

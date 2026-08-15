@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
@@ -9,6 +9,8 @@ import { callOperation } from '@/lib/operations'
 import { resolveStatus, trackerStatus } from '@/design/status'
 import { formatDateTime } from '@/lib/stackos/json'
 import type { TrackerSnapshot, TrackerStatus, TrackerTicket } from '@/lib/task-tracker/types'
+import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
+import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
 
 import TaskTrackerCommandPanel from './task-tracker/TaskTrackerCommandPanel.vue'
 import TrackerGraphPanel from './task-tracker/TrackerGraphPanel.vue'
@@ -38,7 +40,7 @@ import {
 
 const route = useRoute()
 const router = useRouter()
-const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
+const { projectId, changesProjectScope } = useProjectRouteScope(route)
 const routeFocus = computed(() => (typeof route.query.focus === 'string' ? route.query.focus : ''))
 
 const snapshot = ref<TrackerSnapshot | null>(null)
@@ -435,21 +437,17 @@ function syncActiveTaskToUrl(taskKey: string): void {
   void router.replace({ query: nextQuery })
 }
 
-onMounted(() => {
-  void load()
+useProjectScopedLoader({
+  projectId,
+  load: () => load(),
+  onScopeExit: () => {
+    loadRequestSequence += 1
+    stopTrackerStatusStream()
+  },
 })
 
 onBeforeRouteUpdate((to) => {
-  const nextProjectId = Number.parseInt(String(to.params.id), 10)
-  if (nextProjectId !== projectId.value) {
-    loadRequestSequence += 1
-    stopTrackerStatusStream()
-    snapshot.value = null
-    activeTaskKey.value = taskKeyFromQueryValue(to.query.task)
-    clearGraphFocus()
-    setTimeout(() => void load(), 0)
-    return
-  }
+  if (changesProjectScope(to)) return
   const nextTaskKey = taskKeyFromQueryValue(to.query.task)
   if (nextTaskKey === activeTaskKey.value) return
   activeTaskKey.value = nextTaskKey

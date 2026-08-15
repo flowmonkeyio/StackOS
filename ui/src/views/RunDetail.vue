@@ -71,7 +71,7 @@ async function load(): Promise<void> {
   loading.value = true
   error.value = null
   try {
-    run.value = await runsStore.get(props.runId)
+    run.value = await runsStore.get(props.runId, props.projectId)
     const [
       kids,
       planRows,
@@ -83,7 +83,7 @@ async function load(): Promise<void> {
       experimentPage,
       artifactPage,
     ] = await Promise.all([
-      runsStore.children(props.runId),
+      runsStore.children(props.runId, props.projectId),
       fetchRunPlans(),
       apiFetch<SchemaPageResponseActionCallAuditOut>(
         `/api/v1/projects/${props.projectId}/action-calls?run_id=${props.runId}&limit=50`,

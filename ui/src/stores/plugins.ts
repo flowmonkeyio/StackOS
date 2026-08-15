@@ -22,6 +22,7 @@ import type {
   SchemaWriteResponseAuthTestOut,
 } from '@/api'
 import { apiFetch, formatApiError } from '@/lib/client'
+import { createProjectRequestGate } from '@/lib/stackos/projectRequestGate'
 
 export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
   const plugins = ref<SchemaPluginOut[]>([])
@@ -35,24 +36,27 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
   const resources = ref<SchemaResourceOut[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
-  let pluginRefreshSequence = 0
-  let connectionRefreshSequence = 0
+  const pluginProjectId = ref<number | null>(null)
+  const connectionProjectId = ref<number | null>(null)
   let accountRefreshSequence = 0
-  let catalogRefreshSequence = 0
+  const projectRequests = createProjectRequestGate()
 
   const enabledPlugins = computed(() =>
     plugins.value.filter((plugin) => plugin.enabled_for_project !== false),
   )
 
   async function refreshPlugins(
-    projectId?: number,
+    projectId: number,
     options: { silent?: boolean } = {},
-  ): Promise<void> {
-    const requestSequence = ++pluginRefreshSequence
+  ): Promise<boolean> {
+    const request = projectRequests.begin(projectId, 'plugins', {
+      trackPending: !options.silent,
+    })
     if (!options.silent) loading.value = true
     error.value = null
     if (!options.silent) {
       plugins.value = []
+      pluginProjectId.value = null
       catalog.value = composeCatalog(
         [],
         capabilities.value,
@@ -62,11 +66,12 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
       )
     }
     try {
-      const pluginQuery = projectId ? `?project_id=${projectId}` : ''
-      const compactQuery = projectId ? `${pluginQuery}&compact=true` : '?compact=true'
+      const pluginQuery = `?project_id=${projectId}`
+      const compactQuery = `${pluginQuery}&compact=true`
       const pluginRows = await apiFetch<SchemaPluginOut[]>(`/api/v1/plugins${compactQuery}`)
-      if (requestSequence !== pluginRefreshSequence) return
+      if (!request.isCurrent()) return false
       plugins.value = pluginRows
+      pluginProjectId.value = projectId
       catalog.value = composeCatalog(
         pluginRows,
         capabilities.value,
@@ -74,27 +79,31 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
         actions.value,
         resources.value,
       )
+      return true
     } catch (err) {
-      if (requestSequence === pluginRefreshSequence) {
+      if (request.isCurrent()) {
         error.value = formatApiError(err, 'failed to load StackOS plugins')
       }
+      return false
     } finally {
-      if (!options.silent && requestSequence === pluginRefreshSequence) loading.value = false
+      const hasPending = request.finish()
+      if (!options.silent) loading.value = hasPending
     }
   }
 
-  async function refresh(projectId?: number): Promise<void> {
-    const requestSequence = ++catalogRefreshSequence
+  async function refresh(projectId: number): Promise<void> {
+    const request = projectRequests.begin(projectId, 'catalog')
     loading.value = true
     error.value = null
     plugins.value = []
+    pluginProjectId.value = null
     capabilities.value = []
     providers.value = []
     actions.value = []
     resources.value = []
     catalog.value = null
     try {
-      const pluginQuery = projectId ? `?project_id=${projectId}` : ''
+      const pluginQuery = `?project_id=${projectId}`
       const [pluginRows, capabilityRows, providerRows, actionRows, resourceRows] =
         await Promise.all([
           apiFetch<SchemaPluginOut[]>(`/api/v1/plugins${pluginQuery}`),
@@ -103,8 +112,9 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
           apiFetch<SchemaActionOut[]>(`/api/v1/actions${pluginQuery}`),
           apiFetch<SchemaResourceOut[]>(`/api/v1/resources${pluginQuery}`),
         ])
-      if (requestSequence !== catalogRefreshSequence) return
+      if (!request.isCurrent()) return
       plugins.value = pluginRows
+      pluginProjectId.value = projectId
       capabilities.value = capabilityRows
       providers.value = providerRows
       actions.value = actionRows
@@ -117,16 +127,18 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
         resourceRows,
       )
     } catch (err) {
-      if (requestSequence === catalogRefreshSequence) {
+      if (request.isCurrent()) {
         error.value = formatApiError(err, 'failed to load StackOS catalog')
       }
     } finally {
-      if (requestSequence === catalogRefreshSequence) loading.value = false
+      loading.value = request.finish()
     }
   }
 
   async function refreshAuth(projectId: number, options: { silent?: boolean } = {}): Promise<void> {
-    const requestSequence = ++connectionRefreshSequence
+    const request = projectRequests.begin(projectId, 'connections', {
+      trackPending: !options.silent,
+    })
     if (!options.silent) loading.value = true
     error.value = null
     if (!options.silent) {
@@ -138,15 +150,17 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
         `/api/v1/projects/${projectId}/connections/accounts`,
       )
       const nextAuthProviders = status.providers
-      if (requestSequence !== connectionRefreshSequence) return
+      if (!request.isCurrent()) return
       authProviders.value = nextAuthProviders
       authStatus.value = status
+      connectionProjectId.value = projectId
     } catch (err) {
-      if (requestSequence === connectionRefreshSequence) {
+      if (request.isCurrent()) {
         error.value = formatApiError(err, 'failed to load connections')
       }
     } finally {
-      if (!options.silent && requestSequence === connectionRefreshSequence) loading.value = false
+      const hasPending = request.finish()
+      if (!options.silent) loading.value = hasPending
     }
   }
 
@@ -309,6 +323,8 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     resources,
     loading,
     error,
+    pluginProjectId,
+    connectionProjectId,
     enabledPlugins,
     refreshPlugins,
     refresh,

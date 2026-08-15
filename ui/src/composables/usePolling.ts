@@ -13,7 +13,7 @@ import { onBeforeUnmount, onMounted, ref, type Ref } from 'vue'
 export interface UsePollingOptions {
   /** Poll cadence in ms while the tab is visible. Default 20s. */
   intervalMs?: number
-  /** Run once immediately on mount. Default true. */
+  /** Run once immediately during setup. Default true. */
   immediate?: boolean
 }
 
@@ -85,8 +85,11 @@ export function usePolling(
     }
   }
 
+  // Run before the first render. Project-keyed route remounts can otherwise
+  // expose retained store data until Vue reaches the mounted hook.
+  if (immediate) void refresh()
+
   onMounted(() => {
-    if (immediate) void refresh()
     startTimer()
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', onVisibilityChange)

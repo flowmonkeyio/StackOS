@@ -18,6 +18,7 @@ import type { SchemaAuthStatusOut, SchemaHealthResponse } from '@/api'
 import type { Tone } from '@/design/status'
 import { apiFetch } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
+import { createProjectRequestGate } from '@/lib/stackos/projectRequestGate'
 
 export type ReadinessState = 'ready' | 'attention' | 'blocked' | 'unknown'
 
@@ -37,6 +38,12 @@ interface ReadinessRefreshOptions {
   authStatus?: Promise<SchemaAuthStatusOut>
   includeActions?: boolean
   refreshActions?: boolean
+}
+
+interface HealthCheckResult {
+  checks: ReadinessCheck[]
+  version: string | null
+  uptimeSeconds: number | null
 }
 
 const STATE_TONE: Record<ReadinessState, Tone> = {
@@ -65,6 +72,14 @@ export const useReadinessStore = defineStore('readiness', () => {
   const projectId = ref<number | null>(null)
   const cachedActionsCheck = ref<ReadinessCheck | null>(null)
   const actionsCheckedAt = ref(0)
+  const requests = createProjectRequestGate((nextProjectId) => {
+    checks.value = []
+    version.value = null
+    uptimeSeconds.value = null
+    projectId.value = nextProjectId
+    cachedActionsCheck.value = null
+    actionsCheckedAt.value = 0
+  })
 
   const ACTIONS_CACHE_MS = 5 * 60_000
 
@@ -95,46 +110,52 @@ export const useReadinessStore = defineStore('readiness', () => {
     return b.state === 'blocked' ? 'Not ready for agents' : 'Available, with setup left'
   })
 
-  async function loadHealthChecks(base: string): Promise<ReadinessCheck[]> {
+  async function loadHealthChecks(base: string): Promise<HealthCheckResult> {
     try {
       const health = await apiFetch<SchemaHealthResponse>('/api/v1/health')
-      version.value = (health.version as string) ?? null
-      uptimeSeconds.value =
-        typeof health.daemon_uptime_s === 'number' ? health.daemon_uptime_s : null
       const dbOk = health.db_status === 'ok'
-      return [
-        {
-          key: 'daemon',
-          label: 'Local service',
-          state: dbOk ? 'ready' : 'blocked',
-          hint: dbOk ? 'Running and connected to local storage.' : 'Local storage is unreachable.',
-          critical: true,
-          to: null,
-        },
-        {
-          key: 'automation',
-          label: 'Background automation',
-          state: health.scheduler_running ? 'ready' : 'attention',
-          hint: health.scheduler_running
-            ? 'Scheduled and triggered work can run.'
-            : 'Scheduler is stopped — scheduled work will not fire.',
-          critical: false,
-          to: `${base}/schedules`,
-        },
-      ]
+      return {
+        version: (health.version as string) ?? null,
+        uptimeSeconds:
+          typeof health.daemon_uptime_s === 'number' ? health.daemon_uptime_s : null,
+        checks: [
+          {
+            key: 'daemon',
+            label: 'Local service',
+            state: dbOk ? 'ready' : 'blocked',
+            hint: dbOk
+              ? 'Running and connected to local storage.'
+              : 'Local storage is unreachable.',
+            critical: true,
+            to: null,
+          },
+          {
+            key: 'automation',
+            label: 'Background automation',
+            state: health.scheduler_running ? 'ready' : 'attention',
+            hint: health.scheduler_running
+              ? 'Scheduled and triggered work can run.'
+              : 'Scheduler is stopped — scheduled work will not fire.',
+            critical: false,
+            to: `${base}/schedules`,
+          },
+        ],
+      }
     } catch {
-      version.value = null
-      uptimeSeconds.value = null
-      return [
-        {
-          key: 'daemon',
-          label: 'Local service',
-          state: 'blocked',
-          hint: 'Could not reach the local service.',
-          critical: true,
-          to: null,
-        },
-      ]
+      return {
+        version: null,
+        uptimeSeconds: null,
+        checks: [
+          {
+            key: 'daemon',
+            label: 'Local service',
+            state: 'blocked',
+            hint: 'Could not reach the local service.',
+            critical: true,
+            to: null,
+          },
+        ],
+      }
     }
   }
 
@@ -228,11 +249,7 @@ export const useReadinessStore = defineStore('readiness', () => {
   }
 
   async function refresh(id: number, options: ReadinessRefreshOptions = {}): Promise<void> {
-    if (projectId.value !== id) {
-      cachedActionsCheck.value = null
-      actionsCheckedAt.value = 0
-    }
-    projectId.value = id
+    const request = requests.begin(id, 'readiness')
     loading.value = true
     const base = `/projects/${id}`
 
@@ -245,24 +262,34 @@ export const useReadinessStore = defineStore('readiness', () => {
     const actionsPromise = includeActions
       ? actionsAreFresh
         ? Promise.resolve(cachedActionsCheck.value!)
-        : loadActionsCheck(id, base).then((check) => {
-            cachedActionsCheck.value = check
-            actionsCheckedAt.value = Date.now()
-            return check
-          })
+        : loadActionsCheck(id, base)
       : null
 
-    const healthChecks = await loadHealthChecks(base)
-    checks.value = healthChecks
-    const [connectionsCheck, actionsCheck] = await Promise.all([connectionsPromise, actionsPromise])
-    checks.value = actionsCheck
-      ? [...healthChecks, connectionsCheck, actionsCheck]
-      : [...healthChecks, connectionsCheck]
-    loading.value = false
+    try {
+      const [health, connectionsCheck, actionsCheck] = await Promise.all([
+        loadHealthChecks(base),
+        connectionsPromise,
+        actionsPromise,
+      ])
+      if (!request.isCurrent()) return
+      version.value = health.version
+      uptimeSeconds.value = health.uptimeSeconds
+      if (actionsCheck && !actionsAreFresh) {
+        cachedActionsCheck.value = actionsCheck
+        actionsCheckedAt.value = Date.now()
+      }
+      checks.value = actionsCheck
+        ? [...health.checks, connectionsCheck, actionsCheck]
+        : [...health.checks, connectionsCheck]
+    } finally {
+      loading.value = request.finish()
+    }
   }
 
   function reset(): void {
+    requests.invalidate()
     checks.value = []
+    loading.value = false
     version.value = null
     uptimeSeconds.value = null
     projectId.value = null

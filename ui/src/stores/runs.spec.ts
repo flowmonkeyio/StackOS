@@ -77,4 +77,37 @@ describe('runs store', () => {
     expect(store.filteredItems.length).toBe(1)
     expect(store.filteredItems[0].id).toBe(2)
   })
+
+  it('keeps run history scoped to the newest project request', async () => {
+    const projectOne = deferred<void>()
+    globalThis.fetch = vi.fn(async (input) => {
+      const projectId = String(input).includes('/projects/1/') ? 1 : 2
+      if (projectId === 1) await projectOne.promise
+      return new Response(
+        JSON.stringify({
+          items: [{ ...RUN_RUNNING, id: projectId, project_id: projectId }],
+          next_cursor: null,
+          total_estimate: 1,
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }) as typeof fetch
+    const store = useRunsStore()
+
+    const older = store.refresh(1)
+    await store.refresh(2)
+    projectOne.resolve()
+    await older
+
+    expect(store.currentProjectId).toBe(2)
+    expect(store.items.map((run) => run.project_id)).toEqual([2])
+  })
 })
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((next) => {
+    resolve = next
+  })
+  return { promise, resolve }
+}

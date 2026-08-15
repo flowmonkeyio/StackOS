@@ -7,50 +7,31 @@
 
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
-import { RouterView, useRoute, useRouter } from 'vue-router'
+import { RouterView, useRoute } from 'vue-router'
 
 import DesktopUpdatePrompt from '@/components/DesktopUpdatePrompt.vue'
 import ProjectSwitcher from '@/components/ProjectSwitcher.vue'
 import PluginNavRenderer from '@/components/renderers/PluginNavRenderer.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
-import {
-  projectNavSections as buildProjectNavSections,
-  type StackOsNavSection,
-} from '@/lib/stackos/nav'
+import { useProjectNavigation } from '@/composables/useProjectNavigation'
 import { useAuthStore } from '@/stores/auth'
-import { useStackOsCatalogStore } from '@/stores/plugins'
-import { useProjectsStore } from '@/stores/projects'
 import { useToastsStore } from '@/stores/toasts'
 
 const auth = useAuthStore()
-const projects = useProjectsStore()
-const catalog = useStackOsCatalogStore()
 const toasts = useToastsStore()
 const route = useRoute()
-const router = useRouter()
 
-const { activeProject } = storeToRefs(projects)
-const { enabledPlugins } = storeToRefs(catalog)
 const { items: toastItems } = storeToRefs(toasts)
+const {
+  projectItems,
+  currentProject,
+  projectNavSections,
+  routeViewKey,
+  selectProject,
+} = useProjectNavigation()
 
 const theme = ref<'light' | 'dark'>('light')
 const drawerOpen = ref(false)
-const lastCatalogProjectId = ref<number | null>(null)
-
-function parseProjectId(raw: unknown): number | null {
-  const value = Array.isArray(raw) ? raw[0] : raw
-  const parsed = Number.parseInt(String(value ?? ''), 10)
-  return Number.isNaN(parsed) ? null : parsed
-}
-
-const routeProjectId = computed(() => parseProjectId(route.params.id))
-
-const navigationProjectId = computed(() => routeProjectId.value ?? activeProject.value?.id ?? null)
-
-const currentProject = computed(() => {
-  if (routeProjectId.value === null) return activeProject.value
-  return projects.getById(routeProjectId.value) ?? activeProject.value
-})
 
 function applyTheme(): void {
   if (typeof document === 'undefined') return
@@ -82,33 +63,11 @@ onMounted(() => {
   }
   applyTheme()
   window.addEventListener('keydown', onDrawerKeydown)
-  refreshPluginsForProject(navigationProjectId.value)
-})
-
-const removeCatalogRefreshHook = router.afterEach((to) => {
-  refreshPluginsForProject(parseProjectId(to.params.id) ?? activeProject.value?.id ?? null)
 })
 
 onBeforeUnmount(() => {
-  removeCatalogRefreshHook()
   window.removeEventListener('keydown', onDrawerKeydown)
 })
-
-const projectNavSections = computed<StackOsNavSection[]>(() => {
-  const id = navigationProjectId.value
-  if (!id) return []
-  return buildProjectNavSections(id, enabledPlugins.value)
-})
-
-const routeViewKey = computed(() =>
-  routeProjectId.value === null ? route.path : `project:${routeProjectId.value}`,
-)
-
-function refreshPluginsForProject(projectId: number | null): void {
-  if (projectId === lastCatalogProjectId.value) return
-  lastCatalogProjectId.value = projectId
-  if (projectId) void catalog.refreshPlugins(projectId, { silent: true })
-}
 
 function closeDrawer(): void {
   drawerOpen.value = false
@@ -231,7 +190,11 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
         </div>
 
         <div class="px-3 py-3 pt-4 md:pt-3">
-          <ProjectSwitcher />
+          <ProjectSwitcher
+            :items="projectItems"
+            :selected-project="currentProject"
+            @select="selectProject"
+          />
         </div>
 
         <div class="px-3 pb-2">

@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
 import { apiFetch, formatApiError } from '@/lib/client'
+import { createProjectRequestGate } from '@/lib/stackos/projectRequestGate'
 import type { components } from '@/api'
 
 export type Run = components['schemas']['RunOut']
@@ -40,6 +41,15 @@ export const useRunsStore = defineStore('runs', () => {
     until: null,
   })
   const sort = ref<RunSortKey>('-started_at')
+  const requests = createProjectRequestGate((projectId) => {
+    items.value = []
+    totalEstimate.value = 0
+    nextCursor.value = null
+    error.value = null
+    currentProjectId.value = projectId
+    currentDetail.value = null
+    childrenByParent.value = new Map()
+  })
 
   function _buildParams(after?: number | null): URLSearchParams {
     const params = new URLSearchParams({ limit: String(DEFAULT_LIMIT) })
@@ -59,46 +69,80 @@ export const useRunsStore = defineStore('runs', () => {
   }
 
   async function refresh(projectId: number): Promise<void> {
-    currentProjectId.value = projectId
+    const request = requests.begin(projectId, 'list')
     loading.value = true
     error.value = null
     try {
       const page = await apiFetch<RunsPage>(
         `/api/v1/projects/${projectId}/runs?${_buildParams().toString()}`,
       )
+      if (!request.isCurrent()) return
       _ingestPage(page, false)
     } catch (err) {
-      error.value = formatApiError(err, 'failed to load runs')
+      if (request.isCurrent()) {
+        error.value = formatApiError(err, 'failed to load runs')
+      }
     } finally {
-      loading.value = false
+      loading.value = request.finish()
     }
   }
 
   async function loadMore(projectId: number): Promise<void> {
-    if (nextCursor.value === null || loading.value) return
+    if (
+      currentProjectId.value !== projectId ||
+      nextCursor.value === null ||
+      loading.value
+    ) {
+      return
+    }
+    const cursor = nextCursor.value
+    const request = requests.begin(projectId, 'list')
     loading.value = true
     try {
       const page = await apiFetch<RunsPage>(
-        `/api/v1/projects/${projectId}/runs?${_buildParams(nextCursor.value).toString()}`,
+        `/api/v1/projects/${projectId}/runs?${_buildParams(cursor).toString()}`,
       )
+      if (!request.isCurrent()) return
       _ingestPage(page, true)
     } catch (err) {
-      error.value = formatApiError(err, 'failed to load more runs')
+      if (request.isCurrent()) {
+        error.value = formatApiError(err, 'failed to load more runs')
+      }
     } finally {
-      loading.value = false
+      loading.value = request.finish()
     }
   }
 
-  async function get(runId: number): Promise<Run> {
-    const row = await apiFetch<Run>(`/api/v1/runs/${runId}`)
-    currentDetail.value = row
-    return row
+  async function get(runId: number, projectId?: number): Promise<Run> {
+    if (projectId === undefined) {
+      const row = await apiFetch<Run>(`/api/v1/runs/${runId}`)
+      currentDetail.value = row
+      return row
+    }
+    const request = requests.begin(projectId, 'detail', { trackPending: false })
+    try {
+      const row = await apiFetch<Run>(`/api/v1/runs/${runId}`)
+      if (request.isCurrent()) currentDetail.value = row
+      return row
+    } finally {
+      request.finish()
+    }
   }
 
-  async function children(runId: number): Promise<Run[]> {
-    const rows = await apiFetch<Run[]>(`/api/v1/runs/${runId}/children`)
-    childrenByParent.value.set(runId, rows)
-    return rows
+  async function children(runId: number, projectId?: number): Promise<Run[]> {
+    if (projectId === undefined) {
+      const rows = await apiFetch<Run[]>(`/api/v1/runs/${runId}/children`)
+      childrenByParent.value.set(runId, rows)
+      return rows
+    }
+    const request = requests.begin(projectId, 'children', { trackPending: false })
+    try {
+      const rows = await apiFetch<Run[]>(`/api/v1/runs/${runId}/children`)
+      if (request.isCurrent()) childrenByParent.value.set(runId, rows)
+      return rows
+    } finally {
+      request.finish()
+    }
   }
 
   function getById(id: number): Run | null {
@@ -131,9 +175,11 @@ export const useRunsStore = defineStore('runs', () => {
   })
 
   function reset(): void {
+    requests.invalidate()
     items.value = []
     totalEstimate.value = 0
     nextCursor.value = null
+    loading.value = false
     error.value = null
     currentProjectId.value = null
     currentDetail.value = null

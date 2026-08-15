@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { onBeforeRouteUpdate, useRoute } from 'vue-router'
 
@@ -15,6 +15,8 @@ import {
   UiPageShell,
   UiSectionHeader,
 } from '@/components/ui'
+import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
+import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
 import type { DataTableColumn } from '@/components/types'
 import type { SchemaWorkflowTemplateSummaryOut } from '@/api'
 import { useWorkflowTemplatesStore } from '@/stores/workflowTemplates'
@@ -26,7 +28,7 @@ const templatesStore = useWorkflowTemplatesStore()
 const { items, selected, loading, error } = storeToRefs(templatesStore)
 const detailOpen = ref(false)
 
-const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
+const { projectId, changesProjectScope } = useProjectRouteScope(route)
 const pluginSlug = computed(() => String(route.query.plugin_slug ?? ''))
 const search = ref('')
 const rows = computed<TemplateRow[]>(() => {
@@ -57,13 +59,7 @@ const columns: DataTableColumn<TemplateRow>[] = [
   { key: 'version', label: 'Version', widthClass: 'w-24', cellClass: 'font-mono text-xs' },
 ]
 
-function parseProjectId(raw: unknown): number {
-  return Number.parseInt(String(Array.isArray(raw) ? raw[0] : raw), 10)
-}
-
 async function loadFor(nextProjectId = projectId.value, nextPluginSlug = pluginSlug.value): Promise<void> {
-  if (!nextProjectId || Number.isNaN(nextProjectId)) return
-  templatesStore.reset()
   await templatesStore.refresh(nextProjectId, nextPluginSlug || null)
 }
 
@@ -72,9 +68,13 @@ async function selectTemplate(row: TemplateRow): Promise<void> {
   detailOpen.value = true
 }
 
-onMounted(() => loadFor())
+useProjectScopedLoader({
+  projectId,
+  load: ({ projectId }) => loadFor(projectId),
+})
 onBeforeRouteUpdate((to) => {
-  void loadFor(parseProjectId(to.params.id), String(to.query.plugin_slug ?? ''))
+  if (changesProjectScope(to)) return
+  void loadFor(projectId.value, String(to.query.plugin_slug ?? ''))
 })
 </script>
 

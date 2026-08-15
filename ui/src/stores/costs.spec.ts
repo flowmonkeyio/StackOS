@@ -111,4 +111,33 @@ describe('costs store', () => {
     expect(calls).toBe(12)
     expect(store.history.length).toBe(12)
   })
+
+  it('keeps cost data scoped to the newest project request', async () => {
+    const projectOne = deferred<void>()
+    globalThis.fetch = vi.fn(async (input) => {
+      const projectId = String(input).includes('/projects/1/') ? 1 : 2
+      if (projectId === 1) await projectOne.promise
+      return new Response(
+        JSON.stringify({ ...ZERO_COST, total_usd: projectId }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }) as typeof fetch
+    const store = useCostsStore()
+
+    const older = store.refreshCost(1, '2026-05')
+    await store.refreshCost(2, '2026-05')
+    projectOne.resolve()
+    await older
+
+    expect(store.currentProjectId).toBe(2)
+    expect(store.cost?.total_usd).toBe(2)
+  })
 })
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((next) => {
+    resolve = next
+  })
+  return { promise, resolve }
+}

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'
 
@@ -27,6 +27,8 @@ import {
   UiToolbar,
 } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
+import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
+import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
 import { apiFetch, formatApiError } from '@/lib/client'
 import { formatDateTime } from '@/lib/stackos/json'
 import { useStackOsCatalogStore } from '@/stores/plugins'
@@ -39,7 +41,7 @@ const route = useRoute()
 const catalogStore = useStackOsCatalogStore()
 const { actions, enabledPlugins } = storeToRefs(catalogStore)
 
-const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
+const { projectId } = useProjectRouteScope(route)
 const rows = ref<SchemaActionCallAuditOut[]>([])
 const selectedCall = ref<SchemaActionCallAuditOut | null>(null)
 const detailPanelOpen = ref(false)
@@ -158,13 +160,15 @@ function buildQuery(after?: number | null): string {
   return params.toString()
 }
 
-async function fetchCalls({ append = false }: { append?: boolean } = {}): Promise<void> {
-  if (!projectId.value || Number.isNaN(projectId.value)) return
+async function fetchCalls(
+  { append = false, scopedProjectId = projectId.value }:
+    { append?: boolean; scopedProjectId?: number } = {},
+): Promise<void> {
   loading.value = true
   error.value = null
   try {
     const response = await apiFetch<SchemaPageResponseActionCallAuditOut>(
-      `/api/v1/projects/${projectId.value}/action-calls?${buildQuery(append ? nextCursor.value : null)}`,
+      `/api/v1/projects/${scopedProjectId}/action-calls?${buildQuery(append ? nextCursor.value : null)}`,
     )
     // Sort the combined window, not per page — appended cursor pages would
     // otherwise interleave older/newer blocks.
@@ -184,10 +188,9 @@ async function fetchCalls({ append = false }: { append?: boolean } = {}): Promis
   }
 }
 
-async function load(): Promise<void> {
-  if (!projectId.value || Number.isNaN(projectId.value)) return
-  await catalogStore.refresh(projectId.value)
-  await fetchCalls()
+async function load(scopedProjectId: number): Promise<void> {
+  await catalogStore.refresh(scopedProjectId)
+  await fetchCalls({ scopedProjectId })
 }
 
 function setStatus(value: string | number): void {
@@ -250,7 +253,10 @@ function openCall(call: SchemaActionCallAuditOut): void {
   detailPanelOpen.value = true
 }
 
-onMounted(load)
+useProjectScopedLoader({
+  projectId,
+  load: ({ projectId }) => load(projectId),
+})
 </script>
 
 <template>
