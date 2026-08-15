@@ -2,12 +2,16 @@
 
 ## Unreleased
 
+## 2.1.21 - 2026-08-15
+
 - Migrated the MCP adapter to Python SDK 2 and protocol revision `2026-07-28`,
   while retaining legacy initialize-handshake support through `2025-11-25`.
 - Replaced removed low-level handler decorators and ambient request context with
   SDK 2 constructor handlers and explicit per-request context propagation.
 - Updated the public MCP authorization reference to the current `2026-07-28`
   specification.
+- Corrected daemon startup telemetry to report the canonical `M10` milestone
+  instead of a stale duplicated milestone value.
 
 ## 2.1.20 - 2026-07-29
 

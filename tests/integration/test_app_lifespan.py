@@ -8,10 +8,14 @@ state dir, both with mode 0600.
 from __future__ import annotations
 
 import stat
+from unittest.mock import Mock
 
 from fastapi.testclient import TestClient
+from pytest import MonkeyPatch
 from sqlmodel import Session
 
+import stackos.server as server_module
+from stackos import __milestone__, __version__
 from stackos.config import Settings
 from stackos.db.connection import make_engine
 from stackos.db.migrate import upgrade_to_head
@@ -46,6 +50,27 @@ def test_state_and_data_dirs_exist_after_startup(settings: Settings) -> None:
     with TestClient(app, base_url="http://127.0.0.1:5180"):
         assert settings.data_dir.is_dir()
         assert settings.state_dir.is_dir()
+
+
+def test_startup_log_reports_canonical_release_identity(
+    settings: Settings,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """The daemon startup event uses the package-owned version and milestone."""
+    captured_log = Mock()
+    monkeypatch.setattr(server_module, "get_logger", lambda _name: captured_log)
+
+    app = create_app(settings)
+    with TestClient(app, base_url="http://127.0.0.1:5180"):
+        started_calls = [
+            call
+            for call in captured_log.info.call_args_list
+            if call.args == ("daemon.started",)
+        ]
+
+    assert len(started_calls) == 1
+    assert started_calls[0].kwargs["version"] == __version__
+    assert started_calls[0].kwargs["milestone"] == __milestone__
 
 
 def test_host_header_check_rejects_non_loopback(settings: Settings) -> None:

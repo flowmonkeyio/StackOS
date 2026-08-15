@@ -25,7 +25,7 @@ from sqlmodel import Session, SQLModel
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 
-from stackos import __version__
+from stackos import __milestone__, __version__
 from stackos.actions import ActionRepository
 from stackos.api import register_routers
 from stackos.auth import BearerTokenMiddleware, derive_ui_token, ensure_token
@@ -276,7 +276,7 @@ def _build_lifespan(
             host=settings.host,
             port=settings.port,
             version=__version__,
-            milestone="M8",
+            milestone=__milestone__,
             data_dir=str(settings.data_dir),
             state_dir=str(settings.state_dir),
         )
