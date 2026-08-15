@@ -17,6 +17,7 @@ def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
         "media-buying",
         "trackbooth",
         "shopify",
+        "linear",
         "publishing",
         "seo",
         "core",
