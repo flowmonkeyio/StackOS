@@ -22,6 +22,7 @@ def _run(
     env = {**os.environ, "STACKOS_HOME": str(home)}
     if extra_path is not None:
         env["PATH"] = f"{extra_path}{os.pathsep}{env['PATH']}"
+        env["STACKOS_CODEX_BIN"] = str(extra_path / "codex")
     return subprocess.run(
         ["bash", str(script)],
         capture_output=True,
@@ -116,6 +117,7 @@ def test_remove_flag(sandbox_home: Path, scripts_dir: Path, codex_stub: Path) ->
         env={
             **os.environ,
             "STACKOS_HOME": str(sandbox_home),
+            "STACKOS_CODEX_BIN": str(codex_stub / "codex"),
             "PATH": f"{codex_stub}{os.pathsep}{os.environ['PATH']}",
         },
     )
@@ -136,6 +138,7 @@ def test_force_reregisters(sandbox_home: Path, scripts_dir: Path, codex_stub: Pa
         env={
             **os.environ,
             "STACKOS_HOME": str(sandbox_home),
+            "STACKOS_CODEX_BIN": str(codex_stub / "codex"),
             "PATH": f"{codex_stub}{os.pathsep}{os.environ['PATH']}",
         },
     )
@@ -158,7 +161,8 @@ def test_stale_entry_is_repaired(sandbox_home: Path, scripts_dir: Path, tmp_path
         f'STATE="{state}"\n'
         'case "$1 $2" in\n'
         '  "mcp list") if [[ -f "$STATE" ]]; then '
-        'echo "stackos --url http://127.0.0.1:5180/mcp"; fi ;;\n'
+        'echo "stackos /Applications/OldStackOS.app/Contents/Resources/stackos/bin/stackos '
+        'mcp-bridge --runtime codex"; fi ;;\n'
         '  "mcp add") echo "current" > "$STATE" ;;\n'
         '  "mcp remove") rm -f "$STATE" ;;\n'
         '  *) echo "unknown: $@" >&2; exit 2 ;;\n'
@@ -188,6 +192,7 @@ def test_register_fails_without_token(
         env={
             **os.environ,
             "STACKOS_HOME": str(sandbox_home),
+            "STACKOS_CODEX_BIN": str(codex_stub / "codex"),
             "PATH": f"{codex_stub}{os.pathsep}{os.environ['PATH']}",
         },
     )

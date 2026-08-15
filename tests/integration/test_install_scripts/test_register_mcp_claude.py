@@ -266,7 +266,8 @@ def test_remove_uses_user_scope_and_cleans_only_legacy_stackos_entry(
 
     assert result.returncode == 0, result.stderr
     payload = _state(state_path)
-    assert payload["calls"][0] == ["mcp", "remove", "stackos", "--scope", "user"]
+    assert payload["calls"][0] == ["mcp", "get", "stackos"]
+    assert ["mcp", "remove", "stackos", "--scope", "user"] in payload["calls"]
     assert "stackos" not in payload["servers"]
     assert "other" in payload["servers"]
     legacy_payload = json.loads(legacy.read_text(encoding="utf-8"))
