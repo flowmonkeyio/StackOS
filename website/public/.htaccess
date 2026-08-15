@@ -6,6 +6,7 @@ ErrorDocument 404 /404.html
 
 <IfModule mod_alias.c>
   RedirectMatch 301 ^/library/integrations/plugins/core/?$ /library/integrations/local-daemon/
+  RedirectMatch 301 ^/library/integrations/plugins/linear/?$ /library/integrations/linear/
   RedirectMatch 301 ^/library/integrations/plugins/shopify/?$ /library/integrations/shopify/
   RedirectMatch 301 ^/library/integrations/plugins/trackbooth/?$ /library/integrations/trackbooth/
 </IfModule>

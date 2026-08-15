@@ -6,9 +6,14 @@ const item = agentBySlug(slug)
 if (!item) throw createError({ statusCode: 404, statusMessage: 'Agent not found' })
 
 const relatedWorkflows = computed(() => workflows.filter((workflow) => item.workflowKeys.includes(workflow.key)))
+const seoTitle = /\bAI agent\b/i.test(item.name)
+  ? item.name.replace(/\bAI agent\b/i, 'AI agent')
+  : /\bAgent\b/i.test(item.name)
+    ? item.name.replace(/\bAgent\b/i, 'AI agent')
+    : `${item.name} AI agent`
 
-useSiteSeo({ title: item.name, description: item.description })
-useSchemaOrg([defineWebPage({ name: `${item.name} AI agent`, description: item.description }), defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library/' }, { name: 'Agents', item: '/library/agents/' }, { name: item.name, item: canonicalPath(route.path) }] })])
+useSiteSeo({ title: seoTitle, description: item.description })
+useSchemaOrg([defineWebPage({ name: seoTitle, description: item.description }), defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library/' }, { name: 'Agents', item: '/library/agents/' }, { name: item.name, item: canonicalPath(route.path) }] })])
 </script>
 
 <template>

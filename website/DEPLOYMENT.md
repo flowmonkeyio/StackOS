@@ -164,16 +164,21 @@ The permanent consolidation map is deliberately limited to:
 | Historical URL | Canonical URL |
 | --- | --- |
 | `/library/integrations/plugins/core/` | `/library/integrations/local-daemon/` |
+| `/library/integrations/plugins/linear/` | `/library/integrations/linear/` |
 | `/library/integrations/plugins/shopify/` | `/library/integrations/shopify/` |
 | `/library/integrations/plugins/trackbooth/` | `/library/integrations/trackbooth/` |
 
-Do not generalize this rule to every one-provider plugin. The Linear plugin page
-remains a distinct public route.
+Do not generalize this rule to every one-provider plugin. Add a consolidation
+only after confirming that the plugin page and provider page represent the same
+public search intent.
 
-The sitemap's `lastmod` values come only from source-owned guide/article
-`updatedAt` fields. Static catalog routes intentionally omit `lastmod`; build
-time is not content freshness. Every sitemap entry has an explicit priority,
-although Google may choose not to use that hint.
+The sitemap's `lastmod` values come from source-owned guide/article `updatedAt`
+fields and the reviewed static/catalog registry in
+`content/sitemap-lastmod.json`. Registry family defaults represent meaningful
+shared template or catalog changes; item overrides represent a meaningful
+change to one entry. Build, deployment, crawl, and file-modification times are
+not content freshness. Every sitemap entry has an explicit priority, although
+Google may choose not to use that hint.
 
 The RSS feed remains public for readers but must return
 `X-Robots-Tag: noindex` and remain outside the sitemap. The host policy also
@@ -194,8 +199,7 @@ After an authorized deployment and cache purge, verify:
 - `/library/`
 - `/library/integrations/` contains a server-rendered direct link to every
   provider
-- all three consolidation redirects above, plus the retained
-  `/library/integrations/plugins/linear/` route
+- all four consolidation redirects above
 - at least one article, workflow, agent, orchestrator, and integration detail
   page
 - `/robots.txt`

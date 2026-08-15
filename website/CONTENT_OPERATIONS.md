@@ -75,18 +75,20 @@ trailing-slash canonical paths. Never hand-author a slashless canonical, social
 URL, sitemap URL, RSS article URL, or internal HTML link.
 
 `updatedAt` is a source date, not a build stamp. Change it only when the
-article or guide receives a meaningful editorial update. The sitemap emits
-`lastmod` for dated article/guide sources and omits it for catalog routes that
-have no defensible source date. Do not use generation time, deployment time, or
-the generated catalog timestamp as `lastmod`.
+article or guide receives a meaningful editorial update. Static and generated
+catalog routes use the reviewed records in `content/sitemap-lastmod.json`;
+family defaults cover shared template/catalog changes and item overrides cover
+one materially changed entry. Every record needs a defensible evidence note.
+Do not use generation time, deployment time, crawl time, file modification
+time, or the generated catalog timestamp as `lastmod`.
 
 Integration and agent pages must add source-backed value rather than generic
 word-count padding. Integration details may render provider setup, auth type,
 capabilities, actions, risk boundaries, and official links from the generated
 catalog. Agent pages may render only the public contract fields listed above.
 The integrations index must expose every provider as a server-rendered direct
-link. `core`, `shopify`, and `trackbooth` plugin detail routes are consolidated
-to their provider pages; Linear remains distinct.
+link. `core`, `linear`, `shopify`, and `trackbooth` plugin detail routes are
+consolidated to their provider pages.
 
 Before publishing a new cluster:
 

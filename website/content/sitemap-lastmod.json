@@ -1,0 +1,75 @@
+{
+  "schemaVersion": "stackos.sitemap-lastmod.v1",
+  "routes": {
+    "/": {
+      "updatedAt": "2026-07-28",
+      "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 updated the homepage source"
+    },
+    "/library/": {
+      "updatedAt": "2026-07-28",
+      "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 updated the library index source"
+    },
+    "/library/articles/": {
+      "updatedAt": "2026-07-28",
+      "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 updated the article index source"
+    },
+    "/library/workflows/": {
+      "updatedAt": "2026-07-28",
+      "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 updated the workflow index source"
+    },
+    "/library/agents/": {
+      "updatedAt": "2026-07-28",
+      "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 updated the agent index source"
+    },
+    "/library/orchestrators/": {
+      "updatedAt": "2026-07-28",
+      "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 updated the orchestrator index source"
+    },
+    "/library/integrations/": {
+      "updatedAt": "2026-08-08",
+      "evidence": "website Linear provider/plugin canonical consolidation"
+    }
+  },
+  "catalogFamilies": {
+    "workflows": {
+      "default": {
+        "updatedAt": "2026-07-28",
+        "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 materially updated the workflow detail template and catalog"
+      },
+      "items": {}
+    },
+    "agents": {
+      "default": {
+        "updatedAt": "2026-08-08",
+        "evidence": "website shared agent detail title-intent correction"
+      },
+      "items": {}
+    },
+    "orchestrators": {
+      "default": {
+        "updatedAt": "2026-07-28",
+        "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 materially updated the orchestrator detail template and catalog"
+      },
+      "items": {}
+    },
+    "integrationProviders": {
+      "default": {
+        "updatedAt": "2026-07-28",
+        "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 materially updated the provider detail template and catalog"
+      },
+      "items": {
+        "linear": {
+          "updatedAt": "2026-08-08",
+          "evidence": "website Linear provider/plugin canonical consolidation"
+        }
+      }
+    },
+    "integrationPlugins": {
+      "default": {
+        "updatedAt": "2026-07-28",
+        "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 materially updated the plugin detail template and catalog"
+      },
+      "items": {}
+    }
+  }
+}

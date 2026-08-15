@@ -2,6 +2,7 @@ import { canonicalPath } from './siteSeo'
 
 export const integrationConsolidations = {
   core: 'local-daemon',
+  linear: 'linear',
   shopify: 'shopify',
   trackbooth: 'trackbooth',
 } as const

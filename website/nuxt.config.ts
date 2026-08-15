@@ -122,7 +122,6 @@ export default defineNuxtConfig({
         '/getting-started/',
         '/getting-started.md',
         '/library/',
-        '/library/integrations/plugins/linear/',
         '/feed.xml',
       ],
       // Production serves these historical URLs through the exact 301 rules in

@@ -594,7 +594,7 @@ test('integrations open provider-first with flat discovery, consolidated plugins
       logo?: { src?: string }
     }>
   }
-  const consolidatedPlugins = new Set(['core', 'shopify', 'trackbooth'])
+  const consolidatedPlugins = new Set(['core', 'linear', 'shopify', 'trackbooth'])
   const visiblePluginCount = integrationCatalog.plugins.filter((plugin) => !consolidatedPlugins.has(plugin.slug)).length
   const providerCount = integrationCatalog.providers.length
   const providerLogoCount = integrationCatalog.providers.filter((provider) => provider.logo?.src).length
@@ -658,10 +658,6 @@ test('integrations open provider-first with flat discovery, consolidated plugins
   for (const slug of consolidatedPlugins) {
     await expect(page.locator(`.integration-plugin[href="/library/integrations/plugins/${slug}/"]`)).toHaveCount(0)
   }
-  const linearPlugin = page.locator('.integration-plugin').filter({ hasText: 'Linear' })
-  await expect(linearPlugin).toContainText('1 provider')
-  await expect(linearPlugin).not.toContainText('1 providers')
-
   await page.getByRole('button', { name: 'Providers' }).click()
   await page.locator('#integration-query').fill('Linear')
   await expect(page.locator('.integration-card')).toHaveCount(1)
@@ -679,6 +675,36 @@ test('integrations open provider-first with flat discovery, consolidated plugins
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   expect(overflow).toBeLessThanOrEqual(1)
+})
+
+test('agent SEO titles restore intent without duplicate agent wording', async ({ page }) => {
+  await page.goto('/library/agents/stackos-sdlc-delivery-reviewer/')
+  await expect(page).toHaveTitle('Review AI agent | StackOS')
+  await expect(page.locator('meta[property="og:title"]')).toHaveAttribute('content', 'Review AI agent | StackOS')
+  await expect(page.locator('meta[name="twitter:title"]')).toHaveAttribute('content', 'Review AI agent | StackOS')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Review Agent')
+
+  await page.goto('/library/agents/branding-profile-architect/')
+  await expect(page).toHaveTitle('Brand Profile Architect AI agent | StackOS')
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+    'href',
+    'https://stackos.flowmonkey.io/library/agents/branding-profile-architect/',
+  )
+})
+
+test('Linear plugin URL permanently consolidates to its provider page', async ({ page }) => {
+  const redirect = await page.request.get('/library/integrations/plugins/linear/', { maxRedirects: 0 })
+  expect(redirect.status()).toBe(301)
+  expect(new URL(redirect.headers().location, 'http://127.0.0.1:3004').pathname).toBe('/library/integrations/linear/')
+
+  const destination = await page.goto('/library/integrations/linear/')
+  expect(destination?.status()).toBe(200)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Linear')
+  await expect(page.locator('[data-provider-facts="linear"]')).toBeVisible()
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+    'href',
+    'https://stackos.flowmonkey.io/library/integrations/linear/',
+  )
 })
 
 test('integration detail uses a readable logo, compact actions, and a server-rendered route path', async ({ page }) => {
@@ -772,6 +798,10 @@ test('critical crawl paths remain useful without JavaScript', async ({ browser }
 
     await crawlPage.goto('/library/agents/branding-narrative-writer/')
     await expect(crawlPage.locator('[data-agent-contract="branding-narrative-writer"]')).toBeVisible()
+    await expect(crawlPage).toHaveTitle('Branding Narrative Writer AI agent | StackOS')
+
+    await crawlPage.goto('/library/integrations/linear/')
+    await expect(crawlPage.locator('[data-provider-facts="linear"]')).toBeVisible()
   } finally {
     await context.close()
   }

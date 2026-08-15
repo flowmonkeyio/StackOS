@@ -12,6 +12,7 @@ const siteOrigin = 'https://stackos.flowmonkey.io'
 const githubUrl = 'https://github.com/flowmonkeyio/StackOS'
 const legacyIntegrationRoutes = new Map([
   ['/library/integrations/plugins/core/', '/library/integrations/local-daemon/'],
+  ['/library/integrations/plugins/linear/', '/library/integrations/linear/'],
   ['/library/integrations/plugins/shopify/', '/library/integrations/shopify/'],
   ['/library/integrations/plugins/trackbooth/', '/library/integrations/trackbooth/'],
 ])
@@ -323,6 +324,92 @@ const sitemapEntries = [...sitemap.matchAll(/<url>([\s\S]*?)<\/url>/gi)].map((ma
 }))
 const sitemapLocs = new Set()
 const expectedLastmod = new Map()
+const libraryCatalog = JSON.parse(await readFile(join(websiteRoot, 'app', 'data', 'library-catalog.generated.json'), 'utf8'))
+const integrationCatalog = JSON.parse(await readFile(join(websiteRoot, 'app', 'data', 'integration-catalog.generated.json'), 'utf8'))
+
+const catalogLastmodPath = join(websiteRoot, 'content', 'sitemap-lastmod.json')
+const catalogLastmodText = await readIfExists(catalogLastmodPath)
+let catalogLastmod = null
+if (!catalogLastmodText) {
+  addViolation('SEO_SITEMAP_LASTMOD_SOURCE', 'content/sitemap-lastmod.json is missing')
+} else {
+  try {
+    catalogLastmod = JSON.parse(catalogLastmodText)
+  } catch (error) {
+    addViolation('SEO_SITEMAP_LASTMOD_SOURCE', `content/sitemap-lastmod.json is invalid JSON: ${error.message}`)
+  }
+}
+
+function sourceLastmod(record, label) {
+  if (!record || typeof record !== 'object') {
+    addViolation('SEO_SITEMAP_LASTMOD_SOURCE', `${label}: source record is missing`)
+    return ''
+  }
+  const updatedAt = String(record.updatedAt || '').trim()
+  const evidence = String(record.evidence || '').trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(updatedAt) || Number.isNaN(Date.parse(`${updatedAt}T00:00:00Z`))) {
+    addViolation('SEO_SITEMAP_LASTMOD_SOURCE', `${label}: invalid updatedAt ${JSON.stringify(updatedAt)}`)
+    return ''
+  }
+  if (Date.parse(`${updatedAt}T00:00:00Z`) > Date.now()) {
+    addViolation('SEO_SITEMAP_LASTMOD_SOURCE', `${label}: future updatedAt ${updatedAt}`)
+  }
+  if (!evidence) addViolation('SEO_SITEMAP_LASTMOD_SOURCE', `${label}: evidence is missing`)
+  return updatedAt
+}
+
+function addCatalogFamilyLastmod(familyKey, items, routeForItem) {
+  const family = catalogLastmod?.catalogFamilies?.[familyKey]
+  if (!family || typeof family !== 'object') {
+    addViolation('SEO_SITEMAP_LASTMOD_SOURCE', `catalogFamilies.${familyKey}: family is missing`)
+    return
+  }
+  const overrides = family.items && typeof family.items === 'object' ? family.items : {}
+  const knownSlugs = new Set(items.map((item) => item.slug))
+  for (const slug of Object.keys(overrides)) {
+    if (!knownSlugs.has(slug)) {
+      addViolation('SEO_SITEMAP_LASTMOD_SOURCE', `catalogFamilies.${familyKey}.items.${slug}: unknown catalog slug`)
+    }
+  }
+  for (const item of items) {
+    const source = overrides[item.slug] || family.default
+    const updatedAt = sourceLastmod(source, `catalogFamilies.${familyKey}.${item.slug}`)
+    if (updatedAt) expectedLastmod.set(routeForItem(item), updatedAt)
+  }
+}
+
+if (catalogLastmod) {
+  if (catalogLastmod.schemaVersion !== 'stackos.sitemap-lastmod.v1') {
+    addViolation('SEO_SITEMAP_LASTMOD_SOURCE', `Unexpected schemaVersion ${JSON.stringify(catalogLastmod.schemaVersion)}`)
+  }
+  const requiredRouteSources = [
+    '/',
+    '/library/',
+    '/library/articles/',
+    '/library/workflows/',
+    '/library/agents/',
+    '/library/orchestrators/',
+    '/library/integrations/',
+  ]
+  for (const route of requiredRouteSources) {
+    const updatedAt = sourceLastmod(catalogLastmod.routes?.[route], `routes.${route}`)
+    if (updatedAt) expectedLastmod.set(route, updatedAt)
+  }
+  for (const route of Object.keys(catalogLastmod.routes || {})) {
+    if (!requiredRouteSources.includes(route)) {
+      addViolation('SEO_SITEMAP_LASTMOD_SOURCE', `routes.${route}: route is not a supported exact source`)
+    }
+  }
+  addCatalogFamilyLastmod('workflows', libraryCatalog.workflows, (item) => `/library/workflows/${item.slug}/`)
+  addCatalogFamilyLastmod('agents', libraryCatalog.agents, (item) => `/library/agents/${item.slug}/`)
+  addCatalogFamilyLastmod('orchestrators', libraryCatalog.orchestrators, (item) => `/library/orchestrators/${item.slug}/`)
+  addCatalogFamilyLastmod('integrationProviders', integrationCatalog.providers, (item) => `/library/integrations/${item.slug}/`)
+  addCatalogFamilyLastmod(
+    'integrationPlugins',
+    integrationCatalog.plugins.filter((item) => !legacyIntegrationRoutes.has(`/library/integrations/plugins/${item.slug}/`)),
+    (item) => `/library/integrations/plugins/${item.slug}/`,
+  )
+}
 
 const guideSource = await readIfExists(join(websiteRoot, 'content', 'guides', 'getting-started.md'))
 const guideUpdatedAt = frontmatterValue(guideSource, 'updatedAt')
@@ -355,6 +442,9 @@ for (const entry of sitemapEntries) {
     addViolation('SEO_SITEMAP_PRIORITY', `${entry.loc}: ${entry.priority || 'missing'}`)
   }
   const sourceDate = expectedLastmod.get(url.pathname)
+  if (!sourceDate) {
+    addViolation('SEO_SITEMAP_LASTMOD_SOURCE', `${entry.loc}: no source-owned significant-update date`)
+  }
   if (sourceDate && entry.lastmod !== sourceDate) {
     addViolation('SEO_SITEMAP_LASTMOD_TRUTH', `${entry.loc}: expected ${sourceDate}; found ${entry.lastmod || 'missing'}`)
   }
@@ -366,6 +456,7 @@ for (const entry of sitemapEntries) {
 for (const route of expectedIndexableRoutes) {
   const loc = canonicalUrl(route)
   if (!sitemapLocs.has(loc)) addViolation('SEO_SITEMAP_CANONICAL_SET', `Missing loc: ${loc}`)
+  if (!expectedLastmod.has(route)) addViolation('SEO_SITEMAP_LASTMOD_SOURCE', `${route}: expected route has no date source`)
 }
 
 const feedPath = join(outputRoot, 'feed.xml')
@@ -388,9 +479,6 @@ for (const [legacyRoute] of legacyIntegrationRoutes) {
   if (allGeneratedMarkup.includes(legacyRoute)) {
     addViolation('SEO_LEGACY_ROUTE_REMOVED', `${legacyRoute}: survives in generated HTML/XML/JSON-LD`)
   }
-}
-if (!allGeneratedMarkup.includes('/library/integrations/plugins/linear/')) {
-  addViolation('SEO_LINEAR_RETAINED', 'Linear plugin route is not linked in generated output')
 }
 
 const homeHtml = htmlByRoute.get('/') || ''
@@ -425,7 +513,6 @@ if (
   )
 }
 
-const integrationCatalog = JSON.parse(await readFile(join(websiteRoot, 'app', 'data', 'integration-catalog.generated.json'), 'utf8'))
 const integrationIndex = htmlByRoute.get('/library/integrations/') || ''
 for (const provider of integrationCatalog.providers) {
   const path = `/library/integrations/${provider.slug}/`
@@ -445,7 +532,6 @@ for (const slug of topProviderSlugs) {
   }
 }
 
-const libraryCatalog = JSON.parse(await readFile(join(websiteRoot, 'app', 'data', 'library-catalog.generated.json'), 'utf8'))
 for (const agent of libraryCatalog.agents) {
   for (const field of publicAgentFields) {
     const value = agent[field]
@@ -464,11 +550,19 @@ for (const agent of libraryCatalog.agents) {
   } else if (agent.mission && !normalizeText(html).includes(normalizeText(agent.mission))) {
     addViolation('SEO_AGENT_FACT_ENRICHMENT', `${agent.slug}: mission is not rendered`)
   }
-}
-
-const linearHtml = htmlByRoute.get('/library/integrations/plugins/linear/') || ''
-if (!/\b1 provider\b/i.test(stripTags(linearHtml)) || /\b1 providers\b/i.test(stripTags(linearHtml))) {
-  addViolation('SEO_SINGULAR_PLURAL', 'Linear plugin page does not render "1 provider"')
+  const head = html.match(/<head\b[^>]*>([\s\S]*?)<\/head>/i)?.[1] || ''
+  const documentTitle = titleValue(head)
+  const subjectTitle = documentTitle.replace(/\s*\|\s*StackOS\s*$/i, '')
+  const aiAgentPhrases = subjectTitle.match(/\bAI agent\b/gi) || []
+  const subjectTokens = new Set(subjectTitle.toLowerCase().match(/[a-z0-9]+/g) || [])
+  const missingRoleTokens = (agent.name.toLowerCase().match(/[a-z0-9]+/g) || [])
+    .filter((token) => token !== 'agent' && !subjectTokens.has(token))
+  if (aiAgentPhrases.length !== 1 || missingRoleTokens.length) {
+    addViolation(
+      'SEO_AGENT_TITLE_INTENT',
+      `${agent.slug}: title=${JSON.stringify(documentTitle)} aiAgentPhrases=${aiAgentPhrases.length} missingRoleTokens=${missingRoleTokens.join(',') || 'none'}`,
+    )
+  }
 }
 
 const workflowHtml = htmlByRoute.get('/library/workflows/branding-content-production/') || ''
@@ -595,4 +689,7 @@ console.log(JSON.stringify({
   providers: integrationCatalog.providers.length,
   agents: libraryCatalog.agents.length,
   sitemapSha256: sha256(sitemap),
+  sitemapLocLastmodSha256: sha256(JSON.stringify(
+    sitemapEntries.map(({ loc, lastmod }) => [loc, lastmod]),
+  )),
 }, null, 2))
