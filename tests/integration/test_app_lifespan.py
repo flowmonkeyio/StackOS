@@ -63,9 +63,7 @@ def test_startup_log_reports_canonical_release_identity(
     app = create_app(settings)
     with TestClient(app, base_url="http://127.0.0.1:5180"):
         started_calls = [
-            call
-            for call in captured_log.info.call_args_list
-            if call.args == ("daemon.started",)
+            call for call in captured_log.info.call_args_list if call.args == ("daemon.started",)
         ]
 
     assert len(started_calls) == 1

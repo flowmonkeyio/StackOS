@@ -18,8 +18,7 @@ def test_release_version_sources_stay_aligned() -> None:
     editable_stackos = [
         package
         for package in uv_lock["package"]
-        if package["name"] == "stackos"
-        and package.get("source", {}).get("editable") == "."
+        if package["name"] == "stackos" and package.get("source", {}).get("editable") == "."
     ]
 
     assert len(editable_stackos) == 1
