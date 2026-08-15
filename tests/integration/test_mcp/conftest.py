@@ -62,7 +62,7 @@ class MCPClient:
             "id": self._next_id(),
             "method": "initialize",
             "params": {
-                "protocolVersion": "2025-03-26",
+                "protocolVersion": "2025-11-25",
                 "capabilities": {},
                 "clientInfo": {"name": "pytest-mcp-client", "version": "0.1"},
             },

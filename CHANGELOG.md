@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Updated the bounded Python MCP dependency to the supported 1.29 maintenance
+  line and moved legacy handshake coverage to protocol revision `2025-11-25`.
+- Updated the public MCP authorization reference to the current `2026-07-28`
+  specification.
+
 ## 2.1.20 - 2026-07-29
 
 - Kept the current operating page selected when switching projects, preserving

@@ -2,7 +2,7 @@
 title: How can AI agents use business accounts without seeing the login?
 description: The model does not need the password. It needs a safe account reference, a bounded action, and a trusted execution layer that keeps credentials outside its context.
 publishedAt: '2026-07-09'
-updatedAt: '2026-07-12'
+updatedAt: '2026-08-14'
 author: StackOS team
 category: Security
 topics:
@@ -71,7 +71,7 @@ No. Running locally reduces how far secrets travel, but location is only one par
 
 The general principle is least privilege: give the agent only the resources and authority it needs for the current work. That is the same boundary described by [NIST’s definition of least privilege](https://csrc.nist.gov/glossary/term/least_privilege).
 
-If the action layer is remote, the same boundary has to survive the network. The current [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization) uses resource-bound authorization and scope minimization, while the official [MCP security guidance](https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices) forbids token passthrough. A server should not accept a broad token intended for something else and simply forward it downstream.
+If the action layer is remote, the same boundary has to survive the network. The current [MCP authorization specification](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization) uses resource-bound authorization and scope minimization, while the official [MCP security guidance](https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices) forbids token passthrough. A server should not accept a broad token intended for something else and simply forward it downstream.
 
 An agent can still make a bad decision. These controls limit what it can reach, leave a receipt, and give the operator a place to revoke access or recover.
 

@@ -92,7 +92,7 @@ def _initialize(proxy: AgentBridgeProxy, client: _BridgeHttpClient) -> dict[str,
         client,
         method="initialize",
         params={
-            "protocolVersion": "2025-03-26",
+            "protocolVersion": "2025-11-25",
             "capabilities": {},
             "clientInfo": {"name": "pytest-bridge-client", "version": "0.1"},
         },
