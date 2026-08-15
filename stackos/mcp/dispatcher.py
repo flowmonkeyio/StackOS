@@ -8,7 +8,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, cast
 
-from mcp.server.lowlevel.server import request_ctx
+from mcp.server.context import ServerRequestContext
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import delete
 from sqlmodel import Session
@@ -73,7 +73,13 @@ class MCPDispatcher:
         self._settings_resolver = settings_resolver
         self._operation_registry = operation_registry
 
-    async def dispatch(self, name: str, arguments: dict[str, Any] | None) -> _CallResult:
+    async def dispatch(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None,
+        *,
+        request_context: ServerRequestContext[Any, Any] | None = None,
+    ) -> _CallResult:
         try:
             spec = self._registry.get(name)
         except KeyError:
@@ -98,7 +104,7 @@ class MCPDispatcher:
                 with suppress(RuntimeError):
                     ctx.extras["settings"] = self._settings_resolver()
             with bind_context(ctx):
-                emitter = self._build_emitter()
+                emitter = self._build_emitter(request_context)
                 try:
                     parsed = spec.input_model.model_validate(arguments or {})
                 except PydanticValidationError as exc:
@@ -212,15 +218,22 @@ class MCPDispatcher:
             return self._repo_error(exc)
         return _CallResult(payload=result.payload)
 
-    def _build_emitter(self) -> ProgressEmitter:
-        try:
-            req_ctx = request_ctx.get()
-        except LookupError:
+    @staticmethod
+    def _build_emitter(
+        request_context: ServerRequestContext[Any, Any] | None,
+    ) -> ProgressEmitter:
+        if request_context is None:
             return ProgressEmitter(None, None)
         token: str | int | None = None
-        if req_ctx.meta is not None:
-            token = req_ctx.meta.progressToken
-        return ProgressEmitter(req_ctx.session, token, request_id=req_ctx.request_id)
+        if request_context.meta is not None:
+            raw_token = request_context.meta.get("progress_token")
+            if isinstance(raw_token, str | int):
+                token = raw_token
+        return ProgressEmitter(
+            request_context.session,
+            token,
+            request_id=request_context.request_id,
+        )
 
     def _validation_failure(self, exc: PydanticValidationError) -> _CallResult:
         return _CallResult(

@@ -2,8 +2,81 @@
 
 from __future__ import annotations
 
+import base64
 import json
+import re
 from typing import Any
+
+from stackos import __version__
+
+_PROTOCOL_VERSION_META_KEY = "io.modelcontextprotocol/protocolVersion"
+_CLIENT_INFO_META_KEY = "io.modelcontextprotocol/clientInfo"
+_CLIENT_CAPABILITIES_META_KEY = "io.modelcontextprotocol/clientCapabilities"
+_SERVER_INFO_META_KEY = "io.modelcontextprotocol/serverInfo"
+_NAME_BEARING_METHODS = {
+    "prompts/get": "name",
+    "resources/read": "uri",
+    "tools/call": "name",
+}
+_HEADER_SAFE = re.compile(r"^[\x20-\x7E]*$")
+_BASE64_SENTINEL = re.compile(r"^=\?base64\?.*\?=$")
+
+
+def _bridge_encode_header_value(value: str) -> str:
+    """Encode an MCP routing value that cannot round-trip as plain ASCII."""
+    if (
+        _HEADER_SAFE.fullmatch(value)
+        and value == value.strip()
+        and not _BASE64_SENTINEL.fullmatch(value)
+    ):
+        return value
+    encoded = base64.b64encode(value.encode("utf-8")).decode("ascii")
+    return f"=?base64?{encoded}?="
+
+
+def _bridge_mcp_request_headers(payload: object) -> dict[str, str]:
+    """Derive protocol 2026-07-28 HTTP routing headers from one request."""
+    if not isinstance(payload, dict):
+        return {}
+    method = payload.get("method")
+    params = payload.get("params")
+    if not isinstance(method, str) or not isinstance(params, dict):
+        return {}
+    meta = params.get("_meta")
+    if not isinstance(meta, dict):
+        return {}
+    protocol_version = meta.get(_PROTOCOL_VERSION_META_KEY)
+    if not isinstance(protocol_version, str) or not protocol_version:
+        return {}
+    headers = {
+        "MCP-Protocol-Version": protocol_version,
+        "Mcp-Method": method,
+    }
+    name_field = _NAME_BEARING_METHODS.get(method)
+    name = params.get(name_field) if name_field is not None else None
+    if isinstance(name, str):
+        headers["Mcp-Name"] = _bridge_encode_header_value(name)
+    return headers
+
+
+def _bridge_mcp_request_meta(payload: object) -> dict[str, Any] | None:
+    """Extract reusable modern client metadata from one self-contained request."""
+    if not isinstance(payload, dict):
+        return None
+    params = payload.get("params")
+    if not isinstance(params, dict):
+        return None
+    meta = params.get("_meta")
+    if not isinstance(meta, dict):
+        return None
+    protocol_version = meta.get(_PROTOCOL_VERSION_META_KEY)
+    if not isinstance(protocol_version, str) or not protocol_version:
+        return None
+    reusable = {_PROTOCOL_VERSION_META_KEY: protocol_version}
+    for key in (_CLIENT_INFO_META_KEY, _CLIENT_CAPABILITIES_META_KEY):
+        if key in meta:
+            reusable[key] = meta[key]
+    return reusable
 
 
 def _bridge_response_text(text: str) -> str:
@@ -15,6 +88,21 @@ def _bridge_response_text(text: str) -> str:
         if line.startswith("data:"):
             return line.removeprefix("data:").strip()
     return stripped
+
+
+def _bridge_negotiated_protocol_version(response_text: str) -> str | None:
+    """Read the protocol revision selected by a legacy initialize response."""
+    try:
+        envelope = json.loads(response_text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(envelope, dict):
+        return None
+    result = envelope.get("result")
+    if not isinstance(result, dict):
+        return None
+    value = result.get("protocolVersion")
+    return value if isinstance(value, str) and value else None
 
 
 def bridge_error(request_id: object, code: int, message: str) -> str:
@@ -63,6 +151,13 @@ def _bridge_tool_result(request_id: object, structured: dict[str, Any], *, is_er
                 "content": [{"type": "text", "text": text}],
                 "structuredContent": structured,
                 "isError": is_error,
+                "resultType": "complete",
+                "_meta": {
+                    _SERVER_INFO_META_KEY: {
+                        "name": "stackos-agent-bridge",
+                        "version": __version__,
+                    }
+                },
             },
         },
         default=str,

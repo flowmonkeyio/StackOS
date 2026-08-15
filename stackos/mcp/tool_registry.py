@@ -147,8 +147,8 @@ def _output_schema(model: Any) -> dict[str, Any]:
 
 def _to_tool(spec: ToolSpec) -> mcp_types.Tool:
     annotations = mcp_types.ToolAnnotations(
-        readOnlyHint=spec.read_only,
-        idempotentHint=spec.read_only,
+        read_only_hint=spec.read_only,
+        idempotent_hint=spec.read_only,
         title=spec.name,
     )
     meta: dict[str, Any] = {"streaming": spec.streaming}
@@ -167,10 +167,10 @@ def _to_tool(spec: ToolSpec) -> mcp_types.Tool:
     return mcp_types.Tool(
         name=spec.name,
         description=spec.description,
-        inputSchema=_operation_input_schema(spec)
+        input_schema=_operation_input_schema(spec)
         if spec.operation_name is not None
         else _input_schema(spec.input_model),
-        outputSchema=_output_schema(spec.output_schema_model or spec.output_model),
+        output_schema=_output_schema(spec.output_schema_model or spec.output_model),
         annotations=annotations,
         _meta=meta,
     )

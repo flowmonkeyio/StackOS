@@ -4,16 +4,15 @@ Some bulk tools stream interim progress to the caller, for example resource
 imports, artifact ingestion, or connector calls that process many provider
 objects.
 
-The MCP SDK's lowlevel ``Server`` owns the wire transport; tool handlers
-get a ``ServerSession`` reference via the ``request_ctx`` ContextVar set
-by the dispatch layer. ``ProgressEmitter`` wraps that session reference
-into a small, testable surface so tools call ``await emitter.emit(...)``
-rather than reach into SDK internals.
+The MCP SDK's low-level ``Server`` owns the wire transport and passes a
+per-request context into each handler. The StackOS server adapter forwards
+that context's ``ServerSession`` into ``ProgressEmitter``, which keeps tools
+on a small, testable surface rather than reaching into SDK internals.
 
 The "progress token" used by the MCP progress protocol is the JSON-RPC
 ``request id`` of the originating call. The SDK stores it on
-``request_ctx.meta.progressToken`` when the client opts in — if the
-client did not opt in, the token is ``None`` and we silently no-op so
+the request context metadata as ``progress_token`` when the client opts in —
+if the client did not opt in, the token is ``None`` and we silently no-op so
 non-streaming clients still get a normal request/response.
 """
 

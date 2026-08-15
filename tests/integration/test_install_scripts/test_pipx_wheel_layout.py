@@ -81,7 +81,7 @@ def test_wheel_no_duplicate_entries(built_wheel: Path) -> None:
     assert len(names) == len(set(names)), "wheel contains duplicate zip entries"
 
 
-def test_wheel_excludes_unsupported_mcp_major(built_wheel: Path) -> None:
+def test_wheel_bounds_supported_mcp_major(built_wheel: Path) -> None:
     """Wheel installs must not resolve against an untested MCP major."""
     with zipfile.ZipFile(built_wheel) as wheel:
         metadata_name = next(
@@ -94,7 +94,7 @@ def test_wheel_excludes_unsupported_mcp_major(built_wheel: Path) -> None:
         for requirement in metadata.get_all("Requires-Dist", [])
         if requirement.split(";", 1)[0].strip().startswith("mcp")
     ]
-    assert mcp_requirements == ["mcp<2,>=1.29"]
+    assert mcp_requirements == ["mcp<3,>=2.0"]
 
 
 def test_wheel_includes_s3_runtime_ui_asset_and_sdk_requirements(

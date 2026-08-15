@@ -8,7 +8,7 @@ break a tool's input/output schema.
 
 from __future__ import annotations
 
-from .conftest import MCPClient
+from .conftest import MODERN_PROTOCOL_VERSION, MCPClient
 
 # Per-namespace expected counts — derived from the clean StackOS core catalog.
 # Update intentionally when adding generic StackOS MCP tools.
@@ -101,6 +101,31 @@ def test_initialize_handshake_succeeds(mcp_client: MCPClient) -> None:
     assert "result" in result
     server_info = result["result"]["serverInfo"]
     assert server_info["name"] == "stackos"
+
+
+def test_modern_discovery_succeeds_without_initialize(mcp_client: MCPClient) -> None:
+    """Protocol 2026-07-28 uses a self-contained discovery request."""
+    envelope = mcp_client.modern_discover()
+
+    assert mcp_client._initialized is False
+    result = envelope["result"]
+    assert result["supportedVersions"] == [MODERN_PROTOCOL_VERSION]
+    assert result["capabilities"]["tools"] == {"listChanged": False}
+    assert result["resultType"] == "complete"
+    assert result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] == "stackos"
+
+
+def test_modern_tool_list_and_call_are_self_contained(mcp_client: MCPClient) -> None:
+    """Modern list/call requests work without session or handshake state."""
+    tools = mcp_client.modern_list_tools()
+    assert len(tools) == EXPECTED_TOTAL
+
+    envelope = mcp_client.modern_call_tool("meta.enums", {"response_mode": "raw"})
+    result = envelope["result"]
+    assert result["isError"] is False
+    assert result["resultType"] == "complete"
+    assert "runs_status" in result["structuredContent"]
+    assert result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] == "stackos"
 
 
 def test_tools_list_returns_full_catalog(mcp_client: MCPClient) -> None:

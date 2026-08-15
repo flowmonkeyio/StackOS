@@ -24,6 +24,9 @@ from stackos.mcp.bridge import (
     _bridge_compact_structured,
     _bridge_filter_tool_list_response,
     _bridge_forward_arguments,
+    _bridge_mcp_request_headers,
+    _bridge_mcp_request_meta,
+    _bridge_tool_result,
     _bridge_toolbox_describe,
 )
 from stackos.mcp.bridge.catalog import _bridge_toolbox_specs
@@ -75,12 +78,196 @@ def test_stackos_mcp_instructions_match_bridge_project_scope_contract() -> None:
     )
 
 
+def test_bridge_derives_modern_http_routing_headers() -> None:
+    payload = {
+        "jsonrpc": "2.0",
+        "id": "modern-call",
+        "method": "tools/call",
+        "params": {
+            "name": "meta.enums",
+            "arguments": {},
+            "_meta": {
+                "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                "io.modelcontextprotocol/clientCapabilities": {},
+            },
+        },
+    }
+
+    assert _bridge_mcp_request_headers(payload) == {
+        "MCP-Protocol-Version": "2026-07-28",
+        "Mcp-Method": "tools/call",
+        "Mcp-Name": "meta.enums",
+    }
+    assert _bridge_mcp_request_meta(payload) == {
+        "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+        "io.modelcontextprotocol/clientCapabilities": {},
+    }
+
+
+def test_bridge_generated_tool_results_are_modern_result_envelopes() -> None:
+    envelope = json.loads(_bridge_tool_result("modern-call", {"ok": True}, is_error=False))
+    result = envelope["result"]
+
+    assert result["resultType"] == "complete"
+    assert result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] == ("stackos-agent-bridge")
+
+
 class _Response:
     def __init__(self, payload: dict[str, Any]) -> None:
         self.text = json.dumps(payload)
 
     def raise_for_status(self) -> None:
         return None
+
+
+class _HeaderCapturingClient:
+    def __init__(self) -> None:
+        self.headers: dict[str, str] = {}
+
+    def post(self, _url: str, *, content: str, headers: dict[str, str]) -> _Response:
+        body = json.loads(content)
+        self.headers = headers
+        return _Response({"jsonrpc": "2.0", "id": body.get("id"), "result": {}})
+
+
+class _LegacyNegotiationClient:
+    def __init__(self) -> None:
+        self.headers: list[dict[str, str]] = []
+
+    def post(self, _url: str, *, content: str, headers: dict[str, str]) -> _Response:
+        body = json.loads(content)
+        self.headers.append(headers)
+        if body.get("method") == "initialize":
+            return _Response(
+                {
+                    "jsonrpc": "2.0",
+                    "id": body.get("id"),
+                    "result": {"protocolVersion": "2025-11-25"},
+                }
+            )
+        return _Response({"jsonrpc": "2.0", "id": body.get("id"), "result": {}})
+
+
+class _ModernInternalClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[dict[str, Any], dict[str, str]]] = []
+
+    def post(self, _url: str, *, content: str, headers: dict[str, str]) -> _Response:
+        body = json.loads(content)
+        self.calls.append((body, headers))
+        if body.get("method") == "tools/call":
+            return _Response(
+                {
+                    "jsonrpc": "2.0",
+                    "id": body.get("id"),
+                    "result": {
+                        "structuredContent": {"project_id": 1},
+                        "content": [],
+                        "isError": False,
+                    },
+                }
+            )
+        return _Response(
+            {
+                "jsonrpc": "2.0",
+                "id": body.get("id"),
+                "result": {"tools": []},
+            }
+        )
+
+
+def test_bridge_proxy_forwards_modern_routing_headers_without_mutating_base_headers() -> None:
+    base_headers = {"Authorization": "Bearer test", "Content-Type": "application/json"}
+    proxy = AgentBridgeProxy(url="http://stackos.test/mcp", headers=base_headers)
+    client = _HeaderCapturingClient()
+    body = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": "modern-list",
+            "method": "tools/list",
+            "params": {
+                "_meta": {
+                    "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                    "io.modelcontextprotocol/clientCapabilities": {},
+                }
+            },
+        }
+    )
+
+    proxy.request_daemon(client, body)
+
+    assert client.headers["Authorization"] == "Bearer test"
+    assert client.headers["MCP-Protocol-Version"] == "2026-07-28"
+    assert client.headers["Mcp-Method"] == "tools/list"
+    assert "Mcp-Name" not in client.headers
+    assert base_headers == {"Authorization": "Bearer test", "Content-Type": "application/json"}
+
+
+def test_bridge_proxy_adds_modern_metadata_to_internal_scope_calls() -> None:
+    proxy = AgentBridgeProxy(
+        url="http://stackos.test/mcp",
+        headers={"Content-Type": "application/json"},
+        cwd="/workspace",
+    )
+    client = _ModernInternalClient()
+    payload = {
+        "jsonrpc": "2.0",
+        "id": "modern-tools",
+        "method": "tools/list",
+        "params": {
+            "_meta": {
+                "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                "io.modelcontextprotocol/clientInfo": {
+                    "name": "test",
+                    "version": "0.1",
+                },
+                "io.modelcontextprotocol/clientCapabilities": {},
+            }
+        },
+    }
+
+    proxy.handle(
+        client,
+        payload=payload,
+        line=json.dumps(payload),
+        request_id="modern-tools",
+    )
+
+    internal_body, internal_headers = client.calls[0]
+    internal_meta = internal_body["params"]["_meta"]
+    assert internal_body["params"]["name"] == "workspace.startSession"
+    assert internal_meta["io.modelcontextprotocol/protocolVersion"] == "2026-07-28"
+    assert internal_meta["io.modelcontextprotocol/clientInfo"]["name"] == "test"
+    assert internal_headers["MCP-Protocol-Version"] == "2026-07-28"
+    assert internal_headers["Mcp-Method"] == "tools/call"
+    assert internal_headers["Mcp-Name"] == "workspace.startSession"
+
+
+def test_bridge_proxy_forwards_negotiated_legacy_protocol_version() -> None:
+    proxy = AgentBridgeProxy(
+        url="http://stackos.test/mcp",
+        headers={"Content-Type": "application/json"},
+    )
+    client = _LegacyNegotiationClient()
+    initialize = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": "initialize",
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {},
+                "clientInfo": {"name": "test", "version": "0.1"},
+            },
+        }
+    )
+    list_tools = json.dumps({"jsonrpc": "2.0", "id": "tools", "method": "tools/list", "params": {}})
+
+    proxy.request_daemon(client, initialize)
+    proxy.request_daemon(client, list_tools)
+
+    assert "MCP-Protocol-Version" not in client.headers[0]
+    assert client.headers[1]["MCP-Protocol-Version"] == "2025-11-25"
 
 
 class _FakeClient:

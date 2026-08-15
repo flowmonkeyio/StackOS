@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 from .catalog import _bridge_filter_tool_list_response, _bridge_tool_catalog
 from .constants import (
@@ -19,6 +19,9 @@ from .protocol import (
     _bridge_call_error,
     _bridge_extract_project_id,
     _bridge_make_tool_call_payload,
+    _bridge_mcp_request_headers,
+    _bridge_mcp_request_meta,
+    _bridge_negotiated_protocol_version,
     _bridge_replace_tool_call_arguments,
     _bridge_response_text,
     _bridge_tool_call_arguments,
@@ -79,15 +82,55 @@ class AgentBridgeProxy:
         self.workspace_scope_checked = False
         self.workspace_scope_error: str | None = None
         self.scoped_project_id: int | None = None
+        self.protocol_version: str | None = None
+        self.modern_request_meta: dict[str, Any] | None = None
 
     def request_daemon(self, client: Any, body: str) -> str:
-        response = client.post(self.url, content=body, headers=self.headers)
+        try:
+            payload: object = json.loads(body)
+        except json.JSONDecodeError:
+            payload = None
+        request_meta = _bridge_mcp_request_meta(payload)
+        if request_meta is not None:
+            self.modern_request_meta = request_meta
+        elif isinstance(payload, dict) and self.modern_request_meta is not None:
+            forward_payload = cast(
+                dict[str, Any],
+                json.loads(json.dumps(payload, default=str)),
+            )
+            params = forward_payload.get("params")
+            if not isinstance(params, dict):
+                params = {}
+                forward_payload["params"] = params
+            meta = params.get("_meta")
+            if not isinstance(meta, dict):
+                meta = {}
+            params["_meta"] = {**self.modern_request_meta, **meta}
+            payload = forward_payload
+            body = json.dumps(forward_payload, default=str)
+        negotiated_headers = (
+            {"MCP-Protocol-Version": self.protocol_version}
+            if self.protocol_version is not None
+            else {}
+        )
+        headers = {
+            **self.headers,
+            **negotiated_headers,
+            **_bridge_mcp_request_headers(payload),
+        }
+        response = client.post(self.url, content=body, headers=headers)
         response.raise_for_status()
-        return _bridge_response_text(response.text)
+        response_text = _bridge_response_text(response.text)
+        if isinstance(payload, dict) and payload.get("method") == "initialize":
+            self.protocol_version = _bridge_negotiated_protocol_version(response_text)
+        return response_text
 
     def handle(self, client: Any, *, payload: object, line: str, request_id: object) -> str:
         if not isinstance(payload, dict):
             return self.request_daemon(client, line)
+        request_meta = _bridge_mcp_request_meta(payload)
+        if request_meta is not None:
+            self.modern_request_meta = request_meta
         if payload.get("method") == "tools/list":
             self._ensure_workspace_scope(client)
             out = self.request_daemon(client, line)

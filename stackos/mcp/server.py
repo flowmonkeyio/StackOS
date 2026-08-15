@@ -14,6 +14,7 @@ from typing import Any
 
 import mcp.types as mcp_types
 from fastapi import FastAPI
+from mcp.server.context import ServerRequestContext
 from mcp.server.lowlevel.server import Server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from starlette.types import Receive, Scope, Send
@@ -43,7 +44,7 @@ STACKOS_MCP_INSTRUCTIONS = (
 
 
 @asynccontextmanager
-async def _mcp_lifespan(_server: Server[Any, Any]) -> AsyncIterator[dict[str, Any]]:
+async def _mcp_lifespan(_server: Server[dict[str, Any]]) -> AsyncIterator[dict[str, Any]]:
     """Provide the low-level server lifespan context for each transport session."""
     _log.info("mcp.server.lifespan.start")
     try:
@@ -52,35 +53,40 @@ async def _mcp_lifespan(_server: Server[Any, Any]) -> AsyncIterator[dict[str, An
         _log.info("mcp.server.lifespan.stop")
 
 
-def build_server(registry: ToolRegistry, dispatcher: MCPDispatcher) -> Server[Any, Any]:
+def build_server(registry: ToolRegistry, dispatcher: MCPDispatcher) -> Server[dict[str, Any]]:
     """Construct the low-level server with list-tools and call-tool wiring."""
-    server = Server[Any, Any](
+
+    async def _handle_list_tools(
+        _ctx: ServerRequestContext[dict[str, Any], Any],
+        _params: mcp_types.PaginatedRequestParams | None,
+    ) -> mcp_types.ListToolsResult:  # pragma: no cover - covered by integration tests
+        return mcp_types.ListToolsResult(tools=[_to_tool(spec) for spec in registry.all()])
+
+    async def _handle_call_tool(
+        ctx: ServerRequestContext[dict[str, Any], Any],
+        params: mcp_types.CallToolRequestParams,
+    ) -> mcp_types.CallToolResult:
+        result = await dispatcher.dispatch(
+            params.name,
+            params.arguments,
+            request_context=ctx,
+        )
+        structured = result.payload["error"] if result.is_error else result.payload
+        text = json.dumps(structured, default=str)
+        return mcp_types.CallToolResult(
+            content=[mcp_types.TextContent(type="text", text=text)],
+            structured_content=structured,
+            is_error=result.is_error,
+        )
+
+    return Server[dict[str, Any]](
         name="stackos",
         version=__version__,
         instructions=STACKOS_MCP_INSTRUCTIONS,
         lifespan=_mcp_lifespan,
+        on_list_tools=_handle_list_tools,
+        on_call_tool=_handle_call_tool,
     )
-
-    @server.list_tools()
-    async def _handle_list_tools() -> list[
-        mcp_types.Tool
-    ]:  # pragma: no cover - covered by integration tests
-        return [_to_tool(spec) for spec in registry.all()]
-
-    @server.call_tool(validate_input=False)
-    async def _handle_call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        result = await dispatcher.dispatch(name, arguments)
-        if result.is_error:
-            err = result.payload["error"]
-            error_msg = json.dumps(err, default=str)
-            return mcp_types.CallToolResult(
-                content=[mcp_types.TextContent(type="text", text=error_msg)],
-                structuredContent=err,
-                isError=True,
-            )  # type: ignore[return-value]
-        return result.payload
-
-    return server
 
 
 def register_mcp(app: FastAPI) -> None:

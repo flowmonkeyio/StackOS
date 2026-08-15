@@ -21,6 +21,11 @@ from fastapi.testclient import TestClient
 from stackos.config import Settings
 from stackos.server import create_app
 
+MODERN_PROTOCOL_VERSION = "2026-07-28"
+_PROTOCOL_VERSION_META_KEY = "io.modelcontextprotocol/protocolVersion"
+_CLIENT_INFO_META_KEY = "io.modelcontextprotocol/clientInfo"
+_CLIENT_CAPABILITIES_META_KEY = "io.modelcontextprotocol/clientCapabilities"
+
 # ---------------------------------------------------------------------------
 # Wire helper.
 # ---------------------------------------------------------------------------
@@ -97,6 +102,61 @@ class MCPClient:
         r = self.test_client.post("/mcp", json=body, headers=self._headers())
         r.raise_for_status()
         return r.json()
+
+    def modern_request(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        *,
+        name: str | None = None,
+    ) -> dict[str, Any]:
+        """Send one self-contained protocol ``2026-07-28`` request."""
+        request_params = dict(params or {})
+        request_params["_meta"] = {
+            _PROTOCOL_VERSION_META_KEY: MODERN_PROTOCOL_VERSION,
+            _CLIENT_INFO_META_KEY: {"name": "pytest-modern-mcp-client", "version": "0.1"},
+            _CLIENT_CAPABILITIES_META_KEY: {},
+        }
+        body = {
+            "jsonrpc": "2.0",
+            "id": self._next_id(),
+            "method": method,
+            "params": request_params,
+        }
+        extra_headers = {
+            "MCP-Protocol-Version": MODERN_PROTOCOL_VERSION,
+            "Mcp-Method": method,
+        }
+        if name is not None:
+            extra_headers["Mcp-Name"] = name
+        response = self.test_client.post(
+            "/mcp",
+            json=body,
+            headers=self._headers(extra=extra_headers),
+        )
+        response.raise_for_status()
+        assert "mcp-session-id" not in response.headers
+        return response.json()
+
+    def modern_discover(self) -> dict[str, Any]:
+        """Discover modern protocol support without an initialize handshake."""
+        return self.modern_request("server/discover")
+
+    def modern_list_tools(self) -> list[dict[str, Any]]:
+        """List tools through the self-contained modern request path."""
+        return self.modern_request("tools/list")["result"]["tools"]
+
+    def modern_call_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Call one tool through the self-contained modern request path."""
+        return self.modern_request(
+            "tools/call",
+            {"name": name, "arguments": arguments or {}},
+            name=name,
+        )
 
     def call_tool_structured(
         self, name: str, arguments: dict[str, Any] | None = None

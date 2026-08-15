@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
+from mcp.server.context import ServerRequestContext
+from mcp.server.session import ServerSession
 from pydantic import ValidationError
 
 from stackos.mcp.contract import (
@@ -10,6 +14,7 @@ from stackos.mcp.contract import (
     WriteEnvelope,
     verb_is_mutating,
 )
+from stackos.mcp.dispatcher import MCPDispatcher
 from stackos.mcp.server import (
     ToolRegistry,
     ToolSpec,
@@ -136,6 +141,41 @@ class _DummyOutput(MCPInput):
 
 async def _noop_handler(*_args: object, **_kwargs: object) -> dict:  # pragma: no cover
     return {}
+
+
+class _ProgressSession:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    async def send_progress_notification(self, **kwargs: Any) -> None:
+        self.calls.append(kwargs)
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_builds_progress_emitter_from_explicit_request_context() -> None:
+    """SDK 2 request metadata reaches tools without an ambient ContextVar."""
+    session = _ProgressSession()
+    context = ServerRequestContext(
+        session=cast(ServerSession, session),
+        lifespan_context={},
+        protocol_version="2026-07-28",
+        method="tools/call",
+        request_id="request-1",
+        meta={"progress_token": "progress-1"},
+    )
+
+    emitter = MCPDispatcher._build_emitter(context)
+    await emitter.emit(1, 2, "halfway")
+
+    assert session.calls == [
+        {
+            "progress_token": "progress-1",
+            "progress": 1.0,
+            "total": 2.0,
+            "message": "halfway",
+            "related_request_id": "request-1",
+        }
+    ]
 
 
 def test_envelope_discipline_rejects_mutating_with_bare_output() -> None:

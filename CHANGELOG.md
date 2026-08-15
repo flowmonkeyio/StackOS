@@ -2,8 +2,10 @@
 
 ## Unreleased
 
-- Updated the bounded Python MCP dependency to the supported 1.29 maintenance
-  line and moved legacy handshake coverage to protocol revision `2025-11-25`.
+- Migrated the MCP adapter to Python SDK 2 and protocol revision `2026-07-28`,
+  while retaining legacy initialize-handshake support through `2025-11-25`.
+- Replaced removed low-level handler decorators and ambient request context with
+  SDK 2 constructor handlers and explicit per-request context propagation.
 - Updated the public MCP authorization reference to the current `2026-07-28`
   specification.
 

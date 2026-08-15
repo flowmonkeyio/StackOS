@@ -122,6 +122,13 @@ operation registry emits agent-readable docs through `/api/v1/operations` and
 `stackos ops describe`, and MCP tool schemas are generated from the same
 specs when the MCP surface is enabled.
 
+The daemon uses Python MCP SDK 2 and serves both protocol eras on the same
+stateless Streamable HTTP endpoint: self-contained `2026-07-28` requests use
+`server/discover` plus per-request metadata and routing headers, while legacy
+clients may still negotiate revisions through `2025-11-25` with `initialize`.
+The stdio bridge derives modern routing headers from each request and preserves
+the same workspace scope and tool visibility rules in both eras.
+
 The agent-facing MCP bridge surface is intentionally small:
 
 - discovery: the current workspace/project, plugin, catalog, capability,

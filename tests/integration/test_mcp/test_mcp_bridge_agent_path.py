@@ -21,7 +21,11 @@ from stackos.db.connection import make_engine
 from stackos.db.models import Credential
 from stackos.mcp.bridge import _AGENT_VISIBLE_TOOL_ORDER, AgentBridgeProxy
 
-from .conftest import MCPClient
+from .conftest import MODERN_PROTOCOL_VERSION, MCPClient
+
+_PROTOCOL_VERSION_META_KEY = "io.modelcontextprotocol/protocolVersion"
+_CLIENT_INFO_META_KEY = "io.modelcontextprotocol/clientInfo"
+_CLIENT_CAPABILITIES_META_KEY = "io.modelcontextprotocol/clientCapabilities"
 
 
 class _BridgeHttpClient:
@@ -81,6 +85,26 @@ def _send(
     request_id: object = 1,
 ) -> dict[str, Any]:
     line = _rpc(method, params, request_id)
+    return json.loads(
+        proxy.handle(client, payload=json.loads(line), line=line, request_id=request_id)
+    )
+
+
+def _send_modern(
+    proxy: AgentBridgeProxy,
+    client: _BridgeHttpClient,
+    *,
+    method: str,
+    params: dict[str, Any] | None = None,
+    request_id: object = 1,
+) -> dict[str, Any]:
+    request_params = dict(params or {})
+    request_params["_meta"] = {
+        _PROTOCOL_VERSION_META_KEY: MODERN_PROTOCOL_VERSION,
+        _CLIENT_INFO_META_KEY: {"name": "pytest-modern-bridge-client", "version": "0.1"},
+        _CLIENT_CAPABILITIES_META_KEY: {},
+    }
+    line = _rpc(method, request_params, request_id)
     return json.loads(
         proxy.handle(client, payload=json.loads(line), line=line, request_id=request_id)
     )
@@ -203,6 +227,42 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
         tool for tool in envelope["result"]["tools"] if tool["name"] == "toolbox.describe"
     )
     assert "tool_names" in describe_tool["inputSchema"]["properties"]
+
+
+def test_bridge_supports_modern_discovery_catalog_and_local_tool_results(
+    mcp_client: MCPClient,
+) -> None:
+    proxy, client = _bridge(mcp_client)
+
+    discovery = _send_modern(
+        proxy,
+        client,
+        method="server/discover",
+        request_id="modern-discover",
+    )
+    assert discovery["result"]["supportedVersions"] == [MODERN_PROTOCOL_VERSION]
+    assert mcp_client._initialized is False
+
+    catalog = _send_modern(proxy, client, method="tools/list", request_id="modern-tools")
+    names = [tool["name"] for tool in catalog["result"]["tools"]]
+    assert names == [*_AGENT_VISIBLE_TOOL_ORDER, "toolbox.describe", "toolbox.call"]
+    assert catalog["result"]["resultType"] == "complete"
+
+    described = _send_modern(
+        proxy,
+        client,
+        method="tools/call",
+        params={
+            "name": "toolbox.describe",
+            "arguments": {"tool_names": ["workspace.resolve"]},
+        },
+        request_id="modern-describe",
+    )
+    assert described["result"]["isError"] is False
+    assert described["result"]["resultType"] == "complete"
+    assert described["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] == (
+        "stackos-agent-bridge"
+    )
 
 
 def test_bridge_discovers_hidden_operations_with_compact_grouped_list(
