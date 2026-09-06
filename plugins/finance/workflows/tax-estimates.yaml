@@ -1,0 +1,298 @@
+schema_version: stackos.workflow-template.v1
+key: finance.tax-estimates
+name: Finance Tax Estimates
+version: 0.3.0
+description: Prepare a current-source US/California tax-estimate packet in the selected external backend, distinguish projected annual liability from the current installment, and require CPA/EA then owner approval before it is relied on.
+domain: finance
+owner:
+  team: StackOS
+experience:
+  problem: "A solo LLC or S-Corp owner needs tax planning evidence organized before a deadline becomes urgent, without trusting stale rates, generic advice, or an agent-generated filing decision."
+  outcome: "An external tax-estimate packet with current IRS and FTB source refs, separate projected-annual-liability and current-installment states, CPA/EA review, owner approval, and safe cashflow handoff."
+  why_ai: "An agent can prepare and reconcile the packet structure and current-source provenance while licensed advice, decisions, filing, payment, and entity elections stay with the qualified advisor and owner."
+  operator_path:
+    - "Request an estimate for a tax year and as-of date; the agent reads the external taxpayer profile, gathers current sources and prepares supported calculations."
+    - "Review a consolidated missing-input list if needed; select the qualified CPA/EA when the prepared packet reaches review."
+    - "Record owner approval for the reviewed packet; separately decide any filing, remittance, election, or payment outside this workflow."
+  agent_path:
+    - "Confirm current official IRS and California FTB source refs and the explicit entity classification without assuming dates, rates, thresholds, elections, or advice."
+    - "Prepare external packet structure that keeps projected annual liability distinct from the current installment."
+    - "Stop for CPA/EA review, then owner approval, and hand only safe packet/cashflow refs to later work."
+  progress_signals: ["Scope validated", "Current official sources confirmed", "Annual and installment states prepared separately", "CPA/EA review recorded", "Owner approval recorded"]
+  recovery:
+    - "Gather current applicable official sources; unavailable sources or taxpayer inputs produce an incomplete packet with supported work preserved and explicit gaps."
+    - "If the advisor or owner declines/rejects review, preserve the safe external packet ref and return to the named correction/handoff need without filing or payment."
+  safe_stopping_points:
+    - "Return an incomplete packet when material sources or taxpayer inputs are missing, or a prepared packet awaiting an advisor."
+    - "Stop after CPA/EA review when owner approval is pending."
+    - "Stop after owner approval with an external packet/cashflow handoff; this workflow never files, remits, pays, or changes an election."
+  handoffs:
+    - workflow_key: finance.cashflow-management
+      relationship: next
+      when: "A CPA/EA-reviewed and owner-approved tax packet provides safe current-installment planning refs to the external thirteen-week forecast."
+    - workflow_key: finance.bookkeeping-close
+      relationship: fallback
+      when: "The packet identifies external bookkeeping/reconciliation gaps that must be prepared/unposted before tax review can continue."
+public:
+  audience: "US/California solo LLC or S-Corp owners preparing advisor-reviewed tax estimate packets"
+  setup: project-adapter-required
+  prerequisites:
+    - "An external workspace, tax year and estimate-as-of date; the agent resolves business and taxpayer profiles during preparation"
+    - "Current official sources are gathered during the run; a named qualified advisor is needed only at review"
+  proof:
+    - "Safe current-source, external packet, CPA/EA, owner-approval, exception, and cashflow-handoff refs"
+    - "Separate state markers for projected annual liability and current installment"
+  featured: true
+when_to_use:
+  - "A current-source tax-estimate packet for a US/California solo LLC or S-Corp must be prepared for qualified review and cash planning."
+when_not_to_use:
+  - "The request asks for legal/tax advice, a hardcoded rate or deadline, entity election change, tax filing, tax remittance/payment, payroll tax action, or a substitute for a CPA/EA."
+agent_requirements:
+  - role: tax-preparer
+    requirement: required
+    agent_preset_ref: stackos.finance.tax-preparer
+    purpose: Assemble external current-source packet structure and tax/cashflow handoffs without providing advice or carrying out tax actions.
+    applies_to_steps: [preflight, validate-current-sources, prepare-external-packet, cpa-ea-review, owner-review-and-handoff]
+  - role: control-reviewer
+    requirement: required
+    agent_preset_ref: stackos.finance.control-reviewer
+    purpose: Independently challenge source currency, entity-classification branch, liability/installment separation, and prohibited-action boundaries.
+    applies_to_steps: [validate-current-sources, prepare-external-packet, owner-review-and-handoff]
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: required
+    purpose: Coordinate workflow grants, approval state, and safe external refs without persisting tax content in StackOS.
+    applies_to_steps: [preflight, validate-current-sources, prepare-external-packet, cpa-ea-review, owner-review-and-handoff]
+skill_preset_requirements:
+  - skill_preset_ref: stackos.finance.department-orchestrator
+    requirement: required
+    purpose: Coordinate current-source checks, advisor/owner gates, external backend custody, exception recovery, and cashflow handoff.
+    applies_to_steps: [preflight, validate-current-sources, prepare-external-packet, cpa-ea-review, owner-review-and-handoff]
+inputs:
+  - key: goal
+    name: Goal
+    type: string
+    required: false
+    default: Complete the selected finance work and report material decisions or gaps.
+    schema: {type: string, minLength: 1}
+  - key: backend_key
+    name: Backend Key
+    type: string
+    required: false
+    default: local-json
+    schema: {type: string, const: local-json}
+  - key: workspace_ref
+    name: External Workspace Ref
+    type: string
+    required: true
+    schema: {type: string, minLength: 1}
+  - key: recording_mode
+    name: Recording Mode
+    type: string
+    required: false
+    default: prepared-unposted
+    schema: {type: string, const: prepared-unposted}
+  - key: business_profile_ref
+    name: External Business Profile Override
+    type: string
+    required: false
+    description: Optional override; otherwise reuse the selected workspace profile. Tax conclusions require applicable legal form, tax treatment and effective period; missing facts remain named gaps, never inferred elections.
+    schema: {type: string, minLength: 1}
+  - key: operator_policy_ref
+    name: Operator Policy Ref
+    type: string
+    required: false
+    description: Optional override of the durable external workspace policy; the agent resolves it during preflight.
+    schema: {type: string, minLength: 1}
+  - key: trigger_kind
+    name: Trigger Kind
+    type: string
+    required: false
+    default: manual
+    schema: {type: string, enum: [manual, external]}
+  - key: tax_period_ref
+    name: Tax Period Ref
+    type: string
+    required: false
+    schema: {type: string, minLength: 1}
+  - key: tax_year
+    name: Tax Year
+    type: integer
+    required: true
+    schema: {type: integer, minimum: 2000, maximum: 9999}
+  - key: estimate_as_of
+    name: Estimate As-Of Date
+    type: string
+    required: true
+    schema: {type: string, format: date}
+  - key: tax_packet_scope_ref
+    name: Tax Packet Scope Ref
+    type: string
+    required: false
+    description: Safe external reference for the selected entities, sources, and planning scope; it does not contain tax calculations or taxpayer content.
+    schema: {type: string, minLength: 1}
+  - key: official_source_packet_ref
+    name: Current Official Source Packet Ref
+    type: string
+    required: false
+    description: Optional existing source packet to revalidate; validate-current-sources gathers and records current official sources when absent.
+    schema: {type: string, minLength: 1}
+  - key: cpa_ea_reviewer_ref
+    name: CPA Or EA Reviewer Ref
+    type: string
+    required: false
+    description: Optional safe advisor reference from setup; required only before advisor review, never to begin preparation. The reference alone does not establish professional credentials.
+    schema: {type: string, minLength: 1}
+policies:
+  - key: local-json-single-source
+    kind: boundary
+    description: For local-json, finance.json is the sole authoritative local financial record, including mutable setup. Packet refs resolve to record_id in that document; approved proposals also bind an immutable version/digest, not separate editable files. FINANCE.md is guidance/navigation; CSV is import/export, never a second master. Original evidence stays immutable; provider state stays provider-owned and JSON stores dated observations. Follow the packaged local workspace contract.
+  - key: external-backend-is-authoritative
+    kind: boundary
+    description: The selected external backend owns tax packet content, source records, advice, calculations, approvals, and handoffs; StackOS holds only workflow state and safe refs.
+  - key: current-official-sources-required
+    kind: integrity
+    description: The packet must name current official IRS and California FTB source refs appropriate to the stated period/entity. Do not hardcode rates, deadlines, thresholds, or source conclusions in this reusable workflow.
+  - key: separate-annual-liability-and-installment
+    kind: integrity
+    description: Projected annual liability and the current installment are separate external packet states and must never be conflated in a safe workflow summary.
+  - key: qualified-advisor-then-owner
+    kind: approval
+    description: CPA/EA review and owner approval are separate required gates. Neither may be self-approved by the agent or waived by a standing policy.
+  - key: no-tax-action-or-advice
+    kind: boundary
+    description: This workflow provides no tax/legal advice and does not file, remit, pay, change entity elections, or operate a tax portal.
+approval_gates:
+  - key: cpa-ea-tax-review
+    description: Recorded review by the named qualified CPA/EA is required before owner review or cashflow handoff.
+    required_when: before-owner-review
+    approver: cpa-ea
+  - key: owner-tax-packet-approval
+    description: Recorded owner approval is required before the reviewed external packet is relied on for a downstream cashflow handoff.
+    required_when: before-cashflow-handoff
+    approver: owner
+steps:
+  - id: preflight
+    title: Preflight Tax Packet Scope
+    purpose: Resolve the external business/taxpayer profile and annual planning scope; identify missing facts while permitting preparation.
+    input_refs: [goal, backend_key, workspace_ref, recording_mode, business_profile_ref, operator_policy_ref, trigger_kind, tax_period_ref, tax_year, estimate_as_of, tax_packet_scope_ref, official_source_packet_ref, cpa_ea_reviewer_ref]
+    policy_refs: [external-backend-is-authoritative, local-json-single-source, no-tax-action-or-advice]
+    output_refs: [tax_estimate_summary]
+    instructions:
+      - "Read finance.json and its packaged local-json-v1 schema; resolve actual record refs and selected setup, document revision/digest and one-writer readback capability. For first-time setup use the empty bootstrap only in a new workspace; never overwrite existing files. Whole-document changes require reread/rebase; unrelated updates do not invalidate immutable proposal approval."
+    success_criteria:
+      - "Legal form, federal/California tax treatment, effective election dates and accounting basis are separately sourced or marked unknown; the agent does not force LLC and S-Corp into mutually exclusive choices."
+  - id: validate-current-sources
+    title: Validate Current Official Sources
+    purpose: Gather and validate current official IRS and California FTB sources for the tax year, taxpayer and applicable obligations.
+    depends_on: [preflight]
+    policy_refs: [current-official-sources-required, no-tax-action-or-advice]
+    output_refs: [tax_estimate_summary]
+    instructions:
+      - "Do not substitute remembered rates, dates, thresholds, or generic tax advice for current official source evidence."
+      - "Create the external official-source packet here with URLs, retrieval date, applicable tax year, relevant form/worksheet and applicability notes. Missing or conflicting sources remain unresolved; no invented reference is needed to start this step."
+    success_criteria:
+      - "The workflow has current-source refs or an external source exception; it does not make a tax conclusion."
+  - id: prepare-external-packet
+    title: Prepare External Estimate Packet
+    purpose: Organize the selected external packet with distinct projected annual liability and current installment states, assumptions, gaps, and bookkeeping/cashflow references.
+    depends_on: [validate-current-sources]
+    policy_refs: [external-backend-is-authoritative, separate-annual-liability-and-installment, no-tax-action-or-advice]
+    output_refs: [tax_estimate_summary]
+    instructions:
+      - "Write calculations, amounts, source content, and advice only where the selected external backend and qualified reviewer process own them; StackOS receives safe refs and state only."
+      - "Build annual inputs independently of the thirteen-week cash forecast: year-to-date and projected remaining-year business income/expenses, owner filing status and household income, spouse income where relevant, prior-year return/tax, withholding, prior estimates, deductions/credits and sourced accounting adjustments. Missing material taxpayer facts produce packet-incomplete, not a precise estimate."
+      - "Create an obligation matrix separating taxpayer and authority: federal individual estimates, California individual estimates, California entity annual tax/fee where applicable, S-Corp entity obligations, and relevant payroll inputs. Verify applicability, exclusions, current forms and due-date rules from official sources; do not apply every listed obligation to every LLC."
+      - "For each applicable obligation, record annual projected liability, calculation method/source, prior payments/withholding, current installment and remaining planning reserve separately. Use sourced current worksheets and deterministic arithmetic, with assumptions and uncertainty explicit. A cash forecast is optional corroboration, never taxable income."
+      - "For S-Corp treatment, gather payroll and owner-compensation records; missing payroll facts block reliable affected estimates while preserving the incomplete packet. The workflow does not choose reasonable compensation or run payroll."
+      - "Persist a versioned external packet, source_completeness_ref, obligation_matrix_ref and external_write_proof_ref. Independent control review checks sources, annual-versus-installment separation, calculations and gaps. An unavailable advisor yields awaiting-advisor only for a complete review-ready packet, otherwise packet-incomplete."
+    success_criteria:
+      - "Projected annual liability and current installment are distinct external packet states or a safe exception blocks review."
+  - id: cpa-ea-review
+    title: Obtain CPA Or EA Review
+    purpose: Require recorded qualified-review approval of the external packet before owner review.
+    approval_refs: [cpa-ea-tax-review]
+    depends_on: [prepare-external-packet]
+    policy_refs: [qualified-advisor-then-owner, no-tax-action-or-advice]
+    output_refs: [tax_estimate_summary]
+    success_criteria:
+      - "The packet does not proceed to owner approval without both the external business-scoped reviewer record and separate cpa-ea-tax-review technical gate."
+  - id: owner-review-and-handoff
+    title: Obtain Owner Approval And Cashflow Handoff
+    purpose: Require owner approval of the CPA/EA-reviewed external packet, then record only safe cashflow handoff refs.
+    approval_refs: [owner-tax-packet-approval]
+    depends_on: [cpa-ea-review]
+    policy_refs: [qualified-advisor-then-owner, external-backend-is-authoritative, no-tax-action-or-advice]
+    output_refs: [tax_estimate_summary]
+    success_criteria:
+      - "The external business-scoped owner record matches the reviewed packet and the separate technical gate follows CPA/EA review; the result authorizes no filing, remittance, payment, or election change."
+outputs:
+  - key: tax_estimate_summary
+    name: Tax Estimate Summary
+    type: object
+    required: true
+    description: Safe external/current-source/reviewer/approval/handoff refs and state only; never rates, deadlines, calculations, amounts, advice, taxpayer details, source content, or filing/payment instructions.
+    schema:
+      type: object
+      additionalProperties: false
+      required: [status, tax_year, estimate_as_of, projected_annual_liability_state, current_installment_state, exception_refs]
+      properties:
+        status: {type: string, enum: [scoped, current-sources-validated, packet-prepared, packet-incomplete, awaiting-advisor, cpa-ea-reviewed, owner-approved, exception]}
+        tax_period_ref: {type: string, minLength: 1}
+        tax_year: {type: integer}
+        estimate_as_of: {type: string, format: date}
+        tax_packet_scope_ref: {type: string, minLength: 1}
+        official_source_packet_ref: {type: string, minLength: 1}
+        source_completeness_ref: {type: string, minLength: 1}
+        obligation_matrix_ref: {type: string, minLength: 1}
+        control_review_ref: {type: string, minLength: 1}
+        external_write_proof_ref: {type: string, minLength: 1}
+        projected_annual_liability_state: {type: string, enum: [not-prepared, prepared, reviewed, exception]}
+        current_installment_state: {type: string, enum: [not-prepared, prepared, reviewed, exception]}
+        external_packet_ref: {type: string, minLength: 1}
+        cpa_ea_review_ref: {type: string, minLength: 1}
+        owner_approval_ref: {type: string, minLength: 1}
+        exception_refs: {type: array, items: {type: string, minLength: 1}}
+        cashflow_handoff_refs: {type: array, items: {type: string, minLength: 1}}
+      allOf:
+        - if:
+            properties:
+              status: {enum: [packet-prepared, awaiting-advisor, cpa-ea-reviewed, owner-approved]}
+            required: [status]
+          then:
+            required: [external_packet_ref, official_source_packet_ref, source_completeness_ref, obligation_matrix_ref, external_write_proof_ref]
+            properties:
+              projected_annual_liability_state: {enum: [prepared, reviewed]}
+              current_installment_state: {enum: [prepared, reviewed]}
+        - if:
+            properties:
+              status: {enum: [cpa-ea-reviewed, owner-approved]}
+            required: [status]
+          then:
+            required: [cpa_ea_review_ref, control_review_ref]
+            properties:
+              projected_annual_liability_state: {const: reviewed}
+              current_installment_state: {const: reviewed}
+        - if:
+            properties:
+              status: {const: owner-approved}
+            required: [status]
+          then:
+            required: [owner_approval_ref, cashflow_handoff_refs]
+            properties:
+              cashflow_handoff_refs: {minItems: 1}
+        - if:
+            properties:
+              status: {enum: [exception, packet-incomplete]}
+            required: [status]
+          then:
+            properties:
+              exception_refs: {minItems: 1}
+failure_handling:
+  - "A stale/missing/conflicting source, missing qualified review, or missing owner approval stops the workflow with a safe external exception or handoff requirement."
+  - "Never convert a tax packet into a filing, remittance, payment, election, portal action, or tax/legal recommendation."
+metadata:
+  artifact_grant_policy: explicit
+  trigger_kinds: [manual, external]
+  finance_record_owner: external-backend
+  state_model: [scoped, current-sources-validated, packet-prepared, packet-incomplete, awaiting-advisor, cpa-ea-reviewed, owner-approved, exception]

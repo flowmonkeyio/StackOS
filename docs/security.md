@@ -45,6 +45,25 @@ exact-path exception so no sibling route inherits it. Currently:
 | `/api/v1/ingress/slack/*` | Slack Events API and Interactivity requests cannot carry the daemon bearer token. The route verifies `X-Slack-Signature` against the encrypted Slack signing secret using the raw body and timestamp before writing communication resources or agent requests. | A caller with the Slack signing secret can submit Slack-shaped events for that profile. This path also bypasses loopback-only Host checks so deployed/tunnel hosts work; all non-ingress API paths remain loopback-host guarded. |
 | `/api/v1/ingress/hubspot/*` | HubSpot webhook and custom workflow-action requests cannot carry the daemon bearer token. The route verifies the provider-documented v3 timestamped HMAC for webhook batches or v2 digest for workflow actions against the daemon-held app client secret and configured public HTTPS URI before parsing or writing. | A caller with the app client secret can submit HubSpot-shaped events for the one configured app/account profile. Exact portal/app checks and event/definition allowlists gate agent-request creation. This path bypasses loopback-only Host checks; the signed URI is derived from the configured ingress endpoint, never the incoming `Host` header. |
 
+## Generated asset and IMAP staging boundary
+
+Ordinary generated media remains available from the loopback-local
+`/generated-assets/*` mount without bearer authentication. The reserved
+`imap-transfers` first path component is different: it contains temporary raw
+mail evidence, so the mount rejects that normalized subtree with HTTP 404
+before file lookup. Duplicate separators, dot segments, percent encoding, and
+supplying either the daemon or UI bearer token do not make the subtree
+HTTP-readable. The mount also checks the resolved filesystem target, so a
+symlink or other path alias beneath a public-looking generated-assets directory
+cannot expose a file inside `imap-transfers`.
+
+An IMAP export `staging_uri` is therefore a host-filesystem-only locator under
+the daemon-owned generated-assets root, not an HTTP URL. A trusted local host
+may map the locator to the exact allowlisted manifest files and read them with
+its own filesystem authority. StackOS does not provide an API for those bytes,
+and this narrow connector handoff is not a general filesystem connector,
+storage service, finance evidence store, resource, or artifact path.
+
 ## No-secret auth provider boundary
 
 Provider credentials are daemon-owned. Agents may inspect sanitized auth status

@@ -92,6 +92,12 @@ class CredentialStorageMixin:
                 validate_ftp_credential_config(safe_config)
             except ValueError as exc:
                 raise ValidationError(str(exc), data={"provider_key": "ftp"}) from exc
+        elif provider.key == "imap":
+            from stackos.integrations.imap import normalize_imap_ca_pem
+
+            ca_pem = normalize_imap_ca_pem(safe_config.get("tls_ca_pem"))
+            if ca_pem is not None:
+                safe_config["tls_ca_pem"] = ca_pem
         elif provider.key == "aws-s3":
             from stackos.integrations.s3 import (
                 normalize_s3_prefix,
@@ -266,6 +272,12 @@ class CredentialStorageMixin:
                 validate_ftp_credential_config(safe_config)
             except ValueError as exc:
                 raise ValidationError(str(exc), data={"provider_key": "ftp"}) from exc
+        elif provider.key == "imap":
+            from stackos.integrations.imap import normalize_imap_ca_pem
+
+            ca_pem = normalize_imap_ca_pem(safe_config.get("tls_ca_pem"))
+            if ca_pem is not None:
+                safe_config["tls_ca_pem"] = ca_pem
         elif provider.key == "aws-s3":
             from stackos.integrations.s3 import (
                 normalize_s3_prefix,
@@ -282,6 +294,9 @@ class CredentialStorageMixin:
                     data={"provider_key": "aws-s3"},
                 ) from exc
         existing_config = dict(credential.config_json or {})
+        if provider.key == "imap" and "tls_ca_pem" in fields and "tls_ca_pem" not in safe_config:
+            # Explicit clearing removes this Account's extra trust; omission preserves it.
+            existing_config.pop("tls_ca_pem", None)
         existing_config.update(safe_config)
         safe_config = existing_config
         safe_config["auth_method_key"] = method.key

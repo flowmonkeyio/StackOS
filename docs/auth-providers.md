@@ -64,6 +64,18 @@ Agents should prefer `toolProfile.resolve` when they already know which
 provider/Account they need; `connection.list` is still available for
 project-scoped diagnostics.
 
+Account inventory includes `last_test`, the latest normalized `account.test`
+result from the existing credential usage audit. Both global Accounts and
+project Connections (including compact MCP reads) retain its outcome, check
+time, safe explanation, retryability, and repair guidance. Legacy audit rows
+retain their known pass/fail outcome and ask for a new test when complete
+diagnostics were not recorded. No additional credential-state table is used.
+This is historical diagnostic evidence, not a grant or a claim that every
+provider endpoint is accessible. A failed probe remains visible even when the
+Account lifecycle is `connected`; account selection and provider-enforced
+permissions do not change. The UI labels saved connections as connected, not
+verified-ready, and renders failed-check guidance as plain text.
+
 ## Setup Flow
 
 1. The agent inspects required providers through plugin/catalog metadata.

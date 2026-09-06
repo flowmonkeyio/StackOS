@@ -83,9 +83,14 @@ signoff: lint typecheck test-transfer-connectors ## Before commit/release: setup
 	$(UV) run pytest tests/unit \
 		tests/integration/test_routes/test_operations_routes.py \
 		tests/integration/test_routes/test_auth_provider_routes.py \
+		tests/integration/test_routes/test_action_validate_idempotency_routes.py \
 		tests/integration/test_routes/test_cli_mock_provider.py \
 		tests/integration/test_routes/test_telegram_setup_to_action_routes.py \
 		tests/integration/test_mcp/test_mcp_actions.py \
+		tests/integration/test_mcp/test_mcp_action_validate_idempotency.py \
+		tests/integration/test_mcp/test_mcp_finance_receipt_workflow.py \
+		tests/integration/test_mcp/test_mcp_imap_custom_ca.py \
+		tests/integration/test_mcp/test_mcp_finance_billing_workflow.py \
 		tests/integration/test_mcp/test_mcp_bridge_agent_path.py \
 		tests/integration/test_mcp/test_mcp_readiness.py \
 		tests/integration/test_mcp/test_mcp_run_plans.py \
@@ -93,17 +98,26 @@ signoff: lint typecheck test-transfer-connectors ## Before commit/release: setup
 		tests/integration/test_mcp/test_mcp_projects.py \
 		tests/integration/test_mcp/test_mcp_tracker.py \
 		tests/integration/test_mcp/test_mcp_communications.py \
+		tests/integration/test_mcp/test_mcp_agent_presets.py \
 		tests/integration/test_mcp/test_mcp_agent_requests.py \
+		tests/integration/test_mcp/test_mcp_stripe_actions.py \
 		tests/integration/test_repositories/test_tracker.py \
 		tests/integration/test_repositories/test_workspaces.py \
 		tests/integration/test_repositories/test_actions.py \
+		tests/integration/test_repositories/test_plugins.py \
+		tests/integration/test_repositories/test_finance_workflows.py \
+		tests/integration/test_repositories/test_finance_workflow_lifecycles.py \
+		tests/integration/test_repositories/test_stripe_actions.py \
 		tests/integration/test_repositories/test_video_provider_actions.py \
 		tests/integration/test_repositories/test_agent_requests.py \
 		tests/integration/test_repositories/test_auth_providers.py \
+		tests/integration/test_repositories/test_auth_test_history.py \
 		tests/integration/test_repositories/test_smtp_actions.py \
 		tests/integration/test_repositories/test_imap_actions.py \
+		tests/integration/test_repositories/test_imap_custom_ca.py \
 		tests/integration/test_repositories/test_telegram_bot_actions.py \
 		tests/integration/test_repositories/test_workflow_templates.py \
+		tests/integration/test_schema.py \
 		tests/integration/test_integrations \
 		-q
 	$(MAKE) test-ui-unit

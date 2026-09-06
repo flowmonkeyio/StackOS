@@ -274,6 +274,7 @@ def test_builtin_plugin_manifests_validate() -> None:
     assert slugs == [
         "engineering",
         "support",
+        "finance",
         "communications",
         "gtm",
         "marketing",
@@ -289,7 +290,10 @@ def test_builtin_plugin_manifests_validate() -> None:
     ]
     for manifest in BUILTIN_PLUGIN_MANIFESTS:
         assert manifest.capabilities
-        assert manifest.resources
+        # Finance is transport/workflow-only by design: its authoritative
+        # records live in the selected external finance backend, not StackOS.
+        if manifest.slug != "finance":
+            assert manifest.resources
         assert manifest.model_dump(mode="json")["slug"] == manifest.slug
 
     resources_by_plugin = {
@@ -928,6 +932,93 @@ def test_builtin_plugin_manifests_validate() -> None:
     assert "acting_as_account" not in trackbooth_actions["catalog.sync"].input_schema["properties"]
 
 
+def test_finance_stripe_manifest_is_transport_only_and_complete() -> None:
+    finance = next(manifest for manifest in BUILTIN_PLUGIN_MANIFESTS if manifest.slug == "finance")
+    assert finance.resources == []
+    assert {provider.key for provider in finance.providers} == {"stripe"}
+    stripe = finance.providers[0]
+    assert stripe.auth_type == "api-key"
+    assert [method.key for method in stripe.auth_methods] == ["api_key"]
+    assert _auth_field_keys(stripe, "api_key") == ["api_key"]
+    assert stripe.auth_methods[0].permission_verification is not None
+    assert stripe.auth_methods[0].permission_verification.evidence_source == "unavailable"
+    assert stripe.auth_methods[0].permission_verification.enforcement == "provider_enforced"
+
+    actions = {action.key: action for action in finance.actions}
+    assert set(actions) == {
+        "stripe.customers.create",
+        "stripe.customers.retrieve",
+        "stripe.customers.list",
+        "stripe.invoices.create",
+        "stripe.invoice-items.create",
+        "stripe.invoice-items.list",
+        "stripe.invoices.finalize",
+        "stripe.invoices.send",
+        "stripe.invoices.mark-paid-out-of-band",
+        "stripe.invoices.attach-payment",
+        "stripe.invoices.retrieve",
+        "stripe.invoices.list",
+        "stripe.invoice-payments.list",
+        "stripe.payment-intents.retrieve",
+        "stripe.payment-records.report",
+        "stripe.payment-records.retrieve",
+        "stripe.payment-records.list",
+        "stripe.charges.retrieve",
+        "stripe.charges.list",
+        "stripe.balance-transactions.retrieve",
+        "stripe.balance-transactions.list",
+        "stripe.refunds.retrieve",
+        "stripe.refunds.list",
+        "stripe.disputes.list",
+        "stripe.disputes.retrieve",
+        "stripe.balance.retrieve",
+    }
+    for action in actions.values():
+        assert action.provider == "stripe"
+        if action.key != "stripe.payment-records.list":
+            assert action.config["connector"] == "stripe"
+            assert not action.config.get("execution_mode", "").startswith("deferred")
+        assert action.config["operation"] == "rest.v1"
+        assert action.config["stripe"]["api_version"] == "2026-08-26.dahlia"
+        assert "docs/integration-contracts/stripe.md" in action.config["docs"]
+
+    record_list = actions["stripe.payment-records.list"]
+    assert sum(action.config.get("connector") == "stripe" for action in actions.values()) == 25
+    assert "connector" not in record_list.config
+    assert record_list.config["execution_mode"] == "deferred-stripe-payment-record-list"
+    assert "temporarily unavailable in StackOS" in record_list.config["deferred_reason"]
+    assert "known PaymentRecord ref" in record_list.config["deferred_reason"]
+    assert "never create a replacement report" in record_list.config["deferred_reason"]
+    assert record_list.risk_level == "read"
+    assert set(record_list.input_schema["properties"]) == {"limit", "page_cursor"}
+    assert record_list.input_schema["additionalProperties"] is False
+    assert record_list.config["stripe"]["path"] == "/payment_records"
+    assert record_list.config["stripe"]["method"] == "GET"
+
+    assert actions["stripe.customers.create"].input_schema["properties"]["name"]["maxLength"] == 256
+    assert (
+        "payload-secret"
+        in actions["stripe.customers.create"].input_schema["properties"]["email"]["description"]
+    )
+    assert (
+        "payload-secret"
+        in actions["stripe.invoice-items.create"].input_schema["properties"]["description"][
+            "description"
+        ]
+    )
+    assert actions["stripe.invoice-items.create"].input_schema["required"] == [
+        "customer_ref",
+        "invoice_ref",
+        "amount",
+        "currency",
+        "description",
+    ]
+    assert (
+        "maximum"
+        not in actions["stripe.invoices.create"].input_schema["properties"]["days_until_due"]
+    )
+
+
 def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
     providers = [
         (plugin.slug, provider)
@@ -935,7 +1026,7 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
         for provider in plugin.providers
     ]
 
-    assert len(providers) == 56
+    assert len(providers) == 57
     google_seo_providers = {
         "google-search-console",
         "google-analytics",
@@ -949,7 +1040,9 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
             f"{plugin_slug}:{provider.key} missing setup note"
         )
         expected_verified_at = (
-            "2026-07-22"
+            "2026-09-04"
+            if plugin_slug == "finance" and provider.key == "stripe"
+            else "2026-07-22"
             if plugin_slug == "gtm" and provider.key == "hubspot"
             else "2026-07-26"
             if plugin_slug == "utils" and provider.key == "aws-s3"

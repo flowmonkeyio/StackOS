@@ -1,0 +1,2855 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "External local finance JSON workspace v1",
+  "description": "Host-owned structured financial records, not a StackOS resource or ledger. Validate with format checking. JSON Schema checks structure only; the host checks cross-record IDs/references, evidence custody, additive history, immutable proposal digests, applicable currency precision, arithmetic, approval freshness and exclusive writer ownership.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "local-json-v1"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "workspace": {
+      "type": "object",
+      "properties": {
+        "backend_key": {
+          "const": "local-json"
+        },
+        "recording_mode": {
+          "const": "prepared/unposted"
+        }
+      },
+      "required": [
+        "backend_key",
+        "recording_mode"
+      ],
+      "additionalProperties": false
+    },
+    "operating_settings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/operating_setting"
+      }
+    },
+    "business_profiles": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/business_profile"
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/source"
+      }
+    },
+    "attachments": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/attachment"
+      }
+    },
+    "receipts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/receipt"
+      }
+    },
+    "bookkeeping": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/bookkeeping_record"
+      }
+    },
+    "customer_mappings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/customer_mapping"
+      }
+    },
+    "recipient_settings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/recipient_setting"
+      }
+    },
+    "billing_versions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/billing_version"
+      }
+    },
+    "provider_observations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/provider_observation"
+      }
+    },
+    "mutation_attempts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/mutation_attempt"
+      }
+    },
+    "settlements": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/settlement"
+      }
+    },
+    "collection_decisions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/collection_decision"
+      }
+    },
+    "reconciliations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/reconciliation"
+      }
+    },
+    "reviews": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/review"
+      }
+    },
+    "corrections": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/correction"
+      }
+    },
+    "exceptions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/exception"
+      }
+    },
+    "cashflow_forecasts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/cashflow_forecast"
+      }
+    },
+    "reserve_applications": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/reserve_application"
+      }
+    },
+    "tax_packets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/tax_packet"
+      }
+    },
+    "handoffs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/handoff"
+      }
+    },
+    "write_proofs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/write_proof"
+      }
+    },
+    "custody_events": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/custody_event"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "revision",
+    "workspace",
+    "operating_settings",
+    "business_profiles",
+    "sources",
+    "attachments",
+    "receipts",
+    "bookkeeping",
+    "customer_mappings",
+    "recipient_settings",
+    "billing_versions",
+    "provider_observations",
+    "mutation_attempts",
+    "settlements",
+    "collection_decisions",
+    "reconciliations",
+    "reviews",
+    "corrections",
+    "exceptions",
+    "cashflow_forecasts",
+    "reserve_applications",
+    "tax_packets",
+    "handoffs",
+    "write_proofs",
+    "custody_events"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "money": {
+      "type": "object",
+      "properties": {
+        "amount_minor": {
+          "type": "integer"
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        }
+      },
+      "required": [
+        "amount_minor",
+        "currency"
+      ],
+      "additionalProperties": false
+    },
+    "window": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "string",
+          "format": "date"
+        },
+        "end": {
+          "type": "string",
+          "format": "date"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "additionalProperties": false
+    },
+    "gap": {
+      "type": "object",
+      "properties": {
+        "field": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        }
+      },
+      "required": [
+        "field",
+        "reason",
+        "source_refs"
+      ],
+      "additionalProperties": false
+    },
+    "status_event": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
+        },
+        "actor": {
+          "$ref": "#/$defs/ref"
+        },
+        "from_status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to_status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        }
+      },
+      "required": [
+        "at",
+        "actor",
+        "to_status",
+        "reason",
+        "evidence_refs"
+      ],
+      "additionalProperties": false
+    },
+    "transport_identity": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "imap",
+            "manual-upload",
+            "provider",
+            "other"
+          ]
+        },
+        "account_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "mailbox_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "uidvalidity": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "uid": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "host_source_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "external_ref": {
+          "$ref": "#/$defs/ref"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "imap"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "account_ref",
+              "mailbox_ref",
+              "uidvalidity",
+              "uid"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "manual-upload"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "host_source_ref"
+            ]
+          }
+        }
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
+        },
+        "provider_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "account_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "transport_identity": {
+          "$ref": "#/$defs/transport_identity"
+        },
+        "content_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "kind",
+        "ref",
+        "observed_at"
+      ],
+      "additionalProperties": false
+    },
+    "record": {
+      "type": "object",
+      "properties": {
+        "record_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status_history": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/status_event"
+          },
+          "minItems": 1
+        },
+        "provenance": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/provenance"
+          },
+          "minItems": 1
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/gap"
+          }
+        }
+      },
+      "required": [
+        "record_id",
+        "created_at",
+        "updated_at",
+        "status",
+        "status_history",
+        "provenance",
+        "gaps"
+      ]
+    },
+    "sourced_fact": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "effective_from": {
+          "type": "string",
+          "format": "date"
+        },
+        "effective_to": {
+          "type": "string",
+          "format": "date"
+        }
+      },
+      "required": [
+        "value",
+        "source_refs"
+      ],
+      "additionalProperties": false
+    },
+    "operating_setting": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "scope": {
+              "type": "string",
+              "minLength": 1
+            },
+            "week_start": {
+              "enum": [
+                "monday",
+                "tuesday",
+                "wednesday",
+                "thursday",
+                "friday",
+                "saturday",
+                "sunday"
+              ]
+            },
+            "reporting_currency": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$"
+            },
+            "currency_policy_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "category_policy_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "billing_policy_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "followup_policy_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "policy_text": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reminder_owner": {
+              "enum": [
+                "agent",
+                "provider-automation",
+                "manual",
+                "unknown"
+              ]
+            },
+            "owner_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "advisor_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "writer_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "decision_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "intake_policy": {
+              "type": "object",
+              "properties": {
+                "max_file_bytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "max_message_bytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "scan_method": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "quarantine_method": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            },
+            "effective_from": {
+              "type": "string",
+              "format": "date"
+            },
+            "effective_to": {
+              "type": "string",
+              "format": "date"
+            },
+            "supersedes_ref": {
+              "$ref": "#/$defs/ref"
+            }
+          },
+          "required": [
+            "version",
+            "scope"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "business_profile": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "business_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "legal_form": {
+              "$ref": "#/$defs/sourced_fact"
+            },
+            "federal_tax_treatment": {
+              "$ref": "#/$defs/sourced_fact"
+            },
+            "california_tax_treatment": {
+              "$ref": "#/$defs/sourced_fact"
+            },
+            "accounting_basis": {
+              "$ref": "#/$defs/sourced_fact"
+            },
+            "payroll_status": {
+              "$ref": "#/$defs/sourced_fact"
+            },
+            "owner_compensation_status": {
+              "$ref": "#/$defs/sourced_fact"
+            },
+            "tax_year": {
+              "type": "integer",
+              "minimum": 1900
+            },
+            "supersedes_ref": {
+              "$ref": "#/$defs/ref"
+            }
+          },
+          "required": [
+            "version",
+            "business_ref"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "source": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "source_kind": {
+              "type": "string",
+              "minLength": 1
+            },
+            "source_identity": {
+              "type": "string",
+              "minLength": 1
+            },
+            "account_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "attachment_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "required_window": {
+              "$ref": "#/$defs/window"
+            },
+            "available_window": {
+              "$ref": "#/$defs/window"
+            },
+            "opening_balance": {
+              "$ref": "#/$defs/money"
+            },
+            "closing_balance": {
+              "$ref": "#/$defs/money"
+            },
+            "coverage_state": {
+              "enum": [
+                "complete",
+                "partial",
+                "missing",
+                "not-applicable"
+              ]
+            },
+            "official_url": {
+              "type": "string",
+              "format": "uri"
+            },
+            "tax_year": {
+              "type": "integer",
+              "minimum": 1900
+            },
+            "applicability_notes": {
+              "type": "string",
+              "minLength": 1
+            },
+            "transport_identity": {
+              "$ref": "#/$defs/transport_identity"
+            },
+            "duplicate_of_ref": {
+              "$ref": "#/$defs/ref"
+            }
+          },
+          "required": [
+            "source_kind",
+            "source_identity",
+            "attachment_refs",
+            "coverage_state"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "attachment": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "source_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "role": {
+              "type": "string",
+              "minLength": 1
+            },
+            "relative_path": {
+              "type": "string",
+              "pattern": "^attachments/[0-9]{4}/(0[1-9]|1[0-2])/[A-Za-z0-9][A-Za-z0-9_-]*(\\.[A-Za-z0-9_-]+)+$"
+            },
+            "quarantine_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "media_type": {
+              "type": "string",
+              "minLength": 1
+            },
+            "original_filename": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "source_ref",
+            "role",
+            "sha256",
+            "bytes",
+            "media_type",
+            "original_filename"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false,
+      "oneOf": [
+        {
+          "required": [
+            "relative_path"
+          ],
+          "not": {
+            "required": [
+              "quarantine_ref"
+            ]
+          }
+        },
+        {
+          "required": [
+            "quarantine_ref"
+          ],
+          "not": {
+            "required": [
+              "relative_path"
+            ]
+          }
+        }
+      ]
+    },
+    "receipt": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "source_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "attachment_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              },
+              "minItems": 1
+            },
+            "business_date": {
+              "type": "string",
+              "format": "date"
+            },
+            "merchant": {
+              "type": "string",
+              "minLength": 1
+            },
+            "amount": {
+              "$ref": "#/$defs/money"
+            },
+            "business_purpose": {
+              "type": "string",
+              "minLength": 1
+            },
+            "business_purpose_source_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "duplicate_of_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "duplicate_candidate_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "matched_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "exception_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            }
+          },
+          "required": [
+            "source_ref",
+            "attachment_refs"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "amount"
+          ]
+        },
+        {
+          "properties": {
+            "gaps": {
+              "contains": {
+                "properties": {
+                  "field": {
+                    "const": "amount"
+                  }
+                },
+                "required": [
+                  "field"
+                ]
+              }
+            }
+          },
+          "required": [
+            "gaps"
+          ]
+        }
+      ]
+    },
+    "category": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "enum": [
+            "proposed",
+            "applied",
+            "reviewed",
+            "unresolved"
+          ]
+        },
+        "category_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "rule_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "conversion": {
+      "type": "object",
+      "properties": {
+        "original_amount": {
+          "$ref": "#/$defs/money"
+        },
+        "converted_amount": {
+          "$ref": "#/$defs/money"
+        },
+        "date": {
+          "type": "string",
+          "format": "date"
+        },
+        "rate": {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+)?$"
+        },
+        "rate_source_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "review_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "policy_ref": {
+          "$ref": "#/$defs/ref"
+        }
+      },
+      "required": [
+        "original_amount",
+        "converted_amount",
+        "date",
+        "rate",
+        "rate_source_ref"
+      ],
+      "additionalProperties": false
+    },
+    "bookkeeping_record": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "const": "prepared/unposted"
+            },
+            "date": {
+              "type": "string",
+              "format": "date"
+            },
+            "amount": {
+              "$ref": "#/$defs/money"
+            },
+            "source_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              },
+              "minItems": 1
+            },
+            "category": {
+              "$ref": "#/$defs/category"
+            },
+            "business_purpose": {
+              "type": "string",
+              "minLength": 1
+            },
+            "account_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "receipt_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "reconciliation_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "correction_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "conversion": {
+              "$ref": "#/$defs/conversion"
+            }
+          },
+          "required": [
+            "date",
+            "amount",
+            "source_refs",
+            "category"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "customer_mapping": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "external_customer_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "provider_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "account_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "customer_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "match_evidence_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              },
+              "minItems": 1
+            },
+            "verified_at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "supersedes_ref": {
+              "$ref": "#/$defs/ref"
+            }
+          },
+          "required": [
+            "version",
+            "external_customer_ref",
+            "provider_ref",
+            "account_ref",
+            "customer_ref",
+            "match_evidence_refs",
+            "verified_at"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "additional_recipients": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "enum": [
+            "verified-none",
+            "verified",
+            "unknown"
+          ]
+        },
+        "to": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "email"
+          }
+        },
+        "cc": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "email"
+          }
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "verified-none"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "required": [
+              "to",
+              "cc"
+            ],
+            "properties": {
+              "to": {
+                "maxItems": 0
+              },
+              "cc": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "verified"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "required": [
+              "to",
+              "cc"
+            ],
+            "anyOf": [
+              {
+                "properties": {
+                  "to": {
+                    "minItems": 1
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "cc": {
+                    "minItems": 1
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "recipient_setting": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "provider_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "account_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "customer_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "invoice_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "primary_email": {
+              "type": "string",
+              "format": "email"
+            },
+            "primary_email_sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "additional_recipients": {
+              "$ref": "#/$defs/additional_recipients"
+            },
+            "verifier_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "verified_at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "evidence_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "validity": {
+              "type": "object",
+              "properties": {
+                "recheck_condition": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "expires_at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
+                }
+              },
+              "required": [
+                "recheck_condition"
+              ],
+              "additionalProperties": false
+            },
+            "supersedes_ref": {
+              "$ref": "#/$defs/ref"
+            }
+          },
+          "required": [
+            "version",
+            "provider_ref",
+            "account_ref",
+            "customer_ref",
+            "additional_recipients"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false,
+      "dependentRequired": {
+        "primary_email": [
+          "primary_email_sha256"
+        ]
+      }
+    },
+    "billing_terms": {
+      "type": "object",
+      "properties": {
+        "days_until_due": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "due_date": {
+          "type": "string",
+          "format": "date"
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "required": [
+            "days_until_due"
+          ],
+          "not": {
+            "required": [
+              "due_date"
+            ]
+          }
+        },
+        {
+          "required": [
+            "due_date"
+          ],
+          "not": {
+            "required": [
+              "days_until_due"
+            ]
+          }
+        }
+      ]
+    },
+    "billing_line": {
+      "type": "object",
+      "properties": {
+        "line_id": {
+          "$ref": "#/$defs/ref"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "amount": {
+          "$ref": "#/$defs/money"
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "line_id",
+        "description",
+        "description_sha256",
+        "amount",
+        "source_refs"
+      ],
+      "additionalProperties": false
+    },
+    "billing_version": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "digest_sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "customer_mapping_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "recipient_settings_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "currency": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$"
+            },
+            "terms": {
+              "$ref": "#/$defs/billing_terms"
+            },
+            "lines": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/billing_line"
+              },
+              "minItems": 1
+            },
+            "subtotal": {
+              "$ref": "#/$defs/money"
+            },
+            "total": {
+              "$ref": "#/$defs/money"
+            },
+            "source_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              },
+              "minItems": 1
+            },
+            "supersedes_ref": {
+              "$ref": "#/$defs/ref"
+            }
+          },
+          "required": [
+            "version",
+            "digest_sha256",
+            "customer_mapping_ref",
+            "recipient_settings_ref",
+            "currency",
+            "terms",
+            "lines",
+            "subtotal",
+            "total",
+            "source_refs"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false,
+      "description": "Immutable proposal material. Compute digest_sha256 as SHA-256 of the UTF-8 JSON object containing exactly version, customer_mapping_ref, recipient_settings_ref, currency, terms, lines, subtotal, total, source_refs, and supersedes_ref only when present. Preserve complete nested values and array order. Serialize with sorted object keys, no insignificant whitespace, unescaped Unicode, and no NaN/Infinity (Python: json.dumps(material, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8')). Do not normalize strings. Exclude record_id, digest_sha256, metadata, status/history, provenance/gaps, reviews, provider observations, mutation attempts and finance.json revision/hash. Approval separately binds record_id, version and this digest. Mapping and recipient refs identify immutable versions. Immutability, reference integrity and digest correctness require host comparison."
+    },
+    "provider_observation": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "provider_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "account_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "object_type": {
+              "type": "string",
+              "minLength": 1
+            },
+            "object_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "observed_at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "observed_status": {
+              "type": "string",
+              "minLength": 1
+            },
+            "source_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "livemode": {
+              "type": "boolean"
+            },
+            "customer_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "currency": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$"
+            },
+            "amount": {
+              "$ref": "#/$defs/money"
+            },
+            "amount_due": {
+              "$ref": "#/$defs/money"
+            },
+            "amount_paid": {
+              "$ref": "#/$defs/money"
+            },
+            "amount_remaining": {
+              "$ref": "#/$defs/money"
+            },
+            "gross": {
+              "$ref": "#/$defs/money"
+            },
+            "fee": {
+              "$ref": "#/$defs/money"
+            },
+            "net": {
+              "$ref": "#/$defs/money"
+            },
+            "linked_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "payment_ref_state": {
+              "enum": [
+                "available",
+                "missing",
+                "null",
+                "unsupported"
+              ]
+            },
+            "source_type": {
+              "type": "string",
+              "minLength": 1
+            },
+            "source_state": {
+              "type": "string",
+              "minLength": 1
+            },
+            "balance_type": {
+              "type": "string",
+              "minLength": 1
+            },
+            "request_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "action_call_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "description_sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "provider_ref",
+            "account_ref",
+            "object_type",
+            "object_ref",
+            "observed_at",
+            "observed_status",
+            "source_refs"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "mutation_attempt": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action_key": {
+              "type": "string",
+              "minLength": 1
+            },
+            "idempotency_key": {
+              "type": "string",
+              "minLength": 1
+            },
+            "correlation_key": {
+              "type": "string",
+              "minLength": 1
+            },
+            "outcome": {
+              "enum": [
+                "not-attempted",
+                "pending",
+                "succeeded",
+                "failed",
+                "unknown",
+                "test-accepted"
+              ]
+            },
+            "target_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "provider_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "account_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "object_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "action_call_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "request_digest_sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "approved_version_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "recovery_reason": {
+              "type": "string",
+              "minLength": 1
+            },
+            "original_attempt_ref": {
+              "$ref": "#/$defs/ref"
+            }
+          },
+          "required": [
+            "action_key",
+            "idempotency_key",
+            "correlation_key",
+            "outcome"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "allocation": {
+      "type": "object",
+      "properties": {
+        "allocation_id": {
+          "$ref": "#/$defs/ref"
+        },
+        "invoice_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "amount": {
+          "$ref": "#/$defs/money"
+        },
+        "match_evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "allocation_id",
+        "invoice_ref",
+        "amount",
+        "match_evidence_refs"
+      ],
+      "additionalProperties": false
+    },
+    "recovery": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "enum": [
+            "not-needed",
+            "unknown",
+            "held",
+            "resolved"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "original_attempt_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "verified_payment_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "action_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "verified_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "settlement": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "source_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "source_identity": {
+              "type": "string",
+              "minLength": 1
+            },
+            "source_sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "payment_reference_sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "provider_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "account_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "customer_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "invoice_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "received_amount": {
+              "$ref": "#/$defs/money"
+            },
+            "received_at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "selected_route": {
+              "enum": [
+                "attach-payment",
+                "report-and-attach",
+                "paid-out-of-band"
+              ]
+            },
+            "allocation": {
+              "$ref": "#/$defs/allocation"
+            },
+            "payment_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "match_evidence_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "decision_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "review_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "approval_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "attempt_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "write_proof_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "duplicate_of_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "recovery": {
+              "$ref": "#/$defs/recovery"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "supersedes_ref": {
+              "$ref": "#/$defs/ref"
+            }
+          },
+          "required": [
+            "version",
+            "source_ref",
+            "source_identity",
+            "source_sha256",
+            "provider_ref",
+            "account_ref",
+            "customer_ref",
+            "invoice_ref",
+            "received_amount",
+            "received_at",
+            "selected_route",
+            "allocation",
+            "recovery"
+          ]
+        },
+        {
+          "if": {
+            "properties": {
+              "selected_route": {
+                "const": "report-and-attach"
+              }
+            },
+            "required": [
+              "selected_route"
+            ]
+          },
+          "then": {
+            "required": [
+              "payment_reference_sha256"
+            ]
+          }
+        }
+      ],
+      "unevaluatedProperties": false,
+      "description": "For these digest projections use SHA-256 over the UTF-8 JSON object, preserving complete nested values and array order; sorted object keys, no insignificant whitespace, unescaped Unicode, no string normalization and no NaN/Infinity (Python: json.dumps(material, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8')). Include optional named fields only when present, never insert null. Material projection: version, source_ref, source_identity, source_sha256, payment_reference_sha256, provider_ref, account_ref, customer_ref, invoice_ref, received_amount, received_at, selected_route, allocation, match_evidence_refs, duplicate_of_ref, gaps, supersedes_ref. Also include payment_ref only for selected_route=attach-payment, where it is the preexisting selected payment. A payment_ref obtained from report-and-attach is a later execution observation and is excluded. Exclude recovery, decision_refs, review_refs, approval_refs, attempt_refs, write_proof_refs, record_id and common metadata/status/history/provenance. Material scope is immutable per proposal version. Approval separately binds record_id and version; fresh source/provider matching and the exact attachment approval gate remain mandatory."
+    },
+    "collection_decision": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "invoice_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "invoice_observation_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "eligibility": {
+              "enum": [
+                "eligible",
+                "suppressed",
+                "unknown"
+              ]
+            },
+            "decision_reason": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reminder_owner": {
+              "enum": [
+                "agent",
+                "provider-automation",
+                "manual",
+                "unknown"
+              ]
+            },
+            "due_status": {
+              "type": "string",
+              "minLength": 1
+            },
+            "dispute_state": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pause_state": {
+              "type": "string",
+              "minLength": 1
+            },
+            "promise_state": {
+              "type": "string",
+              "minLength": 1
+            },
+            "correction_state": {
+              "type": "string",
+              "minLength": 1
+            },
+            "last_contact_at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "cooldown_until": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "next_eligible_at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "review_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "approval_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "settlement_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "recipient_settings_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "send_outcome": {
+              "enum": [
+                "not-attempted",
+                "test-accepted",
+                "accepted",
+                "failed",
+                "unknown"
+              ]
+            },
+            "attempt_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "supersedes_ref": {
+              "$ref": "#/$defs/ref"
+            }
+          },
+          "required": [
+            "version",
+            "invoice_ref",
+            "eligibility",
+            "decision_reason",
+            "reminder_owner",
+            "send_outcome"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false,
+      "description": "For these digest projections use SHA-256 over the UTF-8 JSON object, preserving complete nested values and array order; sorted object keys, no insignificant whitespace, unescaped Unicode, no string normalization and no NaN/Infinity (Python: json.dumps(material, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8')). Include optional named fields only when present, never insert null. Material projection: version, invoice_ref, invoice_observation_ref, eligibility, decision_reason, reminder_owner, due_status, dispute_state, pause_state, promise_state, correction_state, last_contact_at, cooldown_until, recipient_settings_ref, settlement_refs, gaps, supersedes_ref. Exclude send_outcome, attempt_ref, next_eligible_at, review_refs, approval_refs, record_id and common metadata/status/history/provenance. Approval separately binds record_id and version. Fresh lifecycle, recipient and suppression checks remain mandatory before sending; a matching digest is not permission to send."
+    },
+    "difference": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "amount": {
+          "$ref": "#/$defs/money"
+        },
+        "resolved": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "reason",
+        "source_refs",
+        "resolved"
+      ],
+      "additionalProperties": false
+    },
+    "reconciliation": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "period": {
+              "$ref": "#/$defs/window"
+            },
+            "account_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "source_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "matched_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "unmatched_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "differences": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/difference"
+              }
+            },
+            "opening_balance": {
+              "$ref": "#/$defs/money"
+            },
+            "closing_balance": {
+              "$ref": "#/$defs/money"
+            },
+            "review_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "treatment_notes": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "period",
+            "account_refs",
+            "source_refs",
+            "matched_refs",
+            "unmatched_refs",
+            "differences"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "review": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "target_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "target_version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "target_digest_sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "scope": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
+            },
+            "authority": {
+              "enum": [
+                "owner",
+                "control-reviewer",
+                "advisor",
+                "operator"
+              ]
+            },
+            "verdict": {
+              "enum": [
+                "approved",
+                "rejected",
+                "held",
+                "incomplete",
+                "adopted"
+              ]
+            },
+            "actor": {
+              "$ref": "#/$defs/ref"
+            },
+            "decided_at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "reasons": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "technical_gate_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "supersedes_ref": {
+              "$ref": "#/$defs/ref"
+            }
+          },
+          "required": [
+            "target_ref",
+            "target_digest_sha256",
+            "scope",
+            "authority",
+            "verdict",
+            "actor",
+            "decided_at"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false,
+      "description": "target_digest_sha256 binds the exact reviewed material scope. Host resolution must require and match target_version when the target has a version. For an unversioned target, omit target_version and bind its record_id plus a digest of the full target record except created_at, updated_at, status, status_history, review_refs, write_proof_refs and handoff_refs. Include record_id, provenance, gaps and all other business fields. Use the same canonical UTF-8 JSON SHA-256 serialization defined for billing_version. Excluded status and review/write/handoff links are outcomes, not proof; fresh integrity checks remain mandatory. JSON Schema alone cannot validate the resolved target or digest."
+    },
+    "correction": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "superseded_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "replacement_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            },
+            "decision_ref": {
+              "$ref": "#/$defs/ref"
+            }
+          },
+          "required": [
+            "superseded_ref",
+            "replacement_ref",
+            "reason"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "exception": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            },
+            "affected_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "owner_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "decision_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "resolved_at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
+            }
+          },
+          "required": [
+            "kind",
+            "reason",
+            "affected_refs"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "assumption": {
+      "type": "object",
+      "properties": {
+        "assumption_id": {
+          "$ref": "#/$defs/ref"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1
+        },
+        "uncertainty": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "assumption_id",
+        "description",
+        "source_refs",
+        "rationale",
+        "uncertainty"
+      ],
+      "additionalProperties": false
+    },
+    "cashflow_week": {
+      "type": "object",
+      "properties": {
+        "week_number": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 13
+        },
+        "week_start": {
+          "type": "string",
+          "format": "date"
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "assumption_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/gap"
+          }
+        },
+        "opening_cash": {
+          "$ref": "#/$defs/money"
+        },
+        "operating_inflows": {
+          "$ref": "#/$defs/money"
+        },
+        "operating_outflows": {
+          "$ref": "#/$defs/money"
+        },
+        "actual_tax_payments": {
+          "$ref": "#/$defs/money"
+        },
+        "closing_cash": {
+          "$ref": "#/$defs/money"
+        },
+        "earmarked_reserve": {
+          "$ref": "#/$defs/money"
+        },
+        "free_cash": {
+          "$ref": "#/$defs/money"
+        }
+      },
+      "required": [
+        "week_number",
+        "week_start",
+        "source_refs",
+        "gaps"
+      ],
+      "additionalProperties": false
+    },
+    "cashflow_forecast": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "as_of": {
+              "type": "string",
+              "format": "date"
+            },
+            "week_1_start": {
+              "type": "string",
+              "format": "date"
+            },
+            "source_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "assumptions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/assumption"
+              }
+            },
+            "scenarios": {
+              "type": "object",
+              "properties": {
+                "base": {
+                  "type": "array",
+                  "minItems": 13,
+                  "maxItems": 13,
+                  "items": {
+                    "$ref": "#/$defs/cashflow_week"
+                  }
+                },
+                "downside": {
+                  "type": "array",
+                  "minItems": 13,
+                  "maxItems": 13,
+                  "items": {
+                    "$ref": "#/$defs/cashflow_week"
+                  }
+                }
+              },
+              "required": [
+                "base",
+                "downside"
+              ],
+              "additionalProperties": false
+            },
+            "review_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "reserve_application_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "supersedes_ref": {
+              "$ref": "#/$defs/ref"
+            }
+          },
+          "required": [
+            "version",
+            "as_of",
+            "week_1_start",
+            "source_refs",
+            "assumptions",
+            "scenarios"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "reserve_application": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "tax_packet_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "tax_packet_version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "forecast_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "forecast_version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "amount": {
+              "$ref": "#/$defs/money"
+            },
+            "applied_at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "supersedes_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "review_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            }
+          },
+          "required": [
+            "tax_packet_ref",
+            "tax_packet_version",
+            "forecast_ref",
+            "forecast_version",
+            "amount",
+            "applied_at"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "annual_inputs": {
+      "type": "object",
+      "properties": {
+        "ytd_income": {
+          "$ref": "#/$defs/money"
+        },
+        "ytd_expenses": {
+          "$ref": "#/$defs/money"
+        },
+        "projected_annual_income": {
+          "$ref": "#/$defs/money"
+        },
+        "projected_annual_expenses": {
+          "$ref": "#/$defs/money"
+        },
+        "remaining_year_income": {
+          "$ref": "#/$defs/money"
+        },
+        "remaining_year_expenses": {
+          "$ref": "#/$defs/money"
+        },
+        "household_income": {
+          "$ref": "#/$defs/money"
+        },
+        "spouse_income": {
+          "$ref": "#/$defs/money"
+        },
+        "prior_year_tax": {
+          "$ref": "#/$defs/money"
+        },
+        "prior_year_income": {
+          "$ref": "#/$defs/money"
+        },
+        "withholding": {
+          "$ref": "#/$defs/money"
+        },
+        "prior_estimates": {
+          "$ref": "#/$defs/money"
+        },
+        "deductions": {
+          "$ref": "#/$defs/money"
+        },
+        "credits": {
+          "$ref": "#/$defs/money"
+        },
+        "payroll": {
+          "$ref": "#/$defs/money"
+        },
+        "owner_compensation": {
+          "$ref": "#/$defs/money"
+        },
+        "filing_status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "tax_obligation": {
+      "type": "object",
+      "properties": {
+        "obligation_id": {
+          "$ref": "#/$defs/ref"
+        },
+        "taxpayer_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "authority": {
+          "type": "string",
+          "minLength": 1
+        },
+        "obligation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "applicability": {
+          "enum": [
+            "applies",
+            "unknown",
+            "excluded"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "calculation_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "calculation_method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "input_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/gap"
+          }
+        },
+        "due_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "due_date_source_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "projected_annual_liability": {
+          "$ref": "#/$defs/money"
+        },
+        "withholding_prior_estimates": {
+          "$ref": "#/$defs/money"
+        },
+        "current_installment": {
+          "$ref": "#/$defs/money"
+        },
+        "remaining_reserve": {
+          "$ref": "#/$defs/money"
+        }
+      },
+      "required": [
+        "obligation_id",
+        "taxpayer_ref",
+        "authority",
+        "obligation",
+        "applicability",
+        "reason",
+        "source_refs",
+        "gaps"
+      ],
+      "additionalProperties": false
+    },
+    "tax_review_state": {
+      "type": "object",
+      "properties": {
+        "control": {
+          "enum": [
+            "not-reviewed",
+            "held",
+            "approved"
+          ]
+        },
+        "advisor": {
+          "enum": [
+            "not-reviewed",
+            "held",
+            "approved"
+          ]
+        },
+        "owner": {
+          "enum": [
+            "not-adopted",
+            "held",
+            "adopted"
+          ]
+        }
+      },
+      "required": [
+        "control",
+        "advisor",
+        "owner"
+      ],
+      "additionalProperties": false
+    },
+    "tax_packet": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "tax_year": {
+              "type": "integer",
+              "minimum": 1900
+            },
+            "as_of": {
+              "type": "string",
+              "format": "date"
+            },
+            "profile_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "annual_inputs": {
+              "$ref": "#/$defs/annual_inputs"
+            },
+            "source_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "obligations": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/tax_obligation"
+              }
+            },
+            "review_state": {
+              "$ref": "#/$defs/tax_review_state"
+            },
+            "review_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "write_proof_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "handoff_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "supersedes_ref": {
+              "$ref": "#/$defs/ref"
+            }
+          },
+          "required": [
+            "version",
+            "tax_year",
+            "as_of",
+            "profile_refs",
+            "annual_inputs",
+            "source_refs",
+            "obligations",
+            "review_state"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false,
+      "description": "For these digest projections use SHA-256 over the UTF-8 JSON object, preserving complete nested values and array order; sorted object keys, no insignificant whitespace, unescaped Unicode, no string normalization and no NaN/Infinity (Python: json.dumps(material, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8')). Include optional named fields only when present, never insert null. Material projection: version, tax_year, as_of, profile_refs, annual_inputs, source_refs, obligations, gaps, supersedes_ref. Exclude review_state, review_refs, write_proof_refs, handoff_refs, record_id and common metadata/status/history/provenance. Approval separately binds record_id and version. Changed inputs, obligations or gaps require a new proposal version and review."
+    },
+    "handoff": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "handoff_id": {
+              "$ref": "#/$defs/ref"
+            },
+            "from_workflow": {
+              "type": "string",
+              "minLength": 1
+            },
+            "to_workflow": {
+              "type": "string",
+              "minLength": 1
+            },
+            "source_packet_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "source_version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "conditions": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "owner_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "result_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "source_digest_sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "handoff_id",
+            "from_workflow",
+            "to_workflow",
+            "source_packet_ref",
+            "conditions",
+            "owner_ref"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false,
+      "description": "Host resolution must require and match source_version when the source target has a version. For an unversioned source, omit source_version and require source_digest_sha256 to bind the source record_id and the full target record except created_at, updated_at, status, status_history, review_refs, write_proof_refs and handoff_refs. Include record_id, provenance, gaps and all other business fields. Use the same canonical UTF-8 JSON SHA-256 serialization defined for billing_version. Excluded status and review/write/handoff links are outcomes, not proof; fresh integrity checks remain mandatory. JSON Schema alone cannot validate cross-record versions or digest equality."
+    },
+    "write_proof": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "prior_revision": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "prior_sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "new_revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "changed_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              },
+              "minItems": 1
+            },
+            "writer_ref": {
+              "$ref": "#/$defs/ref"
+            },
+            "reread_result": {
+              "enum": [
+                "verified",
+                "failed",
+                "pending"
+              ]
+            },
+            "verified_attachment_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "reread_at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
+            }
+          },
+          "required": [
+            "prior_revision",
+            "prior_sha256",
+            "new_revision",
+            "changed_refs",
+            "writer_ref",
+            "reread_result"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false,
+      "description": "A proof of a prior verified write may be added in a later revision. Never assert this same write was reread before it happened; retain the immediate result outside the pre-write candidate. Do not embed the current whole-file hash."
+    },
+    "custody_event": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "enum": [
+                "backup",
+                "restore",
+                "retention",
+                "access",
+                "encryption",
+                "disposal"
+              ]
+            },
+            "actor": {
+              "$ref": "#/$defs/ref"
+            },
+            "scope_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "result": {
+              "type": "string",
+              "minLength": 1
+            },
+            "evidence_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              }
+            }
+          },
+          "required": [
+            "event",
+            "actor",
+            "scope_refs",
+            "result"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}

@@ -4,6 +4,36 @@ import { mount } from '@vue/test-utils'
 import ConnectionCredentialField from './ConnectionCredentialField.vue'
 
 describe('ConnectionCredentialField', () => {
+  it('preserves multiline public certificate text and emits an explicit clear', async () => {
+    const certificate = '-----BEGIN CERTIFICATE-----\npublic-certificate\n-----END CERTIFICATE-----'
+    const wrapper = mount(ConnectionCredentialField, {
+      props: {
+        field: {
+          key: 'tls_ca_pem',
+          label: 'Additional trusted CA certificates (PEM)',
+          type: 'textarea',
+          secret: false,
+          required: false,
+          description: 'Public certificates only.',
+        },
+        modelValue: certificate,
+        inputType: 'text',
+        secret: false,
+        select: false,
+        options: [],
+        editing: true,
+      },
+    })
+    const textarea = wrapper.get<HTMLTextAreaElement>('textarea')
+    expect(textarea.element.value).toBe(certificate)
+    expect(wrapper.get('label').attributes('for')).toBe(textarea.attributes('id'))
+    expect(wrapper.text()).toContain('Public certificates only.')
+    await textarea.setValue(certificate + '\n')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([certificate + '\n'])
+    await textarea.setValue('')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([''])
+  })
+
   it('emits ordered comma-separated values for a multi-select auth field', async () => {
     const wrapper = mount(ConnectionCredentialField, {
       props: {

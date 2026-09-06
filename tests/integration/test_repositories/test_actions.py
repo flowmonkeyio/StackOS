@@ -14,6 +14,7 @@ from pytest_httpx import HTTPXMock
 from sqlmodel import Session, select
 
 from stackos.actions import (
+    ActionConnectorError,
     ActionConnectorRegistry,
     ActionConnectorRequest,
     ActionConnectorResult,
@@ -31,6 +32,7 @@ from stackos.db.models import (
     CredentialUsageEvent,
     Plugin,
     PluginSource,
+    ProjectEvent,
     Provider,
 )
 from stackos.repositories.base import (
@@ -74,6 +76,7 @@ class _FakeConnector:
         self.calls = 0
         self.saw_secret: bytes | None = None
         self.saw_provider_context: dict | None = None
+        self.saw_idempotency_key: str | None = None
 
     def validate(self, request: ActionConnectorRequest) -> list[ActionValidationIssue]:
         if "name" not in request.input_json:
@@ -91,6 +94,7 @@ class _FakeConnector:
 
     async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
         self.calls += 1
+        self.saw_idempotency_key = request.idempotency_key
         assert request.credential is not None
         self.saw_secret = request.credential.secret_payload
         self.saw_provider_context = request.provider_context_json
@@ -103,6 +107,28 @@ class _FakeConnector:
             metadata_json={"safe": "ok", "refresh_token": "rt-leak"},
             cost_cents=34,
         )
+
+
+class _MutatingFailureConnector:
+    key = "fake.echo"
+
+    def validate(self, _request: ActionConnectorRequest) -> list[ActionValidationIssue]:
+        return []
+
+    def estimate_cost_cents(self, _request: ActionConnectorRequest) -> int:
+        return 0
+
+    async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
+        assert isinstance(request.session, Session)
+        request.session.add(
+            ProjectEvent(
+                project_id=request.project_id,
+                source_type="connector-test",
+                event_type="must-rollback",
+            )
+        )
+        request.session.flush()
+        raise ActionConnectorError("expected connector failure")
 
 
 class _NoAuthConnector:
@@ -630,6 +656,56 @@ def test_action_execute_file_backs_context_output_as_plain_file(
     assert out.action_call.metadata_json["file_backed_output"]["path"] == pointer["path"]
 
 
+@pytest.mark.parametrize("risk_level", ["read", "write"])
+def test_output_persistence_failure_preserves_provider_execution_diagnosis(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    risk_level: str,
+) -> None:
+    _seed_action(session)
+    action = session.exec(select(Action).where(Action.key == "echo.run")).one()
+    action.risk_level = risk_level
+    session.add(action)
+    session.commit()
+    credential_ref = _credential_ref(session, project_id)
+    fake = _FakeConnector()
+    registry = ActionConnectorRegistry()
+    registry.register(fake)
+    repo = ActionRepository(session, connectors=registry, asset_dir=tmp_path)
+
+    def fail_output_write(**_kwargs: object) -> None:
+        raise OSError("fixture output storage unavailable")
+
+    monkeypatch.setattr(repo, "_apply_output_policy", fail_output_write)
+    with pytest.raises(ConflictError) as caught:
+        asyncio.run(
+            repo.execute(
+                project_id=project_id,
+                action_ref="test-actions.echo.run",
+                credential_ref=credential_ref,
+                input_json={"name": "Ada"},
+                idempotency_key="fixture-output-persistence",
+                output_policy_json={"mode": "always_file"},
+            )
+        )
+
+    assert fake.calls == 1  # Failure was after dispatch, not a safe preflight rejection.
+    call = session.get(ActionCall, caught.value.data["action_call_id"])
+    assert call is not None
+    assert call.status == "failed"
+    assert call.response_json is not None
+    for diagnosis in (caught.value.data, call.response_json):
+        assert diagnosis["output_persistence_failed"] is True
+        assert diagnosis["provider_executed"] is True
+        assert diagnosis["outcome_unknown"] is (risk_level != "read")
+        assert diagnosis["retry_safe"] is (risk_level == "read")
+        assert diagnosis["reconcile_before_retry"] is (risk_level != "read")
+    assert "leaked-token" not in json.dumps(call.response_json)
+    assert "sk-leak" not in json.dumps(call.response_json)
+
+
 def test_action_execute_rejects_explicit_file_path_for_file_backed_output(
     session: Session,
     project_id: int,
@@ -875,10 +951,36 @@ def test_action_execute_idempotency_replays_without_second_connector_call(
     ).data
 
     assert fake.calls == 1
+    assert fake.saw_idempotency_key == "same-action"
     assert first.replayed is False
     assert second.replayed is True
     assert second.action_call.id == first.action_call.id
     assert len(session.exec(select(ActionCall)).all()) == 1
+
+
+def test_action_connector_failure_rolls_back_pending_connector_writes(
+    session: Session,
+    project_id: int,
+) -> None:
+    _seed_action(session)
+    credential_ref = _credential_ref(session, project_id)
+    registry = ActionConnectorRegistry()
+    registry.register(_MutatingFailureConnector())
+
+    with pytest.raises(ConflictError, match="action connector failed"):
+        asyncio.run(
+            ActionRepository(session, connectors=registry).execute(
+                project_id=project_id,
+                action_ref="test-actions.echo.run",
+                input_json={"name": "Ada"},
+                credential_ref=credential_ref,
+                idempotency_key="rollback-action",
+            )
+        )
+
+    assert session.exec(select(ProjectEvent)).all() == []
+    call = session.exec(select(ActionCall)).one()
+    assert call.status.value == "failed"
 
 
 def test_builtin_action_connectors_describe_availability(session: Session) -> None:

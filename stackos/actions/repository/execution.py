@@ -140,6 +140,7 @@ class ActionExecutionMixin:
             input_json=payload,
             provider_context_json=provider_context,
             credential_ref=resolved_ref,
+            idempotency_key=idempotency_key,
         )
         validation_issues = _dedupe_validation_issues([*runtime_context.issues, *validation.issues])
         if validation_issues:
@@ -213,6 +214,7 @@ class ActionExecutionMixin:
             provider_context_json=provider_context,
             credential=None,
             dry_run=True,
+            idempotency_key=idempotency_key,
         )
         estimated_cost_cents = max(0, connector.estimate_cost_cents(dry_request))
         if dry_run:
@@ -377,6 +379,7 @@ class ActionExecutionMixin:
             provider_context_json=provider_context,
             credential=credential,
             dry_run=False,
+            idempotency_key=idempotency_key,
             progress_callback=progress_callback,
         )
         started = time.perf_counter()
@@ -388,6 +391,7 @@ class ActionExecutionMixin:
                 del materialized_payload
         except ActionConnectorError as exc:
             duration_ms = int((time.perf_counter() - started) * 1000)
+            self._s.rollback()
             output_json = _redact_for_audit(redact_secret_values(exc.output_json, sensitive_values))
             connector_metadata = (
                 _redact_for_audit(redact_secret_values(exc.metadata_json, sensitive_values))
@@ -435,6 +439,7 @@ class ActionExecutionMixin:
             ) from exc
         except Exception as exc:
             duration_ms = int((time.perf_counter() - started) * 1000)
+            self._s.rollback()
             safe_error = redact_secret_text(redact_secret_values(str(exc), sensitive_values))
             row = self._record_call(
                 project_id=project_id,
@@ -551,6 +556,17 @@ class ActionExecutionMixin:
         except Exception as exc:
             self._s.rollback()
             safe_error = redact_secret_text(redact_secret_values(str(exc), sensitive_values))
+            # Dispatch already succeeded. Keep this distinction in the durable audit,
+            # not only the immediate error, so a resumed agent cannot mistake a local
+            # output failure for permission to repeat a provider mutation.
+            mutation = manifest.risk_level != "read"
+            persistence_diagnosis = {
+                "output_persistence_failed": True,
+                "provider_executed": True,
+                "outcome_unknown": mutation,
+                "retry_safe": not mutation,
+                "reconcile_before_retry": mutation,
+            }
             row = self._record_call(
                 project_id=project_id,
                 manifest=manifest,
@@ -563,7 +579,7 @@ class ActionExecutionMixin:
                 request_json=payload,
                 provider_context_json=provider_context_for_audit,
                 response_json={
-                    "output_persistence_failed": True,
+                    **persistence_diagnosis,
                     "response_summary": _json_summary(output_json),
                 },
                 metadata_json=success_metadata,
@@ -577,6 +593,7 @@ class ActionExecutionMixin:
             raise ConflictError(
                 "action output persistence failed",
                 data={
+                    **persistence_diagnosis,
                     "action_ref": manifest.action_ref,
                     "action_call_id": row.id,
                     "connector": manifest.connector_key,
@@ -617,6 +634,7 @@ class ActionExecutionMixin:
         provider_context_json: dict[str, Any],
         credential: ResolvedCredential | None,
         dry_run: bool,
+        idempotency_key: str | None = None,
         progress_callback: ActionProgressCallback | None = None,
     ) -> ActionConnectorRequest:
         return ActionConnectorRequest(
@@ -633,6 +651,7 @@ class ActionExecutionMixin:
             asset_dir=self._asset_dir,
             session=self._s,
             dry_run=dry_run,
+            idempotency_key=idempotency_key,
             progress_callback=progress_callback,
         )
 

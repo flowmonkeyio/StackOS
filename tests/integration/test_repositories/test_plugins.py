@@ -28,6 +28,7 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
     assert [p.slug for p in plugins] == [
         "engineering",
         "support",
+        "finance",
         "communications",
         "gtm",
         "marketing",
@@ -84,6 +85,18 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
     support = repo.get_plugin("support")
     assert support.name == "Support"
     assert support.manifest_json["ui"]["nav"]["section"] == "Support"
+
+    finance = repo.catalog(plugin_slug="finance").plugins[0]
+    assert finance.plugin.slug == "finance"
+    assert finance.plugin.manifest_json["ui"] is None
+    assert {provider.key for provider in finance.providers} == {"stripe"}
+    assert {action.key for action in finance.actions} >= {
+        "stripe.customers.create",
+        "stripe.invoices.create",
+        "stripe.invoices.send",
+        "stripe.balance.retrieve",
+    }
+    assert finance.resources == []
 
 
 def test_project_enable_disable_plugin(session: Session, project_id: int) -> None:

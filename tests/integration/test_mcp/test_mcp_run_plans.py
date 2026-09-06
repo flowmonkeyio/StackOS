@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from .conftest import MCPClient
 
 
@@ -345,6 +347,62 @@ def test_claim_step_compact_response_includes_expectations_and_dependency_handof
         "constraint": "prepare only",
         "details": "x" * 5000,
     }
+
+
+@pytest.mark.parametrize("response_mode", [None, "compact", "raw"])
+@pytest.mark.parametrize("result", [None, {"decision": "x" * 1000}, {"detail": "x" * 5000}])
+def test_run_plan_get_step_returns_saved_result_and_recovery(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    response_mode: str | None,
+    result: dict | None,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    created = mcp_client.call_tool_structured(
+        "runPlan.create", {"project_id": project_id, "run_plan_json": _plan_json()}
+    )
+    run_plan_id = created["data"]["id"]
+    if result is not None:
+        started = mcp_client.call_tool_structured(
+            "runPlan.start", {"project_id": project_id, "run_plan_id": run_plan_id}
+        )
+        run_token = started["data"]["run_token"]
+        mcp_client.call_tool_structured(
+            "runPlan.claimStep",
+            {"run_plan_id": run_plan_id, "step_id": "review", "run_token": run_token},
+        )
+        mcp_client.call_tool_structured(
+            "runPlan.recordStep",
+            {
+                "run_plan_id": run_plan_id,
+                "step_id": "review",
+                "run_token": run_token,
+                "status": "success",
+                "result_json": result,
+            },
+        )
+    arguments = {"run_plan_id": run_plan_id, "step_id": "review"}
+    if response_mode is not None:
+        arguments["response_mode"] = response_mode
+    fetched = mcp_client.call_tool_structured("runPlan.getStep", arguments)
+    step = fetched if response_mode == "raw" else fetched["data"]
+    assert step["run_plan_id"] == run_plan_id
+    assert step["step_id"] == "review"
+    if response_mode == "raw" or result is None or "detail" not in result:
+        assert step["result_json"] == result
+        if response_mode != "raw":
+            assert step["result_truncated"] is False
+    else:
+        assert step["result_truncated"] is True
+        assert step["result_json"]["available_keys"] == ["detail"]
+        assert step["result_json"]["handoff_truncated"] is True
+        assert f"run_plan_id={run_plan_id}" in step["result_json"]["recovery"]
+        assert "step_id='review'" in step["result_json"]["recovery"]
+        assert "response_mode=raw" in step["result_json"]["recovery"]
+        recovered = mcp_client.call_tool_structured(
+            "runPlan.getStep", {**arguments, "response_mode": "raw"}
+        )
+        assert recovered["result_json"] == result
 
 
 def test_run_plan_failed_step_marks_tracker_mirror_failed(

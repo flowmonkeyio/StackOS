@@ -18,6 +18,13 @@
 # `plugins/seo/agent-presets/seo.yaml` for `seo.keyword-research` and
 # `seo.website-analysis`. Shared planning and review roles reuse the SDLC agents
 # above. Main-agent guidance lives at `.codex/orchestrator/workflow-orchestrator.md`.
+#
+# Project-local finance agents are adapted from
+# `plugins/finance/agent-presets/finance.yaml` for the six finance workflows.
+# Their main-agent guidance lives at
+# `.codex/orchestrator/finance-department-orchestrator.md`. Finance agent files
+# intentionally omit `model` so they inherit the operator-selected host model;
+# only their role-appropriate reasoning effort is set.
 
 # StackOS is the repository's primary workflow and delivery-state runtime.
 # Keep its MCP namespace model-visible even when Codex defers other MCP tools
@@ -74,6 +81,24 @@ config_file = "agents/seo-keyword-research.toml"
 
 [agents.seo_website_analysis]
 config_file = "agents/seo-website-analysis.toml"
+
+[agents.finance_receipt_operator]
+config_file = "agents/finance-receipt-operator.toml"
+
+[agents.finance_bookkeeping_preparer]
+config_file = "agents/finance-bookkeeping-preparer.toml"
+
+[agents.finance_billing_collections_operator]
+config_file = "agents/finance-billing-collections-operator.toml"
+
+[agents.finance_cashflow_preparer]
+config_file = "agents/finance-cashflow-preparer.toml"
+
+[agents.finance_tax_preparer]
+config_file = "agents/finance-tax-preparer.toml"
+
+[agents.finance_control_reviewer]
+config_file = "agents/finance-control-reviewer.toml"
 
 # Repo-local wrapper starts and proxies to one shared Serena Streamable HTTP
 # MCP server for this checkout.

@@ -395,14 +395,14 @@ onBeforeRouteUpdate((to) => {
           >
             {{
               attentionConnections.length > 0
-                ? `${attentionConnections.length} ${attentionConnections.length === 1 ? 'connection needs' : 'connections need'} repair`
-                : `${connectedServiceCount} ${connectedServiceCount === 1 ? 'service is' : 'services are'} ready`
+                ? `${attentionConnections.length} ${attentionConnections.length === 1 ? 'connection needs' : 'connections need'} attention`
+                : `${connectedServiceCount} ${connectedServiceCount === 1 ? 'service connected' : 'services connected'}`
             }}
           </h2>
           <p class="mt-2 max-w-3xl text-sm leading-6 text-fg-muted">
             <template v-if="attentionConnections.length > 0">
-              Repair or re-test these accounts before an agent depends on them. Healthy services
-              remain available.
+              Review these Accounts and their verification guidance before an agent depends on them.
+              Other connected services remain available.
             </template>
             <template v-else>
               Secrets remain in the local daemon. Connected agents receive only safe credential

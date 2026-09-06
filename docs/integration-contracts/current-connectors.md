@@ -1,13 +1,13 @@
 # Current Executable Connector Contract Audit
 
-Audit date: 2026-07-26
+Audit date: 2026-09-06 (Stripe list deferral; other rows retain prior scope)
 
 Scope: executable connector contracts for OpenAI Images, xAI Imagine, Reve,
 Google Gemini Image, Google Veo, Ideogram, BytePlus Seedream/Seedance,
 Alibaba Wan, Kling, Firecrawl, Jina Reader, FTP/FTPS, Amazon S3, Cloudflare DNS, Reddit,
 DataForSEO, Serper.dev,
 Ahrefs, Google Search Console, Google Analytics 4, Google Tag Manager,
-HubSpot, Linear, WordPress, Ghost, sitemap, Trackbooth, Shopify, generic HTTP, and the internal Branding
+HubSpot, Linear, WordPress, Ghost, sitemap, Trackbooth, Shopify, Stripe, generic HTTP, and the internal Branding
 evidence connector, plus
 connection-only setup providers that intentionally do not expose actions yet,
 and the built-in OAuth/auth-protocol classification.
@@ -88,6 +88,7 @@ this audit does not restate its lifecycle or readiness rules.
 | Cloudflare DNS | [zones list](https://developers.cloudflare.com/api/resources/zones/methods/list/), [DNS record API](https://developers.cloudflare.com/api/resources/dns/subresources/records/), [official OpenAPI](https://github.com/cloudflare/api-schemas) | [API tokens](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/) with Zone Read and DNS Write as needed | One-page `result_info`, standard errors plus RFC 9457/text fallback, [rate-limit headers](https://developers.cloudflare.com/fundamentals/api/reference/limits/), and zero automatic mutation retries |
 | Trackbooth | Live Agent API catalog export fetched by `trackbooth.catalog.sync`; local generated bundle in `plugins/trackbooth/agent-api/` is a reference/test fixture | `X-API-Key` with optional `X-Acting-As-Account`; default API URL `https://apis.trackbooth.com`; credential config may point to localhost or remote HTTPS | Live `GET /api/agent-api/catalog/export` for sync, live compact catalog/search and operation detail only for diagnostics, generated OpenAPI/catalog fixtures, and schema constraints audit |
 | Shopify | [Admin GraphQL reference](https://shopify.dev/docs/api/admin-graphql/latest), [access scopes](https://shopify.dev/docs/api/usage/access-scopes), [versioning](https://shopify.dev/docs/api/usage/versioning), [limits](https://shopify.dev/docs/api/usage/limits) | Static operator-supplied Admin API access token sent as `X-Shopify-Access-Token`; no OAuth/token acquisition in StackOS | One versioned Admin GraphQL endpoint; StackOS exposes 58 curated actions, preserves `extensions.cost`, and documents the 751 schema root-field count in `shopify.md` |
+| Stripe | [Canonical StackOS contract and official source ledger](stripe.md) | Restricted daemon-held API-key JSON credential; `GET /v1/account` persists safe account evidence while Stripe enforces key permissions | 25 executable actions retain the pinned `2026-08-26.dahlia` contracts. The 26th declared action, PaymentRecord listing, is temporarily unavailable: explicit manifest deferral returns its reason without dispatch pending a verified availability fix. Explicit invoice currency, typed observations/reconciliation, read retry veto and original-key write recovery remain unchanged. Test-mode sends produce no email. |
 | Generic HTTP | [RFC 9110 HTTP semantics](https://www.rfc-editor.org/rfc/rfc9110), [RFC 7617 Basic auth](https://www.rfc-editor.org/rfc/rfc7617), [RFC 6750 bearer usage](https://www.rfc-editor.org/rfc/rfc6750), [RFC 9457 problem details](https://www.rfc-editor.org/rfc/rfc9457) | RFC 7617 and RFC 6750 | RFC 9110 and RFC 9457 |
 | Branding internal evidence | `branding.evidence.capture` and `branding.evidence.sanitize-mark` are internal StackOS resource actions documented by `plugins/branding/plugin.yaml`, `plugins/branding/README.md`, and `docs/plugins.md`; they have no external provider API. | none | Not paginated; one evidence resource is captured or marked per action call. |
 
@@ -125,6 +126,7 @@ this audit does not restate its lifecycle or readiness rules.
 | `http` | plugin-defined custom actions only | `stackos/actions/http.py:170` | documented in `docs/plugins.md:77`; no first-party manifest row | Static plugin config supplies URL/method/auth mode; daemon injects credential if allowed. |
 | `trackbooth` | Fixed `trackbooth.catalog.sync`, `trackbooth.catalog.search`, `trackbooth.operation.describe`; sync upserts generated action rows from the live bulk export and exposes stable refs like `trackbooth.api.links_create` | `stackos/actions/trackbooth.py`, `stackos/integrations/trackbooth.py` | `plugins/trackbooth/plugin.yaml`, `plugins/trackbooth/agent-api/*` | API key payload; safe `api_base_url` config defaults to production and may point to localhost for local testing. |
 | `shopify` | 58 refs under `shopify.*`, including products, orders, inventory, customers, and analytics actions | `stackos/actions/shopify.py`, `stackos/integrations/shopify.py` | `plugins/shopify/plugin.yaml`, `plugins/shopify/graphql/*`, `docs/integration-contracts/shopify-action-signoff.md` | Static Admin API access token payload; safe `store_domain` and optional `api_version` config. OAuth/token acquisition is out of scope. |
+| `stripe` | Customer and invoice lifecycle; safe invoice/item/payment/charge/refund/dispute/balance reads; PaymentIntent and PaymentRecord retrieve; report a received bank payment; attach one existing payment; fixed no-charge full out-of-band settlement. PaymentRecord list is deferred. | `stackos/actions/stripe.py`, `stackos/integrations/stripe.py` | `plugins/finance/plugin.yaml`, [`stripe.md`](stripe.md) | Daemon-held API-key JSON only. Account-bound refs, supported bounded pagination, description/reference digests and fixed metadata correlation preserve safe transport. Writes require explicit idempotency/reconciliation and do not imply finance authority. Unavailable PaymentRecord listing never dispatches; use retained audit/known-ref retrieval or hold owner/provider recovery. No payment initiation, refund creation, transfer or payout. |
 
 ## Connection-Only Setup Providers
 

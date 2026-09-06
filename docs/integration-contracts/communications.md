@@ -4,10 +4,12 @@ Status: first executable slice delivered. Generic agent request operations,
 Telegram Bot API messaging, Telegram webhook set/delete/info, project-scoped
 Telegram bot profiles, Telegram secret-token ingress, Slack Web API actions,
 Slack signed HTTP ingress, SMTP send, and IMAP mailbox/message lifecycle actions
-are executable. Slack Socket Mode remains deferred until StackOS has a daemon
-runner contract. This document owns the current contract and limitation record
-for the StackOS communications layer and generic agent request inbox; it is not
-a delivery task ledger.
+are executable. The IMAP connector also provides bounded staged-evidence export
+and transfer-id-only cleanup for the finance receipt workflow; it remains
+transport rather than a finance store. Slack Socket Mode remains deferred until
+StackOS has a daemon runner contract. This document owns the current contract
+and limitation record for the StackOS communications layer and generic agent
+request inbox; it is not a delivery task ledger.
 
 Plan review status: signed off with minor implementation notes by sub-agent
 review on 2026-05-23.
@@ -29,6 +31,9 @@ Official provider and protocol references:
 - SMTP: https://www.rfc-editor.org/rfc/rfc5321.html
 - SMTP AUTH: https://www.rfc-editor.org/rfc/rfc4954
 - IMAP4rev2: https://www.rfc-editor.org/rfc/rfc9051.html
+- Python IMAP client errors and read-only mailbox selection: https://docs.python.org/3/library/imaplib.html
+- Python certificate verification errors: https://docs.python.org/3/library/ssl.html#ssl.SSLCertVerificationError
+- Python DNS errors: https://docs.python.org/3/library/socket.html#socket.gaierror
 
 StackOS references this contract must stay aligned with:
 
@@ -673,9 +678,49 @@ IMAP sync must use stable UIDs and UIDVALIDITY, not volatile sequence numbers.
 Cursor resources should store enough provider metadata to detect mailbox
 rebuilds and avoid duplicate ingestion.
 
+#### External evidence handoff
+
+An IMAP message can be untrusted source evidence for a workflow whose
+authoritative records live outside StackOS. In that case, mailbox search is
+discovery, not acknowledgement; `communications.imap.message.export` retrieves
+one selected UID with read-only `BODY.PEEK[]`; and `\Seen` is a separately
+granted provider action only after the host has atomically persisted and
+verified the original in the selected external backend. The generic search
+cursor's `last_observed_uid` remains observation-only state, not finance
+progress or receipt acknowledgement.
+
+The connector stages bounded raw MIME and extracted attachments beneath its
+existing daemon-owned `ActionConnectorRequest.asset_dir`, returning only an
+allowlisted manifest with a project-contained `staging_uri`, opaque transfer id,
+safe source identity, canonical staged paths, hashes, byte counts, and media
+types. The URI is not a daemon path or a `host_handoff` object; the trusted host
+maps it through its own local filesystem runtime and reads only the exact
+manifest files. It is a host-filesystem-only locator, not an HTTP URL: the
+normalized `imap-transfers` generated-assets subtree always returns HTTP 404,
+including to a bearer-authenticated request, and resolved-target checks prevent
+a symlink or other public-looking alias from exposing it. Staging is a temporary
+transport copy—not a communication resource, artifact, finance record, StackOS
+filesystem integration, or storage service. Raw MIME, attachment bytes,
+headers, bodies, addresses, and attachment filenames must not enter action
+output, durable resources, artifacts, or action-audit fields. The host agent
+owns validated evidence writes and a separately granted transfer-id-only
+connector cleanup action removes the temporary directory after acknowledgement.
+The full implementation contract, including the 10 MiB raw-message limit, 20
+attachment/8 MiB-per-attachment/10 MiB-total limits, 200 MIME parts, 20 MIME
+levels, identity, deduplication, recovery, no-ack cases, and the current search
+cursor's observation-only meaning, is
+[`plugins/finance/references/imap-host-handoff-contract.md`](../../plugins/finance/references/imap-host-handoff-contract.md).
+
+The generic IMAP actions retain plaintext compatibility for non-finance
+mailboxes. A finance workflow must instead preflight a successfully verified
+SSL or STARTTLS credential, use the TLS-only evidence export, and pass the
+observed UIDVALIDITY back to the separately granted acknowledgement action.
+It must never treat a plaintext search/mark result as receipt-intake progress.
+
 ## First-Party Plugin
 
-Add `plugins/communications/plugin.yaml`.
+The implemented communications plugin is
+[`plugins/communications/plugin.yaml`](../../plugins/communications/plugin.yaml).
 
 Capabilities:
 
@@ -1048,7 +1093,7 @@ IMAP examples:
 - `credential_ref`
 - `mailbox_ref`
 - `uidvalidity`
-- `last_seen_uid`
+- `last_observed_uid` (a search observation only; it is never an acknowledgement)
 - `last_sync_at`
 - `search_query`
 
@@ -1367,6 +1412,8 @@ Safe config fields:
 - `tls_mode`: `ssl`, `starttls`, or `none`
 - `username`
 - `default_mailbox`
+- `tls_ca_pem`: optional public CA certificate bundle (PEM, maximum 64 KiB),
+  stored on the Account and used by both the Account probe and IMAP actions
 - `mailbox_refs`
 - `search_limit`
 
@@ -1379,6 +1426,32 @@ Credential tests:
 - Connect, authenticate, select the default mailbox, and return safe mailbox
   capability/status metadata.
 - Do not return raw mailbox transcripts or message bodies.
+- Failures return the existing normalized Account-test summary, next action,
+  retryability, and finite `metadata.stage` / `metadata.reason_code` fields.
+  Connection refusal, DNS, timeout/network, certificate verification, TLS
+  negotiation, rejected login, unavailable default mailbox, and protocol failures
+  stay distinguishable without exposing exception text. A rejected login does
+  not prove a wrong password; an unavailable mailbox does not distinguish a
+  missing mailbox from denied access. Failed probes remain saved diagnostics,
+  not Account revocation. Probes select read-only and use LOGOUT, never CLOSE,
+  message fetches, or flag changes.
+
+For a private CA or temporary local GreenMail fixture, save the reviewed public
+CA certificates in the Account's optional `tls_ca_pem` field. StackOS accepts
+certificate-only PEM bundles, validates CA constraints, and rejects private keys,
+malformed certificates, non-CA certificates, and other content before saving.
+The bundle adds trust only to that Account's IMAP connections; default roots,
+certificate validity checks, and hostname verification remain enabled. Omitted
+values preserve saved trust on edit; explicitly clearing the field removes the
+additional trust. Invalid edits leave the saved Account unchanged. Invalid
+stored trust configuration returns `tls_configuration_error` at the TLS stage.
+
+Account trust lives in the existing local database and survives daemon restart
+and app replacement without a temporary CA-file path or `SSL_CERT_FILE` setting.
+The live server, approved listener ports, and certificate lifetime still belong
+to the operator's fixture setup. A saved CA does not extend its validity period.
+Rerun the read-only Account test before receipt work after a server or certificate
+change. Never disable verification or install global trust as a workaround.
 
 Deferred auth methods:
 
@@ -1597,6 +1670,8 @@ Action refs:
 - `communications.imap.mailbox.list`
 - `communications.imap.messages.search`
 - `communications.imap.message.fetch`
+- `communications.imap.message.export`
+- `communications.imap.message.export.cleanup`
 - `communications.imap.message.mark_seen`
 - `communications.imap.message.mark_unseen`
 
@@ -1605,11 +1680,22 @@ Validation rules:
 - Use mailbox refs and UIDs.
 - Reject sequence-number-only operations.
 - Bound search limit and fetch body size.
-- Let agents request only selected fields unless full body/artifact storage is
-  explicitly needed.
-- Mark-seen and mark-unseen are write actions and need approval/grant coverage.
+- Let agents request only selected fields for metadata fetches. Evidence export
+  uses a separate bounded, read-only `BODY.PEEK[]` transfer with RFC822.SIZE
+  preflight; it is never artifact or resource storage.
+- Evidence export and cleanup are write-risk actions because they create/delete
+  connector staging, even though export does not mutate the provider mailbox.
+- Mark-seen and mark-unseen are write actions and need approval/grant coverage;
+  finance acknowledgement supplies the selected mailbox's expected UIDVALIDITY.
+  A tagged STORE success alone is not acknowledgement: read back the exact UID
+  and intended flags, or return an outcome-unknown recovery error without
+  recording success. Generic body fetch also requires one exact UID-bound
+  literal; unsolicited or ambiguous literals must never replace that message.
+  Cleanup uses LOGOUT directly, never CLOSE or EXPUNGE, so unrelated messages
+  already flagged deleted are preserved (RFC 9051 sections 6.4.1 and 6.4.9).
 - Persist mailbox cursor/channel/message/event resources from connector output
-  without exposing IMAP passwords.
+  without exposing IMAP passwords. Search cursor state is observation-only
+  (`last_observed_uid`), never acknowledgement.
 
 ## Trigger And Ingestion Modes
 

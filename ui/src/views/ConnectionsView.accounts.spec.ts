@@ -293,6 +293,58 @@ describe('ConnectionsView reusable Accounts', () => {
     expect(wrapper.html()).not.toContain('fc-secret')
   })
 
+  it('shows a saved verification failure after loading an attached Account', async () => {
+    const provider = authProvider('stripe', 'Stripe', 'api-key', apiKeyMethod())
+    const account = {
+      ...authConnection({
+        revokedAt: null,
+        providerKey: 'stripe',
+        credentialRef: 'cred_stripe',
+        label: 'Stripe - Sandbox',
+        lastTestedAt: '2026-09-05T00:00:00Z',
+      }),
+      last_test: {
+        credential_ref: 'cred_stripe',
+        provider_key: 'stripe',
+        ok: false,
+        status: 'connected',
+        summary: 'This key cannot access the account verification endpoint.',
+        checked_at: '2026-09-05T00:00:00Z',
+        retryable: false,
+        next_action: 'Use a test key with the required account read permission.',
+        metadata: { authorization: 'Bearer never-render-this-canary' },
+      },
+    }
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      const catalogResponse = catalogJson(url)
+      if (catalogResponse) return catalogResponse
+      if (url === '/api/v1/auth/accounts' || url === '/api/v1/projects/1/connections/accounts') {
+        return json({ project_id: 1, provider_key: null, providers: [provider], accounts: [account] })
+      }
+      return json({})
+    }) as typeof fetch
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/connections', component: ConnectionsView }],
+    })
+    await router.push('/projects/1/connections')
+    await router.isReady()
+
+    for (let load = 0; load < 2; load += 1) {
+      const wrapper = mountConnections(router)
+      await vi.waitFor(() => expect(wrapper.text()).toContain('Stripe - Sandbox'))
+      expect(wrapper.text()).toContain('Verification failed')
+      expect(wrapper.text()).toContain(account.last_test.summary)
+      expect(wrapper.text()).toContain(account.last_test.next_action)
+      expect(wrapper.text()).toContain('1 connection needs attention')
+      expect(wrapper.text()).not.toContain('service is ready')
+      expect(wrapper.text()).not.toContain('never-render-this-canary')
+      expect(wrapper.text()).toContain('1 connected')
+      wrapper.unmount()
+    }
+  })
+
   it('keeps a create-time verification failure visible on the connected service', async () => {
     let created = false
     const provider = authProvider('firecrawl', 'Firecrawl', 'api-key', apiKeyMethod())
@@ -336,7 +388,7 @@ describe('ConnectionsView reusable Accounts', () => {
             summary: 'The API key could not be verified.',
             checked_at: '2026-07-24T00:00:00Z',
             retryable: false,
-            next_action: null,
+            next_action: 'Replace the key with one that has the required permissions.',
             metadata: {},
           },
         })
@@ -367,8 +419,9 @@ describe('ConnectionsView reusable Accounts', () => {
     await vi.waitFor(() => {
       expect(wrapper.text()).toContain('Firecrawl - New')
       expect(wrapper.text()).toContain(
-        'The API key could not be verified. The Account was saved; retry verification from Accounts.',
+        'The API key could not be verified. Replace the key with one that has the required permissions. The Account was saved.',
       )
+      expect(wrapper.text()).not.toContain('retry verification')
     })
   })
 

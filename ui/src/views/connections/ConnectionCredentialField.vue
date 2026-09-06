@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { UiCheckbox, UiFormField, UiInput, UiSecretInput, UiSelect } from '@/components/ui'
+import {
+  UiCheckbox,
+  UiFormField,
+  UiInput,
+  UiSecretInput,
+  UiSelect,
+  UiTextarea,
+} from '@/components/ui'
 
 import { connectionFieldInputId } from './fieldIds'
 import type { AuthField } from './types'
@@ -89,6 +96,16 @@ function updateMultiSelect(value: string, selected: boolean): void {
         no-copy
         no-reveal
         :placeholder="editing && secretPresent ? '••••••••' : (field.placeholder ?? '')"
+        @update:model-value="emit('update:modelValue', $event)"
+      />
+      <UiTextarea
+        v-else-if="field.type === 'textarea'"
+        :id="id"
+        :model-value="modelValue"
+        :aria-describedby="describedBy"
+        :invalid="invalid"
+        :placeholder="field.placeholder ?? undefined"
+        :rows="5"
         @update:model-value="emit('update:modelValue', $event)"
       />
       <UiInput

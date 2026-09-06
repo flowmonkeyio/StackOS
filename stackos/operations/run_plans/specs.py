@@ -197,7 +197,7 @@ def operation_specs() -> list[OperationSpec]:
         ),
         OperationSpec(
             name="runPlan.getStep",
-            summary="Fetch one run-plan step with its complete persisted result.",
+            summary="Fetch one run-plan step with its bounded result or exact raw recovery hint.",
             input_model=RunPlanGetStepInput,
             output_model=RunPlanStepOut,
             handler=run_plan_get_step,
@@ -214,6 +214,10 @@ def operation_specs() -> list[OperationSpec]:
             returns=(
                 "The selected run-plan step, including its persisted result_json and "
                 "execution metadata.",
+                "Compact/default mode retains null and results up to 4096 serialized bytes. "
+                "Larger results return result_truncated=true and a bounded result_json with "
+                "available keys, optional summary, and an exact raw getStep recovery call.",
+                "Pass response_mode=raw to retrieve the complete persisted result unchanged.",
             ),
             examples=(
                 OperationExample(

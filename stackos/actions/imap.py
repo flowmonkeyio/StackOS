@@ -8,17 +8,25 @@ Official docs verified:
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
+import hashlib
 import imaplib
+import os
 import re
+import shutil
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from email import policy
 from email.message import EmailMessage, Message
 from email.parser import BytesParser
 from email.utils import getaddresses
+from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from stackos.actions.connectors import (
+    ActionConnectorError,
     ActionConnectorRequest,
     ActionConnectorResult,
     ActionValidationIssue,
@@ -30,6 +38,8 @@ from stackos.actions.provider_utils import (
     issue,
     unknown_operation,
 )
+from stackos.config import Settings
+from stackos.integrations.imap import imap_ssl_context
 from stackos.repositories.base import ValidationError
 from stackos.repositories.resources import ResourceRepository
 
@@ -38,6 +48,15 @@ _MAX_LIMIT = 500
 _DEFAULT_LIMIT = 50
 _DEFAULT_BODY_BYTES = 64_000
 _MAX_BODY_BYTES = 1_048_576
+_MAX_EXPORT_MESSAGE_BYTES = 10 * 1024 * 1024
+_MAX_EXPORT_ATTACHMENTS = 20
+_MAX_EXPORT_ATTACHMENT_BYTES = 8 * 1024 * 1024
+_MAX_EXPORT_ATTACHMENT_TOTAL_BYTES = 10 * 1024 * 1024
+_MAX_EXPORT_MIME_PARTS = 200
+_MAX_EXPORT_MIME_DEPTH = 20
+_MAX_UIDVALIDITY = 4_294_967_295
+_MAX_MAILBOX_NAME_CHARS = 240
+_TRANSFER_ID_RE = re.compile(r"^[a-f0-9]{32}$")
 _MESSAGE_FIELDS = {
     "subject",
     "from",
@@ -76,9 +95,15 @@ class ImapActionConnector:
                 _optional_int(payload, "uid", issues, minimum=1, required=True)
                 _fields(payload.get("fields"), issues)
                 _optional_int(payload, "max_body_bytes", issues, minimum=0, maximum=_MAX_BODY_BYTES)
+            case "message.export":
+                _text(payload, "mailbox_ref", issues, required=True)
+                _optional_int(payload, "uid", issues, minimum=1, required=True)
+            case "message.export.cleanup":
+                _transfer_id(payload, issues)
             case "message.mark_seen" | "message.mark_unseen":
                 _text(payload, "mailbox_ref", issues, required=True)
                 _optional_int(payload, "uid", issues, minimum=1, required=True)
+                _optional_uidvalidity(payload, issues)
             case _:
                 issues.extend(unknown_operation(request))
         return issues
@@ -100,6 +125,10 @@ class ImapActionConnector:
                 result = await asyncio.to_thread(_fetch_message, request)
                 _store_inbound_message(request, result.output_json)
                 return result
+            case "message.export":
+                return await asyncio.to_thread(_export_message, request)
+            case "message.export.cleanup":
+                return await asyncio.to_thread(_cleanup_export, request)
             case "message.mark_seen":
                 result = await asyncio.to_thread(_mark_message, request, seen=True)
                 _store_message_status(request, result.output_json)
@@ -177,7 +206,7 @@ def _fetch_message(request: ActionConnectorRequest) -> ActionConnectorResult:
             f"(UID FLAGS RFC822.SIZE BODY.PEEK[]<0.{max_body_bytes}>)",
         )
         _ensure_ok(typ, "UID FETCH")
-        raw, flags, size = _fetch_payload(data)
+        raw, flags, size = _fetch_payload(data, uid=uid)
         if raw is None:
             raise ValidationError(f"IMAP message UID {uid} was not found")
         parsed = BytesParser(policy=policy.default).parsebytes(raw)
@@ -196,6 +225,149 @@ def _fetch_message(request: ActionConnectorRequest) -> ActionConnectorResult:
         _logout(client)
 
 
+def _export_message(request: ActionConnectorRequest) -> ActionConnectorResult:
+    """Stage one exact RFC822 message without creating StackOS evidence state."""
+    settings = _imap_settings(request)
+    client: Any | None = None
+    transfer_dir: Path | None = None
+    transfer_id: str | None = None
+    asset_root: Path | None = None
+    try:
+        _require_export_tls(settings)
+        mailbox = _mailbox_name(request, settings)
+        uid = int(request.input_json["uid"])
+        client = _login(settings)
+        selected = _select(client, mailbox, readonly=True)
+        uidvalidity = _required_uidvalidity(selected.get("uidvalidity"))
+        # RFC822.SIZE is deliberately fetched before the full BODY.PEEK literal.
+        typ, preflight = client.uid("FETCH", str(uid), "(UID RFC822.SIZE)")
+        _ensure_export_ok(typ)
+        preflight_size, _unused_literal = _export_fetch_tuple(
+            preflight,
+            uid=uid,
+            require_literal=False,
+        )
+        if preflight_size > _MAX_EXPORT_MESSAGE_BYTES:
+            raise _export_error(
+                "oversize",
+                "IMAP message exceeds the 10 MiB evidence export limit",
+                details={"size_bytes": preflight_size, "max_bytes": _MAX_EXPORT_MESSAGE_BYTES},
+            )
+
+        # BODY.PEEK and readonly SELECT ensure exporting never changes \Seen.
+        typ, fetched = client.uid("FETCH", str(uid), "(UID RFC822.SIZE BODY.PEEK[])")
+        _ensure_export_ok(typ)
+        fetched_size, raw = _export_fetch_tuple(fetched, uid=uid, require_literal=True)
+        assert raw is not None
+        if fetched_size != preflight_size or len(raw) != preflight_size:
+            raise _export_error(
+                "size_mismatch",
+                "IMAP evidence export did not return the preflighted message size",
+                details={
+                    "expected_bytes": preflight_size,
+                    "received_bytes": len(raw),
+                },
+            )
+
+        attachments = _export_attachments(raw)
+        transfer_id, transfer_dir, asset_root = _create_transfer_dir(request)
+        raw_manifest = _stage_export_file(transfer_dir, "original.eml", raw)
+        attachment_manifest = [
+            {
+                "ordinal": ordinal,
+                "path": f"attachment-{ordinal:03d}",
+                "media_type": media_type,
+                **_stage_export_file(transfer_dir, f"attachment-{ordinal:03d}", payload),
+            }
+            for ordinal, (media_type, payload) in enumerate(attachments, start=1)
+        ]
+        staging_uri = _generated_assets_uri(asset_root, transfer_dir)
+        account_ref = _safe_account_ref(request)
+        return _export_result(
+            operation="message.export",
+            tls_mode=str(settings["tls_mode"]),
+            body={
+                "transfer_kind": "imap-staged-evidence.v1",
+                "transfer_id": transfer_id,
+                "staging_uri": staging_uri,
+                "source_identity": {
+                    "provider_key": "imap",
+                    "account_ref": account_ref,
+                    "mailbox_ref": _mailbox_ref(mailbox),
+                    "uidvalidity": uidvalidity,
+                    "uid": uid,
+                    "content_sha256": raw_manifest["sha256"],
+                },
+                "raw_mime": {"path": "original.eml", **raw_manifest},
+                "attachments": attachment_manifest,
+                "attachment_count": len(attachment_manifest),
+                "attachment_total_bytes": sum(item["bytes"] for item in attachment_manifest),
+            },
+        )
+    except ActionConnectorError as exc:
+        _cleanup_partial_export_or_raise(
+            transfer_id=transfer_id,
+            transfer_dir=transfer_dir,
+            asset_root=asset_root,
+        )
+        exc.metadata_json.setdefault("operation", "message.export")
+        exc.metadata_json.setdefault("tls_mode", str(settings.get("tls_mode") or "unknown"))
+        raise
+    except Exception as exc:
+        failure = _export_error(
+            "export_failed",
+            "IMAP evidence export could not complete safely",
+            details={"error_category": type(exc).__name__},
+        )
+        _cleanup_partial_export_or_raise(
+            transfer_id=transfer_id,
+            transfer_dir=transfer_dir,
+            asset_root=asset_root,
+        )
+        raise failure from exc
+    finally:
+        if client is not None:
+            _logout(client)
+
+
+def _cleanup_export(request: ActionConnectorRequest) -> ActionConnectorResult:
+    raw_transfer_id = request.input_json.get("transfer_id")
+    if not isinstance(raw_transfer_id, str) or _TRANSFER_ID_RE.fullmatch(raw_transfer_id) is None:
+        raise _export_error(
+            "invalid_transfer", "IMAP evidence cleanup requires an opaque transfer id"
+        )
+    transfer_id = raw_transfer_id
+    asset_root = _generated_assets_root(request)
+    project_root = _project_transfer_root(request, asset_root)
+    transfer_dir = project_root / transfer_id
+    _assert_contained(project_root, transfer_dir)
+    if not _path_exists(transfer_dir):
+        raise _export_error("not_found", "IMAP staged evidence transfer was not found")
+    if transfer_dir.is_symlink():
+        raise _export_error(
+            "unsafe_transfer", "IMAP staged evidence transfer is unsafe to clean up"
+        )
+    staging_uri = _generated_assets_uri(asset_root, transfer_dir)
+    try:
+        _assert_no_symlinks(transfer_dir)
+        _remove_transfer_dir(transfer_dir)
+    except ActionConnectorError:
+        raise
+    except OSError as exc:
+        raise _cleanup_error(transfer_id=transfer_id, staging_uri=staging_uri) from exc
+    if _path_exists(transfer_dir):
+        raise _cleanup_error(transfer_id=transfer_id, staging_uri=staging_uri)
+    return _export_result(
+        operation="message.export.cleanup",
+        tls_mode=None,
+        body={
+            "transfer_id": transfer_id,
+            "staging_uri": staging_uri,
+            "cleanup_status": "deleted",
+        },
+    )
+
+
 def _mark_message(
     request: ActionConnectorRequest,
     *,
@@ -204,23 +376,54 @@ def _mark_message(
     settings = _imap_settings(request)
     mailbox = _mailbox_name(request, settings)
     uid = int(request.input_json["uid"])
+    expected_uidvalidity = request.input_json.get("expected_uidvalidity")
     client = _login(settings)
     try:
-        _select(client, mailbox, readonly=False)
+        selected = _select(client, mailbox, readonly=False)
+        selected_uidvalidity = selected.get("uidvalidity")
+        if expected_uidvalidity is not None:
+            actual_uidvalidity = _required_uidvalidity(selected_uidvalidity)
+            if actual_uidvalidity != str(expected_uidvalidity):
+                raise ValidationError("IMAP UIDVALIDITY no longer matches the selected mailbox")
         op = "+FLAGS" if seen else "-FLAGS"
         # IMAP STORE command for \\Seen lifecycle:
         # https://www.rfc-editor.org/rfc/rfc9051.html#name-store-command
-        typ, data = client.uid("STORE", str(uid), op, "(\\Seen)")
-        _ensure_ok(typ, f"UID STORE {op}")
+        # A tagged OK also permits a nonexistent UID (RFC 9051 section 6.4.9).
+        # Observe the exact UID's flags before claiming acknowledgement.
+        try:
+            typ, _data = client.uid("STORE", str(uid), op, "(\\Seen)")
+            _ensure_ok(typ, f"UID STORE {op}")
+            typ, data = client.uid("FETCH", str(uid), "(UID FLAGS)")
+            _ensure_ok(typ, "UID FETCH flags")
+            matches = []
+            for item in data or []:
+                if not isinstance(item, bytes):
+                    continue
+                metadata = _safe_decode(item)
+                if _single_fetch_number(metadata, r"\bUID\s+(\d+)") == uid and re.search(
+                    r"\bFLAGS\s+\([^)]*\)", metadata, re.IGNORECASE
+                ):
+                    matches.append(_parse_flags(metadata))
+            if len(matches) != 1 or (("\\Seen" in matches[0]) != seen):
+                raise ValidationError("IMAP flag readback did not confirm the requested UID state")
+        except Exception as exc:
+            raise ActionConnectorError(
+                "IMAP flag write outcome requires reconciliation",
+                provider_error={
+                    "outcome_unknown": True,
+                    "retry_safe": False,
+                    "recovery": "Re-read the exact mailbox epoch, UID and flags before "
+                    "acknowledging or retrying; retain staged evidence until confirmed.",
+                },
+            ) from exc
         result = {
             "mailbox_ref": _mailbox_ref(mailbox),
-            "mailbox_name": mailbox,
             "uid": uid,
-            "message_ref": f"imap-message:{mailbox}:{uid}",
+            "uidvalidity": selected_uidvalidity,
             "attention_status": "read" if seen else "unread",
-            "store_response": [_safe_decode(item) for item in data or [] if item],
+            "store_applied": True,
         }
-        return _connector_result(request, result, settings)
+        return _mark_result(request, result, settings)
     finally:
         _logout(client)
 
@@ -239,6 +442,7 @@ def _imap_settings(request: ActionConnectorRequest) -> dict[str, Any]:
         "host": host,
         "port": port,
         "tls_mode": tls_mode,
+        "tls_ca_pem": config.get("tls_ca_pem"),
         "username": username,
         "password": credential_value(request, "password", "secret"),
         "timeout_s": float(_config_int(config, payload, "timeout_s", default=30)),
@@ -252,26 +456,26 @@ def _login(settings: Mapping[str, Any]) -> Any:
     host = str(settings["host"])
     port = int(settings["port"])
     timeout = float(settings["timeout_s"])
-    client: Any
-    try:
-        if settings["tls_mode"] == "ssl":
-            client = imaplib.IMAP4_SSL(host, port, timeout=timeout)
-        else:
-            client = imaplib.IMAP4(host, port, timeout=timeout)
-    except TypeError:
-        if settings["tls_mode"] == "ssl":
-            client = imaplib.IMAP4_SSL(host, port)
-        else:
-            client = imaplib.IMAP4(host, port)
+    tls_context = imap_ssl_context(settings.get("tls_ca_pem"))
+    if settings["tls_mode"] == "ssl":
+        client: Any = imaplib.IMAP4_SSL(
+            host,
+            port,
+            ssl_context=tls_context,
+            timeout=timeout,
+        )
+    else:
+        client = imaplib.IMAP4(host, port, timeout=timeout)
     if settings["tls_mode"] == "starttls":
-        client.starttls()
+        client.starttls(ssl_context=tls_context)
     client.login(str(settings["username"]), str(settings["password"]))
     return client
 
 
 def _logout(client: Any) -> None:
-    with suppress(Exception):
-        client.close()
+    # LOGOUT releases selection without expunging pre-existing \\Deleted mail.
+    # CLOSE would delete unrelated messages after a writable flag action.
+    # https://www.rfc-editor.org/rfc/rfc9051.html#section-6.4.1
     with suppress(Exception):
         client.logout()
 
@@ -298,14 +502,23 @@ def _mailbox_name(
     raw = str(request.input_json.get("mailbox_ref") or "default").strip()
     refs = settings.get("mailbox_refs") if isinstance(settings.get("mailbox_refs"), Mapping) else {}
     if raw in {"default", "imap-mailbox:default"}:
-        return str(settings["default_mailbox"])
-    if isinstance(refs, Mapping) and raw in refs:
-        return str(refs[raw])
-    if raw.startswith("imap-mailbox:"):
-        return raw.removeprefix("imap-mailbox:")
-    if not refs:
-        return raw
-    raise ValidationError(f"mailbox_ref {raw!r} is not configured for this IMAP credential")
+        mailbox = str(settings["default_mailbox"])
+    elif isinstance(refs, Mapping) and raw in refs:
+        mailbox = str(refs[raw])
+    elif raw.startswith("imap-mailbox:"):
+        mailbox = raw.removeprefix("imap-mailbox:")
+    elif not refs:
+        mailbox = raw
+    else:
+        raise ValidationError(f"mailbox_ref {raw!r} is not configured for this IMAP credential")
+    return _validated_mailbox_name(mailbox)
+
+
+def _validated_mailbox_name(value: str) -> str:
+    mailbox = str(value).strip()
+    if not mailbox or len(mailbox) > _MAX_MAILBOX_NAME_CHARS or _has_crlf(mailbox):
+        raise ValidationError("IMAP mailbox reference resolved to an invalid mailbox name")
+    return mailbox
 
 
 def _mailbox_ref(mailbox: str) -> str:
@@ -374,22 +587,419 @@ def _uid_list(data: Sequence[Any] | None) -> list[int]:
     return out
 
 
-def _fetch_payload(data: Sequence[Any] | None) -> tuple[bytes | None, list[str], int | None]:
+def _fetch_payload(
+    data: Sequence[Any] | None, *, uid: int
+) -> tuple[bytes | None, list[str], int | None]:
     if not data:
         return None, [], None
-    raw: bytes | None = None
-    flags: list[str] = []
-    size: int | None = None
+    matches: list[tuple[bytes, list[str], int | None]] = []
     for item in data:
         if isinstance(item, tuple) and len(item) >= 2:
             meta = _safe_decode(item[0])
-            if isinstance(item[1], bytes):
-                raw = item[1]
-            flags = _parse_flags(meta)
-            size = _parse_size(meta)
+            if _single_fetch_number(meta, r"\bUID\s+(\d+)") != uid:
+                raise ValidationError("IMAP fetch returned a mismatched or missing message UID")
+            if not isinstance(item[1], bytes):
+                raise ValidationError("IMAP fetch returned an invalid message literal")
+            matches.append((item[1], sorted(set(_parse_flags(meta))), _parse_size(meta)))
+    if len(matches) > 1:
+        raise ValidationError("IMAP fetch returned ambiguous message literals")
+    return matches[0] if matches else (None, [], None)
+
+
+def _export_fetch_tuple(
+    data: Sequence[Any] | None,
+    *,
+    uid: int,
+    require_literal: bool,
+) -> tuple[int, bytes | None]:
+    """Bind UID, RFC822.SIZE, and an optional literal from one FETCH response."""
+    matches: list[tuple[int, bytes | None]] = []
+    for item in data or []:
+        literal: bytes | None
+        if isinstance(item, tuple) and len(item) >= 2:
+            metadata = _safe_decode(item[0])
+            literal = item[1] if isinstance(item[1], bytes) else None
         elif isinstance(item, bytes):
-            flags.extend(_parse_flags(_safe_decode(item)))
-    return raw, sorted(set(flags)), size
+            # imaplib returns metadata-only FETCH responses (for example,
+            # RFC822.SIZE preflight) as a bare bytes item. Literal-bearing
+            # FETCH responses use a (metadata, literal) tuple.
+            metadata = _safe_decode(item)
+            literal = None
+        else:
+            continue
+        response_uid = _single_fetch_number(metadata, r"\bUID\s+(\d+)")
+        if response_uid is None:
+            continue
+        if response_uid != uid:
+            raise _export_error(
+                "fetch_mismatch", "IMAP evidence export returned a different message UID"
+            )
+        size = _single_fetch_number(metadata, r"\bRFC822\.SIZE\s+(\d+)")
+        if size is None:
+            raise _export_error(
+                "fetch_mismatch", "IMAP evidence export did not return a usable message size"
+            )
+        if require_literal:
+            literal_size = _single_fetch_number(metadata, r"\bBODY(?:\.PEEK)?\[\]\s+\{(\d+)\}")
+            if literal is None or literal_size is None or literal_size != len(literal):
+                raise _export_error(
+                    "fetch_truncated",
+                    "IMAP evidence export did not return a complete message literal",
+                )
+        elif literal not in {None, b""}:
+            raise _export_error(
+                "fetch_mismatch", "IMAP evidence preflight unexpectedly returned message content"
+            )
+        matches.append((size, literal))
+    if len(matches) != 1:
+        raise _export_error(
+            "fetch_ambiguous", "IMAP evidence export did not return exactly one matching message"
+        )
+    return matches[0]
+
+
+def _single_fetch_number(metadata: str, expression: str) -> int | None:
+    values = re.findall(expression, metadata, flags=re.IGNORECASE)
+    if len(values) != 1:
+        return None
+    try:
+        return int(values[0])
+    except ValueError:
+        return None
+
+
+def _required_uidvalidity(value: Any) -> str:
+    if isinstance(value, bool):
+        raise _export_error(
+            "uidvalidity_invalid", "IMAP mailbox UIDVALIDITY is unavailable or invalid"
+        )
+    text = str(value or "").strip()
+    if not text.isascii() or not text.isdigit():
+        raise _export_error(
+            "uidvalidity_invalid", "IMAP mailbox UIDVALIDITY is unavailable or invalid"
+        )
+    numeric = int(text)
+    if numeric < 1 or numeric > _MAX_UIDVALIDITY:
+        raise _export_error(
+            "uidvalidity_invalid", "IMAP mailbox UIDVALIDITY is unavailable or invalid"
+        )
+    return str(numeric)
+
+
+def _export_attachments(raw: bytes) -> list[tuple[str, bytes]]:
+    try:
+        message = BytesParser(policy=policy.default).parsebytes(raw)
+    except Exception as exc:
+        raise _export_error("malformed", "IMAP evidence MIME is malformed") from exc
+    if message.defects:
+        raise _export_error("malformed", "IMAP evidence MIME is malformed")
+
+    parts = _bounded_mime_parts(message)
+    attachments: list[tuple[str, bytes]] = []
+    attachment_paths: list[tuple[int, ...]] = []
+    attachment_total = 0
+    for part, path in parts:
+        if any(path[: len(parent)] == parent for parent in attachment_paths):
+            continue
+        if not _is_attachment(part):
+            continue
+        if len(attachments) >= _MAX_EXPORT_ATTACHMENTS:
+            raise _export_error(
+                "attachment_count_exceeded",
+                "IMAP evidence export exceeds the attachment count limit",
+                details={"max_attachments": _MAX_EXPORT_ATTACHMENTS},
+            )
+        payload = _attachment_bytes(part)
+        if len(payload) > _MAX_EXPORT_ATTACHMENT_BYTES:
+            raise _export_error(
+                "attachment_oversize",
+                "IMAP evidence export contains an attachment above the 8 MiB limit",
+                details={"max_attachment_bytes": _MAX_EXPORT_ATTACHMENT_BYTES},
+            )
+        attachment_total += len(payload)
+        if attachment_total > _MAX_EXPORT_ATTACHMENT_TOTAL_BYTES:
+            raise _export_error(
+                "attachment_total_oversize",
+                "IMAP evidence export exceeds the attachment aggregate limit",
+                details={"max_attachment_total_bytes": _MAX_EXPORT_ATTACHMENT_TOTAL_BYTES},
+            )
+        attachments.append((_safe_media_type(part.get_content_type()), payload))
+        attachment_paths.append(path)
+    return attachments
+
+
+def _bounded_mime_parts(message: Message) -> list[tuple[Message, tuple[int, ...]]]:
+    stack: list[tuple[Message, int, tuple[int, ...]]] = [(message, 1, ())]
+    collected: list[tuple[Message, tuple[int, ...]]] = []
+    part_count = 0
+    while stack:
+        part, depth, path = stack.pop()
+        part_count += 1
+        if part_count > _MAX_EXPORT_MIME_PARTS or depth > _MAX_EXPORT_MIME_DEPTH:
+            raise _export_error(
+                "mime_structure_exceeded", "IMAP evidence MIME structure exceeds limits"
+            )
+        if part.defects:
+            raise _export_error("malformed", "IMAP evidence MIME is malformed")
+        collected.append((part, path))
+        if not part.is_multipart():
+            continue
+        children = part.get_payload()
+        if not isinstance(children, list):
+            raise _export_error("malformed", "IMAP evidence MIME is malformed")
+        stack.extend(
+            (child, depth + 1, (*path, index))
+            for index, child in reversed(list(enumerate(children)))
+            if isinstance(child, Message)
+        )
+        if len(children) != sum(isinstance(child, Message) for child in children):
+            raise _export_error("malformed", "IMAP evidence MIME is malformed")
+    return collected
+
+
+def _is_attachment(part: Message) -> bool:
+    return part.get_content_disposition() == "attachment" or part.get_filename() is not None
+
+
+def _attachment_bytes(part: Message) -> bytes:
+    if part.is_multipart() or part.get_content_type().lower() == "message/rfc822":
+        return part.as_bytes(policy=policy.default)
+    encoding = str(part.get("Content-Transfer-Encoding") or "").strip().lower()
+    if encoding not in {"", "7bit", "8bit", "binary", "base64", "quoted-printable"}:
+        raise _export_error(
+            "unsupported_encoding", "IMAP evidence attachment encoding is unsupported"
+        )
+    if encoding == "base64":
+        encoded = part.get_payload()
+        if not isinstance(encoded, str):
+            raise _export_error("malformed", "IMAP evidence attachment is malformed")
+        try:
+            return base64.b64decode("".join(encoded.split()), validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise _export_error("malformed", "IMAP evidence attachment is malformed") from exc
+    payload = part.get_payload(decode=True)
+    if payload is None:
+        raw_payload = part.get_payload()
+        if raw_payload is None or raw_payload == "":
+            return b""
+        raise _export_error("malformed", "IMAP evidence attachment is malformed")
+    if not isinstance(payload, bytes):
+        raise _export_error("malformed", "IMAP evidence attachment is malformed")
+    return payload
+
+
+def _safe_media_type(value: str) -> str:
+    candidate = str(value or "").strip().lower()
+    if len(candidate) <= 127 and re.fullmatch(r"[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+", candidate):
+        return candidate
+    return "application/octet-stream"
+
+
+def _generated_assets_root(request: ActionConnectorRequest) -> Path:
+    configured = request.asset_dir or Settings().generated_assets_dir
+    if configured.is_symlink():
+        raise _export_error("unsafe_staging", "IMAP evidence staging root is unavailable")
+    root = configured.resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    if root.is_symlink() or not root.is_dir():
+        raise _export_error("unsafe_staging", "IMAP evidence staging root is unavailable")
+    return root
+
+
+def _project_transfer_root(request: ActionConnectorRequest, asset_root: Path) -> Path:
+    root = asset_root / "imap-transfers" / f"project-{request.project_id}"
+    _assert_contained(asset_root, root)
+    for directory in (asset_root / "imap-transfers", root):
+        _assert_contained(asset_root, directory)
+        if directory.exists() and directory.is_symlink():
+            raise _export_error("unsafe_staging", "IMAP evidence staging root is unsafe")
+        directory.mkdir(mode=0o700, exist_ok=True)
+        if directory.is_symlink() or not directory.is_dir():
+            raise _export_error("unsafe_staging", "IMAP evidence staging root is unsafe")
+    return root
+
+
+def _create_transfer_dir(request: ActionConnectorRequest) -> tuple[str, Path, Path]:
+    asset_root = _generated_assets_root(request)
+    project_root = _project_transfer_root(request, asset_root)
+    for _attempt in range(8):
+        transfer_id = uuid4().hex
+        transfer_dir = project_root / transfer_id
+        _assert_contained(project_root, transfer_dir)
+        try:
+            transfer_dir.mkdir(mode=0o700)
+        except FileExistsError:
+            continue
+        if transfer_dir.is_symlink() or not transfer_dir.is_dir():
+            _remove_transfer_dir(transfer_dir)
+            continue
+        return transfer_id, transfer_dir, asset_root
+    raise _export_error("staging_unavailable", "IMAP evidence staging could not be created safely")
+
+
+def _stage_export_file(directory: Path, name: str, payload: bytes) -> dict[str, Any]:
+    target = directory / name
+    _assert_contained(directory, target)
+    temporary = directory / f".{name}.{uuid4().hex}.tmp"
+    _assert_contained(directory, temporary)
+    try:
+        with temporary.open("xb") as file_obj:
+            file_obj.write(payload)
+            file_obj.flush()
+            os.fsync(file_obj.fileno())
+        os.replace(temporary, target)
+        staged = target.read_bytes()
+    except OSError as exc:
+        with suppress(FileNotFoundError):
+            temporary.unlink()
+        raise _export_error(
+            "staging_unavailable", "IMAP evidence staging could not be written safely"
+        ) from exc
+    if staged != payload:
+        raise _export_error("staging_mismatch", "IMAP evidence staging verification failed")
+    return {"bytes": len(staged), "sha256": hashlib.sha256(staged).hexdigest()}
+
+
+def _generated_assets_uri(asset_root: Path, transfer_dir: Path) -> str:
+    try:
+        relative = transfer_dir.relative_to(asset_root)
+    except ValueError as exc:
+        raise _export_error(
+            "unsafe_staging", "IMAP evidence staging escaped generated assets"
+        ) from exc
+    return f"/generated-assets/{relative.as_posix()}/"
+
+
+def _assert_contained(root: Path, candidate: Path) -> None:
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise _export_error("unsafe_transfer", "IMAP evidence transfer path is unsafe") from exc
+
+
+def _assert_no_symlinks(root: Path) -> None:
+    if root.is_symlink():
+        raise _export_error(
+            "unsafe_transfer", "IMAP staged evidence transfer is unsafe to clean up"
+        )
+    for path in root.rglob("*"):
+        if path.is_symlink():
+            raise _export_error(
+                "unsafe_transfer", "IMAP staged evidence transfer is unsafe to clean up"
+            )
+
+
+def _remove_transfer_dir(transfer_dir: Path) -> None:
+    if not _path_exists(transfer_dir):
+        return
+    if transfer_dir.is_symlink():
+        raise OSError("refusing to delete a symbolic-link transfer directory")
+    _assert_no_symlinks(transfer_dir)
+    shutil.rmtree(transfer_dir)
+    if _path_exists(transfer_dir):
+        raise OSError("transfer directory remains after deletion")
+
+
+def _path_exists(path: Path) -> bool:
+    return os.path.lexists(path)
+
+
+def _cleanup_partial_export_or_raise(
+    *,
+    transfer_id: str | None,
+    transfer_dir: Path | None,
+    asset_root: Path | None,
+) -> None:
+    if transfer_dir is None or transfer_id is None or asset_root is None:
+        return
+    staging_uri = _generated_assets_uri(asset_root, transfer_dir)
+    try:
+        _remove_transfer_dir(transfer_dir)
+    except (ActionConnectorError, OSError) as exc:
+        raise _export_error(
+            "partial_export_cleanup_failed",
+            "IMAP evidence export failed and staged data needs explicit cleanup",
+            details={
+                "transfer_id": transfer_id,
+                "staging_uri": staging_uri,
+                "recovery_required": True,
+            },
+        ) from exc
+    if _path_exists(transfer_dir):
+        raise _export_error(
+            "partial_export_cleanup_failed",
+            "IMAP evidence export failed and staged data needs explicit cleanup",
+            details={
+                "transfer_id": transfer_id,
+                "staging_uri": staging_uri,
+                "recovery_required": True,
+            },
+        )
+
+
+def _cleanup_error(*, transfer_id: str, staging_uri: str) -> ActionConnectorError:
+    return _export_error(
+        "cleanup_failed",
+        "IMAP staged evidence transfer could not be removed safely",
+        details={
+            "transfer_id": transfer_id,
+            "staging_uri": staging_uri,
+            "recovery_required": True,
+        },
+    )
+
+
+def _safe_account_ref(request: ActionConnectorRequest) -> str:
+    if request.credential is None:
+        raise _export_error(
+            "credential_missing", "IMAP evidence export requires a selected account"
+        )
+    return request.credential.credential_ref
+
+
+def _require_export_tls(settings: Mapping[str, Any]) -> None:
+    if settings.get("tls_mode") not in {"ssl", "starttls"}:
+        raise _export_error("tls_required", "IMAP evidence export requires SSL or STARTTLS")
+
+
+def _ensure_export_ok(status: Any) -> None:
+    if str(status).upper() != "OK":
+        raise _export_error("provider_rejected", "IMAP evidence export request was not accepted")
+
+
+def _export_result(
+    *,
+    operation: str,
+    tls_mode: str | None,
+    body: dict[str, Any],
+) -> ActionConnectorResult:
+    metadata: dict[str, Any] = {
+        "vendor": "imap",
+        "operation": operation,
+        "evidence_transfer": True,
+    }
+    if tls_mode is not None:
+        metadata["tls_mode"] = tls_mode
+    return ActionConnectorResult(
+        output_json={"provider": "imap", "operation": operation, "status": "success", **body},
+        metadata_json=metadata,
+    )
+
+
+def _export_error(
+    category: str,
+    detail: str,
+    *,
+    details: Mapping[str, Any] | None = None,
+) -> ActionConnectorError:
+    output: dict[str, Any] = {"status": "rejected", "category": category}
+    if details:
+        output.update(dict(details))
+    return ActionConnectorError(
+        detail,
+        output_json=output,
+        metadata_json={"vendor": "imap", "evidence_transfer": True, "category": category},
+    )
 
 
 def _message_output(
@@ -550,7 +1160,7 @@ def _store_cursor(request: ActionConnectorRequest, result: Mapping[str, Any]) ->
             "mailbox_ref": result["mailbox_ref"],
             "mailbox_name": result["mailbox_name"],
             "uidvalidity": result.get("uidvalidity"),
-            "last_seen_uid": max(result.get("uids") or [0]),
+            "last_observed_uid": max(result.get("uids") or [0]),
             "last_search_count": result.get("count"),
         },
         provenance_json={"source": "imap-action"},
@@ -596,13 +1206,15 @@ def _store_message_status(request: ActionConnectorRequest, result: Mapping[str, 
         project_id=request.project_id,
         plugin_slug="communications",
         resource_key="communication-event",
-        external_id=f"imap-event:{result['mailbox_name']}:{result['uid']}:{result['attention_status']}",
+        external_id=(
+            f"imap-event:{result['mailbox_ref']}:{result['uid']}:{result['attention_status']}"
+        ),
         title=f"IMAP message {result['uid']} {result['attention_status']}",
         data_json={
             "provider_key": "imap",
             "event_type": "message_flag_changed",
             "mailbox_ref": result["mailbox_ref"],
-            "message_ref": result["message_ref"],
+            "message_ref": f"imap-message:{result['mailbox_ref']}:{result['uid']}",
             "attention_status": result["attention_status"],
             "action_ref": request.action_ref,
         },
@@ -626,8 +1238,28 @@ def _connector_result(
             "vendor": "imap",
             "operation": request.operation,
             "tls_mode": settings["tls_mode"],
-            "host": settings["host"],
-            "port": settings["port"],
+        },
+    )
+
+
+def _mark_result(
+    request: ActionConnectorRequest,
+    body: dict[str, Any],
+    settings: Mapping[str, Any],
+) -> ActionConnectorResult:
+    """Return only the allowed acknowledgement projection, never IMAP STORE bytes."""
+    return ActionConnectorResult(
+        output_json={
+            "provider": "imap",
+            "operation": request.operation,
+            "status": "success",
+            **body,
+        },
+        metadata_json={
+            "vendor": "imap",
+            "operation": request.operation,
+            "tls_mode": settings["tls_mode"],
+            "acknowledgement": True,
         },
     )
 
@@ -712,6 +1344,40 @@ def _optional_int(
         return
     if maximum is not None and value > maximum:
         issues.append(issue(f"$.{key}", f"{key} must be <= {maximum}", "range"))
+
+
+def _optional_uidvalidity(
+    payload: Mapping[str, Any],
+    issues: list[ActionValidationIssue],
+) -> None:
+    value = payload.get("expected_uidvalidity")
+    if value is None:
+        return
+    if not isinstance(value, str):
+        issues.append(
+            issue(
+                "$.expected_uidvalidity",
+                "expected_uidvalidity must be a bounded nonzero numeric string",
+                "format",
+            )
+        )
+        return
+    try:
+        _required_uidvalidity(value)
+    except ActionConnectorError:
+        issues.append(
+            issue(
+                "$.expected_uidvalidity",
+                "expected_uidvalidity must be a bounded nonzero numeric string",
+                "format",
+            )
+        )
+
+
+def _transfer_id(payload: Mapping[str, Any], issues: list[ActionValidationIssue]) -> None:
+    value = payload.get("transfer_id")
+    if not isinstance(value, str) or _TRANSFER_ID_RE.fullmatch(value) is None:
+        issues.append(issue("$.transfer_id", "transfer_id must be an opaque transfer id", "format"))
 
 
 def _criteria(value: Any, issues: list[ActionValidationIssue]) -> None:

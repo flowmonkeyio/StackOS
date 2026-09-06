@@ -6,6 +6,10 @@ header. The response shape is the M0 subset documented in `api/health.py`.
 
 from __future__ import annotations
 
+import errno
+from collections.abc import Iterator
+
+import pytest
 from fastapi.testclient import TestClient
 
 from stackos import __version__
@@ -93,6 +97,77 @@ def test_generated_assets_are_public(client: TestClient, settings: Settings) -> 
     resp = client.get("/generated-assets/openai-images/sample.webp")
     assert resp.status_code == 200
     assert resp.content == b"webp"
+
+
+@pytest.fixture
+def imap_transfer_files(settings: Settings) -> Iterator[None]:
+    """Create representative raw staging files beneath the reserved subtree."""
+    transfer_dir = settings.generated_assets_dir / "imap-transfers/project-1/transfer-1"
+    transfer_dir.mkdir(parents=True, exist_ok=True)
+    (transfer_dir / "original.eml").write_bytes(b"private original")
+    (transfer_dir / "attachment-001").write_bytes(b"private attachment")
+    yield
+
+
+@pytest.mark.parametrize("filename", ["original.eml", "attachment-001"])
+@pytest.mark.parametrize(
+    "request_path",
+    [
+        "/generated-assets/imap-transfers/project-1/transfer-1/{filename}",
+        "/generated-assets//imap-transfers/project-1/transfer-1/{filename}",
+        "/generated-assets/public/../imap-transfers/project-1/transfer-1/{filename}",
+        # HTTPX preserves the encoded segment until ASGI decoding; StaticFiles
+        # must then normalize it before the guard evaluates the first component.
+        "/generated-assets/public/%2e%2e/imap-transfers/project-1/transfer-1/{filename}",
+        "/generated-assets/%69map-transfers/project-1/transfer-1/{filename}",
+    ],
+    ids=[
+        "normal",
+        "double-slash",
+        "dot-segment",
+        "encoded-dot-segment",
+        "percent-encoded",
+    ],
+)
+def test_imap_transfer_staging_is_never_http_served(
+    client: TestClient,
+    auth_token: str,
+    imap_transfer_files: None,
+    request_path: str,
+    filename: str,
+) -> None:
+    """Normalized staging paths stay private even with daemon bearer authority."""
+    path = request_path.format(filename=filename)
+
+    assert client.get(path).status_code == 404
+    assert client.get(path, headers={"authorization": f"Bearer {auth_token}"}).status_code == 404
+
+
+@pytest.mark.parametrize("filename", ["original.eml", "attachment-001"])
+def test_imap_transfer_staging_is_not_served_through_symlink_alias(
+    client: TestClient,
+    settings: Settings,
+    auth_token: str,
+    imap_transfer_files: None,
+    filename: str,
+) -> None:
+    """A public-looking alias cannot expose a resolved staging target."""
+    alias = settings.generated_assets_dir / "receipt-preview"
+    try:
+        alias.symlink_to(
+            settings.generated_assets_dir / "imap-transfers/project-1/transfer-1",
+            target_is_directory=True,
+        )
+    except NotImplementedError as exc:
+        pytest.skip(f"platform cannot create a directory symlink: {exc}")
+    except OSError as exc:
+        if exc.errno in {errno.EACCES, errno.ENOTSUP, errno.EPERM}:
+            pytest.skip(f"platform cannot create a directory symlink: {exc}")
+        raise
+
+    path = f"/generated-assets/receipt-preview/{filename}"
+    assert client.get(path).status_code == 404
+    assert client.get(path, headers={"authorization": f"Bearer {auth_token}"}).status_code == 404
 
 
 def test_openapi_json_is_public(client: TestClient) -> None:

@@ -1456,6 +1456,7 @@ export interface components {
             display_name: string;
             /** Expires At */
             expires_at: string | null;
+            last_test?: components["schemas"]["AuthTestOut"] | null;
             /** Last Tested At */
             last_tested_at: string | null;
             /** Project Ids */
@@ -1937,6 +1938,7 @@ export interface components {
             display_name: string;
             /** Expires At */
             expires_at: string | null;
+            last_test?: components["schemas"]["AuthTestOut"] | null;
             /** Last Tested At */
             last_tested_at: string | null;
             /** Project Ids */

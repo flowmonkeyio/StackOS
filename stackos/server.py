@@ -17,13 +17,14 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
 
 from apscheduler.triggers.interval import IntervalTrigger
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session, SQLModel
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
+from starlette.types import Scope
 
 from stackos import __milestone__, __version__
 from stackos.actions import ActionRepository
@@ -65,6 +66,44 @@ _PUBLIC_INGRESS_PREFIXES: tuple[str, ...] = (
 )
 _OAUTH_CALLBACK_PATH = "/api/v1/auth/oauth/callback"
 _SLOW_REQUEST_MS = 100
+_IMAP_TRANSFER_STAGING_ROOT = "imap-transfers"
+
+
+class GeneratedAssetsStaticFiles(StaticFiles):
+    """Serve public generated media without exposing private staging trees."""
+
+    @staticmethod
+    def _is_within(candidate: Path, root: Path) -> bool:
+        """Compare resolved paths conservatively across case-insensitive filesystems."""
+        candidate_parts = tuple(part.casefold() for part in candidate.parts)
+        root_parts = tuple(part.casefold() for part in root.parts)
+        return candidate_parts[: len(root_parts)] == root_parts
+
+    def lookup_path(self, path: str) -> tuple[str, os.stat_result | None]:
+        # A public sibling can be a symlink into the reserved staging tree.
+        # Resolve both paths before StaticFiles stats or opens the candidate so
+        # that an alias cannot bypass the normalized lexical check below.
+        for directory in self.all_directories:
+            try:
+                candidate = Path(os.path.realpath(os.path.join(directory, path)))
+                staging_root = Path(
+                    os.path.realpath(os.path.join(directory, _IMAP_TRANSFER_STAGING_ROOT))
+                )
+            except (OSError, ValueError):
+                return "", None
+            if self._is_within(candidate, staging_root):
+                return "", None
+        return super().lookup_path(path)
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        # StaticFiles.__call__ supplies the result of StaticFiles.get_path here,
+        # so duplicate separators and decoded dot segments have already been
+        # normalized before we enforce the reserved top-level boundary. Keep
+        # this check before super().get_response(), which performs file lookup.
+        parts = Path(path).parts
+        if parts and parts[0].casefold() == _IMAP_TRANSFER_STAGING_ROOT:
+            raise HTTPException(status_code=404)
+        return await super().get_response(path, scope)
 
 
 class RequestTimingMiddleware(BaseHTTPMiddleware):
@@ -356,7 +395,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.mount(
         "/generated-assets",
-        StaticFiles(directory=settings.generated_assets_dir),
+        GeneratedAssetsStaticFiles(directory=settings.generated_assets_dir),
         name="generated-assets",
     )
     _mount_ui(app, settings)

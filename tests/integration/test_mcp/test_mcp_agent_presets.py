@@ -371,3 +371,105 @@ def test_website_seo_analysis_presets_resolve_end_to_end(
     assert resolved["required_skill_presets"][0]["preset"]["summary"]["version"] == "0.1.1"
     assert resolved["unresolved_requirements"] == []
     assert resolved["unresolved_skill_preset_requirements"] == []
+
+
+def test_finance_workflow_presets_resolve_end_to_end(mcp_client: MCPClient) -> None:
+    expected_roles = {
+        "finance.receipt-intake": (
+            {"stackos.finance.receipt-operator"},
+            {"stackos.finance.control-reviewer"},
+        ),
+        "finance.bookkeeping-close": (
+            {"stackos.finance.bookkeeping-preparer"},
+            {"stackos.finance.control-reviewer"},
+        ),
+        "finance.payment-request": (
+            {
+                "stackos.finance.billing-collections-operator",
+                "stackos.finance.control-reviewer",
+            },
+            set(),
+        ),
+        "finance.payment-request-followups": (
+            {
+                "stackos.finance.billing-collections-operator",
+                "stackos.finance.control-reviewer",
+            },
+            set(),
+        ),
+        "finance.cashflow-management": (
+            {"stackos.finance.cashflow-preparer"},
+            {"stackos.finance.control-reviewer"},
+        ),
+        "finance.tax-estimates": (
+            {
+                "stackos.finance.tax-preparer",
+                "stackos.finance.control-reviewer",
+            },
+            set(),
+        ),
+    }
+
+    for workflow_key, (required, recommended) in expected_roles.items():
+        resolved = mcp_client.call_tool_structured(
+            "agentPreset.resolveForWorkflow",
+            {
+                "workflow_key": workflow_key,
+                "plugin_slug": "finance",
+                "response_mode": "raw",
+            },
+        )
+
+        assert resolved["workflow"]["key"] == workflow_key
+        assert resolved["unresolved_requirements"] == []
+        assert {
+            agent["preset"]["summary"]["key"] for agent in resolved["required_agents"]
+        } == required
+        assert {
+            agent["preset"]["summary"]["key"] for agent in resolved["recommended_agents"]
+        } == recommended
+        assert {item["skill_ref"] for item in resolved["skill_requirements"]} == {"stackos:stackos"}
+        assert {
+            item["preset"]["summary"]["key"] for item in resolved["required_skill_presets"]
+        } == {"stackos.finance.department-orchestrator"}
+        assert resolved["unresolved_skill_preset_requirements"] == []
+
+
+def test_finance_operational_guidance_survives_compact_workflow_resolution(
+    mcp_client: MCPClient,
+) -> None:
+    """Exercise the shipped MCP resolution, not a parallel guidance dispatcher."""
+    for workflow in (
+        "receipt-intake",
+        "bookkeeping-close",
+        "payment-request",
+        "payment-request-followups",
+        "cashflow-management",
+        "tax-estimates",
+    ):
+        request = {"workflow_key": f"finance.{workflow}", "plugin_slug": "finance"}
+        raw = mcp_client.call_tool_structured(
+            "agentPreset.resolveForWorkflow", {**request, "response_mode": "raw"}
+        )
+        compact = mcp_client.call_tool_structured("agentPreset.resolveForWorkflow", request)
+        compact = compact.get("data", compact)
+        raw_skill = raw["required_skill_presets"][0]
+        compact_skill = compact["required_skill_presets"][0]
+        assert compact_skill["preset"]["version"] == "0.6.0"
+        assert compact_skill["project_adaptation"] == raw_skill["project_adaptation"]
+        assert any("capability preflight" in item for item in compact_skill["preset"]["must_do"])
+        conditional = {
+            item["ref"]: item
+            for item in compact_skill["project_adaptation"]["conditional_context_refs"]
+        }
+        assert "external business/tax profile" in conditional
+        for group in ("required_agents", "recommended_agents"):
+            expected = {item["preset"]["summary"]["key"]: item for item in raw[group]}
+            assert {item["preset"]["key"] for item in compact[group]} == set(expected)
+            for item in compact[group]:
+                source = expected[item["preset"]["key"]]
+                assert item["project_adaptation"] == source["project_adaptation"]
+                assert item["preset"]["handoff_outputs"]
+                assert "capability preflight" in item["project_adaptation"]["required_agent_action"]
+                if item["preset"]["role_class"] == "review":
+                    assert "action.execute" not in item["preset"]["recommended_tools"]

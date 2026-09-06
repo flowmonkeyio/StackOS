@@ -167,11 +167,32 @@ creatives, leads, experiments, generated assets, and so on.
 
 The core UI should render resources generically by plugin and key.
 
+A plugin does not have to define a resource merely because it has a workflow.
+When an operator-selected external backend is the authoritative owner of a
+domain record, the plugin should declare that boundary in its workflows and
+reference contract instead of duplicating the record in StackOS. In that shape,
+workflow/tracker/resource/artifact results carry only safe external references,
+status, and proof; host-file access remains a host capability rather than a
+StackOS filesystem connector. The finance plugin's `local-json` backend is
+the current example: `finance.json` owns financial records and mutable setup,
+`FINANCE.md` is guidance/navigation, and CSV is import/export rather than another
+master. Original attachments remain evidence. The generic action audit can still retain its normal
+sanitized connector envelope as non-authoritative transport evidence.
+
 ## Workflow Templates
 
 Plugins can ship workflow templates under `plugins/<slug>/workflows/`. These
 templates should define reusable setup and context requirements, not one-off run
 state. Agents create concrete run plans from them.
+
+A workflow package can also ship generic agent presets under
+`plugins/<slug>/agent-presets/`, main-agent skill presets under
+`plugins/<slug>/skill-presets/`, external-backend reference contracts, and a
+host-owned workspace template. Those files define method and guidance; they do
+not create a plugin-specific core table, filesystem integration, scheduler, or
+custom UI. When an action has external impact, the workflow must name its exact
+action ref, active-step grant, recovery path, and approval boundary rather than
+putting that business decision in the connector.
 
 ## Enablement
 

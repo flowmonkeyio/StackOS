@@ -19,6 +19,7 @@ from stackos.agent_responses import (
 )
 from stackos.operations.spec import OperationSpec, ResponseMode
 from stackos.repositories.base import ValidationError
+from stackos.repositories.run_plan_views import bounded_handoff_result
 
 _MODE_ALIASES: dict[str, ResponseMode] = {
     "compact": "compact",
@@ -743,6 +744,11 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
         return _compact_resource_get(data)
     if operation_name == "resource.query":
         return _compact_resource_query(data)
+    if operation_name in {"account.list", "connection.list"}:
+        return _compact_account_inventory(data)
+    if operation_name == "account.test":
+        # This normalized AuthTestOut is the repair packet, not provider output.
+        return copy.deepcopy(data)
     if operation_name == "tracker.get":
         return compact_tracker_snapshot(data)
     if operation_name == "tracker.status":
@@ -761,6 +767,14 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
         return compact_tracker_search(data)
     if operation_name.startswith("tracker."):
         return _compact_tracker_mutation(data)
+    if operation_name == "runPlan.getStep":
+        out = _compact_run_plan(data)
+        out["result_json"], out["result_truncated"] = bounded_handoff_result(
+            data.get("result_json"),
+            run_plan_id=data["run_plan_id"],
+            step_id=data["step_id"],
+        )
+        return out
     if operation_name.startswith("runPlan."):
         return _compact_run_plan(data)
     if operation_name == "workflowTemplate.list":
@@ -782,6 +796,25 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
     if operation_name in _CONTEXT_PAGE_OPERATIONS:
         return _compact_context_item(data)
     return _compact_mapping(data)
+
+
+def _compact_account_inventory(data: dict[str, Any]) -> dict[str, Any]:
+    out = _compact_mapping(data)
+    accounts = data.get("accounts")
+    if isinstance(accounts, list):
+        compact_accounts = []
+        for account in accounts[:_MAX_COMPACT_LIST_ITEMS]:
+            if not isinstance(account, dict):
+                continue
+            compact = _compact_mapping(account)
+            # AuthTestOut is already normalized/redacted by the auth owner.
+            # Do not discard its stage, failure reason, or corrective action.
+            for key in ("last_tested_at", "last_test"):
+                if key in account:
+                    compact[key] = copy.deepcopy(account[key])
+            compact_accounts.append(compact)
+        out["accounts"] = compact_accounts
+    return out
 
 
 def _compact_action_execution(data: dict[str, Any]) -> dict[str, Any]:
@@ -1246,7 +1279,7 @@ def _compact_resolved_skill_preset(item: dict[str, Any]) -> dict[str, Any]:
 
 def _compact_adaptation(value: Any) -> dict[str, Any]:
     adaptation = _safe_dict(value)
-    return {
+    out = {
         key: _compact_value(adaptation.get(key))
         for key in (
             "generic_preset",
@@ -1256,11 +1289,20 @@ def _compact_adaptation(value: Any) -> dict[str, Any]:
             "instruction",
             "required_agent_action",
             "prompt_assembly_order",
-            "required_context_refs",
-            "conditional_context_refs",
         )
         if adaptation.get(key) is not None
     }
+    for key in ("required_context_refs", "conditional_context_refs"):
+        if adaptation.get(key) is not None:
+            out[key] = [
+                {
+                    field: _compact_value(reference[field])
+                    for field in ("ref", "purpose", "required", "when")
+                    if reference.get(field) is not None
+                }
+                for reference in _mapping_items(adaptation[key])[:_MAX_COMPACT_LIST_ITEMS]
+            ]
+    return out
 
 
 def _mapping_items(value: Any) -> list[dict[str, Any]]:

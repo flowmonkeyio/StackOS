@@ -1,0 +1,650 @@
+slug: finance
+name: Finance Operations
+version: 0.7.0
+description: Backend-neutral finance workflows and provider transport for a solo US business. StackOS never becomes the finance system of record.
+display_order: 18
+source: builtin
+capabilities:
+  - key: stripe-invoicing
+    name: Stripe invoicing
+    description: Create and deliver a reviewed Stripe invoice through explicit provider actions.
+    kind: provider
+  - key: stripe-reconciliation
+    name: Stripe payment lifecycle evidence
+    description: Read safe Stripe payment, fee, refund, and balance evidence for an external finance backend.
+    kind: provider
+providers:
+  - key: stripe
+    name: Stripe
+    description: Stripe API transport for customers, invoices, payment lifecycle evidence, and balances. It contains no bookkeeping, collections, tax, or approval policy.
+    auth_type: api-key
+    auth_methods:
+      - key: api_key
+        label: Stripe API key
+        auth_type: api-key
+        description: A restricted Stripe secret API key stored only in the local daemon encrypted credential payload.
+        payload_format: json
+        permission_verification:
+          evidence_source: unavailable
+          enforcement: provider_enforced
+        fields:
+          - key: api_key
+            label: Stripe secret API key
+            type: secret
+            secret: true
+            required: true
+            placeholder: Create a restricted key in the Stripe Dashboard; never paste it into chat.
+    config:
+      setup_note: Store a restricted Stripe API key in StackOS. Account testing uses the read-only account endpoint; Stripe enforces the key permissions for each action.
+      setup:
+        credential_label: Stripe restricted API key
+        setup_note: In the Stripe Dashboard, create a restricted API key with only the customer, invoice, invoice item, payment intent, payment record, charge, balance transaction, refund, and balance reads or writes required by your approved workflows. Connect it through StackOS; never share the key with an agent.
+        homepage_url: https://stripe.com/
+        signup_url: https://dashboard.stripe.com/register
+        console_url: https://dashboard.stripe.com/
+        credential_url: https://dashboard.stripe.com/apikeys
+        billing_url: https://dashboard.stripe.com/settings/billing
+        docs_url: https://docs.stripe.com/api
+        fallback_url: https://docs.stripe.com/keys
+        fallback_reason: Dashboard key and billing routes are authenticated and may vary by account.
+        url_confidence:
+          homepage_url: verified
+          signup_url: verified
+          console_url: verified
+          credential_url: verified
+          billing_url: directional
+          docs_url: verified
+          fallback_url: verified
+        verified_at: '2026-09-04'
+      docs:
+        - docs/integration-contracts/stripe.md
+        - https://docs.stripe.com/api/authentication
+        - https://docs.stripe.com/api/idempotent_requests
+actions:
+  - key: stripe.customers.create
+    name: Create Stripe Customer
+    description: Create one Stripe customer from explicit approved details and return an account-bound customer reference.
+    provider: stripe
+    capability: stripe-invoicing
+    risk_level: write
+    input_schema: &customer_create_input
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email: {type: string, format: email, maxLength: 512, description: Use an exact opaque payload-secret marker so the address is materialized only for provider dispatch.}
+        name: {type: string, minLength: 1, maxLength: 256, description: When supplied, use an opaque payload-secret marker rather than plaintext action input.}
+        description: {type: string, maxLength: 500, description: When supplied, use an opaque payload-secret marker rather than plaintext action input.}
+    output_schema: &stripe_output
+      type: object
+      additionalProperties: true
+    config: &customer_create_config
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe:
+        method: POST
+        path: /customers
+        api_version: 2026-08-26.dahlia
+      docs:
+        - docs/integration-contracts/stripe.md
+        - https://docs.stripe.com/api/customers/create
+  - key: stripe.customers.retrieve
+    name: Retrieve Stripe Customer
+    description: Retrieve one previously discovered Stripe customer by an account-bound reference.
+    provider: stripe
+    capability: stripe-invoicing
+    risk_level: read
+    input_schema: &customer_ref_input
+      type: object
+      additionalProperties: false
+      required: [customer_ref]
+      properties:
+        customer_ref: &opaque_ref {type: string, pattern: '^provider-object:', maxLength: 120}
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: '/customers/{customer_ref}', api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/customers/retrieve]
+  - key: stripe.customers.list
+    name: List Stripe Customers by Exact Email
+    description: Return one bounded page of Stripe customers matching one exact email, so an existing customer can be used without a raw provider ID.
+    provider: stripe
+    capability: stripe-invoicing
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email: {type: string, format: email, maxLength: 512, description: Use an exact opaque payload-secret marker so the address is materialized only for provider dispatch.}
+        limit: {type: integer, minimum: 1, maximum: 100, default: 25}
+        page_cursor: *opaque_ref
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: /customers, api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/customers/list]
+  - key: stripe.invoices.create
+    name: Create Draft Stripe Invoice
+    description: Create a Stripe draft invoice in the explicitly approved currency that will later be explicitly finalized and sent.
+    provider: stripe
+    capability: stripe-invoicing
+    risk_level: write
+    input_schema: &invoice_create_input
+      type: object
+      additionalProperties: false
+      required: [customer_ref, collection_method, days_until_due, currency]
+      properties:
+        customer_ref: *opaque_ref
+        collection_method: {type: string, enum: [send_invoice]}
+        currency: {type: string, pattern: '^[a-z]{3}$', description: Approved invoice currency; do not inherit an account default or infer it from a later line.}
+        days_until_due: {type: integer, minimum: 1}
+        correlation_key: &correlation_key {type: string, pattern: '^[0-9a-f]{32}$', description: Random opaque key for one invoice occurrence; never encode customer or billing data.}
+        description: {type: string, maxLength: 500, description: When supplied, use an opaque payload-secret marker rather than plaintext action input.}
+    output_schema: *stripe_output
+    config: &invoice_create_config
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: POST, path: /invoices, api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/invoices/create]
+  - key: stripe.invoice-items.create
+    name: Create Stripe Invoice Item
+    description: Add one explicit positive-amount line item to an explicit Stripe customer and draft invoice.
+    provider: stripe
+    capability: stripe-invoicing
+    risk_level: write
+    input_schema: &invoice_item_create_input
+      type: object
+      additionalProperties: false
+      required: [customer_ref, invoice_ref, amount, currency, description]
+      properties:
+        customer_ref: *opaque_ref
+        invoice_ref: *opaque_ref
+        amount: {type: integer, minimum: 1}
+        currency: {type: string, pattern: '^[a-z]{3}$'}
+        description: {type: string, minLength: 1, maxLength: 500, description: Use an opaque payload-secret marker so line text is materialized only for provider dispatch.}
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: POST, path: /invoiceitems, api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/invoiceitems/create]
+  - key: stripe.invoice-items.list
+    name: List Stripe Invoice Items
+    description: Read one bounded page of items for exactly one invoice or customer; descriptions are returned only as exact UTF-8 SHA-256 digests.
+    provider: stripe
+    capability: stripe-invoicing
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      oneOf:
+        - required: [invoice_ref]
+        - required: [customer_ref]
+      properties:
+        invoice_ref: *opaque_ref
+        customer_ref: *opaque_ref
+        limit: {type: integer, minimum: 1, maximum: 100, default: 25}
+        page_cursor: *opaque_ref
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: /invoiceitems, api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/invoiceitems/list]
+  - key: stripe.invoices.finalize
+    name: Finalize Stripe Invoice
+    description: Finalize one reviewed draft invoice with auto_advance=false; this does not send it.
+    provider: stripe
+    capability: stripe-invoicing
+    risk_level: write
+    input_schema: &invoice_ref_input
+      type: object
+      additionalProperties: false
+      required: [invoice_ref]
+      properties:
+        invoice_ref: *opaque_ref
+    output_schema: *stripe_output
+    config: &invoice_finalize_config
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: POST, path: '/invoices/{invoice_ref}/finalize', api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/invoices/finalize]
+  - key: stripe.invoices.send
+    name: Send Stripe Invoice
+    description: Request a send for one already finalized Stripe invoice. Sandbox/test mode sends no email; an accepted test request is not sent/delivered. Live acceptance is not inbox-delivery proof. Workflow approval and exception policy remain outside the connector.
+    provider: stripe
+    capability: stripe-invoicing
+    risk_level: write
+    input_schema: *invoice_ref_input
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: POST, path: '/invoices/{invoice_ref}/send', api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/invoices/send]
+  - key: stripe.invoices.mark-paid-out-of-band
+    name: Mark Stripe Invoice Paid Out of Band
+    description: Mark one verified fully settled invoice paid without creating a Stripe charge. It is never a partial-settlement fallback.
+    provider: stripe
+    capability: stripe-reconciliation
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [invoice_ref]
+      properties:
+        invoice_ref: *opaque_ref
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: POST, path: '/invoices/{invoice_ref}/pay', api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/invoices/pay]
+  - key: stripe.invoices.attach-payment
+    name: Attach Stripe Payment to Invoice
+    description: Attach exactly one previously verified PaymentIntent or PaymentRecord to one invoice. Allocation and matching decisions remain in the workflow.
+    provider: stripe
+    capability: stripe-reconciliation
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      oneOf:
+        - required: [invoice_ref, payment_intent_ref]
+        - required: [invoice_ref, payment_record_ref]
+      properties:
+        invoice_ref: *opaque_ref
+        payment_intent_ref: *opaque_ref
+        payment_record_ref: *opaque_ref
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: POST, path: '/invoices/{invoice_ref}/attach_payment', api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/invoices/attach_payment]
+  - key: stripe.payment-intents.retrieve
+    name: Retrieve Stripe Payment Intent
+    description: Retrieve verified PaymentIntent settlement evidence by an account-bound reference, excluding payment method, PII, metadata, and client-secret data.
+    provider: stripe
+    capability: stripe-reconciliation
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [payment_intent_ref]
+      properties:
+        payment_intent_ref: *opaque_ref
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: '/payment_intents/{payment_intent_ref}', api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/payment_intents/retrieve]
+  - key: stripe.payment-records.report
+    name: Report Verified Stripe Payment Record
+    description: Report one verified bank transfer with a fixed custom Bank transfer method and guaranteed outcome. The bank reference is materialized only for provider dispatch and is never returned.
+    provider: stripe
+    capability: stripe-reconciliation
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [customer_ref, amount, currency, initiated_at, guaranteed_at, payment_reference]
+      properties:
+        customer_ref: *opaque_ref
+        amount: {type: integer, minimum: 1, description: Positive minor-unit amount exactly as verified by the workflow.}
+        currency: {type: string, pattern: '^[a-z]{3}$'}
+        initiated_at: {type: integer, minimum: 0}
+        guaranteed_at: {type: integer, minimum: 0}
+        payment_reference: {type: string, minLength: 1, maxLength: 512, description: Use an exact opaque payload-secret marker so the bank reference is materialized only for provider dispatch.}
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: POST, path: /payment_records/report_payment, api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/payment-record/report]
+  - key: stripe.payment-records.retrieve
+    name: Retrieve Stripe Payment Record
+    description: Retrieve one reported PaymentRecord by an account-bound reference, exposing only settlement state, safe account references, and a bank-reference digest.
+    provider: stripe
+    capability: stripe-reconciliation
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [payment_record_ref]
+      properties:
+        payment_record_ref: *opaque_ref
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: '/payment_records/{payment_record_ref}', api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/payment-record/retrieve]
+  - key: stripe.payment-records.list
+    name: List Stripe Payment Records
+    description: Temporarily unavailable in StackOS while the documented Stripe PaymentRecord listing endpoint availability mismatch is resolved. Inspect retained action audit/response files and retrieve a known PaymentRecord ref; if the ref is missing, hold for owner/provider recovery and never create a replacement report.
+    provider: stripe
+    capability: stripe-reconciliation
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        limit: {type: integer, minimum: 1, maximum: 100, default: 25}
+        page_cursor: *opaque_ref
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      execution_mode: deferred-stripe-payment-record-list
+      deferred_reason: "PaymentRecord listing is temporarily unavailable in StackOS until the documented Stripe endpoint availability mismatch is resolved. Do not retry, change credentials, or guess a URL. Inspect retained action audit and response files, then retrieve a known PaymentRecord ref. If the ref is missing, hold for owner/provider recovery; never create a replacement report."
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: /payment_records, api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/payment-record, https://github.com/stripe/openapi/blob/9ac29c7795ab21c7711b4bc25bb2dd739552a5fa/latest/openapi.spec3.json]
+  - key: stripe.invoices.retrieve
+    name: Retrieve Stripe Invoice
+    description: Retrieve one invoice with its current customer expanded, exposing primary email digests and observed due date for comparison; additional billing recipients remain outside API visibility.
+    provider: stripe
+    capability: stripe-invoicing
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [invoice_ref]
+      properties:
+        invoice_ref: *opaque_ref
+        correlation_key: *correlation_key
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: '/invoices/{invoice_ref}', api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/invoices/retrieve, https://docs.stripe.com/api/invoices/object, https://docs.stripe.com/expand]
+  - key: stripe.invoices.list
+    name: List Stripe Invoices
+    description: Return one bounded Stripe invoice page and a safe continuation reference when more results exist.
+    provider: stripe
+    capability: stripe-invoicing
+    risk_level: read
+    input_schema: &invoice_list_input
+      type: object
+      additionalProperties: false
+      properties:
+        limit: {type: integer, minimum: 1, maximum: 100, default: 25}
+        page_cursor: *opaque_ref
+        status: {type: string, enum: [draft, open, paid, uncollectible, void]}
+        customer_ref: *opaque_ref
+        created_gte: {type: integer, minimum: 0}
+        created_lte: {type: integer, minimum: 0}
+        correlation_key: *correlation_key
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: /invoices, api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/invoices/list]
+  - key: stripe.invoice-payments.list
+    name: List Stripe Invoice Payments
+    description: Return bounded payment lifecycle evidence for one Stripe invoice. Missing or null payment linkage preserves facts and pagination but cannot establish a payment match or settlement.
+    provider: stripe
+    capability: stripe-reconciliation
+    risk_level: read
+    input_schema: &invoice_payments_list_input
+      type: object
+      additionalProperties: false
+      required: [invoice_ref]
+      properties:
+        invoice_ref: *opaque_ref
+        limit: {type: integer, minimum: 1, maximum: 100, default: 25}
+        page_cursor: *opaque_ref
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: /invoice_payments, api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/invoice-payment/list]
+  - key: stripe.charges.retrieve
+    name: Retrieve Stripe Charge
+    description: Retrieve one previously discovered Stripe charge by its safe reference.
+    provider: stripe
+    capability: stripe-reconciliation
+    risk_level: read
+    input_schema: &charge_ref_input
+      type: object
+      additionalProperties: false
+      required: [charge_ref]
+      properties:
+        charge_ref: *opaque_ref
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: '/charges/{charge_ref}', api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/charges/retrieve]
+  - key: stripe.charges.list
+    name: List Stripe Charges
+    description: Return one bounded Stripe charge page and a safe continuation reference, optionally filtered by customer or payment intent.
+    provider: stripe
+    capability: stripe-reconciliation
+    risk_level: read
+    input_schema: &charges_list_input
+      type: object
+      additionalProperties: false
+      properties:
+        customer_ref: *opaque_ref
+        payment_intent_ref: *opaque_ref
+        limit: {type: integer, minimum: 1, maximum: 100, default: 25}
+        page_cursor: *opaque_ref
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: /charges, api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/charges/list]
+  - key: stripe.disputes.list
+    name: List Stripe Disputes
+    description: Read one bounded dispute page for exactly one charge or payment intent; no evidence content or dispute mutation is exposed.
+    provider: stripe
+    capability: stripe-reconciliation
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      oneOf:
+        - required: [charge_ref]
+        - required: [payment_intent_ref]
+      properties:
+        charge_ref: *opaque_ref
+        payment_intent_ref: *opaque_ref
+        limit: {type: integer, minimum: 1, maximum: 100, default: 25}
+        page_cursor: *opaque_ref
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: /disputes, api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/disputes/list]
+  - key: stripe.disputes.retrieve
+    name: Retrieve Stripe Dispute
+    description: Read a previously discovered dispute by its account-bound reference, excluding submitted evidence and customer content.
+    provider: stripe
+    capability: stripe-reconciliation
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [dispute_ref]
+      properties:
+        dispute_ref: *opaque_ref
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: '/disputes/{dispute_ref}', api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/disputes/retrieve]
+  - key: stripe.balance-transactions.retrieve
+    name: Retrieve Stripe Balance Transaction
+    description: Retrieve gross, fee, and net evidence for one previously discovered Stripe balance transaction.
+    provider: stripe
+    capability: stripe-reconciliation
+    risk_level: read
+    input_schema: &balance_transaction_ref_input
+      type: object
+      additionalProperties: false
+      required: [balance_transaction_ref]
+      properties:
+        balance_transaction_ref: *opaque_ref
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: '/balance_transactions/{balance_transaction_ref}', api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/balance_transactions/retrieve]
+  - key: stripe.balance-transactions.list
+    name: List Stripe Balance Transactions
+    description: Return one bounded Stripe balance transaction page with gross, fee, refund, and net evidence.
+    provider: stripe
+    capability: stripe-reconciliation
+    risk_level: read
+    input_schema: &balance_transactions_list_input
+      type: object
+      additionalProperties: false
+      properties:
+        limit: {type: integer, minimum: 1, maximum: 100, default: 25}
+        page_cursor: *opaque_ref
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: /balance_transactions, api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/balance_transactions/list]
+  - key: stripe.refunds.retrieve
+    name: Retrieve Stripe Refund
+    description: Retrieve one previously discovered Stripe refund; this action never creates a refund.
+    provider: stripe
+    capability: stripe-reconciliation
+    risk_level: read
+    input_schema: &refund_ref_input
+      type: object
+      additionalProperties: false
+      required: [refund_ref]
+      properties:
+        refund_ref: *opaque_ref
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: '/refunds/{refund_ref}', api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/refunds/retrieve]
+  - key: stripe.refunds.list
+    name: List Stripe Refunds
+    description: Return one bounded Stripe refund page for reconciliation evidence; this action never creates refunds.
+    provider: stripe
+    capability: stripe-reconciliation
+    risk_level: read
+    input_schema: &refunds_list_input
+      type: object
+      additionalProperties: false
+      properties:
+        charge_ref: *opaque_ref
+        limit: {type: integer, minimum: 1, maximum: 100, default: 25}
+        page_cursor: *opaque_ref
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: /refunds, api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/refunds/list]
+  - key: stripe.balance.retrieve
+    name: Retrieve Stripe Balance
+    description: Retrieve current available and pending Stripe balance buckets for cashflow evidence; it never moves funds.
+    provider: stripe
+    capability: stripe-reconciliation
+    risk_level: read
+    input_schema: {type: object, additionalProperties: false, properties: {}}
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: /balance, api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/balance]

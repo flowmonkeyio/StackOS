@@ -132,6 +132,16 @@ reconciliation marks an orphaned `RUNNING` call `FAILED` with
 `outcome_unknown=true` and `retry_safe=false` rather than reporting success or
 silently retrying it.
 
+If provider execution succeeds but local response-file persistence fails, the
+failed call and immediate error both retain `output_persistence_failed=true`
+and `provider_executed=true`. For a non-read action they also retain
+`outcome_unknown=true`, `retry_safe=false`, and `reconcile_before_retry=true`.
+This is not proof that the provider operation failed. Inspect any surviving
+output and reconcile the exact provider object before deciding on a retry;
+failed audit rows are not successful idempotency replays. Read-only calls mark
+those mutation flags false and may be repeated after output storage is repaired.
+These fields report recovery facts; they do not add automatic retry behavior.
+
 The read API exposes the same public audit shape at
 `GET /api/v1/projects/{project_id}/action-calls`. It can be filtered by run,
 run plan, run-plan step, plugin, action key, and status. Results are returned
@@ -139,9 +149,34 @@ newest first; cursor pagination continues toward older calls. The StackOS UI
 exposes this as the project-level **Action Calls** ledger, while run detail
 continues to show the calls scoped to a specific run/step.
 
-The table is part of the clean StackOS core. Domain plugins store their durable
-objects in resources/artifacts; removed workflow-specific storage is not part
-of the current execution model.
+The table is part of the clean StackOS core. A domain plugin uses resources or
+artifacts only when StackOS is its declared durable owner. A workflow can instead
+name an external system of record and return only safe external refs/status/proof;
+the finance package is the current example. Removed workflow-specific storage is
+not part of the current execution model.
+
+### Bounded evidence-transfer staging
+
+Some provider reads need to hand a bounded original file to a host agent without
+turning the action ledger into that domain's evidence store. A connector can use
+its existing `ActionConnectorRequest.asset_dir` for a temporary, contained
+staging directory and return only paths, hashes, limits, and an allowlisted
+safe receipt projection. Artifact creation is explicit, so staging is not an
+artifact. A connector must never put the staged bytes in action output, audit
+metadata, resources, artifacts, run-plan state, or error text.
+
+The staging directory is a temporary transport copy, not a durable artifact or
+a host filesystem capability. Its workflow contract must name a fixed byte
+limit, containment validation, a trusted host mapping for the returned staging
+URI, hash verification, post-copy cleanup, and recovery for an interrupted
+transfer. The host agent, using its own filesystem authority, is the only
+component that may promote validated bytes into the selected external backend.
+Cleanup must be a bounded connector action keyed by an opaque transfer id—not a
+caller-supplied path—when the daemon directory is not host-writable. A provider
+acknowledgement that would advance progress must remain a separate action after
+that backend verification. The IMAP finance receipt contract is the current
+example:
+[`plugins/finance/references/imap-host-handoff-contract.md`](../plugins/finance/references/imap-host-handoff-contract.md).
 
 ## Availability
 
@@ -256,6 +291,19 @@ to raw inline output unless an explicit output policy says otherwise. Call
 is not a substitute for workflow memory, approval gates, artifacts, learnings,
 experiments, or decisions.
 
+`action.validate` forwards the caller's top-level `idempotency_key` to the
+connector validator, separately from `input_json`. Supply the candidate key
+when the connector requires one, such as a Stripe POST action. Validation does
+not derive or reserve a key, decrypt provider or payload secrets, execute the
+connector, or create an `action_calls` row. The same key can be validated
+repeatedly and then used for the intended execution.
+
+This differs from `action.run` with `dry_run=true`, which records a local
+`DRY_RUN` action call. If using a dry run, give it a separate key from the
+eventual dispatch: changing the dry-run flag under one stored key is an
+idempotency conflict. Neither form of local validation proves provider
+acceptance or supplies workflow approval.
+
 Action inputs are split into endpoint payload and provider execution context.
 `input_json` is the action-specific body/query/path contract. Optional
 `provider_context_json` is validated against the selected action's
@@ -364,8 +412,14 @@ cover the migrated clean path for:
   open/info/list/member discovery, and signed HTTP ingress resource flow
 - `smtp`: `communications.smtp.email.send` with daemon-side password auth and
   accepted/rejected recipient metadata only
-- `imap`: mailbox list, bounded UID search, selected message fetch, and mark
-  seen/unseen lifecycle actions
+- `imap`: mailbox list, bounded UID search, selected message fetch, mark
+  seen/unseen lifecycle actions, and bounded staged-evidence export plus
+  transfer-id-only cleanup for the finance receipt workflow
+- `stripe`: reviewed customer/invoice lifecycle, recording and attaching
+  already-received payments, a fixed no-charge out-of-band settlement action,
+  and read-only payment, charge, balance-transaction, refund and balance
+  evidence; finance workflows, not the connector, own matching, approvals and
+  recovery decisions
 - `hubspot`, `salesforce`, `apollo`, `pipedrive`, `clay`, `outreach`,
   `salesloft`, `google-workspace`, and `microsoft-365`: first GTM/RevOps
   provider actions

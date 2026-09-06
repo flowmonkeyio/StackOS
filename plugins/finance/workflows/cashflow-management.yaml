@@ -1,0 +1,324 @@
+schema_version: stackos.workflow-template.v1
+key: finance.cashflow-management
+name: Finance Cashflow Management
+version: 0.3.0
+description: Prepare a dated exactly thirteen-week cashflow forecast in the selected external backend from bounded external and optional read-only Stripe evidence, without moving money or storing forecast contents in StackOS.
+domain: finance
+owner:
+  team: StackOS
+experience:
+  problem: "Cashflow planning is easy to neglect when balances, invoices, expected payments, and operating assumptions are scattered."
+  outcome: "A dated external thirteen-week forecast packet with safe evidence/proof refs, uncertainty, exception state, and tax-estimate handoff readiness."
+  why_ai: "An agent can assemble a bounded forecast packet and make uncertainty explicit, while the operator remains responsible for assumptions, liquidity choices, and money movement."
+  operator_path:
+    - "Request an updated forecast as of a date; the agent resolves accounts, commitments, weekly start convention and cashflow rules from the workspace."
+    - "Review assumptions, uncertainty, and exceptions in the selected external backend."
+    - "Use the packet to decide later operational actions; this workflow itself never moves money or commits a payment."
+  agent_path:
+    - "Read only selected external records and optional safe Stripe balance/invoice/payment evidence."
+    - "Build a dated sequence of exactly thirteen weekly external forecast entries, preserving assumptions and uncertainty in the external backend."
+    - "Record only safe references in StackOS; deliver supported forecasts with named assumptions and gaps, or an incomplete packet when opening cash is unknown."
+  progress_signals: ["Scope validated", "Evidence collected", "Thirteen-week packet prepared", "Uncertainty reviewed", "Handoff recorded"]
+  recovery:
+    - "Separate unavailable facts from labeled scenario assumptions. Missing evidence stays visible; prepare supported components and never substitute zero for unknown cash."
+    - "If a Stripe source is unavailable, keep the packet bounded to selected available external evidence and name the resulting gap."
+  safe_stopping_points:
+    - "Stop with a scope/evidence-gap packet before a forecast is prepared."
+    - "Stop after a review-ready external forecast; downstream payment, transfer, or tax actions require their own workflows and authority."
+  handoffs:
+    - workflow_key: finance.tax-estimates
+      relationship: conditional
+      when: "A separately requested tax preparation may reuse relevant forecast assumptions; a thirteen-week cash forecast never substitutes for annual taxable-income inputs or automatically starts tax work."
+    - workflow_key: finance.bookkeeping-close
+      relationship: fallback
+      when: "The forecast is blocked by an unresolved bookkeeping or reconciliation exception."
+public:
+  audience: "Solo entrepreneurs preparing a rolling external cashflow view without delegating money movement"
+  setup: mixed
+  prerequisites:
+    - "An external workspace with account/source register and forecast as-of date; defaults are resolved during preflight"
+    - "Safe external source refs; optional restricted Stripe read access when selected"
+  proof:
+    - "External dated thirteen-week forecast ref and assumptions/uncertainty refs"
+    - "Safe source/action-call proof refs, exception refs, and tax handoff ref"
+  featured: true
+when_to_use:
+  - "A rolling external cashflow forecast needs a bounded, dated thirteen-week refresh."
+when_not_to_use:
+  - "The request asks to pay, transfer, charge, invest, borrow, refinance, refund, file/remit tax, set a budget, or make a financial decision on the operator's behalf."
+agent_requirements:
+  - role: cashflow-preparer
+    requirement: required
+    agent_preset_ref: stackos.finance.cashflow-preparer
+    purpose: Prepare a bounded external thirteen-week packet with assumptions/gaps visible and no money authority.
+    applies_to_steps: [preflight, collect-evidence, prepare-thirteen-week-forecast, review-and-handoff]
+  - role: control-reviewer
+    requirement: recommended
+    agent_preset_ref: stackos.finance.control-reviewer
+    purpose: Challenge date coverage, source boundaries, uncertainty, and money-movement exclusions before handoff.
+    applies_to_steps: [review-and-handoff]
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: required
+    purpose: Operate grants and optional provider reads while retaining forecast data only in the selected external backend.
+    applies_to_steps: [preflight, collect-evidence, prepare-thirteen-week-forecast, review-and-handoff]
+skill_preset_requirements:
+  - skill_preset_ref: stackos.finance.department-orchestrator
+    requirement: required
+    purpose: Coordinate finance flow boundaries, external state, uncertainty, exception recovery, and safe handoffs.
+    applies_to_steps: [preflight, collect-evidence, prepare-thirteen-week-forecast, review-and-handoff]
+inputs:
+  - key: goal
+    name: Goal
+    type: string
+    required: false
+    default: Complete the selected finance work and report material decisions or gaps.
+    schema: {type: string, minLength: 1}
+  - key: backend_key
+    name: Backend Key
+    type: string
+    required: false
+    default: local-json
+    schema: {type: string, const: local-json}
+  - key: workspace_ref
+    name: External Workspace Ref
+    type: string
+    required: true
+    schema: {type: string, minLength: 1}
+  - key: recording_mode
+    name: Recording Mode
+    type: string
+    required: false
+    default: prepared-unposted
+    schema: {type: string, const: prepared-unposted}
+  - key: business_profile_ref
+    name: External Business Profile Override
+    type: string
+    required: false
+    description: Optional override; reuse applicable workspace facts. Missing tax inputs limit tax-reserve estimates, not supported cashflow preparation; legal form and tax treatment remain separate facts.
+    schema: {type: string, minLength: 1}
+  - key: operator_policy_ref
+    name: Operator Policy Ref
+    type: string
+    required: false
+    description: Optional override of the durable external workspace policy; the agent resolves it during preflight.
+    schema: {type: string, minLength: 1}
+  - key: trigger_kind
+    name: Trigger Kind
+    type: string
+    required: false
+    default: manual
+    schema: {type: string, enum: [manual, external]}
+  - key: forecast_scope_ref
+    name: Forecast Scope Ref
+    type: string
+    required: false
+    description: Optional scope override; collect-evidence produces the source snapshot and scope record.
+    schema: {type: string, minLength: 1}
+  - key: forecast_as_of
+    name: Forecast As-Of Date
+    type: string
+    required: true
+    schema: {type: string, format: date}
+  - key: week_1_start
+    name: Week One Start
+    type: string
+    required: false
+    description: Optional override; resolve the workspace week-start convention from forecast_as_of and record the chosen date.
+    schema: {type: string, format: date}
+  - key: forecast_horizon_weeks
+    name: Forecast Horizon Weeks
+    type: integer
+    required: false
+    default: 13
+    schema: {type: integer, const: 13}
+  - key: cashflow_policy_ref
+    name: Cashflow Policy Ref
+    type: string
+    required: false
+    description: Optional safe external override of workspace forecast rules and assumptions; it never grants money movement.
+    schema: {type: string, minLength: 1}
+capability_requirements:
+  - key: stripe-invoicing
+    required: false
+    description: Optional read-only invoice evidence when Stripe is selected.
+    preferred_providers: [stripe]
+  - key: stripe-reconciliation
+    required: false
+    description: Optional read-only balance and invoice-payment evidence when Stripe is selected.
+    preferred_providers: [stripe]
+auth_requirements:
+  - key: stripe
+    provider: stripe
+    auth_type: api-key
+    optional: true
+    description: Optional daemon-held restricted Stripe key used only for reads in this workflow.
+action_contracts:
+  - key: stripe_balance_retrieve
+    action: finance.stripe.balance.retrieve
+    capability: stripe-reconciliation
+    provider: stripe
+    auth_ref: stripe
+    optional: true
+    risk_level: read
+  - key: stripe_invoices_list
+    action: finance.stripe.invoices.list
+    capability: stripe-invoicing
+    provider: stripe
+    auth_ref: stripe
+    optional: true
+    risk_level: read
+  - key: stripe_invoices_retrieve
+    action: finance.stripe.invoices.retrieve
+    capability: stripe-invoicing
+    provider: stripe
+    auth_ref: stripe
+    optional: true
+    risk_level: read
+  - key: stripe_invoice_payments_list
+    action: finance.stripe.invoice-payments.list
+    capability: stripe-reconciliation
+    provider: stripe
+    auth_ref: stripe
+    optional: true
+    risk_level: read
+policies:
+  - key: local-json-single-source
+    kind: boundary
+    description: For local-json, finance.json is the sole authoritative local financial record, including mutable setup. Packet refs resolve to record_id in that document; approved proposals also bind an immutable version/digest, not separate editable files. FINANCE.md is guidance/navigation; CSV is import/export, never a second master. Original evidence stays immutable; provider state stays provider-owned and JSON stores dated observations. Follow the packaged local workspace contract.
+  - key: external-backend-is-authoritative
+    kind: boundary
+    description: The selected external backend owns forecast assumptions, dated entries, source records, and business decisions; StackOS stores only safe refs and action audit.
+  - key: exactly-thirteen-dated-weeks
+    kind: integrity
+    description: The external forecast must contain exactly thirteen consecutive dated weekly entries from week_1_start, using forecast_as_of and forecast_horizon_weeks=13; StackOS output carries only safe refs/status, never forecast contents.
+  - key: base-and-downside-scenarios
+    kind: integrity
+    description: The external forecast packet must represent both base and downside scenarios with distinct safe refs/status. Workflow/tracker/resource/artifact results never carry scenario values, assumptions, or financial amounts; optional Stripe reads may leave bounded sanitized amounts in the existing non-authoritative action audit.
+  - key: no-money-movement
+    kind: boundary
+    description: This workflow does not charge, pay, transfer, refund, invest, borrow, schedule a payment, or otherwise move money.
+  - key: operator-policy-is-guidance
+    kind: approval
+    description: Workspace policy guides assumptions but grants no money authority. Resolve material assumption questions within the current occurrence when safe; preserve gaps and supported components instead of demanding separate recovery runs for routine clarification.
+steps:
+  - id: preflight
+    title: Preflight Forecast Scope
+    purpose: Resolve a dated thirteen-week scope, external account sources and scenario conventions.
+    input_refs: [goal, backend_key, workspace_ref, recording_mode, business_profile_ref, operator_policy_ref, trigger_kind, forecast_scope_ref, forecast_as_of, week_1_start, forecast_horizon_weeks, cashflow_policy_ref]
+    policy_refs: [external-backend-is-authoritative, local-json-single-source, exactly-thirteen-dated-weeks, base-and-downside-scenarios, no-money-movement]
+    output_refs: [cashflow_summary]
+    instructions:
+      - "Read finance.json and its packaged local-json-v1 schema; resolve actual record refs and selected setup, document revision/digest and one-writer readback capability. For first-time setup use the empty bootstrap only in a new workspace; never overwrite existing files. Whole-document changes require reread/rebase; unrelated updates do not invalidate immutable proposal approval."
+    success_criteria:
+      - "Forecast entry criteria, start date, thirteen-week invariant, and source gaps are explicit."
+  - id: collect-evidence
+    title: Collect Bounded Cashflow Evidence
+    purpose: Read selected external records and optional safe Stripe balance, invoice, and invoice-payment evidence.
+    action_refs: [stripe_balance_retrieve, stripe_invoices_list, stripe_invoices_retrieve, stripe_invoice_payments_list]
+    depends_on: [preflight]
+    policy_refs: [external-backend-is-authoritative, no-money-movement]
+    output_refs: [cashflow_summary]
+    instructions:
+      - "All provider actions are read-only. Do not infer an expected payment, settlement, balance availability, or instruction from a provider observation alone."
+    success_criteria:
+      - "Evidence is available by safe external/provider ref or recorded as a bounded gap."
+  - id: prepare-thirteen-week-forecast
+    title: Prepare External Thirteen-Week Forecast
+    purpose: Write exactly thirteen dated weekly forecast entries, assumptions, uncertainty, and exceptions only in the selected external backend.
+    depends_on: [collect-evidence]
+    policy_refs: [external-backend-is-authoritative, exactly-thirteen-dated-weeks, base-and-downside-scenarios, no-money-movement]
+    output_refs: [cashflow_summary]
+    instructions:
+      - "Never put weekly forecast contents, financial amounts, payment instructions, or source content into workflow, tracker, resource, artifact, or free-form audit narrative; treat the executor's bounded sanitized provider-action envelope as non-authoritative transport evidence."
+      - "Prepare both base and downside scenarios in the selected external backend and return only their safe refs and lifecycle state."
+      - "Produce a source snapshot covering opening bank cash, available/pending Stripe balances, receivables with timing/confidence, operating commitments, payroll/owner compensation and tax-reserve sources. Pending Stripe funds are not bank cash; an invoice, its payment and the resulting payout must not be counted as three inflows."
+      - "For each of 13 dated weeks and each base/downside scenario, calculate opening cash + operating inflows - operating outflows - actual tax payments = closing cash. Show earmarked tax reserve and free cash separately; reserving money is not an expense or a second cash outflow. Carry each closing balance to the next opening balance."
+      - "Propose evidence-supported timing and downside assumptions with confidence and reason; never fabricate known amounts. Unknown opening cash or materially missing commitments produces forecast-incomplete, preserving supported components and the missing-input list."
+      - "Consume an existing reviewed tax packet when available; otherwise show the external policy reserve as provisional or unknown. Apply each tax packet version once per forecast version and supersede the prior reserve assignment rather than subtracting twice. Do not automatically start tax-estimates from a reserve refresh."
+      - "Write the packet through the single-writer revision protocol and reread it. Review date coverage, both rollforwards, source coverage and duplicate counting; invoke the recommended independent reviewer for material new assumptions or reconciliation risk, otherwise the main agent can verify the routine refresh. Produce control_review_ref and external_write_proof_ref."
+    success_criteria:
+      - "The external packet is exactly thirteen dated weeks or is explicitly exception-bound."
+  - id: review-and-handoff
+    title: Review Forecast And Handoff Safely
+    purpose: Review safe external proof/uncertainty refs and hand a qualified forecast packet to tax estimates when its conditions are met.
+    depends_on: [prepare-thirteen-week-forecast]
+    policy_refs: [external-backend-is-authoritative, no-money-movement]
+    output_refs: [cashflow_summary]
+    success_criteria:
+      - "The workflow returns safe forecast/proof/handoff refs and does not authorize a financial action."
+outputs:
+  - key: cashflow_summary
+    name: Cashflow Summary
+    type: object
+    required: true
+    description: Safe external forecast/source/proof refs and coverage state only; never forecast entries, amounts, customer data, payment instructions, or tax calculations.
+    schema:
+      type: object
+      additionalProperties: false
+      required: [status, forecast_as_of, forecast_horizon_weeks, exception_refs]
+      properties:
+        status: {type: string, enum: [scoped, evidence-collected, forecast-prepared, forecast-incomplete, review-ready, handed-off, exception]}
+        forecast_scope_ref: {type: string, minLength: 1}
+        forecast_ref: {type: string, minLength: 1}
+        source_completeness_ref: {type: string, minLength: 1}
+        control_review_ref: {type: string, minLength: 1}
+        external_write_proof_ref: {type: string, minLength: 1}
+        tax_reserve_application_ref: {type: string, minLength: 1}
+        forecast_as_of: {type: string, format: date}
+        week_1_start: {type: string, format: date}
+        forecast_horizon_weeks: {const: 13}
+        base_scenario_ref: {type: string, minLength: 1}
+        base_scenario_state: {type: string, enum: [prepared, reviewed, exception]}
+        downside_scenario_ref: {type: string, minLength: 1}
+        downside_scenario_state: {type: string, enum: [prepared, reviewed, exception]}
+        source_proof_refs: {type: array, items: {type: string, minLength: 1}}
+        uncertainty_refs: {type: array, items: {type: string, minLength: 1}}
+        exception_refs: {type: array, items: {type: string, minLength: 1}}
+        handoff_refs: {type: array, items: {type: string, minLength: 1}}
+      allOf:
+        - if:
+            properties:
+              status: {enum: [evidence-collected, forecast-prepared, review-ready, handed-off]}
+            required: [status]
+          then:
+            required: [source_proof_refs, uncertainty_refs]
+            properties:
+              source_proof_refs: {minItems: 1}
+        - if:
+            properties:
+              status: {enum: [forecast-prepared, review-ready, handed-off]}
+            required: [status]
+          then:
+            required: [forecast_ref, week_1_start, base_scenario_ref, base_scenario_state, downside_scenario_ref, downside_scenario_state, source_completeness_ref, external_write_proof_ref]
+        - if:
+            properties:
+              status: {enum: [review-ready, handed-off]}
+            required: [status]
+          then:
+            required: [control_review_ref]
+            properties:
+              base_scenario_state: {const: reviewed}
+              downside_scenario_state: {const: reviewed}
+        - if:
+            properties:
+              status: {const: handed-off}
+            required: [status]
+          then:
+            required: [handoff_refs]
+            properties:
+              handoff_refs: {minItems: 1}
+        - if:
+            properties:
+              status: {enum: [exception, forecast-incomplete]}
+            required: [status]
+          then:
+            properties:
+              exception_refs: {minItems: 1}
+failure_handling:
+  - "Do not create a money action, a partial forecast presented as complete, or an inferred financial decision. Use a safe external exception and handoff requirement instead."
+metadata:
+  artifact_grant_policy: explicit
+  trigger_kinds: [manual, external]
+  finance_record_owner: external-backend
+  state_model: [scoped, evidence-collected, forecast-prepared, forecast-incomplete, review-ready, handed-off, exception]

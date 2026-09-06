@@ -13,6 +13,7 @@ import {
   providerGroupLabel,
 } from '@/views/connections/formatters'
 import { connectionFieldInputId } from '@/views/connections/fieldIds'
+import { credentialVerificationMessage } from '@/views/connections/credentialPresentation'
 import type {
   AuthMethod,
   MessageMap,
@@ -320,7 +321,7 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
           tested.data.ok ? 'success' : 'danger',
           tested.data.ok
             ? credentialTestMessage(provider.key, tested.data.metadata, 'Account verified.')
-            : `${tested.data.summary} The Account was saved; retry verification from Accounts.`,
+            : `${credentialVerificationMessage(tested.data)} The Account was saved.`,
         )
       } catch (testError) {
         setAccountMessage(
@@ -399,7 +400,7 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
               response.data.metadata,
               response.data.summary,
             )
-          : response.data.summary,
+          : credentialVerificationMessage(response.data),
       )
     } catch (err) {
       setAccountMessage(

@@ -6,6 +6,8 @@ import asyncio
 import json
 from typing import Any
 
+import pytest
+
 from stackos.mcp.bridge import (
     _AGENT_ADMIN_GATED_TOOL_NAMES,
     _AGENT_BASE_TOOLBOX_NAMES,
@@ -30,7 +32,10 @@ from stackos.mcp.bridge import (
     _bridge_toolbox_describe,
 )
 from stackos.mcp.bridge.catalog import _bridge_toolbox_specs
-from stackos.mcp.bridge.response import _bridge_compact_auth_status
+from stackos.mcp.bridge.response import (
+    _bridge_compact_auth_status,
+    _bridge_compact_tool_response,
+)
 from stackos.mcp.contract import verb_is_mutating
 from stackos.mcp.permissions import SKILL_TOOL_GRANTS, SYSTEM_SKILL
 from stackos.mcp.server import STACKOS_MCP_INSTRUCTIONS, ToolRegistry
@@ -38,6 +43,7 @@ from stackos.mcp.streaming import ProgressEmitter
 from stackos.mcp.tool_registry import _to_tool
 from stackos.mcp.tools import register_all
 from stackos.operations.registry import build_operation_registry
+from stackos.operations.responses import shape_operation_response
 
 
 def _tool(
@@ -840,6 +846,86 @@ def test_bridge_compact_connections_keep_only_attached_or_explicit_provider_rows
     assert [provider["key"] for provider in targeted["providers"]] == ["openai-images"]
     assert targeted["providers"][0]["status"] == "missing"
     assert targeted["providers"][0]["setup_required"] is True
+
+
+@pytest.mark.parametrize("attached_only", [False, True], ids=["accounts", "connections"])
+def test_bridge_compact_connections_preserve_failed_verification(attached_only: bool) -> None:
+    diagnostic = {
+        "ok": False,
+        "status": "failed",
+        "summary": "Permission denied for this endpoint.",
+        "retryable": False,
+        "next_action": "Review the provider key permissions.",
+        "metadata": {"provider_status_code": 403, "request_id": "req_fixture"},
+    }
+    compact = _bridge_compact_auth_status(
+        {
+            "project_id": 7,
+            "accounts": [
+                {
+                    "credential_ref": "cred_fixture",
+                    "provider_key": "stripe",
+                    "status": "connected",
+                    "last_test": diagnostic,
+                }
+            ],
+        },
+        attached_only=attached_only,
+    )
+    assert compact["accounts"][0]["status"] == "connected"
+    assert compact["accounts"][0]["last_test"] == diagnostic
+
+
+@pytest.mark.parametrize("operation_name", ["account.list", "connection.list"])
+@pytest.mark.parametrize("tested", [True, False], ids=["tested", "untested"])
+def test_bridge_auth_inventory_envelope_preserves_test_result_and_timestamp(
+    operation_name: str, tested: bool
+) -> None:
+    diagnostic = (
+        {
+            "ok": False,
+            "status": "failed",
+            "summary": "IMAP certificate verification failed.",
+            "retryable": False,
+            "next_action": "Configure trust for the mailbox server certificate.",
+            "metadata": {"stage": "connect", "reason_code": "tls_certificate_error"},
+        }
+        if tested
+        else None
+    )
+    tested_at = "2026-09-05T19:30:00Z" if tested else None
+    canonical = shape_operation_response(
+        build_operation_registry().get(operation_name),
+        {
+            "project_id": 7,
+            "accounts": [
+                {
+                    "credential_ref": "cred_fixture",
+                    "provider_key": "imap",
+                    "status": "connected",
+                    "last_test": diagnostic,
+                    "last_tested_at": tested_at,
+                }
+            ],
+        },
+        response_mode="compact",
+    )
+    canonical_text = json.dumps(canonical, sort_keys=True)
+    response = _bridge_compact_tool_response(
+        tool_name=operation_name,
+        response_text=_bridge_tool_result(42, canonical, is_error=False),
+        response_mode="compact",
+    )
+    envelope = json.loads(response)
+    structured = envelope["result"]["structuredContent"]
+    account = structured["data"]["accounts"][0]
+
+    assert account["credential_ref"] == "cred_fixture"
+    assert account["status"] == "connected"
+    assert account["last_tested_at"] == tested_at
+    assert account["last_test"] == diagnostic
+    assert json.loads(envelope["result"]["content"][0]["text"]) == structured
+    assert json.dumps(canonical, sort_keys=True) == canonical_text
 
 
 def test_bridge_compact_connections_preserve_account_lifecycle_and_metadata_fallback() -> None:

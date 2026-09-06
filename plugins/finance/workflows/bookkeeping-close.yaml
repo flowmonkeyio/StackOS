@@ -1,0 +1,352 @@
+schema_version: stackos.workflow-template.v1
+key: finance.bookkeeping-close
+name: Finance Bookkeeping Preparation and Reconciliation
+version: 0.4.0
+description: Prepare and reconcile a bounded bookkeeping close in the selected external backend without creating a StackOS ledger or claiming an authoritative posting.
+domain: finance
+owner:
+  team: StackOS
+experience:
+  problem: "A solo operator needs receipt, invoice, payment, and balance evidence organized into a repeatable close without making bookkeeping decisions disappear into chat."
+  outcome: "A reviewed, externally recorded close packet marked prepared/unposted, with matched and exception refs that can be handed to later workflows."
+  why_ai: "An agent can assemble bounded external evidence, surface gaps, and prepare a reconciled close packet while the owner retains accounting judgment and posting authority."
+  operator_path:
+    - "Select the period; the agent reads source accounts, accounting basis and category rules from the external workspace."
+    - "Review classification, matching, reconciliation exceptions, and any external-backend finalization requested by a qualified professional."
+    - "Accept a prepared/unposted close or return it for repair; no accounting period is closed in StackOS."
+  agent_path:
+    - "Read only the external records and optional safe Stripe lifecycle evidence needed for the selected period."
+    - "Prepare, match, classify, and reconcile with uncertainty and exceptions visible."
+    - "Write only the selected external backend's prepared/unposted record and safe handoff refs."
+  progress_signals: ["Period scoped", "Evidence matched", "Exceptions visible", "Prepared close reviewed", "Handoff recorded"]
+  recovery:
+    - "Isolate missing sources, ambiguous matches and unsupported categories while preparing supported records; show a consolidated decision list."
+    - "If Stripe evidence is unavailable, retain the bounded evidence gap and prepare only what the selected external backend can support."
+  safe_stopping_points:
+    - "Return prepared work with open exceptions when evidence is incomplete; never label the period fully reconciled."
+    - "Stop at prepared/unposted after owner review; authoritative posting belongs to the external backend and separately authorized professional process."
+  handoffs:
+    - workflow_key: finance.cashflow-management
+      relationship: next
+      when: "A prepared close provides safe period status and external evidence refs for a forecast refresh."
+    - workflow_key: finance.tax-estimates
+      relationship: conditional
+      when: "A prepared close contributes evidence to a current-source tax estimate packet."
+public:
+  audience: "Solo entrepreneurs preparing a monthly or bounded-period bookkeeping close outside StackOS"
+  setup: mixed
+  prerequisites:
+    - "A selected external finance backend/workspace and explicit period reference"
+    - "An external source-account register, accounting basis and category policy, resolved during preflight"
+    - "Safe external evidence refs; Stripe access only if it is selected as a reconciliation source"
+  proof:
+    - "Prepared/unposted close and reconciliation refs in the external backend"
+    - "Safe external evidence/action-call refs and exception refs"
+    - "Owner review state and downstream handoff refs"
+  featured: true
+when_to_use:
+  - "A bounded accounting period needs receipts, invoices, payment lifecycle evidence, and exceptions prepared for review."
+when_not_to_use:
+  - "The request is to post a general ledger, move money, pay a vendor, run payroll, file/remit tax, or invent a category, basis, tax treatment, or settlement allocation."
+agent_requirements:
+  - role: bookkeeping-preparer
+    requirement: required
+    agent_preset_ref: stackos.finance.bookkeeping-preparer
+    purpose: Prepare external evidence, matching, reconciliation, and exception records without authoritative posting.
+    applies_to_steps: [preflight, collect-evidence, prepare-and-reconcile, review-prepared-close, handoff]
+  - role: control-reviewer
+    requirement: recommended
+    agent_preset_ref: stackos.finance.control-reviewer
+    purpose: Independently challenge duplicate, correction, match, reconciliation, and prepared/unposted boundaries.
+    applies_to_steps: [review-prepared-close]
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: required
+    purpose: Use StackOS grants and action audit while keeping all finance records in the selected external backend.
+    applies_to_steps: [preflight, collect-evidence, prepare-and-reconcile, review-prepared-close, handoff]
+skill_preset_requirements:
+  - skill_preset_ref: stackos.finance.department-orchestrator
+    requirement: required
+    purpose: Coordinate external-backend finance work, specialist handoffs, exceptions, and approval boundaries.
+    applies_to_steps: [preflight, collect-evidence, prepare-and-reconcile, review-prepared-close, handoff]
+inputs:
+  - key: goal
+    name: Goal
+    type: string
+    required: false
+    default: Complete the selected finance work and report material decisions or gaps.
+    schema: {type: string, minLength: 1}
+  - key: backend_key
+    name: Backend Key
+    type: string
+    required: false
+    default: local-json
+    schema: {type: string, const: local-json}
+  - key: workspace_ref
+    name: External Workspace Ref
+    type: string
+    required: true
+    schema: {type: string, minLength: 1}
+  - key: recording_mode
+    name: Recording Mode
+    type: string
+    required: false
+    default: prepared-unposted
+    schema: {type: string, const: prepared-unposted}
+  - key: business_profile_ref
+    name: External Business Profile Override
+    type: string
+    required: false
+    description: Optional override; reuse applicable workspace facts. Missing basis or tax treatment limits affected conclusions, not evidence preparation; never infer an election from legal form.
+    schema: {type: string, minLength: 1}
+  - key: operator_policy_ref
+    name: Operator Policy Ref
+    type: string
+    required: false
+    description: Optional override of the durable external workspace policy; the agent resolves it during preflight.
+    schema: {type: string, minLength: 1}
+  - key: trigger_kind
+    name: Trigger Kind
+    type: string
+    required: false
+    default: manual
+    schema: {type: string, enum: [manual, external]}
+  - key: period_ref
+    name: Period Ref
+    type: string
+    required: true
+    schema: {type: string, minLength: 1}
+  - key: accounting_basis
+    name: Accounting Basis
+    type: string
+    required: false
+    description: Optional setup override; otherwise resolve the external business profile. Missing basis prevents basis-specific conclusions, not evidence preparation.
+    schema: {type: string, enum: [cash, accrual, other]}
+  - key: reconciliation_scope_ref
+    name: Reconciliation Scope Ref
+    type: string
+    required: false
+    description: Optional scope override; collect-evidence creates a source coverage record for the period and configured bank/card/Stripe accounts.
+    schema: {type: string, minLength: 1}
+capability_requirements:
+  - key: stripe-invoicing
+    required: false
+    description: Optional safe Stripe invoice lifecycle evidence for matching; it never creates, finalizes, sends, or posts an invoice.
+    preferred_providers: [stripe]
+  - key: stripe-reconciliation
+    required: false
+    description: Optional safe Stripe lifecycle evidence for matching and reconciliation; it never changes Stripe or posts bookkeeping.
+    preferred_providers: [stripe]
+auth_requirements:
+  - key: stripe
+    provider: stripe
+    auth_type: api-key
+    optional: true
+    description: Restricted Stripe access is optional and read-only for this workflow.
+action_contracts:
+  - key: stripe_invoices_list
+    action: finance.stripe.invoices.list
+    capability: stripe-invoicing
+    provider: stripe
+    auth_ref: stripe
+    optional: true
+    risk_level: read
+  - key: stripe_invoices_retrieve
+    action: finance.stripe.invoices.retrieve
+    capability: stripe-invoicing
+    provider: stripe
+    auth_ref: stripe
+    optional: true
+    risk_level: read
+  - key: stripe_invoice_payments_list
+    action: finance.stripe.invoice-payments.list
+    capability: stripe-reconciliation
+    provider: stripe
+    auth_ref: stripe
+    optional: true
+    risk_level: read
+  - key: stripe_charges_list
+    action: finance.stripe.charges.list
+    capability: stripe-reconciliation
+    provider: stripe
+    auth_ref: stripe
+    optional: true
+    risk_level: read
+  - key: stripe_charges_retrieve
+    action: finance.stripe.charges.retrieve
+    capability: stripe-reconciliation
+    provider: stripe
+    auth_ref: stripe
+    optional: true
+    risk_level: read
+  - key: stripe_balance_transactions_list
+    action: finance.stripe.balance-transactions.list
+    capability: stripe-reconciliation
+    provider: stripe
+    auth_ref: stripe
+    optional: true
+    risk_level: read
+  - key: stripe_balance_transactions_retrieve
+    action: finance.stripe.balance-transactions.retrieve
+    capability: stripe-reconciliation
+    provider: stripe
+    auth_ref: stripe
+    optional: true
+    risk_level: read
+  - key: stripe_refunds_list
+    action: finance.stripe.refunds.list
+    capability: stripe-reconciliation
+    provider: stripe
+    auth_ref: stripe
+    optional: true
+    risk_level: read
+  - key: stripe_refunds_retrieve
+    action: finance.stripe.refunds.retrieve
+    capability: stripe-reconciliation
+    provider: stripe
+    auth_ref: stripe
+    optional: true
+    risk_level: read
+policies:
+  - key: local-json-single-source
+    kind: boundary
+    description: For local-json, finance.json is the sole authoritative local financial record, including mutable setup. Packet refs resolve to record_id in that document; approved proposals also bind an immutable version/digest, not separate editable files. FINANCE.md is guidance/navigation; CSV is import/export, never a second master. Original evidence stays immutable; provider state stays provider-owned and JSON stores dated observations. Follow the packaged local workspace contract.
+  - key: external-backend-is-authoritative
+    kind: boundary
+    description: The external backend owns all bookkeeping records, corrections, reconciliation, and posting status; StackOS holds only workflow/action audit.
+  - key: prepared-not-posted
+    kind: integrity
+    description: Local-json work is always labeled prepared/unposted and must not claim authoritative ledger posting, settled allocation, period close, filing, or remittance.
+  - key: no-inferred-accounting-or-tax-policy
+    kind: boundary
+    description: The agent may propose evidence-supported categories with confidence and rationale within the configured category set. It must not invent business purpose, accounting basis, tax treatment, payment authority or an unsupported final accounting conclusion.
+  - key: operator-policy-is-guidance
+    kind: approval
+    description: Resolve material local corrections or missing business purpose with one scoped owner decision in the current occurrence when its stage/grants permit. A new occurrence is needed for changed provider authority or an unsafe-to-resume run, not every category question. No decision here authorizes posting.
+steps:
+  - id: preflight
+    title: Preflight Close Scope
+    purpose: Resolve the external workspace, period, source accounts, accounting basis and category policy.
+    input_refs: [goal, backend_key, workspace_ref, recording_mode, business_profile_ref, operator_policy_ref, trigger_kind, period_ref, accounting_basis, reconciliation_scope_ref]
+    policy_refs: [external-backend-is-authoritative, local-json-single-source, prepared-not-posted, no-inferred-accounting-or-tax-policy]
+    output_refs: [bookkeeping_close_summary]
+    instructions:
+      - "Read finance.json and its packaged local-json-v1 schema; resolve actual record refs and selected setup, document revision/digest and one-writer readback capability. For first-time setup use the empty bootstrap only in a new workspace; never overwrite existing files. Whole-document changes require reread/rebase; unrelated updates do not invalidate immutable proposal approval."
+    success_criteria:
+      - "Period entry criteria and required evidence gaps are explicit before records are prepared."
+  - id: collect-evidence
+    title: Collect Bounded External Evidence
+    purpose: Read selected external records and optional safe Stripe lifecycle evidence for the period.
+    action_refs: [stripe_invoices_list, stripe_invoices_retrieve, stripe_invoice_payments_list, stripe_charges_list, stripe_charges_retrieve, stripe_balance_transactions_list, stripe_balance_transactions_retrieve, stripe_refunds_list, stripe_refunds_retrieve]
+    depends_on: [preflight]
+    policy_refs: [external-backend-is-authoritative]
+    output_refs: [bookkeeping_close_summary]
+    instructions:
+      - "Use only read actions and bounded safe provider references; do not create, send, refund, transfer, or mutate Stripe evidence."
+      - "Read the connector's supported typed BalanceTransaction source_ref/source_type when source_state=available and retain balance_type. Use Refund failure_balance_transaction_ref and any independently available Dispute balance_transaction_refs under existing read authority; this does not add a dispute action grant. Missing/null/unexpanded/unsupported sources and InvoicePayment missing payment linkage remain evidence gaps, not inferred equal-amount matches."
+      - "Read the external bank/card account register and supplied statements/exports, opening and closing balances, dates and expected coverage. Stripe and receipts alone are not complete books. Create source_completeness_ref here, naming complete/missing windows and statement evidence; request missing exports once while processing available evidence."
+    success_criteria:
+      - "Evidence is either available by safe ref or recorded as a bounded gap."
+  - id: prepare-and-reconcile
+    title: Prepare And Reconcile External Close
+    purpose: Match, classify, reconcile, and write the selected external backend's prepared close and exception records.
+    depends_on: [collect-evidence]
+    policy_refs: [external-backend-is-authoritative, prepared-not-posted, no-inferred-accounting-or-tax-policy]
+    output_refs: [bookkeeping_close_summary]
+    instructions:
+      - "Use additive corrections with explicit external approval refs; never silently overwrite a prior observation."
+      - "Keep unresolved differences, duplicate evidence, and ambiguous matches as exceptions rather than manufacturing a balanced result."
+      - "Propose categories from the established category set using merchant, source and business-purpose evidence; retain confidence/rationale and distinguish proposed from policy-matched/reviewed. Do not invent business purpose, deductibility, accounting basis, or unsupported settlement allocations."
+      - "Separate invoice/payment/fee/refund/payout evidence, match bank transfers without double-counting revenue, and reconcile each covered account using its opening and closing balance. Preserve gross receipts and fees separately."
+      - "Keep supported rows prepared/unposted even when other rows need clarification. Persist through the single-writer revision check and reread; produce external_write_proof_ref."
+      - "A fully covered no-activity period can have prepared_record_refs empty. Prove source coverage and opening/closing reconciliation rather than inventing a transaction."
+    success_criteria:
+      - "The external close state is prepared/unposted, reconciled where evidence supports it, or explicitly exception-bound."
+  - id: review-prepared-close
+    title: Review Prepared Close
+    purpose: Perform routine specialist/control review of the prepared external close and surface unresolved exceptions.
+    depends_on: [prepare-and-reconcile]
+    policy_refs: [prepared-not-posted]
+    output_refs: [bookkeeping_close_summary]
+    success_criteria:
+      - "Record proportionate review as control_review_ref. Invoke the recommended independent reviewer for novel category policy, material corrections or unresolved reconciliation risk; the main agent may check routine policy-matched or no-activity periods. Complete reconciliation requires complete coverage, explained differences and no material open exceptions; otherwise retain completed-with-open-exceptions and one owner decision list."
+  - id: handoff
+    title: Record Safe Workflow Handoffs
+    purpose: Hand prepared external close refs to cashflow or tax-estimate work only when their stated conditions are met.
+    depends_on: [review-prepared-close]
+    policy_refs: [external-backend-is-authoritative, prepared-not-posted]
+    output_refs: [bookkeeping_close_summary]
+    success_criteria:
+      - "Each handoff is idempotent, source-linked, and contains no finance content in StackOS."
+outputs:
+  - key: bookkeeping_close_summary
+    name: Bookkeeping Close Summary
+    type: object
+    required: true
+    description: Safe status and external proof refs only; never account values, amounts, categories, customer data, source content, or a claim of authoritative posting.
+    schema:
+      type: object
+      additionalProperties: false
+      required: [status, period_ref, recording_state, reconciliation_state, exception_refs]
+      properties:
+        status: {type: string, enum: [scoped, evidence-collected, prepared-unposted, reviewed, handed-off, completed-with-open-exceptions, exception]}
+        period_ref: {type: string, minLength: 1}
+        accounting_basis: {type: string}
+        reconciliation_scope_ref: {type: string, minLength: 1}
+        source_completeness_ref: {type: string, minLength: 1}
+        source_coverage_state: {type: string, enum: [complete, partial, missing]}
+        control_review_ref: {type: string, minLength: 1}
+        external_write_proof_ref: {type: string, minLength: 1}
+        recording_state: {const: prepared/unposted}
+        prepared_record_refs: {type: array, items: {type: string, minLength: 1}}
+        reconciliation_state: {type: string, enum: [not-started, in-progress, matched, exception, complete]}
+        exception_refs: {type: array, items: {type: string, minLength: 1}}
+        approval_refs: {type: array, items: {type: string, minLength: 1}}
+        handoff_refs: {type: array, items: {type: string, minLength: 1}}
+      allOf:
+        - if:
+            properties:
+              status: {enum: [prepared-unposted, reviewed, handed-off, completed-with-open-exceptions]}
+            required: [status]
+          then:
+            required: [prepared_record_refs, source_completeness_ref, source_coverage_state, external_write_proof_ref]
+        - if:
+            properties:
+              status: {enum: [reviewed, handed-off]}
+            required: [status]
+          then:
+            required: [control_review_ref]
+            properties:
+              reconciliation_state: {const: complete}
+              source_coverage_state: {const: complete}
+              exception_refs: {maxItems: 0}
+        - if:
+            properties:
+              status: {const: completed-with-open-exceptions}
+            required: [status]
+          then:
+            properties:
+              exception_refs: {minItems: 1}
+              reconciliation_state: {enum: [not-started, in-progress, matched, exception]}
+        - if:
+            properties:
+              status: {const: handed-off}
+            required: [status]
+          then:
+            required: [handoff_refs]
+            properties:
+              handoff_refs: {minItems: 1}
+        - if:
+            properties:
+              status: {const: exception}
+            required: [status]
+          then:
+            properties:
+              exception_refs: {minItems: 1}
+failure_handling:
+  - "Do not post, close, settle, remit, or file when evidence or approval is missing; return a safe external exception/handoff requirement."
+metadata:
+  artifact_grant_policy: explicit
+  trigger_kinds: [manual, external]
+  finance_record_owner: external-backend
+  state_model: [scoped, evidence-collected, prepared-unposted, reviewed, handed-off, completed-with-open-exceptions, exception]

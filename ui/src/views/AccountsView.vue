@@ -33,6 +33,7 @@ import {
   providerLabel,
 } from './connections/formatters'
 import type { OAuthReturnStatus } from './connections/types'
+import { credentialVerificationMessage } from './connections/credentialPresentation'
 import { formatAbsoluteDateTime, formatRelativeDateTime } from '@/lib/stackos/time'
 
 const route = useRoute()
@@ -481,6 +482,16 @@ onMounted(load)
                       Review connectivity
                     </UiButton>
                   </template>
+                </UiCallout>
+
+                <UiCallout
+                  v-if="account.last_test?.ok === false"
+                  tone="danger"
+                  title="Verification failed"
+                  density="compact"
+                  class="mt-2"
+                >
+                  {{ credentialVerificationMessage(account.last_test) }}
                 </UiCallout>
 
                 <UiCallout

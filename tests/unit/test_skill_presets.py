@@ -214,6 +214,83 @@ def test_branding_skill_preset_names_evidence_lock_and_level2_boundary() -> None
     assert loaded.preset.metadata_json["evidence_lock"]["required_before_finalization"] is True
 
 
+def test_finance_orchestrator_keeps_financial_authority_external() -> None:
+    loaded = SkillPresetLoader().describe_preset(key="stackos.finance.department-orchestrator")
+    contract = loaded.preset.operating_contract
+    contract_text = " ".join(
+        [
+            contract.mission,
+            *contract.responsibilities,
+            *contract.must_do,
+            *contract.must_not_do,
+            *contract.required_outputs,
+            *contract.success_criteria,
+            *contract.self_check,
+        ]
+    ).lower()
+    refs = [item.ref for item in loaded.preset.project_adaptation.required_context_refs]
+    conditional_refs = [
+        item.ref for item in loaded.preset.project_adaptation.conditional_context_refs
+    ]
+
+    assert loaded.summary.plugin_slug == "finance"
+    assert loaded.preset.version == "0.6.0"
+    assert loaded.preset.skill_type == "main-agent-orchestration"
+    assert loaded.preset.project_adaptation.required is True
+    assert loaded.preset.project_adaptation.do_not_use_verbatim is True
+    assert set(loaded.preset.applies_to_workflows) == {
+        "finance.receipt-intake",
+        "finance.bookkeeping-close",
+        "finance.payment-request",
+        "finance.payment-request-followups",
+        "finance.cashflow-management",
+        "finance.tax-estimates",
+    }
+    assert {"AGENTS.md", "stackos:stackos", "finance-plugin:workflows"} <= set(refs)
+    assert "finance-plugin:references/local-workspace-contract.md" in conditional_refs
+    assert "finance-plugin:references/imap-host-handoff-contract.md" in conditional_refs
+    assert loaded.preset.metadata_json["boundary"]["not_a_subagent"] is True
+    assert loaded.preset.metadata_json["boundary"]["finance_system_of_record"] == (
+        "external-backend"
+    )
+    assert {
+        "resource.upsert",
+        "artifact.create",
+        "artifact.update",
+        "communication.send",
+        "communication.reply",
+    }.isdisjoint(loaded.preset.recommended_tools)
+    assert "selected external backend" in contract_text
+    assert "prepared/unposted" in contract_text
+    assert "selective dispatch" in contract_text
+    assert "one high-reasoning owner" in contract_text
+    assert "one external-record writer" in contract_text
+    assert "fresh approval occurrence" in contract_text
+    assert "opening cash plus receipts minus cash payments equals closing cash" in contract_text
+    assert "base and downside" in contract_text
+    assert "paid, voided, disputed, paused, corrected, and active-promise" in contract_text
+    assert "incomplete/awaiting-advisor packet" in contract_text
+    assert "cpa/ea review where the workflow says so" in contract_text
+    assert "do not create a stackos ledger" in contract_text
+    assert "do not use generic communication.send" in contract_text
+    assert "settlement-only occurrence" in contract_text
+    assert "report/attach/mark" in contract_text
+    assert "finance state" in contract_text
+    for required in (
+        "finance.json",
+        "sole authoritative",
+        "mutable setup",
+        "finance.md",
+        "csv",
+        "record_id",
+        "unrelated",
+        "immutable",
+    ):
+        assert required in contract_text
+    assert loaded.preset.metadata_json["execution"]["role_selection"] == "selective"
+    assert loaded.preset.metadata_json["execution"]["one_writer_external_record"] is True
+
+
 def test_skill_preset_loader_reads_bundled_plugin_assets_without_clone_root(
     tmp_path: Path,
     monkeypatch,

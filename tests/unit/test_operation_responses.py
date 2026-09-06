@@ -418,6 +418,100 @@ def test_run_plan_compact_keeps_consistency_issues() -> None:
     assert compact["data"]["consistency_issues"][0]["run_id"] == 9
 
 
+@pytest.mark.parametrize("result", [None, {}, {"decision": "x" * 1000, "items": list(range(30))}])
+def test_run_plan_get_step_compact_preserves_bounded_result(result: dict | None) -> None:
+    spec = _spec("runPlan.getStep", mutating=False)
+    payload = {
+        "id": 101,
+        "run_plan_id": 42,
+        "step_id": "prepare",
+        "status": "success",
+        "output_refs_json": ["reviewed_brief"],
+        "result_json": result,
+    }
+
+    compact = shape_operation_response(spec, payload, response_mode="compact")["data"]
+
+    assert compact["result_json"] == result
+    assert compact["result_truncated"] is False
+    assert compact["run_plan_id"] == 42
+    assert compact["step_id"] == "prepare"
+    assert compact["output_refs_json"] == ["reviewed_brief"]
+    assert shape_operation_response(spec, payload, response_mode="raw") == payload
+
+
+def test_run_plan_get_step_compact_bounds_large_result_with_raw_recovery() -> None:
+    spec = _spec("runPlan.getStep", mutating=False)
+    payload = {
+        "run_plan_id": 42,
+        "step_id": "prepare",
+        "status": "success",
+        "result_json": {"summary": "Reviewed", "detail": "x" * 5000},
+    }
+
+    compact = shape_operation_response(spec, payload, response_mode="compact")["data"]
+
+    assert compact["result_truncated"] is True
+    assert compact["result_json"] == {
+        "available_keys": ["detail", "summary"],
+        "handoff_truncated": True,
+        "recovery": (
+            "Call runPlan.getStep with run_plan_id=42, step_id='prepare', and "
+            "response_mode=raw for the complete prior result."
+        ),
+        "summary": "Reviewed",
+    }
+    assert shape_operation_response(spec, payload, response_mode="raw") == payload
+
+
+@pytest.mark.parametrize("operation", ["runPlan.get", "runPlan.list"])
+def test_run_plan_inventory_does_not_include_saved_step_results(operation: str) -> None:
+    spec = _spec(operation, mutating=False)
+    step = {"step_id": "prepare", "status": "success", "result_json": {"detail": "private"}}
+    payload = {"id": 42, "key": "plan", "steps": [step]}
+
+    compact = shape_operation_response(spec, payload, response_mode="compact")["data"]
+
+    assert "result_json" not in compact["steps"][0]
+
+
+@pytest.mark.parametrize(
+    "operation,role_field",
+    [
+        ("agentPreset.resolveForWorkflow", "required_agents"),
+        ("agentPreset.resolveForWorkflow", "required_skill_presets"),
+        ("skillPreset.resolveForWorkflow", "required_skill_presets"),
+    ],
+)
+def test_preset_compact_adaptation_preserves_context_references(
+    operation: str, role_field: str
+) -> None:
+    adaptation = {
+        "required_context_refs": [
+            {
+                "ref": "project:external-record",
+                "purpose": "Find the authoritative record",
+                "required": True,
+            }
+        ],
+        "conditional_context_refs": [
+            {
+                "ref": "project:tax-profile",
+                "purpose": "Prepare a tax estimate",
+                "required": False,
+                "when": "Only when the selected workflow needs tax inputs",
+            }
+        ],
+    }
+    payload = {role_field: [{"project_adaptation": adaptation}]}
+
+    compact = shape_operation_response(
+        _spec(operation, mutating=False), payload, response_mode="compact"
+    )["data"]
+
+    assert compact[role_field][0]["project_adaptation"] == adaptation
+
+
 def test_tracker_get_compact_summarizes_snapshot_without_full_rows() -> None:
     spec = _spec("tracker.get", mutating=False)
     payload = {

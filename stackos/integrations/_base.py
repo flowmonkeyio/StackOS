@@ -200,6 +200,10 @@ class BaseIntegration:
     # Core dispatch.
     # ------------------------------------------------------------------
 
+    def _should_retry_response(self, response: httpx.Response) -> bool:
+        """Provider response policy; the shared loop still owns retry limits."""
+        return response.status_code == 429 or response.status_code >= 500
+
     async def _request_with_retry(
         self,
         method: str,
@@ -218,11 +222,11 @@ class BaseIntegration:
     ) -> httpx.Response:
         """Issue ``method url`` with rate-limit + budget + retry handling.
 
-        On a non-recoverable HTTP error (4xx other than 429) we raise
-        immediately. On 429 / 5xx we retry up to ``max_retries`` times
+        By default, on a non-recoverable HTTP error (4xx other than 429)
+        we raise immediately. On 429 / 5xx we retry up to ``max_retries`` times
         with exponential backoff; the final failure surfaces as
         ``IntegrationDownError`` so callers can branch on the typed
-        error.
+        error. Providers may override response retryability, never the limit.
         """
         last_status: int | None = None
         for attempt in range(max_retries + 1):
@@ -263,12 +267,13 @@ class BaseIntegration:
             last_status = response.status_code
             if response.status_code < 400:
                 return response
+            should_retry = self._should_retry_response(response)
             if response.status_code == 429:
                 # Vendor rate-limited us; honor Retry-After if present.
                 retry_after = self._parse_retry_after(response)
-                if attempt >= max_retries:
+                if attempt >= max_retries or not should_retry:
                     raise RateLimitedError(
-                        f"{self.vendor}.{op} 429 after {max_retries} retries",
+                        f"{self.vendor}.{op} 429 after {attempt} retries",
                         data={
                             "vendor": self.vendor,
                             "op": op,
@@ -288,11 +293,10 @@ class BaseIntegration:
                 )
                 await asyncio.sleep(wait)
                 continue
-            if response.status_code >= 500:
-                if attempt >= max_retries:
+            if response.status_code >= 500 or should_retry:
+                if attempt >= max_retries or not should_retry:
                     raise IntegrationDownError(
-                        f"{self.vendor}.{op} status {response.status_code} "
-                        f"after {max_retries} retries",
+                        f"{self.vendor}.{op} status {response.status_code} after {attempt} retries",
                         data={
                             "vendor": self.vendor,
                             "op": op,
@@ -301,7 +305,9 @@ class BaseIntegration:
                         },
                     )
                 _log.warning(
-                    "integration.5xx",
+                    "integration.5xx"
+                    if response.status_code >= 500
+                    else "integration.retryable_error",
                     integration=self.kind,
                     op=op,
                     project_id=self.project_id,

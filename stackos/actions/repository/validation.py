@@ -45,6 +45,7 @@ class ActionValidationMixin:
         context_ref: str | None = None,
         provider_context_json: dict[str, Any] | None = None,
         credential_ref: str | None = None,
+        idempotency_key: str | None = None,
     ) -> ActionValidationOut:
         payload, resolved_ref = self._normalize_payload_and_ref(
             input_json or {},
@@ -110,6 +111,7 @@ class ActionValidationMixin:
                     provider_context_json=runtime_context.provider_context_json,
                     credential=None,
                     dry_run=True,
+                    idempotency_key=idempotency_key,
                 )
                 issues.extend(connector.validate(request))
                 estimated_cost_cents = connector.estimate_cost_cents(request)

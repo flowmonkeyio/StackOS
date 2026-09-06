@@ -65,6 +65,10 @@ Project-local main-agent mappings:
   [`.codex/orchestrator/branding-content-orchestrator.md`](./.codex/orchestrator/branding-content-orchestrator.md)
 - `seo.keyword-research` and `seo.website-analysis` ->
   [`.codex/orchestrator/workflow-orchestrator.md`](./.codex/orchestrator/workflow-orchestrator.md)
+- `finance.receipt-intake`, `finance.bookkeeping-close`,
+  `finance.payment-request`, `finance.payment-request-followups`,
+  `finance.cashflow-management`, and `finance.tax-estimates` ->
+  [`.codex/orchestrator/finance-department-orchestrator.md`](./.codex/orchestrator/finance-department-orchestrator.md)
 
 ## Core Rules
 

@@ -100,6 +100,78 @@ describe('AccountsView', () => {
     expect(wrapper.html()).not.toContain('fc-secret')
   })
 
+  it('loads failed verification evidence as plain text and clears it after a successful retest', async () => {
+    const provider = authProvider('stripe', 'Stripe', 'api-key', apiKeyMethod())
+    const account = {
+      ...authConnection({
+        revokedAt: null,
+        providerKey: 'stripe',
+        credentialRef: 'cred_stripe',
+        label: 'Stripe - Sandbox',
+        lastTestedAt: '2026-09-05T00:00:00Z',
+      }),
+      last_test: {
+        credential_ref: 'cred_stripe',
+        provider_key: 'stripe',
+        ok: false,
+        status: 'connected',
+        summary: 'Permission denied. <img src=x onerror="alert(1)">',
+        checked_at: '2026-09-05T00:00:00Z',
+        retryable: false,
+        next_action: 'Use a properly scoped test key. [Claim](javascript:alert(1))',
+        metadata: { ignored_provider_payload: 'never-render-this-canary' },
+      },
+    }
+    globalThis.fetch = vi.fn(async (input, init) => {
+      const url = String(input)
+      if (url === '/api/v1/auth/accounts') {
+        return json({
+          project_id: null,
+          provider_key: null,
+          providers: [provider],
+          accounts: [account],
+        })
+      }
+      if (url === '/api/v1/projects?limit=50') {
+        return json({ items: [], next_cursor: null, total_estimate: 0 })
+      }
+      if (url === '/api/v1/auth/accounts/cred_stripe/test') {
+        expect(init?.method).toBe('POST')
+        account.last_test = {
+          ...account.last_test,
+          ok: true,
+          summary: 'Account verified.',
+          next_action: '',
+          metadata: { ignored_provider_payload: '' },
+        }
+        return json({ data: account.last_test })
+      }
+      return json({})
+    }) as typeof fetch
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/accounts', component: AccountsView }],
+    })
+    await router.push('/accounts')
+    await router.isReady()
+    const wrapper = mount(
+      { template: '<RouterView />' },
+      { global: { plugins: [router], stubs: { teleport: true } } },
+    )
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Stripe - Sandbox'))
+    expect(wrapper.text()).toContain('Verification failed')
+    expect(wrapper.text()).toContain(account.last_test.summary)
+    expect(wrapper.text()).toContain(account.last_test.next_action)
+    expect(wrapper.find('img[onerror]').exists()).toBe(false)
+    expect(wrapper.find('a[href^="javascript:"]').exists()).toBe(false)
+    expect(wrapper.html()).not.toContain('never-render-this-canary')
+    await clickButton(wrapper, 'Test')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Account verified.'))
+    expect(wrapper.text()).not.toContain('Verification failed')
+    expect(wrapper.text()).not.toContain('Permission denied.')
+  })
+
   it('groups Accounts by provider and shows safe lifecycle and identity details', async () => {
     const firecrawl = authProvider('firecrawl', 'Firecrawl', 'api-key', apiKeyMethod())
     const slack = authProvider('slack-bot', 'Slack', 'oauth2', [])

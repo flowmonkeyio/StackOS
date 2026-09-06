@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import tomllib
 from pathlib import Path
 
@@ -90,6 +91,33 @@ LOCAL_CODEX_SEO_AGENT_PRESETS = {
     ),
 }
 
+LOCAL_CODEX_FINANCE_AGENT_PRESETS = {
+    "finance_receipt_operator": (
+        "agents/finance-receipt-operator.toml",
+        "stackos.finance.receipt-operator",
+    ),
+    "finance_bookkeeping_preparer": (
+        "agents/finance-bookkeeping-preparer.toml",
+        "stackos.finance.bookkeeping-preparer",
+    ),
+    "finance_billing_collections_operator": (
+        "agents/finance-billing-collections-operator.toml",
+        "stackos.finance.billing-collections-operator",
+    ),
+    "finance_cashflow_preparer": (
+        "agents/finance-cashflow-preparer.toml",
+        "stackos.finance.cashflow-preparer",
+    ),
+    "finance_tax_preparer": (
+        "agents/finance-tax-preparer.toml",
+        "stackos.finance.tax-preparer",
+    ),
+    "finance_control_reviewer": (
+        "agents/finance-control-reviewer.toml",
+        "stackos.finance.control-reviewer",
+    ),
+}
+
 
 def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
     workflow = yaml.safe_load(
@@ -111,6 +139,7 @@ def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
         set(LOCAL_CODEX_AGENT_PRESETS)
         | set(LOCAL_CODEX_BRANDING_AGENT_PRESETS)
         | set(LOCAL_CODEX_SEO_AGENT_PRESETS)
+        | set(LOCAL_CODEX_FINANCE_AGENT_PRESETS)
     )
 
     for agent_name, (config_file, preset_ref) in LOCAL_CODEX_AGENT_PRESETS.items():
@@ -274,11 +303,176 @@ def test_codex_local_seo_agents_track_seo_workflows() -> None:
     assert "handoff never authorizes execution by itself" in orchestrator_text
 
 
+def test_codex_local_finance_agents_track_finance_presets_without_model_override() -> None:
+    workflows = [
+        yaml.safe_load(path.read_text(encoding="utf-8"))
+        for path in sorted((REPO_ROOT / "plugins/finance/workflows").glob("*.yaml"))
+    ]
+    workflow_refs = {
+        item["agent_preset_ref"]
+        for workflow in workflows
+        for item in workflow["agent_requirements"]
+    }
+    expected_refs = {preset for _path, preset in LOCAL_CODEX_FINANCE_AGENT_PRESETS.values()}
+    assert workflow_refs == expected_refs
+
+    project_rules = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    assert ".codex/orchestrator/finance-department-orchestrator.md" in project_rules
+    for workflow in workflows:
+        assert f"`{workflow['key']}`" in project_rules
+
+    config = tomllib.loads((REPO_ROOT / ".codex/config.toml").read_text(encoding="utf-8"))
+    expected_efforts = {
+        "finance_receipt_operator": "medium",
+        "finance_bookkeeping_preparer": "high",
+        "finance_billing_collections_operator": "medium",
+        "finance_cashflow_preparer": "high",
+        "finance_tax_preparer": "high",
+        "finance_control_reviewer": "xhigh",
+    }
+    expected_versions = {
+        "finance_receipt_operator": "0.4.0",
+        "finance_bookkeeping_preparer": "0.5.0",
+        "finance_billing_collections_operator": "0.6.0",
+        "finance_cashflow_preparer": "0.4.0",
+        "finance_tax_preparer": "0.4.0",
+        "finance_control_reviewer": "0.6.0",
+    }
+    for agent_name, (config_file, preset_ref) in LOCAL_CODEX_FINANCE_AGENT_PRESETS.items():
+        assert config["agents"][agent_name]["config_file"] == config_file
+        local_text = (REPO_ROOT / ".codex" / config_file).read_text(encoding="utf-8")
+        local = tomllib.loads(local_text)
+        source = AgentPresetLoader().describe_preset(key=preset_ref).preset
+        assert source.version == expected_versions[agent_name]
+        assert f"Source preset: {preset_ref} v{expected_versions[agent_name]}" in local_text
+        assert "Keep aligned with plugins/finance/agent-presets/finance.yaml." in local_text
+        assert "model" not in local
+        assert local["model_reasoning_effort"] == expected_efforts[agent_name]
+        assert "learn.chatgpt.com/docs/agent-configuration/subagents" in local_text
+
+    orchestrator_text = (
+        REPO_ROOT / ".codex/orchestrator/finance-department-orchestrator.md"
+    ).read_text(encoding="utf-8")
+    assert "Source skill preset: `stackos.finance.department-orchestrator` v0.6.0" in (
+        orchestrator_text
+    )
+    assert "not a subagent" in orchestrator_text
+    assert "one high-reasoning integration owner" in orchestrator_text
+    assert "routine complete receipt" in orchestrator_text
+    assert "Exactly one writer" in orchestrator_text
+    assert "fresh approval occurrence" in orchestrator_text
+    assert "opening cash + receipts - cash payments = closing cash" in orchestrator_text
+    assert "`local-json`" in orchestrator_text
+    assert "`finance.json`" in orchestrator_text
+    assert "owner-payment-record" in orchestrator_text
+    assert "settlement-only never sends" in orchestrator_text
+    for required in (
+        "approved currency",
+        "test-accepted",
+        "no email",
+        "idempotency_key_in_use",
+        "payment_ref_state",
+        "source_state",
+        "PaymentRecord listing is temporarily unavailable in StackOS",
+        "hold lost-reference recovery for owner/provider resolution",
+        "Do not retry listing",
+    ):
+        assert required in orchestrator_text
+    for agent_name in ("finance_billing_collections_operator", "finance_control_reviewer"):
+        config_file, _preset_ref = LOCAL_CODEX_FINANCE_AGENT_PRESETS[agent_name]
+        local_text = (REPO_ROOT / ".codex" / config_file).read_text(encoding="utf-8")
+        for required in ("test-accepted", "payment_ref_state", "idempotency_key_in_use"):
+            assert required in local_text
+
+
+def test_finance_dispatch_adaptations_are_route_conditional_and_host_capable() -> None:
+    """Contract/adaptation proof; behavioral rehearsal belongs to the flow tests."""
+    loader = AgentPresetLoader()
+    for config_file, preset_ref in LOCAL_CODEX_FINANCE_AGENT_PRESETS.values():
+        preset = loader.describe_preset(key=preset_ref).preset
+        adaptation = preset.project_adaptation
+        conditional = {item.ref: item for item in adaptation.conditional_context_refs}
+        assert "external business/tax profile" not in {
+            item.ref for item in adaptation.required_context_refs
+        }
+        assert "external business/tax profile" in conditional
+        assert "selected workflow" in conditional["external business/tax profile"].when
+        assert "receipt" in conditional["external business/tax profile"].when
+        assert "capability preflight" in adaptation.required_agent_action
+        local = tomllib.loads((REPO_ROOT / ".codex" / config_file).read_text(encoding="utf-8"))
+        assert "capability preflight" in local["developer_instructions"]
+        if preset.role_class == "review":
+            assert "independent" in local["developer_instructions"]
+            assert "action.execute" not in preset.recommended_tools
+        else:
+            assert "proposed packet" in local["developer_instructions"]
+
+
+def test_finance_presets_and_local_roles_share_json_authority_and_approval_scope() -> None:
+    loader = AgentPresetLoader()
+    for config_file, preset_ref in LOCAL_CODEX_FINANCE_AGENT_PRESETS.values():
+        preset = loader.describe_preset(key=preset_ref).preset
+        adaptation = preset.project_adaptation
+        conditional = {item.ref: item for item in adaptation.conditional_context_refs}
+        local_contract = conditional["finance-plugin:references/local-workspace-contract.md"]
+        assert "local-json" in local_contract.when
+        assert "finance.json" in local_contract.purpose
+        text = adaptation.required_agent_action.lower()
+        local = tomllib.loads((REPO_ROOT / ".codex" / config_file).read_text(encoding="utf-8"))
+        for instructions in (text, local["developer_instructions"].lower()):
+            for required in (
+                "finance.json",
+                "sole authoritative",
+                "finance.md",
+                "csv",
+                "record_id",
+                "unrelated",
+                "immutable",
+            ):
+                assert required in instructions, (preset_ref, required)
+
+
+def test_finance_workspace_has_typed_recipient_and_recovery_fields() -> None:
+    """The external schema retains facts; Markdown is not an editable second master."""
+    schema = json.loads(
+        (
+            REPO_ROOT / "plugins/finance/templates/finance-workspace/schemas/finance-v1.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+
+    def declared_properties(node: dict) -> dict:
+        if "$ref" in node:
+            return declared_properties(schema["$defs"][node["$ref"].rsplit("/", 1)[-1]])
+        properties = dict(node.get("properties", {}))
+        for branch in node.get("allOf", []):
+            properties.update(declared_properties(branch))
+        return properties
+
+    def properties(collection: str) -> dict:
+        return declared_properties(schema["properties"][collection]["items"])
+
+    recipients = properties("recipient_settings")
+    assert {
+        "version",
+        "account_ref",
+        "customer_ref",
+        "invoice_ref",
+        "primary_email",
+        "primary_email_sha256",
+        "additional_recipients",
+        "verifier_ref",
+        "verified_at",
+        "evidence_refs",
+        "validity",
+    } <= recipients.keys()
+    assert "payment_reference_sha256" in properties("settlements")
+
+
 def test_agent_preset_loader_lists_bundled_roles() -> None:
     listing = AgentPresetLoader().list_presets()
     keys = {item.key for item in listing.presets}
 
-    assert len(keys) == 46
+    assert len(keys) == 52
     assert "stackos.sdlc.requirements-flow-definer" in keys
     assert "stackos.sdlc.codebase-explorer" in keys
     assert "stackos.sdlc.planning" in keys
@@ -309,6 +503,12 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     assert "branding.voice-reviewer" in keys
     assert "branding.sanitization-reviewer" in keys
     assert "branding.profile-architect" in keys
+    assert "stackos.finance.receipt-operator" in keys
+    assert "stackos.finance.bookkeeping-preparer" in keys
+    assert "stackos.finance.billing-collections-operator" in keys
+    assert "stackos.finance.cashflow-preparer" in keys
+    assert "stackos.finance.tax-preparer" in keys
+    assert "stackos.finance.control-reviewer" in keys
     assert "trackbooth.workflow-author" not in keys
     assert all(item.generic_preset for item in listing.presets)
     assert all(item.adaptation_required for item in listing.presets)
@@ -327,6 +527,9 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     assert by_key["branding.claim-auditor"].plugin_slug == "branding"
     assert by_key["seo.workflow.website-analysis"].plugin_slug == "seo"
     assert by_key["seo.workflow.website-analysis"].version == "0.2.0"
+    assert by_key["stackos.finance.receipt-operator"].plugin_slug == "finance"
+    assert by_key["stackos.finance.receipt-operator"].agent_type == "mcp-tool-consumer"
+    assert by_key["stackos.finance.control-reviewer"].role_class == "review"
 
     website_preset = AgentPresetLoader().describe_preset(key="seo.workflow.website-analysis").preset
     website_text = " ".join(
@@ -347,10 +550,113 @@ def test_bundled_agent_presets_explicitly_classify_role_execution_style() -> Non
         loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
         bundles.extend(loaded.get("presets", []))
 
-    assert len(bundles) == 46
+    assert len(bundles) == 52
     assert all(item.get("role_class") in {"reasoning", "mechanical", "review"} for item in bundles)
     role_classes = {item["role_class"] for item in bundles}
     assert role_classes == {"reasoning", "mechanical", "review"}
+
+
+def test_finance_agent_presets_preserve_external_backend_and_role_boundaries() -> None:
+    loader = AgentPresetLoader()
+    receipt = loader.describe_preset(key="stackos.finance.receipt-operator").preset
+    bookkeeping = loader.describe_preset(key="stackos.finance.bookkeeping-preparer").preset
+    billing = loader.describe_preset(key="stackos.finance.billing-collections-operator").preset
+    cashflow = loader.describe_preset(key="stackos.finance.cashflow-preparer").preset
+    tax = loader.describe_preset(key="stackos.finance.tax-preparer").preset
+    reviewer = loader.describe_preset(key="stackos.finance.control-reviewer").preset
+
+    assert receipt.agent_type == "mcp-tool-consumer"
+    assert receipt.role_class == "mechanical"
+    assert bookkeeping.role_class == "reasoning"
+    assert billing.role_class == "mechanical"
+    assert cashflow.role_class == "reasoning"
+    assert tax.role_class == "reasoning"
+    assert reviewer.role_class == "review"
+    assert receipt.applies_to_workflows == ["finance.receipt-intake"]
+    assert bookkeeping.applies_to_workflows == ["finance.bookkeeping-close"]
+    assert billing.applies_to_workflows == [
+        "finance.payment-request",
+        "finance.payment-request-followups",
+    ]
+    assert cashflow.applies_to_workflows == ["finance.cashflow-management"]
+    assert tax.applies_to_workflows == ["finance.tax-estimates"]
+    assert reviewer.applies_to_workflows == [
+        "finance.receipt-intake",
+        "finance.bookkeeping-close",
+        "finance.payment-request",
+        "finance.payment-request-followups",
+        "finance.cashflow-management",
+        "finance.tax-estimates",
+    ]
+
+    for preset in (receipt, bookkeeping, billing, cashflow, tax, reviewer):
+        refs = [item.ref for item in preset.project_adaptation.required_context_refs]
+        assert preset.generic_preset is True
+        assert preset.project_adaptation.required is True
+        assert preset.project_adaptation.do_not_use_verbatim is True
+        assert "AGENTS.md" in refs
+        assert "stackos:stackos" in refs
+        assert "finance-plugin:workflows" in refs
+        assert "finance-plugin:references/backend-contract.md" in refs
+
+    receipt_text = " ".join(
+        [
+            *receipt.prompt_contract.must_do,
+            *receipt.prompt_contract.must_not_do,
+        ]
+    ).lower()
+    bookkeeping_text = " ".join(
+        [*bookkeeping.prompt_contract.must_do, *bookkeeping.prompt_contract.must_not_do]
+    ).lower()
+    billing_text = " ".join(
+        [
+            *billing.prompt_contract.must_do,
+            *billing.prompt_contract.must_not_do,
+        ]
+    ).lower()
+    cashflow_text = " ".join(
+        [
+            *cashflow.prompt_contract.must_do,
+            *cashflow.prompt_contract.must_not_do,
+        ]
+    ).lower()
+    tax_text = " ".join([*tax.prompt_contract.must_do, *tax.prompt_contract.must_not_do]).lower()
+    reviewer_text = " ".join(
+        [
+            *reviewer.prompt_contract.must_do,
+            *reviewer.prompt_contract.must_not_do,
+        ]
+    ).lower()
+
+    assert "store-before-ack" in receipt_text
+    assert "delegated sole writer" in receipt_text
+    assert "finance resource type" in receipt_text
+    assert "category proposal" in bookkeeping_text
+    assert "prepared/unposted" in bookkeeping_text
+    assert "paid, voided, disputed, paused, corrected, and active-promise" in billing_text
+    assert "fresh approval occurrence" in billing_text
+    assert "charge, collect, transfer" in billing_text
+    assert "payload-secret reference" in billing_text
+    assert "paymentrecord" in billing_text
+    assert "owner-payment-attachment" in billing_text
+    assert "thirteen-week" in cashflow_text
+    assert "opening cash plus receipts minus cash payments" in cashflow_text
+    assert "spendable cash" in cashflow_text
+    assert "tax-obligation matrix" in tax_text
+    assert "awaiting-advisor packet" in tax_text
+    assert "do not hardcode rates" in tax_text
+    assert "do not execute provider actions" in reviewer_text
+    assert "do not self-approve" in reviewer_text
+    assert "cpa/ea" in reviewer_text
+    assert "received-payment settlement" in reviewer_text
+    mutating_tools = {
+        "runPlan.claimStep",
+        "runPlan.recordStep",
+        "resource.upsert",
+        "artifact.create",
+        "action.execute",
+    }
+    assert mutating_tools.isdisjoint(reviewer.recommended_tools)
 
 
 def test_agent_preset_describe_includes_tracker_adaptation_guidance() -> None:

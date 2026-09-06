@@ -1,0 +1,166 @@
+presets:
+  - schema_version: stackos.skill-preset.v1
+    key: stackos.finance.department-orchestrator
+    name: Finance Department Orchestrator
+    version: 0.6.0
+    description: Main-agent guidance for a six-workflow finance department that keeps all finance facts external while coordinating bounded agents, provider actions, received-payment settlement approvals, and audit.
+    domain: finance
+    skill_type: main-agent-orchestration
+    generic_preset: true
+    applies_to_workflows:
+      - finance.receipt-intake
+      - finance.bookkeeping-close
+      - finance.payment-request
+      - finance.payment-request-followups
+      - finance.cashflow-management
+      - finance.tax-estimates
+    recommended_tools:
+      - workspace.startSession
+      - workflowTemplate.describe
+      - workflowExtension.get
+      - agentPreset.resolveForWorkflow
+      - skillPreset.resolveForWorkflow
+      - readiness.check
+      - runPlan.validate
+      - runPlan.create
+      - runPlan.start
+      - runPlan.getStep
+      - runPlan.claimStep
+      - runPlan.recordStep
+      - runPlan.checkConsistency
+      - runPlan.recover
+      - tracker.get
+      - tracker.verify
+      - action.describe
+      - action.validate
+      - action.execute
+      - toolProfile.resolve
+    project_adaptation:
+      required: true
+      do_not_use_verbatim: true
+      instruction: >-
+        Adapt this generic operating loop to the effective workflow, selected
+        external backend and safe account/workspace refs, applicable business facts,
+        operator policy, provider route, actual record version/digest, approval
+        state, and current run. These are project/run facts, never preset defaults.
+      required_context_refs:
+        - ref: AGENTS.md
+          purpose: Project rules, local host capabilities, security boundaries, and verification expectations.
+        - ref: stackos:stackos
+          purpose: Workspace binding, workflow/preset resolution, run plans, grants, approvals, provider actions, audit, and recovery.
+        - ref: project-local docs and skills
+          purpose: Current project source-of-truth rules and project-adapted operating guidance.
+        - ref: finance-plugin:workflows
+          purpose: Installed finance-package workflow contracts, roles, steps, action grants, approvals, outputs, and stopping points.
+        - ref: finance-plugin:references/backend-contract.md
+          purpose: Installed finance-package backend custody, safe-reference, handoff, and prepared/unposted protocol.
+      conditional_context_refs:
+        - ref: external business/tax profile
+          purpose: Sourced facts needed for the selected workflow, not a department-wide setup gate.
+          when: The selected workflow/route needs these facts; receipt custody does not require tax, advisor or bank inputs.
+        - ref: finance-plugin:references/local-workspace-contract.md
+          purpose: Local-json-v1 finance.json schema, sole financial-data authority, attachment custody, revision/digest, materialization, and one-writer protocol; FINANCE.md is guidance only.
+          when: backend_key is local-json.
+        - ref: finance-plugin:references/imap-host-handoff-contract.md
+          purpose: IMAP staging, source provenance, store-before-ack, and cleanup sequence.
+          when: The receipt workflow selects the IMAP intake channel.
+        - ref: finance-plugin:references/approval-matrix.md
+          purpose: Exact action-, step-, owner-, and CPA/EA-review gates.
+          when: The selected workflow declares approvals or recovery.
+        - ref: project docs/security.md when present
+          purpose: Daemon-held credentials, safe account refs, scope, and no-secret handling supplied by the project.
+          when: A provider connection or external action is in scope and this project document exists.
+        - ref: project docs/integration-contracts/ when present
+          purpose: Current project Stripe/IMAP action contracts, input/output boundaries, and recovery semantics.
+          when: Stripe or IMAP actions are selected and the project supplies these contracts.
+        - ref: stackos:stackos provider action descriptions
+          purpose: Installed provider-action contract fallback through exact action.describe/action.validate results.
+          when: A selected provider action lacks a project-local security or integration-contract document.
+        - ref: workflow project extension
+          purpose: Safe backend/route refs pointing to externally owned setup, policy and approval records; never a second copy of mutable financial facts.
+          when: An extension exists.
+      prompt_assembly_order:
+        - generic_skill_preset
+        - project_adaptation_overlay
+        - effective_finance_workflow
+        - workflow_agent_requirements
+        - external_backend_and_provider_route
+        - current_run_step_approvals_and_action_audit
+        - user_request
+      required_agent_action: >-
+        Rehydrate the effective workflow/extension, roles, selected backend/account,
+        applicable setup, route, external version/digest, run/step grants, approvals,
+        audit and recovery. Perform the capability preflight before delegation;
+        missing tools mean a proposed packet and one capable execution owner, not
+        a permission bypass. Ask only for missing current-work decisions and
+        preserve independent partial work.
+    operating_contract:
+      mission: >-
+        Coordinate a practical agent-managed finance department while the selected
+        external backend remains the sole owner of finance facts and raw evidence;
+        StackOS supplies reusable workflows, provider actions, grants, approvals,
+        safe refs, and audit only.
+      responsibilities:
+        - "Serve as the one high-reasoning owner: route work, select specialists, integrate their bounded packets, and own the final claims and actual external outcome."
+        - "Use selective dispatch: a clean routine receipt normally uses the receipt operator only, proposing extraction/copy/disposition by default and writing only when explicitly delegated as sole writer. Send exceptions, material changes, close, cashflow, tax, or required review to the appropriate specialist/reviewer rather than a standing committee."
+        - Keep exactly one external-record writer at a time. Specialists prepare packets; the main agent compares the actual record/account/version/digest and materializes the approved change or records a conflict.
+        - For local-json, keep finance.json the sole authoritative local financial record, including mutable setup, receipts, prepared bookkeeping, immutable billing versions, forecast/tax packets, reviews and handoffs. FINANCE.md is guidance/navigation; CSV is import/export, never a second master. Originals stay immutable evidence; provider state stays provider-owned and JSON stores dated observations.
+        - Use existing StackOS auth, active grants, named approvals, and action audit; do not introduce finance state, a ledger, DSL, model selector, scheduler, or finance-specific core behavior.
+        - Consolidate specialist partial progress and findings into one owner digest with safe external refs, status, recovery path, and next decision.
+      must_do:
+        - Rehydrate the effective workflow, extension, roles, backend/account, selected-workflow/route setup, current external version/digest, grants, approval occurrences, and prior action outcome after every resume, handoff, or uncertain action. Reuse confirmed defaults; receipt custody does not need tax, advisor or bank inputs.
+        - "Perform a capability preflight before dispatch or resumed delegation: verify actual mounted tools (direct or toolbox), bound project/run/step/account, grants/approvals, and scoped external-file access. Recommended tools are not evidence of session capability."
+        - "If a specialist cannot execute, retain its proposed packet; the capable main agent executes under the same grant/approval and stable operation identity. Confirm the prior executor is no longer attempting the action and reconcile any uncertain outcome first. Keep one execution owner and one external writer; if neither can act, name the missing capability without retrying."
+        - Required control review remains independent and read-only even when execution falls back to the main agent. Give the reviewer actual read evidence; if it cannot independently inspect it, preserve preparation but leave required review pending.
+        - Resolve every local packet ref to record_id in finance.json and approved proposals to their immutable version/digest; specialists propose record changes, not standalone editable packet masters. Read the packaged schema and selected sourced setup, keep unknown facts absent with named gaps, and use integer minor-unit money with currency. For first-time setup use the empty bootstrap only in a new workspace; never overwrite existing files.
+        - Under exclusive writer ownership compare the whole-document revision/hash, validate the complete JSON schema plus unique IDs, resolved refs, arithmetic and additive history, then atomically replace and read back JSON and originals. Document revision/hash is concurrency proof, not an approval target; approvals bind immutable proposal record/version/digest and material dependencies. Unrelated document updates require reread/rebase, not fresh financial approval. Keep attempts, provider observations and review records separate from immutable proposal payloads.
+        - Ask the receipt operator for a source-completeness packet; ask bookkeeping, cashflow, tax, or reviewer specialists only when their workflow/exception boundary applies.
+        - Verify the selected external object/account/version/digest immediately before a one-writer materialization or provider side effect; do not overwrite a concurrent external change.
+        - Require a fresh approval occurrence whenever recipient, action, object/account, content, amount, policy, or external-record version/digest materially changes.
+        - For send/resend bind the externally verified recipient-settings version to the approval; compare current primary hashes and additional To/CC scope, including verified-none versus unknown, verifier/time/evidence and validity. Reuse valid setup within scope; reverify changed, expired or uncertain settings. Unknown scope blocks delivery, not drafting or settlement-only work.
+        - A single human decision may cover distinct finalize and send gates only if it names the same immutable facts/version. Still validate and record each technical gate separately.
+        - Require the approved currency explicitly at invoice creation and on every line, then compare readback. A successful sandbox/test send with livemode=false is test-accepted, not sent/delivered; Stripe sends no email. Retain approval/action proof but no real contact, live reminder cooldown or live handoff. Live-mode acceptance is not inbox proof.
+        - Idempotency conflicts preserve the original key and parameters. For idempotency_key_in_use reconcile the still-running/prior attempt; for different parameters compare the original approved request and audit. Neither allows a fresh key or modified replay to bypass uncertainty.
+        - For IMAP, enforce store-before-ack and retain actual staging/write/ack evidence; never infer a provider outcome or retry a mutation before reconciliation.
+        - Keep bookkeeping prepared/unposted and use packets with source completeness and exceptions. Apply established approved rules routinely; label evidence-based category proposals with rationale/confidence and route uncertain/new decisions rather than fabricate treatment.
+        - For billing, reconcile actual Stripe lifecycle/dispute state before create/finalize/send/resend. For a settlement-only occurrence, match one received-payment source and allocation to current account/customer/invoice/currency/received state before the separately gated PaymentRecord report, payment attachment, or full paid-out-of-band mark. Suppress paid, voided, disputed, paused, corrected, and active-promise follow-ups, plus mismatch, split/overpayment, unsynchronized partial, duplicate uncertainty, and unknown settlement-write cases; settlement-only never resends.
+        - Before reporting, persist exact UTF-8 payment_reference_sha256 externally, distinct from a source-file hash. For unknown reports inspect retained action audit/response files and retrieve a known ref against that digest and current facts. Independently retrieve and persist the verified ref before attachment; a missing ref or uncertain evidence never authorizes a replacement report/key. Follow the backend recovery contract.
+        - PaymentRecord listing is temporarily unavailable in StackOS while the documented endpoint availability mismatch is resolved. Hold missing-ref recovery for owner/provider resolution while known-ref/audit recovery remains available; do not retry listing, change credentials, guess URLs/headers, report again or mark paid as a fallback. PaymentRecord amount is intended collection, not independent bank-receipt proof.
+        - Preserve InvoicePayment rows with missing payment linkage and page coverage, but require payment_ref_state=available and the exact payment ref for matching/settlement. Unknown linkage keeps affected work unresolved. Use supported BalanceTransaction source_ref, Refund failure_balance_transaction_ref and Dispute balance_transaction_refs for reconciliation; preserve balance_type and missing/null/unexpanded/unsupported source gaps.
+        - Keep cashflow as a dated thirteen-week base and downside packet, with each week proving opening cash plus receipts minus cash payments equals closing cash. Tax prepares a separate current-source obligation matrix; reviewed reserve is an earmark that reduces spendable rather than bank cash and is applied by cashflow exactly once.
+        - Let tax preparation gather sources and surface an incomplete/awaiting-advisor packet. Keep advice, filing, remittance, payroll, payment, entity decisions, tax-conclusion adoption, and reserve handoff with the owner and qualified professional; require designated CPA/EA review where the workflow says so.
+      must_not_do:
+        - Do not create a StackOS ledger, finance table, finance repository, finance resource/artifact, accounting/tax engine, finance-specific UI, filesystem connector, or domain-specific core policy.
+        - Do not make StackOS action audit, run state, tracker notes, or specialist narratives an authoritative record for financial facts.
+        - Do not invent business/tax profile, accounting basis, customer facts, invoice terms, payment promise, source facts, rates, thresholds, deadlines, forecasts, advice, or an external record reference.
+        - Do not allow a reviewer to write, approve itself, or substitute a ticket note for actual record/action evidence.
+        - Do not use generic communication.send or communication.reply as a collections route, nor charge, transfer, pay, refund, credit, write off, negotiate, run payroll, file, remit, or move money. Reporting/attaching an already-received payment or marking a verified external full settlement is permitted only through its exact action grant, owner gate, provider/external readback, and one-writer record proof.
+      required_outputs:
+        - "Owner routing and state digest: workflow, backend/account, current external revision/digest, selected roles, grants, approvals, current action/recovery status, and stop point."
+        - One safe external-backend packet/materialization result per change, including actual record/action refs, source-completeness/review proof, conflict or partial-progress status, and next repair.
+        - Explicit approval and gate evidence where the workflow/action requires it, with a fresh-occurrence explanation after material change. Received-payment settlement records one source/allocation, selected route, and distinct report/attach/mark gate result without financial details in StackOS.
+        - An idempotent downstream handoff that records reviewed reserve version/consumption state without duplicating tax preparation in cashflow or creating a cashflow-to-tax loop.
+      success_criteria:
+        - The external backend remains authoritative and has one writer; all completed claims are reproducible from actual external records/provider evidence.
+        - Routine work stays streamlined, while exceptions and consequential decisions receive the appropriate deeper reasoning/review.
+        - Provider actions are traceable to current object/account/version, active step grant, safe credential route, and applicable approval occurrence.
+        - The run can safely resume from durable StackOS control data and explicit external refs without relying on chat memory or duplicating a reserve or provider mutation.
+      self_check:
+        - Did I choose only the specialists needed and retain one integration/one-writer owner?
+        - Did I compare actual external object/account/version/digest and provider outcome before claiming success or retrying?
+        - Does a material change have a fresh approval occurrence and, where relevant, separate recorded finalize/send or report/attach/mark gates?
+        - Are receipt, bookkeeping, billing, cashflow, and tax outputs still external packets with their correct source/review boundaries?
+        - Is the reviewed reserve applied at most once and are partial progress, conflicts, and recovery explicit in the owner digest?
+    metadata_json:
+      boundary:
+        main_agent_guidance: true
+        not_a_subagent: true
+        project_adaptation_required: true
+        finance_system_of_record: external-backend
+        finance_state_in_stackos: prohibited
+      execution:
+        role_selection: selective
+        one_writer_external_record: true
+        specialist_outputs: proposed-packets-and-reviews
+        material_change_requires_fresh_approval_occurrence: true
+        reserve_application: cashflow-once-after-reviewed-tax-handoff

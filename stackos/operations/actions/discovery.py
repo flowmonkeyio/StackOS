@@ -244,6 +244,7 @@ async def action_validate(
         context_ref=inp.context_ref,
         provider_context_json=inp.provider_context_json,
         credential_ref=inp.credential_ref,
+        idempotency_key=inp.idempotency_key,
     )
 
 

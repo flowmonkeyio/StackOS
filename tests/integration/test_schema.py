@@ -104,6 +104,16 @@ LEGACY_TABLES: frozenset[str] = frozenset(
     }
 )
 
+REJECTED_FINANCE_TABLES: frozenset[str] = frozenset(
+    {
+        "finance_books",
+        "finance_journal_entries",
+        "finance_journal_lines",
+        "finance_period_events",
+        "finance_periods",
+    }
+)
+
 
 @pytest.fixture
 def isolated_alembic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
@@ -1066,6 +1076,7 @@ def test_alembic_upgrade_creates_expected_stackos_tables(isolated_alembic: Path)
     _run_alembic(["upgrade", "head"])
     tables = _list_tables(isolated_alembic)
 
+    assert not (tables & REJECTED_FINANCE_TABLES)
     assert tables == EXPECTED_TABLES, (
         f"Missing: {EXPECTED_TABLES - tables}; Extra: {tables - EXPECTED_TABLES}"
     )

@@ -249,6 +249,104 @@ load installed skills such as `stackos:stackos`. Skill presets are StackOS
 contracts returned by `skillPreset.*` and workflow resolution operations; the
 agent adapts them before use.
 
+## Finance Workflow Presets
+
+The finance plugin is an external-system-of-record package, not a finance-agent
+runtime or ledger. Its six workflows resolve six generic specialist presets:
+
+| Preset | Role and boundary |
+| --- | --- |
+| `stackos.finance.receipt-operator` | Mechanically prepares a receipt provenance/completeness packet. It proposes extraction/copy/disposition by default and writes only when explicitly delegated as sole external writer; IMAP acknowledgement follows verified storage. |
+| `stackos.finance.bookkeeping-preparer` | Prepares source-complete, prepared/unposted close/reconciliation packets. It can apply established rules and propose evidence-based categories with rationale/confidence, but routes uncertain/new judgments. |
+| `stackos.finance.billing-collections-operator` | Prepares/reconciles the exact approved invoice or received-payment recording action. It requires current-object recovery, fresh approval after material change, distinct finalize/send/report/attach/external-settlement gates, source/allocation matching and lifecycle-aware follow-up suppression. It never charges or moves money. |
+| `stackos.finance.cashflow-preparer` | Prepares an external 13-week base/downside packet. Each week reconciles opening cash plus receipts minus cash payments to closing cash; a reviewed reserve is a once-only spendable-cash earmark, not bank cash. |
+| `stackos.finance.tax-preparer` | Gathers current sources and prepares an obligation-matrix packet, including incomplete/awaiting-advisor work. CPA/EA review is required before adoption or reserve handoff, not before preparation; it never advises, files, remits, or moves money. |
+| `stackos.finance.control-reviewer` | Independently reviews safe evidence, action grants, approval gates, and stopping boundaries. It is read-only and cannot self-approve or substitute for the owner/CPA/EA. |
+
+`stackos.finance.department-orchestrator` is the corresponding main-agent skill
+preset. It is the single high-reasoning owner of routing, one-writer external
+materialization, specialist integration, and final claims. Before execution or
+resume it rehydrates the effective workflow/extension, selected backend/workspace
+and safe account refs, applicable workflow/route setup, actual record version/digest, provider
+route, active grant, declared approval occurrence, action audit, handoffs, and
+recovery state. It selectively dispatches roles: a complete routine receipt does
+not require a committee. Raw finance contents stay external; workflow/tracker
+outputs carry safe refs, bounded state, and recovery proof only.
+
+Use the finance package's selected-workflow setup matrix. Receipt custody needs
+workspace/writer/source route, not tax, advisor or bank setup. Reuse confirmed
+defaults, ask only missing current-work questions, and preserve independent
+partial work. Tax/business profiles are conditional context rather than blanket
+activation requirements.
+
+Dispatch includes a capability preflight of actual mounted tools, bound
+project/run/step/account, active grants/approvals and required host-file access.
+`recommended_tools` does not prove a particular session can execute. If a
+specialist lacks capability, it returns a proposed packet; the capable main agent
+executes with the same grant/approval and stable operation identity after checking
+the prior executor has stopped and reconciling any unknown outcome. Never race
+two executors, duplicate retries or broaden permissions. If neither can act,
+report the precise missing capability. Required control review remains independent
+and read-only; unavailable actual evidence leaves review pending.
+
+For the initial local backend, `backend_key` is `local-json` and `finance.json`
+under `local-json-v1` is the sole authoritative local financial record, including
+mutable setup. `FINANCE.md` is guidance/navigation, reports are derived explanations,
+and CSV is import/export, not another master. Originals stay immutable evidence;
+providers own their actual state and JSON stores dated observations. Packet refs
+resolve to stable JSON record IDs and scoped immutable versions, not separate
+editable packet files. First-time setup uses a new workspace from the empty
+JSON/schema and guidance templates, without overwriting existing files.
+
+There is one writer per materialization:
+specialists return packets, then the delegated sole writer compares actual
+backend/account/object and document revision/hash before validating and atomically
+replacing the complete JSON document and reading it back. A mismatch is a conflict,
+not an overwrite. Document revision/hash is concurrency proof; approvals bind the
+immutable proposal record/version/digest and material dependencies. Unrelated JSON
+updates need reread/rebase, not fresh approval. Material scoped changes need a fresh
+approval occurrence. One human decision
+may cover distinct finalize/send gates only for the same immutable facts/version; both
+technical gates remain recorded separately.
+
+Billing approvals bind the external recipient-settings version/scope, including
+primary/email hash, additional To/CC or `verified-none` versus `unknown`, verifier/
+time/evidence and validity/recheck condition. Compare current primary hashes and
+applicable external scope immediately before send. Reuse current verified setup;
+reverify changed/expired/uncertain facts and obtain fresh approval after material
+change. Unknown recipients block delivery, not drafts or settlement-only work.
+
+Codex materialization lives in `.codex/agents/` with main guidance in
+`.codex/orchestrator/finance-department-orchestrator.md`. Finance agent files omit
+`model`, preserving the operator-selected model, and set only role effort: medium for
+receipt/billing, high for bookkeeping/cashflow/tax, and xhigh for independent review.
+This follows [official Codex subagent configuration guidance](https://learn.chatgpt.com/docs/agent-configuration/subagents).
+
+Finance presets are adapted like every bundled preset. They do not authorize a
+new StackOS resource type, filesystem connector, scheduler, or finance core model.
+The host filesystem is used only by the selected external-backend contract, while
+provider credentials remain daemon-held and finance actions use their active workflow
+grant and any technical approval gate the action declares.
+
+For customers who pay directly, the existing receivables follow-up workflow has
+an explicit `settlement-only` mode; `followup-only` remains the default. The
+main agent matches external cleared-payment evidence to one invoice and obtains
+review/approval before the billing operator reports and attaches a PaymentRecord,
+attaches an existing succeeded PaymentIntent, or uses the separate full-balance
+out-of-band option. Partial payments remain partial. Unknown outcomes, duplicate
+source allocations, split payments and overpayments stop for reconciliation;
+settlement-only never sends a reminder. The external invoice/payment record,
+not a StackOS resource or role output, owns the amounts and allocation history.
+Unknown PaymentRecord reports first inspect retained action audit/response files,
+then independently retrieve a surviving known ref against the exact pre-report
+UTF-8 `payment_reference_sha256` and current payment/account/allocation facts.
+This digest is not a receipt-file hash. PaymentRecord listing is temporarily
+unavailable in StackOS and rejects before dispatch with a reason; it is optional
+recovery, not a prerequisite for ordinary follow-ups or known-ref settlement.
+Missing verified refs hold for owner/provider resolution. Do not retry listing,
+change credentials/URLs, or create a replacement report/key. Persist the verified
+ref before attachment. The finance backend contract owns the recovery method.
+
 ## Tracker Use
 
 All presets are expected to work through the existing StackOS tracker:

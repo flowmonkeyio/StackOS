@@ -1111,3 +1111,10 @@ def test_auth_test_redacts_vendor_controlled_text_fields(
     assert out.summary == "Authorization: Bearer [redacted]"
     assert out.next_action == "rotate refresh_token=[redacted]"
     assert out.metadata["access_token"] == "[redacted]"
+    usage = session.exec(
+        select(CredentialUsageEvent).where(CredentialUsageEvent.operation == "account.test")
+    ).one()
+    assert usage.metadata_json["result"] == out.model_dump(mode="json")
+    assert "fc-secret" not in json.dumps(usage.metadata_json)
+    assert "rt-secret" not in json.dumps(usage.metadata_json)
+    assert "tok-secret" not in json.dumps(usage.metadata_json)

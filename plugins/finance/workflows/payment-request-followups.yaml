@@ -1,0 +1,536 @@
+schema_version: stackos.workflow-template.v1
+key: finance.payment-request-followups
+name: Finance Payment Request Follow-Ups
+version: 0.6.0
+description: Evaluate a bounded external invoice follow-up or received-payment settlement scope. Reconcile a payment already received through Stripe or direct bank transfer without charging a customer, and resend only when lifecycle suppression checks and the distinct owner gate permit it.
+domain: finance
+owner:
+  team: StackOS
+experience:
+  problem: "A solo operator needs overdue-payment follow-ups and a safe way to reconcile money already received, but a generic reminder or an unverified paid mark can duplicate a payment or misstate what a customer owes."
+  outcome: "A safe external follow-up or settlement decision record. Every invoice is suppressed, exception-bound, or eligible for one owner-approved Stripe resend; a selected received payment is reported/attached or marked paid only with exact evidence, without charging or moving money."
+  why_ai: "An agent can re-check bounded provider lifecycle and received-payment evidence against the external record, leaving collection judgment, allocation choices, customer terms, and material settlement approval with the operator."
+  operator_path:
+    - "Request a collections check for a review window, or report that a customer wired or otherwise paid money directly; the agent resolves the selected external scope, invoice mappings, recent contacts and reminder policy."
+    - "Review exceptions, active promises, the independently prepared eligible set, or the exact received-payment match/allocation."
+    - "Record an owner approval for the exact resend, PaymentRecord report, payment attachment, or verified full out-of-band settlement action; do not authorize generic autonomous outreach."
+  agent_path:
+    - "Read bounded Stripe invoice and invoice-payment lifecycle evidence plus the selected external follow-up or received-payment state."
+    - "For a settlement-only occurrence, match one source and allocation, obtain independent review, then report/attach it or mark the exact verified full remaining balance as paid out of band."
+    - "Suppress every paid, voided, disputed, paused, corrected, active-promise, mismatch, or unresolved received-payment case before any send action."
+    - "Have the control reviewer challenge the eligibility/suppression or settlement decision, then call only the separately owner-gated permitted action."
+    - "Write safe outcome and recovery refs to the selected external backend."
+  progress_signals: ["Scope validated", "Lifecycle evidence read", "Settlement prepared or not requested", "Suppression decisions recorded", "Eligible set reviewed", "Approved action or no-send recorded"]
+  recovery:
+    - "If invoice lifecycle or promise state is incomplete, suppress by default and record an external exception."
+    - "If a resend outcome is unknown, retrieve the same invoice and reconcile it; do not use generic communication delivery or a new send path."
+    - "If a PaymentRecord report, payment attachment, or paid-out-of-band mark is unknown, re-read the known provider object and selected external record before any retry; never create a new source identity or idempotency key to bypass uncertainty."
+  safe_stopping_points:
+    - "Stop after suppression/eligibility review when no owner resend approval is recorded."
+    - "Stop after settlement preparation or review when no matching owner settlement approval is recorded."
+    - "Stop with a safe recovery ref when delivery or settlement outcome is uncertain."
+  handoffs:
+    - workflow_key: finance.bookkeeping-close
+      relationship: conditional
+      when: "Observed invoice/payment lifecycle or a one-source/one-allocation settlement needs a prepared/unposted external reconciliation entry."
+    - workflow_key: finance.cashflow-management
+      relationship: conditional
+      when: "A reviewed follow-up status changes forecast assumptions, or a verified actual receipt needs a once-only external cashflow handoff under the selected policy."
+public:
+  audience: "Solo entrepreneurs reviewing Stripe invoice follow-ups or reconciling a customer payment already received"
+  setup: connection-required
+  prerequisites:
+    - "A selected workspace and review window; resolve follow-up rules/history/reminder ownership for followup-only, or the received-payment source/allocation for settlement-only"
+    - "Restricted Stripe invoice/payment read access"
+    - "A separately recorded owner approval for any Stripe invoice resend, PaymentRecord report, payment attachment, or full paid-out-of-band mark"
+  proof:
+    - "Safe invoice/payment/external-follow-up refs and suppression, settlement, or eligibility state"
+    - "Control-reviewer, owner approval, source/allocation, and external-record version refs"
+    - "Action-call and external-write proof refs for any approved settlement or resend"
+  featured: true
+when_to_use:
+  - "A bounded set of sent/open external invoices needs lifecycle-aware follow-up evaluation."
+  - "A customer wired money, paid directly, or paid separately through Stripe and the received payment must be matched to one invoice without charging the customer."
+when_not_to_use:
+  - "The request asks for generic communication.send, a customer reply outside Stripe invoice resend, a credit, write-off, refund, extension negotiation, debt collection advice, money movement, or a live test send."
+agent_requirements:
+  - role: billing-collections-operator
+    requirement: required
+    agent_preset_ref: stackos.finance.billing-collections-operator
+    purpose: Evaluate bounded invoice lifecycle and received-payment facts and prepare only an allowed Stripe settlement or resend action.
+    applies_to_steps: [preflight, read-invoice-lifecycle, prepare-settlement, review-settlement, apply-settlement, suppress-ineligible, review-eligible, resend-approved, record-outcome]
+  - role: control-reviewer
+    requirement: required
+    agent_preset_ref: stackos.finance.control-reviewer
+    purpose: Independently verify lifecycle suppression, received-payment match/allocation, external promise state, and exact owner-gated mutation boundary.
+    applies_to_steps: [prepare-settlement, review-settlement, apply-settlement, suppress-ineligible, review-eligible, resend-approved]
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: required
+    purpose: Use StackOS grants and daemon-held provider actions without introducing a bypass communication path.
+    applies_to_steps: [preflight, read-invoice-lifecycle, prepare-settlement, review-settlement, apply-settlement, suppress-ineligible, review-eligible, resend-approved, record-outcome]
+skill_preset_requirements:
+  - skill_preset_ref: stackos.finance.department-orchestrator
+    requirement: required
+    purpose: Coordinate collections workflow boundaries, external state, action approvals, recovery, and safe handoffs.
+    applies_to_steps: [preflight, read-invoice-lifecycle, prepare-settlement, review-settlement, apply-settlement, suppress-ineligible, review-eligible, resend-approved, record-outcome]
+inputs:
+  - key: goal
+    name: Goal
+    type: string
+    required: false
+    default: Complete the selected finance work and report material decisions or gaps.
+    schema: {type: string, minLength: 1}
+  - key: backend_key
+    name: Backend Key
+    type: string
+    required: false
+    default: local-json
+    schema: {type: string, const: local-json}
+  - key: workspace_ref
+    name: External Workspace Ref
+    type: string
+    required: true
+    schema: {type: string, minLength: 1}
+  - key: recording_mode
+    name: Recording Mode
+    type: string
+    required: false
+    default: prepared-unposted
+    schema: {type: string, const: prepared-unposted}
+  - key: business_profile_ref
+    name: External Business Profile Override
+    type: string
+    required: false
+    description: Optional setup override for facts applicable to this workflow and selected route; otherwise reuse the selected workspace defaults. Missing unrelated tax or advisor data does not block billing or settlement preparation.
+    schema: {type: string, minLength: 1}
+  - key: operator_policy_ref
+    name: Operator Policy Ref
+    type: string
+    required: false
+    description: Optional override of the durable external workspace policy; the agent resolves it during preflight.
+    schema: {type: string, minLength: 1}
+  - key: trigger_kind
+    name: Trigger Kind
+    type: string
+    required: false
+    default: manual
+    schema: {type: string, enum: [manual, external]}
+  - key: followup_scope_ref
+    name: External Follow-Up Scope Ref
+    type: string
+    required: false
+    schema: {type: string, minLength: 1}
+  - key: occurrence_mode
+    name: Occurrence Mode
+    type: string
+    required: false
+    default: followup-only
+    description: Followup-only preserves the existing reminder path. Settlement-only reconciles one already-received payment and cannot send a reminder.
+    schema: {type: string, enum: [followup-only, settlement-only]}
+  - key: settlement_scope_ref
+    name: External Received-Payment Scope Ref
+    type: string
+    required: false
+    description: Optional external source, allocation, and record-version scope for one received payment. Required by the agent before a settlement action, never stored as StackOS financial state.
+    schema: {type: string, minLength: 1}
+  - key: review_window
+    name: Review Window
+    type: object
+    required: true
+    schema:
+      type: object
+      additionalProperties: false
+      required: [start, end]
+      properties:
+        start: {type: string, format: date}
+        end: {type: string, format: date}
+  - key: followup_policy_ref
+    name: Follow-Up Policy Ref
+    type: string
+    required: false
+    description: Optional safe override of the durable external policy for eligibility, pause, correction, promise, and resend handling.
+    schema: {type: string, minLength: 1}
+capability_requirements:
+  - key: stripe-invoicing
+    required: true
+    preferred_providers: [stripe]
+  - key: stripe-reconciliation
+    required: true
+    preferred_providers: [stripe]
+auth_requirements:
+  - key: stripe
+    provider: stripe
+    auth_type: api-key
+    optional: false
+    description: A daemon-held restricted Stripe key for invoice lifecycle reads and the explicitly approved resend route.
+action_contracts:
+  - key: stripe_invoices_list
+    action: finance.stripe.invoices.list
+    capability: stripe-invoicing
+    provider: stripe
+    auth_ref: stripe
+    risk_level: read
+  - key: stripe_invoices_retrieve
+    action: finance.stripe.invoices.retrieve
+    capability: stripe-invoicing
+    provider: stripe
+    auth_ref: stripe
+    risk_level: read
+  - key: stripe_invoice_payments_list
+    action: finance.stripe.invoice-payments.list
+    capability: stripe-reconciliation
+    provider: stripe
+    auth_ref: stripe
+    risk_level: read
+  - key: stripe_payment_intents_retrieve
+    action: finance.stripe.payment-intents.retrieve
+    capability: stripe-reconciliation
+    provider: stripe
+    auth_ref: stripe
+    risk_level: read
+  - key: stripe_payment_records_retrieve
+    action: finance.stripe.payment-records.retrieve
+    capability: stripe-reconciliation
+    provider: stripe
+    auth_ref: stripe
+    risk_level: read
+  - key: stripe_payment_records_list
+    action: finance.stripe.payment-records.list
+    optional: true
+    capability: stripe-reconciliation
+    provider: stripe
+    auth_ref: stripe
+    risk_level: read
+    description: Temporarily unavailable in StackOS while the documented Stripe endpoint availability mismatch is resolved. This optional deferred action does not block ordinary followups or supported settlement paths. Recover a known PaymentRecord ref from retained audit/response files and retrieve it; a missing ref requires an owner/provider hold, never a replacement report.
+  - key: stripe_payment_records_report
+    action: finance.stripe.payment-records.report
+    capability: stripe-reconciliation
+    provider: stripe
+    auth_ref: stripe
+    approval_ref: owner-payment-record
+    risk_level: write
+  - key: stripe_invoices_attach_payment
+    action: finance.stripe.invoices.attach-payment
+    capability: stripe-reconciliation
+    provider: stripe
+    auth_ref: stripe
+    approval_ref: owner-payment-attachment
+    risk_level: write
+  - key: stripe_invoices_mark_paid_out_of_band
+    action: finance.stripe.invoices.mark-paid-out-of-band
+    capability: stripe-reconciliation
+    provider: stripe
+    auth_ref: stripe
+    approval_ref: owner-external-settlement
+    risk_level: write
+  - key: stripe_charges_retrieve
+    action: finance.stripe.charges.retrieve
+    capability: stripe-reconciliation
+    provider: stripe
+    auth_ref: stripe
+    risk_level: read
+  - key: stripe_refunds_list
+    action: finance.stripe.refunds.list
+    capability: stripe-reconciliation
+    provider: stripe
+    auth_ref: stripe
+    risk_level: read
+  - key: stripe_invoices_send
+    action: finance.stripe.invoices.send
+    capability: stripe-invoicing
+    provider: stripe
+    auth_ref: stripe
+    approval_ref: owner-followup-resend
+    risk_level: write
+    description: Owner-approved resend of the exact reviewed invoice only.
+  - key: stripe_disputes_list
+    action: finance.stripe.disputes.list
+    capability: stripe-reconciliation
+    provider: stripe
+    auth_ref: stripe
+    risk_level: read
+    description: Inspect disputes using one safe charge or payment-intent reference from invoice-payment evidence.
+  - key: stripe_disputes_retrieve
+    action: finance.stripe.disputes.retrieve
+    capability: stripe-reconciliation
+    provider: stripe
+    auth_ref: stripe
+    risk_level: read
+    description: Recheck a known dispute reference before deciding eligibility.
+policies:
+  - key: local-json-single-source
+    kind: boundary
+    description: For local-json, finance.json is the sole authoritative local financial record, including mutable setup. Packet refs resolve to record_id in that document; approved proposals also bind an immutable version/digest, not separate editable files. FINANCE.md is guidance/navigation; CSV is import/export, never a second master. Original evidence stays immutable; provider state stays provider-owned and JSON stores dated observations. Follow the packaged local workspace contract.
+  - key: external-backend-is-authoritative
+    kind: boundary
+    description: The selected external backend owns follow-up state, promise/correction markers, customer history, and business decisions; StackOS records safe action/workflow refs only.
+  - key: mandatory-suppression
+    kind: integrity
+    description: Suppress not-due, paid/zero-balance, voided, uncollectible, pending/processing, disputed, paused, corrected, active-promise and cooldown cases, invoices whose reminders are owned by Stripe automation, and any payment mismatch, unallocated partial/split payment, overpayment, stale source, duplicate uncertainty or unknown settlement write. Incomplete evidence is suppressed as an exception.
+  - key: received-payment-matching
+    kind: integrity
+    description: The external backend remains authoritative for one received-payment source identity and one allocation. Independently match the current invoice/account/customer/currency/received state and allocation before a provider mutation. A verified duplicate is recorded, never retried with a new key. A partial direct payment may use the PaymentRecord report-and-attach route only when it is one exact supported allocation; it ends this occurrence without a resend. Split allocations, overpayments and mismatches are exceptions, not credits, refunds or inferred settlement.
+  - key: settlement-routes-are-exclusive
+    kind: integrity
+    description: A direct-bank PaymentRecord report+attach route is separate from the explicitly selected paid-out-of-band route. Do not report+mark the same source. Mark paid out of band only after a current read proves one verified external source exactly settles the full remaining invoice balance; it never charges or moves money.
+  - key: settlement-recovery
+    kind: integrity
+    description: Inspect action audit and response files, then external state before any recovery write. Retrieve a known PaymentRecord ref and compare the exact external payment_reference_sha256 and account/mode/customer/currency/guaranteed amounts against external received-payment and allocation evidence; independently retrieve and persist the verified ref before attachment. PaymentRecord listing is temporarily unavailable in StackOS. If no ref survives, hold for owner/provider recovery; do not retry listing, change credentials, guess an endpoint, create a replacement report or use a fresh key. Missing or uncertain evidence never justifies another report. Optional identical-request/key replay is permitted only inside a verified safe window shorter than 24 hours.
+  - key: stripe-only-customer-effect
+    kind: boundary
+    description: The only customer-facing action in this workflow is finance.stripe.invoices.send. communication.send and communication.reply are intentionally absent because current core cannot enforce this action's pre-send approval boundary.
+  - key: no-concessions-or-money-movement
+    kind: boundary
+    description: Do not negotiate credits, write-offs, refunds, extensions, payment arrangements, or debt collection terms; do not charge, transfer, pay, or move money.
+  - key: operator-policy-is-guidance
+    kind: approval
+    description: A standing policy guides routine work but cannot dynamically waive the owner-followup-resend action-level technical gate.
+approval_gates:
+  - key: owner-followup-resend
+    description: Recorded owner approval required before the Stripe resend action; it is an unconditional pre-action gate for this action.
+    required_when: before-resend-action
+    approver: owner
+  - key: owner-payment-record
+    description: Recorded owner approval required before reporting one already-received direct-bank payment as a Stripe PaymentRecord; it is an unconditional pre-action gate for this action.
+    required_when: before-payment-record-report-action
+    approver: owner
+  - key: owner-payment-attachment
+    description: Recorded owner approval required before attaching one independently verified Stripe PaymentIntent or PaymentRecord to one invoice; it is an unconditional pre-action gate for this action.
+    required_when: before-payment-attachment-action
+    approver: owner
+  - key: owner-external-settlement
+    description: Recorded owner approval required before marking one invoice paid out of band from a verified external source that exactly settles its current full remaining balance; it is an unconditional pre-action gate for this action.
+    required_when: before-out-of-band-settlement-action
+    approver: owner
+steps:
+  - id: preflight
+    title: Preflight Follow-Up Scope
+    purpose: Resolve the review scope and only the setup applicable to the selected occurrence mode.
+    input_refs: [goal, backend_key, workspace_ref, recording_mode, business_profile_ref, operator_policy_ref, trigger_kind, followup_scope_ref, occurrence_mode, settlement_scope_ref, review_window, followup_policy_ref]
+    policy_refs: [external-backend-is-authoritative, local-json-single-source, stripe-only-customer-effect, no-concessions-or-money-movement]
+    output_refs: [followup_summary]
+    instructions:
+      - "Read finance.json and its packaged local-json-v1 schema; resolve actual record refs and selected setup, document revision/digest and one-writer readback capability. For first-time setup use the empty bootstrap only in a new workspace; never overwrite existing files. Whole-document changes require reread/rebase; unrelated updates do not invalidate immutable proposal approval."
+      - "For followup-only, resolve external contact history, reminder owner and follow-up rules. For settlement-only, resolve the received-payment source, account and allocation; no reminder policy, contact history or recipient-setting setup is required because this occurrence never sends."
+    success_criteria:
+      - "Review window, occurrence mode and applicable external scope are explicit before lifecycle reads. Followup-only needs follow-up policy; settlement-only requires the external settlement scope before any settlement action, without collecting unrelated send setup."
+  - id: read-invoice-lifecycle
+    title: Read Bounded Invoice Lifecycle
+    purpose: Retrieve only safe Stripe invoice/payment evidence needed to evaluate the external scope.
+    action_refs: [stripe_invoices_list, stripe_invoices_retrieve, stripe_invoice_payments_list, stripe_disputes_list, stripe_disputes_retrieve]
+    depends_on: [preflight]
+    policy_refs: [external-backend-is-authoritative]
+    output_refs: [followup_summary]
+    success_criteria:
+      - "Provider state is observed by safe ref and does not replace external promises, corrections, or customer records."
+  - id: prepare-settlement
+    title: Prepare Received-Payment Settlement
+    purpose: For settlement-only work, read and match one already-received Stripe or direct-bank payment to one invoice without creating a payment or moving money. For followup-only work, record settlement as not requested.
+    action_refs: [stripe_invoices_retrieve, stripe_invoice_payments_list, stripe_payment_intents_retrieve, stripe_payment_records_retrieve, stripe_payment_records_list, stripe_charges_retrieve, stripe_refunds_list, stripe_disputes_list, stripe_disputes_retrieve]
+    depends_on: [read-invoice-lifecycle]
+    policy_refs: [external-backend-is-authoritative, received-payment-matching, settlement-recovery]
+    output_refs: [followup_summary]
+    instructions:
+      - "For followup-only, record settlement_state=not-requested and continue. For settlement-only, read the selected external settlement scope and current finance.json revision/digest before matching one source identity and one allocation. Never infer a source, customer, currency, amount, received state, successful payment, or payment reference from an invoice alone."
+      - "Read the current invoice, every relevant invoice-payment allocation and selected PaymentIntent or PaymentRecord. An existing Stripe PaymentIntent must be succeeded and reconciled through its selected charge, refund, dispute and invoice-allocation evidence before it is eligible to attach. Do not use a broad customer search as identity proof."
+      - "Preserve InvoicePayment rows with missing payment linkage: payment_ref_state=missing or null is unavailable evidence, not a malformed page or proof of no payment. Continue reading complete pages, but require payment_ref_state=available and the exact payment ref before matching or declaring settlement; unknown linkage keeps affected settlement/follow-ups on hold."
+      - "For an uncertain prior report, inspect retained action audit/response files and the external source first, then retrieve any known ref. PaymentRecord listing is temporarily unavailable in StackOS while the documented endpoint availability mismatch is resolved. If no ref survives, preserve lost-reference recovery as reconcile-required and seek owner/provider resolution; do not retry listing, change credentials, guess an endpoint/header, create a replacement report, use a fresh key or mark paid as a fallback. Compare the exact pre-report UTF-8 payment_reference_sha256 (not a receipt-file digest), account/mode/customer, all relevant currency/amount-state observations and allocation evidence. Missing or uncertain evidence remains unresolved. Independently retrieve the known record and persist its verified safe ref externally before any attachment."
+      - "Classify full exact, exact supported partial, duplicate, split allocation, overpayment, mismatch, stale external record, or unknown. A partial direct payment can proceed only through the exact supported report-and-attach allocation route; it leaves the invoice balance open and ends this occurrence without a resend. Split, overpayment, mismatch and unknown are exception/reconcile-required states."
+      - "Persist only safe source/allocation/record-version refs in StackOS output. Before an original report, retain financial facts, source identity, exact untrimmed and unnormalized UTF-8 payment_reference_sha256 and operation key in the external backend; payment_reference uses the provider payload-secret marker. Do not substitute the receipt attachment hash for the reference digest."
+    success_criteria:
+      - "Every settlement-only candidate is one exact supported route, a verified duplicate, or an exception/recovery record. Nothing is reported, attached, marked paid, or sent in this step."
+  - id: review-settlement
+    title: Independently Review Settlement Route
+    purpose: Have the control reviewer challenge the current external source, allocation, match, route, and owner approval before a settlement mutation.
+    depends_on: [prepare-settlement]
+    policy_refs: [external-backend-is-authoritative, received-payment-matching, settlement-routes-are-exclusive]
+    output_refs: [followup_summary]
+    instructions:
+      - "For followup-only, record not applicable. For settlement-only, independently compare the exact external source identity, account/customer, invoice, currency, received state, allocation, selected route and record revision/digest with the external business-scoped approval. The StackOS technical gate is action-scoped and does not bind this payload by itself."
+      - "A direct bank route normally reports one PaymentRecord then attaches it. The PaymentRecord report uses only the fixed Bank transfer/custom processor/guaranteed outcome shape from the action contract. The owner-external-settlement mark is a separate selected route only when the current invoice read proves the one verified source exactly settles its full remaining balance. Do not report+mark the same source."
+      - "Produce settlement_decision_ref and control_review_ref. A changed source, allocation, invoice/account, currency, received state, amount, route or external record version/digest invalidates the prior decision and requires a fresh matching owner approval occurrence."
+    success_criteria:
+      - "The workflow can stop review-ready without a settlement approval, and no reviewer substitutes for an owner or technical action gate."
+  - id: apply-settlement
+    title: Apply Owner-Approved Settlement
+    purpose: Run at most the one selected owner-gated Stripe settlement action route and immediately reconcile provider/external state without collecting money.
+    action_refs: [stripe_payment_records_report, stripe_invoices_attach_payment, stripe_invoices_mark_paid_out_of_band, stripe_invoices_retrieve, stripe_invoice_payments_list, stripe_payment_records_retrieve, stripe_payment_records_list, stripe_payment_intents_retrieve]
+    depends_on: [review-settlement]
+    policy_refs: [external-backend-is-authoritative, received-payment-matching, settlement-routes-are-exclusive, settlement-recovery, no-concessions-or-money-movement]
+    output_refs: [followup_summary]
+    instructions:
+      - "For followup-only or an exception/reconcile-required settlement, make no provider mutation and record the selected safe stop. For an original direct-bank report-and-attach route, first re-read the external record and source/allocation, confirm the exact payment-reference digest and operation key were retained externally, report only with owner-payment-record, retain the returned PaymentRecord ref externally, then re-read it and attach it only with the separate owner-payment-attachment. A recovered existing PaymentRecord is retrieved and persisted, never reported again. For a previously received succeeded Stripe payment, attach only with owner-payment-attachment after current readback."
+      - "For the explicitly selected mark-paid-out-of-band route, re-read invoice/payment evidence and the external source immediately before action; require one verified source that exactly settles the full current remaining balance and owner-external-settlement. Do not report+mark, do not mark a partial, split, overpayment, mismatch or unverified source, and never charge, refund, transfer, pay, credit, write off, or otherwise move money."
+      - "Use the stable operation key tied to the external source identity and one allocation. On unknown report, attachment or mark outcome, inspect the ActionCall/response files plus current provider and external state first. Recover an unknown report through retained evidence and a known ref as in prepare-settlement; independently retrieve and persist the verified ref before attachment. If the ref is missing, hold for owner/provider recovery because PaymentRecord listing is temporarily unavailable in StackOS. For unknown attachment, inspect every relevant invoice-payment page for that exact payment ref before doing anything else. Missing or uncertain evidence remains reconcile-required; never use a fresh report/key or mark-paid fallback. Optional identical-request/key replay requires a verified safe window shorter than Stripe's minimum 24-hour retention."
+      - "PaymentRecord listing is deferred in StackOS; do not retry it, change credentials or guess URLs. A missing ref keeps lost-reference recovery on hold. On idempotency_key_in_use, another original-key request may still be running; on different parameters, compare the original approved request and audit. Reconcile first and preserve the original key, never create a fresh key to bypass either conflict."
+      - "Immediately re-read invoice, invoice-payment allocation and selected PaymentIntent/PaymentRecord after any mutation. Persist the outcome under the sole external-record writer after its revision/digest check, then re-read the external record. A settlement-only occurrence has resend_state=not-requested: do not call finance.stripe.invoices.send."
+    success_criteria:
+      - "Each provider mutation has its distinct technical gate, current matching owner decision, stable recovery key and provider/external readback. Settlement-only sends no reminder."
+  - id: suppress-ineligible
+    title: Suppress Ineligible Follow-Ups
+    purpose: Apply required lifecycle and external-state suppression before eligibility is considered.
+    depends_on: [apply-settlement]
+    policy_refs: [mandatory-suppression, received-payment-matching, no-concessions-or-money-movement]
+    output_refs: [followup_summary]
+    instructions:
+      - "Suppress not-due, paid/zero-balance, voided, uncollectible, pending/processing, disputed, paused, corrected, active-promise and cooldown/recent-contact cases. Read all relevant payment/dispute pages; missing lifecycle linkage is unknown, not clear."
+      - "Settlement-only is always no-send. In either mode, a partial that is not fully synchronized, split allocation, overpayment, mismatch, duplicate uncertainty, stale external record or unknown settlement write remains suppressed/reconcile-required and cannot be followed up in this occurrence."
+      - "Do not convert missing evidence into an eligible case; preserve a safe external exception ref instead."
+      - "For followup-only, read the external reminder owner and policy. When Stripe automation owns reminders, do not send another reminder; when its setting is unknown, suppress and request one setup decision. Customer replies/promises are externally recorded manual inputs in this release. Settlement-only remains no-send without requiring reminder setup."
+      - "Create a versioned followup_decision_ref here, recording observed time, invoice, suppression reasons, contact history and policy. Continue independent invoice reviews and present one consolidated digest."
+    success_criteria:
+      - "Every candidate is suppressed, eligible-for-review, or exception-bound with a safe reason category."
+  - id: review-eligible
+    title: Independently Review Eligible Set
+    purpose: Require the control reviewer to challenge the safe lifecycle/suppression record before an owner chooses an exact resend.
+    depends_on: [suppress-ineligible]
+    policy_refs: [mandatory-suppression, stripe-only-customer-effect]
+    output_refs: [followup_summary]
+    instructions:
+      - "For settlement-only, record no eligible resend and do not turn this review into a follow-up decision. A verified partial may remain open but receives no automatic resend from this occurrence."
+      - "Do not treat the review as an owner approval or a substitute for owner-followup-resend on the action contract."
+      - "Match the exact safe invoice ref and intended resend against the external business-scoped approval record; the StackOS action gate alone is not payload-level authorization."
+      - "Produce control_review_ref for the chosen invoice. Only one invoice may be resent per run occurrence; a review batch can produce multiple recommendations but each additional resend needs its own approved occurrence. A changed decision invalidates the old approval."
+    success_criteria:
+      - "The workflow can stop with review-ready eligible refs when no owner resend approval exists."
+  - id: resend-approved
+    title: Resend Owner-Approved Invoice
+    purpose: Call the exact owner-gated Stripe invoice resend action for an eligible invoice and reconcile its result through invoice reads.
+    action_refs: [stripe_invoices_send, stripe_invoices_retrieve, stripe_invoice_payments_list, stripe_disputes_list, stripe_disputes_retrieve]
+    depends_on: [review-eligible]
+    policy_refs: [stripe-only-customer-effect, operator-policy-is-guidance]
+    output_refs: [followup_summary]
+    instructions:
+      - "A settlement-only occurrence has resend_state=not-requested. Do not call finance.stripe.invoices.send even if an old or broad resend approval exists."
+      - "Immediately reread invoice/payment/dispute and external contact/promise state before send. If paid or newly suppressed, skip this send and record the reason. No approval overrides fresh suppression."
+      - "Compare current_customer_email_sha256 and invoice_customer_email_sha256 with the approved primary email and the current externally verified recipient-settings version/scope. Extra recipients must be explicitly listed or verified-none, never unknown. The API covers primary-email-fields-only, not additional To/CC settings; missing, stale or mismatched evidence blocks resend. Reuse current valid setup verification; reverify when settings, account/customer/invoice scope or approved recipients change or become uncertain, not on every unchanged run."
+      - "Use the approved exact decision and stable attempt key. Check the actual action call; an invoice remaining open does not establish delivery. Unknown sends stay reconcile-required and are not blindly retried."
+      - "For accepted sandbox/test sends with livemode=false, use status=test-accepted and resend_state=test-accepted: Stripe sends no email. Preserve approval/action proof but do not record a real customer contact or start a live reminder cooldown. Live-mode acceptance still does not prove inbox delivery."
+    success_criteria:
+      - "The only send action has the owner-followup-resend technical gate; an unknown result is reconciled rather than bypassed."
+  - id: record-outcome
+    title: Record External Outcome And Handoff
+    purpose: Update only the selected external backend with safe status/proof refs and hand off relevant preparation work.
+    depends_on: [resend-approved]
+    policy_refs: [external-backend-is-authoritative]
+    output_refs: [followup_summary]
+    instructions:
+      - "For a sandbox/test acceptance retain resend_state=test-accepted with action/approval proof. Record a test result, not a customer contact, live reminder cooldown or live financial handoff."
+      - "Persist contact attempt/result/time, next eligible time or pause, suppression decision and recovery state in the external workspace through the single-writer revision check; reread and return external_write_proof_ref. No-send is a valid outcome."
+    success_criteria:
+      - "Safe outcome, recovery, suppression, and handoff refs are externalized without customer content in StackOS."
+outputs:
+  - key: followup_summary
+    name: Payment Follow-Up Summary
+    type: object
+    required: true
+    description: Safe provider/external/approval/proof refs and follow-up or settlement state only; never customer content, payment amount, currency, payment reference, contact details, promises, negotiations, or source content.
+    schema:
+      type: object
+      additionalProperties: false
+      required: [status, occurrence_mode, settlement_state, resend_state, recovery_state, exception_refs]
+      properties:
+        status: {type: string, enum: [scoped, lifecycle-read, settlement-prepared, settlement-review-ready, settlement-recorded, suppressed, review-ready, resent, test-accepted, recorded, reconcile-required, exception]}
+        occurrence_mode: {type: string, enum: [followup-only, settlement-only]}
+        settlement_state: {type: string, enum: [not-requested, prepared, review-ready, payment-record-reported, payment-attached, marked-paid-out-of-band, partial-applied, reconcile-required, exception, recorded]}
+        settlement_route: {type: string, enum: [none, report-and-attach, attach-existing-stripe-payment, mark-paid-out-of-band]}
+        resend_state: {type: string, enum: [not-requested, suppressed, sent, test-accepted, unknown]}
+        followup_scope_ref: {type: string, minLength: 1}
+        followup_decision_ref: {type: string, minLength: 1}
+        control_review_ref: {type: string, minLength: 1}
+        settlement_scope_ref: {type: string, minLength: 1}
+        settlement_decision_ref: {type: string, minLength: 1}
+        payment_source_ref: {type: string, minLength: 1}
+        payment_allocation_ref: {type: string, minLength: 1}
+        payment_ref: {type: string, minLength: 1}
+        suppressed_invoice_refs: {type: array, items: {type: string, minLength: 1}}
+        eligible_invoice_refs: {type: array, items: {type: string, minLength: 1}}
+        approval_refs: {type: array, items: {type: string, minLength: 1}}
+        action_call_refs: {type: array, items: {type: string, minLength: 1}}
+        external_write_proof_ref: {type: string, minLength: 1}
+        recovery_state: {type: string, enum: [not-needed, reconcile-required, reconciled, blocked]}
+        exception_refs: {type: array, items: {type: string, minLength: 1}}
+        handoff_refs: {type: array, items: {type: string, minLength: 1}}
+      allOf:
+        - if:
+            properties:
+              status: {enum: [lifecycle-read, settlement-prepared, settlement-review-ready, settlement-recorded, suppressed, review-ready, resent, test-accepted, recorded, reconcile-required]}
+            required: [status]
+          then:
+            required: [action_call_refs]
+            properties:
+              action_call_refs: {minItems: 1}
+        - if:
+            properties:
+              occurrence_mode: {const: followup-only}
+              status: {enum: [suppressed, review-ready, resent, test-accepted, recorded]}
+            required: [occurrence_mode, status]
+          then:
+            required: [suppressed_invoice_refs, eligible_invoice_refs, followup_decision_ref]
+        - if:
+            properties:
+              status: {enum: [resent, test-accepted]}
+            required: [status]
+          then:
+            required: [approval_refs, control_review_ref]
+            properties:
+              approval_refs: {minItems: 1}
+        - if:
+            properties:
+              status: {const: test-accepted}
+            required: [status]
+          then:
+            properties:
+              resend_state: {const: test-accepted}
+        - if:
+            properties:
+              resend_state: {const: test-accepted}
+            required: [resend_state]
+          then:
+            required: [approval_refs, control_review_ref, action_call_refs]
+            properties:
+              status: {enum: [test-accepted, recorded]}
+              approval_refs: {minItems: 1}
+              action_call_refs: {minItems: 1}
+        - if:
+            properties:
+              status: {const: recorded}
+            required: [status]
+          then:
+            required: [external_write_proof_ref, handoff_refs]
+        - if:
+            properties:
+              status: {const: settlement-recorded}
+            required: [status]
+          then:
+            required: [settlement_decision_ref, payment_source_ref, payment_allocation_ref, approval_refs, action_call_refs, external_write_proof_ref, handoff_refs]
+            properties:
+              settlement_state: {enum: [payment-attached, marked-paid-out-of-band, partial-applied, recorded]}
+              approval_refs: {minItems: 1}
+              action_call_refs: {minItems: 1}
+        - if:
+            properties:
+              occurrence_mode: {const: settlement-only}
+            required: [occurrence_mode]
+          then:
+            properties:
+              resend_state: {const: not-requested}
+              status:
+                not: {const: resent}
+        - if:
+            properties:
+              status: {const: exception}
+            required: [status]
+          then:
+            properties:
+              exception_refs: {minItems: 1}
+failure_handling:
+  - "Suppress rather than send whenever lifecycle/promise/correction evidence is incomplete, and never use a generic communication route as a workaround."
+  - "A missing owner approval stops before resend; no live customer effect occurs during engineering verification."
+  - "A missing or stale settlement approval, mismatch, split allocation, overpayment, unsynchronized partial payment, unknown write, or missing PaymentRecord recovery ref stops before settlement or resend; no customer payment is initiated."
+metadata:
+  artifact_grant_policy: explicit
+  trigger_kinds: [manual, external]
+  finance_record_owner: external-backend
+  state_model: [scoped, lifecycle-read, settlement-prepared, settlement-review-ready, settlement-recorded, suppressed, review-ready, resent, test-accepted, recorded, reconcile-required, exception]

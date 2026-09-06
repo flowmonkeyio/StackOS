@@ -67,6 +67,35 @@ def test_wheel_includes_stackos_plugin(built_wheel: Path) -> None:
     assert "stackos/_assets/plugins/engineering/skill-presets/sdlc.yaml" in names
 
 
+def test_wheel_includes_finance_plugin_assets(built_wheel: Path) -> None:
+    """The external finance workflow package must survive a pipx install."""
+    names = _wheel_names(built_wheel)
+    finance_root = "stackos/_assets/plugins/finance/"
+    expected = {
+        "plugin.yaml",
+        "agent-presets/finance.yaml",
+        "skill-presets/finance.yaml",
+        "templates/finance-workspace/FINANCE.md",
+        "templates/finance-workspace/finance.json",
+        "templates/finance-workspace/schemas/finance-v1.schema.json",
+        "workflows/receipt-intake.yaml",
+        "workflows/bookkeeping-close.yaml",
+        "workflows/payment-request.yaml",
+        "workflows/payment-request-followups.yaml",
+        "workflows/cashflow-management.yaml",
+        "workflows/tax-estimates.yaml",
+        "references/approval-matrix.md",
+        "references/backend-contract.md",
+        "references/imap-host-handoff-contract.md",
+        "references/local-workspace-contract.md",
+        "references/workflow-handoffs.md",
+    }
+
+    assert {
+        name.removeprefix(finance_root) for name in names if name.startswith(finance_root)
+    } >= expected
+
+
 def test_wheel_assets_path_namespace_is_under_stackos(built_wheel: Path) -> None:
     """Assets are namespaced under the package so `importlib.resources` resolves them."""
     names = _wheel_names(built_wheel)

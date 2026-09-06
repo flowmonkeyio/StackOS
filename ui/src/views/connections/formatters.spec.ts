@@ -86,6 +86,25 @@ describe('connections formatters', () => {
     expect(connectionAttentionTone({ status: 'pending' })).toBe('warning')
   })
 
+  it('flags a failed verification without changing connection eligibility', () => {
+    const connection = { status: 'connected', last_test: { ok: false } }
+    expect(connectionStatusKey(connection)).toBe('connected')
+    expect(connectionNeedsAttention(connection)).toBe(true)
+    expect(connectionAttentionTone(connection)).toBe('danger')
+    expect(connectionNeedsAttention({ ...connection, last_test: { ok: true } })).toBe(false)
+    expect(connectionNeedsAttention({ ...connection, last_test: null })).toBe(false)
+  })
+
+  it('sorts failed verification ahead of other connected Accounts', () => {
+    const connected = { display_name: 'Alpha', status: 'connected' } as ConnectionRow
+    const unverified = {
+      display_name: 'Zulu',
+      status: 'connected',
+      last_test: { ok: false },
+    } as unknown as ConnectionRow
+    expect([connected, unverified].sort(compareConnections)).toEqual([unverified, connected])
+  })
+
   it('sorts repair-needed Accounts before healthy Accounts', () => {
     const connected = {
       display_name: 'Alpha',

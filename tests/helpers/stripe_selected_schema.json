@@ -1,0 +1,856 @@
+{
+  "source_url": "https://github.com/stripe/openapi/blob/9ac29c7795ab21c7711b4bc25bb2dd739552a5fa/latest/openapi.spec3.json",
+  "api_version": "2026-08-26.dahlia",
+  "projection": "Full top-level required arrays and scalar types/enums only; not the complete provider response schema. Nullable OpenAPI fields converted to JSON Schema null unions.",
+  "schemas": {
+    "balance_transaction": {
+      "type": "object",
+      "required": [
+        "amount",
+        "available_on",
+        "balance_type",
+        "created",
+        "currency",
+        "fee",
+        "fee_details",
+        "id",
+        "net",
+        "object",
+        "reporting_category",
+        "status",
+        "type"
+      ],
+      "properties": {
+        "amount": {
+          "type": "integer"
+        },
+        "available_on": {
+          "type": "integer"
+        },
+        "balance_type": {
+          "type": "string",
+          "enum": [
+            "issuing",
+            "payments",
+            "refund_and_dispute_prefunding",
+            "risk_reserved"
+          ]
+        },
+        "created": {
+          "type": "integer"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fee": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "net": {
+          "type": "integer"
+        },
+        "object": {
+          "type": "string",
+          "enum": [
+            "balance_transaction"
+          ]
+        },
+        "reporting_category": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "adjustment",
+            "advance",
+            "advance_funding",
+            "anticipation_repayment",
+            "application_fee",
+            "application_fee_refund",
+            "charge",
+            "climate_order_purchase",
+            "climate_order_refund",
+            "connect_collection_transfer",
+            "contribution",
+            "fee_credit_funding",
+            "inbound_transfer",
+            "inbound_transfer_reversal",
+            "issuing_authorization_hold",
+            "issuing_authorization_release",
+            "issuing_dispute",
+            "issuing_transaction",
+            "obligation_outbound",
+            "obligation_reversal_inbound",
+            "payment",
+            "payment_failure_refund",
+            "payment_network_reserve_hold",
+            "payment_network_reserve_release",
+            "payment_refund",
+            "payment_reversal",
+            "payment_unreconciled",
+            "payout",
+            "payout_cancel",
+            "payout_failure",
+            "payout_minimum_balance_hold",
+            "payout_minimum_balance_release",
+            "refund",
+            "refund_failure",
+            "reserve_hold",
+            "reserve_release",
+            "reserve_transaction",
+            "reserved_funds",
+            "stripe_balance_payment_debit",
+            "stripe_balance_payment_debit_reversal",
+            "stripe_fee",
+            "stripe_fx_fee",
+            "tax_fee",
+            "tax_fund",
+            "topup",
+            "topup_reversal",
+            "transfer",
+            "transfer_cancel",
+            "transfer_failure",
+            "transfer_refund"
+          ]
+        }
+      }
+    },
+    "charge": {
+      "type": "object",
+      "required": [
+        "amount",
+        "amount_captured",
+        "amount_refunded",
+        "billing_details",
+        "captured",
+        "created",
+        "currency",
+        "disputed",
+        "id",
+        "livemode",
+        "metadata",
+        "object",
+        "paid",
+        "refunded",
+        "status"
+      ],
+      "properties": {
+        "amount": {
+          "type": "integer"
+        },
+        "amount_captured": {
+          "type": "integer"
+        },
+        "amount_refunded": {
+          "type": "integer"
+        },
+        "application_fee_amount": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "calculated_statement_descriptor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "captured": {
+          "type": "boolean"
+        },
+        "created": {
+          "type": "integer"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "disputed": {
+          "type": "boolean"
+        },
+        "failure_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "failure_message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "livemode": {
+          "type": "boolean"
+        },
+        "object": {
+          "type": "string",
+          "enum": [
+            "charge"
+          ]
+        },
+        "paid": {
+          "type": "boolean"
+        },
+        "payment_method": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "receipt_email": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "receipt_number": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "receipt_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "refunded": {
+          "type": "boolean"
+        },
+        "statement_descriptor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "statement_descriptor_suffix": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "failed",
+            "pending",
+            "succeeded"
+          ]
+        },
+        "transfer_group": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "customer": {
+      "type": "object",
+      "required": [
+        "created",
+        "id",
+        "livemode",
+        "object"
+      ],
+      "properties": {
+        "balance": {
+          "type": "integer"
+        },
+        "business_name": {
+          "type": "string"
+        },
+        "created": {
+          "type": "integer"
+        },
+        "currency": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "customer_account": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "delinquent": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "email": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "individual_name": {
+          "type": "string"
+        },
+        "invoice_prefix": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "livemode": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "next_invoice_sequence": {
+          "type": "integer"
+        },
+        "object": {
+          "type": "string",
+          "enum": [
+            "customer"
+          ]
+        },
+        "phone": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tax_exempt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "exempt",
+            "none",
+            "reverse",
+            null
+          ]
+        }
+      }
+    },
+    "dispute": {
+      "type": "object",
+      "required": [
+        "amount",
+        "balance_transactions",
+        "charge",
+        "created",
+        "currency",
+        "enhanced_eligibility_types",
+        "evidence",
+        "evidence_details",
+        "id",
+        "is_charge_refundable",
+        "livemode",
+        "metadata",
+        "object",
+        "reason",
+        "status"
+      ],
+      "properties": {
+        "amount": {
+          "type": "integer"
+        },
+        "created": {
+          "type": "integer"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "is_charge_refundable": {
+          "type": "boolean"
+        },
+        "livemode": {
+          "type": "boolean"
+        },
+        "object": {
+          "type": "string",
+          "enum": [
+            "dispute"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "lost",
+            "needs_response",
+            "prevented",
+            "under_review",
+            "warning_closed",
+            "warning_needs_response",
+            "warning_under_review",
+            "won"
+          ]
+        }
+      }
+    },
+    "invoice": {
+      "type": "object",
+      "required": [
+        "amount_due",
+        "amount_overpaid",
+        "amount_paid",
+        "amount_paid_off_stripe",
+        "amount_remaining",
+        "amount_shipping",
+        "attempt_count",
+        "attempted",
+        "auto_advance",
+        "automatic_tax",
+        "collection_method",
+        "created",
+        "currency",
+        "customer",
+        "default_tax_rates",
+        "discounts",
+        "id",
+        "issuer",
+        "lines",
+        "livemode",
+        "object",
+        "payment_settings",
+        "period_end",
+        "period_start",
+        "post_payment_credit_notes_amount",
+        "pre_payment_credit_notes_amount",
+        "starting_balance",
+        "status_transitions",
+        "subtotal",
+        "total"
+      ],
+      "properties": {
+        "account_country": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "account_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "amount_due": {
+          "type": "integer"
+        },
+        "amount_overpaid": {
+          "type": "integer"
+        },
+        "amount_paid": {
+          "type": "integer"
+        },
+        "amount_paid_off_stripe": {
+          "type": "integer"
+        },
+        "amount_remaining": {
+          "type": "integer"
+        },
+        "amount_shipping": {
+          "type": "integer"
+        },
+        "attempt_count": {
+          "type": "integer"
+        },
+        "attempted": {
+          "type": "boolean"
+        },
+        "auto_advance": {
+          "type": "boolean"
+        },
+        "automatically_finalizes_at": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "billing_reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "automatic_pending_invoice_item_invoice",
+            "manual",
+            "quote_accept",
+            "subscription",
+            "subscription_create",
+            "subscription_cycle",
+            "subscription_threshold",
+            "subscription_update",
+            "upcoming",
+            null
+          ]
+        },
+        "collection_method": {
+          "type": "string",
+          "enum": [
+            "charge_automatically",
+            "send_invoice"
+          ]
+        },
+        "created": {
+          "type": "integer"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "customer_account": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "customer_email": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "customer_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "customer_phone": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "customer_tax_exempt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "exempt",
+            "none",
+            "reverse",
+            null
+          ]
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "due_date": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "effective_at": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "ending_balance": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "footer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hosted_invoice_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "invoice_pdf": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "livemode": {
+          "type": "boolean"
+        },
+        "next_payment_attempt": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "number": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "object": {
+          "type": "string",
+          "enum": [
+            "invoice"
+          ]
+        },
+        "period_end": {
+          "type": "integer"
+        },
+        "period_start": {
+          "type": "integer"
+        },
+        "post_payment_credit_notes_amount": {
+          "type": "integer"
+        },
+        "pre_payment_credit_notes_amount": {
+          "type": "integer"
+        },
+        "receipt_number": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "starting_balance": {
+          "type": "integer"
+        },
+        "statement_descriptor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "draft",
+            "open",
+            "paid",
+            "uncollectible",
+            "void",
+            null
+          ]
+        },
+        "subtotal": {
+          "type": "integer"
+        },
+        "subtotal_excluding_tax": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "total": {
+          "type": "integer"
+        },
+        "total_excluding_tax": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "webhooks_delivered_at": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    },
+    "invoiceitem": {
+      "type": "object",
+      "required": [
+        "amount",
+        "currency",
+        "customer",
+        "date",
+        "discountable",
+        "id",
+        "livemode",
+        "object",
+        "period",
+        "proration",
+        "quantity",
+        "quantity_decimal"
+      ],
+      "properties": {
+        "amount": {
+          "type": "integer"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "customer_account": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "date": {
+          "type": "integer"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "discountable": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "livemode": {
+          "type": "boolean"
+        },
+        "net_amount": {
+          "type": "integer"
+        },
+        "object": {
+          "type": "string",
+          "enum": [
+            "invoiceitem"
+          ]
+        },
+        "proration": {
+          "type": "boolean"
+        },
+        "quantity": {
+          "type": "integer"
+        },
+        "quantity_decimal": {
+          "type": "string"
+        }
+      }
+    },
+    "refund": {
+      "type": "object",
+      "required": [
+        "amount",
+        "created",
+        "currency",
+        "id",
+        "object"
+      ],
+      "properties": {
+        "amount": {
+          "type": "integer"
+        },
+        "created": {
+          "type": "integer"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "customer_account": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "failure_reason": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "instructions_email": {
+          "type": "string"
+        },
+        "object": {
+          "type": "string",
+          "enum": [
+            "refund"
+          ]
+        },
+        "pending_reason": {
+          "type": "string",
+          "enum": [
+            "charge_pending",
+            "insufficient_funds",
+            "processing"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "duplicate",
+            "expired_uncaptured_charge",
+            "fraudulent",
+            "requested_by_customer",
+            null
+          ]
+        },
+        "receipt_number": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

@@ -240,7 +240,7 @@ providers:
         - https://www.rfc-editor.org/rfc/rfc4954
   - key: imap
     name: IMAP
-    description: IMAP provider for mailbox listing, search, fetch, and message flag lifecycle.
+    description: IMAP provider for mailbox listing, search, metadata fetch, bounded evidence staging, and message flag lifecycle.
     auth_type: imap-password
     auth_methods:
       - key: imap-password
@@ -288,6 +288,13 @@ providers:
             secret: false
             required: false
             placeholder: INBOX
+          - key: tls_ca_pem
+            label: Additional trusted CA certificates (PEM)
+            type: textarea
+            secret: false
+            required: false
+            description: Optional public CA certificates for this Account only (maximum 64 KiB). Keep private keys out of this field. Default trusted roots, certificate validity checks, and hostname verification remain enabled. Clear this field to remove the additional trust.
+            placeholder: "-----BEGIN CERTIFICATE-----"
           - key: mailbox_refs
             label: Mailbox Refs
             type: text
@@ -1438,6 +1445,7 @@ actions:
       properties:
         mailbox_ref:
           type: string
+          maxLength: 253
         cursor_ref:
           type: string
         criteria:
@@ -1500,6 +1508,7 @@ actions:
       properties:
         mailbox_ref:
           type: string
+          maxLength: 253
         uid:
           type: integer
         fields:
@@ -1532,6 +1541,198 @@ actions:
       docs:
         - docs/integration-contracts/communications.md
         - https://www.rfc-editor.org/rfc/rfc9051.html
+  - key: imap.message.export
+    name: Export IMAP Message Evidence
+    description: Stage one exact IMAP RFC822 message and bounded attachments for a host-owned evidence backend without acknowledging the message.
+    provider: imap
+    capability: email-inbox
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - mailbox_ref
+        - uid
+      properties:
+        mailbox_ref:
+          type: string
+          maxLength: 253
+        uid:
+          type: integer
+          minimum: 1
+    output_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - provider
+        - operation
+        - status
+        - transfer_kind
+        - transfer_id
+        - staging_uri
+        - source_identity
+        - raw_mime
+        - attachments
+        - attachment_count
+        - attachment_total_bytes
+      properties:
+        provider:
+          const: imap
+        operation:
+          const: message.export
+        status:
+          const: success
+        transfer_kind:
+          const: imap-staged-evidence.v1
+        transfer_id:
+          type: string
+          pattern: '^[a-f0-9]{32}$'
+        staging_uri:
+          type: string
+          pattern: '^/generated-assets/imap-transfers/project-[1-9][0-9]*/[a-f0-9]{32}/$'
+        source_identity:
+          type: object
+          additionalProperties: false
+          required:
+            - provider_key
+            - account_ref
+            - mailbox_ref
+            - uidvalidity
+            - uid
+            - content_sha256
+          properties:
+            provider_key:
+              const: imap
+            account_ref:
+              type: string
+              minLength: 1
+              maxLength: 120
+            mailbox_ref:
+              type: string
+              pattern: '^imap-mailbox:[^\r\n]{1,240}$'
+            uidvalidity:
+              type: string
+              pattern: '^[1-9][0-9]{0,9}$'
+            uid:
+              type: integer
+              minimum: 1
+            content_sha256:
+              type: string
+              pattern: '^[a-f0-9]{64}$'
+        raw_mime:
+          type: object
+          additionalProperties: false
+          required:
+            - path
+            - bytes
+            - sha256
+          properties:
+            path:
+              const: original.eml
+            bytes:
+              type: integer
+              minimum: 0
+              maximum: 10485760
+            sha256:
+              type: string
+              pattern: '^[a-f0-9]{64}$'
+        attachments:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - ordinal
+              - path
+              - media_type
+              - bytes
+              - sha256
+            properties:
+              ordinal:
+                type: integer
+                minimum: 1
+                maximum: 20
+              path:
+                type: string
+                pattern: '^attachment-[0-9]{3}$'
+              media_type:
+                type: string
+                maxLength: 127
+                pattern: '^[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+$'
+              bytes:
+                type: integer
+                minimum: 0
+                maximum: 8388608
+              sha256:
+                type: string
+                pattern: '^[a-f0-9]{64}$'
+        attachment_count:
+          type: integer
+          minimum: 0
+          maximum: 20
+        attachment_total_bytes:
+          type: integer
+          minimum: 0
+          maximum: 10485760
+    config:
+      schema_version: stackos.action.v1
+      connector: imap
+      operation: message.export
+      requires_credential: true
+      docs:
+        - docs/integration-contracts/communications.md
+        - plugins/finance/references/imap-host-handoff-contract.md
+        - https://www.rfc-editor.org/rfc/rfc9051.html
+  - key: imap.message.export.cleanup
+    name: Clean Up IMAP Evidence Export
+    description: Delete one completed IMAP evidence staging transfer by its opaque transfer id only.
+    provider: imap
+    capability: email-inbox
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - transfer_id
+      properties:
+        transfer_id:
+          type: string
+          pattern: '^[a-f0-9]{32}$'
+    output_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - provider
+        - operation
+        - status
+        - transfer_id
+        - staging_uri
+        - cleanup_status
+      properties:
+        provider:
+          const: imap
+        operation:
+          const: message.export.cleanup
+        status:
+          const: success
+        transfer_id:
+          type: string
+          pattern: '^[a-f0-9]{32}$'
+        staging_uri:
+          type: string
+          pattern: '^/generated-assets/imap-transfers/project-[1-9][0-9]*/[a-f0-9]{32}/$'
+        cleanup_status:
+          const: deleted
+    config:
+      schema_version: stackos.action.v1
+      connector: imap
+      operation: message.export.cleanup
+      requires_credential: false
+      allows_credential: false
+      docs:
+        - docs/integration-contracts/communications.md
+        - plugins/finance/references/imap-host-handoff-contract.md
   - key: imap.message.mark_seen
     name: Mark IMAP Message Seen
     description: Add the IMAP Seen flag to one message by UID after explicit grant.
@@ -1547,9 +1748,13 @@ actions:
       properties:
         mailbox_ref:
           type: string
+          maxLength: 253
         uid:
           type: integer
           minimum: 1
+        expected_uidvalidity:
+          type: string
+          pattern: '^[1-9][0-9]{0,9}$'
     output_schema: *object_schema
     config:
       schema_version: stackos.action.v1
@@ -1670,6 +1875,8 @@ config:
       - imap.mailbox.list
       - imap.messages.search
       - imap.message.fetch
+      - imap.message.export
+      - imap.message.export.cleanup
       - imap.message.mark_seen
       - imap.message.mark_unseen
     deferred: []

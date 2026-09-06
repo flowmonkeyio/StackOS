@@ -31,8 +31,9 @@ operations; they do not call providers or models.
   Events API/Interactivity ingress. Socket Mode is deferred.
 - `smtp`: password/app-password SMTP send. SMTP acceptance is not delivery or
   read confirmation.
-- `imap`: password/app-password mailbox listing, search, fetch, and `Seen` flag
-  lifecycle using UIDs.
+- `imap`: password/app-password mailbox listing, bounded UID search, selected
+  field fetch, `Seen` flag lifecycle, and bounded staged-evidence export with
+  transfer-id-only cleanup for the finance receipt route.
 
 ## Resources
 
@@ -86,6 +87,31 @@ Agents see safe status and opaque credential refs; host, username, password, TLS
 mode, and mailbox mapping resolve only inside the daemon. SMTP acceptance is recorded as outbound message
 submission metadata, not delivery or read state. IMAP uses UID/UIDVALIDITY-based
 resources for mailbox cursor, message fetch, and local read/unread lifecycle.
+
+For an external evidence backend such as the finance local Markdown workspace,
+IMAP remains a transport only. The receipt flow uses non-acknowledging UID
+`BODY.PEEK[]` export into a bounded connector staging directory under its
+daemon-owned asset path. Its safe result includes a project-contained
+`staging_uri`, opaque transfer id, source identity, canonical staged paths, and
+hash/byte manifest; it has no `host_handoff` field and exposes no raw MIME or
+attachment bytes. The `staging_uri` is a host-filesystem-only locator, never an
+HTTP URL; the daemon's static mount returns 404 for every normalized
+`imap-transfers` path even when a bearer token is supplied, and it rejects a
+public-looking symlink or path alias whose resolved target is inside that tree.
+The trusted host maps that locator through its own local filesystem runtime,
+verifies and writes the original outside StackOS, re-reads the external record,
+then separately invokes the granted epoch-qualified `mark_seen` action and
+transfer-id-only cleanup. The generic search cursor is observation-only, not
+receipt progress. Raw MIME and attachment bytes stay in temporary staging,
+never action output, communication resources, artifacts, or action-audit data.
+This narrow handoff does not create general filesystem access, storage
+infrastructure, or a finance evidence store.
+The complete handoff and recovery contract—including the fixed export limits and
+transfer-id-only staging cleanup—lives in
+[`plugins/finance/references/imap-host-handoff-contract.md`](../finance/references/imap-host-handoff-contract.md).
+Finance receipt intake requires a successfully verified SSL or STARTTLS
+credential before it searches, exports, or acknowledges; legacy plaintext IMAP
+operations remain outside that finance workflow.
 
 Built-in templates cover inbox review, rich Telegram replies, callback
 follow-up, and outbound notifications. They provide context/action structure for

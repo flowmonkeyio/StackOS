@@ -92,6 +92,18 @@ class AuthProviderOut(BaseModel):
     config_json: dict[str, Any] | None
 
 
+class AuthTestOut(BaseModel):
+    credential_ref: str
+    provider_key: str
+    ok: bool
+    status: str
+    summary: str
+    checked_at: str
+    retryable: bool = False
+    next_action: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class AccountOut(BaseModel):
     credential_id: int
     credential_ref: str
@@ -102,6 +114,7 @@ class AccountOut(BaseModel):
     status: str
     expires_at: datetime | None
     last_tested_at: datetime | None
+    last_test: AuthTestOut | None = None
     revoked_at: datetime | None
     scopes: list[str]
     account: dict[str, Any] | None = None
@@ -138,18 +151,6 @@ class OAuthCallbackOut(BaseModel):
     provider_key: str | None = None
     credential_ref: str | None = None
     status: str
-
-
-class AuthTestOut(BaseModel):
-    credential_ref: str
-    provider_key: str
-    ok: bool
-    status: str
-    summary: str
-    checked_at: str
-    retryable: bool = False
-    next_action: str | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class AuthRevokeOut(BaseModel):

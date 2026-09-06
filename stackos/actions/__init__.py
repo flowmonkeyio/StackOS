@@ -72,6 +72,7 @@ from stackos.actions.shopify import ShopifyActionConnector
 from stackos.actions.sitemap import SitemapActionConnector
 from stackos.actions.slack_bot import SlackBotActionConnector
 from stackos.actions.smtp import SmtpActionConnector
+from stackos.actions.stripe import StripeActionConnector
 from stackos.actions.taboola import TaboolaActionConnector
 from stackos.actions.telegram_bot import TelegramBotActionConnector
 from stackos.actions.trackbooth import TrackboothActionConnector
@@ -124,6 +125,7 @@ DEFAULT_ACTION_CONNECTORS.register(ShopifyActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(SlackBotActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(SmtpActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(ImapActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(StripeActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(MockProviderActionConnector())
 
 __all__ = [
@@ -186,6 +188,7 @@ __all__ = [
     "SitemapActionConnector",
     "SlackBotActionConnector",
     "SmtpActionConnector",
+    "StripeActionConnector",
     "TaboolaActionConnector",
     "TelegramBotActionConnector",
     "TrackboothActionConnector",

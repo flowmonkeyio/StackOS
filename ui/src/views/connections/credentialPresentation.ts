@@ -1,4 +1,4 @@
-import type { SchemaAccountOut, SchemaAuthProviderOut } from '@/api'
+import type { SchemaAccountOut, SchemaAuthProviderOut, SchemaAuthTestOut } from '@/api'
 
 import type { ConnectionRow, ServiceGroup } from './types'
 import { providerSetupGuidance } from './providerSetup'
@@ -17,6 +17,7 @@ const STATUS_ORDER: Record<string, number> = {
 interface ConnectionStatusLike {
   status?: string | null
   setup_required?: boolean | null
+  last_test?: Pick<SchemaAuthTestOut, 'ok'> | null
 }
 
 const PLUGIN_LABELS: Record<string, string> = {
@@ -56,6 +57,9 @@ export function methodLabel(provider: SchemaAuthProviderOut, methodKey: string):
 }
 
 export function compareConnections(left: ConnectionRow, right: ConnectionRow): number {
+  const attentionDiff =
+    Number(!connectionNeedsAttention(left)) - Number(!connectionNeedsAttention(right))
+  if (attentionDiff !== 0) return attentionDiff
   const statusDiff =
     (STATUS_ORDER[connectionStatusKey(left)] ?? 99) -
     (STATUS_ORDER[connectionStatusKey(right)] ?? 99)
@@ -73,13 +77,20 @@ export function connectionStatusKey(connection: ConnectionStatusLike): string {
 }
 
 export function connectionNeedsAttention(connection: ConnectionStatusLike): boolean {
-  return connectionStatusKey(connection) !== 'connected'
+  return connectionStatusKey(connection) !== 'connected' || connection.last_test?.ok === false
 }
 
 export function connectionAttentionTone(connection: ConnectionStatusLike): 'danger' | 'warning' {
-  return ['failed', 'expired', 'revoked'].includes(connectionStatusKey(connection))
+  return connection.last_test?.ok === false ||
+    ['failed', 'expired', 'revoked'].includes(connectionStatusKey(connection))
     ? 'danger'
     : 'warning'
+}
+
+export function credentialVerificationMessage(
+  result: Pick<SchemaAuthTestOut, 'summary' | 'next_action'>,
+): string {
+  return [result.summary, result.next_action].filter(Boolean).join(' ')
 }
 
 export function connectionTitle(connection: SchemaAccountOut): string {

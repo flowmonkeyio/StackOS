@@ -1,0 +1,31 @@
+{
+  "schema_version": "local-json-v1",
+  "revision": 0,
+  "workspace": {
+    "backend_key": "local-json",
+    "recording_mode": "prepared/unposted"
+  },
+  "operating_settings": [],
+  "business_profiles": [],
+  "sources": [],
+  "attachments": [],
+  "receipts": [],
+  "bookkeeping": [],
+  "customer_mappings": [],
+  "recipient_settings": [],
+  "billing_versions": [],
+  "provider_observations": [],
+  "mutation_attempts": [],
+  "settlements": [],
+  "collection_decisions": [],
+  "reconciliations": [],
+  "reviews": [],
+  "corrections": [],
+  "exceptions": [],
+  "cashflow_forecasts": [],
+  "reserve_applications": [],
+  "tax_packets": [],
+  "handoffs": [],
+  "write_proofs": [],
+  "custody_events": []
+}

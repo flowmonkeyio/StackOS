@@ -53,7 +53,9 @@ contract:
 - plugin manifest capability/provider/resource/action/navigation entries
 - workflow templates, agent presets, and skill presets in the standard plugin
   directories
-- resource schemas with `ui_schema`, `record_kind`, and `agent_guidance`
+- resource schemas with `ui_schema`, `record_kind`, and `agent_guidance` when
+  StackOS is the declared durable owner; an external-system-of-record package
+  may intentionally declare none
 - action contracts plus executable connectors, or explicit `execution_mode`
   deferral
 - workflow templates with inputs, context, policies, approvals, grants, ordered
@@ -79,9 +81,10 @@ Use this reasoning path before authoring files:
 4. Inventory existing plugins, resources, actions, workflows, agent presets,
    skill presets, and provider setup so names and connectors are reused.
 5. Model durable state and invariants first; then write workflow steps around
-   those records and guarantees. Resources are future memory; artifacts hold
-   bulky content and must be indexed by resources when the output should be
-   discoverable later.
+   those records and guarantees. Name the correct durable owner before choosing
+   a StackOS resource: resources are future memory only when StackOS owns the
+   record. Artifacts hold bulky content and must be indexed by resources when
+   the output should be discoverable later in StackOS.
    Artifact creation is not the workflow scratchpad. Step `output_refs` may
    describe logical outputs that stay in chat, local project working files,
    tracker evidence, or resources until the workflow deliberately preserves
@@ -121,10 +124,47 @@ same workflow when they are part of the same operator request. It is fine for
 different workflows to duplicate internal step patterns; avoid composable
 workflow fragments that make one deliverable require several workflow runs.
 
-The closeout should prove future accessibility. If a workflow creates something
-the project will need later, it must write a queryable resource record that
-stores the summary, state, decision refs, artifact refs, approvals, and follow-up
-hooks. Do not leave durable truth only in chat, local files, or artifacts.
+The closeout should prove future accessibility. If StackOS owns something a
+project will need later, it must write a queryable resource record that stores
+the summary, state, decision refs, artifact refs, approvals, and follow-up
+hooks. Do not leave StackOS-owned durable truth only in chat, local files, or
+artifacts. If an external backend is explicitly the system of record, that
+backend owns the durable packet and contents; StackOS closeout returns only the
+safe external refs, state, action/approval proof, and recovery/handoff refs.
+
+## External System-Of-Record Workflow Packages
+
+Some workflows coordinate a domain whose records must live outside StackOS. A
+package may intentionally have no resource contracts and no resource/artifact
+write grant when it declares one selected external backend. The package must:
+
+- identify the selected backend and a safe external workspace or record ref as
+  run inputs; do not turn a host path into a StackOS path or filesystem action;
+- keep `metadata.artifact_grant_policy: explicit`, omit finance/domain content
+  from workflow, tracker, resource, and artifact output, and return only safe
+  external/provider/action/approval/proof refs and bounded lifecycle state;
+- make any temporary provider-file staging a bounded connector transport with
+  URI containment, host-owned file authority, explicit cleanup, and recovery—
+  never a hidden artifact or new storage layer;
+- distinguish a provider action's generic sanitized action audit from the
+  external record of authority. The audit may retain bounded transport fields
+  under the executor contract, but cannot be described as the domain ledger or
+  approval record; and
+- name technical action/step gates separately from the external business-scoped
+  approval evidence. A gate does not bind an unverified payload or allow an
+  agent to self-approve.
+
+The finance workflows are the current example: `local-json` is host-managed
+external storage with `finance.json` as the sole authoritative local financial
+record, including mutable setup. `FINANCE.md` is guidance/navigation; reports
+are derived, CSV is import/export, and original attachments remain evidence.
+Packet refs resolve to stable JSON record IDs and scoped versions, never separate
+editable masters. Providers own their actual state; JSON keeps dated observations.
+First-time setup uses a new workspace and never overwrites existing files.
+Local bookkeeping remains
+`prepared/unposted`; Stripe and IMAP are explicit connector routes; and no
+finance resource, artifact, ledger, filesystem connector, scheduler, or custom
+UI is introduced.
 
 Use this mechanical closeout before claiming done:
 

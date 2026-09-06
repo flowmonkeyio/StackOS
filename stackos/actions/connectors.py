@@ -45,6 +45,7 @@ class ActionConnectorRequest:
     asset_dir: Path | None = None
     session: Any | None = field(default=None, repr=False)
     dry_run: bool = False
+    idempotency_key: str | None = field(default=None, repr=False)
     progress_callback: ActionProgressCallback | None = field(
         default=None,
         repr=False,

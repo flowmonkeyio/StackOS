@@ -291,7 +291,7 @@ def _bridge_dict(value: Any) -> dict[str, Any]:
 
 def _bridge_compact_account(account: dict[str, Any]) -> dict[str, Any]:
     provider_account = _bridge_dict(account.get("account"))
-    return {
+    compact = {
         "credential_ref": account.get("credential_ref"),
         "provider_key": account.get("provider_key"),
         "display_name": account.get("display_name"),
@@ -301,6 +301,12 @@ def _bridge_compact_account(account: dict[str, Any]) -> dict[str, Any]:
         "project_ids": account.get("project_ids") or [],
         "setup_required": bool(account.get("setup_required", False)),
     }
+    # Verification outcome and freshness are repair context, including an
+    # explicit null for untested Accounts. The daemon owns their safe projection.
+    for key in ("last_test", "last_tested_at"):
+        if key in account:
+            compact[key] = account[key]
+    return compact
 
 
 def _bridge_provider_setup(

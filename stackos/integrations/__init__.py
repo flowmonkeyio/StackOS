@@ -47,6 +47,7 @@ from stackos.integrations.serper import SerperIntegration
 from stackos.integrations.shopify import ShopifyIntegration
 from stackos.integrations.slack_bot import SlackBotIntegration
 from stackos.integrations.smtp import SmtpIntegration
+from stackos.integrations.stripe import StripeIntegration
 from stackos.integrations.telegram_bot import TelegramBotIntegration
 from stackos.integrations.trackbooth import TrackboothIntegration
 from stackos.integrations.wordpress import WordPressIntegration
@@ -92,6 +93,7 @@ REGISTRY: dict[str, type[BaseIntegration]] = {
     "slack-bot": SlackBotIntegration,
     "smtp": SmtpIntegration,
     "imap": ImapIntegration,
+    "stripe": StripeIntegration,
 }
 
 
@@ -141,6 +143,7 @@ __all__ = [
     "ShopifyIntegration",
     "SlackBotIntegration",
     "SmtpIntegration",
+    "StripeIntegration",
     "TelegramBotIntegration",
     "TrackboothIntegration",
     "WordPressIntegration",

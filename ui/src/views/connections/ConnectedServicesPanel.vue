@@ -31,6 +31,7 @@ import {
   serviceName,
 } from './formatters'
 import ConnectionCapabilityReadiness from './ConnectionCapabilityReadiness.vue'
+import { credentialVerificationMessage } from './credentialPresentation'
 import type { ConnectionRow, MessageMap, ServiceGroup } from './types'
 
 const props = defineProps<{
@@ -350,6 +351,16 @@ function statusLabel(connection: ConnectionRow): string {
               :provider="group.provider"
               :connection="connection"
             />
+
+            <UiCallout
+              v-if="connection.last_test?.ok === false"
+              tone="danger"
+              title="Verification failed"
+              density="compact"
+              class="mt-2"
+            >
+              {{ credentialVerificationMessage(connection.last_test) }}
+            </UiCallout>
 
             <UiCallout
               v-if="connectionMessages[connection.credential_ref]"

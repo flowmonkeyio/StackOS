@@ -143,7 +143,11 @@ class CredentialTestingMixin:
             provider_key=credential.provider_key,
             operation="account.test",
             status=out.status,
-            metadata_json={"ok": out.ok, "metadata": out.metadata},
+            metadata_json={
+                "ok": out.ok,
+                "metadata": out.metadata,
+                "result": out.model_dump(mode="json"),
+            },
             project_id=project_id,
         )
         self._s.commit()
@@ -385,6 +389,7 @@ class CredentialTestingMixin:
                     extra[key] = config[key]
             if credential.provider_key == "imap":
                 extra["default_mailbox"] = str(config.get("default_mailbox") or "INBOX")
+                extra["tls_ca_pem"] = config.get("tls_ca_pem")
             missing = [key for key in ("host", "port", "tls_mode", "username") if key not in extra]
             if missing:
                 raise ValidationError(

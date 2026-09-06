@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from pydantic import ValidationError as ModelValidationError
 from sqlmodel import col, select
 
 from stackos.artifacts import redact_secrets
@@ -13,11 +14,12 @@ from stackos.db.models import (
     Credential,
     CredentialAccount,
     CredentialScope,
+    CredentialUsageEvent,
     ProjectCredential,
 )
 from stackos.repositories.base import NotFoundError
 
-from .schema import AccountOut, AuthStatusOut
+from .schema import AccountOut, AuthStatusOut, AuthTestOut
 
 
 class CredentialStatusMixin:
@@ -111,11 +113,57 @@ class CredentialStatusMixin:
             status=status,
             expires_at=credential.expires_at,
             last_tested_at=credential.last_tested_at,
+            last_test=self._last_test_for_credential(credential),
             revoked_at=credential.revoked_at,
             scopes=self._scopes_for_credential(credential),
             account=self._provider_account_for_credential(credential),
             project_ids=self._project_ids_for_credential(credential.id),
             setup_required=not has_backing or status != "connected",
+        )
+
+    def _last_test_for_credential(self, credential: Credential) -> AuthTestOut | None:
+        """Project the existing test audit, never use it as an execution grant."""
+        event = self._s.exec(
+            select(CredentialUsageEvent)
+            .where(
+                CredentialUsageEvent.credential_id == credential.id,
+                CredentialUsageEvent.operation == "account.test",
+            )
+            .order_by(col(CredentialUsageEvent.id).desc())
+            .limit(1)
+        ).first()
+        if event is None:
+            return None
+        data = redact_secrets(event.metadata_json or {})
+        result = data.get("result")
+        if isinstance(result, dict):
+            try:
+                return AuthTestOut.model_validate(
+                    {
+                        **result,
+                        "credential_ref": credential.credential_ref,
+                        "provider_key": credential.provider_key,
+                    }
+                )
+            except ModelValidationError:
+                # Older audit rows did not retain the complete normalized result.
+                # Preserve their known outcome without guessing a provider cause.
+                pass
+        ok = data.get("ok")
+        if not isinstance(ok, bool):
+            return None
+        metadata = data.get("metadata")
+        return AuthTestOut(
+            credential_ref=credential.credential_ref,
+            provider_key=credential.provider_key,
+            ok=ok,
+            status="ok" if ok else "failed",
+            summary=(
+                "Previous credential test passed." if ok else "Previous credential test failed."
+            ),
+            checked_at=event.created_at.isoformat(),
+            next_action="Test the Account again for current diagnostics.",
+            metadata=metadata if isinstance(metadata, dict) else {},
         )
 
     def _project_ids_for_credential(self, credential_id: int) -> list[int]:
