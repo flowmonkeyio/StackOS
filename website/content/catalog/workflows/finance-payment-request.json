@@ -1,0 +1,122 @@
+{
+  "key": "finance.payment-request",
+  "slug": "finance-payment-request",
+  "name": "Finance Payment Request",
+  "description": "One external payment request linked to a safe Stripe invoice reference, with deterministic mutation recovery and separate owner-approved finalization and send gates.",
+  "domain": "finance",
+  "audience": "Solo entrepreneurs issuing a reviewed Stripe invoice from an external payment-request record",
+  "color": "#8ea6ff",
+  "featured": true,
+  "problem": "Sending an invoice is repetitive, but a draft, finalization, customer delivery, recovery, and external records must remain distinguishable.",
+  "outcome": "One external payment request linked to a safe Stripe invoice reference, with deterministic mutation recovery and separate owner-approved finalization and send gates.",
+  "whyAi": "An agent can prepare a bounded Stripe invoice from the selected external record while enforcing idempotency, separating draft work from customer delivery, and preserving owner decisions.",
+  "operatorPath": [
+    "Request an invoice from the external billing record; the agent resolves workspace defaults and prepares the draft.",
+    "Review the exact draft once and approve its finalization and initial send together if desired; the agent records that decision against both technical gates.",
+    "Inspect a safe provider result, exception, or recovery recommendation; never provide customer data or payment instructions in chat."
+  ],
+  "agentPath": [
+    "Preflight one external payment request and resolve only safe account-bound Stripe references.",
+    "Create/reconcile a draft customer, invoice, and invoice item with deterministic idempotency keys.",
+    "Use action-level owner approvals for finalize and send; a standing policy is guidance and cannot waive either technical gate.",
+    "Write safe provider/status/proof refs back to the selected external backend and hand open invoices to follow-up work when appropriate."
+  ],
+  "progressSignals": [
+    "Request scoped",
+    "Draft reconciled",
+    "Finalization approved",
+    "Invoice finalized",
+    "Send approved",
+    "External record updated"
+  ],
+  "recovery": [
+    "For an unknown write outcome, retrieve/reconcile the same safe provider refs with the same deterministic key; never create a new key or duplicate customer/invoice/item.",
+    "If approval is absent, stop at the review-ready draft and do not finalize or send."
+  ],
+  "safeStoppingPoints": [
+    "Stop with a draft/reconciliation recommendation before finalization when approval is not recorded.",
+    "Stop after finalization but before send when the send gate is absent or delivery outcome is uncertain."
+  ],
+  "handoffs": [
+    {
+      "workflowKey": "finance.payment-request-followups",
+      "relationship": "next",
+      "when": "A safely recorded sent/open invoice is eligible for follow-up policy evaluation."
+    },
+    {
+      "workflowKey": "finance.bookkeeping-close",
+      "relationship": "conditional",
+      "when": "Safe invoice lifecycle evidence must be prepared/matched in the external backend."
+    }
+  ],
+  "setup": "connection-required",
+  "prerequisites": [
+    "A restricted Stripe connection with the invoice route selected",
+    "A selected workspace and one billing-request reference resolving an immutable external version with customer, lines, currency and terms",
+    "Owner approval of the concrete draft before finalization and send; these approvals are produced during the run"
+  ],
+  "proof": [
+    "Safe external payment-request and Stripe invoice/customer refs",
+    "Action-call/provider request refs, idempotency/reconciliation status, and owner approval refs",
+    "External backend write proof and workflow handoff refs"
+  ],
+  "whenToUse": [
+    "A single approved external payment request needs a Stripe draft invoice, finalization, and customer delivery."
+  ],
+  "stages": [
+    {
+      "id": "preflight",
+      "title": "Preflight External Request And Stripe Route",
+      "summary": "Resolve one immutable billing request and workspace billing/customer-mapping rules."
+    },
+    {
+      "id": "resolve-customer",
+      "title": "Resolve Or Create Customer",
+      "summary": "Reconcile an approved external customer to a safe account-bound Stripe customer ref."
+    },
+    {
+      "id": "create-draft",
+      "title": "Create Or Reconcile Draft Invoice",
+      "summary": "Prepare the approved external request as a Stripe draft invoice and item without finalizing or sending."
+    },
+    {
+      "id": "review-draft",
+      "title": "Review Draft And Required Owner Gates",
+      "summary": "Confirm external request consistency and make finalization/send approvals available to their exact action contracts."
+    },
+    {
+      "id": "finalize-invoice",
+      "title": "Finalize Approved Invoice",
+      "summary": "Run only the owner-approved Stripe finalization action and reconcile unknown outcomes with reads."
+    },
+    {
+      "id": "send-invoice",
+      "title": "Send Approved Invoice",
+      "summary": "Run only the owner-approved Stripe customer send action and reconcile unknown outcomes with reads."
+    },
+    {
+      "id": "record-and-handoff",
+      "title": "Record External Status And Handoff",
+      "summary": "Record safe Stripe outcome refs in the selected external backend and hand eligible open invoices to follow-up work."
+    }
+  ],
+  "agentNames": [
+    "Finance Billing and Collections Operator",
+    "Finance Control Reviewer"
+  ],
+  "agentRefs": [
+    {
+      "key": "stackos.finance.billing-collections-operator",
+      "slug": "stackos-finance-billing-collections-operator",
+      "name": "Finance Billing and Collections Operator"
+    },
+    {
+      "key": "stackos.finance.control-reviewer",
+      "slug": "stackos-finance-control-reviewer",
+      "name": "Finance Control Reviewer"
+    }
+  ],
+  "integrations": [
+    "Stripe"
+  ]
+}

@@ -1760,7 +1760,7 @@ wheels = [
 
 [[package]]
 name = "stackos"
-version = "2.1.21"
+version = "2.1.22"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },

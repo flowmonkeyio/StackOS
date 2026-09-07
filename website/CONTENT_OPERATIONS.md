@@ -40,8 +40,9 @@ next actions. Do not create FAQ schema; ordinary question headings are enough.
 
 ## Add visuals
 
-Visuals are editorially optional. The required `visual` frontmatter records the
-selected page mode; it does not require every article to contain an embedded
+Visuals are editorially optional. Set `visual: none` for a text-only article
+hero and cards without a generated product diagram. The required `visual`
+frontmatter records the selected page mode; it does not require every article to contain an embedded
 workflow or concept visual. Use an embedded workflow when it materially
 clarifies a real process:
 

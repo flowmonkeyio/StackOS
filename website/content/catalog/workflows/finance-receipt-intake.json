@@ -1,0 +1,113 @@
+{
+  "key": "finance.receipt-intake",
+  "slug": "finance-receipt-intake",
+  "name": "Finance Receipt Intake",
+  "description": "One verified external receipt record with original evidence retained, safe proof refs, and an IMAP acknowledgement only after the host completes the common intake contract.",
+  "domain": "finance",
+  "audience": "US solo entrepreneurs who need a dependable receipt inbox without moving financial evidence into StackOS",
+  "color": "#8ea6ff",
+  "featured": true,
+  "problem": "Receipts arrive through email, chat, and manual uploads, and are easy to lose, duplicate, or acknowledge before the underlying record is durable.",
+  "outcome": "One verified external receipt record with original evidence retained, safe proof refs, and an IMAP acknowledgement only after the host completes the common intake contract.",
+  "whyAi": "An agent can coordinate bounded provider transport, duplicate checks, and host-file verification while leaving custody and accounting judgment with the selected backend and owner.",
+  "operatorPath": [
+    "Forward receipts to the configured mailbox or upload originals/screenshots in chat; the agent resolves workspace defaults.",
+    "Start a manual or explicit external-trigger intake and choose IMAP, chat, or manual-upload evidence.",
+    "Review one consolidated list of material exceptions; credentials belong only in Connections, while receipt uploads use the host chat attachment channel."
+  ],
+  "agentPath": [
+    "Confirm the external workspace is readable and writable before any IMAP export.",
+    "For IMAP, search a bounded candidate page, stage exactly one message, and validate the host handoff.",
+    "Use the common external intake contract to deduplicate, atomically retain originals, update finance.json, and re-read the result.",
+    "Only after verified external persistence, acknowledge the matching UIDVALIDITY/UID and clean up the staged transfer."
+  ],
+  "progressSignals": [
+    "Candidate identified",
+    "Evidence staged or received",
+    "External write verified",
+    "Provider acknowledgement recorded",
+    "Staging cleanup recorded"
+  ],
+  "recovery": [
+    "If the workspace, hashes, paths, or finance.json re-read fail, stop before acknowledgement and retain only a safe exception reference.",
+    "If acknowledgement is unknown or fails, preserve the verified external record and transfer id, then retry the same epoch-qualified acknowledgement without re-ingesting it."
+  ],
+  "safeStoppingPoints": [
+    "Stop after a staged candidate when host verification cannot proceed.",
+    "Stop after the external record is verified but before acknowledgement when the mailbox epoch or provider result is uncertain."
+  ],
+  "handoffs": [
+    {
+      "workflowKey": "finance.bookkeeping-close",
+      "relationship": "next",
+      "when": "A receipt is accepted or matched in the selected external backend and its bookkeeping work remains prepared/unposted."
+    }
+  ],
+  "setup": "mixed",
+  "prerequisites": [
+    "An explicitly selected external backend and writable workspace",
+    "Host access to the selected workspace and the uploaded originals or IMAP staging route",
+    "A durable operator policy reference",
+    "A verified SSL or STARTTLS IMAP connection only when the IMAP route is selected"
+  ],
+  "proof": [
+    "Safe external receipt-record and host-write proof refs",
+    "Safe source identity and hash/path verification refs",
+    "Epoch-qualified acknowledgement and cleanup state when IMAP is selected"
+  ],
+  "whenToUse": [
+    "A receipt, invoice attachment, screenshot, or other evidence must enter the selected finance backend through the common intake protocol.",
+    "A dedicated receipt mailbox has a bounded candidate message that needs store-before-ack handling."
+  ],
+  "stages": [
+    {
+      "id": "preflight",
+      "title": "Preflight External Backend And Route",
+      "summary": "Resolve workspace defaults, host access, and the selected route without requiring tax classification."
+    },
+    {
+      "id": "discover-or-receive",
+      "title": "Discover Or Receive One Candidate",
+      "summary": "Obtain one bounded candidate without treating it as an accepted receipt."
+    },
+    {
+      "id": "stage-imap-evidence",
+      "title": "Stage IMAP Evidence",
+      "summary": "Stage exactly one IMAP message through the bounded communications connector when the IMAP route is selected."
+    },
+    {
+      "id": "validate-and-write-external",
+      "title": "Validate And Write External Record",
+      "summary": "Apply the external backend's duplicate, quarantine, atomic original-write, finance.json update, and re-read protocol."
+    },
+    {
+      "id": "acknowledge-imap",
+      "title": "Acknowledge Verified IMAP Evidence",
+      "summary": "Mark the exact message seen only after the host proves external persistence."
+    },
+    {
+      "id": "cleanup-staging",
+      "title": "Clean Up Completed IMAP Staging",
+      "summary": "Remove connector staging after a proven acknowledgement while preserving external evidence and safe recovery state."
+    }
+  ],
+  "agentNames": [
+    "Finance Receipt Operator",
+    "Finance Control Reviewer"
+  ],
+  "agentRefs": [
+    {
+      "key": "stackos.finance.receipt-operator",
+      "slug": "stackos-finance-receipt-operator",
+      "name": "Finance Receipt Operator"
+    },
+    {
+      "key": "stackos.finance.control-reviewer",
+      "slug": "stackos-finance-control-reviewer",
+      "name": "Finance Control Reviewer"
+    }
+  ],
+  "integrations": [
+    "Imap"
+  ]
+}

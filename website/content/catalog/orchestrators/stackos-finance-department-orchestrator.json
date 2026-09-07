@@ -1,0 +1,58 @@
+{
+  "key": "stackos.finance.department-orchestrator",
+  "slug": "stackos-finance-department-orchestrator",
+  "name": "Finance Department Orchestrator",
+  "description": "Main-agent guidance for a six-workflow finance department that keeps all finance facts external while coordinating bounded agents, provider actions, received-payment settlement approvals,…",
+  "domain": "finance",
+  "audience": "Operations teams",
+  "color": "#8ea6ff",
+  "featured": true,
+  "workflowKeys": [
+    "finance.receipt-intake",
+    "finance.bookkeeping-close",
+    "finance.payment-request",
+    "finance.payment-request-followups",
+    "finance.cashflow-management",
+    "finance.tax-estimates"
+  ],
+  "coordinates": [
+    "Finance Receipt Operator",
+    "Finance Bookkeeping Preparer",
+    "Finance Billing and Collections Operator",
+    "Finance Cashflow Preparer",
+    "Finance Tax Preparer",
+    "Finance Control Reviewer"
+  ],
+  "agentRefs": [
+    {
+      "key": "stackos.finance.receipt-operator",
+      "slug": "stackos-finance-receipt-operator",
+      "name": "Finance Receipt Operator"
+    },
+    {
+      "key": "stackos.finance.bookkeeping-preparer",
+      "slug": "stackos-finance-bookkeeping-preparer",
+      "name": "Finance Bookkeeping Preparer"
+    },
+    {
+      "key": "stackos.finance.billing-collections-operator",
+      "slug": "stackos-finance-billing-collections-operator",
+      "name": "Finance Billing and Collections Operator"
+    },
+    {
+      "key": "stackos.finance.cashflow-preparer",
+      "slug": "stackos-finance-cashflow-preparer",
+      "name": "Finance Cashflow Preparer"
+    },
+    {
+      "key": "stackos.finance.tax-preparer",
+      "slug": "stackos-finance-tax-preparer",
+      "name": "Finance Tax Preparer"
+    },
+    {
+      "key": "stackos.finance.control-reviewer",
+      "slug": "stackos-finance-control-reviewer",
+      "name": "Finance Control Reviewer"
+    }
+  ]
+}

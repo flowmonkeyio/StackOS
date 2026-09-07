@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 2.1.22 - 2026-09-06
+
+- Added the finance workflow package for receipt intake, bookkeeping close,
+  payment requests and follow-ups, cashflow management, and tax estimates.
+  Finance records remain in the selected external backend rather than in
+  StackOS.
+- Added restricted-key Stripe invoice and received-payment workflows plus IMAP
+  evidence handoff, with explicit approval, recovery, and audit boundaries.
+- Added the local JSON finance-workspace template and finance-specific agent
+  presets, orchestration guidance, connector contracts, and verification
+  coverage for the new operational path.
+
 ## 2.1.21 - 2026-08-15
 
 - Migrated the MCP adapter to Python SDK 2 and protocol revision `2026-07-28`,

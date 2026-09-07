@@ -1,0 +1,107 @@
+{
+  "key": "finance.tax-estimates",
+  "slug": "finance-tax-estimates",
+  "name": "Finance Tax Estimates",
+  "description": "An external tax-estimate packet with current IRS and FTB source refs, separate projected-annual-liability and current-installment states, CPA/EA review, owner approval, and safe cashflow…",
+  "domain": "finance",
+  "audience": "US/California solo LLC or S-Corp owners preparing advisor-reviewed tax estimate packets",
+  "color": "#8ea6ff",
+  "featured": true,
+  "problem": "A solo LLC or S-Corp owner needs tax planning evidence organized before a deadline becomes urgent, without trusting stale rates, generic advice, or an agent-generated filing decision.",
+  "outcome": "An external tax-estimate packet with current IRS and FTB source refs, separate projected-annual-liability and current-installment states, CPA/EA review, owner approval, and safe cashflow handoff.",
+  "whyAi": "An agent can prepare and reconcile the packet structure and current-source provenance while licensed advice, decisions, filing, payment, and entity elections stay with the qualified advisor and owner.",
+  "operatorPath": [
+    "Request an estimate for a tax year and as-of date; the agent reads the external taxpayer profile, gathers current sources and prepares supported calculations.",
+    "Review a consolidated missing-input list if needed; select the qualified CPA/EA when the prepared packet reaches review.",
+    "Record owner approval for the reviewed packet; separately decide any filing, remittance, election, or payment outside this workflow."
+  ],
+  "agentPath": [
+    "Confirm current official IRS and California FTB source refs and the explicit entity classification without assuming dates, rates, thresholds, elections, or advice.",
+    "Prepare external packet structure that keeps projected annual liability distinct from the current installment.",
+    "Stop for CPA/EA review, then owner approval, and hand only safe packet/cashflow refs to later work."
+  ],
+  "progressSignals": [
+    "Scope validated",
+    "Current official sources confirmed",
+    "Annual and installment states prepared separately",
+    "CPA/EA review recorded",
+    "Owner approval recorded"
+  ],
+  "recovery": [
+    "Gather current applicable official sources; unavailable sources or taxpayer inputs produce an incomplete packet with supported work preserved and explicit gaps.",
+    "If the advisor or owner declines/rejects review, preserve the safe external packet ref and return to the named correction/handoff need without filing or payment."
+  ],
+  "safeStoppingPoints": [
+    "Return an incomplete packet when material sources or taxpayer inputs are missing, or a prepared packet awaiting an advisor.",
+    "Stop after CPA/EA review when owner approval is pending.",
+    "Stop after owner approval with an external packet/cashflow handoff; this workflow never files, remits, pays, or changes an election."
+  ],
+  "handoffs": [
+    {
+      "workflowKey": "finance.cashflow-management",
+      "relationship": "next",
+      "when": "A CPA/EA-reviewed and owner-approved tax packet provides safe current-installment planning refs to the external thirteen-week forecast."
+    },
+    {
+      "workflowKey": "finance.bookkeeping-close",
+      "relationship": "fallback",
+      "when": "The packet identifies external bookkeeping/reconciliation gaps that must be prepared/unposted before tax review can continue."
+    }
+  ],
+  "setup": "project-adapter-required",
+  "prerequisites": [
+    "An external workspace, tax year and estimate-as-of date; the agent resolves business and taxpayer profiles during preparation",
+    "Current official sources are gathered during the run; a named qualified advisor is needed only at review"
+  ],
+  "proof": [
+    "Safe current-source, external packet, CPA/EA, owner-approval, exception, and cashflow-handoff refs",
+    "Separate state markers for projected annual liability and current installment"
+  ],
+  "whenToUse": [
+    "A current-source tax-estimate packet for a US/California solo LLC or S-Corp must be prepared for qualified review and cash planning."
+  ],
+  "stages": [
+    {
+      "id": "preflight",
+      "title": "Preflight Tax Packet Scope",
+      "summary": "Resolve the external business/taxpayer profile and annual planning scope; identify missing facts while permitting preparation."
+    },
+    {
+      "id": "validate-current-sources",
+      "title": "Validate Current Official Sources",
+      "summary": "Gather and validate current official IRS and California FTB sources for the tax year, taxpayer and applicable obligations."
+    },
+    {
+      "id": "prepare-external-packet",
+      "title": "Prepare External Estimate Packet",
+      "summary": "Organize the selected external packet with distinct projected annual liability and current installment states, assumptions, gaps, and…"
+    },
+    {
+      "id": "cpa-ea-review",
+      "title": "Obtain CPA Or EA Review",
+      "summary": "Require recorded qualified-review approval of the external packet before owner review."
+    },
+    {
+      "id": "owner-review-and-handoff",
+      "title": "Obtain Owner Approval And Cashflow Handoff",
+      "summary": "Require owner approval of the CPA/EA-reviewed external packet, then record only safe cashflow handoff refs."
+    }
+  ],
+  "agentNames": [
+    "Finance Tax Preparer",
+    "Finance Control Reviewer"
+  ],
+  "agentRefs": [
+    {
+      "key": "stackos.finance.tax-preparer",
+      "slug": "stackos-finance-tax-preparer",
+      "name": "Finance Tax Preparer"
+    },
+    {
+      "key": "stackos.finance.control-reviewer",
+      "slug": "stackos-finance-control-reviewer",
+      "name": "Finance Control Reviewer"
+    }
+  ],
+  "integrations": []
+}

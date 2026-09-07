@@ -36,7 +36,7 @@ function displayDate(date: string) {
   <LibraryFrame v-if="article" :breadcrumb-current-label="article.title">
     <article>
       <header class="article-hero">
-        <div class="shell article-hero__grid">
+        <div class="shell article-hero__grid" :class="{ 'article-hero__grid--text-only': article.visual === 'none' }">
           <div>
             <p class="library-kicker">{{ article.category }}</p>
             <h1>{{ article.title }}</h1>

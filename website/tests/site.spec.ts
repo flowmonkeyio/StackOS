@@ -424,6 +424,22 @@ test('library navigation and editorial visuals are compact, readable, and icon-l
   expect(overflow).toBeLessThanOrEqual(1)
 })
 
+test('text-only articles omit generated visuals in heroes and cards', async ({ page }) => {
+  const path = '/library/articles/building-ai-finance-department-one-person-business/'
+  await page.goto(path)
+  await expect(page.locator('.article-hero .generated-visual')).toHaveCount(0)
+  const columns = await page.locator('.article-hero__grid').evaluate((element) =>
+    getComputedStyle(element).gridTemplateColumns.split(' ').length,
+  )
+  expect(columns).toBe(1)
+  await expect(page.locator('.article-prose')).toContainText('I wanted agents to take on the bookkeeping')
+
+  await page.goto('/library/articles/')
+  const card = page.locator(`.article-card[href="${path}"]`)
+  await expect(card).toBeVisible()
+  await expect(card.locator('.generated-visual')).toHaveCount(0)
+})
+
 test('article tables remain structured and contained at every viewport', async ({ page }) => {
   await page.goto('/library/articles/ai-workflow-automation')
 

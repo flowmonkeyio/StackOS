@@ -1,0 +1,103 @@
+{
+  "key": "finance.cashflow-management",
+  "slug": "finance-cashflow-management",
+  "name": "Finance Cashflow Management",
+  "description": "A dated external thirteen-week forecast packet with safe evidence/proof refs, uncertainty, exception state, and tax-estimate handoff readiness.",
+  "domain": "finance",
+  "audience": "Solo entrepreneurs preparing a rolling external cashflow view without delegating money movement",
+  "color": "#8ea6ff",
+  "featured": true,
+  "problem": "Cashflow planning is easy to neglect when balances, invoices, expected payments, and operating assumptions are scattered.",
+  "outcome": "A dated external thirteen-week forecast packet with safe evidence/proof refs, uncertainty, exception state, and tax-estimate handoff readiness.",
+  "whyAi": "An agent can assemble a bounded forecast packet and make uncertainty explicit, while the operator remains responsible for assumptions, liquidity choices, and money movement.",
+  "operatorPath": [
+    "Request an updated forecast as of a date; the agent resolves accounts, commitments, weekly start convention and cashflow rules from the workspace.",
+    "Review assumptions, uncertainty, and exceptions in the selected external backend.",
+    "Use the packet to decide later operational actions; this workflow itself never moves money or commits a payment."
+  ],
+  "agentPath": [
+    "Read only selected external records and optional safe Stripe balance/invoice/payment evidence.",
+    "Build a dated sequence of exactly thirteen weekly external forecast entries, preserving assumptions and uncertainty in the external backend.",
+    "Record only safe references in StackOS; deliver supported forecasts with named assumptions and gaps, or an incomplete packet when opening cash is unknown."
+  ],
+  "progressSignals": [
+    "Scope validated",
+    "Evidence collected",
+    "Thirteen-week packet prepared",
+    "Uncertainty reviewed",
+    "Handoff recorded"
+  ],
+  "recovery": [
+    "Separate unavailable facts from labeled scenario assumptions. Missing evidence stays visible; prepare supported components and never substitute zero for unknown cash.",
+    "If a Stripe source is unavailable, keep the packet bounded to selected available external evidence and name the resulting gap."
+  ],
+  "safeStoppingPoints": [
+    "Stop with a scope/evidence-gap packet before a forecast is prepared.",
+    "Stop after a review-ready external forecast; downstream payment, transfer, or tax actions require their own workflows and authority."
+  ],
+  "handoffs": [
+    {
+      "workflowKey": "finance.tax-estimates",
+      "relationship": "conditional",
+      "when": "A separately requested tax preparation may reuse relevant forecast assumptions; a thirteen-week cash forecast never substitutes for annual taxable-income inputs or automatically starts tax work."
+    },
+    {
+      "workflowKey": "finance.bookkeeping-close",
+      "relationship": "fallback",
+      "when": "The forecast is blocked by an unresolved bookkeeping or reconciliation exception."
+    }
+  ],
+  "setup": "mixed",
+  "prerequisites": [
+    "An external workspace with account/source register and forecast as-of date; defaults are resolved during preflight",
+    "Safe external source refs; optional restricted Stripe read access when selected"
+  ],
+  "proof": [
+    "External dated thirteen-week forecast ref and assumptions/uncertainty refs",
+    "Safe source/action-call proof refs, exception refs, and tax handoff ref"
+  ],
+  "whenToUse": [
+    "A rolling external cashflow forecast needs a bounded, dated thirteen-week refresh."
+  ],
+  "stages": [
+    {
+      "id": "preflight",
+      "title": "Preflight Forecast Scope",
+      "summary": "Resolve a dated thirteen-week scope, external account sources and scenario conventions."
+    },
+    {
+      "id": "collect-evidence",
+      "title": "Collect Bounded Cashflow Evidence",
+      "summary": "Read selected external records and optional safe Stripe balance, invoice, and invoice-payment evidence."
+    },
+    {
+      "id": "prepare-thirteen-week-forecast",
+      "title": "Prepare External Thirteen-Week Forecast",
+      "summary": "Write exactly thirteen dated weekly forecast entries, assumptions, uncertainty, and exceptions only in the selected external backend."
+    },
+    {
+      "id": "review-and-handoff",
+      "title": "Review Forecast And Handoff Safely",
+      "summary": "Review safe external proof/uncertainty refs and hand a qualified forecast packet to tax estimates when its conditions are met."
+    }
+  ],
+  "agentNames": [
+    "Finance Cashflow Preparer",
+    "Finance Control Reviewer"
+  ],
+  "agentRefs": [
+    {
+      "key": "stackos.finance.cashflow-preparer",
+      "slug": "stackos-finance-cashflow-preparer",
+      "name": "Finance Cashflow Preparer"
+    },
+    {
+      "key": "stackos.finance.control-reviewer",
+      "slug": "stackos-finance-control-reviewer",
+      "name": "Finance Control Reviewer"
+    }
+  ],
+  "integrations": [
+    "Stripe"
+  ]
+}

@@ -64,6 +64,7 @@ const visualLabel = computed(() => `${copy.value.title} ${props.label}. ${copy.v
 
 <template>
   <div
+    v-if="mode !== 'none'"
     class="generated-visual"
     :class="[`generated-visual--${mode}`, { 'is-compact': compact }]"
     :style="visualStyle"

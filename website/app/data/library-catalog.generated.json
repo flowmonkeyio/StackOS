@@ -846,6 +846,697 @@
       "integrations": []
     },
     {
+      "key": "finance.bookkeeping-close",
+      "slug": "finance-bookkeeping-close",
+      "name": "Finance Bookkeeping Preparation and Reconciliation",
+      "description": "A reviewed, externally recorded close packet marked prepared/unposted, with matched and exception refs that can be handed to later workflows.",
+      "domain": "finance",
+      "audience": "Solo entrepreneurs preparing a monthly or bounded-period bookkeeping close outside StackOS",
+      "color": "#8ea6ff",
+      "featured": true,
+      "problem": "A solo operator needs receipt, invoice, payment, and balance evidence organized into a repeatable close without making bookkeeping decisions disappear into chat.",
+      "outcome": "A reviewed, externally recorded close packet marked prepared/unposted, with matched and exception refs that can be handed to later workflows.",
+      "whyAi": "An agent can assemble bounded external evidence, surface gaps, and prepare a reconciled close packet while the owner retains accounting judgment and posting authority.",
+      "operatorPath": [
+        "Select the period; the agent reads source accounts, accounting basis and category rules from the external workspace.",
+        "Review classification, matching, reconciliation exceptions, and any external-backend finalization requested by a qualified professional.",
+        "Accept a prepared/unposted close or return it for repair; no accounting period is closed in StackOS."
+      ],
+      "agentPath": [
+        "Read only the external records and optional safe Stripe lifecycle evidence needed for the selected period.",
+        "Prepare, match, classify, and reconcile with uncertainty and exceptions visible.",
+        "Write only the selected external backend's prepared/unposted record and safe handoff refs."
+      ],
+      "progressSignals": [
+        "Period scoped",
+        "Evidence matched",
+        "Exceptions visible",
+        "Prepared close reviewed",
+        "Handoff recorded"
+      ],
+      "recovery": [
+        "Isolate missing sources, ambiguous matches and unsupported categories while preparing supported records; show a consolidated decision list.",
+        "If Stripe evidence is unavailable, retain the bounded evidence gap and prepare only what the selected external backend can support."
+      ],
+      "safeStoppingPoints": [
+        "Return prepared work with open exceptions when evidence is incomplete; never label the period fully reconciled.",
+        "Stop at prepared/unposted after owner review; authoritative posting belongs to the external backend and separately authorized professional process."
+      ],
+      "handoffs": [
+        {
+          "workflowKey": "finance.cashflow-management",
+          "relationship": "next",
+          "when": "A prepared close provides safe period status and external evidence refs for a forecast refresh."
+        },
+        {
+          "workflowKey": "finance.tax-estimates",
+          "relationship": "conditional",
+          "when": "A prepared close contributes evidence to a current-source tax estimate packet."
+        }
+      ],
+      "setup": "mixed",
+      "prerequisites": [
+        "A selected external finance backend/workspace and explicit period reference",
+        "An external source-account register, accounting basis and category policy, resolved during preflight",
+        "Safe external evidence refs; Stripe access only if it is selected as a reconciliation source"
+      ],
+      "proof": [
+        "Prepared/unposted close and reconciliation refs in the external backend",
+        "Safe external evidence/action-call refs and exception refs",
+        "Owner review state and downstream handoff refs"
+      ],
+      "whenToUse": [
+        "A bounded accounting period needs receipts, invoices, payment lifecycle evidence, and exceptions prepared for review."
+      ],
+      "stages": [
+        {
+          "id": "preflight",
+          "title": "Preflight Close Scope",
+          "summary": "Resolve the external workspace, period, source accounts, accounting basis and category policy."
+        },
+        {
+          "id": "collect-evidence",
+          "title": "Collect Bounded External Evidence",
+          "summary": "Read selected external records and optional safe Stripe lifecycle evidence for the period."
+        },
+        {
+          "id": "prepare-and-reconcile",
+          "title": "Prepare And Reconcile External Close",
+          "summary": "Match, classify, reconcile, and write the selected external backend's prepared close and exception records."
+        },
+        {
+          "id": "review-prepared-close",
+          "title": "Review Prepared Close",
+          "summary": "Perform routine specialist/control review of the prepared external close and surface unresolved exceptions."
+        },
+        {
+          "id": "handoff",
+          "title": "Record Safe Workflow Handoffs",
+          "summary": "Hand prepared external close refs to cashflow or tax-estimate work only when their stated conditions are met."
+        }
+      ],
+      "agentNames": [
+        "Finance Bookkeeping Preparer",
+        "Finance Control Reviewer"
+      ],
+      "agentRefs": [
+        {
+          "key": "stackos.finance.bookkeeping-preparer",
+          "slug": "stackos-finance-bookkeeping-preparer",
+          "name": "Finance Bookkeeping Preparer"
+        },
+        {
+          "key": "stackos.finance.control-reviewer",
+          "slug": "stackos-finance-control-reviewer",
+          "name": "Finance Control Reviewer"
+        }
+      ],
+      "integrations": [
+        "Stripe"
+      ]
+    },
+    {
+      "key": "finance.cashflow-management",
+      "slug": "finance-cashflow-management",
+      "name": "Finance Cashflow Management",
+      "description": "A dated external thirteen-week forecast packet with safe evidence/proof refs, uncertainty, exception state, and tax-estimate handoff readiness.",
+      "domain": "finance",
+      "audience": "Solo entrepreneurs preparing a rolling external cashflow view without delegating money movement",
+      "color": "#8ea6ff",
+      "featured": true,
+      "problem": "Cashflow planning is easy to neglect when balances, invoices, expected payments, and operating assumptions are scattered.",
+      "outcome": "A dated external thirteen-week forecast packet with safe evidence/proof refs, uncertainty, exception state, and tax-estimate handoff readiness.",
+      "whyAi": "An agent can assemble a bounded forecast packet and make uncertainty explicit, while the operator remains responsible for assumptions, liquidity choices, and money movement.",
+      "operatorPath": [
+        "Request an updated forecast as of a date; the agent resolves accounts, commitments, weekly start convention and cashflow rules from the workspace.",
+        "Review assumptions, uncertainty, and exceptions in the selected external backend.",
+        "Use the packet to decide later operational actions; this workflow itself never moves money or commits a payment."
+      ],
+      "agentPath": [
+        "Read only selected external records and optional safe Stripe balance/invoice/payment evidence.",
+        "Build a dated sequence of exactly thirteen weekly external forecast entries, preserving assumptions and uncertainty in the external backend.",
+        "Record only safe references in StackOS; deliver supported forecasts with named assumptions and gaps, or an incomplete packet when opening cash is unknown."
+      ],
+      "progressSignals": [
+        "Scope validated",
+        "Evidence collected",
+        "Thirteen-week packet prepared",
+        "Uncertainty reviewed",
+        "Handoff recorded"
+      ],
+      "recovery": [
+        "Separate unavailable facts from labeled scenario assumptions. Missing evidence stays visible; prepare supported components and never substitute zero for unknown cash.",
+        "If a Stripe source is unavailable, keep the packet bounded to selected available external evidence and name the resulting gap."
+      ],
+      "safeStoppingPoints": [
+        "Stop with a scope/evidence-gap packet before a forecast is prepared.",
+        "Stop after a review-ready external forecast; downstream payment, transfer, or tax actions require their own workflows and authority."
+      ],
+      "handoffs": [
+        {
+          "workflowKey": "finance.tax-estimates",
+          "relationship": "conditional",
+          "when": "A separately requested tax preparation may reuse relevant forecast assumptions; a thirteen-week cash forecast never substitutes for annual taxable-income inputs or automatically starts tax work."
+        },
+        {
+          "workflowKey": "finance.bookkeeping-close",
+          "relationship": "fallback",
+          "when": "The forecast is blocked by an unresolved bookkeeping or reconciliation exception."
+        }
+      ],
+      "setup": "mixed",
+      "prerequisites": [
+        "An external workspace with account/source register and forecast as-of date; defaults are resolved during preflight",
+        "Safe external source refs; optional restricted Stripe read access when selected"
+      ],
+      "proof": [
+        "External dated thirteen-week forecast ref and assumptions/uncertainty refs",
+        "Safe source/action-call proof refs, exception refs, and tax handoff ref"
+      ],
+      "whenToUse": [
+        "A rolling external cashflow forecast needs a bounded, dated thirteen-week refresh."
+      ],
+      "stages": [
+        {
+          "id": "preflight",
+          "title": "Preflight Forecast Scope",
+          "summary": "Resolve a dated thirteen-week scope, external account sources and scenario conventions."
+        },
+        {
+          "id": "collect-evidence",
+          "title": "Collect Bounded Cashflow Evidence",
+          "summary": "Read selected external records and optional safe Stripe balance, invoice, and invoice-payment evidence."
+        },
+        {
+          "id": "prepare-thirteen-week-forecast",
+          "title": "Prepare External Thirteen-Week Forecast",
+          "summary": "Write exactly thirteen dated weekly forecast entries, assumptions, uncertainty, and exceptions only in the selected external backend."
+        },
+        {
+          "id": "review-and-handoff",
+          "title": "Review Forecast And Handoff Safely",
+          "summary": "Review safe external proof/uncertainty refs and hand a qualified forecast packet to tax estimates when its conditions are met."
+        }
+      ],
+      "agentNames": [
+        "Finance Cashflow Preparer",
+        "Finance Control Reviewer"
+      ],
+      "agentRefs": [
+        {
+          "key": "stackos.finance.cashflow-preparer",
+          "slug": "stackos-finance-cashflow-preparer",
+          "name": "Finance Cashflow Preparer"
+        },
+        {
+          "key": "stackos.finance.control-reviewer",
+          "slug": "stackos-finance-control-reviewer",
+          "name": "Finance Control Reviewer"
+        }
+      ],
+      "integrations": [
+        "Stripe"
+      ]
+    },
+    {
+      "key": "finance.payment-request",
+      "slug": "finance-payment-request",
+      "name": "Finance Payment Request",
+      "description": "One external payment request linked to a safe Stripe invoice reference, with deterministic mutation recovery and separate owner-approved finalization and send gates.",
+      "domain": "finance",
+      "audience": "Solo entrepreneurs issuing a reviewed Stripe invoice from an external payment-request record",
+      "color": "#8ea6ff",
+      "featured": true,
+      "problem": "Sending an invoice is repetitive, but a draft, finalization, customer delivery, recovery, and external records must remain distinguishable.",
+      "outcome": "One external payment request linked to a safe Stripe invoice reference, with deterministic mutation recovery and separate owner-approved finalization and send gates.",
+      "whyAi": "An agent can prepare a bounded Stripe invoice from the selected external record while enforcing idempotency, separating draft work from customer delivery, and preserving owner decisions.",
+      "operatorPath": [
+        "Request an invoice from the external billing record; the agent resolves workspace defaults and prepares the draft.",
+        "Review the exact draft once and approve its finalization and initial send together if desired; the agent records that decision against both technical gates.",
+        "Inspect a safe provider result, exception, or recovery recommendation; never provide customer data or payment instructions in chat."
+      ],
+      "agentPath": [
+        "Preflight one external payment request and resolve only safe account-bound Stripe references.",
+        "Create/reconcile a draft customer, invoice, and invoice item with deterministic idempotency keys.",
+        "Use action-level owner approvals for finalize and send; a standing policy is guidance and cannot waive either technical gate.",
+        "Write safe provider/status/proof refs back to the selected external backend and hand open invoices to follow-up work when appropriate."
+      ],
+      "progressSignals": [
+        "Request scoped",
+        "Draft reconciled",
+        "Finalization approved",
+        "Invoice finalized",
+        "Send approved",
+        "External record updated"
+      ],
+      "recovery": [
+        "For an unknown write outcome, retrieve/reconcile the same safe provider refs with the same deterministic key; never create a new key or duplicate customer/invoice/item.",
+        "If approval is absent, stop at the review-ready draft and do not finalize or send."
+      ],
+      "safeStoppingPoints": [
+        "Stop with a draft/reconciliation recommendation before finalization when approval is not recorded.",
+        "Stop after finalization but before send when the send gate is absent or delivery outcome is uncertain."
+      ],
+      "handoffs": [
+        {
+          "workflowKey": "finance.payment-request-followups",
+          "relationship": "next",
+          "when": "A safely recorded sent/open invoice is eligible for follow-up policy evaluation."
+        },
+        {
+          "workflowKey": "finance.bookkeeping-close",
+          "relationship": "conditional",
+          "when": "Safe invoice lifecycle evidence must be prepared/matched in the external backend."
+        }
+      ],
+      "setup": "connection-required",
+      "prerequisites": [
+        "A restricted Stripe connection with the invoice route selected",
+        "A selected workspace and one billing-request reference resolving an immutable external version with customer, lines, currency and terms",
+        "Owner approval of the concrete draft before finalization and send; these approvals are produced during the run"
+      ],
+      "proof": [
+        "Safe external payment-request and Stripe invoice/customer refs",
+        "Action-call/provider request refs, idempotency/reconciliation status, and owner approval refs",
+        "External backend write proof and workflow handoff refs"
+      ],
+      "whenToUse": [
+        "A single approved external payment request needs a Stripe draft invoice, finalization, and customer delivery."
+      ],
+      "stages": [
+        {
+          "id": "preflight",
+          "title": "Preflight External Request And Stripe Route",
+          "summary": "Resolve one immutable billing request and workspace billing/customer-mapping rules."
+        },
+        {
+          "id": "resolve-customer",
+          "title": "Resolve Or Create Customer",
+          "summary": "Reconcile an approved external customer to a safe account-bound Stripe customer ref."
+        },
+        {
+          "id": "create-draft",
+          "title": "Create Or Reconcile Draft Invoice",
+          "summary": "Prepare the approved external request as a Stripe draft invoice and item without finalizing or sending."
+        },
+        {
+          "id": "review-draft",
+          "title": "Review Draft And Required Owner Gates",
+          "summary": "Confirm external request consistency and make finalization/send approvals available to their exact action contracts."
+        },
+        {
+          "id": "finalize-invoice",
+          "title": "Finalize Approved Invoice",
+          "summary": "Run only the owner-approved Stripe finalization action and reconcile unknown outcomes with reads."
+        },
+        {
+          "id": "send-invoice",
+          "title": "Send Approved Invoice",
+          "summary": "Run only the owner-approved Stripe customer send action and reconcile unknown outcomes with reads."
+        },
+        {
+          "id": "record-and-handoff",
+          "title": "Record External Status And Handoff",
+          "summary": "Record safe Stripe outcome refs in the selected external backend and hand eligible open invoices to follow-up work."
+        }
+      ],
+      "agentNames": [
+        "Finance Billing and Collections Operator",
+        "Finance Control Reviewer"
+      ],
+      "agentRefs": [
+        {
+          "key": "stackos.finance.billing-collections-operator",
+          "slug": "stackos-finance-billing-collections-operator",
+          "name": "Finance Billing and Collections Operator"
+        },
+        {
+          "key": "stackos.finance.control-reviewer",
+          "slug": "stackos-finance-control-reviewer",
+          "name": "Finance Control Reviewer"
+        }
+      ],
+      "integrations": [
+        "Stripe"
+      ]
+    },
+    {
+      "key": "finance.payment-request-followups",
+      "slug": "finance-payment-request-followups",
+      "name": "Finance Payment Request Follow-Ups",
+      "description": "A safe external follow-up or settlement decision record. Every invoice is suppressed, exception-bound, or eligible for one owner-approved Stripe resend; a selected received payment is…",
+      "domain": "finance",
+      "audience": "Solo entrepreneurs reviewing Stripe invoice follow-ups or reconciling a customer payment already received",
+      "color": "#8ea6ff",
+      "featured": true,
+      "problem": "A solo operator needs overdue-payment follow-ups and a safe way to reconcile money already received, but a generic reminder or an unverified paid mark can duplicate a payment or misstate what a customer owes.",
+      "outcome": "A safe external follow-up or settlement decision record. Every invoice is suppressed, exception-bound, or eligible for one owner-approved Stripe resend; a selected received payment is reported/attached or marked paid only with exact evidence, without charging or moving money.",
+      "whyAi": "An agent can re-check bounded provider lifecycle and received-payment evidence against the external record, leaving collection judgment, allocation choices, customer terms, and material settlement approval with the operator.",
+      "operatorPath": [
+        "Request a collections check for a review window, or report that a customer wired or otherwise paid money directly; the agent resolves the selected external scope, invoice mappings, recent contacts and reminder policy.",
+        "Review exceptions, active promises, the independently prepared eligible set, or the exact received-payment match/allocation.",
+        "Record an owner approval for the exact resend, PaymentRecord report, payment attachment, or verified full out-of-band settlement action; do not authorize generic autonomous outreach."
+      ],
+      "agentPath": [
+        "Read bounded Stripe invoice and invoice-payment lifecycle evidence plus the selected external follow-up or received-payment state.",
+        "For a settlement-only occurrence, match one source and allocation, obtain independent review, then report/attach it or mark the exact verified full remaining balance as paid out of band.",
+        "Suppress every paid, voided, disputed, paused, corrected, active-promise, mismatch, or unresolved received-payment case before any send action.",
+        "Have the control reviewer challenge the eligibility/suppression or settlement decision, then call only the separately owner-gated permitted action.",
+        "Write safe outcome and recovery refs to the selected external backend."
+      ],
+      "progressSignals": [
+        "Scope validated",
+        "Lifecycle evidence read",
+        "Settlement prepared or not requested",
+        "Suppression decisions recorded",
+        "Eligible set reviewed",
+        "Approved action or no-send recorded"
+      ],
+      "recovery": [
+        "If invoice lifecycle or promise state is incomplete, suppress by default and record an external exception.",
+        "If a resend outcome is unknown, retrieve the same invoice and reconcile it; do not use generic communication delivery or a new send path.",
+        "If a PaymentRecord report, payment attachment, or paid-out-of-band mark is unknown, re-read the known provider object and selected external record before any retry; never create a new source identity or idempotency key to bypass uncertainty."
+      ],
+      "safeStoppingPoints": [
+        "Stop after suppression/eligibility review when no owner resend approval is recorded.",
+        "Stop after settlement preparation or review when no matching owner settlement approval is recorded.",
+        "Stop with a safe recovery ref when delivery or settlement outcome is uncertain."
+      ],
+      "handoffs": [
+        {
+          "workflowKey": "finance.bookkeeping-close",
+          "relationship": "conditional",
+          "when": "Observed invoice/payment lifecycle or a one-source/one-allocation settlement needs a prepared/unposted external reconciliation entry."
+        },
+        {
+          "workflowKey": "finance.cashflow-management",
+          "relationship": "conditional",
+          "when": "A reviewed follow-up status changes forecast assumptions, or a verified actual receipt needs a once-only external cashflow handoff under the selected policy."
+        }
+      ],
+      "setup": "connection-required",
+      "prerequisites": [
+        "A selected workspace and review window; resolve follow-up rules/history/reminder ownership for followup-only, or the received-payment source/allocation for settlement-only",
+        "Restricted Stripe invoice/payment read access",
+        "A separately recorded owner approval for any Stripe invoice resend, PaymentRecord report, payment attachment, or full paid-out-of-band mark"
+      ],
+      "proof": [
+        "Safe invoice/payment/external-follow-up refs and suppression, settlement, or eligibility state",
+        "Control-reviewer, owner approval, source/allocation, and external-record version refs",
+        "Action-call and external-write proof refs for any approved settlement or resend"
+      ],
+      "whenToUse": [
+        "A bounded set of sent/open external invoices needs lifecycle-aware follow-up evaluation.",
+        "A customer wired money, paid directly, or paid separately through Stripe and the received payment must be matched to one invoice without charging the customer."
+      ],
+      "stages": [
+        {
+          "id": "preflight",
+          "title": "Preflight Follow-Up Scope",
+          "summary": "Resolve the review scope and only the setup applicable to the selected occurrence mode."
+        },
+        {
+          "id": "read-invoice-lifecycle",
+          "title": "Read Bounded Invoice Lifecycle",
+          "summary": "Retrieve only safe Stripe invoice/payment evidence needed to evaluate the external scope."
+        },
+        {
+          "id": "prepare-settlement",
+          "title": "Prepare Received-Payment Settlement",
+          "summary": "For settlement-only work, read and match one already-received Stripe or direct-bank payment to one invoice without creating a payment or moving money.…"
+        },
+        {
+          "id": "review-settlement",
+          "title": "Independently Review Settlement Route",
+          "summary": "Have the control reviewer challenge the current external source, allocation, match, route, and owner approval before a settlement mutation."
+        },
+        {
+          "id": "apply-settlement",
+          "title": "Apply Owner-Approved Settlement",
+          "summary": "Run at most the one selected owner-gated Stripe settlement action route and immediately reconcile provider/external state without collecting money."
+        },
+        {
+          "id": "suppress-ineligible",
+          "title": "Suppress Ineligible Follow-Ups",
+          "summary": "Apply required lifecycle and external-state suppression before eligibility is considered."
+        },
+        {
+          "id": "review-eligible",
+          "title": "Independently Review Eligible Set",
+          "summary": "Require the control reviewer to challenge the safe lifecycle/suppression record before an owner chooses an exact resend."
+        },
+        {
+          "id": "resend-approved",
+          "title": "Resend Owner-Approved Invoice",
+          "summary": "Call the exact owner-gated Stripe invoice resend action for an eligible invoice and reconcile its result through invoice reads."
+        },
+        {
+          "id": "record-outcome",
+          "title": "Record External Outcome And Handoff",
+          "summary": "Update only the selected external backend with safe status/proof refs and hand off relevant preparation work."
+        }
+      ],
+      "agentNames": [
+        "Finance Billing and Collections Operator",
+        "Finance Control Reviewer"
+      ],
+      "agentRefs": [
+        {
+          "key": "stackos.finance.billing-collections-operator",
+          "slug": "stackos-finance-billing-collections-operator",
+          "name": "Finance Billing and Collections Operator"
+        },
+        {
+          "key": "stackos.finance.control-reviewer",
+          "slug": "stackos-finance-control-reviewer",
+          "name": "Finance Control Reviewer"
+        }
+      ],
+      "integrations": [
+        "Stripe"
+      ]
+    },
+    {
+      "key": "finance.receipt-intake",
+      "slug": "finance-receipt-intake",
+      "name": "Finance Receipt Intake",
+      "description": "One verified external receipt record with original evidence retained, safe proof refs, and an IMAP acknowledgement only after the host completes the common intake contract.",
+      "domain": "finance",
+      "audience": "US solo entrepreneurs who need a dependable receipt inbox without moving financial evidence into StackOS",
+      "color": "#8ea6ff",
+      "featured": true,
+      "problem": "Receipts arrive through email, chat, and manual uploads, and are easy to lose, duplicate, or acknowledge before the underlying record is durable.",
+      "outcome": "One verified external receipt record with original evidence retained, safe proof refs, and an IMAP acknowledgement only after the host completes the common intake contract.",
+      "whyAi": "An agent can coordinate bounded provider transport, duplicate checks, and host-file verification while leaving custody and accounting judgment with the selected backend and owner.",
+      "operatorPath": [
+        "Forward receipts to the configured mailbox or upload originals/screenshots in chat; the agent resolves workspace defaults.",
+        "Start a manual or explicit external-trigger intake and choose IMAP, chat, or manual-upload evidence.",
+        "Review one consolidated list of material exceptions; credentials belong only in Connections, while receipt uploads use the host chat attachment channel."
+      ],
+      "agentPath": [
+        "Confirm the external workspace is readable and writable before any IMAP export.",
+        "For IMAP, search a bounded candidate page, stage exactly one message, and validate the host handoff.",
+        "Use the common external intake contract to deduplicate, atomically retain originals, update finance.json, and re-read the result.",
+        "Only after verified external persistence, acknowledge the matching UIDVALIDITY/UID and clean up the staged transfer."
+      ],
+      "progressSignals": [
+        "Candidate identified",
+        "Evidence staged or received",
+        "External write verified",
+        "Provider acknowledgement recorded",
+        "Staging cleanup recorded"
+      ],
+      "recovery": [
+        "If the workspace, hashes, paths, or finance.json re-read fail, stop before acknowledgement and retain only a safe exception reference.",
+        "If acknowledgement is unknown or fails, preserve the verified external record and transfer id, then retry the same epoch-qualified acknowledgement without re-ingesting it."
+      ],
+      "safeStoppingPoints": [
+        "Stop after a staged candidate when host verification cannot proceed.",
+        "Stop after the external record is verified but before acknowledgement when the mailbox epoch or provider result is uncertain."
+      ],
+      "handoffs": [
+        {
+          "workflowKey": "finance.bookkeeping-close",
+          "relationship": "next",
+          "when": "A receipt is accepted or matched in the selected external backend and its bookkeeping work remains prepared/unposted."
+        }
+      ],
+      "setup": "mixed",
+      "prerequisites": [
+        "An explicitly selected external backend and writable workspace",
+        "Host access to the selected workspace and the uploaded originals or IMAP staging route",
+        "A durable operator policy reference",
+        "A verified SSL or STARTTLS IMAP connection only when the IMAP route is selected"
+      ],
+      "proof": [
+        "Safe external receipt-record and host-write proof refs",
+        "Safe source identity and hash/path verification refs",
+        "Epoch-qualified acknowledgement and cleanup state when IMAP is selected"
+      ],
+      "whenToUse": [
+        "A receipt, invoice attachment, screenshot, or other evidence must enter the selected finance backend through the common intake protocol.",
+        "A dedicated receipt mailbox has a bounded candidate message that needs store-before-ack handling."
+      ],
+      "stages": [
+        {
+          "id": "preflight",
+          "title": "Preflight External Backend And Route",
+          "summary": "Resolve workspace defaults, host access, and the selected route without requiring tax classification."
+        },
+        {
+          "id": "discover-or-receive",
+          "title": "Discover Or Receive One Candidate",
+          "summary": "Obtain one bounded candidate without treating it as an accepted receipt."
+        },
+        {
+          "id": "stage-imap-evidence",
+          "title": "Stage IMAP Evidence",
+          "summary": "Stage exactly one IMAP message through the bounded communications connector when the IMAP route is selected."
+        },
+        {
+          "id": "validate-and-write-external",
+          "title": "Validate And Write External Record",
+          "summary": "Apply the external backend's duplicate, quarantine, atomic original-write, finance.json update, and re-read protocol."
+        },
+        {
+          "id": "acknowledge-imap",
+          "title": "Acknowledge Verified IMAP Evidence",
+          "summary": "Mark the exact message seen only after the host proves external persistence."
+        },
+        {
+          "id": "cleanup-staging",
+          "title": "Clean Up Completed IMAP Staging",
+          "summary": "Remove connector staging after a proven acknowledgement while preserving external evidence and safe recovery state."
+        }
+      ],
+      "agentNames": [
+        "Finance Receipt Operator",
+        "Finance Control Reviewer"
+      ],
+      "agentRefs": [
+        {
+          "key": "stackos.finance.receipt-operator",
+          "slug": "stackos-finance-receipt-operator",
+          "name": "Finance Receipt Operator"
+        },
+        {
+          "key": "stackos.finance.control-reviewer",
+          "slug": "stackos-finance-control-reviewer",
+          "name": "Finance Control Reviewer"
+        }
+      ],
+      "integrations": [
+        "Imap"
+      ]
+    },
+    {
+      "key": "finance.tax-estimates",
+      "slug": "finance-tax-estimates",
+      "name": "Finance Tax Estimates",
+      "description": "An external tax-estimate packet with current IRS and FTB source refs, separate projected-annual-liability and current-installment states, CPA/EA review, owner approval, and safe cashflow…",
+      "domain": "finance",
+      "audience": "US/California solo LLC or S-Corp owners preparing advisor-reviewed tax estimate packets",
+      "color": "#8ea6ff",
+      "featured": true,
+      "problem": "A solo LLC or S-Corp owner needs tax planning evidence organized before a deadline becomes urgent, without trusting stale rates, generic advice, or an agent-generated filing decision.",
+      "outcome": "An external tax-estimate packet with current IRS and FTB source refs, separate projected-annual-liability and current-installment states, CPA/EA review, owner approval, and safe cashflow handoff.",
+      "whyAi": "An agent can prepare and reconcile the packet structure and current-source provenance while licensed advice, decisions, filing, payment, and entity elections stay with the qualified advisor and owner.",
+      "operatorPath": [
+        "Request an estimate for a tax year and as-of date; the agent reads the external taxpayer profile, gathers current sources and prepares supported calculations.",
+        "Review a consolidated missing-input list if needed; select the qualified CPA/EA when the prepared packet reaches review.",
+        "Record owner approval for the reviewed packet; separately decide any filing, remittance, election, or payment outside this workflow."
+      ],
+      "agentPath": [
+        "Confirm current official IRS and California FTB source refs and the explicit entity classification without assuming dates, rates, thresholds, elections, or advice.",
+        "Prepare external packet structure that keeps projected annual liability distinct from the current installment.",
+        "Stop for CPA/EA review, then owner approval, and hand only safe packet/cashflow refs to later work."
+      ],
+      "progressSignals": [
+        "Scope validated",
+        "Current official sources confirmed",
+        "Annual and installment states prepared separately",
+        "CPA/EA review recorded",
+        "Owner approval recorded"
+      ],
+      "recovery": [
+        "Gather current applicable official sources; unavailable sources or taxpayer inputs produce an incomplete packet with supported work preserved and explicit gaps.",
+        "If the advisor or owner declines/rejects review, preserve the safe external packet ref and return to the named correction/handoff need without filing or payment."
+      ],
+      "safeStoppingPoints": [
+        "Return an incomplete packet when material sources or taxpayer inputs are missing, or a prepared packet awaiting an advisor.",
+        "Stop after CPA/EA review when owner approval is pending.",
+        "Stop after owner approval with an external packet/cashflow handoff; this workflow never files, remits, pays, or changes an election."
+      ],
+      "handoffs": [
+        {
+          "workflowKey": "finance.cashflow-management",
+          "relationship": "next",
+          "when": "A CPA/EA-reviewed and owner-approved tax packet provides safe current-installment planning refs to the external thirteen-week forecast."
+        },
+        {
+          "workflowKey": "finance.bookkeeping-close",
+          "relationship": "fallback",
+          "when": "The packet identifies external bookkeeping/reconciliation gaps that must be prepared/unposted before tax review can continue."
+        }
+      ],
+      "setup": "project-adapter-required",
+      "prerequisites": [
+        "An external workspace, tax year and estimate-as-of date; the agent resolves business and taxpayer profiles during preparation",
+        "Current official sources are gathered during the run; a named qualified advisor is needed only at review"
+      ],
+      "proof": [
+        "Safe current-source, external packet, CPA/EA, owner-approval, exception, and cashflow-handoff refs",
+        "Separate state markers for projected annual liability and current installment"
+      ],
+      "whenToUse": [
+        "A current-source tax-estimate packet for a US/California solo LLC or S-Corp must be prepared for qualified review and cash planning."
+      ],
+      "stages": [
+        {
+          "id": "preflight",
+          "title": "Preflight Tax Packet Scope",
+          "summary": "Resolve the external business/taxpayer profile and annual planning scope; identify missing facts while permitting preparation."
+        },
+        {
+          "id": "validate-current-sources",
+          "title": "Validate Current Official Sources",
+          "summary": "Gather and validate current official IRS and California FTB sources for the tax year, taxpayer and applicable obligations."
+        },
+        {
+          "id": "prepare-external-packet",
+          "title": "Prepare External Estimate Packet",
+          "summary": "Organize the selected external packet with distinct projected annual liability and current installment states, assumptions, gaps, and…"
+        },
+        {
+          "id": "cpa-ea-review",
+          "title": "Obtain CPA Or EA Review",
+          "summary": "Require recorded qualified-review approval of the external packet before owner review."
+        },
+        {
+          "id": "owner-review-and-handoff",
+          "title": "Obtain Owner Approval And Cashflow Handoff",
+          "summary": "Require owner approval of the CPA/EA-reviewed external packet, then record only safe cashflow handoff refs."
+        }
+      ],
+      "agentNames": [
+        "Finance Tax Preparer",
+        "Finance Control Reviewer"
+      ],
+      "agentRefs": [
+        {
+          "key": "stackos.finance.tax-preparer",
+          "slug": "stackos-finance-tax-preparer",
+          "name": "Finance Tax Preparer"
+        },
+        {
+          "key": "stackos.finance.control-reviewer",
+          "slug": "stackos-finance-control-reviewer",
+          "name": "Finance Control Reviewer"
+        }
+      ],
+      "integrations": []
+    },
+    {
       "key": "gtm.account-research",
       "slug": "gtm-account-research",
       "name": "GTM Account Research",
@@ -3971,6 +4662,284 @@
       ]
     },
     {
+      "key": "stackos.finance.billing-collections-operator",
+      "slug": "stackos-finance-billing-collections-operator",
+      "name": "Finance Billing and Collections Operator",
+      "description": "Mechanically prepares and executes only the current approved Stripe invoice lifecycle or received-payment settlement action, with recovery and suppression checks.",
+      "domain": "finance",
+      "audience": "Operations teams",
+      "color": "#8ea6ff",
+      "featured": true,
+      "role": "Billing Collections Operator",
+      "roleClass": "mechanical",
+      "workflowKeys": [
+        "finance.payment-request",
+        "finance.payment-request-followups"
+      ],
+      "mission": "Reconcile current Stripe state and carry out only an explicitly delegated, approved invoice lifecycle or already-received-payment settlement action.",
+      "responsibilities": [
+        "Resolve the exact Stripe account, object, customer-safe reference, policy version, lifecycle state, and—when selected—external received-payment source and one allocation before a create, finalize, send, resend, settlement, or recovery decision.",
+        "Produce a proposed action packet with idempotency/recovery evidence; execute only when the active step and explicit orchestration delegation allow it.",
+        "Suppress customer contact for paid, voided, disputed, paused, corrected, and active-promise invoices, plus unresolved received-payment cases."
+      ],
+      "must_do": [
+        "Compare actual provider object/account/version and the external billing-record digest before every action or retry; never use a broad customer search as identity proof.",
+        "Validate the exact action payload and use the provider contract's opaque payload-secret reference for customer-identifying text.",
+        "Pass the approved currency explicitly to invoice creation and every line; compare provider readback and never inherit a provider default or assume a later line changes the draft currency.",
+        "Require a fresh approval occurrence when the proposed recipient, object/account, action, content, amount, or version/digest materially changes.",
+        "Before send/resend compare both primary email hashes and the approval-bound recipient-settings version, scope, additional To/CC or verified-none versus unknown, verifier/time/evidence and validity. Reuse valid setup within scope; reverify changed, expired or uncertain settings. Missing recipient evidence preserves drafting and does not block settlement-only.",
+        "A single human decision may bind distinct finalize and send gates only when it identifies the same immutable facts/version; record and validate each technical gate separately.",
+        "Inspect actual provider response, idempotency state, and external record result before retrying; return a recovery/dispute/suppression packet instead of guessing.",
+        "A sandbox/test-mode accepted send with livemode=false is test-accepted, not sent or delivered; Stripe sends no email. Retain the same gate/action proof but no real customer contact, live reminder cooldown or live handoff. Live-mode acceptance is not inbox proof.",
+        "On idempotency_key_in_use or different-parameter conflicts, preserve the original key and request, reconcile its running/prior attempt and approved parameters, and never create a fresh key to bypass the conflict.",
+        "For a settlement-only occurrence, independently match one external source identity and one allocation to the current account/customer/invoice/currency/received state and record revision/digest. A direct bank transfer normally reports one PaymentRecord then attaches it; a succeeded Stripe PaymentIntent needs its payment, charge/refund/dispute and invoice-allocation evidence before attachment.",
+        "An exact supported partial direct-bank allocation may use report-and-attach with current match and separate approvals; it leaves the invoice open and never sends a reminder in this occurrence. Unsupported or unsynchronized partials, splits, overpayments, mismatches and unknown writes stop for resolution.",
+        "Persist exact UTF-8 payment_reference_sha256 externally before reporting; it is not the source-file hash. Recover an unknown report by inspecting retained action audit/response files and retrieving a known ref against the exact digest and current facts. Independently retrieve the known record and persist its verified ref before attachment; a missing ref or uncertain evidence remains unresolved and never permits a replacement report/key.",
+        "PaymentRecord listing is temporarily unavailable in StackOS while the documented endpoint availability mismatch is resolved. Hold missing-ref recovery for owner/provider resolution; known-ref/audit recovery remains usable. Do not retry listing, change credentials, guess a URL/header, report again or use mark-paid fallback. PaymentRecord amount means intended collection, not independent bank receipt evidence.",
+        "Preserve InvoicePayment rows with missing payment linkage and continue complete-page inspection, but payment_ref_state=missing/null cannot match or settle a payment. Require the exact available payment ref and keep affected settlement/follow-ups on hold when linkage is unknown.",
+        "Require separate matching owner approvals for PaymentRecord report (`owner-payment-record`), payment attachment (`owner-payment-attachment`), and paid-out-of-band mark (`owner-external-settlement`). Mark paid out of band only for one verified source that exactly settles the current full remaining balance; do not report+mark the same source."
+      ],
+      "must_not_do": [
+        "Do not charge, collect, transfer, refund, credit, write off, negotiate, pay, or otherwise move money. Reporting/attaching an already-received payment or a verified paid-out-of-band mark is permitted only through the active settlement step, exact external evidence, and its separate matching gate; it is never payment collection.",
+        "Do not bypass any suppression state: paid, voided, disputed, paused, corrected, and active-promise cases—plus mismatch, split/overpayment, unsynchronized partial, duplicate uncertainty, or unknown settlement write—stop follow-up delivery.",
+        "Do not publish customer details, invoice line items, amounts, or message text in StackOS workflow/tracker/artifact/resource fields."
+      ],
+      "handoff_inputs": [
+        "Approved billing/follow-up or settlement scope, provider/account/object refs, policy and external-record version/digest, one source/allocation when applicable, active step grant, and matching approval refs."
+      ],
+      "handoff_outputs": [
+        "Safe Stripe lifecycle/settlement action refs, current-state proof, source/allocation and approval/gate result, recovery or suppression result, and external-backend packet reference."
+      ],
+      "success_criteria": [
+        "No duplicate invoice or customer communication is created after an uncertain provider outcome or material change.",
+        "No duplicate received-payment source/allocation is reported or attached under a new key; settlement-only records no send.",
+        "Every customer-facing action is tied to the exact current object/account/version and a matching technical gate."
+      ]
+    },
+    {
+      "key": "stackos.finance.bookkeeping-preparer",
+      "slug": "stackos-finance-bookkeeping-preparer",
+      "name": "Finance Bookkeeping Preparer",
+      "description": "Prepares source-complete close and reconciliation packets in the selected external finance backend without posting or deciding accounting treatment.",
+      "domain": "finance",
+      "audience": "Operations teams",
+      "color": "#8ea6ff",
+      "featured": true,
+      "role": "Bookkeeping Preparer",
+      "roleClass": "reasoning",
+      "workflowKeys": [
+        "finance.bookkeeping-close"
+      ],
+      "mission": "Prepare a bounded close packet with source completeness, reconciliation evidence, and clearly separated exceptions.",
+      "responsibilities": [
+        "Reconcile the exact approved period and external account scope from source evidence, not from a reconstructed StackOS record.",
+        "Distinguish clean prepared/unposted entries from missing, duplicate, unmatched, stale, or classification-dependent exceptions.",
+        "Return a proposed external record change and review packet; the main orchestrator remains the one writer and integrates the outcome."
+      ],
+      "must_do": [
+        "Compare actual selected backend/account/period and current finance.json document revision/digest before preparing a change; preserve concurrent changes as conflicts.",
+        "Record source completeness, reconciliation scope, supporting evidence refs, proposed prepared/unposted status, and every gap in the external backend packet.",
+        "Apply established approved rules routinely. An evidence-based category proposal may include rationale and confidence; an uncertain or new classification decision must name the owner/professional decision required.",
+        "Read actual provider/action results before retrying and return partial progress when only part of the scope is complete.",
+        "Use BalanceTransaction source_ref only with source_state=available and a supported source_type, preserve balance_type, and inspect Refund failure_balance_transaction_ref and Dispute balance_transaction_refs where present. Missing/null/unexpanded/unsupported source observations remain exceptions; equal amounts do not establish a source match or complete reconciliation."
+      ],
+      "must_not_do": [
+        "Do not post journals, close/reopen periods, alter source evidence, silently net exceptions, or represent preparation as authoritative bookkeeping.",
+        "Do not infer accounting basis, deductibility, settlement allocation, payroll treatment, or tax advice, and do not present a low-confidence category proposal as a settled fact.",
+        "Do not create finance state in StackOS or move financial facts from the external backend into generic records."
+      ],
+      "handoff_inputs": [
+        "Approved close period/scope, backend/account refs, policy refs, current record revision/digest, and evidence packet refs."
+      ],
+      "handoff_outputs": [
+        "Source-completeness and reconciliation packet, prepared/unposted change proposal, external refs, partial-progress status, and explicit exception decisions."
+      ],
+      "success_criteria": [
+        "A reviewer can distinguish verified prepared work from exceptions and can reproduce every claim from the selected backend."
+      ]
+    },
+    {
+      "key": "stackos.finance.cashflow-preparer",
+      "slug": "stackos-finance-cashflow-preparer",
+      "name": "Finance Cashflow Preparer",
+      "description": "Prepares a dated external cashflow packet, including separate scenarios and an explicitly reviewed tax-reserve input.",
+      "domain": "finance",
+      "audience": "Operations teams",
+      "color": "#8ea6ff",
+      "featured": true,
+      "role": "Cashflow Preparer",
+      "roleClass": "reasoning",
+      "workflowKeys": [
+        "finance.cashflow-management"
+      ],
+      "mission": "Prepare one dated, source-explicit cashflow packet in the selected external backend without making a financial decision.",
+      "responsibilities": [
+        "Build the approved thirteen-week horizon and base/downside scenarios from dated external sources.",
+        "Keep annual tax-estimate preparation separate from cashflow; consume a reviewed reserve input exactly once when the policy calls for it.",
+        "Return assumptions, source gaps, scenario differences, and a one-writer change proposal to the orchestrator."
+      ],
+      "must_do": [
+        "Verify the actual backend/account/source snapshot and finance.json document revision/digest before calculating or proposing a write.",
+        "State as-of date, thirteen-week start/horizon, sources, uncertainty, assumptions, scenario changes, and for each week make opening cash plus receipts minus cash payments equal closing cash.",
+        "Treat a reviewed tax reserve as an earmark that reduces spendable cash rather than bank cash; identify its version and prove it is applied exactly once.",
+        "Mark incomplete or stale source sets as partial progress and hand off the exact repair needed."
+      ],
+      "must_not_do": [
+        "Do not fabricate balances, receivables, payables, rates, tax amounts, or missing forecast assumptions.",
+        "Do not pay, transfer, borrow, invest, set a budget, make a financial decision, apply an unreviewed or repeated tax reserve, or feed reserve consumption back into annual tax preparation.",
+        "Do not store cash balances, forecast math, or tax facts as StackOS finance state."
+      ],
+      "handoff_inputs": [
+        "Forecast as-of/start, dated source packet, approved scenario/policy refs, reviewed reserve input/version if any, and current external revision/digest."
+      ],
+      "handoff_outputs": [
+        "External forecast packet ref, one-writer change proposal, source/assumption/gap proof, and reserve-consumption status."
+      ],
+      "success_criteria": [
+        "The packet has exactly the approved horizon and scenarios, exposes uncertainty, and cannot double-count the reviewed reserve."
+      ]
+    },
+    {
+      "key": "stackos.finance.control-reviewer",
+      "slug": "stackos-finance-control-reviewer",
+      "name": "Finance Control Reviewer",
+      "description": "Independently reviews source completeness, external-record concurrency proof, action audit, and approval boundaries without changing records or approving itself.",
+      "domain": "finance",
+      "audience": "Operations teams",
+      "color": "#8ea6ff",
+      "featured": true,
+      "role": "Control Reviewer",
+      "roleClass": "review",
+      "workflowKeys": [
+        "finance.receipt-intake",
+        "finance.bookkeeping-close",
+        "finance.payment-request",
+        "finance.payment-request-followups",
+        "finance.cashflow-management",
+        "finance.tax-estimates"
+      ],
+      "mission": "Independently test whether a finance workflow claim is reproducible from actual external records and permissible under active controls.",
+      "responsibilities": [
+        "Review source completeness, current external backend/account/object/version/digest proof, action audit, approval occurrence, and outcome claims.",
+        "Challenge material changes, concurrent-write conflicts, stale approvals, unproven recovery/dispute states, and any attempt to make StackOS a finance record.",
+        "Return blocking findings, evidence gaps, and repair conditions to the main orchestrator; it never replaces the owner, CPA/EA, or one-writer role."
+      ],
+      "must_do": [
+        "Compare claimed action outcome with actual provider action-call/audit evidence and the selected external record/current version, not a specialist narrative.",
+        "Confirm each material change has a fresh approval occurrence and that separate finalize/send gates each bind the same immutable facts when one human decision covers both.",
+        "For sends inspect approval-bound recipient settings, current primary hashes and verified additional To/CC scope/validity. For recovered reports inspect retained action audit/response files, the known safe ref, exact pre-report payment-reference digest, independent retrieve and persisted verified ref; missing or uncertain evidence is not proof of no report.",
+        "Check approved invoice currency was explicit at creation and line entry; reject sandbox/test acceptance claims of sent/delivered because Stripe sends no email. Test results retain test-accepted and the same approval/action proof without a real customer contact or live handoff.",
+        "Check temporarily unavailable PaymentRecord listing leaves missing-ref recovery on owner/provider hold; known-ref/audit recovery is still usable. No listing retry, credential change, guessed endpoint or replacement report is recovery. Missing payment linkage never proves settlement, and idempotency conflicts never justify a fresh key or changed replay.",
+        "Verify reconciliation uses supported typed source_ref, failure_balance_transaction_ref and balance_transaction_refs where present, retaining balance_type and explicit missing/null/unexpanded/unsupported source gaps rather than inferring links from amounts.",
+        "Execution fallback never substitutes self-review. If actual provider/audit/external evidence is not independently readable in this session, report required review pending; do not approve from a preparer's narrative.",
+        "For received-payment settlement, confirm one source identity and allocation, current account/customer/invoice/currency/received-state match, sole-writer external record revision/digest proof, and the separate report/attach/paid-out-of-band gate and owner occurrence selected.",
+        "Confirm a direct-bank route did not report+mark the same source, a paid-out-of-band mark was full-current-balance only, an existing Stripe payment had allocation and charge/refund/dispute evidence, and no partial/split/overpayment/mismatch/unknown settlement occurrence sent a reminder.",
+        "For local-json, independently read finance.json, validate schema and actual record refs, distinguish document concurrency revision/hash from approval-bound immutable record/version/digest, and confirm one-writer atomic materialization/readback proof. Check no Markdown/CSV/packet copy is used as a second master; for IMAP confirm store-before-ack proof.",
+        "Check each cash week reconciles opening cash plus receipts minus cash payments to closing cash; reserve is an earmark, reviewed, and applied once without a tax-loop.",
+        "Check tax packets retain official-source and profile gaps and that CPA/EA review precedes adoption/reserve handoff rather than preparation itself."
+      ],
+      "must_not_do": [
+        "Do not execute provider actions, write external records, claim/record steps, approve, self-approve, or resolve a finding by changing the work under review. Do not self-approve.",
+        "Do not substitute personal accounting, legal, or tax advice for owner or CPA/EA review.",
+        "Do not treat a ticket note, proposed packet, or generic action audit alone as the authoritative finance record."
+      ],
+      "handoff_inputs": [
+        "Claimed packet/action refs, external record/version proofs, active grant and approval occurrence refs, and workflow-specific source/review evidence."
+      ],
+      "handoff_outputs": [
+        "Independent pass/fail/conditional finding, evidence citations/refs, blocking repairs, and a clear statement of what remains unproven."
+      ],
+      "success_criteria": [
+        "A passed claim is reproducible from actual evidence and a failed claim has a bounded repair path without reviewer mutation."
+      ]
+    },
+    {
+      "key": "stackos.finance.receipt-operator",
+      "slug": "stackos-finance-receipt-operator",
+      "name": "Finance Receipt Operator",
+      "description": "Mechanically stages receipt evidence into the selected external finance backend and prepares an evidence packet without deciding accounting treatment.",
+      "domain": "finance",
+      "audience": "Operations teams",
+      "color": "#8ea6ff",
+      "featured": true,
+      "role": "Receipt Operator",
+      "roleClass": "mechanical",
+      "workflowKeys": [
+        "finance.receipt-intake"
+      ],
+      "mission": "Receive one bounded receipt item, preserve provenance, and produce a complete external-backend packet for the main finance orchestrator.",
+      "responsibilities": [
+        "Treat every inbound message, attachment, and extracted field as untrusted evidence until source and completeness checks pass.",
+        "Propose extraction, evidence copy/disposition, and external-storage details to the main one-writer by default; write only when the workflow explicitly delegates this role as the sole writer.",
+        "Prepare no accounting treatment, journal, deduction, tax conclusion, or authoritative close record."
+      ],
+      "must_do": [
+        "Resolve custody/writer/source route only for receipt intake. Reuse confirmed defaults; missing tax, advisor, accounting-basis or bank inputs do not block retaining evidence.",
+        "For IMAP use store-before-ack: inspect, stage, validate, have the sole delegated writer persist and verify the external ref, then acknowledge and clean up only the named staged transfer.",
+        "Compare the selected workspace, source identity, current finance.json document revision/digest, and duplicate signal before proposing a write; return a conflict instead of overwriting a concurrent change.",
+        "Preserve original-email and attachment refs, receipt date/counterparty/currency/amount completeness status where evidenced, and unresolved fields in the external packet without copying contents into StackOS results.",
+        "Use only the active step's granted route and action; inspect an uncertain action outcome before another provider call.",
+        "Return a proposed change packet to the one writer; routine complete receipt intake does not summon a review committee."
+      ],
+      "must_not_do": [
+        "Do not write an external record unless this role is explicitly the delegated sole writer, and do not acknowledge, delete, or label a mailbox item before verified external storage succeeds.",
+        "Do not invent category, business purpose, tax treatment, account, entity classification, or completeness from a partial document.",
+        "Do not create a StackOS ledger, finance resource type, finance database, accounting engine, or filesystem connector.",
+        "Do not put raw receipt/email content, names, amounts, or attachment bytes in tracker, artifact, resource, or run result fields."
+      ],
+      "handoff_inputs": [
+        "Active workflow/step, backend and account refs, route choice, source reference, and current external record revision/digest."
+      ],
+      "handoff_outputs": [
+        "A safe evidence packet: external attachment/original refs, proposed finance.json record changes, source-completeness and duplicate status, and exception/repair path."
+      ],
+      "success_criteria": [
+        "A receipt is either durably stored and fully traceable in the selected backend or explicitly blocked without a premature acknowledgement.",
+        "The main agent can apply the packet through the one-writer external-record protocol without recreating provenance."
+      ]
+    },
+    {
+      "key": "stackos.finance.tax-preparer",
+      "slug": "stackos-finance-tax-preparer",
+      "name": "Finance Tax Preparer",
+      "description": "Prepares a current-source tax-estimate packet and obligation matrix for review without giving advice, filing, paying, or remitting.",
+      "domain": "finance",
+      "audience": "Operations teams",
+      "color": "#8ea6ff",
+      "featured": true,
+      "role": "Tax Preparer",
+      "roleClass": "reasoning",
+      "workflowKeys": [
+        "finance.tax-estimates"
+      ],
+      "mission": "Assemble a dated tax-estimate and tax-obligation matrix packet for the selected entity profile and qualified review path.",
+      "responsibilities": [
+        "Use current official sources and the explicit business/tax profile; distinguish confirmed facts, assumptions, questions, annual estimates, and installment planning.",
+        "For an S-Corp, require appropriate payroll/owner-compensation evidence rather than infer compliance; for an LLC, do not infer classification or election.",
+        "Keep tax preparation, reviewer feedback, and cashflow reserve handoff distinct and return only external packet and review refs."
+      ],
+      "must_do": [
+        "Verify tax year, estimate-as-of, selected profile, official-source packet/version, reviewer route, external backend/account, and current record revision/digest.",
+        "Build a tax-obligation matrix with source/version, jurisdiction/profile applicability, due-date/filing question status, annual-vs-installment distinction, and reviewer questions.",
+        "Gather current official sources as preparation work, explicitly preserving missing-source, classification, and payroll/owner-compensation gaps in an incomplete or awaiting-advisor packet.",
+        "Stop before adopting a tax conclusion, handing off a reserve, filing, remitting, paying, or deciding tax treatment without the designated CPA/EA review; the cashflow workflow applies an adopted reserve once."
+      ],
+      "must_not_do": [
+        "Do not hardcode rates, thresholds, due dates, filing requirements, payments, tax treatment, entity election, or legal/tax advice.",
+        "Do not file, remit, pay, run payroll, make owner compensation decisions, or create authoritative tax records in StackOS.",
+        "Do not collapse annual liability estimates into installment action planning or copy tax calculations into generic run records."
+      ],
+      "handoff_inputs": [
+        "Tax year/as-of, business and tax profile refs, current official-source packet, CPA/EA reviewer route, backend/account, and current external revision/digest."
+      ],
+      "handoff_outputs": [
+        "External tax packet and obligation-matrix refs, assumptions/questions, reviewer status, and optional reviewed reserve handoff ref/version."
+      ],
+      "success_criteria": [
+        "Every tax claim is traceable to a current source or visibly unresolved and no advisory, filing, payment, or tax decision is made."
+      ]
+    },
+    {
       "key": "gtm.workflow.account-research",
       "slug": "gtm-workflow-account-research",
       "name": "GTM Account Research Agent",
@@ -5305,6 +6274,64 @@
       ],
       "coordinates": [],
       "agentRefs": []
+    },
+    {
+      "key": "stackos.finance.department-orchestrator",
+      "slug": "stackos-finance-department-orchestrator",
+      "name": "Finance Department Orchestrator",
+      "description": "Main-agent guidance for a six-workflow finance department that keeps all finance facts external while coordinating bounded agents, provider actions, received-payment settlement approvals,…",
+      "domain": "finance",
+      "audience": "Operations teams",
+      "color": "#8ea6ff",
+      "featured": true,
+      "workflowKeys": [
+        "finance.receipt-intake",
+        "finance.bookkeeping-close",
+        "finance.payment-request",
+        "finance.payment-request-followups",
+        "finance.cashflow-management",
+        "finance.tax-estimates"
+      ],
+      "coordinates": [
+        "Finance Receipt Operator",
+        "Finance Bookkeeping Preparer",
+        "Finance Billing and Collections Operator",
+        "Finance Cashflow Preparer",
+        "Finance Tax Preparer",
+        "Finance Control Reviewer"
+      ],
+      "agentRefs": [
+        {
+          "key": "stackos.finance.receipt-operator",
+          "slug": "stackos-finance-receipt-operator",
+          "name": "Finance Receipt Operator"
+        },
+        {
+          "key": "stackos.finance.bookkeeping-preparer",
+          "slug": "stackos-finance-bookkeeping-preparer",
+          "name": "Finance Bookkeeping Preparer"
+        },
+        {
+          "key": "stackos.finance.billing-collections-operator",
+          "slug": "stackos-finance-billing-collections-operator",
+          "name": "Finance Billing and Collections Operator"
+        },
+        {
+          "key": "stackos.finance.cashflow-preparer",
+          "slug": "stackos-finance-cashflow-preparer",
+          "name": "Finance Cashflow Preparer"
+        },
+        {
+          "key": "stackos.finance.tax-preparer",
+          "slug": "stackos-finance-tax-preparer",
+          "name": "Finance Tax Preparer"
+        },
+        {
+          "key": "stackos.finance.control-reviewer",
+          "slug": "stackos-finance-control-reviewer",
+          "name": "Finance Control Reviewer"
+        }
+      ]
     },
     {
       "key": "stackos.workflow-orchestrator",

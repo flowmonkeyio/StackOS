@@ -1,0 +1,136 @@
+{
+  "key": "finance.payment-request-followups",
+  "slug": "finance-payment-request-followups",
+  "name": "Finance Payment Request Follow-Ups",
+  "description": "A safe external follow-up or settlement decision record. Every invoice is suppressed, exception-bound, or eligible for one owner-approved Stripe resend; a selected received payment is…",
+  "domain": "finance",
+  "audience": "Solo entrepreneurs reviewing Stripe invoice follow-ups or reconciling a customer payment already received",
+  "color": "#8ea6ff",
+  "featured": true,
+  "problem": "A solo operator needs overdue-payment follow-ups and a safe way to reconcile money already received, but a generic reminder or an unverified paid mark can duplicate a payment or misstate what a customer owes.",
+  "outcome": "A safe external follow-up or settlement decision record. Every invoice is suppressed, exception-bound, or eligible for one owner-approved Stripe resend; a selected received payment is reported/attached or marked paid only with exact evidence, without charging or moving money.",
+  "whyAi": "An agent can re-check bounded provider lifecycle and received-payment evidence against the external record, leaving collection judgment, allocation choices, customer terms, and material settlement approval with the operator.",
+  "operatorPath": [
+    "Request a collections check for a review window, or report that a customer wired or otherwise paid money directly; the agent resolves the selected external scope, invoice mappings, recent contacts and reminder policy.",
+    "Review exceptions, active promises, the independently prepared eligible set, or the exact received-payment match/allocation.",
+    "Record an owner approval for the exact resend, PaymentRecord report, payment attachment, or verified full out-of-band settlement action; do not authorize generic autonomous outreach."
+  ],
+  "agentPath": [
+    "Read bounded Stripe invoice and invoice-payment lifecycle evidence plus the selected external follow-up or received-payment state.",
+    "For a settlement-only occurrence, match one source and allocation, obtain independent review, then report/attach it or mark the exact verified full remaining balance as paid out of band.",
+    "Suppress every paid, voided, disputed, paused, corrected, active-promise, mismatch, or unresolved received-payment case before any send action.",
+    "Have the control reviewer challenge the eligibility/suppression or settlement decision, then call only the separately owner-gated permitted action.",
+    "Write safe outcome and recovery refs to the selected external backend."
+  ],
+  "progressSignals": [
+    "Scope validated",
+    "Lifecycle evidence read",
+    "Settlement prepared or not requested",
+    "Suppression decisions recorded",
+    "Eligible set reviewed",
+    "Approved action or no-send recorded"
+  ],
+  "recovery": [
+    "If invoice lifecycle or promise state is incomplete, suppress by default and record an external exception.",
+    "If a resend outcome is unknown, retrieve the same invoice and reconcile it; do not use generic communication delivery or a new send path.",
+    "If a PaymentRecord report, payment attachment, or paid-out-of-band mark is unknown, re-read the known provider object and selected external record before any retry; never create a new source identity or idempotency key to bypass uncertainty."
+  ],
+  "safeStoppingPoints": [
+    "Stop after suppression/eligibility review when no owner resend approval is recorded.",
+    "Stop after settlement preparation or review when no matching owner settlement approval is recorded.",
+    "Stop with a safe recovery ref when delivery or settlement outcome is uncertain."
+  ],
+  "handoffs": [
+    {
+      "workflowKey": "finance.bookkeeping-close",
+      "relationship": "conditional",
+      "when": "Observed invoice/payment lifecycle or a one-source/one-allocation settlement needs a prepared/unposted external reconciliation entry."
+    },
+    {
+      "workflowKey": "finance.cashflow-management",
+      "relationship": "conditional",
+      "when": "A reviewed follow-up status changes forecast assumptions, or a verified actual receipt needs a once-only external cashflow handoff under the selected policy."
+    }
+  ],
+  "setup": "connection-required",
+  "prerequisites": [
+    "A selected workspace and review window; resolve follow-up rules/history/reminder ownership for followup-only, or the received-payment source/allocation for settlement-only",
+    "Restricted Stripe invoice/payment read access",
+    "A separately recorded owner approval for any Stripe invoice resend, PaymentRecord report, payment attachment, or full paid-out-of-band mark"
+  ],
+  "proof": [
+    "Safe invoice/payment/external-follow-up refs and suppression, settlement, or eligibility state",
+    "Control-reviewer, owner approval, source/allocation, and external-record version refs",
+    "Action-call and external-write proof refs for any approved settlement or resend"
+  ],
+  "whenToUse": [
+    "A bounded set of sent/open external invoices needs lifecycle-aware follow-up evaluation.",
+    "A customer wired money, paid directly, or paid separately through Stripe and the received payment must be matched to one invoice without charging the customer."
+  ],
+  "stages": [
+    {
+      "id": "preflight",
+      "title": "Preflight Follow-Up Scope",
+      "summary": "Resolve the review scope and only the setup applicable to the selected occurrence mode."
+    },
+    {
+      "id": "read-invoice-lifecycle",
+      "title": "Read Bounded Invoice Lifecycle",
+      "summary": "Retrieve only safe Stripe invoice/payment evidence needed to evaluate the external scope."
+    },
+    {
+      "id": "prepare-settlement",
+      "title": "Prepare Received-Payment Settlement",
+      "summary": "For settlement-only work, read and match one already-received Stripe or direct-bank payment to one invoice without creating a payment or moving money.…"
+    },
+    {
+      "id": "review-settlement",
+      "title": "Independently Review Settlement Route",
+      "summary": "Have the control reviewer challenge the current external source, allocation, match, route, and owner approval before a settlement mutation."
+    },
+    {
+      "id": "apply-settlement",
+      "title": "Apply Owner-Approved Settlement",
+      "summary": "Run at most the one selected owner-gated Stripe settlement action route and immediately reconcile provider/external state without collecting money."
+    },
+    {
+      "id": "suppress-ineligible",
+      "title": "Suppress Ineligible Follow-Ups",
+      "summary": "Apply required lifecycle and external-state suppression before eligibility is considered."
+    },
+    {
+      "id": "review-eligible",
+      "title": "Independently Review Eligible Set",
+      "summary": "Require the control reviewer to challenge the safe lifecycle/suppression record before an owner chooses an exact resend."
+    },
+    {
+      "id": "resend-approved",
+      "title": "Resend Owner-Approved Invoice",
+      "summary": "Call the exact owner-gated Stripe invoice resend action for an eligible invoice and reconcile its result through invoice reads."
+    },
+    {
+      "id": "record-outcome",
+      "title": "Record External Outcome And Handoff",
+      "summary": "Update only the selected external backend with safe status/proof refs and hand off relevant preparation work."
+    }
+  ],
+  "agentNames": [
+    "Finance Billing and Collections Operator",
+    "Finance Control Reviewer"
+  ],
+  "agentRefs": [
+    {
+      "key": "stackos.finance.billing-collections-operator",
+      "slug": "stackos-finance-billing-collections-operator",
+      "name": "Finance Billing and Collections Operator"
+    },
+    {
+      "key": "stackos.finance.control-reviewer",
+      "slug": "stackos-finance-control-reviewer",
+      "name": "Finance Control Reviewer"
+    }
+  ],
+  "integrations": [
+    "Stripe"
+  ]
+}
