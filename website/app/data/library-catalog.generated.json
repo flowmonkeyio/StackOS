@@ -1,6 +1,79 @@
 {
   "workflows": [
     {
+      "key": "agency.setup",
+      "slug": "agency-setup",
+      "name": "Agency Setup",
+      "description": "One read-back-verified agency profile and, only when exactly selected, a no-launch finance setup handoff.",
+      "domain": "agency",
+      "audience": "Solo operators and small agencies setting up reusable agent context.",
+      "color": "#8ea6ff",
+      "featured": false,
+      "problem": "Agency operators need durable orientation without creating a separate agency-management system.",
+      "outcome": "One read-back-verified agency profile and, only when exactly selected, a no-launch finance setup handoff.",
+      "whyAi": "",
+      "operatorPath": [
+        "Supply an agency name and short context, plus optional navigation reference and explicit guidance.",
+        "Review the saved profile and separately decide whether to set up exact finance workflows."
+      ],
+      "agentPath": [
+        "Inspect current-project agency profiles and resolve one existing or stable new profile reference from supplied identity before strict run validation.",
+        "Merge supplied facts with permitted existing optional context, persist one profile, and read it back.",
+        "Return a setup_existing finance handoff only for exact selected workflow keys; do not launch it."
+      ],
+      "progressSignals": [
+        "Agency inventory complete",
+        "payload resolved",
+        "profile persisted",
+        "readback verified"
+      ],
+      "recovery": [
+        "If profile identity conflicts or more than one current profile exists, stop for operator direction rather than overwriting or creating another profile."
+      ],
+      "safeStoppingPoints": [
+        "Stop after agency context is verified. Finance setup is a separate optional handoff and is never started implicitly."
+      ],
+      "handoffs": [],
+      "setup": "available",
+      "prerequisites": [
+        "A currently bound StackOS project and operator-supplied agency identity."
+      ],
+      "proof": [
+        "One queryable agency profile",
+        "readback evidence",
+        "and a bounded optional finance handoff."
+      ],
+      "whenToUse": [
+        "A new agency workspace needs minimal durable context for future agents.",
+        "An existing agency profile needs a reviewed update under its stable reference."
+      ],
+      "stages": [
+        {
+          "id": "inventory-existing-setup",
+          "title": "Inventory Existing Agency Setup",
+          "summary": "Inspect bounded current-project agency-profile context and resolve one stable identity."
+        },
+        {
+          "id": "resolve-supplied-facts",
+          "title": "Resolve Supplied Agency Facts",
+          "summary": "Produce the complete write payload by merging supplied facts with permitted existing optional context."
+        },
+        {
+          "id": "persist-profile",
+          "title": "Persist Agency Profile",
+          "summary": "Upsert the resolved complete profile under its stable external id."
+        },
+        {
+          "id": "readback-and-handoff",
+          "title": "Read Back And Hand Off",
+          "summary": "Verify the saved profile and return an optional no-launch finance setup handoff."
+        }
+      ],
+      "agentNames": [],
+      "agentRefs": [],
+      "integrations": []
+    },
+    {
       "key": "branding.brand-foundation-setup",
       "slug": "branding-brand-foundation-setup",
       "name": "Brand Foundation Setup",
@@ -284,6 +357,80 @@
         "Linkedin Api",
         "Esp"
       ]
+    },
+    {
+      "key": "agency.project-setup",
+      "slug": "agency-project-setup",
+      "name": "Client Project Setup",
+      "description": "One read-back-verified client-project context record and, only when exactly selected, a no-launch finance setup handoff.",
+      "domain": "agency",
+      "audience": "Solo operators and agencies organizing lightweight client-engagement context.",
+      "color": "#8ea6ff",
+      "featured": false,
+      "problem": "Agency and standalone operators need durable engagement orientation without inventing a second project-management or finance system.",
+      "outcome": "One read-back-verified client-project context record and, only when exactly selected, a no-launch finance setup handoff.",
+      "whyAi": "",
+      "operatorPath": [
+        "Supply the engagement identity and brief context, with optional agency association, guidance, and finance navigation pointer.",
+        "Review the saved engagement record and separately decide whether to set up exact finance workflows."
+      ],
+      "agentPath": [
+        "Inspect current-project engagement records and resolve an existing or stable new engagement reference from supplied identity before strict run validation.",
+        "Resolve any supplied or preserved agency association only against agency-profile resources in that same current project; stop before writing if it is unresolved.",
+        "Merge supplied facts with permitted existing optional context, persist one engagement record, and read it back.",
+        "Return a setup_existing finance handoff only for exact selected workflow keys; do not launch it."
+      ],
+      "progressSignals": [
+        "Engagement inventory complete",
+        "payload resolved",
+        "context persisted",
+        "readback verified"
+      ],
+      "recovery": [
+        "If stable engagement identity conflicts with existing context, stop for operator direction rather than overwriting or creating a duplicate."
+      ],
+      "safeStoppingPoints": [
+        "Stop after engagement context is verified. Finance setup is a separate optional handoff and is never started implicitly."
+      ],
+      "handoffs": [],
+      "setup": "available",
+      "prerequisites": [
+        "A currently bound StackOS project and operator-supplied engagement identity."
+      ],
+      "proof": [
+        "One queryable client-project context record",
+        "readback evidence",
+        "and a bounded optional finance handoff."
+      ],
+      "whenToUse": [
+        "A client engagement needs minimal durable context in an agency or standalone workspace.",
+        "An existing engagement context needs a reviewed update under its stable reference."
+      ],
+      "stages": [
+        {
+          "id": "inventory-existing-context",
+          "title": "Inventory Existing Engagement Context",
+          "summary": "Inspect bounded current-project project-context records and resolve one stable engagement identity."
+        },
+        {
+          "id": "resolve-supplied-facts",
+          "title": "Resolve Supplied Engagement Facts",
+          "summary": "Produce the complete write payload by merging supplied facts with permitted existing optional context."
+        },
+        {
+          "id": "persist-project-context",
+          "title": "Persist Client Project Context",
+          "summary": "Upsert the resolved complete engagement payload under its stable external id."
+        },
+        {
+          "id": "readback-and-handoff",
+          "title": "Read Back And Hand Off",
+          "summary": "Verify the saved engagement resource and return the optional finance setup handoff without executing it."
+        }
+      ],
+      "agentNames": [],
+      "agentRefs": [],
+      "integrations": []
     },
     {
       "key": "communications.inbox-review",
@@ -4683,6 +4830,7 @@
         "Suppress customer contact for paid, voided, disputed, paused, corrected, and active-promise invoices, plus unresolved received-payment cases."
       ],
       "must_do": [
+        "Preserve a sourced single-project billing_version.external_project_ref when supplied and bind it in the billing digest. Same client does not imply same project. Changed attribution requires a new proposal version and applicable approval; downstream settlement derives context from the invoice, not a second attribution record.",
         "Compare actual provider object/account/version and the external billing-record digest before every action or retry; never use a broad customer search as identity proof.",
         "Validate the exact action payload and use the provider contract's opaque payload-secret reference for customer-identifying text.",
         "Pass the approved currency explicitly to invoice creation and every line; compare provider readback and never inherit a provider default or assume a later line changes the draft currency.",
@@ -4737,6 +4885,7 @@
         "Return a proposed external record change and review packet; the main orchestrator remains the one writer and integrates the outcome."
       ],
       "must_do": [
+        "Propose external_project_ref on a bookkeeping record only for a verified single-project attribution; retain provenance and additive corrections. Company-wide costs need no project; ambiguous/shared costs stay unassigned with a gap rather than duplicated or automatically allocated.",
         "Compare actual selected backend/account/period and current finance.json document revision/digest before preparing a change; preserve concurrent changes as conflicts.",
         "Record source completeness, reconciliation scope, supporting evidence refs, proposed prepared/unposted status, and every gap in the external backend packet.",
         "Apply established approved rules routinely. An evidence-based category proposal may include rationale and confidence; an uncertain or new classification decision must name the owner/professional decision required.",
@@ -4825,6 +4974,7 @@
         "Return blocking findings, evidence gaps, and repair conditions to the main orchestrator; it never replaces the owner, CPA/EA, or one-writer role."
       ],
       "must_do": [
+        "Check standalone finance has no agency prerequisite and agency-root work uses one business financial master. Optional external_project_ref must match sourced nonfinancial identity and the billing digest where applicable; no copied receipt/settlement attribution, duplicated amounts, or implied cross-project access.",
         "Compare claimed action outcome with actual provider action-call/audit evidence and the selected external record/current version, not a specialist narrative.",
         "Confirm each material change has a fresh approval occurrence and that separate finalize/send gates each bind the same immutable facts when one human decision covers both.",
         "For sends inspect approval-bound recipient settings, current primary hashes and verified additional To/CC scope/validity. For recovered reports inspect retained action audit/response files, the known safe ref, exact pre-report payment-reference digest, independent retrieve and persisted verified ref; missing or uncertain evidence is not proof of no report.",
@@ -6343,6 +6493,8 @@
       "color": "#8ea6ff",
       "featured": true,
       "workflowKeys": [
+        "agency.setup",
+        "agency.project-setup",
         "communications.callback-follow-up",
         "communications.customer-feedback-intake",
         "communications.inbox-review",

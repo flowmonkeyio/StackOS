@@ -29,6 +29,7 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
         "engineering",
         "support",
         "finance",
+        "agency",
         "communications",
         "gtm",
         "marketing",

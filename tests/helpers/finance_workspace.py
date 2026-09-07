@@ -258,6 +258,8 @@ def material_billing_digest(billing: dict[str, Any]) -> str:
         "source_refs",
     )
     payload = {key: billing[key] for key in keys}
+    if "external_project_ref" in billing:
+        payload["external_project_ref"] = billing["external_project_ref"]
     if "supersedes_ref" in billing:
         payload["supersedes_ref"] = billing["supersedes_ref"]
     return hashlib.sha256(

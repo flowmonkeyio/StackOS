@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: finance.tax-estimates
 name: Finance Tax Estimates
-version: 0.3.0
+version: 0.3.1
 description: Prepare a current-source US/California tax-estimate packet in the selected external backend, distinguish projected annual liability from the current installment, and require CPA/EA then owner approval before it is relied on.
 domain: finance
 owner:
@@ -85,6 +85,7 @@ inputs:
     name: External Workspace Ref
     type: string
     required: true
+    description: One selected business financial master, usable from a standalone business directory or agency root. Agency/project setup is optional; descriptive associations never grant cross-project access. Follow the backend contract's business/project scope guidance.
     schema: {type: string, minLength: 1}
   - key: recording_mode
     name: Recording Mode

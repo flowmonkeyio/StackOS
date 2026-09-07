@@ -296,7 +296,7 @@ def test_codex_local_seo_agents_track_seo_workflows() -> None:
     assert "Additional workflow: seo.website-analysis" in (
         REPO_ROOT / ".codex/agents/sdlc-delivery-reviewer.toml"
     ).read_text(encoding="utf-8")
-    assert "Source skill preset: `stackos.workflow-orchestrator` v0.1.1" in (orchestrator_text)
+    assert "Source skill preset: `stackos.workflow-orchestrator` v0.1.2" in (orchestrator_text)
     assert "not a subagent" in orchestrator_text
     assert "unavailable optional providers do not block a ready route" in orchestrator_text
     assert "parallel planning, review, evidence" in orchestrator_text
@@ -331,12 +331,12 @@ def test_codex_local_finance_agents_track_finance_presets_without_model_override
         "finance_control_reviewer": "xhigh",
     }
     expected_versions = {
-        "finance_receipt_operator": "0.4.0",
-        "finance_bookkeeping_preparer": "0.5.0",
-        "finance_billing_collections_operator": "0.6.0",
-        "finance_cashflow_preparer": "0.4.0",
-        "finance_tax_preparer": "0.4.0",
-        "finance_control_reviewer": "0.6.0",
+        "finance_receipt_operator": "0.4.1",
+        "finance_bookkeeping_preparer": "0.5.1",
+        "finance_billing_collections_operator": "0.6.1",
+        "finance_cashflow_preparer": "0.4.1",
+        "finance_tax_preparer": "0.4.1",
+        "finance_control_reviewer": "0.6.1",
     }
     for agent_name, (config_file, preset_ref) in LOCAL_CODEX_FINANCE_AGENT_PRESETS.items():
         assert config["agents"][agent_name]["config_file"] == config_file
@@ -344,6 +344,12 @@ def test_codex_local_finance_agents_track_finance_presets_without_model_override
         local = tomllib.loads(local_text)
         source = AgentPresetLoader().describe_preset(key=preset_ref).preset
         assert source.version == expected_versions[agent_name]
+        assert (
+            "Finance works standalone or at an agency root"
+            in source.project_adaptation.required_agent_action
+        )
+        assert "agency root without an agency prerequisite" in local_text
+        assert "no cross-project" in local_text
         assert f"Source preset: {preset_ref} v{expected_versions[agent_name]}" in local_text
         assert "Keep aligned with plugins/finance/agent-presets/finance.yaml." in local_text
         assert "model" not in local
@@ -353,7 +359,7 @@ def test_codex_local_finance_agents_track_finance_presets_without_model_override
     orchestrator_text = (
         REPO_ROOT / ".codex/orchestrator/finance-department-orchestrator.md"
     ).read_text(encoding="utf-8")
-    assert "Source skill preset: `stackos.finance.department-orchestrator` v0.6.0" in (
+    assert "Source skill preset: `stackos.finance.department-orchestrator` v0.7.0" in (
         orchestrator_text
     )
     assert "not a subagent" in orchestrator_text

@@ -1,0 +1,131 @@
+slug: agency
+name: Agency
+version: 0.1.0
+description: Minimal agency and client-engagement context for organizing reusable StackOS workflows without creating nested projects or duplicating finance records.
+display_order: 19
+source: builtin
+capabilities:
+  - key: agency-setup
+    name: Agency setup
+    description: Establish a compact agency profile that future agents can retrieve and update.
+    kind: domain
+  - key: client-project-context
+    name: Client project context
+    description: Keep a minimal, project-scoped engagement record with optional agency and finance navigation references.
+    kind: domain
+resources:
+  - key: agency-profile
+    name: Agency Profile
+    description: Minimal durable agency identity and operator-supplied context for the currently bound StackOS project.
+    schema:
+      type: object
+      additionalProperties: false
+      required: [agency_name, brief_context]
+      properties:
+        agency_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Operator-facing agency name.
+        brief_context:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: Compact operator-supplied context that future agents may use to orient themselves.
+        agency_workspace_ref:
+          type: string
+          minLength: 1
+          maxLength: 300
+          description: Optional safe navigation reference selected by the operator; it is not a host path or StackOS project identifier.
+        guidance:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 1000
+          maxItems: 30
+          description: Explicitly supplied agency guidance. Omit unknown or inferred guidance.
+    ui_schema:
+      table_columns: [agency_name, agency_workspace_ref]
+      summary_fields: [brief_context, guidance]
+      detail_sections:
+        - title: Agency identity
+          fields: [agency_name, brief_context]
+        - title: Navigation and guidance
+          fields: [agency_workspace_ref, guidance]
+    config:
+      schema_version: stackos.resource.v1
+      record_kind: agency-profile
+      agent_guidance: Keep one current agency profile for this StackOS project and update the same stable external id on rerun. Store only operator-supplied agency context and safe navigation references. Do not use this record as a nested StackOS-project registry, credential store, finance backend, or financial system of record.
+  - key: project-context
+    name: Client Project Context
+    description: Minimal business-engagement context for one client project, not a nested StackOS project or a financial record.
+    schema:
+      type: object
+      additionalProperties: false
+      required: [engagement_ref, engagement_name, client_ref, description]
+      properties:
+        engagement_ref:
+          type: string
+          minLength: 1
+          maxLength: 300
+          description: Stable operator-supplied engagement reference. It must match the resource external id on write.
+        engagement_name:
+          type: string
+          minLength: 1
+          maxLength: 300
+          description: Human-recognizable client-project or engagement name.
+        client_ref:
+          type: string
+          minLength: 1
+          maxLength: 300
+          description: Safe client identity reference; do not place client secrets or private financial data here.
+        description:
+          type: string
+          minLength: 1
+          maxLength: 3000
+          description: Short operator-supplied engagement description.
+        agency_profile_ref:
+          type: string
+          minLength: 1
+          maxLength: 300
+          description: Optional safe reference to an agency-profile resource in this same StackOS project.
+        guidance:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 1000
+          maxItems: 30
+          description: Explicitly supplied engagement guidance. Omit unknown or inferred guidance.
+        finance_workspace_association_ref:
+          type: string
+          minLength: 1
+          maxLength: 300
+          description: Optional safe navigation pointer to an externally managed finance workspace association. It is not financial data, mutable finance setup, a credential, or finance authority.
+    ui_schema:
+      table_columns: [engagement_name, client_ref, agency_profile_ref]
+      summary_fields: [description, finance_workspace_association_ref]
+      detail_sections:
+        - title: Engagement
+          fields: [engagement_ref, engagement_name, client_ref, description]
+        - title: Optional associations
+          fields: [agency_profile_ref, finance_workspace_association_ref]
+        - title: Guidance
+          fields: [guidance]
+    config:
+      schema_version: stackos.resource.v1
+      record_kind: client-project-context
+      agent_guidance: Store one resource per stable business engagement in the currently bound StackOS project. This record does not create a nested StackOS project, cross-project access, a client-management system, or finance authority. Update the same engagement_ref on rerun; finance pointers are navigation only and all financial facts and mutable settings stay in the selected external finance backend.
+ui:
+  nav:
+    section: Agency
+    items:
+      - key: agency.resources
+        label: Data
+        route: /resources?plugin=agency
+      - key: agency.templates
+        label: Workflows
+        route: /workflow-templates?plugin=agency
+config:
+  schema_version: stackos.plugin.v1

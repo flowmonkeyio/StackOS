@@ -27,6 +27,19 @@ API keys, passwords and tax-portal secrets out of this workspace.
 
 ## Where records live
 
+This workspace can belong to a standalone business or sit under an agency root.
+Agency setup is optional. Keep one business financial master across client
+engagements; do not create per-client/project copies. A descriptive project link
+grants no cross-project tools, credentials or access to another directory.
+
+Optional `external_project_ref` belongs only on a sourced single-project billing
+version or prepared bookkeeping record. Verify the nonfinancial project identity
+and client/business ownership; the same client may have several projects.
+Company-wide costs remain unassigned. Ambiguous/shared attribution stays absent
+with a gap, never duplicated amounts or automatic allocations. Receipt custody
+does not require project metadata. Billing attribution is included in its material
+digest; change it through a new proposal version and applicable approval.
+
 All of these are collections inside `finance.json`, not separate packet files:
 
 | Work | Canonical collections |

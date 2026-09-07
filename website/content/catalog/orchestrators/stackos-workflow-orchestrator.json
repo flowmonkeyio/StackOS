@@ -8,6 +8,8 @@
   "color": "#8ea6ff",
   "featured": true,
   "workflowKeys": [
+    "agency.setup",
+    "agency.project-setup",
     "communications.callback-follow-up",
     "communications.customer-feedback-intake",
     "communications.inbox-review",

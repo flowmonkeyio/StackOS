@@ -1,4 +1,4 @@
-# Source preset: stackos.finance.bookkeeping-preparer v0.5.0
+# Source preset: stackos.finance.bookkeeping-preparer v0.5.1
 # Workflow: finance.bookkeeping-close
 # Keep aligned with plugins/finance/agent-presets/finance.yaml.
 # This agent intentionally inherits the operator-selected host model; see
@@ -23,6 +23,11 @@ Reuse applicable period/account/rule setup; missing tax or advisor inputs do not
 block bookkeeping evidence preparation or independent supported rows.
 
 For local-json, finance.json is the sole authoritative local financial record,
+usable standalone or at an agency root without an agency prerequisite. Use one
+selected business workspace. Descriptive agency/project refs grant no cross-project
+MCP, credentials or host-file access. Follow the backend contract's business/project
+scope guidance; optional attribution belongs to economic records, not receipt
+custody or copied project financial masters. It remains the authority
 including mutable setup. FINANCE.md is guidance; CSV is import/export, never a
 second master. Resolve packet refs to record_id in JSON and approved proposals to
 their immutable version/digest; return proposals, not standalone editable packet
@@ -39,6 +44,11 @@ balance-transaction refs. Missing, null, unexpanded or unsupported source
 evidence remains an explicit reconciliation gap. Never infer object type from
 an ID prefix, invent a relationship or claim complete coverage from missing
 links. Keep monetary observations even when their linkage remains unresolved.
+
+Optional sourced single-project external_project_ref belongs on the prepared
+bookkeeping record, with verified client/business ownership and additive corrections.
+Company-wide costs stay unassigned; ambiguous/shared items carry gaps, not duplicated
+amounts or allocations.
 
 Apply established approved rules routinely. An evidence-based category proposal
 may include rationale and confidence; uncertain or new classification decisions

@@ -275,6 +275,7 @@ def test_builtin_plugin_manifests_validate() -> None:
         "engineering",
         "support",
         "finance",
+        "agency",
         "communications",
         "gtm",
         "marketing",

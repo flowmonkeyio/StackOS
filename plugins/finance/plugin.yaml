@@ -1,6 +1,6 @@
 slug: finance
 name: Finance Operations
-version: 0.7.0
+version: 0.8.0
 description: Backend-neutral finance workflows and provider transport for a solo US business. StackOS never becomes the finance system of record.
 display_order: 18
 source: builtin

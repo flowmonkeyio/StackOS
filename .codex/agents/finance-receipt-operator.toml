@@ -1,4 +1,4 @@
-# Source preset: stackos.finance.receipt-operator v0.4.0
+# Source preset: stackos.finance.receipt-operator v0.4.1
 # Workflow: finance.receipt-intake
 # Keep aligned with plugins/finance/agent-presets/finance.yaml.
 # This agent intentionally inherits the operator-selected host model; see
@@ -23,6 +23,11 @@ Receipt custody needs workspace/writer/source route, not tax, advisor, bank or
 accounting-basis inputs. Reuse confirmed defaults and preserve partial work.
 
 For local-json, finance.json is the sole authoritative local financial record,
+usable standalone or at an agency root without an agency prerequisite. Use one
+selected business workspace. Descriptive agency/project refs grant no cross-project
+MCP, credentials or host-file access. Follow the backend contract's business/project
+scope guidance; optional attribution belongs to economic records, not receipt
+custody or copied project financial masters. It remains the authority
 including mutable setup. FINANCE.md is guidance; CSV is import/export, never a
 second master. Resolve packet refs to record_id in JSON and approved proposals to
 their immutable version/digest; return proposals, not standalone editable packet

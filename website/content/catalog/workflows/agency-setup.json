@@ -1,0 +1,73 @@
+{
+  "key": "agency.setup",
+  "slug": "agency-setup",
+  "name": "Agency Setup",
+  "description": "One read-back-verified agency profile and, only when exactly selected, a no-launch finance setup handoff.",
+  "domain": "agency",
+  "audience": "Solo operators and small agencies setting up reusable agent context.",
+  "color": "#8ea6ff",
+  "featured": false,
+  "problem": "Agency operators need durable orientation without creating a separate agency-management system.",
+  "outcome": "One read-back-verified agency profile and, only when exactly selected, a no-launch finance setup handoff.",
+  "whyAi": "",
+  "operatorPath": [
+    "Supply an agency name and short context, plus optional navigation reference and explicit guidance.",
+    "Review the saved profile and separately decide whether to set up exact finance workflows."
+  ],
+  "agentPath": [
+    "Inspect current-project agency profiles and resolve one existing or stable new profile reference from supplied identity before strict run validation.",
+    "Merge supplied facts with permitted existing optional context, persist one profile, and read it back.",
+    "Return a setup_existing finance handoff only for exact selected workflow keys; do not launch it."
+  ],
+  "progressSignals": [
+    "Agency inventory complete",
+    "payload resolved",
+    "profile persisted",
+    "readback verified"
+  ],
+  "recovery": [
+    "If profile identity conflicts or more than one current profile exists, stop for operator direction rather than overwriting or creating another profile."
+  ],
+  "safeStoppingPoints": [
+    "Stop after agency context is verified. Finance setup is a separate optional handoff and is never started implicitly."
+  ],
+  "handoffs": [],
+  "setup": "available",
+  "prerequisites": [
+    "A currently bound StackOS project and operator-supplied agency identity."
+  ],
+  "proof": [
+    "One queryable agency profile",
+    "readback evidence",
+    "and a bounded optional finance handoff."
+  ],
+  "whenToUse": [
+    "A new agency workspace needs minimal durable context for future agents.",
+    "An existing agency profile needs a reviewed update under its stable reference."
+  ],
+  "stages": [
+    {
+      "id": "inventory-existing-setup",
+      "title": "Inventory Existing Agency Setup",
+      "summary": "Inspect bounded current-project agency-profile context and resolve one stable identity."
+    },
+    {
+      "id": "resolve-supplied-facts",
+      "title": "Resolve Supplied Agency Facts",
+      "summary": "Produce the complete write payload by merging supplied facts with permitted existing optional context."
+    },
+    {
+      "id": "persist-profile",
+      "title": "Persist Agency Profile",
+      "summary": "Upsert the resolved complete profile under its stable external id."
+    },
+    {
+      "id": "readback-and-handoff",
+      "title": "Read Back And Hand Off",
+      "summary": "Verify the saved profile and return an optional no-launch finance setup handoff."
+    }
+  ],
+  "agentNames": [],
+  "agentRefs": [],
+  "integrations": []
+}

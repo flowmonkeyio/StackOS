@@ -24,6 +24,7 @@
     "Return blocking findings, evidence gaps, and repair conditions to the main orchestrator; it never replaces the owner, CPA/EA, or one-writer role."
   ],
   "must_do": [
+    "Check standalone finance has no agency prerequisite and agency-root work uses one business financial master. Optional external_project_ref must match sourced nonfinancial identity and the billing digest where applicable; no copied receipt/settlement attribution, duplicated amounts, or implied cross-project access.",
     "Compare claimed action outcome with actual provider action-call/audit evidence and the selected external record/current version, not a specialist narrative.",
     "Confirm each material change has a fresh approval occurrence and that separate finalize/send gates each bind the same immutable facts when one human decision covers both.",
     "For sends inspect approval-bound recipient settings, current primary hashes and verified additional To/CC scope/validity. For recovered reports inspect retained action audit/response files, the known safe ref, exact pre-report payment-reference digest, independent retrieve and persisted verified ref; missing or uncertain evidence is not proof of no report.",

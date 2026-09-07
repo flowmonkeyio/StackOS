@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: finance.payment-request-followups
 name: Finance Payment Request Follow-Ups
-version: 0.6.0
+version: 0.6.1
 description: Evaluate a bounded external invoice follow-up or received-payment settlement scope. Reconcile a payment already received through Stripe or direct bank transfer without charging a customer, and resend only when lifecycle suppression checks and the distinct owner gate permit it.
 domain: finance
 owner:
@@ -91,6 +91,7 @@ inputs:
     name: External Workspace Ref
     type: string
     required: true
+    description: One selected business financial master, usable from a standalone business directory or agency root. Agency/project setup is optional; descriptive associations never grant cross-project access. Follow the backend contract's business/project scope guidance.
     schema: {type: string, minLength: 1}
   - key: recording_mode
     name: Recording Mode

@@ -1,0 +1,74 @@
+{
+  "key": "agency.project-setup",
+  "slug": "agency-project-setup",
+  "name": "Client Project Setup",
+  "description": "One read-back-verified client-project context record and, only when exactly selected, a no-launch finance setup handoff.",
+  "domain": "agency",
+  "audience": "Solo operators and agencies organizing lightweight client-engagement context.",
+  "color": "#8ea6ff",
+  "featured": false,
+  "problem": "Agency and standalone operators need durable engagement orientation without inventing a second project-management or finance system.",
+  "outcome": "One read-back-verified client-project context record and, only when exactly selected, a no-launch finance setup handoff.",
+  "whyAi": "",
+  "operatorPath": [
+    "Supply the engagement identity and brief context, with optional agency association, guidance, and finance navigation pointer.",
+    "Review the saved engagement record and separately decide whether to set up exact finance workflows."
+  ],
+  "agentPath": [
+    "Inspect current-project engagement records and resolve an existing or stable new engagement reference from supplied identity before strict run validation.",
+    "Resolve any supplied or preserved agency association only against agency-profile resources in that same current project; stop before writing if it is unresolved.",
+    "Merge supplied facts with permitted existing optional context, persist one engagement record, and read it back.",
+    "Return a setup_existing finance handoff only for exact selected workflow keys; do not launch it."
+  ],
+  "progressSignals": [
+    "Engagement inventory complete",
+    "payload resolved",
+    "context persisted",
+    "readback verified"
+  ],
+  "recovery": [
+    "If stable engagement identity conflicts with existing context, stop for operator direction rather than overwriting or creating a duplicate."
+  ],
+  "safeStoppingPoints": [
+    "Stop after engagement context is verified. Finance setup is a separate optional handoff and is never started implicitly."
+  ],
+  "handoffs": [],
+  "setup": "available",
+  "prerequisites": [
+    "A currently bound StackOS project and operator-supplied engagement identity."
+  ],
+  "proof": [
+    "One queryable client-project context record",
+    "readback evidence",
+    "and a bounded optional finance handoff."
+  ],
+  "whenToUse": [
+    "A client engagement needs minimal durable context in an agency or standalone workspace.",
+    "An existing engagement context needs a reviewed update under its stable reference."
+  ],
+  "stages": [
+    {
+      "id": "inventory-existing-context",
+      "title": "Inventory Existing Engagement Context",
+      "summary": "Inspect bounded current-project project-context records and resolve one stable engagement identity."
+    },
+    {
+      "id": "resolve-supplied-facts",
+      "title": "Resolve Supplied Engagement Facts",
+      "summary": "Produce the complete write payload by merging supplied facts with permitted existing optional context."
+    },
+    {
+      "id": "persist-project-context",
+      "title": "Persist Client Project Context",
+      "summary": "Upsert the resolved complete engagement payload under its stable external id."
+    },
+    {
+      "id": "readback-and-handoff",
+      "title": "Read Back And Hand Off",
+      "summary": "Verify the saved engagement resource and return the optional finance setup handoff without executing it."
+    }
+  ],
+  "agentNames": [],
+  "agentRefs": [],
+  "integrations": []
+}

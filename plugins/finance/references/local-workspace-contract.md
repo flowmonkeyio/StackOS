@@ -58,6 +58,26 @@ floating-point amounts. Dates are ISO dates; observations are timezone-qualified
 timestamps. Omit unavailable values and explain the affected field in `gaps`.
 Zero is a known value, never a missing-data substitute.
 
+## Optional project attribution
+
+Finance works standalone. An agency and its projects are optional operating
+context, so `external_project_ref` is allowed only on one bookkeeping record or
+one billing version when a non-empty opaque, source-backed nonfinancial project
+identity is actually supplied. It is not a StackOS project ID, an internal
+financial-record ref, or a customer mapping. It is not an authority grant.
+Before
+accepting it, the host verifies the ref against the supplied agency
+resource/operator context and its ownership; that verification grants no
+cross-project access and does not query or operate another StackOS project.
+
+Omit it for company-wide expenses. When the project is unknown or
+multi-project, leave it absent with an explicit gap. Never infer attribution
+from a customer mapping: one customer can have
+multiple projects. The field is one label on the existing financial record, not
+a registry, allocation, profitability calculation, shared-cost allocation, or
+additional amount. Do not copy it to receipts, billing lines, settlements,
+cashflow forecasts, tax packets, or provider observations.
+
 Before accepting a write, validate against the local schema with format checking
 enabled, then verify unique IDs, resolved internal references, source coverage,
 currency/arithmetic, immutable versions and additive history. Validate original
@@ -158,9 +178,10 @@ An unrelated receipt may change the file revision without changing an approved
 invoice; reread and rebase, then compare the scoped approved facts again.
 
 For a billing digest, select `version`, `customer_mapping_ref`,
-`recipient_settings_ref`, `currency`, `terms`, `lines`, `subtotal`, `total`,
-`source_refs`, and `supersedes_ref` when present. Approval separately binds the
-stable `record_id`. Encode that selected object as UTF-8 JSON with sorted
+`recipient_settings_ref`, `external_project_ref` when present, `currency`,
+`terms`, `lines`, `subtotal`, `total`, `source_refs`, and `supersedes_ref` when
+present. Approval separately binds the stable `record_id`. Encode that selected
+object as UTF-8 JSON with sorted
 object keys, compact separators, Unicode preserved, no NaN/Infinity and no
 trailing newline; hash those bytes with SHA-256. Preserve array order and exact
 strings. Do not hash the digest itself, record metadata, unrelated
@@ -210,14 +231,20 @@ existing rules; ask only for missing business purpose/material decisions.
 Keep supported rows `prepared/unposted` with unresolved rows visible.
 Complete reconciliation requires full source coverage and explained balances.
 
+If an optional `external_project_ref` on bookkeeping is corrected, preserve the
+original, create the supported replacement record, and link the two through the
+existing additive `corrections` record with the reason. A derived attribution
+view must resolve that correction relationship before totaling; never mutate the
+original, count its amount twice, or split it across projects.
+
 Each monetary value has its own ISO 4217 currency. For conversions preserve
 original and converted amount/currency, date, rate/source and reviewer/policy.
 
 ## Billing and collections
 
-Billing versions are immutable: customer/mapping, lines, currency, terms and
-version/digest. Mutation attempts are separate linked records in the same JSON
-document. Compare the provider invoice and all
+Billing versions are immutable: customer/mapping, optional
+`external_project_ref`, lines, currency, terms and version/digest. Mutation
+attempts are separate linked records in the same JSON document. Compare the provider invoice and all
 items, including description hashes, before approving and before mutating.
 One owner decision can cover the exact finalize/send pair. Its billing version
 also binds the recipient-settings version: approved primary/email hash, additional

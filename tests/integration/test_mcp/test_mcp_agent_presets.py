@@ -368,7 +368,7 @@ def test_website_seo_analysis_presets_resolve_end_to_end(
     assert resolved["required_skill_presets"][0]["preset"]["summary"]["key"] == (
         "stackos.workflow-orchestrator"
     )
-    assert resolved["required_skill_presets"][0]["preset"]["summary"]["version"] == "0.1.1"
+    assert resolved["required_skill_presets"][0]["preset"]["summary"]["version"] == "0.1.2"
     assert resolved["unresolved_requirements"] == []
     assert resolved["unresolved_skill_preset_requirements"] == []
 
@@ -455,7 +455,7 @@ def test_finance_operational_guidance_survives_compact_workflow_resolution(
         compact = compact.get("data", compact)
         raw_skill = raw["required_skill_presets"][0]
         compact_skill = compact["required_skill_presets"][0]
-        assert compact_skill["preset"]["version"] == "0.6.0"
+        assert compact_skill["preset"]["version"] == "0.7.0"
         assert compact_skill["project_adaptation"] == raw_skill["project_adaptation"]
         assert any("capability preflight" in item for item in compact_skill["preset"]["must_do"])
         conditional = {

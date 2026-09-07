@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: finance.payment-request
 name: Finance Payment Request
-version: 0.4.0
+version: 0.4.1
 description: Prepare, review, finalize, and send one Stripe invoice for an approved external payment request without making StackOS the billing system of record.
 domain: finance
 owner:
@@ -87,6 +87,7 @@ inputs:
     name: External Workspace Ref
     type: string
     required: true
+    description: One selected business financial master, usable from a standalone business directory or agency root. Agency/project setup is optional; descriptive associations never grant cross-project access. Follow the backend contract's business/project scope guidance.
     schema: {type: string, minLength: 1}
   - key: recording_mode
     name: Recording Mode
@@ -266,6 +267,7 @@ steps:
     output_refs: [payment_request_summary]
     instructions:
       - "Use one stable idempotency key per draft/line operation and a random non-sensitive 32-lowercase-hex correlation_key per request version, stored externally. Preserve key, provider ref, action ref and attempt outcome before continuing."
+      - "Optionally retain a verified single-project external_project_ref on the immutable billing version and include it in the material digest. One customer can have several projects; do not infer attribution from a customer mapping. Ambiguous or multi-project requests stay unassigned with a gap, without duplicating invoice amounts. A changed attribution needs a new proposal version and applicable approval, not a rewritten approved request."
       - "Pass the approved currency explicitly to invoice creation and every line. Do not rely on Stripe's account/customer default or assume a later line changes the draft currency; compare the resulting invoice currency before adding lines."
       - "Create every approved line on the explicit draft invoice. For uncertain writes, retrieve the known invoice or paginate customer/time-bounded invoice lists with correlation_matches; list exact invoice items and compare all lines before retry. Absence from one page is not absence. Ambiguity remains reconcile-required."
     success_criteria:

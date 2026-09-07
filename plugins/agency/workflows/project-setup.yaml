@@ -1,0 +1,289 @@
+schema_version: stackos.workflow-template.v1
+key: agency.project-setup
+name: Client Project Setup
+version: 0.1.0
+description: Record minimal client-engagement context in the currently bound StackOS project without creating a nested project, finance record, or provider state.
+domain: agency
+owner:
+  team: StackOS
+experience:
+  problem: Agency and standalone operators need durable engagement orientation without inventing a second project-management or finance system.
+  outcome: One read-back-verified client-project context record and, only when exactly selected, a no-launch finance setup handoff.
+  operator_path:
+    - Supply the engagement identity and brief context, with optional agency association, guidance, and finance navigation pointer.
+    - Review the saved engagement record and separately decide whether to set up exact finance workflows.
+  agent_path:
+    - Inspect current-project engagement records and resolve an existing or stable new engagement reference from supplied identity before strict run validation.
+    - Resolve any supplied or preserved agency association only against agency-profile resources in that same current project; stop before writing if it is unresolved.
+    - Merge supplied facts with permitted existing optional context, persist one engagement record, and read it back.
+    - Return a setup_existing finance handoff only for exact selected workflow keys; do not launch it.
+  progress_signals: [Engagement inventory complete, payload resolved, context persisted, readback verified]
+  recovery:
+    - If stable engagement identity conflicts with existing context, stop for operator direction rather than overwriting or creating a duplicate.
+  safe_stopping_points:
+    - Stop after engagement context is verified. Finance setup is a separate optional handoff and is never started implicitly.
+public:
+  audience: Solo operators and agencies organizing lightweight client-engagement context.
+  setup: available
+  prerequisites: [A currently bound StackOS project and operator-supplied engagement identity.]
+  proof: [One queryable client-project context record, readback evidence, and a bounded optional finance handoff.]
+  featured: false
+when_to_use:
+  - A client engagement needs minimal durable context in an agency or standalone workspace.
+  - An existing engagement context needs a reviewed update under its stable reference.
+when_not_to_use:
+  - The request is to create a nested StackOS project, project-management system, host folder, provider connection, or financial record.
+  - The request is to run finance operations; select the relevant finance workflow instead.
+agent_requirements: []
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: required
+    purpose: Use workspace binding, workflow, resource, run-plan, and audit contracts correctly.
+    applies_to_steps: [inventory-existing-context, resolve-supplied-facts, persist-project-context, readback-and-handoff]
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Keep standalone or agency-associated setup, resource persistence, stopping boundaries, and optional handoffs explicit without adding a specialist role.
+inputs:
+  - key: engagement_ref
+    name: Engagement Reference
+    type: string
+    required: true
+    description: Agent-resolved stable reference used as the project-context external id. Resolve it from supplied engagement identity or an existing record; do not ask the operator to invent an opaque id.
+    schema: {type: string, minLength: 1, maxLength: 300}
+  - key: engagement_name
+    name: Engagement Name
+    type: string
+    required: true
+    description: Human-recognizable client engagement name.
+    schema: {type: string, minLength: 1, maxLength: 300}
+  - key: client_ref
+    name: Client Reference
+    type: string
+    required: true
+    description: Safe client identity reference. Do not include client secrets or financial facts.
+    schema: {type: string, minLength: 1, maxLength: 300}
+  - key: description
+    name: Description
+    type: string
+    required: true
+    description: Short operator-supplied engagement description.
+    schema: {type: string, minLength: 1, maxLength: 3000}
+  - key: agency_profile_ref
+    name: Agency Profile Reference
+    type: string
+    required: false
+    description: Optional safe association with an agency-profile resource in this same StackOS project. Its absence means standalone setup.
+    schema: {type: string, minLength: 1, maxLength: 300}
+  - key: guidance
+    name: Engagement Guidance
+    type: array
+    required: false
+    description: Optional explicitly supplied guidance; omit unknown or inferred guidance.
+    schema:
+      type: array
+      items: {type: string, minLength: 1, maxLength: 1000}
+      maxItems: 30
+  - key: finance_workspace_association_ref
+    name: Finance Workspace Association Reference
+    type: string
+    required: false
+    description: Optional safe navigation pointer to an externally managed finance workspace association. It is not financial data, finance configuration, or finance authority.
+    schema: {type: string, minLength: 1, maxLength: 300}
+  - key: finance_setup_requested
+    name: Finance Setup Requested
+    type: boolean
+    required: false
+    default: false
+    description: Whether to return a finance setup handoff. It never starts finance setup or finance operations.
+    schema: {type: boolean, default: false}
+  - key: finance_workflow_keys
+    name: Finance Workflow Keys
+    type: array
+    required: false
+    description: Exact finance workflow keys selected for a setup_existing handoff. Omit until selected; never infer a finance route.
+    schema:
+      type: array
+      uniqueItems: true
+      items:
+        type: string
+        enum: [finance.receipt-intake, finance.bookkeeping-close, finance.payment-request, finance.payment-request-followups, finance.cashflow-management, finance.tax-estimates]
+      maxItems: 6
+context_requirements:
+  - id: existing_project_contexts
+    source: resources
+    purpose: Check current-project project-context records for the resolved engagement reference and preserve valid existing optional context.
+    filters:
+      plugin_slug: agency
+      resource_keys: [project-context]
+    fields: [title, external_id, data_json, updated_at]
+    max_items: 50
+    return_mode: compact
+  - id: existing_agency_profiles
+    source: resources
+    purpose: Resolve a supplied or preserved agency-profile association only inside the current StackOS project before writing engagement context.
+    filters:
+      plugin_slug: agency
+      resource_keys: [agency-profile]
+    fields: [title, external_id, data_json, updated_at]
+    max_items: 20
+    return_mode: compact
+resource_contracts:
+  - key: project_context
+    resource: project-context
+    purpose: Store one minimal client-engagement context under its resolved stable reference.
+    required: true
+policies:
+  - key: setup-boundary
+    kind: boundary
+    description: Workflow infrastructure setup is read-only capability setup and must not create this resource or a run plan. This workflow's explicitly authorized onboarding run may upsert only the project-context resource during its granted persist step; it creates no host folder, StackOS project, provider connection, artifact, finance work, or project-delivery workflow.
+  - key: flat-project-scope
+    kind: boundary
+    description: A project-context record belongs to the currently bound StackOS project only. It is a business engagement, not a nested StackOS project, and grants no automatic cross-project access, inherited configuration, or agency hierarchy.
+  - key: finance-handoff-only
+    kind: boundary
+    description: finance_workspace_association_ref is a safe navigation pointer only. Finance backend authority, mutable finance setup, accounts, provider credentials, and financial facts remain external. Return a setup_existing finance handoff only for exact selected workflow keys; finance setup is never started implicitly.
+steps:
+  - id: inventory-existing-context
+    title: Inventory Existing Engagement Context
+    purpose: Inspect bounded current-project project-context records and resolve one stable engagement identity.
+    input_refs: [engagement_ref, engagement_name]
+    context_refs: [existing_project_contexts, existing_agency_profiles]
+    policy_refs: [setup-boundary, flat-project-scope]
+    output_refs: [project_context_inventory]
+    instructions:
+      - Confirm the bound StackOS project and inspect only current-project project-context resources.
+      - If the resolved engagement_ref is new, retain it. If it already exists, reuse that stable reference rather than creating a duplicate.
+      - For a supplied agency_profile_ref, or an association preserved from the existing engagement record, resolve the exact reference only in existing_agency_profiles from this same bound StackOS project. If it is missing or unresolved, record the hold for the next step; do not search another project or create a profile.
+      - If its supplied identity conflicts materially with the current record, stop and ask the operator which record is authoritative. Do not scan host folders or infer a project hierarchy.
+    success_criteria:
+      - Existing state, exact resolved engagement reference, and conflict status are captured for the next step.
+  - id: resolve-supplied-facts
+    title: Resolve Supplied Engagement Facts
+    purpose: Produce the complete write payload by merging supplied facts with permitted existing optional context.
+    depends_on: [inventory-existing-context]
+    input_refs: [engagement_ref, engagement_name, client_ref, description, agency_profile_ref, guidance, finance_workspace_association_ref, finance_setup_requested, finance_workflow_keys]
+    context_refs: [existing_agency_profiles]
+    policy_refs: [setup-boundary, flat-project-scope, finance-handoff-only]
+    output_refs: [project_context_payload]
+    instructions:
+      - Keep engagement_ref, engagement_name, client_ref, and description scoped to supplied facts. Absence of agency_profile_ref is valid standalone engagement setup.
+      - Include agency_profile_ref, guidance, and finance_workspace_association_ref only when supplied. On update, preserve an existing optional field when new input omits it; change or clear it only on explicit operator instruction.
+      - If the supplied or preserved payload includes agency_profile_ref, require an exact matching agency-profile in the same bound StackOS project before producing a write payload. If it is missing, unresolved, or only known outside this project, stop before writing; do not create a profile, search other projects, or treat the association as verified.
+      - Do not create clients, agency profiles, StackOS projects, host folders, financial records, finance settings, credentials, allocation rules, or profitability calculations. Determine whether exact finance_workflow_keys support a later setup_existing handoff, but do not invoke it.
+    success_criteria:
+      - The complete resolved payload names the stable engagement reference and contains only valid project-context fields.
+  - id: persist-project-context
+    title: Persist Client Project Context
+    purpose: Upsert the resolved complete engagement payload under its stable external id.
+    depends_on: [resolve-supplied-facts]
+    input_refs: [engagement_ref]
+    resource_refs: [project_context]
+    policy_refs: [setup-boundary, flat-project-scope, finance-handoff-only]
+    output_refs: [project_context_write]
+    instructions:
+      - Use only the step-granted resource.upsert path with the complete resolved payload from the direct dependency handoff.
+      - Set resource external id exactly to the resolved engagement_ref and update that same identity on rerun.
+      - Write only engagement identity, safe client reference, description, and supplied optional associations or guidance. Do not write financial facts, finance configuration, credentials, artifacts, project-management state, or project hierarchy state.
+    success_criteria:
+      - Exactly one project-context resource is created or updated under the resolved stable engagement reference.
+  - id: readback-and-handoff
+    title: Read Back And Hand Off
+    purpose: Verify the saved engagement resource and return the optional finance setup handoff without executing it.
+    depends_on: [persist-project-context]
+    input_refs: [engagement_ref, agency_profile_ref, finance_setup_requested, finance_workflow_keys]
+    context_refs: [existing_project_contexts]
+    policy_refs: [setup-boundary, finance-handoff-only]
+    output_refs: [project_setup_summary]
+    instructions:
+      - Re-query the exact project-context resource in the bound project and verify stable engagement identity and saved fields against the write handoff.
+      - Return a finance handoff only when requested and exact finance_workflow_keys are selected. Name authoring intent setup_existing, selected keys, and that no finance setup or operation was started.
+      - Stop after readback; do not create a finance workspace, a nested StackOS project, a host folder, an artifact, a provider action, or a financial record.
+    success_criteria:
+      - The summary names the read-back project-context reference, standalone or associated state, residual questions, and truthful finance handoff state.
+outputs:
+  - key: project_context_inventory
+    name: Project Context Inventory
+    type: object
+    required: true
+    description: Bounded current-project engagement inventory and stable identity resolution for the next step.
+    schema:
+      type: object
+      additionalProperties: false
+      required: [engagement_ref, context_state, existing_context_refs, agency_association_state]
+      properties:
+        engagement_ref: {type: string, minLength: 1}
+        context_state: {type: string, enum: [new, existing, conflict]}
+        existing_context_refs: {type: array, items: {type: string}}
+        agency_profile_ref: {type: string}
+        agency_association_state: {type: string, enum: [standalone, resolved, unresolved]}
+  - key: project_context_payload
+    name: Project Context Payload
+    type: object
+    required: true
+    description: Complete resolved client-project context payload for the single granted write.
+    schema:
+      type: object
+      additionalProperties: false
+      required: [engagement_ref, engagement_name, client_ref, description]
+      properties:
+        engagement_ref: {type: string, minLength: 1}
+        engagement_name: {type: string, minLength: 1}
+        client_ref: {type: string, minLength: 1}
+        description: {type: string, minLength: 1}
+        agency_profile_ref: {type: string}
+        guidance: {type: array}
+        finance_workspace_association_ref: {type: string}
+  - key: project_context_write
+    name: Project Context Write
+    type: object
+    required: true
+    description: Safe result of the one granted project-context resource upsert for readback.
+    schema:
+      type: object
+      additionalProperties: false
+      required: [engagement_ref, resource_external_id, write_state]
+      properties:
+        engagement_ref: {type: string, minLength: 1}
+        resource_external_id: {type: string, minLength: 1}
+        write_state: {type: string, enum: [created, updated]}
+  - key: project_setup_summary
+    name: Client Project Setup Summary
+    type: object
+    required: true
+    description: Safe readback and optional next-workflow handoff for one minimal client engagement context.
+    schema:
+      type: object
+      additionalProperties: false
+      required: [engagement_ref, project_context_ref, record_state, agency_association_state, finance_setup_handoff, residual_questions]
+      properties:
+        engagement_ref: {type: string, minLength: 1}
+        project_context_ref: {type: string, minLength: 1}
+        record_state: {type: string, enum: [created, updated, verified]}
+        agency_association_state: {type: string, enum: [standalone, associated]}
+        finance_setup_handoff:
+          type: object
+          additionalProperties: false
+          required: [requested, state, workflow_keys, authoring_intent, next_action]
+          properties:
+            requested: {type: boolean}
+            state: {type: string, enum: [not-requested, selection-required, handoff-only]}
+            workflow_keys:
+              type: array
+              uniqueItems: true
+              items: {type: string, enum: [finance.receipt-intake, finance.bookkeeping-close, finance.payment-request, finance.payment-request-followups, finance.cashflow-management, finance.tax-estimates]}
+            authoring_intent: {type: string, enum: [none, setup_existing]}
+            next_action: {type: string, minLength: 1}
+        residual_questions:
+          type: array
+          items: {type: string}
+failure_handling:
+  - If stable identity or supplied engagement facts conflict with the existing context, stop before writing and ask the operator to resolve the conflict.
+  - If a supplied or preserved agency_profile_ref does not resolve to exactly one agency-profile in the same bound StackOS project, stop before writing. Do not create the association, search other projects, or create a profile as a fallback.
+  - If finance setup is requested without exact selected finance workflow keys, return selection-required with no handoff launch and no finance state.
+  - If readback cannot find exactly the persisted engagement in the bound project, report recovery state and do not claim setup is complete.
+metadata:
+  builtin: true
+  plugin_slug: agency
+  workflow_family: agency-project-setup
+  artifact_grant_policy: explicit

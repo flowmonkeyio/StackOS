@@ -251,6 +251,23 @@ agent adapts them before use.
 
 ## Finance Workflow Presets
 
+Minimal agency/client-project setup uses `agency.setup` and
+`agency.project-setup`, both with the existing `stackos.workflow-orchestrator`.
+They need no specialist presets, agency-manager agent, or project-manager agent.
+In this repository their main-agent adaptation is
+`.codex/orchestrator/workflow-orchestrator.md`; see the
+[agency package](../plugins/agency/README.md) for the setup/persistence/handoff
+boundary. Finance remains independently usable without this package.
+
+From a standalone business directory or an agency root, the finance main agent
+uses one selected external financial master per business. Client engagements are
+descriptive context, not nested StackOS projects or inherited access. Optional
+`external_project_ref` on billing versions and prepared bookkeeping records
+retains sourced attribution; receipt custody needs no project. Company-wide costs
+remain unassigned, and no allocation/profitability engine is implied. Provider
+connections must be explicitly available to the bound finance-owning project;
+host directory access is a separate capability.
+
 The finance plugin is an external-system-of-record package, not a finance-agent
 runtime or ledger. Its six workflows resolve six generic specialist presets:
 

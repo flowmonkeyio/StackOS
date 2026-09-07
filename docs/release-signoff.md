@@ -26,6 +26,17 @@ make signoff
 
 ## Agent Flow Matrix
 
+For agency/setup package changes, include
+`tests/unit/test_agency_plugin.py` and
+`tests/integration/test_repositories/test_agency_setup.py`, the plugin catalog
+and workflow/preset suites, and the finance schema/workspace slice. Rehearse a
+standalone engagement, an agency with no projects, two projects for one client,
+setup rerun/readback, and rejected cross-project access. Verify standalone
+finance has no agency prerequisite, optional attribution changes the invoice
+approval digest, and company-wide/ambiguous costs do not become duplicated or
+automatically allocated. Independently compare the shipped definitions and
+host adaptations with the existing setup, resource, and orchestrator patterns.
+
 Use this matrix before release to choose the smallest meaningful test slice
 while still covering the agent-facing contract. Run full `make signoff` when a
 change crosses more than one row, changes operation schemas, changes grants, or

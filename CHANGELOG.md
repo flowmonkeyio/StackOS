@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 2.1.23 - 2026-09-06
+
+- Added minimal agency and client-project setup workflows using existing
+  project-scoped resources and the shared main-agent orchestrator.
+- Kept finance independently usable from a standalone business folder or agency
+  root, with optional source-backed project attribution on invoices and prepared
+  bookkeeping records, one external financial master, and aligned agent guidance.
+
 ## 2.1.22 - 2026-09-06
 
 - Added the finance workflow package for receipt intake, bookkeeping close,

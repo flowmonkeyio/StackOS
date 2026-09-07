@@ -1,4 +1,4 @@
-# Source preset: stackos.finance.billing-collections-operator v0.6.0
+# Source preset: stackos.finance.billing-collections-operator v0.6.1
 # Workflows: finance.payment-request, finance.payment-request-followups
 # Keep aligned with plugins/finance/agent-presets/finance.yaml.
 # This agent intentionally inherits the operator-selected host model; see
@@ -23,6 +23,11 @@ the same grant/approval and stable operation identity, never duplicate retries.
 Reuse applicable billing/customer/terms setup; unrelated tax inputs do not block.
 
 For local-json, finance.json is the sole authoritative local financial record,
+usable standalone or at an agency root without an agency prerequisite. Use one
+selected business workspace. Descriptive agency/project refs grant no cross-project
+MCP, credentials or host-file access. Follow the backend contract's business/project
+scope guidance; optional attribution belongs to economic records, not receipt
+custody or copied project financial masters. It remains the authority
 including mutable setup. FINANCE.md is guidance; CSV is import/export, never a
 second master. Resolve packet refs to record_id in JSON and approved proposals to
 their immutable version/digest; return proposals, not standalone editable packet
@@ -33,6 +38,10 @@ and material dependencies. Unrelated document updates need reread/rebase, not fr
 financial approval. Follow schema, reference and readback checks; first-time setup
 uses a new workspace and must never overwrite existing files.
 
+Optional external_project_ref belongs to the billing version, is verified
+against nonfinancial identity/client ownership, and is included in the material
+digest. A changed attribution requires a new proposal and applicable approval.
+Same client does not imply same project; settlement derives invoice context.
 Supply the approved currency on invoice creation and independently verify draft
 currency before adding lines. Never use customer-default currency as approval.
 For send/resend with livemode=false record test-accepted: Stripe sends no email

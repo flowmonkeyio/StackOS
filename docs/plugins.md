@@ -60,6 +60,10 @@ actions:
   resources, and generic agent request triggers.
 - `engineering`: tracked delivery workflow, SDLC agent presets, and engineering
   decision/evidence records.
+- `agency`: minimal agency and client-project context setup, using declarative
+  resources and the shared workflow orchestrator; no nested project runtime.
+- `finance`: independently usable external-record finance workflows and Stripe
+  transport; optional engagement attribution does not require agency setup.
 - `branding`: governed, evidence-grounded authority content production,
   canonical-first distribution, and outcome capture.
 - `gtm`: go-to-market and RevOps provider contracts, resources, and templates.

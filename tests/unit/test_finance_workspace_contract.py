@@ -58,6 +58,11 @@ def test_backend_contract_keeps_finance_records_outside_stackos() -> None:
         "filesystem connector",
         "QuickBooks",
         "Google Sheets",
+        "`external_project_ref`",
+        "not a StackOS project ID",
+        "not an authority grant",
+        "no automatic cross-project access",
+        "no project registry",
     ):
         assert required in contract
 
@@ -104,6 +109,8 @@ def test_local_workspace_contract_requires_safe_common_intake_ordering() -> None
         "Unsupported or unsynchronized partials",
         "split allocations, overpayments, mismatches and unknown outcomes",
         "24 hours",
+        "project is unknown or multi-project",
+        "Never infer attribution from a customer mapping",
         "backup, restore, retention periods, access permissions",
     ):
         assert required in contract
@@ -270,6 +277,38 @@ def test_unrelated_receipt_does_not_invalidate_exact_billing_approval(tmp_path: 
     invoice["terms"]["days_until_due"] = 45
     invoice["digest_sha256"] = material_billing_digest(invoice)
     assert invoice["digest_sha256"] != approved_digest
+    with pytest.raises(ValueError, match="approved billing material is immutable"):
+        write_document(path, changed, digest(path))
+    assert read_document(path) == current
+
+
+def test_project_attribution_is_billing_material_without_a_second_amount_or_record(
+    tmp_path: Path,
+) -> None:
+    path = initialize(tmp_path / "finance")
+    document = read_document(path)
+    billing = add_billing_fixture(document)
+    unassigned_digest = billing["digest_sha256"]
+    billing["external_project_ref"] = "agency-project:fixture-client-a-website"
+    billing["digest_sha256"] = material_billing_digest(billing)
+    assert billing["digest_sha256"] != unassigned_digest
+    document["revision"] = 1
+    write_document(path, document, digest(path))
+
+    current = read_document(path)
+    current_billing = current["billing_versions"][0]
+    assert len(current["billing_versions"]) == 1
+    assert current_billing["total"] == money(1000)
+    assert sum(line["amount"]["amount_minor"] for line in current_billing["lines"]) == 1000
+    assert "allocation" not in current_billing
+    assert all("external_project_ref" not in line for line in current_billing["lines"])
+
+    changed = copy.deepcopy(current)
+    changed["revision"] = 2
+    changed_billing = changed["billing_versions"][0]
+    changed_billing["external_project_ref"] = "agency-project:fixture-client-b-website"
+    changed_billing["digest_sha256"] = material_billing_digest(changed_billing)
+    assert changed_billing["digest_sha256"] != current_billing["digest_sha256"]
     with pytest.raises(ValueError, match="approved billing material is immutable"):
         write_document(path, changed, digest(path))
     assert read_document(path) == current

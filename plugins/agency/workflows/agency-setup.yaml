@@ -1,0 +1,257 @@
+schema_version: stackos.workflow-template.v1
+key: agency.setup
+name: Agency Setup
+version: 0.1.0
+description: Record minimal reusable agency context in the currently bound StackOS project without creating host folders, nested projects, finance records, or provider state.
+domain: agency
+owner:
+  team: StackOS
+experience:
+  problem: Agency operators need durable orientation without creating a separate agency-management system.
+  outcome: One read-back-verified agency profile and, only when exactly selected, a no-launch finance setup handoff.
+  operator_path:
+    - Supply an agency name and short context, plus optional navigation reference and explicit guidance.
+    - Review the saved profile and separately decide whether to set up exact finance workflows.
+  agent_path:
+    - Inspect current-project agency profiles and resolve one existing or stable new profile reference from supplied identity before strict run validation.
+    - Merge supplied facts with permitted existing optional context, persist one profile, and read it back.
+    - Return a setup_existing finance handoff only for exact selected workflow keys; do not launch it.
+  progress_signals: [Agency inventory complete, payload resolved, profile persisted, readback verified]
+  recovery:
+    - If profile identity conflicts or more than one current profile exists, stop for operator direction rather than overwriting or creating another profile.
+  safe_stopping_points:
+    - Stop after agency context is verified. Finance setup is a separate optional handoff and is never started implicitly.
+public:
+  audience: Solo operators and small agencies setting up reusable agent context.
+  setup: available
+  prerequisites: [A currently bound StackOS project and operator-supplied agency identity.]
+  proof: [One queryable agency profile, readback evidence, and a bounded optional finance handoff.]
+  featured: false
+when_to_use:
+  - A new agency workspace needs minimal durable context for future agents.
+  - An existing agency profile needs a reviewed update under its stable reference.
+when_not_to_use:
+  - The request is to create a StackOS hierarchy, client-management system, host folder, provider connection, or financial record.
+  - The request is to run finance operations; select the relevant finance workflow instead.
+agent_requirements: []
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: required
+    purpose: Use workspace binding, workflow, resource, run-plan, and audit contracts correctly.
+    applies_to_steps: [inventory-existing-setup, resolve-supplied-facts, persist-profile, readback-and-handoff]
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Keep setup scope, resource persistence, stopping boundaries, and optional handoffs explicit without adding a specialist role.
+inputs:
+  - key: agency_profile_ref
+    name: Agency Profile Reference
+    type: string
+    required: true
+    description: Agent-resolved stable reference used as the agency-profile external id. Resolve it from supplied agency identity or an existing profile; do not ask the operator to invent an opaque id.
+    schema: {type: string, minLength: 1, maxLength: 300}
+  - key: agency_name
+    name: Agency Name
+    type: string
+    required: true
+    description: Operator-facing agency name.
+    schema: {type: string, minLength: 1, maxLength: 200}
+  - key: brief_context
+    name: Brief Context
+    type: string
+    required: true
+    description: Short operator-supplied agency context for future agents.
+    schema: {type: string, minLength: 1, maxLength: 2000}
+  - key: agency_workspace_ref
+    name: Agency Workspace Reference
+    type: string
+    required: false
+    description: Optional safe navigation reference, never a host path or StackOS project id.
+    schema: {type: string, minLength: 1, maxLength: 300}
+  - key: guidance
+    name: Agency Guidance
+    type: array
+    required: false
+    description: Optional explicitly supplied guidance; omit unknown or inferred guidance.
+    schema:
+      type: array
+      items: {type: string, minLength: 1, maxLength: 1000}
+      maxItems: 30
+  - key: finance_setup_requested
+    name: Finance Setup Requested
+    type: boolean
+    required: false
+    default: false
+    description: Whether to return a finance setup handoff. It never starts finance setup or finance operations.
+    schema: {type: boolean, default: false}
+  - key: finance_workflow_keys
+    name: Finance Workflow Keys
+    type: array
+    required: false
+    description: Exact finance workflow keys selected for a setup_existing handoff. Omit until selected; never infer a finance route.
+    schema:
+      type: array
+      uniqueItems: true
+      items:
+        type: string
+        enum: [finance.receipt-intake, finance.bookkeeping-close, finance.payment-request, finance.payment-request-followups, finance.cashflow-management, finance.tax-estimates]
+      maxItems: 6
+context_requirements:
+  - id: existing_agency_profiles
+    source: resources
+    purpose: Check the current project for existing agency profiles and resolve a single stable identity without permitting duplicates.
+    filters:
+      plugin_slug: agency
+      resource_keys: [agency-profile]
+    fields: [title, external_id, data_json, updated_at]
+    max_items: 20
+    return_mode: compact
+resource_contracts:
+  - key: agency_profile
+    resource: agency-profile
+    purpose: Store the one minimal agency profile under its resolved stable reference.
+    required: true
+policies:
+  - key: setup-boundary
+    kind: boundary
+    description: Workflow infrastructure setup is read-only capability setup and must not create this resource or a run plan. This workflow's explicitly authorized onboarding run may upsert only the agency-profile resource during its granted persist step; it creates no host folder, StackOS project, provider connection, artifact, or finance work.
+  - key: flat-project-scope
+    kind: boundary
+    description: An agency profile belongs to the currently bound StackOS project only. It does not create a parent project, child project, global agency registry, automatic inheritance, or cross-project access.
+  - key: finance-handoff-only
+    kind: boundary
+    description: Existing finance workflow setup is optional. Return a setup_existing handoff only for exact selected finance workflow keys; finance setup is never started implicitly, and this workflow never creates a finance workspace, saves finance settings, connects accounts, or executes finance work.
+steps:
+  - id: inventory-existing-setup
+    title: Inventory Existing Agency Setup
+    purpose: Inspect bounded current-project agency-profile context and resolve one stable identity.
+    input_refs: [agency_profile_ref, agency_name]
+    context_refs: [existing_agency_profiles]
+    policy_refs: [setup-boundary, flat-project-scope]
+    output_refs: [agency_inventory]
+    instructions:
+      - Confirm the bound StackOS project and inspect only current-project agency-profile resources.
+      - If no profile exists, use the pre-run resolved agency_profile_ref. If exactly one profile exists, reuse its stable reference rather than creating another current profile.
+      - If more than one profile exists, or the resolved identity conflicts with an existing agency identity, stop and ask the operator which record is authoritative. Do not scan host folders or infer a project hierarchy.
+    success_criteria:
+      - Existing state, exact resolved profile reference, and duplicate-profile status are captured for the next step.
+  - id: resolve-supplied-facts
+    title: Resolve Supplied Agency Facts
+    purpose: Produce the complete write payload by merging supplied facts with permitted existing optional context.
+    depends_on: [inventory-existing-setup]
+    input_refs: [agency_profile_ref, agency_name, brief_context, agency_workspace_ref, guidance, finance_setup_requested, finance_workflow_keys]
+    policy_refs: [setup-boundary, flat-project-scope, finance-handoff-only]
+    output_refs: [agency_profile_payload]
+    instructions:
+      - Keep agency_name and brief_context scoped to supplied facts.
+      - Include agency_workspace_ref and guidance only when supplied. On update, preserve an existing optional field when new input omits it; change or clear it only on explicit operator instruction.
+      - Do not insert placeholders, paths, secrets, client data, finance data, or finance configuration. Determine whether exact finance_workflow_keys support a later setup_existing handoff, but do not invoke it.
+    success_criteria:
+      - The complete resolved payload names the stable profile reference and contains only valid agency-profile fields.
+  - id: persist-profile
+    title: Persist Agency Profile
+    purpose: Upsert the resolved complete profile under its stable external id.
+    depends_on: [resolve-supplied-facts]
+    input_refs: [agency_profile_ref, agency_name, brief_context, agency_workspace_ref, guidance]
+    resource_refs: [agency_profile]
+    policy_refs: [setup-boundary, flat-project-scope]
+    output_refs: [agency_profile_write]
+    instructions:
+      - Use only the step-granted resource.upsert path with the complete resolved payload from the direct dependency handoff.
+      - Set resource external id exactly to the resolved agency_profile_ref and update that same identity on rerun.
+      - Write no financial facts, finance configuration, credentials, artifacts, or project hierarchy state.
+    success_criteria:
+      - Exactly one agency-profile resource is created or updated under the resolved stable reference.
+  - id: readback-and-handoff
+    title: Read Back And Hand Off
+    purpose: Verify the saved profile and return an optional no-launch finance setup handoff.
+    depends_on: [persist-profile]
+    input_refs: [agency_profile_ref, finance_setup_requested, finance_workflow_keys]
+    context_refs: [existing_agency_profiles]
+    policy_refs: [setup-boundary, finance-handoff-only]
+    output_refs: [agency_setup_summary]
+    instructions:
+      - Re-query the exact agency-profile resource in the bound project and verify its stable reference and saved fields against the write handoff.
+      - Return a finance handoff only when requested and exact finance_workflow_keys are selected. Name authoring intent setup_existing, selected keys, and that no finance setup or operation was started.
+      - Stop after readback; do not create a project context, host folder, StackOS project, artifact, provider action, or finance record.
+    success_criteria:
+      - The summary names the read-back profile, record state, residual questions, and truthful finance handoff state.
+outputs:
+  - key: agency_inventory
+    name: Agency Inventory
+    type: object
+    required: true
+    description: Bounded current-project agency-profile inventory and stable identity resolution for the next step.
+    schema:
+      type: object
+      additionalProperties: false
+      required: [agency_profile_ref, profile_state, existing_profile_refs]
+      properties:
+        agency_profile_ref: {type: string, minLength: 1}
+        profile_state: {type: string, enum: [new, existing, conflict]}
+        existing_profile_refs: {type: array, items: {type: string}}
+  - key: agency_profile_payload
+    name: Agency Profile Payload
+    type: object
+    required: true
+    description: Complete resolved agency-profile payload for the single granted write.
+    schema:
+      type: object
+      additionalProperties: false
+      required: [agency_profile_ref, agency_name, brief_context]
+      properties:
+        agency_profile_ref: {type: string, minLength: 1}
+        agency_name: {type: string, minLength: 1}
+        brief_context: {type: string, minLength: 1}
+        agency_workspace_ref: {type: string}
+        guidance: {type: array}
+  - key: agency_profile_write
+    name: Agency Profile Write
+    type: object
+    required: true
+    description: Safe result of the one granted agency-profile resource upsert for readback.
+    schema:
+      type: object
+      additionalProperties: false
+      required: [agency_profile_ref, resource_external_id, write_state]
+      properties:
+        agency_profile_ref: {type: string, minLength: 1}
+        resource_external_id: {type: string, minLength: 1}
+        write_state: {type: string, enum: [created, updated]}
+  - key: agency_setup_summary
+    name: Agency Setup Summary
+    type: object
+    required: true
+    description: Safe readback and optional next-workflow handoff for one minimal agency profile.
+    schema:
+      type: object
+      additionalProperties: false
+      required: [agency_profile_ref, record_state, finance_setup_handoff, residual_questions]
+      properties:
+        agency_profile_ref: {type: string, minLength: 1}
+        record_state: {type: string, enum: [created, updated, verified]}
+        finance_setup_handoff:
+          type: object
+          additionalProperties: false
+          required: [requested, state, workflow_keys, authoring_intent, next_action]
+          properties:
+            requested: {type: boolean}
+            state: {type: string, enum: [not-requested, selection-required, handoff-only]}
+            workflow_keys:
+              type: array
+              uniqueItems: true
+              items: {type: string, enum: [finance.receipt-intake, finance.bookkeeping-close, finance.payment-request, finance.payment-request-followups, finance.cashflow-management, finance.tax-estimates]}
+            authoring_intent: {type: string, enum: [none, setup_existing]}
+            next_action: {type: string, minLength: 1}
+        residual_questions:
+          type: array
+          items: {type: string}
+failure_handling:
+  - If stable identity or supplied agency facts conflict with the existing profile, stop before writing and ask the operator to resolve the conflict.
+  - If finance setup is requested without exact selected finance workflow keys, return selection-required with no handoff launch and no finance state.
+  - If readback cannot find exactly the persisted profile in the bound project, report recovery state and do not claim setup is complete.
+metadata:
+  builtin: true
+  plugin_slug: agency
+  workflow_family: agency-setup
+  artifact_grant_policy: explicit

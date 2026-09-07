@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: finance.cashflow-management
 name: Finance Cashflow Management
-version: 0.3.0
+version: 0.3.1
 description: Prepare a dated exactly thirteen-week cashflow forecast in the selected external backend from bounded external and optional read-only Stripe evidence, without moving money or storing forecast contents in StackOS.
 domain: finance
 owner:
@@ -84,6 +84,7 @@ inputs:
     name: External Workspace Ref
     type: string
     required: true
+    description: One selected business financial master, usable from a standalone business directory or agency root. Agency/project setup is optional; descriptive associations never grant cross-project access. Follow the backend contract's business/project scope guidance.
     schema: {type: string, minLength: 1}
   - key: recording_mode
     name: Recording Mode

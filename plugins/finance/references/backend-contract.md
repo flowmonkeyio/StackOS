@@ -21,6 +21,37 @@ IDs. Editing them does not update the financial record. Resolve conflicts from
 original/provider evidence through a reviewed JSON correction, never silently
 prefer a report or synchronize two masters.
 
+## Business and project scope
+
+Run from a standalone business directory or an agency root using the existing
+finance workflows and one selected external financial master per business.
+Reuse that master across client engagements; do not create a finance.json in
+each project folder. Resolve its safe workspace selector from the effective
+finance extension and its actual settings from the external backend. A navigation
+pointer in agency context is not a second configuration owner. Host-file access
+and provider connections must be available in the bound finance-owning scope;
+neither an agency association nor a folder relationship supplies that authority.
+
+Finance is independently usable: an agency and its projects are optional
+context, not prerequisites or a second financial master. When supplied,
+`external_project_ref` is a non-empty opaque, source-backed nonfinancial project
+identity. It may appear only on a bookkeeping record or a billing version; it
+is not a StackOS project ID or a local financial-record ref. It is
+not an authority grant.
+The host verifies the reference against the supplied agency resource or
+operator/external source and its ownership before accepting it. That check never
+requires discovering, reading, or operating another StackOS project: the ref
+creates no automatic cross-project access and no project registry or mandatory
+mapping in finance.
+
+Omit the field for company-wide work. When the project is unknown or
+multi-project, leave it absent with an explicit gap. Never infer attribution
+from a customer mapping: the same customer can have multiple projects.
+Attribution is a single optional label,
+not a split allocation, project profitability engine, shared-cost allocation,
+or copied financial amount. Do not put it on receipts, billing lines,
+settlements, cashflow, tax packets, or provider observations.
+
 StackOS must not own finance-domain tables, repositories, resources,
 private evidence storage, a filesystem connector, financial ledger or tax
 engine. Existing workflows, grants, credentials, approvals and audit provide
@@ -79,8 +110,8 @@ reference resolution, immutable versions, arithmetic, provenance and custody.
 | --- | --- |
 | Source coverage | Account, expected/available window, opening/closing evidence, gaps and observation date. |
 | Receipt/evidence | One source and one or more receipt records; original paths/hashes/bytes, extracted facts, duplicate links and quarantine. |
-| Bookkeeping | Amount/currency/date, category proposal/applied rule, confidence/reason, source and reconciliation links, prepared/unposted status. |
-| Billing version | Immutable customer/mapping, complete lines, currency, terms, total, recipient-settings version/scope and verification, version/digest, provider refs and mutation attempt keys. |
+| Bookkeeping | Amount/currency/date, category proposal/applied rule, confidence/reason, source and reconciliation links, prepared/unposted status, and optional source-backed `external_project_ref`. |
+| Billing version | Immutable customer/mapping, complete lines, currency, terms, total, recipient-settings version/scope and verification, optional source-backed `external_project_ref`, version/digest, provider refs and mutation attempt keys. |
 | Collections and received-payment settlement | Invoice lifecycle/due status, dispute, reminder owner, contact/cooldown/promise/pause, decision version, approval and actual send outcome. For a received payment, retain one source identity, customer/invoice/account match evidence, currency/received state, one allocation, selected route, provider refs, recovery key and external write/readback proof. |
 | Cashflow | 13-week base/downside cash rollforwards, source/assumption refs, reserves separate from actual payments, unknowns. |
 | Tax packet | Annual business/household inputs, current sources, applicable obligations, calculations, payments/withholding, annual liability versus installment and review state. |
@@ -156,6 +187,11 @@ remain in the external record; StackOS receives only safe refs/status.
 Corrections are additive: original/superseded ref, reason, actor/time and new
 facts, plus approval when a material business decision requires it.
 `prepared/unposted` is not a ledger posting or closed accounting period.
+Correct a bookkeeping attribution through that existing additive correction
+pattern: preserve the original record, create the supported replacement record,
+and retain a `corrections` entry from superseded to replacement ref with its
+reason. A consuming attribution view resolves that relationship before totals;
+it must not count both records, mutate the original, or invent split amounts.
 
 Reconcile bank/card windows and balances as well as Stripe. Separate gross
 receipts, fees, refunds and transfers; do not count an invoice, payment and

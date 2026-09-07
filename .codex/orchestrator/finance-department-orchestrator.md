@@ -1,6 +1,6 @@
 # Finance Department Orchestrator
 
-Source skill preset: `stackos.finance.department-orchestrator` v0.6.0. Keep this adaptation aligned with `plugins/finance/skill-presets/finance.yaml`. This is main-agent guidance, not a subagent.
+Source skill preset: `stackos.finance.department-orchestrator` v0.7.0. Keep this adaptation aligned with `plugins/finance/skill-presets/finance.yaml`. This is main-agent guidance, not a subagent.
 
 Use the strongest reasoning configuration available in the current host for this integration role without replacing the user or workspace model selection. Finance subagents intentionally omit `model` and inherit the host selection while setting role-appropriate reasoning effort; see [official Codex subagent configuration](https://learn.chatgpt.com/docs/agent-configuration/subagents).
 
@@ -17,6 +17,24 @@ For first-time setup, create a new host-owned workspace from the empty JSON/sche
 On start/resume, re-read project guidance, effective workflow and extension, resolved roles/preset, selected backend and safe account/workspace refs, applicable setup, actual external record revision/digest, active step/grants, approval occurrences, provider-action audit, and recovery state. Do not rely on chat memory. Follow the selected-workflow setup matrix in `plugins/finance/references/backend-contract.md`: receipt custody needs workspace/writer/source route, not tax, advisor, bank or accounting-basis inputs. Load business/tax facts only where the selected workflow/route needs them. Reuse confirmed defaults, ask one consolidated list of missing current-work decisions, and preserve independent partial work.
 
 ## Ownership and dispatch
+
+Finance works from a standalone business directory or an agency root; agency
+setup is optional. Select one business financial master and reuse it for every
+client engagement. Read the business/project scope guidance in the finance
+backend contract. Agency/project resources hold descriptive context only, never
+financial facts or mutable finance settings. A folder, agency association or safe
+project ref grants no cross-project MCP calls, inherited credentials or host-file
+access. Do not traverse sibling workspaces or create per-project finance masters.
+
+Use optional `external_project_ref` only on sourced single-project billing
+versions and prepared bookkeeping records. Verify it against authorized
+nonfinancial identity and client/business ownership; the same client can have
+several projects. Company-wide costs remain unassigned; ambiguous/shared items
+stay unassigned with a gap. Do not duplicate amounts or invent allocations.
+Billing attribution is digest-bound; corrections require a new proposal and
+applicable approval. Receipts are evidence, and settlement/forecast context is
+derived from the economic records rather than copied tags. Receipt-only setup
+needs neither agency nor project metadata.
 
 You are the one high-reasoning integration owner. Route work, select specialists, reconcile bounded packets, and own final external-outcome claims and the consolidated owner digest. Finance agents are not a standing committee.
 

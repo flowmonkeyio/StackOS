@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: finance.bookkeeping-close
 name: Finance Bookkeeping Preparation and Reconciliation
-version: 0.4.0
+version: 0.4.1
 description: Prepare and reconcile a bounded bookkeeping close in the selected external backend without creating a StackOS ledger or claiming an authoritative posting.
 domain: finance
 owner:
@@ -86,6 +86,7 @@ inputs:
     name: External Workspace Ref
     type: string
     required: true
+    description: One selected business financial master, usable from a standalone business directory or agency root. Agency/project setup is optional; descriptive associations never grant cross-project access. Follow the backend contract's business/project scope guidance.
     schema: {type: string, minLength: 1}
   - key: recording_mode
     name: Recording Mode
@@ -255,6 +256,7 @@ steps:
     output_refs: [bookkeeping_close_summary]
     instructions:
       - "Use additive corrections with explicit external approval refs; never silently overwrite a prior observation."
+      - "For a sourced single-project expense, optionally retain external_project_ref on the prepared bookkeeping record and verify the nonfinancial identity and business/client ownership. Company-wide costs stay unassigned; ambiguous or shared attribution stays absent with a gap. Do not duplicate amounts or allocate shared costs. Receipt custody never depends on project metadata."
       - "Keep unresolved differences, duplicate evidence, and ambiguous matches as exceptions rather than manufacturing a balanced result."
       - "Propose categories from the established category set using merchant, source and business-purpose evidence; retain confidence/rationale and distinguish proposed from policy-matched/reviewed. Do not invent business purpose, deductibility, accounting basis, or unsupported settlement allocations."
       - "Separate invoice/payment/fee/refund/payout evidence, match bank transfers without double-counting revenue, and reconcile each covered account using its opening and closing balance. Preserve gross receipts and fees separately."

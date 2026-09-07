@@ -63,7 +63,7 @@ Project-local main-agent mappings:
   [`.codex/orchestrator/sdlc-delivery-orchestrator.md`](./.codex/orchestrator/sdlc-delivery-orchestrator.md)
 - `branding.brand-foundation-setup` and `branding.content-production` ->
   [`.codex/orchestrator/branding-content-orchestrator.md`](./.codex/orchestrator/branding-content-orchestrator.md)
-- `seo.keyword-research` and `seo.website-analysis` ->
+- `agency.setup`, `agency.project-setup`, `seo.keyword-research`, and `seo.website-analysis` ->
   [`.codex/orchestrator/workflow-orchestrator.md`](./.codex/orchestrator/workflow-orchestrator.md)
 - `finance.receipt-intake`, `finance.bookkeeping-close`,
   `finance.payment-request`, `finance.payment-request-followups`,

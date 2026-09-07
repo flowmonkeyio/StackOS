@@ -1006,6 +1006,9 @@
             "account_ref": {
               "$ref": "#/$defs/ref"
             },
+            "external_project_ref": {
+              "$ref": "#/$defs/ref"
+            },
             "receipt_refs": {
               "type": "array",
               "items": {
@@ -1360,6 +1363,9 @@
             "customer_mapping_ref": {
               "$ref": "#/$defs/ref"
             },
+            "external_project_ref": {
+              "$ref": "#/$defs/ref"
+            },
             "recipient_settings_ref": {
               "$ref": "#/$defs/ref"
             },
@@ -1409,7 +1415,7 @@
         }
       ],
       "unevaluatedProperties": false,
-      "description": "Immutable proposal material. Compute digest_sha256 as SHA-256 of the UTF-8 JSON object containing exactly version, customer_mapping_ref, recipient_settings_ref, currency, terms, lines, subtotal, total, source_refs, and supersedes_ref only when present. Preserve complete nested values and array order. Serialize with sorted object keys, no insignificant whitespace, unescaped Unicode, and no NaN/Infinity (Python: json.dumps(material, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8')). Do not normalize strings. Exclude record_id, digest_sha256, metadata, status/history, provenance/gaps, reviews, provider observations, mutation attempts and finance.json revision/hash. Approval separately binds record_id, version and this digest. Mapping and recipient refs identify immutable versions. Immutability, reference integrity and digest correctness require host comparison."
+      "description": "Immutable proposal material. Compute digest_sha256 as SHA-256 of the UTF-8 JSON object containing exactly version, customer_mapping_ref, recipient_settings_ref, external_project_ref when present, currency, terms, lines, subtotal, total, source_refs, and supersedes_ref only when present. Preserve complete nested values and array order. Serialize with sorted object keys, no insignificant whitespace, unescaped Unicode, and no NaN/Infinity (Python: json.dumps(material, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8')). Do not normalize strings. Exclude record_id, digest_sha256, metadata, status/history, provenance/gaps, reviews, provider observations, mutation attempts and finance.json revision/hash. Approval separately binds record_id, version and this digest. Mapping and recipient refs identify immutable versions. Immutability, reference integrity and digest correctness require host comparison."
     },
     "provider_observation": {
       "allOf": [

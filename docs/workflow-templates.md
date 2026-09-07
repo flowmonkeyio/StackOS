@@ -134,6 +134,14 @@ safe external refs, state, action/approval proof, and recovery/handoff refs.
 
 ## External System-Of-Record Workflow Packages
 
+The [agency package](../plugins/agency/README.md) adds minimal nonfinancial agency
+and client-project setup using the same resource/persist/retrieve pattern as
+other setup workflows. Those descriptive associations do not create nested
+StackOS projects or inherited access. Finance may be set up independently or
+from an agency root; its external financial authority is unchanged. Optional
+project attribution is a financial relationship in that external record, not
+financial data in agency resources.
+
 Some workflows coordinate a domain whose records must live outside StackOS. A
 package may intentionally have no resource contracts and no resource/artifact
 write grant when it declares one selected external backend. The package must:

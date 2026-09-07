@@ -40,6 +40,27 @@ def _by_key(items: list[dict]) -> dict[str, dict]:
     return {item["key"]: item for item in items}
 
 
+def test_finance_scope_remains_standalone_with_optional_agency_context() -> None:
+    for workflow in _workflows().values():
+        inputs = _by_key(workflow["inputs"])
+        assert inputs["workspace_ref"]["required"] is True
+        assert (
+            "standalone business directory or agency root" in inputs["workspace_ref"]["description"]
+        )
+        assert not any(
+            "agency" in item["key"] for item in workflow.get("capability_requirements", [])
+        )
+        assert not any(
+            "agency" in item["key"] or "project" in item["key"]
+            for item in workflow["inputs"]
+            if item.get("required")
+        )
+        assert workflow.get("resource_contracts", []) == []
+        assert {item["skill_preset_ref"] for item in workflow["skill_preset_requirements"]} == {
+            "stackos.finance.department-orchestrator"
+        }
+
+
 def test_finance_yaml_has_no_silently_overridden_mapping_keys() -> None:
     def check(node: yaml.Node, path: Path) -> None:
         if isinstance(node, yaml.MappingNode):

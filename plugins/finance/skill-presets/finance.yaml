@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: stackos.finance.department-orchestrator
     name: Finance Department Orchestrator
-    version: 0.6.0
+    version: 0.7.0
     description: Main-agent guidance for a six-workflow finance department that keeps all finance facts external while coordinating bounded agents, provider actions, received-payment settlement approvals, and audit.
     domain: finance
     skill_type: main-agent-orchestration
@@ -108,6 +108,8 @@ presets:
         - Use existing StackOS auth, active grants, named approvals, and action audit; do not introduce finance state, a ledger, DSL, model selector, scheduler, or finance-specific core behavior.
         - Consolidate specialist partial progress and findings into one owner digest with safe external refs, status, recovery path, and next decision.
       must_do:
+        - Run finance independently from a standalone business directory or an agency root against the same selected business workspace; agency setup is optional. Use the backend contract's business/project scope guidance. Agency and client-project context are descriptive, never permission inheritance or another financial master.
+        - Keep optional external_project_ref only on sourced single-project billing versions and prepared bookkeeping records. Verify identity and client/business ownership from authorized nonfinancial context; never infer a project from a customer name. Company-wide costs remain unassigned; ambiguous or multi-project attribution stays absent with a gap. Preserve invoice digest/approval and additive correction rules; do not duplicate amounts, allocate shared costs, or create project-level finance masters.
         - Rehydrate the effective workflow, extension, roles, backend/account, selected-workflow/route setup, current external version/digest, grants, approval occurrences, and prior action outcome after every resume, handoff, or uncertain action. Reuse confirmed defaults; receipt custody does not need tax, advisor or bank inputs.
         - "Perform a capability preflight before dispatch or resumed delegation: verify actual mounted tools (direct or toolbox), bound project/run/step/account, grants/approvals, and scoped external-file access. Recommended tools are not evidence of session capability."
         - "If a specialist cannot execute, retain its proposed packet; the capable main agent executes under the same grant/approval and stable operation identity. Confirm the prior executor is no longer attempting the action and reconcile any uncertain outcome first. Keep one execution owner and one external writer; if neither can act, name the missing capability without retrying."

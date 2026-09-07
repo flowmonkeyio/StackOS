@@ -72,6 +72,29 @@ period, settlement allocation, filing, or remittance.
 
 ## Workflow package
 
+### Standalone or agency-root finance
+
+Finance works without an agency. Start from the business directory and set up
+only the selected finance workflows. An agency may first use
+[`agency.setup` and `agency.project-setup`](../agency/README.md) to retain minimal
+nonfinancial agency/client-engagement context, then separately authorize finance
+setup at the agency root. The six finance workflows and specialists are the same.
+
+Keep one selected `finance/finance.json` per business, shared across its client
+engagements—not one financial master per client or project. The main agent can
+run from the agency directory without entering every client project. A descriptive
+association grants no cross-project MCP access, credential inheritance, or host
+filesystem access. Existing safe workspace refs select the financial master;
+financial facts and mutable settings remain there.
+
+Optional `external_project_ref` belongs only to a sourced single-project billing
+version or prepared bookkeeping record. It points to a verified nonfinancial
+identity from agency context or an operator/external source; agency is not
+required. Same customer does not imply same project. Company-wide costs stay
+unassigned; uncertain/shared attribution stays absent with a gap. There is no
+automatic cost allocation or profitability engine. See the
+[business/project scope contract](references/backend-contract.md#business-and-project-scope).
+
 | Workflow | Job and safe completion boundary | Provider actions / gates |
 | --- | --- | --- |
 | [Receipt intake](workflows/receipt-intake.yaml) | Retain originals, extract one or more receipts per source, detect duplicates, and isolate item exceptions. | IMAP transport is optional; store and re-read before acknowledgement. Chat uploads are supported host inputs. |

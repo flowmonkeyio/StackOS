@@ -19,6 +19,7 @@
     "Return a proposed external record change and review packet; the main orchestrator remains the one writer and integrates the outcome."
   ],
   "must_do": [
+    "Propose external_project_ref on a bookkeeping record only for a verified single-project attribution; retain provenance and additive corrections. Company-wide costs need no project; ambiguous/shared costs stay unassigned with a gap rather than duplicated or automatically allocated.",
     "Compare actual selected backend/account/period and current finance.json document revision/digest before preparing a change; preserve concurrent changes as conflicts.",
     "Record source completeness, reconciliation scope, supporting evidence refs, proposed prepared/unposted status, and every gap in the external backend packet.",
     "Apply established approved rules routinely. An evidence-based category proposal may include rationale and confidence; an uncertain or new classification decision must name the owner/professional decision required.",

@@ -89,6 +89,16 @@ def _receipt() -> dict:
     }
 
 
+def _bookkeeping_record() -> dict:
+    return {
+        **_record("bookkeeping:fixture", "prepared/unposted"),
+        "date": "2026-09-05",
+        "amount": {"amount_minor": 1250, "currency": "EUR"},
+        "source_refs": ["source:fixture"],
+        "category": {"state": "proposed", "category_ref": "category:software"},
+    }
+
+
 def _document(collection: str, record: dict) -> dict:
     document = _template()
     document[collection].append(record)
@@ -275,8 +285,9 @@ def test_billing_versions_bind_exact_structured_scope_for_host_immutability_chec
 def test_billing_digest_description_defines_exact_material_and_canonical_serialization() -> None:
     description = _schema()["$defs"]["billing_version"]["description"]
     assert (
-        "exactly version, customer_mapping_ref, recipient_settings_ref, currency, terms, "
-        "lines, subtotal, total, source_refs, and supersedes_ref only when present"
+        "exactly version, customer_mapping_ref, recipient_settings_ref, "
+        "external_project_ref when present, currency, terms, lines, subtotal, total, "
+        "source_refs, and supersedes_ref only when present"
     ) in description
     assert "Preserve complete nested values and array order" in description
     assert (
@@ -287,6 +298,35 @@ def test_billing_digest_description_defines_exact_material_and_canonical_seriali
         "Exclude record_id, digest_sha256, metadata, status/history, provenance/gaps"
     ) in description
     assert "Approval separately binds record_id, version and this digest" in description
+
+
+def test_external_project_attribution_is_optional_and_limited_to_billing_and_bookkeeping() -> None:
+    project_ref = "agency-project:fixture-client-a-website"
+    for collection, record in (
+        ("bookkeeping", _bookkeeping_record()),
+        ("billing_versions", _billing_version()),
+    ):
+        assert not _errors(_document(collection, record))
+        attributed = copy.deepcopy(record)
+        attributed["external_project_ref"] = project_ref
+        assert not _errors(_document(collection, attributed))
+        for invalid_ref in ("", None, 7, [], {}):
+            invalid = copy.deepcopy(record)
+            invalid["external_project_ref"] = invalid_ref
+            assert _errors(_document(collection, invalid)), (collection, invalid_ref)
+
+    definitions = _schema()["$defs"]
+    for name, definition in definitions.items():
+        properties = definition.get("properties", {})
+        if name not in {"bookkeeping_record", "billing_version"}:
+            assert "external_project_ref" not in properties, name
+
+    receipt = _receipt()
+    receipt["external_project_ref"] = project_ref
+    assert _errors(_document("receipts", receipt))
+    settlement = _settlement()
+    settlement["external_project_ref"] = project_ref
+    assert _errors(_document("settlements", settlement))
 
 
 def test_cashflow_scenarios_have_exactly_thirteen_typed_rows_with_explicit_unknowns() -> None:

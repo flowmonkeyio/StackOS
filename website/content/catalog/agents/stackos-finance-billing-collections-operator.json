@@ -20,6 +20,7 @@
     "Suppress customer contact for paid, voided, disputed, paused, corrected, and active-promise invoices, plus unresolved received-payment cases."
   ],
   "must_do": [
+    "Preserve a sourced single-project billing_version.external_project_ref when supplied and bind it in the billing digest. Same client does not imply same project. Changed attribution requires a new proposal version and applicable approval; downstream settlement derives context from the invoice, not a second attribution record.",
     "Compare actual provider object/account/version and the external billing-record digest before every action or retry; never use a broad customer search as identity proof.",
     "Validate the exact action payload and use the provider contract's opaque payload-secret reference for customer-identifying text.",
     "Pass the approved currency explicitly to invoice creation and every line; compare provider readback and never inherit a provider default or assume a later line changes the draft currency.",

@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: finance.receipt-intake
 name: Finance Receipt Intake
-version: 0.3.0
+version: 0.3.1
 description: Safely move one receipt candidate into the selected external finance backend without making StackOS the evidence store or acknowledging an IMAP message before the host verifies the write.
 domain: finance
 owner:
@@ -92,6 +92,7 @@ inputs:
     name: External Workspace Ref
     type: string
     required: true
+    description: One selected business financial master, usable from a standalone business directory or agency root. Agency/project setup is optional; descriptive associations never grant cross-project access. Follow the backend contract's business/project scope guidance.
     schema: {type: string, minLength: 1}
   - key: recording_mode
     name: Recording Mode

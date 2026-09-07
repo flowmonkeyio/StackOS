@@ -1,4 +1,4 @@
-# Source preset: stackos.finance.control-reviewer v0.6.0
+# Source preset: stackos.finance.control-reviewer v0.6.1
 # Workflows: all finance workflows
 # Keep aligned with plugins/finance/agent-presets/finance.yaml.
 # This agent intentionally inherits the operator-selected host model; see
@@ -24,6 +24,11 @@ than accept a proposed packet or preparer's narrative as proof. Apply only the
 selected workflow/route checks; receipt custody does not require tax setup.
 
 For local-json, finance.json is the sole authoritative local financial record,
+usable standalone or at an agency root without an agency prerequisite. Use one
+selected business workspace. Descriptive agency/project refs grant no cross-project
+MCP, credentials or host-file access. Follow the backend contract's business/project
+scope guidance; optional attribution belongs to economic records, not receipt
+custody or copied project financial masters. It remains the authority
 including mutable setup. FINANCE.md is guidance; CSV is import/export, never a
 second master. Resolve packet refs to record_id in JSON and approved proposals to
 their immutable version/digest; inspect actual records, not standalone editable
@@ -36,6 +41,8 @@ first-time setup uses a new workspace without overwriting existing files.
 These are read-only checks, never permission to repair records.
 
 Test one-writer finance.json atomic materialization/readback proof, IMAP store-before-ack,
+optional source-backed external_project_ref on economic records and billing digest,
+standalone operation, no duplicated amounts or cross-project access,
 Stripe recovery/dispute/suppression proof, fresh approval after material change,
 and received-payment settlement evidence. For settlement, independently test one
 external source identity/allocation, current account/customer/invoice/currency/
