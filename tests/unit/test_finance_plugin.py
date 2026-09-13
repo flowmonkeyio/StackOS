@@ -350,16 +350,50 @@ def test_finance_workflows_keep_transport_and_finance_authority_separate() -> No
             assert "filesystem" not in action["action"]
 
 
+def test_payment_request_catalog_discovery_and_dated_draft_stay_in_existing_workflow() -> None:
+    payment = _workflows()["finance.payment-request"]
+    actions = _by_key(payment["action_contracts"])
+    steps = {item["id"]: item for item in payment["steps"]}
+
+    assert {
+        "stripe_products_list": "finance.stripe.products.list",
+        "stripe_products_retrieve": "finance.stripe.products.retrieve",
+        "stripe_prices_list": "finance.stripe.prices.list",
+        "stripe_prices_retrieve": "finance.stripe.prices.retrieve",
+    }.items() <= {key: action["action"] for key, action in actions.items()}.items()
+    assert {
+        "stripe_products_list",
+        "stripe_products_retrieve",
+        "stripe_prices_list",
+        "stripe_prices_retrieve",
+    } <= set(steps["create-draft"]["action_refs"])
+    assert "stripe_prices_retrieve" in steps["review-draft"]["action_refs"]
+
+    guidance = " ".join(
+        instruction
+        for step in (steps["create-draft"], steps["review-draft"])
+        for instruction in step["instructions"]
+    ).lower()
+    for required in ("effective_at", "price_ref", "quantity", "catalog", "draft total"):
+        assert required in guidance
+    assert not any(
+        action["action"]
+        in {
+            "finance.stripe.products.create",
+            "finance.stripe.prices.create",
+            "finance.stripe.subscriptions.create",
+        }
+        for action in actions.values()
+    )
+
+
 def test_finance_contract_discloses_the_existing_non_authoritative_action_audit() -> None:
     text = " ".join(BACKEND_CONTRACT.read_text(encoding="utf-8").lower().split())
     payment = _workflows()["finance.payment-request"]
     payment_policies = " ".join(item["description"] for item in payment["policies"]).lower()
 
-    assert "generic action executor" in text
-    assert "sanitized request/response envelope" in text
-    assert "bounded monetary" in text
-    assert "non-authoritative transport evidence" in text
-    assert "field-level audit projection" in text
+    assert "action executor persists sanitized transport request/response" in text
+    assert "not an editable financial master" in text
     assert "generic action audit may retain" in payment_policies
 
 
@@ -403,6 +437,7 @@ def test_approval_bindings_and_finance_state_boundaries_are_exact() -> None:
     )
     assert payment_actions["stripe_invoices_send"]["approval_ref"] == "owner-invoice-send"
     assert followup_actions["stripe_invoices_send"]["approval_ref"] == "owner-followup-resend"
+    assert "approval_ref" not in followup_actions["smtp_email_send"]
     assert followup_actions["stripe_payment_records_report"] == {
         "key": "stripe_payment_records_report",
         "action": "finance.stripe.payment-records.report",
@@ -453,6 +488,8 @@ def test_approval_bindings_and_finance_state_boundaries_are_exact() -> None:
         "suppressed",
         "sent",
         "test-accepted",
+        "partial",
+        "rejected",
         "unknown",
     ]
 
@@ -511,6 +548,83 @@ def test_followup_settlement_branch_is_optional_safe_and_has_no_money_movement()
     assert "stable operation key" in instructions
     assert "report+mark" in policies
     assert "charge, transfer, pay, or move money" in policies
+
+
+def test_followup_authored_email_uses_selected_route_and_step_grant() -> None:
+    followups = _workflows()["finance.payment-request-followups"]
+    inputs = _by_key(followups["inputs"])
+    actions = _by_key(followups["action_contracts"])
+    auth = _by_key(followups["auth_requirements"])
+    capabilities = _by_key(followups["capability_requirements"])
+    steps = {item["id"]: item for item in followups["steps"]}
+    assert followups["version"] == "0.7.0"
+    assert "default" not in inputs["followup_route"]
+    assert inputs["followup_route"]["schema"]["enum"] == ["stripe-resend", "smtp-email"]
+    assert inputs["followup_route"]["required"] is False
+    for key in ("smtp", "imap"):
+        assert auth[key]["optional"] is True
+    for key in ("email-send", "email-inbox"):
+        assert capabilities[key]["required"] is False
+    assert actions["smtp_email_send"]["action"] == "communications.smtp.email.send"
+    assert "approval_ref" not in actions["smtp_email_send"]
+    for key in ("smtp_email_send", "imap_export_message", "imap_export_cleanup"):
+        assert actions[key]["optional"] is True
+        assert actions[key]["risk_level"] == "write"
+    for step in steps.values():
+        assert ("smtp_email_send" in step.get("action_refs", [])) is (
+            step["id"] == "resend-approved"
+        )
+        for key in ("imap_export_message", "imap_export_cleanup"):
+            assert (key in step.get("action_refs", [])) is (step["id"] == "read-invoice-lifecycle")
+    assert not steps["resend-approved"].get("approval_refs")
+    assert {
+        "communications.imap.message.mark_seen",
+        "communications.imap.message.mark_unseen",
+    }.isdisjoint(item["action"] for item in actions.values())
+    guidance = " ".join(
+        instruction for step in followups["steps"] for instruction in step.get("instructions", [])
+    )
+    assert "readiness.check" in guidance
+    assert "approval-matrix.md#follow-up-approvals" in guidance
+    assert "operator instruction or documented settings" in guidance
+    assert "no automatic fallback" in guidance
+
+
+def test_followup_email_summary_preserves_suppression_and_transport_uncertainty() -> None:
+    schema = _summary_schema(_workflows()["finance.payment-request-followups"])
+    validator = Draft202012Validator(schema)
+    base = {
+        **_truthful_preflight_summaries()["finance.payment-request-followups"],
+        "followup_route": "smtp-email",
+        "followup_decision_ref": "decision:fixture",
+        "control_review_ref": "review:fixture",
+        "action_call_refs": ["action-call:fixture"],
+        "suppressed_invoice_refs": [],
+        "eligible_invoice_refs": ["invoice:fixture"],
+    }
+    assert list(validator.iter_errors(base)) == []
+    for state in ("sent", "partial", "rejected", "unknown"):
+        summary = {
+            **base,
+            "resend_state": state,
+            "status": "resent" if state == "sent" else "reconcile-required",
+            "recovery_state": "not-needed" if state == "sent" else "reconcile-required",
+        }
+        assert list(validator.iter_errors(summary)) == [], state
+        assert list(validator.iter_errors({**summary, "occurrence_mode": "settlement-only"}))
+        assert list(validator.iter_errors({**summary, "subject": "Private customer subject"}))
+        if state == "sent":
+            assert list(validator.iter_errors({**summary, "followup_route": "stripe-resend"}))
+    no_send = {
+        **base,
+        "status": "recorded",
+        "resend_state": "suppressed",
+        "suppressed_invoice_refs": ["invoice:fixture"],
+        "eligible_invoice_refs": [],
+        "external_write_proof_ref": "write:fixture",
+        "handoff_refs": [],
+    }
+    assert list(validator.iter_errors(no_send)) == []
 
 
 def test_settlement_guidance_does_not_require_reminders_or_reject_supported_partial() -> None:

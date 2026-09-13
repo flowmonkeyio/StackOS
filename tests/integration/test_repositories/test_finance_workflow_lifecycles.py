@@ -51,6 +51,7 @@ CASES = [
     ("finance.payment-request", "sent"),
     ("finance.payment-request", "suppressed"),
     ("finance.payment-request-followups", "paid-suppressed"),
+    ("finance.payment-request-followups", "smtp-suppressed"),
     ("finance.payment-request-followups", "resent"),
     ("finance.payment-request-followups", "report-and-attach"),
     ("finance.payment-request-followups", "partial-applied"),
@@ -64,6 +65,10 @@ def _step_result(workflow: str, case: str, step: str, refs: dict[str, str]) -> d
     settlement = case in {"report-and-attach", "partial-applied", "mark-paid-out-of-band"}
     if settlement:
         summary.update(occurrence_mode="settlement-only", settlement_scope_ref=refs["source"])
+    if workflow == "finance.payment-request-followups":
+        summary["followup_route"] = (
+            "smtp-email" if case == "smtp-suppressed" or settlement else "stripe-resend"
+        )
     if step == "preflight":
         return result
 
@@ -204,7 +209,7 @@ def _step_result(workflow: str, case: str, step: str, refs: dict[str, str]) -> d
         "apply-settlement",
     }:
         return result
-    suppressed = case == "paid-suppressed"
+    suppressed = case in {"paid-suppressed", "smtp-suppressed"}
     summary.update(
         status="suppressed" if suppressed else "review-ready",
         followup_decision_ref=refs["decision"],
@@ -281,10 +286,14 @@ def _external_fixture(finance: Path, workflow: str, case: str) -> dict[str, str]
                 "recorded",
                 version=1,
                 invoice_ref="fixture:invoice",
-                eligibility="suppressed" if case == "paid-suppressed" else "eligible",
+                eligibility="suppressed"
+                if case in {"paid-suppressed", "smtp-suppressed"}
+                else "eligible",
                 decision_reason=f"Synthetic lifecycle fixture: {case}",
                 reminder_owner="agent",
-                send_outcome="not-attempted" if case == "paid-suppressed" else "accepted",
+                send_outcome="not-attempted"
+                if case in {"paid-suppressed", "smtp-suppressed"}
+                else "accepted",
             )
             document["collection_decisions"].append(packet)
     else:
@@ -486,8 +495,12 @@ def test_finance_complete_template_lifecycle_keeps_packet_contents_external(
     inputs = _strict_inputs()[workflow]
     if case in {"report-and-attach", "partial-applied", "mark-paid-out-of-band"}:
         inputs.update(
-            occurrence_mode="settlement-only", settlement_scope_ref="external-fixture:source"
+            occurrence_mode="settlement-only",
+            settlement_scope_ref="external-fixture:source",
+            followup_route="smtp-email",
         )
+    elif case == "smtp-suppressed":
+        inputs["followup_route"] = "smtp-email"
     finance = tmp_path / "finance"
     refs = _external_fixture(finance, workflow, case)
     plan = repo.create(project_id=project_id, template_key=workflow, inputs_json=inputs).data
@@ -589,6 +602,13 @@ def test_finance_complete_template_lifecycle_keeps_packet_contents_external(
         approvals = {
             approval.approval_key: approval.status for approval in recorded.approval_requests
         }
+        assert approvals["owner-followup-resend"] == "pending"
+        assert "owner-followup-email" not in approvals
+    if case == "smtp-suppressed":
+        assert outcomes[-1]["followup_summary"]["resend_state"] == "suppressed"
+        assert packet["send_outcome"] == "not-attempted"
+        approvals = {item.approval_key: item.status for item in recorded.approval_requests}
+        assert "owner-followup-email" not in approvals
         assert approvals["owner-followup-resend"] == "pending"
 
 

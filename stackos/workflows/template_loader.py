@@ -972,10 +972,16 @@ class WorkflowTemplateLoader:
             source=source.summary.source,
             origin_path=source.summary.origin_path,
         ).model_dump(mode="json", exclude_none=True)
-        forked = WorkflowTemplateSpec.model_validate(spec_data)
+        validation = validate_workflow_template_obj(spec_data)
+        if not validation.valid:
+            raise ValidationError(
+                "workflow template validation failed",
+                data={"errors": [item.model_dump(mode="json") for item in validation.errors]},
+            )
+        assert validation.template is not None
         return self.save_project_template(
             project_id=project_id,
-            spec=forked,
+            spec=validation.template,
             source="project",
             created_by=created_by,
         )

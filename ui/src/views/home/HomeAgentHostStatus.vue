@@ -70,14 +70,15 @@ function presentation(host: DesktopMcpHostStatus) {
       </li>
     </ul>
     <UiCallout
-      v-else-if="state.kind === 'error'"
+      v-if="state.kind === 'error'"
       tone="warning"
       density="compact"
     >
       {{ state.message }}
+      <span v-if="state.items.length"> Previously checked connections are shown.</span>
     </UiCallout>
     <ul
-      v-else
+      v-if="state.items.length"
       class="m-0 grid grid-cols-5 list-none gap-2 p-0"
     >
       <li

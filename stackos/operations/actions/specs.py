@@ -3,21 +3,27 @@
 from __future__ import annotations
 
 from stackos.actions import ActionDescribeOut, ActionExecutionOut, ActionValidationOut
+from stackos.actions.repository.schema import ActionCallAuditOut
 from stackos.mcp.contract import WriteEnvelope
+from stackos.operations._helpers import operation_spec
 from stackos.operations.spec import (
     OperationExample,
     OperationSpec,
     OperationSurface,
     OperationSurfaces,
 )
+from stackos.repositories.base import Page
 
 from .discovery import action_describe, action_list, action_validate
 from .execution import action_call_get, action_execute, action_run
+from .history import action_call_query
 from .schemas import (
+    ACTION_CALL_HISTORY_RESPONSE_POLICY,
     ACTION_CALL_POLL_RESPONSE_POLICY,
     ACTION_FILE_OUTPUT_RESPONSE_POLICY,
     ActionCallGetInput,
     ActionCallGetOut,
+    ActionCallQueryInput,
     ActionDescribeInput,
     ActionExecuteInput,
     ActionListInput,
@@ -30,6 +36,26 @@ from .schemas import (
 
 def operation_specs() -> list[OperationSpec]:
     return [
+        operation_spec(
+            name="actionCall.query",
+            summary="Read project action history with exact date and provider filters.",
+            input_model=ActionCallQueryInput,
+            output_model=Page[ActionCallAuditOut],
+            handler=action_call_query,
+            response_policy=ACTION_CALL_HISTORY_RESPONSE_POLICY,
+            purpose="Inspect filtered action history or one exact project-scoped action call.",
+            grant_policy="direct-read",
+            mutating=False,
+            examples=(
+                OperationExample(
+                    title="Inspect one action", arguments={"project_id": 1, "action_call_id": 42}
+                ),
+            ),
+            returns=(
+                "Cursor-paginated canonical safe audit rows and the exact filtered total; "
+                "default excludes dry runs.",
+            ),
+        ),
         OperationSpec(
             name="action.list",
             summary="List or search action contracts with compact availability state.",

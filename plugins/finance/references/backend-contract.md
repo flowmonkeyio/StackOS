@@ -58,13 +58,24 @@ engine. Existing workflows, grants, credentials, approvals and audit provide
 control. Workflow/tracker results contain safe external refs and bounded status,
 never customer text, receipt bytes or financial calculations.
 
-The existing generic action executor persists a sanitized request/response
-envelope. It may contain bounded monetary/lifecycle fields needed for transport
-and recovery: non-authoritative transport evidence, not books. Customer text
-and raw credentials remain excluded. Stricter field-level audit projection
-would be a separate shared executor capability; no new audit store is added.
+The existing action executor persists sanitized transport request/response
+evidence, not books. Selected Stripe business-detail reads and SMTP requests
+can contain confidential business content. SMTP also creates its normal
+communication delivery record (subject, sender/recipient refs and acceptance
+metadata, not the body).
+These existing transport records are not an editable financial master: approvals,
+drafts and contact decisions remain external. Never copy that content into
+workflow/tracker summaries or create finance resources. Raw credentials remain
+excluded; no additional audit store or finance persistence is introduced.
 
 ## Setup and execution
+
+Follow current operator instructions and documented settings. Use judgment for
+routine work within the role; clarify only a material gap, conflict or decision
+outside that scope. Do not ask again for information already supplied or turn
+guidance into extra approval rounds. Apply checks relevant to the current work
+and preserve independent progress; existing grants, evidence and review
+boundaries still apply.
 
 Set up shared workspace/custody choices once, then collect only the durable
 inputs needed by the selected workflow and route. Resolve confirmed defaults
@@ -74,8 +85,8 @@ from their external owner instead of repeatedly asking for reference strings.
 | --- | --- |
 | Receipt intake | Workspace/custody, sole writer and safe source route; IMAP additionally needs verified TLS and readable staging. No tax profile, advisor, bank statement or accounting basis is a receipt prerequisite. |
 | Bookkeeping | Period/account register, statements or exports, coverage and approved category/business-purpose rules. Missing basis limits basis-specific conclusions, not source preparation. |
-| Payment request | Customer/account mapping, explicit approved invoice/line currency, invoice terms, recipient settings and exact current request. No household tax inputs. |
-| Follow-ups | Current invoice/history, reminder timing/owner/exclusions and recipient settings when sending. Settlement-only instead needs the selected received-payment source and allocation; it does not require send-recipient setup. |
+| Payment request | Customer/account mapping, explicit approved invoice/line currency, invoice terms, recipient settings and exact current request. A catalog request also needs the selected existing Price and explicit quantity; current terms/currency and the actual draft amounts are observed before approval/finalization. No household tax inputs. |
+| Follow-ups | Current invoice/contact/reply history and operator-provided or documented sending instructions: Stripe resend or SMTP email, account, recipients and wording. IMAP is optional reply evidence. Settlement-only needs source/allocation, not send setup. |
 | Cashflow | Dated opening cash, expected receipts, commitments, horizon/scenario conventions and reserve source or explicit uncertainty. No complete tax packet prerequisite. |
 | Tax preparation | Relevant annual business/taxpayer inputs and current sources. Legal form is separate from federal/California tax treatment/effective dates; qualified review is required before adoption, not source gathering. |
 
@@ -111,7 +122,7 @@ reference resolution, immutable versions, arithmetic, provenance and custody.
 | Source coverage | Account, expected/available window, opening/closing evidence, gaps and observation date. |
 | Receipt/evidence | One source and one or more receipt records; original paths/hashes/bytes, extracted facts, duplicate links and quarantine. |
 | Bookkeeping | Amount/currency/date, category proposal/applied rule, confidence/reason, source and reconciliation links, prepared/unposted status, and optional source-backed `external_project_ref`. |
-| Billing version | Immutable customer/mapping, complete lines, currency, terms, total, recipient-settings version/scope and verification, optional source-backed `external_project_ref`, version/digest, provider refs and mutation attempt keys. |
+| Billing version | Immutable customer/mapping, complete manual lines or existing Price refs with quantities, currency, terms, optional printed issue date, observed catalog line amounts/subtotal/total when quoted, recipient-settings version/scope and verification, optional source-backed `external_project_ref`, version/digest, provider refs and mutation attempt keys. A pre-quote catalog request keeps unavailable amounts/totals absent with named gaps; the connector does not send the retained observed amount for its Price item. |
 | Collections and received-payment settlement | Invoice lifecycle/due status, dispute, reminder owner, contact/cooldown/promise/pause, decision version, approval and actual send outcome. For a received payment, retain one source identity, customer/invoice/account match evidence, currency/received state, one allocation, selected route, provider refs, recovery key and external write/readback proof. |
 | Cashflow | 13-week base/downside cash rollforwards, source/assumption refs, reserves separate from actual payments, unknowns. |
 | Tax packet | Annual business/household inputs, current sources, applicable obligations, calculations, payments/withholding, annual liability versus installment and review state. |

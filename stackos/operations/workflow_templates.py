@@ -324,13 +324,15 @@ def operation_specs():
             output_model=WriteEnvelope[LoadedWorkflowTemplate],
             handler=_template_save,
             purpose=(
-                "Use this only for explicit local-admin workflow template setup after "
+                "Use this for operator-requested project-scoped workflow template setup after "
                 "workflowTemplate.validate succeeds and the operator wants the draft to become "
                 "a reusable project or user template."
             ),
             prerequisites=(
                 "Read workflowTemplate.authoringGuide first.",
-                "Requires operator/admin authority and reviewed template JSON/YAML.",
+                "Requires a project scope, an operator request to create a reusable workflow, "
+                "and reviewed template JSON/YAML. A clear current request is sufficient; "
+                "do not require a separate local-admin grant or repeated approval.",
                 "Use workflowExtension.validate/upsert instead when the base workflow should "
                 "stay reusable and only project defaults, context, guardrails, agent/skill "
                 "requirements, or step guidance need to change.",
@@ -356,8 +358,12 @@ def operation_specs():
                     },
                 ),
             ),
+            returns=(
+                "The saved project-scoped template. Saving does not create a run, execute "
+                "actions, or grant tools; execution remains a separate run-plan operation.",
+            ),
             mutating=True,
-            grant_policy="local-admin-workflow-template-write",
+            grant_policy="direct-setup-write",
         ),
         operation_spec(
             name="workflowTemplate.fork",
@@ -366,12 +372,13 @@ def operation_specs():
             output_model=WriteEnvelope[LoadedWorkflowTemplate],
             handler=_template_fork,
             purpose=(
-                "Use this only for explicit local-admin template customization when the "
+                "Use this for operator-requested project-scoped template customization when the "
                 "result should become a separately named reusable workflow identity."
             ),
             prerequisites=(
                 "Read workflowTemplate.authoringGuide first.",
-                "Requires operator/admin authority and a new stable template key.",
+                "Requires a project scope, an operator request for a separate reusable "
+                "workflow, and a new stable template key; no local-admin grant is needed.",
                 "Validate project-specific overlays as workflow extensions before deciding "
                 "that a forked template identity is actually needed.",
             ),
@@ -385,8 +392,12 @@ def operation_specs():
                     },
                 ),
             ),
+            returns=(
+                "The new project-scoped template. Forking does not create a run, execute "
+                "actions, or grant tools.",
+            ),
             mutating=True,
-            grant_policy="local-admin-workflow-template-write",
+            grant_policy="direct-setup-write",
         ),
     ]
 

@@ -225,7 +225,8 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
                 ),
                 mutation_boundary=(
                     "Draft and validate without writes; call workflowTemplate.save only after "
-                    "explicit operator/local-admin approval of the complete template. Reuse "
+                    "explicit operator authorization of the complete template. Saving uses "
+                    "the normal project-scoped setup toolbox, not a run-step grant. Reuse "
                     "existing resources, actions, agent presets, and skill presets whenever "
                     "possible."
                 ),
@@ -315,9 +316,12 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "and failure handling. Do not add plugin package files for a project/user template.",
             "Call workflowTemplate.validate on the complete draft and repair every error. "
             "Validation is read-only and must precede save.",
-            "Obtain explicit operator/local-admin approval before workflowTemplate.save. The "
-            "saved template must use source=project or source=user and must not claim "
-            "metadata.builtin=true.",
+            "Use the operator's explicit request or approval to save the validated draft with "
+            "workflowTemplate.save through the bound project toolbox. Do not ask again when "
+            "that authority is already clear. Pass the draft as template_json or template_yaml "
+            "and use source=project or source=user; both remain owned by the bound project. "
+            "Do not claim metadata.builtin=true. Saving neither creates a run nor grants "
+            "execution permission.",
             "After save, enter setup_existing: describe the saved template, resolve its roles, "
             "check readiness, materialize host-local execution contracts, and run structural "
             "plus strict read-only plan validation. Do not create a run during authoring/setup.",
@@ -917,14 +921,15 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             WorkflowAuthoringOperationRef(
                 name="workflowTemplate.save",
                 purpose=(
-                    "Persist a reviewed project/user template with explicit local-admin authority."
+                    "Persist an operator-authorized project/user template through the "
+                    "project-scoped setup toolbox without creating execution state."
                 ),
             ),
             WorkflowAuthoringOperationRef(
                 name="workflowTemplate.fork",
                 purpose=(
                     "Create a separately named reusable workflow identity with "
-                    "explicit local-admin authority."
+                    "explicit operator authorization through project-scoped setup."
                 ),
             ),
             WorkflowAuthoringOperationRef(

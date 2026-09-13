@@ -58,7 +58,7 @@ const STATUS_DOT: Record<string, string> = {
         </UiBadge>
       </div>
       <UiButton
-        v-if="isShell"
+        :disabled="!isShell"
         variant="secondary"
         size="sm"
         icon-left="refresh"
@@ -84,11 +84,9 @@ const STATUS_DOT: Record<string, string> = {
       title="Can't reach the local service"
     >
       StackOS isn't responding on this machine.
-      <template
-        v-if="isShell"
-        #actions
-      >
+      <template #actions>
         <UiButton
+          :disabled="!isShell"
           variant="secondary"
           size="sm"
           :loading="systemBusy === 'restart'"
@@ -97,6 +95,7 @@ const STATUS_DOT: Record<string, string> = {
           Restart service
         </UiButton>
         <UiButton
+          :disabled="!isShell"
           variant="secondary"
           size="sm"
           :loading="systemBusy === 'repair'"
@@ -115,16 +114,15 @@ const STATUS_DOT: Record<string, string> = {
         aria-label="System facts"
       />
       <HomeAgentHostStatus
-        v-if="isShell"
         :state="hostStatuses"
         :summary="hostStatusSummary"
         @refresh="$emit('refreshHosts')"
       />
       <div
-        v-if="isShell"
         class="flex flex-wrap gap-2"
       >
         <UiButton
+          :disabled="!isShell"
           variant="secondary"
           size="sm"
           icon-left="shield-check"
@@ -134,6 +132,7 @@ const STATUS_DOT: Record<string, string> = {
           Run doctor
         </UiButton>
         <UiButton
+          :disabled="!isShell"
           variant="secondary"
           size="sm"
           icon-left="wrench"
@@ -144,7 +143,7 @@ const STATUS_DOT: Record<string, string> = {
         </UiButton>
       </div>
       <p
-        v-else
+        v-if="!isShell"
         class="text-2xs text-fg-subtle"
       >
         Service controls live in the StackOS desktop app.

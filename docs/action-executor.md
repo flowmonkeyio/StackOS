@@ -106,6 +106,16 @@ Every internal execution writes an `action_calls` sidecar row with:
 - redacted request/response/metadata
 - status, dry-run flag, duration, cost, error, and idempotency key
 
+`actionCall.query` reads project-scoped audit history, including exact-call,
+provider, status, dry-run, and half-open UTC creation-time filters. History
+keeps ID ordering by default; `sort=created_at` selects timestamp ordering
+with an ID tie-breaker for chronological views such as latest calls.
+Unfiltered audit history includes all call types. These are recorded connector
+outcomes, not business-result or agent-liveness metrics. Exact action inspection
+uses the query's safe audit row; the polling contract of `actionCall.get` below
+is unchanged. Home charts use tracker ticket counts; detailed action history
+remains on the Action Calls audit page.
+
 `action.run` and `action.execute` return compact action-call metadata by
 default for MCP/REST when the operation policy allows it. External provider
 actions write the sanitized request/response envelope to a response file and
@@ -131,6 +141,12 @@ progress is not durable proof and may disappear on daemon restart. Startup
 reconciliation marks an orphaned `RUNNING` call `FAILED` with
 `outcome_unknown=true` and `retry_safe=false` rather than reporting success or
 silently retrying it.
+
+A run-plan step cannot be recorded as successful or skipped while linked
+background action calls remain running. The validation response identifies the
+pending calls and supplies `actionCall.get` polling context. Wait for terminal
+action evidence before claiming successful completion; failed/blocked recovery
+and explicit abort behavior remain available.
 
 If provider execution succeeds but local response-file persistence fails, the
 failed call and immediate error both retain `output_persistence_failed=true`
@@ -361,6 +377,8 @@ must agree before the connector is invoked.
 Registered first-party connectors are one provider per connector file and now
 cover the migrated clean path for:
 
+- `aignc`: `utils.aignc.models.list`, `utils.aignc.chat.complete`,
+  `utils.aignc.image.generate`, and `utils.aignc.audio.analyze`
 - `openai-images`: `utils.image.generate`, `utils.image.edit`
 - `xai-imagine`: `utils.xai.image.generate`, `utils.xai.image.edit`, and
   `utils.xai.video.generate`
@@ -445,6 +463,20 @@ directly instead of treating them as missing connectors. Outbrain and user-owned
 webhook actions remain deferred until endpoint-level contracts or project-local
 static HTTP config are supplied.
 
+The AIGNC connector performs one explicit model list or nonstreaming generation
+request through the fixed supplier API. Agents choose text/audio models and
+instructions; Google search is an explicit chat option. Model listing stays
+inline; chat, image and audio generation use the shared background acceptance
+and `actionCall.get` polling flow. Their optional `read_timeout_seconds` is
+bounded to 60–1800 seconds, defaults to 600, and governs provider read inactivity
+separately from the short submit/poll calls. JPEG generation uses
+generic generated assets and image artifacts. Audio reads a current-project
+artifact from daemon-managed assets and encodes it inside the daemon. Provider
+commercial fields are excluded, and this connector defines no pricing or
+budget integration. It does not select models, route workflows, or retry
+generation automatically. See the [AIGNC contract](integration-contracts/aignc.md)
+for supplied-evidence limits and the existing audio staging path.
+
 The OpenAI Images connector persists base64 image bytes under generated assets,
 registers the persisted files as generic `image` artifacts when action
 execution has repository context, and returns local artifact URLs/ids with no
@@ -512,6 +544,35 @@ agent only supplies the action input payload allowed by that plugin action's
 schema.
 
 ## Boundary
+
+### Useful output without credential exposure
+
+Credential redaction and business-data selection are different concerns.
+An agent-authorized read may need customer identity, document text, a provider
+invoice link, or a continuation cursor to complete its job. Connectors should
+preserve the reviewed business fields needed for that operation, or provide an
+explicit detailed read/export path. Compact response files are the token-saving
+boundary; deleting fields before that boundary makes them unrecoverable even in
+raw mode.
+
+Do not silently discard completeness information: preserve page continuation,
+partial results and provider truncation indicators. Nonsecret provider cursor
+names that collide with credential redaction should follow existing GA4/GTM
+connector-owned normalization (`next_page_cursor`), not a global token exemption.
+
+Business details and customer-facing document URLs are sensitive task data, not
+authentication credentials. Selected Stripe reads use the explicit
+`include_business_details` output option; their normal action audit/response
+files can retain sanitized business snapshots without becoming a financial
+system of record. Share only in the authorized recipient scope. Keep API keys,
+client secrets, credential-bearing download URLs and exact payload-transit
+secrets out of output. If redaction makes a locator unusable, indicate that
+instead of claiming it is an actionable URL.
+
+Provider output/completeness requirements live in
+[`connector-quality.md`](integration-contracts/connector-quality.md); provider-specific
+behavior is routed by the [integration contracts index](integration-contracts/README.md).
+Verification history belongs in the delivery tracker, not another contract report.
 
 Actions are dumb execution units. They do not pick campaigns, choose variants,
 optimize budgets, interpret SEO opportunities, or decide next steps. Those

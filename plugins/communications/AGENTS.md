@@ -134,8 +134,12 @@ does not run an assistant, classify intent, or decide workflows.
   sequence-number-only actions.
 - OAuth/XOAUTH2 for SMTP or IMAP stays deferred until provider-specific refresh,
   scope diagnostics, and safe auth tests exist.
-- Message bodies may contain private data. Store long or raw bodies as artifacts
-  and return previews/selected fields unless a granted run needs full content.
+- Message bodies may contain private data. Default to previews/selected fields;
+  explicitly request Slack history `include_content=true` when authorized work
+  needs full selected content, then inspect the normal sanitized response file.
+  Do not create artifacts or duplicate full bodies just to read action output.
+  IMAP previews must retain completeness facts; original receipt evidence uses
+  the existing host-only export contract and its external owner.
 - `agent_requests` are generic core queue records. Communications can create
   them only through trusted ingestion or granted run-plan steps.
 - All communication ingress must follow one-brain processing. Provider adapters
@@ -166,45 +170,6 @@ For Slack-like, Telegram-like, email, or future chat providers:
 6. Use named `communicationTarget.*` records for outbound destinations and
    `communicationRoute.*` for cross-surface handoff guidance.
 7. Do not add provider-specific MCP tools or daemon-side workflow decisions.
-
-## Current Status
-
-Telegram bot identity checks, text messages, photo sends, native message
-reaction set, message delete, callback answers, bounded diagnostic
-`updates.poll`, webhook set/delete/info, and communication-profile-scoped
-secret-token ingress are executable through `action.run` for one explicit direct call or
-`action.execute` inside granted run-plan steps, via the `telegram-bot`
-connector. Communication-profile setup is executable through
-`communicationProfile.*` across REST, CLI, and MCP. Webhook ingress stores
-communication resources and creates generic agent requests only after
-communication-profile trigger and access policy allow it.
-
-Provider-neutral setup operations for profiles, surfaces, memberships, targets,
-and stored communication context are executable through REST, CLI, and MCP. They
-write static resources and do not call Telegram, Slack, SMTP, IMAP, or a model.
-
-SMTP send and IMAP mailbox/message lifecycle actions are executable through
-`action.run` or `action.execute` with daemon-held credentials. SMTP covers
-explicit outbound message send only and never claims delivery/read/open/click/
-reply state. IMAP covers mailbox list, bounded UID search, selected message
-fetch, and mark seen/unseen. Slack Web API actions and signed HTTP ingress are
-executable. Automatic background callback ACK jobs, Slack Socket Mode, Slack
-history/files/admin actions, Slack reaction remove, richer Telegram
-media/admin operations, broader chat/mail providers, and SMTP/IMAP OAuth or
-XOAUTH2 remain deferred until their provider-specific contracts, tests, and
-safe auth diagnostics are delivered.
-
-The core `agentRequest.*` operations are executable through the shared
-operation registry. Use `agentRequest.list`, `agentRequest.get`,
-`agentRequest.claim`, `agentRequest.prepareRunPlan`, `agentRequest.release`,
-`agentRequest.linkRunPlan`, `agentRequest.complete`, and
-`agentRequest.ignore` for queue lifecycle.
-`agentRequest.prepareRunPlan` atomically claims a request, creates the
-caller-supplied run plan or template-backed plan, links both, and returns the
-claim token. It does not choose a template, start a plan, call a model, call a
-provider, or send a reply.
-`agentRequest.create` is not bootstrap granted; it requires a run token whose
-active step explicitly grants `agentRequest.create`.
 
 ## Implementation Checklist
 

@@ -22,7 +22,7 @@ export. See the [digest protocol](local-workspace-contract.md#versions-and-diges
 | Receipt intake | Retain, extract, deduplicate, quarantine and verify custody. | Ask only for material ambiguity; continue unrelated items. |
 | Bookkeeping preparation | Propose sourced categories, match, reconcile and preserve gaps. | Owner resolves missing business purpose or material corrections; no routine row approval. |
 | Payment request | Resolve customer, prepare/recover complete draft, compare proposal. | One owner decision can cover exact finalization and initial send, filling both technical gates. |
-| Follow-ups and received-payment settlement | Read lifecycle/history and suppress ineligible cases; prepare one received-payment match/allocation and digest. | Exact resend needs owner-followup-resend. Report, attach, and paid-out-of-band settlement each use their separate owner gate; one invoice/source allocation per mutation occurrence. |
+| Follow-ups and received-payment settlement | Read lifecycle/history and prepare the instructed Stripe resend or authored email; alternatively prepare a received-payment match/allocation. | Follow the operator's instruction or documented sending policy. Existing Stripe/settlement gates remain; no additional email approval gate. |
 | Cashflow | Prepare sourced rollforwards and scenarios with visible uncertainty. | Ask for material assumptions; no payment authority. |
 | Tax estimates | Gather annual facts/current sources, prepare estimates or incomplete packet. | CPA/EA then owner approve adoption of the same packet version. |
 
@@ -34,8 +34,14 @@ The owner may approve both once. Record that same external decision under both
 gates through the existing authorized approval path; agents never self-approve.
 
 The immutable proposal covers account/customer/invoice, currency, every line,
-description hashes, terms, subtotal and total. Independently review it, then
-reread and compare immediately before each mutation.
+description hashes or selected Price refs/quantities, terms, optional printed
+issue date, subtotal and total when known. A catalog request may be prepared
+before a quote with named amount/total gaps, but approval/finalization requires
+the independently reread current Price terms/currency and draft line amounts,
+subtotal and total captured into a new digest-bound version. `effective_at`
+must match the readback exactly when requested; a missing or null provider value
+does not match. Independently review it, then reread and compare immediately
+before each mutation.
 Material changes require a fresh decision/new occurrence with pending gates,
 preserving the superseded record. Never reuse an approved run for another invoice.
 
@@ -63,12 +69,37 @@ no recipient-setting approval.
 
 ## Follow-up approvals
 
-`owner-followup-resend` cannot override fresh suppression: not due, paid/zero,
+Sending instructions do not replace checking current state: not due, paid/zero,
 void, uncollectible, pending/processing, disputed, paused, corrected, active
 promise, cooldown/recent contact or another reminder owner.
 Compare the exact decision version and reread immediately before send.
 Changed state yields no-send or a fresh decision, not automatic approval reuse.
 An open invoice does not prove delivery; unknown outcomes stay unresolved.
+
+The same billing/collections agent handles both routes. Follow the operator's
+current instruction or documented settings for channel, account, recipients and
+wording; ask only when these leave a material ambiguity. Do not guess a channel
+or silently substitute another. Normal operation assumes a live Stripe account.
+
+`stripe-resend` uses `finance.stripe.invoices.send` and its existing
+`owner-followup-resend` gate. `smtp-email` uses
+`communications.smtp.email.send` with the normal active-step grant; it adds no
+separate approval interview. IMAP reads replies, SMTP sends. Keep the selected
+route/account and actual action `input_json` in `collection_decision.outreach`
+in the same `finance.json`; use the connector's current input contract rather
+than inventing finance-specific email restrictions. Existing review/digest and
+attempt records apply to either route.
+
+Check invoice state and recent contacts/replies together so the two channels do
+not duplicate a follow-up. When IMAP evidence is needed, use the existing
+[host handoff](imap-host-handoff-contract.md) to retain the original and inspect
+reply headers; a preview is not complete reply evidence. No mailbox
+acknowledgement is needed for follow-up review.
+
+Record the actual result: SMTP acceptance is not inbox delivery; partial
+acceptance identifies recipients already contacted. Resolve an uncertain send
+before retrying or switching channels—an open invoice alone cannot prove email
+failure. Settlement-only remains recording work, not a sending instruction.
 
 ## Received-payment settlement approvals
 

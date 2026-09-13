@@ -1,14 +1,14 @@
 schema_version: stackos.workflow-template.v1
 key: finance.payment-request
 name: Finance Payment Request
-version: 0.4.1
-description: Prepare, review, finalize, and send one Stripe invoice for an approved external payment request without making StackOS the billing system of record.
+version: 0.5.0
+description: Prepare, review, finalize, and either send or explicitly hand off one Stripe invoice for an approved external payment request without making StackOS the billing system of record.
 domain: finance
 owner:
   team: StackOS
 experience:
   problem: "Sending an invoice is repetitive, but a draft, finalization, customer delivery, recovery, and external records must remain distinguishable."
-  outcome: "One external payment request linked to a safe Stripe invoice reference, with deterministic mutation recovery and separate owner-approved finalization and send gates."
+  outcome: "One external payment request linked to a safe Stripe invoice reference, with deterministic mutation recovery and separate owner-approved finalization and send gates; an instructed no-send settlement handoff remains distinct from delivery."
   why_ai: "An agent can prepare a bounded Stripe invoice from the selected external record while enforcing idempotency, separating draft work from customer delivery, and preserving owner decisions."
   operator_path:
     - "Request an invoice from the external billing record; the agent resolves workspace defaults and prepares the draft."
@@ -16,20 +16,20 @@ experience:
     - "Inspect a safe provider result, exception, or recovery recommendation; never provide customer data or payment instructions in chat."
   agent_path:
     - "Preflight one external payment request and resolve only safe account-bound Stripe references."
-    - "Create/reconcile a draft customer, invoice, and invoice item with deterministic idempotency keys."
+    - "Discover approved existing catalog choices when needed, then create/reconcile a draft customer, invoice, and invoice item with deterministic idempotency keys."
     - "Use action-level owner approvals for finalize and send; a standing policy is guidance and cannot waive either technical gate."
-    - "Write safe provider/status/proof refs back to the selected external backend and hand open invoices to follow-up work when appropriate."
+    - "Write safe provider/status/proof refs back to the selected external backend and hand sent/open invoices or an instructed finalized no-send settlement to follow-up work when appropriate."
   progress_signals: ["Request scoped", "Draft reconciled", "Finalization approved", "Invoice finalized", "Send approved", "External record updated"]
   recovery:
     - "For an unknown write outcome, retrieve/reconcile the same safe provider refs with the same deterministic key; never create a new key or duplicate customer/invoice/item."
     - "If approval is absent, stop at the review-ready draft and do not finalize or send."
   safe_stopping_points:
     - "Stop with a draft/reconciliation recommendation before finalization when approval is not recorded."
-    - "Stop after finalization but before send when the send gate is absent or delivery outcome is uncertain."
+    - "Stop after finalization but before send when the send gate is absent, delivery outcome is uncertain, or the external record instructs a separate settlement-only attachment."
   handoffs:
     - workflow_key: finance.payment-request-followups
       relationship: next
-      when: "A safely recorded sent/open invoice is eligible for follow-up policy evaluation."
+      when: "A safely recorded sent/open invoice is eligible for follow-up policy evaluation, or a finalized invoice has an instructed known-payment settlement-only attachment."
     - workflow_key: finance.bookkeeping-close
       relationship: conditional
       when: "Safe invoice lifecycle evidence must be prepared/matched in the external backend."
@@ -156,6 +156,34 @@ action_contracts:
     auth_ref: stripe
     risk_level: write
     description: Create only after the external request supplies approved details; use a deterministic idempotency key and reconcile unknown outcomes.
+  - key: stripe_products_list
+    action: finance.stripe.products.list
+    capability: stripe-invoicing
+    provider: stripe
+    auth_ref: stripe
+    risk_level: read
+    description: Discover one bounded page of existing Stripe products through safe refs; names require the action's explicit business-details option.
+  - key: stripe_products_retrieve
+    action: finance.stripe.products.retrieve
+    capability: stripe-invoicing
+    provider: stripe
+    auth_ref: stripe
+    risk_level: read
+    description: Read one selected existing product through its account-bound safe ref before selecting its prices.
+  - key: stripe_prices_list
+    action: finance.stripe.prices.list
+    capability: stripe-invoicing
+    provider: stripe
+    auth_ref: stripe
+    risk_level: read
+    description: Discover one bounded page of existing Stripe prices through safe refs, optionally scoped to a selected product.
+  - key: stripe_prices_retrieve
+    action: finance.stripe.prices.retrieve
+    capability: stripe-invoicing
+    provider: stripe
+    auth_ref: stripe
+    risk_level: read
+    description: Read the selected current price terms, currency and supported complex-price observations before the workflow creates or reviews its line.
   - key: stripe_invoices_create
     action: finance.stripe.invoices.create
     capability: stripe-invoicing
@@ -243,7 +271,7 @@ steps:
     output_refs: [payment_request_summary]
     instructions:
       - "Read finance.json and its packaged local-json-v1 schema; resolve actual record refs and selected setup, document revision/digest and one-writer readback capability. For first-time setup use the empty bootstrap only in a new workspace; never overwrite existing files. Whole-document changes require reread/rebase; unrelated updates do not invalidate immutable proposal approval."
-      - "Read the immutable version behind billing_request_ref. Require source-approved customer identity, currency, complete line amounts/descriptions and due terms before creating provider records; ask only for missing business facts. Preserve the version and digest externally."
+      - "Read the immutable version behind billing_request_ref. Require source-approved customer identity, invoice currency, due terms, and either complete manual line amount/currency/description facts, selected catalog Price refs with explicit quantities, or source-approved catalog selection criteria for create-draft discovery to resolve an existing Price without guessing. A pre-quote catalog request may name unavailable line amounts/totals as gaps; approval/finalization needs their independently observed draft values in a new immutable version. An optional effective_at is the approved printed issue-date timestamp for this invoice occurrence, not its created, due, or payment date. Ask only for missing business facts. Preserve the version and digest externally."
     success_criteria:
       - "The external request ref, Stripe route, approval requirements, and safe stopping point are explicit."
   - id: resolve-customer
@@ -261,28 +289,29 @@ steps:
   - id: create-draft
     title: Create Or Reconcile Draft Invoice
     purpose: Prepare the approved external request as a Stripe draft invoice and item without finalizing or sending.
-    action_refs: [stripe_invoices_create, stripe_invoice_items_create, stripe_invoices_retrieve, stripe_invoices_list, stripe_invoice_items_list]
+    action_refs: [stripe_products_list, stripe_products_retrieve, stripe_prices_list, stripe_prices_retrieve, stripe_invoices_create, stripe_invoice_items_create, stripe_invoices_retrieve, stripe_invoices_list, stripe_invoice_items_list]
     depends_on: [resolve-customer]
     policy_refs: [deterministic-write-recovery, separate-finalize-and-send, customer-payload-privacy]
     output_refs: [payment_request_summary]
     instructions:
       - "Use one stable idempotency key per draft/line operation and a random non-sensitive 32-lowercase-hex correlation_key per request version, stored externally. Preserve key, provider ref, action ref and attempt outcome before continuing."
       - "Optionally retain a verified single-project external_project_ref on the immutable billing version and include it in the material digest. One customer can have several projects; do not infer attribution from a customer mapping. Ambiguous or multi-project requests stay unassigned with a gap, without duplicating invoice amounts. A changed attribution needs a new proposal version and applicable approval, not a rewritten approved request."
-      - "Pass the approved currency explicitly to invoice creation and every line. Do not rely on Stripe's account/customer default or assume a later line changes the draft currency; compare the resulting invoice currency before adding lines."
-      - "Create every approved line on the explicit draft invoice. For uncertain writes, retrieve the known invoice or paginate customer/time-bounded invoice lists with correlation_matches; list exact invoice items and compare all lines before retry. Absence from one page is not absence. Ambiguity remains reconcile-required."
+      - "Pass the approved currency explicitly to invoice creation. When effective_at is supplied, pass that exact timestamp and observe its returned value: it controls the printed issue date only, not the created, due, or payment date. An absent/null observation does not establish a match to a requested effective_at. Do not rely on Stripe's account/customer default or assume a later line changes the draft currency; compare the resulting invoice currency before adding lines."
+      - "Use bounded Product/Price discovery only to select an existing catalog ref. Request include_business_details=true only when readable Product names or Price nicknames are needed; default safe refs do not supply them. Retrieve the selected Price's current terms and applicable invoice currency (including a supported currency option where present) before creating its line; its base currency need not equal the approved invoice currency when that option applies. The safe ref proves identity, not a term snapshot. Do not guess a selection or blanket-reject a complex Price merely because tiers or currency options need review."
+      - "Create every approved line on the explicit draft invoice. A manual line retains its approved amount, currency and description. A catalog line uses its selected price_ref with explicit nonnegative quantity and only the optional currency/description allowed by the action. Stripe computes that line's total: construct that connector payload selectively and never send the proposal's retained observed catalog amount with price_ref. For uncertain writes, retrieve the known invoice or paginate customer/time-bounded invoice lists with correlation_matches; list exact invoice items and compare all lines before retry. Absence from one page is not absence. Ambiguity remains reconcile-required."
     success_criteria:
       - "Draft state is safely proven or pending same-key reconciliation; no customer-facing delivery occurred."
   - id: review-draft
     title: Review Draft And Required Owner Gates
     purpose: Confirm external request consistency and make finalization/send approvals available to their exact action contracts.
     depends_on: [create-draft]
-    action_refs: [stripe_invoices_retrieve, stripe_invoice_items_list]
+    action_refs: [stripe_invoices_retrieve, stripe_invoice_items_list, stripe_prices_retrieve]
     policy_refs: [external-backend-is-authoritative, separate-finalize-and-send]
     output_refs: [payment_request_summary]
     instructions:
       - "Do not treat a step approval or standing policy as a substitute for the recorded action-level approval required by finalization and send."
       - "Match the concrete safe customer/invoice refs and intended recipient/terms against the external business-scoped approval record; the StackOS technical gate is action-ref scoped, not a payload-level approval record."
-      - "Read the complete provider draft and all paginated items. Compare customer/account, currency, every line amount/description SHA-256, due terms, subtotal and total against the immutable request. Unexpected fees/tax/discounts or missing lines stop finalization."
+      - "Read the complete provider draft and all paginated items. Compare customer/account, invoice currency, manual line amount/description SHA-256, selected catalog price_ref/quantity and retained observed line amount, due terms, and actual subtotal/total against the immutable request. For each catalog line, review the current Price terms and applicable invoice currency, including the selected currency option where present, without treating its ref as a term snapshot; capture the independently reread line amount, draft total and subtotal into the immutable proposal before approval/finalization. Complex pricing needs an observed review, not a guessed selection or a blanket rejection. When effective_at was requested, compare the observed integer exactly; absent/null does not claim a match. Unexpected fees/tax/discounts, missing lines or an unreviewed mismatch stop finalization."
       - "Compare current_customer_email_sha256 and invoice_customer_email_sha256 with the exact approved primary recipient. Stripe API does not expose all Dashboard-only extra To/CC billing recipients; require externally verified recipient-setting scope before send. Missing/mismatched recipient evidence blocks delivery while preserving the draft."
       - "Produce proposal_version_ref and control_review_ref here. One owner decision may authorize finalize plus initial send for that exact proposal; record the same external decision under owner-invoice-finalization and owner-invoice-send separately. These remain two technical gates, not two necessary conversations."
       - "Any material change after review supersedes this proposal and requires a fresh decision/new run occurrence. Existing runtime gates do not bind payload fields; the orchestrator must compare the exact proposal before each mutation."
@@ -307,18 +336,18 @@ steps:
     policy_refs: [deterministic-write-recovery, separate-finalize-and-send]
     output_refs: [payment_request_summary]
     instructions:
-      - "Reread invoice/items and confirm the approved proposal and send gate still match. Suppress send if paid, void, zero balance or otherwise no longer appropriate. Inspect the actual send action outcome; an open invoice alone does not prove an email was sent."
+      - "When sending, reread invoice/items and confirm the approved proposal and owner-invoice-send gate still match. Suppress send if paid, void, zero balance or otherwise no longer appropriate. When the external record instructs settlement-only for a known existing payment, record suppression_ref and delivery_state=suppressed, make no finance.stripe.invoices.send call, and hand the finalized invoice to the separate follow-ups settlement route. Never infer a send from an open remaining balance before that payment is linked. Otherwise inspect the actual send action outcome; an open invoice alone does not prove an email was sent."
       - "For a successful send in sandbox/test mode (livemode=false), record status and delivery_state as test-accepted: Stripe sends no email. Keep the same approval/audit proof and do not claim sent/delivered or create a live reminder handoff. A live-mode accepted send still does not prove inbox delivery."
     success_criteria:
-      - "The send request has the action-level owner-invoice-send technical gate; sandbox acceptance is test-accepted without email, and unknown delivery is not retried with a new key."
+      - "An actual send request has the action-level owner-invoice-send technical gate; an instructed settlement-only suppression has its recorded suppression ref and no send call. Sandbox acceptance is test-accepted without email, and unknown delivery is not retried with a new key."
   - id: record-and-handoff
     title: Record External Status And Handoff
-    purpose: Record safe Stripe outcome refs in the selected external backend and hand eligible open invoices to follow-up work.
+    purpose: Record safe Stripe outcome refs in the selected external backend and hand eligible open invoices or instructed no-send settlement work to follow-up.
     depends_on: [send-invoice]
     policy_refs: [external-backend-is-authoritative]
     output_refs: [payment_request_summary]
     instructions:
-      - "Retain test-accepted as the delivery_state when recording a sandbox send, with empty live handoff_refs. Do not turn a test acceptance into a sent invoice or live follow-up event."
+      - "Retain test-accepted as the delivery_state when recording a sandbox send, with empty live handoff_refs. Do not turn a test acceptance into a sent invoice or live follow-up event. For the instructed no-send settlement path, finish this source run with delivery_state=suppressed, the suppression ref, finalized invoice/provider proof and a settlement-only handoff ref; it does not need owner-invoice-send because no send occurred."
     success_criteria:
       - "External status/proof and idempotent handoff refs are recorded without placing billing content in StackOS."
 outputs:

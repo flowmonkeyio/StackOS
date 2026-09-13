@@ -76,7 +76,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', focusSearch))
 
 useSiteSeo({
   title: `${catalog.counts.providers} AI integrations for agents and workflows`,
-  description: `Search ${catalog.counts.providers} tools across ${catalog.counts.plugins} StackOS plugins, with ${catalog.counts.actions} supported actions for communication, publishing, SEO, commerce, advertising, research, and more.`,
+  description: `Search ${catalog.counts.providers} tools across ${catalog.counts.plugins} StackOS plugins, with ${catalog.counts.actions} listed actions for communication, publishing, SEO, commerce, advertising, research, and more.`,
 })
 
 useSchemaOrg([

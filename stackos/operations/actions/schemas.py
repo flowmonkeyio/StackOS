@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from stackos.action_availability import ActionExposureOut
 from stackos.db.models import ActionCallStatus
@@ -34,6 +34,42 @@ ACTION_CALL_POLL_RESPONSE_POLICY = OperationResponsePolicy(
         "terminal output or failure details, and next-poll guidance.",
     ),
 )
+
+ACTION_CALL_HISTORY_RESPONSE_POLICY = OperationResponsePolicy(
+    default_mode="compact",
+    allowed_modes=("compact", "raw"),
+    ack_safe=False,
+    compact_notes=(
+        "Keep every returned row's exact id, project identity, action/provider, status, "
+        "run references and timestamps, plus next_cursor and total_estimate. "
+        "Raw additionally includes canonical redacted audit detail.",
+    ),
+)
+
+
+class ActionCallQueryInput(MCPInput):
+    model_config = ConfigDict(extra="forbid")
+    project_id: int = Field(ge=1)
+    action_call_id: int | None = Field(default=None, ge=1)
+    run_id: int | None = None
+    run_plan_id: int | None = None
+    run_plan_step_id: int | None = None
+    plugin_slug: str | None = None
+    action_key: str | None = None
+    provider_key: str | None = None
+    status: ActionCallStatus | None = None
+    dry_run: StrictBool | None = False
+    sort: Literal["id", "created_at"] = Field(
+        default="id",
+        description=(
+            "Descending ID by default. created_at orders newest recorded timestamp first, "
+            "then ID descending; repeat the same filters and sort with after_id."
+        ),
+    )
+    created_from: datetime | None = None
+    created_before: datetime | None = None
+    limit: int = Field(default=50, ge=1, le=200)
+    after_id: int | None = Field(default=None, ge=1)
 
 
 class ActionListInput(MCPInput):

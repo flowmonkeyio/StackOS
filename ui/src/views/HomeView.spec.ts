@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import HomeView from './HomeView.vue'
+import { portfolioFixture, ticketSummaryFixture } from './home/overviewFixtures'
 
 const ORIG_FETCH = globalThis.fetch
 
@@ -21,24 +22,88 @@ describe('HomeView', () => {
     vi.restoreAllMocks()
   })
 
-  it('does not render host status controls in a plain browser', async () => {
+  it('shows real host reads and disabled native lifecycle controls in a plain browser', async () => {
     globalThis.fetch = vi.fn(async (input) => defaultFetch(String(input))) as typeof fetch
 
     const wrapper = await mountHome()
     await vi.waitFor(() => expect(wrapper.text()).toContain('Local service'))
 
     expect(wrapper.text()).toContain('Running')
-    expect(wrapper.text()).not.toContain('Agent hosts')
+    const service = wrapper.get('[aria-label="System status"]')
+    expect(service.findAll('button').map((button) => button.text())).toEqual([
+      'Restart',
+      'Refresh',
+      'Run doctor',
+      'Install or repair',
+    ])
+    for (const label of ['Restart', 'Run doctor', 'Install or repair']) {
+      expect(
+        service
+          .findAll('button')
+          .find((button) => button.text() === label)
+          ?.attributes('disabled'),
+      ).toBeDefined()
+    }
+    expect(
+      service
+        .findAll('button')
+        .find((button) => button.text() === 'Refresh')
+        ?.attributes('disabled'),
+    ).toBeUndefined()
+    expect(service.text()).toContain('Service controls live in the StackOS desktop app.')
+    expect(wrapper.text()).toContain('AI tool connections')
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      '/api/v1/operations/hostMcp.status/call',
+      expect.anything(),
+    )
     const guide = wrapper.get('a[href="https://stackos.flowmonkey.io/getting-started"]')
     expect(guide.text()).toContain('Getting started')
     expect(guide.attributes('target')).toBe('_blank')
     expect(guide.attributes('rel')).toBe('noopener noreferrer')
   })
 
+  it('filters contributing projects by ticket status and aligns chart visibility with the directory', async () => {
+    const requests: Array<{ url: string; args: Record<string, unknown> }> = []
+    globalThis.fetch = vi.fn(async (input, init) => {
+      const url = String(input)
+      if (init?.body) requests.push({ url, args: JSON.parse(String(init.body)).arguments })
+      return defaultFetch(url)
+    }) as typeof fetch
+    const wrapper = await mountHome()
+    const overview = wrapper.findComponent({ name: 'HomePortfolioOverview' })
+    expect(wrapper.text()).toContain('Tickets by status')
+    expect(overview.text()).toContain('Current snapshot · 4 tickets')
+    expect(overview.findComponent({ name: 'TicketStatusChart' }).attributes('summary-aside')).toBeUndefined()
+    expect(wrapper.text()).not.toContain('Latest action calls')
+    expect(
+      wrapper.get('a[href="/projects/1/tasks?view=tickets&status=in-progress"]').text(),
+    ).toContain('In Progress 1')
+    overview.vm.$emit('select', 'in-progress')
+    await flushPromises()
+    expect(
+      requests.filter(({ url }) => url.includes('project.portfolio')).at(-1)?.args,
+    ).toMatchObject({ ticket_status: 'in-progress', is_active: true, limit: 50 })
+    overview.vm.$emit('visibility', 'all')
+    await flushPromises()
+    expect(requests.filter(({ url }) => url.includes('ticketCountsAll')).at(-1)?.args).toEqual({
+      response_mode: 'raw',
+      is_active: null,
+    })
+    expect(
+      requests.filter(({ url }) => url.includes('project.portfolio')).at(-1)?.args,
+    ).toMatchObject({ ticket_status: 'in-progress', is_active: null })
+    await wrapper.get('button[aria-label="Clear ticket status filter"]').trigger('click')
+    await flushPromises()
+    expect(
+      requests.filter(({ url }) => url.includes('project.portfolio')).at(-1)?.args,
+    ).toMatchObject({ ticket_status: null, is_active: null })
+    wrapper.unmount()
+  })
+
   it('turns an empty portfolio into a plain-language first step', async () => {
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input)
-      if (url === '/api/v1/projects?limit=50') {
+      if (url === '/api/v1/operations/project.portfolio/call') {
         return json({ items: [], next_cursor: null, total_estimate: 0 })
       }
       return defaultFetch(url)
@@ -99,13 +164,16 @@ describe('HomeView', () => {
         }),
       ],
     }))
+    const installOrRepair = vi.fn()
+    const restartService = vi.fn()
+    const runDoctor = vi.fn()
     Object.defineProperty(window, 'stackosDesktop', {
       configurable: true,
       value: {
         status: vi.fn(),
-        installOrRepair: vi.fn(),
-        restartService: vi.fn(),
-        runDoctor: vi.fn(),
+        installOrRepair,
+        restartService,
+        runDoctor,
         hostStatuses,
         checkForUpdates: vi.fn(),
         downloadUpdate: vi.fn(),
@@ -118,7 +186,9 @@ describe('HomeView', () => {
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('AI tool connections'))
     expect(hostStatuses).toHaveBeenCalledTimes(1)
-    expect(wrapper.text()).toContain('1 connected · 1 available · 1 needs attention · 2 not detected')
+    expect(wrapper.text()).toContain(
+      '1 connected · 1 available · 1 needs attention · 2 not detected',
+    )
     expect(wrapper.text()).toContain('Connected')
     expect(wrapper.text()).toContain('Not detected')
     expect(wrapper.text()).toContain('Restart needed')
@@ -130,6 +200,17 @@ describe('HomeView', () => {
     expect(wrapper.get('img[alt="Gemini CLI"]').attributes('src')).toBe('/images/gemini.webp')
     expect(wrapper.get('img[alt="Hermes"]').attributes('src')).toBe('/images/hermes.webp')
     expect(wrapper.findAll('p[title] > span.truncate')).toHaveLength(5)
+    const service = wrapper.get('[aria-label="System status"]')
+    expect(service.findAll('button').map((button) => button.text())).toEqual([
+      'Restart',
+      'Refresh',
+      'Run doctor',
+      'Install or repair',
+    ])
+    expect(service.text()).not.toContain('System details')
+    expect(restartService).not.toHaveBeenCalled()
+    expect(runDoctor).not.toHaveBeenCalled()
+    expect(installOrRepair).not.toHaveBeenCalled()
   })
 })
 
@@ -145,7 +226,7 @@ async function mountHome() {
     {
       global: {
         plugins: [router, createPinia()],
-        stubs: { teleport: true },
+        stubs: { teleport: true, TicketStatusChart: true },
       },
     },
   )
@@ -154,6 +235,21 @@ async function mountHome() {
 }
 
 function defaultFetch(url: string): Response {
+  if (url === '/api/v1/operations/tracker.ticketCountsAll/call') {
+    return json(ticketSummaryFixture())
+  }
+  if (url === '/api/v1/operations/hostMcp.status/call') {
+    return json({
+      ok: true,
+      items: [
+        host({}),
+        host({ host_key: 'claude-code', display_name: 'Claude Code' }),
+        host({ host_key: 'claude-desktop', display_name: 'Claude Desktop' }),
+        host({ host_key: 'gemini-cli', display_name: 'Gemini CLI' }),
+        host({ host_key: 'hermes', display_name: 'Hermes' }),
+      ],
+    })
+  }
   if (url === '/api/v1/health') {
     return json({
       db_status: 'ok',
@@ -162,20 +258,9 @@ function defaultFetch(url: string): Response {
       daemon_uptime_s: 120,
     })
   }
-  if (url === '/api/v1/projects?limit=50') {
+  if (url === '/api/v1/operations/project.portfolio/call') {
     return json({
-      items: [
-        {
-          id: 1,
-          slug: 'demo',
-          name: 'Demo',
-          domain: 'example.com',
-          locale: 'en',
-          is_active: true,
-          created_at: '2026-06-26T00:00:00Z',
-          updated_at: '2026-06-26T00:00:00Z',
-        },
-      ],
+      items: [portfolioFixture()],
       next_cursor: null,
       total_estimate: 1,
     })

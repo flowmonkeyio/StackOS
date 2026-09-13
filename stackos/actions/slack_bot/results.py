@@ -8,7 +8,11 @@ from typing import Any
 import httpx
 
 from stackos.actions.connectors import ActionConnectorRequest, ActionConnectorResult
+from stackos.actions.provider_utils import credential_payload
+from stackos.artifacts import redact_secrets
+from stackos.secret_refs import redact_secret_values
 
+from .http import _redact_slack_text
 from .refs import (
     _channel_from_body,
     _channel_id_from_obj,
@@ -206,13 +210,21 @@ def _conversation_history_result(
     body: Any,
     headers: httpx.Headers,
 ) -> ActionConnectorResult:
+    auth = credential_payload(request) if request.credential is not None else {}
+    secret_values = tuple(
+        value
+        for key in ("bot_token", "access_token", "token", "signing_secret", "value")
+        if isinstance((value := auth.get(key)), str) and value
+    )
+    body = redact_secret_values(body, secret_values)
     data = body if isinstance(body, Mapping) else {}
     channel_ref = request.input_json.get("channel_ref") or request.input_json.get("surface_ref")
     channel = str(channel_ref or "").removeprefix("slack-channel:")
     raw_messages = data.get("messages")
     provider_messages = raw_messages if isinstance(raw_messages, list) else []
+    include_content = request.input_json.get("include_content") is True
     messages = [
-        _safe_history_message(item, channel=channel)
+        _safe_history_message(item, channel=channel, include_content=include_content)
         for item in provider_messages
         if isinstance(item, Mapping)
     ]
@@ -229,14 +241,18 @@ def _conversation_history_result(
                 if isinstance(item.get("message_ref"), str) and item["message_ref"]
             ],
             "count": len(messages),
+            "content_included": include_content,
             "has_more": bool(data.get("has_more")),
             "next_cursor": _next_cursor(body),
+            **({"is_limited": data["is_limited"]} if "is_limited" in data else {}),
         },
         metadata_json=_metadata("conversations.history", request.operation, status, body, headers),
     )
 
 
-def _safe_history_message(item: Mapping[str, Any], *, channel: str) -> dict[str, Any]:
+def _safe_history_message(
+    item: Mapping[str, Any], *, channel: str, include_content: bool = False
+) -> dict[str, Any]:
     ts = str(item.get("ts") or "")
     thread_ts = str(item.get("thread_ts") or ts or "")
     raw_files = item.get("files")
@@ -246,16 +262,86 @@ def _safe_history_message(item: Mapping[str, Any], *, channel: str) -> dict[str,
         for file_item in files
         if isinstance(file_item, Mapping) and file_item.get("id")
     ]
-    return {
+    text = str(item.get("text") or "")
+    result = {
         "message_ref": _message_ref(channel, ts) if channel and ts else None,
         "thread_ref": _thread_ref(channel, thread_ts) if channel and thread_ts else None,
         "provider_message_ts": ts or None,
         "user_ref": f"slack-user:{item['user']}" if item.get("user") else None,
         "bot_id": item.get("bot_id"),
         "subtype": item.get("subtype"),
-        "text_preview": str(item.get("text") or "")[:500],
+        "text_preview": _redact_slack_text(text[:500]),
+        "text_preview_truncated": len(text) > 500,
         "file_refs": file_refs,
     }
+    if "reply_count" in item:
+        result["reply_count"] = item["reply_count"]
+    if include_content:
+        for field in ("text", "blocks", "attachments"):
+            if field in item:
+                result[field] = _safe_history_content(item[field])
+        if "files" in item:
+            result["files"] = [
+                _safe_history_file(file) for file in files if isinstance(file, Mapping)
+            ]
+    return result
+
+
+def _safe_history_file(file: Mapping[str, Any]) -> dict[str, Any]:
+    """Return file descriptors, never private download URLs or inline file bytes."""
+    result = {
+        key: file[key]
+        for key in (
+            "name",
+            "title",
+            "mimetype",
+            "filetype",
+            "pretty_type",
+            "size",
+            "created",
+            "timestamp",
+            "mode",
+            "is_external",
+            "external_type",
+            "file_access",
+        )
+        if key in file
+    }
+    if file.get("id"):
+        result["file_ref"] = f"slack-file:{file['id']}"
+    if file.get("user"):
+        result["user_ref"] = f"slack-user:{file['user']}"
+    return _safe_history_content(result)
+
+
+def _safe_history_content(value: Any) -> Any:
+    """Preserve rich business content while excluding private file transport paths.
+
+    Slack image blocks can embed a slack_file id or private URL. A ref is useful
+    for later explicit file work; returning the URL is not a file download.
+    https://docs.slack.dev/reference/block-kit/composition-objects/slack-file-object/
+    """
+    if isinstance(value, Mapping):
+        result: dict[str, Any] = {}
+        for key, item in value.items():
+            if key in {"url_private", "url_private_download", "upload_url"}:
+                continue
+            if key == "slack_file" and isinstance(item, Mapping):
+                result[key] = {"file_ref": f"slack-file:{item['id']}"} if item.get("id") else {}
+                if "url" in item:
+                    result[key]["url_omitted"] = True
+            elif key == "files" and isinstance(item, list):
+                result[key] = [
+                    _safe_history_file(file) for file in item if isinstance(file, Mapping)
+                ]
+            else:
+                result[key] = _safe_history_content(item)
+        return redact_secrets(result)
+    if isinstance(value, list):
+        return [_safe_history_content(item) for item in value]
+    if isinstance(value, str):
+        return _redact_slack_text(value)
+    return value
 
 
 def _metadata(

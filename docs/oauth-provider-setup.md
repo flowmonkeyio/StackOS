@@ -9,15 +9,9 @@ Method choice, lifecycle, readiness, and Connections UI behavior are canonical
 in the [one-brain auth-method contract](./auth-providers.md#one-brain-auth-method-contract).
 This runbook records only provider registration and callback facts.
 
-> **Current status:** the OAuth core changes in this repository have not been
-> released. The static callback page at
-> [`workers/oauth-callback-relay/public`](../workers/oauth-callback-relay/public)
-> is live at `auth.stackos.flowmonkey.io`. On 2026-07-22, the deployed page was
-> verified byte-for-byte against the reviewed local `index.html` and returned
-> the required no-store and browser-security headers. It reuses the existing
-> local callback route; it does not add a Worker, Pages Function, daemon route,
-> or OAuth lifecycle. A provider connection still requires a local StackOS
-> build containing the unreleased OAuth core.
+The static callback source is
+[`workers/oauth-callback-relay/public`](../workers/oauth-callback-relay/public).
+It reuses the existing local callback route; it is not another OAuth lifecycle.
 
 Do not paste client secrets, authorization codes, access tokens, refresh tokens,
 or API keys into chat, tickets, documentation, source files, or Pages settings.
@@ -94,7 +88,7 @@ arbitrary local services.
 | --- | --- | --- |
 | Direct loopback callback | Implemented for providers that accept it | Retained as a local-development option |
 | Named reverse tunnel to port `5180` | Compatible with the current direct callback design | Temporary testing only; one tunnel/hostname maps to one machine |
-| Static Cloudflare Pages callback to loopback | Live; deployed page matches the reviewed source as of 2026-07-22 | Yes; one public callback works for same-machine installations on canonical port `5180` |
+| Static Cloudflare Pages callback to loopback | Implemented static relay; verify the deployed artifact against reviewed source when releasing | Yes; one public callback works for same-machine installations on canonical port `5180` |
 | Stateful hosted OAuth/token broker | Not implemented | No; unnecessary unless cross-device authorization becomes a demonstrated requirement |
 
 ## Cloudflare Pages Static Callback
@@ -214,9 +208,9 @@ new middleware exception:
 8. Register the remaining provider applications only after the common callback
    passes.
 
-No StackOS release is required to create provider applications or upload the
-static page. The unreleased OAuth core must still be present locally, but no
-separate relay-handoff route is part of the Pages design.
+Provider registration and static-page deployment are separate from installing
+StackOS. A connection still needs the local OAuth callback implementation;
+no separate relay-handoff route is part of the Pages design.
 
 ## Provider Summary
 

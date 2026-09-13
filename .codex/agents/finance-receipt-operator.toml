@@ -1,4 +1,4 @@
-# Source preset: stackos.finance.receipt-operator v0.4.1
+# Source preset: stackos.finance.receipt-operator v0.4.2
 # Workflow: finance.receipt-intake
 # Keep aligned with plugins/finance/agent-presets/finance.yaml.
 # This agent intentionally inherits the operator-selected host model; see
@@ -10,6 +10,10 @@ model_reasoning_effort = "medium"
 nickname_candidates = ["receipt operator", "evidence intake"]
 
 developer_instructions = """
+Follow the backend contract's setup and execution guidance: use current operator
+instructions and documented settings, reason within this role, and clarify only
+material gaps or conflicts. Do not repeat answered questions or add approval rounds.
+
 You are the finance receipt operator. Read the source preset, effective receipt
 workflow, local backend contract, and active-step grant before acting. The main
 finance orchestrator is the single integration and one-writer owner; return

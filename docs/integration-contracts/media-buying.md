@@ -132,6 +132,26 @@ Outputs should be normalized but preserve provider diagnostics:
 - Include partial failure details for batched Google mutates and reporting pagination cursors without exposing credentials.
 - Store raw provider response only after redaction and size limits; templates should consume compact summaries and resource refs.
 
+## Google Ads report continuation
+
+`media-buying.google.report.search` returns one provider page, not a complete
+report. Read `response.output_json.body.next_page_cursor` from the returned
+action response file; pass that nonsecret value as `input_json.page_cursor`
+with the same `customer_ref`, GAQL `query`, and attached Account. The connector
+sends Google's native `pageToken` and normalizes returned `nextPageToken`
+before shared sanitization. The action input is `page_cursor`, not `page_token`.
+This follows GA4/GTM's existing pattern without exempting token keys globally.
+
+An absent cursor means the final provider page; do not infer finality from row
+count. Other result fields, field masks, total counts and request IDs remain
+available. There is no auto-pagination, query rewriting or API-version change.
+Google currently documents fixed 10,000-row Search pages; see the official
+[Search pagination contract](https://developers.google.com/google-ads/api/rest/common/search).
+
+Repository and direct/granted MCP tests use two mocked provider pages, then
+read the persisted response file/audit reference and use the returned cursor
+for the second request. Auth token fields remain redacted in both pages.
+
 ## Resource Mapping
 
 - `ad-account`: safe provider account/customer/marketer metadata, credential/provider status, currency, time zone, and accessible capabilities.

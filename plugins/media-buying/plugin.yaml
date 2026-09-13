@@ -1,6 +1,6 @@
 slug: media-buying
 name: Media Buying
-version: 0.1.0
+version: 0.1.1
 description: First-party StackOS domain package for paid media provider contracts, resource schemas, and reusable workflow templates.
 display_order: 40
 source: builtin
@@ -1019,7 +1019,7 @@ actions:
         - https://www.googleapis.com/auth/adwords
   - key: google.report.search
     name: Search Google Ads Report
-    description: Run a bounded Google Ads reporting search from explicit GAQL or query parts and paging controls.
+    description: Run one Google Ads GAQL search page. Read body.next_page_cursor from the response file and pass it as page_cursor with the same customer_ref and query to continue; no cursor means the final page.
     provider: google-ads
     capability: media-measurement
     risk_level: read
@@ -1034,8 +1034,9 @@ actions:
           type: string
         query:
           type: string
-        page_token:
+        page_cursor:
           type: string
+          description: Nonsecret paging value from the preceding body.next_page_cursor; forwarded to Google as pageToken. Keep customer_ref and query unchanged.
     output_schema: *object_schema
     config:
       schema_version: stackos.action.v1
@@ -1044,6 +1045,9 @@ actions:
       requires_credential: true
       required_scopes:
         - https://www.googleapis.com/auth/adwords
+      docs:
+        - docs/integration-contracts/media-buying.md
+        - https://developers.google.com/google-ads/api/rest/common/search
   - key: google.conversion_action.create
     name: Create Google Conversion Action
     description: Create a Google Ads conversion action from explicit tracking and attribution fields.

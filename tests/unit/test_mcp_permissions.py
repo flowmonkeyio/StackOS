@@ -97,6 +97,8 @@ def test_check_grant_for_system_skill_covers_bootstrap_setup_operations() -> Non
     check_grant("workflowTemplate.list", SYSTEM_SKILL)
     check_grant("workflowTemplate.describe", SYSTEM_SKILL)
     check_grant("workflowTemplate.validate", SYSTEM_SKILL)
+    check_grant("workflowTemplate.save", SYSTEM_SKILL)
+    check_grant("workflowTemplate.fork", SYSTEM_SKILL)
     check_grant("runPlan.create", SYSTEM_SKILL)
     check_grant("runPlan.validate", SYSTEM_SKILL)
     check_grant("runPlan.start", SYSTEM_SKILL)
@@ -117,10 +119,6 @@ def test_check_grant_for_system_skill_covers_bootstrap_setup_operations() -> Non
     check_grant("tracker.rejectTask", SYSTEM_SKILL)
     check_grant("tracker.reopen", SYSTEM_SKILL)
 
-    with pytest.raises(ToolNotGrantedError):
-        check_grant("workflowTemplate.save", SYSTEM_SKILL)
-    with pytest.raises(ToolNotGrantedError):
-        check_grant("workflowTemplate.fork", SYSTEM_SKILL)
     with pytest.raises(ToolNotGrantedError):
         check_grant("runPlan.claimStep", SYSTEM_SKILL)
     with pytest.raises(ToolNotGrantedError):
@@ -156,6 +154,9 @@ def test_check_grant_passes_for_test_skill() -> None:
 
 
 def test_run_plan_controller_has_dynamic_step_tools() -> None:
+    for tool_name in ("workflowTemplate.save", "workflowTemplate.fork"):
+        with pytest.raises(ToolNotGrantedError):
+            check_grant(tool_name, RUN_PLAN_CONTROLLER_SKILL)
     check_grant("runPlan.claimStep", RUN_PLAN_CONTROLLER_SKILL)
     check_grant("runPlan.recordStep", RUN_PLAN_CONTROLLER_SKILL)
     check_grant("action.execute", RUN_PLAN_CONTROLLER_SKILL)

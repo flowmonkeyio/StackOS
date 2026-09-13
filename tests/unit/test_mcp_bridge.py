@@ -1401,8 +1401,8 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
     assert "learning.create" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "experiment.recordDecision" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "decision.record" not in _AGENT_BASE_TOOLBOX_NAMES
-    assert "workflowTemplate.save" not in _AGENT_BASE_TOOLBOX_NAMES
-    assert "workflowTemplate.fork" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "workflowTemplate.save" in _AGENT_BASE_TOOLBOX_NAMES
+    assert "workflowTemplate.fork" in _AGENT_BASE_TOOLBOX_NAMES
     assert {
         "account.revoke",
         "account.start",
@@ -1411,8 +1411,6 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
         "plugin.enable",
         "plugin.disable",
         "runPlan.update",
-        "workflowTemplate.fork",
-        "workflowTemplate.save",
     } == _AGENT_ADMIN_GATED_TOOL_NAMES
     assert {
         "action.execute",

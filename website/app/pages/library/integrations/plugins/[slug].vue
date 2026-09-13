@@ -17,7 +17,7 @@ const providers = catalog.providersForPlugin(slug)
 
 useSiteSeo({
   title: `${plugin.name} integrations — ${countLabel(plugin.providerCount, 'provider')}`,
-  description: `${plugin.description} Browse ${countLabel(plugin.providerCount, 'provider')} and ${countLabel(plugin.actionCount, 'supported action')} in the StackOS ${plugin.name} plugin.`,
+  description: `${plugin.description} Browse ${countLabel(plugin.providerCount, 'provider')} and ${countLabel(plugin.actionCount, 'listed action')} in the StackOS ${plugin.name} plugin.`,
 })
 
 useSchemaOrg([
@@ -35,7 +35,7 @@ useHead({ script: [{ key: 'plugin-integrations-list', type: 'application/ld+json
         <p class="library-kicker">StackOS plugin</p>
         <h1>{{ plugin.name }}</h1>
         <p>{{ plugin.description }}</p>
-        <div class="plugin-detail-hero__stats"><span><strong>{{ plugin.providerCount }}</strong> {{ plugin.providerCount === 1 ? 'provider' : 'providers' }}</span><span><strong>{{ plugin.actionCount }}</strong> supported {{ plugin.actionCount === 1 ? 'action' : 'actions' }}</span><span><strong>{{ plugin.capabilityCount }}</strong> {{ plugin.capabilityCount === 1 ? 'capability' : 'capabilities' }}</span></div>
+        <div class="plugin-detail-hero__stats"><span><strong>{{ plugin.providerCount }}</strong> {{ plugin.providerCount === 1 ? 'provider' : 'providers' }}</span><span><strong>{{ plugin.actionCount }}</strong> listed {{ plugin.actionCount === 1 ? 'action' : 'actions' }}</span><span><strong>{{ plugin.capabilityCount }}</strong> {{ plugin.capabilityCount === 1 ? 'capability' : 'capabilities' }}</span></div>
       </div>
     </section>
 
@@ -43,7 +43,7 @@ useHead({ script: [{ key: 'plugin-integrations-list', type: 'application/ld+json
       <div class="shell">
         <div class="library-section__heading">
           <div><p class="eyebrow">Available tools</p><h2>Providers in {{ plugin.name }}.</h2></div>
-          <p>Each provider is one tool the plugin can use. Open a provider to see its exact supported actions and official product links.</p>
+          <p>Each provider is one tool the plugin can use. Open a provider to see its listed actions, availability limits, and official product links.</p>
         </div>
         <div class="plugin-provider-grid"><IntegrationCard v-for="provider in providers" :key="provider.key" :provider="provider" /></div>
       </div>

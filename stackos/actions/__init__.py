@@ -9,6 +9,7 @@ from stackos.action_availability import (
     build_action_exposure,
 )
 from stackos.actions.ahrefs import AhrefsActionConnector
+from stackos.actions.aignc import AigncActionConnector
 from stackos.actions.alibaba_wan import AlibabaWanVideoActionConnector
 from stackos.actions.apollo import ApolloActionConnector
 from stackos.actions.branding import BrandingActionConnector
@@ -80,6 +81,7 @@ from stackos.actions.wordpress import WordPressActionConnector
 from stackos.actions.xai_imagine import XAIImagineActionConnector
 
 DEFAULT_ACTION_CONNECTORS.register(OpenAIImagesActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(AigncActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(AlibabaWanVideoActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(XAIImagineActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(ReveImagesActionConnector())
@@ -146,6 +148,7 @@ __all__ = [
     "ActionValidationIssue",
     "ActionValidationOut",
     "AhrefsActionConnector",
+    "AigncActionConnector",
     "AlibabaWanVideoActionConnector",
     "ApolloActionConnector",
     "BrandingActionConnector",

@@ -235,20 +235,38 @@ def cursor_paginate_desc(
     limit: int | None,
     after_id: int | None,
     converter: Any,
+    order_col: Any | None = None,
 ) -> Page[Any]:
-    """Apply ``id_col < after_id ORDER BY id_col DESC LIMIT n`` paging."""
+    """Page descending IDs, optionally preceded by one non-null ordering column."""
     n = _normalise_limit(limit)
 
     count_stmt = statement.with_only_columns(id_col).order_by(None).subquery()
-    from sqlalchemy import func  # local import keeps top tidy
+    from sqlalchemy import and_, func, or_  # local import keeps top tidy
     from sqlalchemy import select as sa_select
 
     count_row = session.exec(sa_select(func.count()).select_from(count_stmt)).one()  # type: ignore[call-overload]
     total_estimate = int(count_row[0])
 
-    paged_stmt = statement.order_by(id_col.desc()).limit(n + 1)
+    paged_stmt = (
+        statement.order_by(id_col.desc())
+        if order_col is None
+        else statement.order_by(None).order_by(order_col.desc(), id_col.desc())
+    ).limit(n + 1)
     if after_id is not None:
-        paged_stmt = paged_stmt.where(id_col < after_id)
+        if order_col is None:
+            paged_stmt = paged_stmt.where(id_col < after_id)
+        else:
+            anchor = session.exec(  # type: ignore[call-overload]
+                statement.order_by(None).where(id_col == after_id).limit(1)
+            ).first()
+            if anchor is None:
+                raise ValidationError(
+                    "cursor no longer matches the filters; refresh the first page"
+                )
+            value = getattr(anchor, order_col.key)
+            paged_stmt = paged_stmt.where(
+                or_(order_col < value, and_(order_col == value, id_col < after_id))
+            )
 
     rows = list(session.exec(paged_stmt))  # type: ignore[call-overload]
     items_rows = rows[:n]

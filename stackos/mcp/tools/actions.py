@@ -17,6 +17,7 @@ def _action_operations() -> OperationRegistry:
         "action.execute",
         "action.run",
         "actionCall.get",
+        "actionCall.query",
         "secret.set",
     ):
         operations.register(all_operations.get(name))

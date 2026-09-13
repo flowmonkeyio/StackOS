@@ -947,6 +947,10 @@ def test_finance_stripe_manifest_is_transport_only_and_complete() -> None:
 
     actions = {action.key: action for action in finance.actions}
     assert set(actions) == {
+        "stripe.products.list",
+        "stripe.products.retrieve",
+        "stripe.prices.list",
+        "stripe.prices.retrieve",
         "stripe.customers.create",
         "stripe.customers.retrieve",
         "stripe.customers.list",
@@ -984,7 +988,7 @@ def test_finance_stripe_manifest_is_transport_only_and_complete() -> None:
         assert "docs/integration-contracts/stripe.md" in action.config["docs"]
 
     record_list = actions["stripe.payment-records.list"]
-    assert sum(action.config.get("connector") == "stripe" for action in actions.values()) == 25
+    assert sum(action.config.get("connector") == "stripe" for action in actions.values()) == 29
     assert "connector" not in record_list.config
     assert record_list.config["execution_mode"] == "deferred-stripe-payment-record-list"
     assert "temporarily unavailable in StackOS" in record_list.config["deferred_reason"]
@@ -1010,9 +1014,15 @@ def test_finance_stripe_manifest_is_transport_only_and_complete() -> None:
     assert actions["stripe.invoice-items.create"].input_schema["required"] == [
         "customer_ref",
         "invoice_ref",
+    ]
+    assert actions["stripe.invoice-items.create"].input_schema["oneOf"][0]["required"] == [
         "amount",
         "currency",
         "description",
+    ]
+    assert actions["stripe.invoice-items.create"].input_schema["oneOf"][1]["required"] == [
+        "price_ref",
+        "quantity",
     ]
     assert (
         "maximum"
@@ -1027,7 +1037,7 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
         for provider in plugin.providers
     ]
 
-    assert len(providers) == 57
+    assert len(providers) == 58
     google_seo_providers = {
         "google-search-console",
         "google-analytics",
@@ -1041,7 +1051,9 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
             f"{plugin_slug}:{provider.key} missing setup note"
         )
         expected_verified_at = (
-            "2026-09-04"
+            "2026-09-12"
+            if plugin_slug == "utils" and provider.key == "aignc"
+            else "2026-09-04"
             if plugin_slug == "finance" and provider.key == "stripe"
             else "2026-07-22"
             if plugin_slug == "gtm" and provider.key == "hubspot"

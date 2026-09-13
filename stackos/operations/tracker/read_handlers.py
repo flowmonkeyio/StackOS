@@ -13,6 +13,8 @@ from stackos.operations.tracker.schemas import (
     TrackerNextInput,
     TrackerProjectInput,
     TrackerSearchInput,
+    TrackerTicketCountsAllInput,
+    TrackerTicketCountsInput,
     TrackerTicketInput,
 )
 from stackos.repositories.base import Page
@@ -25,6 +27,7 @@ from stackos.repositories.tracker import (
     TrackerSearchOut,
     TrackerSnapshotOut,
     TrackerStatusOut,
+    TrackerTicketCountsOut,
     TrackerVerifyOut,
 )
 
@@ -36,6 +39,22 @@ async def tracker_status(
 ) -> TrackerStatusOut:
     repository = TrackerRepository(ctx.session)
     return await run_in_threadpool(repository.status, project_id=inp.project_id)
+
+
+async def tracker_ticket_counts(
+    inp: TrackerTicketCountsInput, ctx: MCPContext, _emitter: ProgressEmitter
+) -> TrackerTicketCountsOut:
+    return await run_in_threadpool(
+        TrackerRepository(ctx.session).ticket_counts, project_id=inp.project_id
+    )
+
+
+async def tracker_ticket_counts_all(
+    inp: TrackerTicketCountsAllInput, ctx: MCPContext, _emitter: ProgressEmitter
+) -> TrackerTicketCountsOut:
+    return await run_in_threadpool(
+        TrackerRepository(ctx.session).ticket_counts_all, is_active=inp.is_active
+    )
 
 
 async def tracker_get(

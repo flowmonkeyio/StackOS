@@ -399,6 +399,8 @@ def test_finance_payment_workflows_keep_distinct_action_level_owner_gates(
     )
     assert payment_actions["stripe_invoices_send"].approval_ref == "owner-invoice-send"
     assert followup_actions["stripe_invoices_send"].approval_ref == "owner-followup-resend"
+    assert followup_actions["smtp_email_send"].approval_ref is None
+    assert followup_steps["resend-approved"].approval_refs == []
     assert followup_actions["stripe_payment_records_report"].approval_ref == "owner-payment-record"
     assert followup_actions["stripe_invoices_attach_payment"].approval_ref == (
         "owner-payment-attachment"
@@ -418,6 +420,7 @@ def test_finance_payment_workflows_keep_distinct_action_level_owner_gates(
     ]
     assert followup_steps["resend-approved"].action_refs == [
         "stripe_invoices_send",
+        "smtp_email_send",
         "stripe_invoices_retrieve",
         "stripe_invoice_payments_list",
         "stripe_disputes_list",
@@ -482,6 +485,49 @@ def test_finance_settlement_only_plan_has_action_gates_without_a_new_workflow(
         grant.get("tool") not in {"resource.upsert", "communication.send", "communication.reply"}
         for grant in plan.grant_snapshot_json["mcp_tool_grants"]
     )
+
+
+@pytest.mark.parametrize("route", [None, "stripe-resend", "smtp-email"])
+def test_finance_followup_route_preserves_optional_auth_and_exact_step_grants(
+    session: Session, project_id: int, route: str | None
+) -> None:
+    workflow_key = "finance.payment-request-followups"
+    inputs = _strict_inputs()[workflow_key]
+    if route is not None:
+        inputs["followup_route"] = route
+    loader = WorkflowTemplateLoader(session)
+    template = loader.describe_template(
+        project_id=project_id, key=workflow_key, plugin_slug="finance"
+    ).spec
+    route_input = next(item for item in template.inputs if item.key == "followup_route")
+    assert route_input.required is False
+    auth = {item.key: item for item in template.auth_requirements}
+    assert auth["smtp"].optional is True and auth["imap"].optional is True
+    validation = RunPlanRepository(session).validate_plan(
+        project_id=project_id,
+        template_key=workflow_key,
+        plugin_slug="finance",
+        inputs_json=inputs,
+        enforce_required_inputs=True,
+    )
+    assert validation.valid is True, validation.errors
+    assert validation.plan is not None
+    plan = validation.plan
+    for step in plan.steps:
+        actions = {
+            ref
+            for grant in _step_grants(plan, step.id)
+            if grant.get("tool") == "action.execute"
+            for ref in grant.get("action_refs", [])
+        }
+        assert ("communications.smtp.email.send" in actions) is (step.id == "resend-approved")
+        for action in (
+            "communications.imap.message.export",
+            "communications.imap.message.export.cleanup",
+        ):
+            assert (action in actions) is (step.id == "read-invoice-lifecycle")
+        assert "communications.imap.message.mark_seen" not in actions
+        assert "communications.imap.message.mark_unseen" not in actions
 
 
 def test_finance_tax_estimates_requires_cpa_ea_then_owner_at_their_actual_steps(

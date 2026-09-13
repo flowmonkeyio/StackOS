@@ -559,7 +559,7 @@ def test_workflow_extension_tools_configure_project_overlay(
     assert after_delete["extension"] is None
 
 
-def test_workflow_template_writes_are_registered_but_not_system_granted(
+def test_workflow_template_writes_are_project_setup_operations(
     mcp_client: MCPClient,
     seeded_project: dict,
 ) -> None:
@@ -579,9 +579,9 @@ def test_workflow_template_writes_are_registered_but_not_system_granted(
             },
         ),
     ]:
-        err = mcp_client.call_tool_error(tool_name, arguments)
-        assert err["code"] == -32007
-        assert err["message"] == "ToolNotGrantedError"
+        saved = mcp_client.call_tool_structured(tool_name, arguments)
+        assert saved["project_id"] == project_id
+        assert saved["data"]["summary"]["source"] == "project"
 
 
 def test_marketing_campaign_production_template_validates_and_describes(

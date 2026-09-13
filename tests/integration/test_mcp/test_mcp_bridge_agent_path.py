@@ -229,6 +229,152 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
     assert "tool_names" in describe_tool["inputSchema"]["properties"]
 
 
+@pytest.mark.parametrize("source", ["project", "user"])
+def test_bound_bridge_authors_templates_without_run_grants(
+    mcp_client: MCPClient,
+    tmp_path: Path,
+    source: str,
+) -> None:
+    proxy, client = _scoped_bridge(mcp_client, cwd=str(tmp_path / "customer-workspace"))
+    _initialize(proxy, client)
+    bound = _structured(_tool_call(proxy, client, "workspace.startSession"))
+    project_id = bound["project_id"]
+    foreign_project = _create_project(mcp_client, "other-authoring-workspace")
+    draft = {
+        "schema_version": "stackos.workflow-template.v1",
+        "key": "customer.monthly-close",
+        "name": "Monthly Close",
+        "version": "0.1.0",
+        "inputs": [{"key": "period", "type": "string", "required": True}],
+        "agent_requirements": [
+            {
+                "role": "reviewer",
+                "agent_preset_ref": "stackos.workflow.project-memory-review",
+                "applies_to_steps": ["review"],
+            }
+        ],
+        "skill_preset_requirements": [
+            {
+                "skill_preset_ref": "stackos.workflow-orchestrator",
+                "requirement": "required",
+            }
+        ],
+        "steps": [{"id": "review", "title": "Review"}],
+    }
+
+    def call(operation: str, arguments: dict | None = None) -> dict:
+        response = _toolbox_call(proxy, client, operation, arguments or {})
+        assert response["result"]["isError"] is False, response
+        return _operation_data(_structured(response))
+
+    guide = call("workflowTemplate.authoringGuide", {"response_mode": "raw"})
+    assert "author_project" in {mode["key"] for mode in guide["intent_modes"]}
+    assert call("workflowTemplate.validate", {"template_json": draft})["valid"] is True
+    before_runs = call("runPlan.list")
+    saved = _toolbox_call(
+        proxy,
+        client,
+        "workflowTemplate.save",
+        {
+            "template_json": draft,
+            "source": source,
+        },
+    )
+    assert saved["result"]["isError"] is False, saved
+    assert _structured(saved)["project_id"] == project_id
+    forked = _toolbox_call(
+        proxy,
+        client,
+        "workflowTemplate.fork",
+        {
+            "key": draft["key"],
+            "new_key": "customer.review-close",
+        },
+    )
+    assert forked["result"]["isError"] is False, forked
+    assert _structured(forked)["project_id"] == project_id
+    assert draft["key"] in {
+        item["key"] for item in call("workflowTemplate.list", {"response_mode": "raw"})["templates"]
+    }
+    assert call("workflowTemplate.describe", {"key": draft["key"]})["summary"]["source"] == source
+    resolved = call("agentPreset.resolveForWorkflow", {"workflow_key": draft["key"]})
+    assert len(resolved["required_agents"]) == 1
+    assert len(resolved["required_skill_presets"]) == 1
+    assert resolved["unresolved_requirements"] == []
+    assert resolved["unresolved_skill_preset_requirements"] == []
+    readiness = call("readiness.check", {"workflow_key": draft["key"]})
+    assert readiness["structurally_ready"] is True
+    assert readiness["required_providers_ready"] is True
+    assert call("runPlan.validate", {"workflow_key": draft["key"]})["valid"] is True
+    assert (
+        call("runPlan.validate", {"workflow_key": draft["key"], "enforce_required_inputs": True})[
+            "valid"
+        ]
+        is False
+    )
+    assert (
+        call(
+            "runPlan.validate",
+            {
+                "workflow_key": draft["key"],
+                "enforce_required_inputs": True,
+                "inputs_json": {"period": "2026-08"},
+            },
+        )["valid"]
+        is True
+    )
+    assert call("runPlan.list") == before_runs
+    for operation, arguments in (
+        ("workflowTemplate.save", {"template_json": draft, "source": source}),
+        ("workflowTemplate.fork", {"key": draft["key"], "new_key": "customer.foreign-copy"}),
+    ):
+        cross_project = _toolbox_call(
+            proxy,
+            client,
+            operation,
+            {
+                **arguments,
+                "project_id": foreign_project,
+            },
+        )
+        assert _is_bridge_scope_error(cross_project)
+    absent = mcp_client.call_tool_error(
+        "workflowTemplate.describe",
+        {
+            "project_id": foreign_project,
+            "key": draft["key"],
+        },
+    )
+    assert absent["code"] == -32004
+
+    # A separate execution request can use the saved template through normal grants.
+    plan = call(
+        "runPlan.create",
+        {
+            "workflow_key": draft["key"],
+            "inputs_json": {"period": "2026-08"},
+        },
+    )
+    assert plan["status"] == "draft"
+    started = call("runPlan.start", {"run_plan_id": plan["id"]})
+    for operation, extra in (
+        ("runPlan.claimStep", {}),
+        ("runPlan.recordStep", {"status": "success", "result_json": {"summary": "Reviewed"}}),
+    ):
+        response = _tool_call(
+            proxy,
+            client,
+            "toolbox.call",
+            {
+                "run_id": started["run_id"],
+                "tool_name": operation,
+                "arguments": {"run_plan_id": plan["id"], "step_id": "review", **extra},
+            },
+        )
+        assert response["result"]["isError"] is False, response
+    assert call("runPlan.get", {"run_plan_id": plan["id"]})["status"] == "completed"
+
+
 def test_bridge_supports_modern_discovery_catalog_and_local_tool_results(
     mcp_client: MCPClient,
 ) -> None:

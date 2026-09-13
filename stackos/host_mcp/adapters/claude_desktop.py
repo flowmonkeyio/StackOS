@@ -100,7 +100,6 @@ def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
                 else False
             )
             if running_state == "not_running" or restarted_after_change is True:
-                clear_restart_required(HOST_KEY, home=home)
                 return HostMcpResult(
                     host_key=HOST_KEY,
                     surface=SURFACE,

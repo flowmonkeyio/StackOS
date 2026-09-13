@@ -190,6 +190,14 @@ plaintext secrets. Intentional artifact rows can be inspected with bounded
 `artifact.read`. Possession of the raw daemon token is therefore treated as
 local administrator authority, not as a normal agent credential.
 
+Inert project configuration is a separate setup boundary: operator-authorized
+`workflowTemplate.save` and `workflowTemplate.fork` are normal project-scoped
+setup writes, like workflow extensions. The bound bridge rejects cross-project
+arguments; template schema/secret checks and immutable version conflicts still
+apply. These operations do not create runs or grant actions, are not run-step
+tools, and remain unavailable to the browser console token. Their CLI path uses
+the ordinary authenticated operation route, not a caller-asserted admin bypass.
+
 ## Daemon-Owned Browser Automation
 
 StackOS browser automation uses a daemon-owned visible Chromium runtime driven by Playwright. Agents can

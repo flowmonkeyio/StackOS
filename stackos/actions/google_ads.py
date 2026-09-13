@@ -222,14 +222,21 @@ class GoogleAdsActionConnector:
                 )
             case "report.search":
                 body_json: dict[str, Any] = {"query": payload["query"]}
-                if payload.get("page_token"):
-                    body_json["pageToken"] = payload["page_token"]
+                if payload.get("page_cursor"):
+                    body_json["pageToken"] = payload["page_cursor"]
                 status, body, response_headers = await send_json(
                     method="POST",
                     url=f"{_BASE_URL}/{version}/customers/{_customer_id(request)}/googleAds:search",
                     headers=headers,
                     json_body=body_json,
                 )
+                if isinstance(body, dict):
+                    # Nonsecret paging data must survive the shared token-key redactor.
+                    # https://developers.google.com/google-ads/api/rest/common/search
+                    body = dict(body)
+                    next_page = body.pop("nextPageToken", None)
+                    if next_page:
+                        body["next_page_cursor"] = next_page
             case "conversion_upload.clicks":
                 body_json = {
                     "conversions": payload["conversions"],

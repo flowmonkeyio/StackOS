@@ -1,0 +1,92 @@
+{
+  "title": "A customer paid. Why is the invoice still open?",
+  "status": "review-ready; agentic-angle revision independently reviewed; not operator-approved or published",
+  "visibility": "internal review artifact; excluded from external publication payloads",
+  "article_path": "reports/finance-articles/2026-09-06/03-payment-invoice-open.md",
+  "channel": "website",
+  "evidence_ledger": [
+    {
+      "ref": "urn:stackos:project:1:resource:985",
+      "type": "cleared operator and workflow-design evidence",
+      "supports": "A proposed reconciliation route for already-received money, with permitted actions, confirmation, and no new money movement."
+    },
+    {
+      "ref": "urn:stackos:project:1:resource:989",
+      "type": "cleared public payment-semantics and workflow evidence",
+      "supports": "Received, matched, remaining, and settled are distinct; an exact partial payment can leave an invoice open; uncertain updates and contact eligibility require a hold or current-context check."
+    }
+  ],
+  "claims": [
+    {
+      "claim_type": "proposed operating method",
+      "text": "Before a payment reminder, the agent checks the confirmed payment source, invoice and agreed terms, prior allocations, and current promise, dispute, and contact context.",
+      "evidence_refs": [
+        "urn:stackos:project:1:resource:985",
+        "urn:stackos:project:1:resource:989"
+      ]
+    },
+    {
+      "claim_type": "illustrative arithmetic",
+      "text": "For a hypothetical $1,000 invoice with a confirmed $400 matched payment and no earlier payments or adjustments, $600 remains.",
+      "evidence_refs": [],
+      "assumptions": [
+        "The payment belongs to the invoice.",
+        "There are no earlier payments or adjustments."
+      ]
+    },
+    {
+      "claim_type": "bounded reconciliation behavior",
+      "text": "A clear supported match can record already-received money, verify the remaining invoice balance, and update a cash/follow-up view without treating the invoice as fully paid or creating a new charge.",
+      "evidence_refs": [
+        "urn:stackos:project:1:resource:985",
+        "urn:stackos:project:1:resource:989"
+      ]
+    },
+    {
+      "claim_type": "proposed uncertainty control",
+      "text": "An ambiguous payment or uncertain attempted update stays unresolved while the agent asks a focused question or checks current state before retrying.",
+      "evidence_refs": [
+        "urn:stackos:project:1:resource:989"
+      ]
+    },
+    {
+      "claim_type": "conditional contact decision",
+      "text": "A routine reminder is sent only when owner rules and the latest payment, promise, dispute, and recent-contact context permit it; otherwise the case pauses for the owner’s decision and resumes with a fresh state check.",
+      "evidence_refs": [
+        "urn:stackos:project:1:resource:989"
+      ]
+    },
+    {
+      "claim_type": "proposed completion check",
+      "text": "The proposed agent verifies the cash/follow-up updates and inspects the delivery result of an authorized reminder; unfinished updates or unconfirmed sends remain visible.",
+      "evidence_refs": [
+        "urn:stackos:project:1:resource:985",
+        "urn:stackos:project:1:resource:989"
+      ]
+    }
+  ],
+  "intentionally_omitted": [
+    "Provider names, routes, storage details, customer or account data, and finance-product implementation claims.",
+    "Claims about deployment, accuracy, savings, collection results, or real customer outcomes.",
+    "Accounting, tax, legal, or universal customer-contact advice."
+  ],
+  "open_questions_for_review": [],
+  "review_decisions": [
+    "Independent claim reviewer /root/finance_agentic_claim03 passed the proposed workflow, arithmetic and authority/confirmation boundaries. Two unsupported owner-effort outcome sentences were removed and the main agent verified the deletions.",
+    "Both previous rejections remain in scope: no technical StackOS/product manual, and no generic finance guidance with agents treated as an aside.",
+    "Independent voice reviewer /root/finance_agentic_voice03 ready with concrete comparison to both earlier revised articles and both live exemplars. No further voice repair.",
+    "Independent disclosure reviewer /root/finance_agentic_disclosure03 cleared article prose and cleared this map only for internal review. Map remains internal; no public appendix requested or produced."
+  ],
+  "voice_and_form_self_audit": {
+    "named_comparisons": [
+      "reports/finance-articles/2026-09-06/01-finance-department.md",
+      "reports/finance-articles/2026-09-06/02-receipt-processed.md",
+      "website/content/articles/how-to-refine-ai-agent-workflow.md",
+      "website/content/articles/what-ai-agent-handoff-should-include.md"
+    ],
+    "opening": "Starts with the risk of a premature reminder, rather than 01’s owner ambition, 02’s attachment scenario, the refinement article’s first-person method, or the handoff article’s direct-answer definition.",
+    "form": "Uses one payment-and-contact decision path. The dollar arithmetic supports the middle; it does not become 01’s broad coordinator model, 02’s two-document progression, or either representative article’s long taxonomy and tables.",
+    "cadence_and_ending": "Keeps short decision sentences around the hypothetical and longer explanatory paragraphs elsewhere. Ends with an agreed installment that can leave the invoice open while the agent waits to recheck at the agreed time; no arithmetic recap, fresh-session test, or handoff template."
+  },
+  "durable_draft_ref": "artifact:2057"
+}

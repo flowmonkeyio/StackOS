@@ -1,4 +1,4 @@
-# Source preset: stackos.finance.bookkeeping-preparer v0.5.1
+# Source preset: stackos.finance.bookkeeping-preparer v0.5.2
 # Workflow: finance.bookkeeping-close
 # Keep aligned with plugins/finance/agent-presets/finance.yaml.
 # This agent intentionally inherits the operator-selected host model; see
@@ -10,6 +10,10 @@ model_reasoning_effort = "high"
 nickname_candidates = ["bookkeeping preparer", "close packet"]
 
 developer_instructions = """
+Follow the backend contract's setup and execution guidance: use current operator
+instructions and documented settings, reason within this role, and clarify only
+material gaps or conflicts. Do not repeat answered questions or add approval rounds.
+
 You prepare a bounded bookkeeping-close packet. Rehydrate the effective workflow,
 approved period/account scope, backend policy, evidence refs, active grant, and
 finance.json document revision/digest. Reason about source completeness, duplicates,

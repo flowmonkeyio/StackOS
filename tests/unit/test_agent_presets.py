@@ -331,12 +331,12 @@ def test_codex_local_finance_agents_track_finance_presets_without_model_override
         "finance_control_reviewer": "xhigh",
     }
     expected_versions = {
-        "finance_receipt_operator": "0.4.1",
-        "finance_bookkeeping_preparer": "0.5.1",
-        "finance_billing_collections_operator": "0.6.1",
-        "finance_cashflow_preparer": "0.4.1",
-        "finance_tax_preparer": "0.4.1",
-        "finance_control_reviewer": "0.6.1",
+        "finance_receipt_operator": "0.4.2",
+        "finance_bookkeeping_preparer": "0.5.2",
+        "finance_billing_collections_operator": "0.6.2",
+        "finance_cashflow_preparer": "0.4.2",
+        "finance_tax_preparer": "0.4.2",
+        "finance_control_reviewer": "0.6.2",
     }
     for agent_name, (config_file, preset_ref) in LOCAL_CODEX_FINANCE_AGENT_PRESETS.items():
         assert config["agents"][agent_name]["config_file"] == config_file
@@ -349,6 +349,9 @@ def test_codex_local_finance_agents_track_finance_presets_without_model_override
             in source.project_adaptation.required_agent_action
         )
         assert "agency root without an agency prerequisite" in local_text
+        assert "documented settings" in local_text
+        assert "material gaps or conflicts" in local_text
+        assert "extra approval rounds" in source.project_adaptation.instruction
         assert "no cross-project" in local_text
         assert f"Source preset: {preset_ref} v{expected_versions[agent_name]}" in local_text
         assert "Keep aligned with plugins/finance/agent-presets/finance.yaml." in local_text
@@ -359,7 +362,7 @@ def test_codex_local_finance_agents_track_finance_presets_without_model_override
     orchestrator_text = (
         REPO_ROOT / ".codex/orchestrator/finance-department-orchestrator.md"
     ).read_text(encoding="utf-8")
-    assert "Source skill preset: `stackos.finance.department-orchestrator` v0.7.0" in (
+    assert "Source skill preset: `stackos.finance.department-orchestrator` v0.7.1" in (
         orchestrator_text
     )
     assert "not a subagent" in orchestrator_text
@@ -955,15 +958,23 @@ def test_generic_workflow_author_preset_teaches_workflow_generation_boundary() -
     assert "provider or plugin integration contract" in conditional_refs
     assert "current action inventory" in conditional_refs
     assert "workflowTemplate.validate" in loaded.preset.recommended_tools
+    assert "workflowTemplate.authoringGuide" in loaded.preset.recommended_tools
     assert "workflowExtension.upsert" in loaded.preset.recommended_tools
     assert "runPlan.create" in loaded.preset.recommended_tools
-    assert "workflowTemplate.save" not in loaded.preset.recommended_tools
+    assert "workflowTemplate.save" in loaded.preset.recommended_tools
+    assert "workflowTemplate.fork" in loaded.preset.recommended_tools
     assert "workflow authoring brief" in loaded.preset.project_adaptation.required_agent_action
     assert (
         "run plan, a workflow extension, or a reusable project workflow template" in contract_text
     )
     assert "workflowTemplate.save" in contract_text
-    assert "local-admin authority" in contract_text
+    assert "operator-authorized" in contract_text
+    assert "bound project toolbox" in contract_text
+    assert "saving does not start a run or grant execution" in contract_text
+    assert (
+        "authoring/setup validates and saves configuration without creating runs" in contract_text
+    )
+    assert "local-admin authority" not in contract_text
     assert "Do not embed raw API keys" in contract_text
     lower_contract_text = contract_text.lower()
     assert "trackbooth" not in lower_contract_text

@@ -134,13 +134,20 @@ def validate(document: dict[str, Any], *, schema_path: Path | None = None) -> No
     for billing in document["billing_versions"]:
         if material_billing_digest(billing) != billing["digest_sha256"]:
             raise ValueError("billing material digest mismatch")
-        values = [line["amount"] for line in billing["lines"]]
-        if any(
-            value["currency"] != billing["currency"]
-            for value in [*values, billing["subtotal"], billing["total"]]
+        values = [line["amount"] for line in billing["lines"] if "amount" in line]
+        totals = [billing[key] for key in ("subtotal", "total") if key in billing]
+        if any(value["currency"] != billing["currency"] for value in [*values, *totals]) or any(
+            line["currency"] != billing["currency"]
+            for line in billing["lines"]
+            if "currency" in line
         ):
             raise ValueError("billing currency mismatch")
-        if sum(value["amount_minor"] for value in values) != billing["subtotal"]["amount_minor"]:
+        if (
+            len(values) == len(billing["lines"])
+            and "subtotal" in billing
+            and sum(value["amount_minor"] for value in values)
+            != billing["subtotal"]["amount_minor"]
+        ):
             raise ValueError("billing subtotal mismatch")
     for forecast in document["cashflow_forecasts"]:
         for rows in forecast["scenarios"].values():
@@ -253,11 +260,14 @@ def material_billing_digest(billing: dict[str, Any]) -> str:
         "currency",
         "terms",
         "lines",
-        "subtotal",
-        "total",
         "source_refs",
     )
     payload = {key: billing[key] for key in keys}
+    for key in ("subtotal", "total"):
+        if key in billing:
+            payload[key] = billing[key]
+    if "effective_at" in billing:
+        payload["effective_at"] = billing["effective_at"]
     if "external_project_ref" in billing:
         payload["external_project_ref"] = billing["external_project_ref"]
     if "supersedes_ref" in billing:
@@ -319,6 +329,7 @@ def material_record_digest(value: dict[str, Any], collection: str) -> str:
             "last_contact_at",
             "cooldown_until",
             "recipient_settings_ref",
+            "outreach",
             "settlement_refs",
             "gaps",
             "supersedes_ref",

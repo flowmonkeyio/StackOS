@@ -1,6 +1,6 @@
 # Current Executable Connector Contract Audit
 
-Audit date: 2026-09-06 (Stripe list deferral; other rows retain prior scope)
+Audit date: 2026-09-07 (Stripe catalog/date contract and list deferral; other rows retain prior scope)
 
 Scope: executable connector contracts for OpenAI Images, xAI Imagine, Reve,
 Google Gemini Image, Google Veo, Ideogram, BytePlus Seedream/Seedance,
@@ -23,42 +23,20 @@ Important consequence: provider docs should shape action schemas and connector c
 
 ## OAuth and auth-protocol status
 
-The canonical provider-by-provider matrix is in
-[`../auth-providers.md`](../auth-providers.md#built-in-oauth-provider-matrix).
-Credential lifecycle, method selection, readiness, and Connections UI policy
-are defined once in the
-[one-brain auth-method contract](../auth-providers.md#one-brain-auth-method-contract).
-The integration-contract summary is:
-
-| Runtime status | Providers |
-| --- | --- |
-| Interactive authorization code through the shared core | Google Ads, Google Workspace, Google Search Console, Google Analytics, Google Tag Manager, Meta Ads, Microsoft 365, Outreach, Pipedrive, Salesforce, Salesloft |
-| Core client-credentials token acquisition | Reddit, Taboola |
-| Mixed OAuth and non-OAuth alternatives | Pipedrive (manual OAuth token and API token), Salesloft (manual OAuth token and API key), HubSpot (private-app token) |
-| Interactive authorization code with capability-scoped optional consent | HubSpot |
-| Interactive authorization code with fixed user actor, PKCE, and full issue-work consent | Linear |
-| Existing manual OAuth token; provider actions explicitly deferred | X API, LinkedIn |
-
-The root classification fix is complete for the affected built-in manifests:
-OAuth client credentials remain OAuth, Reddit and Taboola declare
-`oauth-client-credentials`, and WordPress declares `application-password`.
-The shared resolver boundary is defined by the
-[canonical auth-method contract](../auth-providers.md#one-brain-auth-method-contract);
-this audit does not restate its lifecycle or readiness rules.
-
-### Method-aware provider facts
-
-| Provider | Methods, probe, and request facts |
-| --- | --- |
-| HubSpot | OAuth token responses return authoritative `scopes` and `hub_id`. The supported single-account `private_app_token` calls `POST /oauth/v2/private-apps/get/access-token-info`; normalized returned scopes/account evidence is authoritative for its `provider_probe`/`local_required` posture. |
-| Pipedrive | OAuth and manual OAuth-token profiles send `Authorization: Bearer`; personal API-token profiles send `x-api-token`. `GET /api/v1/users/me` returns safe account identity but no scope grants, so the static API-token method is `unavailable`/`provider_enforced`; manual OAuth-token compatibility is `unavailable`/`local_required`. |
-| Salesloft | OAuth, manual OAuth-token, and customer API-key profiles send `Authorization: Bearer`. `GET /v2/me` returns safe account identity but no scope grants, so manual OAuth-token compatibility is `unavailable`/`local_required` and the static API key is `unavailable`/`provider_enforced`. |
-| Meta Ads | The existing user or system-user `oauth2_token` method is not an API key. Without trusted grant evidence it remains `unavailable`/`local_required`, so scope-gated actions fail before connector HTTP. |
+The [built-in provider matrix](../auth-providers.md#built-in-oauth-provider-matrix)
+owns supported methods, and the
+[auth-method contract](../auth-providers.md#one-brain-auth-method-contract)
+owns credential lifecycle, grant evidence, and readiness. Provider-specific
+transport/probe details belong in [GTM CRM](gtm-crm.md),
+[HubSpot](hubspot.md), [outbound](gtm-prospecting-outbound.md), and
+[media buying](media-buying.md). Do not infer OAuth or scope grants from the
+presence of a secret field.
 
 ## Docs Ledger
 
 | Provider | Official docs used | Auth docs | Rate/error/pagination docs |
 | --- | --- | --- | --- |
+| AIGNC | Operator-supplied supplier guide reviewed 2026-09-12; operator-directed endpoint replacement on 2026-09-13; [local contract](aignc.md). No public docs page independently verified. | Guide section 1 specifies bearer API key; current fixed endpoint is `https://cli-api.f2nd.com/v1` | Error, quota, pagination and idempotency contracts unverified; generation requests are never retried automatically. |
 | OpenAI Images | [Image generation guide](https://developers.openai.com/api/docs/guides/image-generation), [Images API reference](https://developers.openai.com/api/reference/resources/images) | [OpenAI API authentication](https://platform.openai.com/docs/api-reference/authentication) | [OpenAI rate limits guide](https://platform.openai.com/docs/guides/rate-limits), image generation pricing table in the guide above |
 | xAI Imagine | [Image generation](https://docs.x.ai/developers/model-capabilities/images/generation), [image editing](https://docs.x.ai/developers/model-capabilities/images/editing), [multi-image editing](https://docs.x.ai/developers/model-capabilities/images/multi-image-editing), [video generation](https://docs.x.ai/developers/model-capabilities/video/generation), [image-to-video](https://docs.x.ai/developers/model-capabilities/video/image-to-video), [reference-to-video](https://docs.x.ai/developers/model-capabilities/video/reference-to-video), [models](https://docs.x.ai/developers/models) | xAI examples use bearer auth with an API key from the xAI console | Video generation docs define submit/poll status values; [pricing](https://docs.x.ai/developers/pricing) documents Imagine output/input cost units |
 | Reve | [Docs overview](https://api.reve.com/console/docs), [create](https://api.reve.com/console/docs/create), [edit](https://api.reve.com/console/docs/edit), [remix](https://api.reve.com/console/docs/remix), [pricing](https://api.reve.com/console/pricing) | Reve examples use bearer auth with an API key from the Reve console | Image endpoints are synchronous and return `request_id`, `content_violation`, `credits_used`, and `credits_remaining`; pricing page documents base credit costs |
@@ -88,7 +66,7 @@ this audit does not restate its lifecycle or readiness rules.
 | Cloudflare DNS | [zones list](https://developers.cloudflare.com/api/resources/zones/methods/list/), [DNS record API](https://developers.cloudflare.com/api/resources/dns/subresources/records/), [official OpenAPI](https://github.com/cloudflare/api-schemas) | [API tokens](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/) with Zone Read and DNS Write as needed | One-page `result_info`, standard errors plus RFC 9457/text fallback, [rate-limit headers](https://developers.cloudflare.com/fundamentals/api/reference/limits/), and zero automatic mutation retries |
 | Trackbooth | Live Agent API catalog export fetched by `trackbooth.catalog.sync`; local generated bundle in `plugins/trackbooth/agent-api/` is a reference/test fixture | `X-API-Key` with optional `X-Acting-As-Account`; default API URL `https://apis.trackbooth.com`; credential config may point to localhost or remote HTTPS | Live `GET /api/agent-api/catalog/export` for sync, live compact catalog/search and operation detail only for diagnostics, generated OpenAPI/catalog fixtures, and schema constraints audit |
 | Shopify | [Admin GraphQL reference](https://shopify.dev/docs/api/admin-graphql/latest), [access scopes](https://shopify.dev/docs/api/usage/access-scopes), [versioning](https://shopify.dev/docs/api/usage/versioning), [limits](https://shopify.dev/docs/api/usage/limits) | Static operator-supplied Admin API access token sent as `X-Shopify-Access-Token`; no OAuth/token acquisition in StackOS | One versioned Admin GraphQL endpoint; StackOS exposes 58 curated actions, preserves `extensions.cost`, and documents the 751 schema root-field count in `shopify.md` |
-| Stripe | [Canonical StackOS contract and official source ledger](stripe.md) | Restricted daemon-held API-key JSON credential; `GET /v1/account` persists safe account evidence while Stripe enforces key permissions | 25 executable actions retain the pinned `2026-08-26.dahlia` contracts. The 26th declared action, PaymentRecord listing, is temporarily unavailable: explicit manifest deferral returns its reason without dispatch pending a verified availability fix. Explicit invoice currency, typed observations/reconciliation, read retry veto and original-key write recovery remain unchanged. Test-mode sends produce no email. |
+| Stripe | [Stripe contract and official source ledger](stripe.md) | Daemon-held API key; safe account evidence and provider-enforced key permissions | See the canonical contract for the pinned API, unavailable PaymentRecord list, business-detail reads, and recovery. |
 | Generic HTTP | [RFC 9110 HTTP semantics](https://www.rfc-editor.org/rfc/rfc9110), [RFC 7617 Basic auth](https://www.rfc-editor.org/rfc/rfc7617), [RFC 6750 bearer usage](https://www.rfc-editor.org/rfc/rfc6750), [RFC 9457 problem details](https://www.rfc-editor.org/rfc/rfc9457) | RFC 7617 and RFC 6750 | RFC 9110 and RFC 9457 |
 | Branding internal evidence | `branding.evidence.capture` and `branding.evidence.sanitize-mark` are internal StackOS resource actions documented by `plugins/branding/plugin.yaml`, `plugins/branding/README.md`, and `docs/plugins.md`; they have no external provider API. | none | Not paginated; one evidence resource is captured or marked per action call. |
 
@@ -96,6 +74,7 @@ this audit does not restate its lifecycle or readiness rules.
 
 | Connector key | Action refs | Current implementation refs | Manifest refs | Auth/setup implication |
 | --- | --- | --- | --- | --- |
+| `aignc` | `utils.aignc.models.list`, `utils.aignc.chat.complete`, `utils.aignc.image.generate`, `utils.aignc.audio.analyze` | `stackos/actions/aignc.py`, `stackos/integrations/aignc.py`, `stackos/integrations/aignc_contract.py` | `stackos/plugins/manifest.py` Utilities actions | Daemon-held bearer key, fixed supplier endpoint, explicit models and input limits, managed media artifacts. No model routing or pricing/budget integration. |
 | `openai-images` | `utils.image.generate`, `utils.image.edit` | `stackos/actions/openai_images.py`, `stackos/integrations/openai_images.py` | `stackos/plugins/manifest.py` built-in utils media actions | API key payload; budget enforced by `openai-images` kind. |
 | `xai-imagine` | `utils.xai.image.generate`, `utils.xai.image.edit`, `utils.xai.video.generate` | `stackos/actions/xai_imagine.py`, `stackos/integrations/xai_imagine.py` | `stackos/plugins/manifest.py` built-in utils xAI media actions | API key payload; budget enforced by `xai-imagine` kind; images/videos are persisted to generated assets and registered as generic media artifacts. |
 | `reve` | `utils.reve.image.generate`, `utils.reve.image.edit`, `utils.reve.image.remix` | `stackos/actions/reve_images.py`, `stackos/integrations/reve_images.py` | `stackos/plugins/manifest.py` built-in utils Reve media actions | API key payload; budget enforced by `reve` kind; JSON base64 image outputs are persisted to generated assets and registered as generic image artifacts. `account.test` is format-only because Reve does not document a free live credential probe. |
@@ -126,7 +105,7 @@ this audit does not restate its lifecycle or readiness rules.
 | `http` | plugin-defined custom actions only | `stackos/actions/http.py:170` | documented in `docs/plugins.md:77`; no first-party manifest row | Static plugin config supplies URL/method/auth mode; daemon injects credential if allowed. |
 | `trackbooth` | Fixed `trackbooth.catalog.sync`, `trackbooth.catalog.search`, `trackbooth.operation.describe`; sync upserts generated action rows from the live bulk export and exposes stable refs like `trackbooth.api.links_create` | `stackos/actions/trackbooth.py`, `stackos/integrations/trackbooth.py` | `plugins/trackbooth/plugin.yaml`, `plugins/trackbooth/agent-api/*` | API key payload; safe `api_base_url` config defaults to production and may point to localhost for local testing. |
 | `shopify` | 58 refs under `shopify.*`, including products, orders, inventory, customers, and analytics actions | `stackos/actions/shopify.py`, `stackos/integrations/shopify.py` | `plugins/shopify/plugin.yaml`, `plugins/shopify/graphql/*`, `docs/integration-contracts/shopify-action-signoff.md` | Static Admin API access token payload; safe `store_domain` and optional `api_version` config. OAuth/token acquisition is out of scope. |
-| `stripe` | Customer and invoice lifecycle; safe invoice/item/payment/charge/refund/dispute/balance reads; PaymentIntent and PaymentRecord retrieve; report a received bank payment; attach one existing payment; fixed no-charge full out-of-band settlement. PaymentRecord list is deferred. | `stackos/actions/stripe.py`, `stackos/integrations/stripe.py` | `plugins/finance/plugin.yaml`, [`stripe.md`](stripe.md) | Daemon-held API-key JSON only. Account-bound refs, supported bounded pagination, description/reference digests and fixed metadata correlation preserve safe transport. Writes require explicit idempotency/reconciliation and do not imply finance authority. Unavailable PaymentRecord listing never dispatches; use retained audit/known-ref retrieval or hold owner/provider recovery. No payment initiation, refund creation, transfer or payout. |
+| `stripe` | `finance.stripe.*` customer/Product/Price/invoice/payment actions; PaymentRecord list is deferred | `stackos/actions/stripe.py`, `stackos/integrations/stripe.py` | `plugins/finance/plugin.yaml`, [Stripe contract](stripe.md) | Daemon-held API key and account-bound refs. Current action availability and exact inputs come from `action.describe`; protocol and recovery limits, including catalog selection and issue-date readback, live in the contract. |
 
 ## Connection-Only Setup Providers
 
@@ -144,6 +123,41 @@ this audit does not restate its lifecycle or readiness rules.
 - Pagination/status contracts must be modeled as actions before templates rely on them. Firecrawl crawl currently starts a job and returns an id, but the docs require polling `GET /v2/crawl/{id}` and following `next` when the result exceeds 10 MB.
 
 ## Provider Findings
+
+### AIGNC
+
+The 2026-09-12 AIGNC delivery implements four explicit Utilities actions from
+the operator-supplied guide. The caller chooses text/audio models, messages,
+instructions, and whether to enable Google grounding. Image generation fixes
+the sole documented image model. Discovery does not expand the reviewed model
+capability inventory. Image bytes become generic artifacts; audio uses an
+existing project artifact in daemon-managed assets. Supplier commercial fields
+and raw base64 are excluded from normalized output and audit. No separate
+workflow, agent runtime, model router, or financial calculation is introduced.
+
+Chat, image and audio requests use the generic background action mechanism also
+used by FTP/S3 transfers: accept once, receive `action_call_id`, poll
+`actionCall.get`, then read the terminal response file and artifacts. Model
+listing remains inline. Generation read inactivity is configurable with
+`read_timeout_seconds` (60–1800 seconds, default 600); it is independent of
+agent-side submit/poll waits and is not an AIGNC job-poll timeout.
+
+The operator-directed 2026-09-13 service-domain replacement changes the fixed
+base URL to `https://cli-api.f2nd.com/v1`. Provider key `aignc` and existing
+account bindings remain unchanged. A manual cURL smoke on the same date using
+the attached Account succeeded with HTTP 200 for one `gemini-3.8-flash` text
+request, returning `Париж.` and zero reported searches.
+
+Automated verification covers supplied and captured wire formats, background
+direct/granted execution, polling, idempotency and media containment. Installed
+live probes also verified the 20-ID model inventory, plain/grounded text, a
+synthetic audio transcription and a persisted JPEG. A substantial grounded
+report completed in 105.342 seconds on the earlier synchronous path. It reported
+completion and search counts beyond the requested/documented limits, so these
+are not established upstream guarantees. Other model generation, longer audio,
+rate limits, retention and provider moderation remain unverified.
+The [AIGNC contract](aignc.md) owns exact schema, setup, staging,
+diagnostic and recovery details.
 
 ### OpenAI Images
 

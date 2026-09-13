@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from pathlib import Path
 
 import pytest
 
+from stackos.skill_presets import SkillPresetLoader
 from tests.helpers.finance_workspace import (
     AT,
     add_billing_fixture,
@@ -104,16 +106,25 @@ def test_local_workspace_contract_requires_safe_common_intake_ordering() -> None
         "unacknowledged",
         "source as seen or advance its cursor",
         "one allocation",
-        "report+mark",
-        "supported partial report-and-attach allocation",
-        "Unsupported or unsynchronized partials",
-        "split allocations, overpayments, mismatches and unknown outcomes",
-        "24 hours",
+        "backend-contract.md#duplicate-handling-and-retries",
+        "approval-matrix.md#invoice-approvals",
         "project is unknown or multi-project",
         "Never infer attribution from a customer mapping",
         "backup, restore, retention periods, access permissions",
     ):
         assert required in contract
+
+    # Provider decisions/recovery live in the shared backend contract, not a
+    # second copy of the same operating manual in the local storage guide.
+    backend = " ".join(_read(BACKEND_CONTRACT).split())
+    for required in (
+        "Never report and mark the same source",
+        "unsupported or unsynchronized partial, split, overpayment, mismatch",
+        "unknown-write states as exceptions",
+        "verified retained window shorter than 24 hours",
+        "synchronized supported partial remains an open balance",
+    ):
+        assert required in backend
 
 
 def test_finance_markdown_template_routes_to_canonical_collections_and_controls() -> None:
@@ -137,10 +148,28 @@ def test_finance_markdown_template_routes_to_canonical_collections_and_controls(
         "prepared/unposted",
         "one verified source/allocation",
         "Unknown outcomes remain",
-        "PaymentRecord listing is temporarily",
         "single authoritative local financial",
+        "#single-writer-and-retry-safe-persistence",
+        "preset.summary.origin_path",
+        "skillPreset.describe",
     ):
         assert required in template
+
+    references = set(re.findall(r"finance-plugin:(references/[a-z-]+\.md)", template))
+    assert references == {
+        "references/local-workspace-contract.md",
+        "references/approval-matrix.md",
+        "references/backend-contract.md",
+        "references/imap-host-handoff-contract.md",
+    }
+    preset = SkillPresetLoader().describe_preset(
+        key="stackos.finance.department-orchestrator", plugin_slug="finance", source="plugin"
+    )
+    assert preset.summary.origin_path is not None
+    package_root = Path(preset.summary.origin_path).parent.parent
+    assert all((package_root / reference).is_file() for reference in references)
+    assert "PaymentRecord listing" not in template
+    assert "temporarily unavailable in StackOS" in _read(BACKEND_CONTRACT)
 
 
 def _add_receipt(document: dict, *, record_id: str = "receipt:fixture") -> None:
@@ -280,6 +309,68 @@ def test_unrelated_receipt_does_not_invalidate_exact_billing_approval(tmp_path: 
     with pytest.raises(ValueError, match="approved billing material is immutable"):
         write_document(path, changed, digest(path))
     assert read_document(path) == current
+
+
+def test_invoice_issue_date_and_catalog_selection_are_billing_approval_material(
+    tmp_path: Path,
+) -> None:
+    document = read_document(initialize(tmp_path / "finance"))
+    billing = add_billing_fixture(document)
+    undated_digest = material_billing_digest(billing)
+    billing["effective_at"] = 1786924800
+    dated_digest = material_billing_digest(billing)
+    assert dated_digest != undated_digest
+    billing["effective_at"] = 1787184000
+    assert material_billing_digest(billing) != dated_digest
+    del billing["effective_at"]
+    assert material_billing_digest(billing) == undated_digest
+
+    line = billing["lines"][0]
+    line["price_ref"] = "provider-object:fixture-price-a"
+    line["quantity"] = 1
+    selected_digest = material_billing_digest(billing)
+    line["price_ref"] = "provider-object:fixture-price-b"
+    assert material_billing_digest(billing) != selected_digest
+    line["price_ref"] = "provider-object:fixture-price-a"
+    line["quantity"] = 2
+    assert material_billing_digest(billing) != selected_digest
+
+
+def test_catalog_proposal_preserves_unknown_then_observed_amounts(tmp_path: Path) -> None:
+    document = read_document(initialize(tmp_path / "finance"))
+    billing = add_billing_fixture(document)
+    billing["status"] = "prepared"
+    line = billing["lines"][0]
+    line["price_ref"] = "provider-object:fixture-price"
+    line["quantity"] = 2
+    del line["amount"]
+    del billing["subtotal"]
+    del billing["total"]
+    billing["gaps"] = [
+        {
+            "field": field,
+            "reason": "Awaiting independent Stripe draft readback.",
+            "source_refs": ["source:billing"],
+        }
+        for field in ("lines[0].amount", "subtotal", "total")
+    ]
+    billing["digest_sha256"] = material_billing_digest(billing)
+    validate(document)
+    prequote_digest = billing["digest_sha256"]
+    assert "amount" not in line and "total" not in billing
+
+    # Financial proposal facts are not a verbatim Stripe action payload.
+    line["amount"] = money(2000)
+    billing["subtotal"] = money(2000)
+    billing["total"] = money(2000)
+    billing["gaps"] = []
+    billing["digest_sha256"] = material_billing_digest(billing)
+    validate(document)
+    assert billing["digest_sha256"] != prequote_digest
+    line["amount"] = money(1999)
+    billing["digest_sha256"] = material_billing_digest(billing)
+    with pytest.raises(ValueError, match="billing subtotal mismatch"):
+        validate(document)
 
 
 def test_project_attribution_is_billing_material_without_a_second_amount_or_record(

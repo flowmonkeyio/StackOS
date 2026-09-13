@@ -89,12 +89,22 @@ class ImapActionConnector:
             case "messages.search":
                 _text(payload, "mailbox_ref", issues, required=True)
                 _optional_int(payload, "limit", issues, minimum=1, maximum=_MAX_LIMIT)
+                _optional_int(payload, "after_uid", issues, minimum=1, maximum=_MAX_UIDVALIDITY)
+                _optional_uidvalidity(payload, issues)
+                if payload.get("after_uid") is not None and not payload.get("expected_uidvalidity"):
+                    issues.append(
+                        issue(
+                            "$.expected_uidvalidity",
+                            "after_uid requires expected_uidvalidity from the previous search",
+                            "required",
+                        )
+                    )
                 _criteria(payload.get("criteria"), issues)
             case "message.fetch":
                 _text(payload, "mailbox_ref", issues, required=True)
                 _optional_int(payload, "uid", issues, minimum=1, required=True)
                 _fields(payload.get("fields"), issues)
-                _optional_int(payload, "max_body_bytes", issues, minimum=0, maximum=_MAX_BODY_BYTES)
+                _optional_int(payload, "max_body_bytes", issues, minimum=1, maximum=_MAX_BODY_BYTES)
             case "message.export":
                 _text(payload, "mailbox_ref", issues, required=True)
                 _optional_int(payload, "uid", issues, minimum=1, required=True)
@@ -168,12 +178,35 @@ def _search_messages(request: ActionConnectorRequest) -> ActionConnectorResult:
     client = _login(settings)
     try:
         readonly_select = _select(client, mailbox, readonly=True)
-        criteria = _search_criteria(request.input_json.get("criteria"))
+        after_uid = request.input_json.get("after_uid")
+        expected_uidvalidity = request.input_json.get("expected_uidvalidity")
+        if after_uid is not None and expected_uidvalidity is None:
+            raise ValidationError("IMAP search continuation requires expected_uidvalidity")
+        if expected_uidvalidity is not None:
+            actual_uidvalidity = _required_uidvalidity(readonly_select.get("uidvalidity"))
+            if actual_uidvalidity != str(expected_uidvalidity):
+                raise ValidationError(
+                    "IMAP UIDVALIDITY changed; restart search without after_uid and "
+                    "reconcile message identities before continuing"
+                )
+        raw_criteria = request.input_json.get("criteria") or {}
+        criteria = _search_criteria(raw_criteria)
+        lower = max(int(raw_criteria.get("uid_from") or 1), int(after_uid or 0) + 1)
+        uid_to = raw_criteria.get("uid_to")
+        upper = _MAX_UIDVALIDITY if uid_to is None or uid_to == "*" else int(uid_to)
+        if after_uid is not None and lower <= upper:
+            criteria.extend(["UID", f"{lower}:*"])
         # IMAP UID SEARCH command:
         # https://www.rfc-editor.org/rfc/rfc9051.html#name-uid-command
-        typ, data = client.uid("SEARCH", None, *criteria)
-        _ensure_ok(typ, "UID SEARCH")
-        uids = _uid_list(data)[:limit]
+        # n:* can return the highest UID even when it is below n. Filter the
+        # intended bounds locally, and never send a UID beyond the 32-bit range.
+        matched_uids: list[int] = []
+        if lower <= upper:
+            typ, data = client.uid("SEARCH", None, *criteria)
+            _ensure_ok(typ, "UID SEARCH")
+            matched_uids = sorted({uid for uid in _uid_list(data) if lower <= uid <= upper})
+        uids = matched_uids[:limit]
+        has_more = len(matched_uids) > len(uids)
         result = {
             "mailbox_ref": _mailbox_ref(mailbox),
             "mailbox_name": mailbox,
@@ -182,6 +215,9 @@ def _search_messages(request: ActionConnectorRequest) -> ActionConnectorResult:
             "uids": uids,
             "message_refs": [f"imap-message:{mailbox}:{uid}" for uid in uids],
             "count": len(uids),
+            "matched_count": len(matched_uids),
+            "has_more": has_more,
+            "next_after_uid": uids[-1] if has_more else None,
             "limit": limit,
         }
         return _connector_result(request, result, settings)
@@ -194,7 +230,7 @@ def _fetch_message(request: ActionConnectorRequest) -> ActionConnectorResult:
     mailbox = _mailbox_name(request, settings)
     uid = int(request.input_json["uid"])
     fields = _requested_fields(request.input_json.get("fields"))
-    max_body_bytes = int(request.input_json.get("max_body_bytes") or _DEFAULT_BODY_BYTES)
+    max_body_bytes = int(request.input_json.get("max_body_bytes", _DEFAULT_BODY_BYTES))
     client = _login(settings)
     try:
         select_data = _select(client, mailbox, readonly=True)
@@ -209,7 +245,10 @@ def _fetch_message(request: ActionConnectorRequest) -> ActionConnectorResult:
         raw, flags, size = _fetch_payload(data, uid=uid)
         if raw is None:
             raise ValidationError(f"IMAP message UID {uid} was not found")
-        parsed = BytesParser(policy=policy.default).parsebytes(raw)
+        if size is not None and size < len(raw):
+            raise ValidationError("IMAP fetch returned more message bytes than RFC822.SIZE")
+        bounded_raw = raw[:max_body_bytes]
+        parsed = BytesParser(policy=policy.default).parsebytes(bounded_raw)
         message = _message_output(
             parsed,
             fields=fields,
@@ -219,6 +258,8 @@ def _fetch_message(request: ActionConnectorRequest) -> ActionConnectorResult:
             flags=flags,
             size=size,
             max_body_bytes=max_body_bytes,
+            fetched_bytes=len(raw),
+            parsed_bytes=len(bounded_raw),
         )
         return _connector_result(request, message, settings)
     finally:
@@ -1012,8 +1053,11 @@ def _message_output(
     flags: list[str],
     size: int | None,
     max_body_bytes: int,
+    fetched_bytes: int,
+    parsed_bytes: int,
 ) -> dict[str, Any]:
-    text_body, html_body = _message_bodies(message, max_body_bytes=max_body_bytes)
+    # One extra character detects local body clipping without an unbounded read.
+    text_body, html_body = _message_bodies(message, max_body_bytes=max_body_bytes + 1)
     headers = {
         key: str(message.get(key) or "")
         for key in ("Subject", "From", "To", "Cc", "Date", "Message-ID")
@@ -1036,13 +1080,34 @@ def _message_output(
         "message_id": str(message.get("Message-ID") or ""),
         "text_preview": text_body[:500],
         "html_preview": html_body[:500],
-        "body_text": text_body,
-        "body_html": html_body,
+        "body_text": text_body[:max_body_bytes],
+        "body_html": html_body[:max_body_bytes],
         "flags": flags,
         "headers": headers,
     }
     for key in fields:
         base[key] = candidates[key]
+    field_limits = {
+        "text_preview": (text_body, 500),
+        "html_preview": (html_body, 500),
+        "body_text": (text_body, max_body_bytes),
+        "body_html": (html_body, max_body_bytes),
+    }
+    base["content_completeness"] = {
+        "scope": "parsed_fields_from_mime_prefix",
+        "fetched_bytes": fetched_bytes,
+        "parsed_bytes": parsed_bytes,
+        "max_body_bytes": max_body_bytes,
+        "raw_message_complete": parsed_bytes == size if size is not None else None,
+        "raw_message_truncated": parsed_bytes < size if size is not None else None,
+        "truncated_fields": sorted(
+            key
+            for key, (text, limit) in field_limits.items()
+            if key in fields and len(text) > limit
+        ),
+        "mime_parse_defects": any(part.defects for part in message.walk()),
+        "full_content_action_ref": "communications.imap.message.export",
+    }
     return base
 
 
@@ -1162,6 +1227,9 @@ def _store_cursor(request: ActionConnectorRequest, result: Mapping[str, Any]) ->
             "uidvalidity": result.get("uidvalidity"),
             "last_observed_uid": max(result.get("uids") or [0]),
             "last_search_count": result.get("count"),
+            "matched_count": result.get("matched_count"),
+            "has_more": result.get("has_more"),
+            "next_after_uid": result.get("next_after_uid"),
         },
         provenance_json={"source": "imap-action"},
     )
@@ -1191,6 +1259,7 @@ def _store_inbound_message(request: ActionConnectorRequest, message: Mapping[str
             "date": message.get("date"),
             "message_id": message.get("message_id"),
             "text_preview": message.get("text_preview"),
+            "content_completeness": message.get("content_completeness"),
             "flags": message.get("flags", []),
             "attention_status": "read" if "\\Seen" in message.get("flags", []) else "unread",
             "action_ref": request.action_ref,

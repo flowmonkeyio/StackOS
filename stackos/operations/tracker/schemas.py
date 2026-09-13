@@ -10,6 +10,7 @@ from typing import (
 from pydantic import (
     ConfigDict,
     Field,
+    StrictBool,
     model_validator,
 )
 
@@ -53,6 +54,15 @@ class TrackerProjectInput(MCPInput):
             "the full tracker rows for diagnostics. raw aliases standard."
         ),
     )
+
+
+class TrackerTicketCountsInput(TrackerProjectInput):
+    project_id: int = Field(ge=1)
+
+
+class TrackerTicketCountsAllInput(MCPInput):
+    model_config = ConfigDict(extra="forbid")
+    is_active: StrictBool | None = True
 
 
 class TrackerGetInput(MCPInput):

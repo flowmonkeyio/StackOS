@@ -5,8 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from stackos.mcp.contract import WriteEnvelope
+from stackos.operations._helpers import operation_spec
 from stackos.operations.spec import (
     OperationExample,
+    OperationResponsePolicy,
     OperationSpec,
 )
 from stackos.operations.tracker.read_handlers import (
@@ -19,6 +21,8 @@ from stackos.operations.tracker.read_handlers import (
     tracker_next,
     tracker_search,
     tracker_status,
+    tracker_ticket_counts,
+    tracker_ticket_counts_all,
     tracker_verify,
     tracker_why,
 )
@@ -37,6 +41,8 @@ from stackos.operations.tracker.schemas import (
     TrackerReleaseInput,
     TrackerReopenInput,
     TrackerSearchInput,
+    TrackerTicketCountsAllInput,
+    TrackerTicketCountsInput,
     TrackerTicketInput,
     TrackerUpdateTaskInput,
     TrackerUpdateTicketInput,
@@ -67,12 +73,54 @@ from stackos.repositories.tracker import (
     TrackerSearchOut,
     TrackerSnapshotOut,
     TrackerStatusOut,
+    TrackerTicketCountsOut,
     TrackerVerifyOut,
+)
+
+_TICKET_COUNTS_RESPONSE_POLICY = OperationResponsePolicy(
+    default_mode="compact",
+    allowed_modes=("compact", "raw"),
+    ack_safe=False,
+    compact_notes=("Keep scope, as_of, total_count, and all seven exact ticket status counts.",),
 )
 
 
 def operation_specs() -> list[OperationSpec]:
     return [
+        operation_spec(
+            name="tracker.ticketCounts",
+            summary="Read exact current ticket-status counts in the project's default tracker.",
+            input_model=TrackerTicketCountsInput,
+            output_model=TrackerTicketCountsOut,
+            handler=tracker_ticket_counts,
+            mutating=False,
+            grant_policy="direct-read",
+            response_policy=_TICKET_COUNTS_RESPONSE_POLICY,
+            purpose=(
+                "Read a payload-free current snapshot; includes group and workflow tickets once."
+            ),
+            examples=(
+                OperationExample(title="Count project tickets", arguments={"project_id": 1}),
+            ),
+        ),
+        operation_spec(
+            name="tracker.ticketCountsAll",
+            summary="Read current ticket-status totals across active, archived, or all projects.",
+            input_model=TrackerTicketCountsAllInput,
+            output_model=TrackerTicketCountsOut,
+            handler=tracker_ticket_counts_all,
+            mutating=False,
+            grant_policy="local-admin-read",
+            response_policy=_TICKET_COUNTS_RESPONSE_POLICY,
+            purpose=(
+                "Local-console snapshot across default trackers; not history or agent liveness."
+            ),
+            examples=(
+                OperationExample(
+                    title="Count active-project tickets", arguments={"is_active": True}
+                ),
+            ),
+        ),
         _read_spec(
             name="tracker.status",
             summary="Summarize project tracker counts, ready work, blockers, and revision.",

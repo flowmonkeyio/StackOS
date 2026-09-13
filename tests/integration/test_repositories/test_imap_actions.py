@@ -1591,3 +1591,300 @@ def test_imap_protocol_fetch_rejects_ambiguous_or_mismatched_literal(
                 credential_ref=credential_ref,
             )
         )
+
+
+def test_imap_search_completeness_and_epoch_qualified_continuation(
+    session: Session, project_id: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import stackos.actions.imap as imap_module
+
+    def uid(client: _FakeIMAPSSL, *args: Any) -> tuple[str, list[Any]]:
+        client.uid_calls.append(args)
+        assert args[0] == "SEARCH"
+        # An unsorted response, sparse UIDs and a repeated endpoint must not
+        # cause skipped pages or a last-page loop (RFC 9051 section 6.4.9).
+        return "OK", [b"9 3 5 5"]
+
+    _FakeIMAPSSL.instances.clear()
+    monkeypatch.setattr(_FakeIMAPSSL, "uid", uid)
+    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    credential_ref = _credential_ref(session, project_id)
+    repo = ActionRepository(session)
+
+    def search(**extra: Any) -> dict[str, Any]:
+        result = asyncio.run(
+            repo.execute(
+                project_id=project_id,
+                action_ref="communications.imap.messages.search",
+                input_json={"mailbox_ref": "support", "limit": 2, **extra},
+                credential_ref=credential_ref,
+            )
+        ).data
+        audit = session.get(ActionCall, result.action_call.id)
+        assert audit is not None
+        assert audit.response_json == result.output_json
+        assert "imap-secret" not in json.dumps(audit.response_json)
+        return result.output_json
+
+    first = search(criteria={"unseen": True})
+    assert first["uids"] == [3, 5]
+    assert first["count"] == 2 and first["matched_count"] == 3
+    assert first["has_more"] is True and first["next_after_uid"] == 5
+    second = search(
+        criteria={"unseen": True},
+        after_uid=first["next_after_uid"],
+        expected_uidvalidity=first["uidvalidity"],
+    )
+    assert second["uids"] == [9]
+    assert second["matched_count"] == 1
+    assert second["has_more"] is False and second["next_after_uid"] is None
+    assert _FakeIMAPSSL.instances[-1].uid_calls == [("SEARCH", None, "UNSEEN", "UID", "6:*")]
+    empty = search(after_uid=9, expected_uidvalidity="777")
+    assert empty["uids"] == [] and empty["matched_count"] == 0
+    assert empty["has_more"] is False and empty["next_after_uid"] is None
+    maximum = search(after_uid=4294967295, expected_uidvalidity="777")
+    assert maximum["uids"] == [] and maximum["matched_count"] == 0
+    assert _FakeIMAPSSL.instances[-1].uid_calls == []
+    assert all(instance.logout_called for instance in _FakeIMAPSSL.instances)
+    assert all(instance.selected == [("Support", True)] for instance in _FakeIMAPSSL.instances)
+
+
+@pytest.mark.parametrize("actual_epoch", ["778", "", "0"])
+def test_imap_search_continuation_rejects_changed_or_missing_epoch_before_search(
+    session: Session, project_id: int, monkeypatch: pytest.MonkeyPatch, actual_epoch: str
+) -> None:
+    import stackos.actions.imap as imap_module
+
+    _FakeIMAPSSL.instances.clear()
+    monkeypatch.setattr(_FakeIMAPSSL, "uidvalidity", actual_epoch)
+    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    credential_ref = _credential_ref(session, project_id)
+    with pytest.raises(ConflictError):
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="communications.imap.messages.search",
+                input_json={
+                    "mailbox_ref": "support",
+                    "limit": 2,
+                    "after_uid": 5,
+                    "expected_uidvalidity": "777",
+                },
+                credential_ref=credential_ref,
+            )
+        )
+    assert _FakeIMAPSSL.instances[-1].uid_calls == []
+    assert _FakeIMAPSSL.instances[-1].logout_called
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"after_uid": 5},
+        {"after_uid": True, "expected_uidvalidity": "777"},
+        {"after_uid": 4294967296, "expected_uidvalidity": "777"},
+        {"after_uid": 5, "expected_uidvalidity": "bad"},
+    ],
+)
+def test_imap_search_continuation_validation(payload: dict[str, Any]) -> None:
+    request = ActionConnectorRequest(
+        project_id=1,
+        plugin_slug="communications",
+        action_key="imap.messages.search",
+        provider_key="imap",
+        action_ref="communications.imap.messages.search",
+        operation="messages.search",
+        input_json={"mailbox_ref": "support", "limit": 2, **payload},
+        config_json={},
+    )
+    assert ImapActionConnector().validate(request)
+
+
+@pytest.mark.parametrize(
+    ("criteria", "expected"),
+    [({"uid_from": 6}, []), ({"uid_from": 4, "uid_to": 5}, [5])],
+)
+def test_imap_search_uid_bounds_do_not_accept_reversed_star_endpoint(
+    session: Session,
+    project_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+    criteria: dict[str, Any],
+    expected: list[int],
+) -> None:
+    import stackos.actions.imap as imap_module
+
+    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    credential_ref = _credential_ref(session, project_id)
+    result = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="communications.imap.messages.search",
+            input_json={"mailbox_ref": "support", "limit": 2, "criteria": criteria},
+            credential_ref=credential_ref,
+        )
+    ).data
+    assert result.output_json["uids"] == expected
+    assert result.output_json["matched_count"] == len(expected)
+
+
+@pytest.mark.parametrize(
+    ("cap", "known_size", "over_return"),
+    [
+        (64, True, False),
+        (4096, True, False),
+        (64, False, False),
+        (4096, False, False),
+        (64, True, True),
+    ],
+)
+def test_imap_fetch_exposes_truthful_prefix_and_preview_completeness(
+    session: Session,
+    project_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+    cap: int,
+    known_size: bool,
+    over_return: bool,
+) -> None:
+    import stackos.actions.imap as imap_module
+
+    raw = b"Subject: Long email\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n" + b"x" * 900
+    literal = raw if over_return else raw[:cap]
+
+    def uid(client: _FakeIMAPSSL, *args: Any) -> tuple[str, list[Any]]:
+        client.uid_calls.append(args)
+        assert args == ("FETCH", "3", f"(UID FLAGS RFC822.SIZE BODY.PEEK[]<0.{cap}>)")
+        size_field = f" RFC822.SIZE {len(raw)}" if known_size else ""
+        meta = f"3 (UID 3 FLAGS (){size_field} BODY[]<0> {{{len(literal)}}})".encode()
+        return "OK", [(meta, literal)]
+
+    _FakeIMAPSSL.instances.clear()
+    monkeypatch.setattr(_FakeIMAPSSL, "uid", uid)
+    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    credential_ref = _credential_ref(session, project_id)
+    result = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="communications.imap.message.fetch",
+            input_json={
+                "mailbox_ref": "support",
+                "uid": 3,
+                "fields": ["subject", "body_text", "text_preview"],
+                "max_body_bytes": cap,
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+    details = result.output_json["content_completeness"]
+    assert details["scope"] == "parsed_fields_from_mime_prefix"
+    assert details["fetched_bytes"] == len(literal)
+    assert details["parsed_bytes"] == min(len(literal), cap)
+    assert details["max_body_bytes"] == cap
+    assert details["raw_message_complete"] is (cap >= len(raw) if known_size else None)
+    assert details["raw_message_truncated"] is (cap < len(raw) if known_size else None)
+    assert details["truncated_fields"] == (["text_preview"] if cap >= len(raw) else [])
+    assert isinstance(details["mime_parse_defects"], bool)
+    assert details["full_content_action_ref"] == "communications.imap.message.export"
+    assert len(result.output_json["text_preview"]) <= 500
+    assert len(result.output_json["body_text"]) <= cap
+    if cap < len(raw):
+        assert len(result.output_json["body_text"]) < 900
+    audit = session.get(ActionCall, result.action_call.id)
+    assert audit is not None and audit.response_json == result.output_json
+    assert "imap-secret" not in json.dumps(audit.response_json)
+    assert _FakeIMAPSSL.instances[-1].selected == [("Support", True)]
+    assert _FakeIMAPSSL.instances[-1].logout_called
+
+
+def test_imap_fetch_rejects_zero_byte_cap_instead_of_fetching_default() -> None:
+    request = ActionConnectorRequest(
+        project_id=1,
+        plugin_slug="communications",
+        action_key="imap.message.fetch",
+        provider_key="imap",
+        action_ref="communications.imap.message.fetch",
+        operation="message.fetch",
+        input_json={"mailbox_ref": "support", "uid": 3, "max_body_bytes": 0},
+        config_json={},
+    )
+    assert ImapActionConnector().validate(request)
+
+
+def test_imap_output_completeness_contract_is_discoverable(session: Session) -> None:
+    repo = ActionRepository(session)
+    search = repo.describe(action_ref="communications.imap.messages.search")
+    properties = search.manifest.input_schema_json["properties"]
+    assert properties["after_uid"]["type"] == "integer"
+    assert properties["after_uid"]["minimum"] == 1
+    assert properties["after_uid"]["maximum"] == 4294967295
+    assert properties["expected_uidvalidity"]["type"] == "string"
+    fetched = repo.describe(action_ref="communications.imap.message.fetch")
+    assert fetched.manifest.input_schema_json["properties"]["max_body_bytes"]["minimum"] == 1
+
+
+def test_imap_empty_search_without_epoch_does_not_claim_continuation(
+    session: Session, project_id: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import stackos.actions.imap as imap_module
+
+    def uid(client: _FakeIMAPSSL, *args: Any) -> tuple[str, list[Any]]:
+        client.uid_calls.append(args)
+        return "OK", [b""]
+
+    monkeypatch.setattr(_FakeIMAPSSL, "uidvalidity", "")
+    monkeypatch.setattr(_FakeIMAPSSL, "uid", uid)
+    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    credential_ref = _credential_ref(session, project_id)
+    result = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="communications.imap.messages.search",
+            input_json={"mailbox_ref": "support", "limit": 2},
+            credential_ref=credential_ref,
+        )
+    ).data.output_json
+    assert result["uids"] == [] and result["matched_count"] == 0
+    assert result["has_more"] is False and result["next_after_uid"] is None
+
+
+def test_imap_fetch_complete_raw_does_not_hide_mime_parse_defects(
+    session: Session, project_id: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import stackos.actions.imap as imap_module
+
+    monkeypatch.setattr(_FakeIMAPSSL, "raw_message", b"not a header\r\n\r\nmessage body")
+    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    credential_ref = _credential_ref(session, project_id)
+    result = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="communications.imap.message.fetch",
+            input_json={"mailbox_ref": "support", "uid": 3},
+            credential_ref=credential_ref,
+        )
+    ).data.output_json
+    completeness = result["content_completeness"]
+    assert completeness["raw_message_complete"] is True
+    assert completeness["mime_parse_defects"] is True
+    stored = ResourceRepository(session).query_records(
+        project_id=project_id, plugin_slug="communications", resource_key="communication-message"
+    )
+    assert stored.items[0].data_json["content_completeness"] == completeness
+
+
+def test_imap_fetch_rejects_inconsistent_provider_size(
+    session: Session, project_id: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import stackos.actions.imap as imap_module
+
+    monkeypatch.setattr(_FakeIMAPSSL, "reported_size", 1)
+    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    credential_ref = _credential_ref(session, project_id)
+    with pytest.raises(ConflictError):
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="communications.imap.message.fetch",
+                input_json={"mailbox_ref": "support", "uid": 3},
+                credential_ref=credential_ref,
+            )
+        )

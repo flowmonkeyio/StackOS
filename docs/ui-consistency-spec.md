@@ -1,10 +1,11 @@
 # StackOS UI Consistency Spec
 
-> Canonical component rules derived from two full internal audits (tables ·
-> scroll · cards · filters/drawers, and badges · headers/tabs · key-value ·
-> buttons/forms · feedback/icons/format · renderers/blocks/meters). This is the
-> contract every page is rebuilt onto. Baseline reference: HomeConsoleView,
-> InboxView, ActivityView, SetupStatusTab, HomeView.
+Status: retained consistency proposal, not the current implementation contract.
+Use [ui-design-system.md](./ui-design-system.md) for current rules and
+[ui-component-inventory.md](./ui-component-inventory.md) for existing primitives.
+The proposed changes below—including removing table height caps—require a
+scoped design decision; they are not a standing instruction to rebuild pages or
+delete supported components during unrelated work.
 
 ## 1. Scroll — one model
 

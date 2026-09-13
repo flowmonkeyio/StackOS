@@ -1,0 +1,79 @@
+{
+  "title": "Building an AI finance department for a one-person business",
+  "status": "review-ready; agentic-angle revision independently reviewed; not operator-approved or published",
+  "article_path": "reports/finance-articles/2026-09-06/01-finance-department.md",
+  "channel": "website",
+  "evidence_ledger": [
+    {
+      "ref": "urn:stackos:project:1:resource:985",
+      "type": "cleared operator statement and documented workflow design",
+      "public_use": "cleared",
+      "supports": [
+        "The operator wants recurring bookkeeping, invoicing, payment follow-ups, cashflow, and tax-preparation administration to require less of a solo entrepreneur's attention.",
+        "The documented design includes receipt intake, bookkeeping preparation, invoice and payment follow-up work, cashflow management, and tax-estimate preparation with authorization and uncertainty boundaries.",
+        "Original receipt material should be retained before later handling, and ambiguous information should be surfaced rather than assumed."
+      ]
+    }
+  ],
+  "claims": [
+    {
+      "text": "The operator wants agents to reduce recurring finance administration across the documented finance lanes.",
+      "claim_type": "cleared operator intent",
+      "evidence_refs": [
+        "urn:stackos:project:1:resource:985"
+      ]
+    },
+    {
+      "text": "One finance coordinator can be proposed as the owner-facing role that carries a recurring case through connected inputs, bounded authority, verification, and a focused escalation.",
+      "claim_type": "proposed operating method",
+      "evidence_refs": [
+        "urn:stackos:project:1:resource:985"
+      ]
+    },
+    {
+      "text": "The partial-payment sequence is illustrative: the coordinator compares supplied records, acts only where authorized, verifies the resulting state, and escalates an ambiguous allocation.",
+      "claim_type": "hypothetical operating example",
+      "evidence_refs": []
+    },
+    {
+      "text": "The examples of permitted actions and escalation rules are proposed boundaries that a business would choose; they are not universal control requirements or a description of live production behavior.",
+      "claim_type": "editorial framing",
+      "evidence_refs": []
+    },
+    {
+      "text": "Tax-preparation work is described as organizing records and questions for qualified review, not interpreting tax treatment, filing, or professional advice.",
+      "claim_type": "scope boundary",
+      "evidence_refs": []
+    }
+  ],
+  "unsupported-or-intentionally-omitted": [
+    "No claim that an AI system is accurate, autonomous in every circumstance, suitable for every business, or a replacement for an accountant, tax professional, lawyer, or owner judgment.",
+    "No claim of a live customer incident, production use, time saved, financial outcome, customer outcome, or adoption result.",
+    "No credentials, provider-specific setup, financial-account data, customer-identifying information, tailored accounting treatment, tax or legal advice, rates, deadlines, or software-selection recommendation.",
+    "No claim that an agent creates charges, transfers funds, files taxes, or takes other new-money action."
+  ],
+  "open_questions_for_review": [],
+  "review_decisions": [
+    "Revised after feedback that finance guidance with occasional agent mentions was not the intended subject. The current angle treats agentic work as a complete, owner-facing finance case with connected inputs, bounded authority, verification, and continuation.",
+    "Kept the article product-neutral and at the purpose-of-tools level. It does not describe StackOS, APIs, storage formats, or vendor mechanics.",
+    "Condensed the six finance lanes into supporting examples so the continuous partial-payment case, rather than a responsibility table, carries the article.",
+    "Independent claim review: two bounded repairs accepted. Agent staffing is now explicitly this setup; agentic work is defined for this article rather than asserted as a universal definition. Main checked both changes.",
+    "Independent voice review: shared goal-is-not/it-is closing formula replaced with a fresh-session continuation test. Targeted reviewer recheck cleared it; main accepted prose-level comparative evidence.",
+    "Independent disclosure review /root/finance_agentic_disclosure01 cleared the article and internal map. Current claim and voice reviewers: /root/finance_agentic_claim01 and /root/finance_agentic_voice01."
+  ],
+  "voice-and-form-self-audit": {
+    "named_comparisons": [
+      "website/content/articles/how-to-refine-ai-agent-workflow.md",
+      "website/content/articles/what-ai-agent-handoff-should-include.md"
+    ],
+    "opening": "Uses attributable operator intent to delegate recurring administration and a proposed coordinating agent; it does not imply an observed deployment or a product superiority claim.",
+    "structure": "Uses one illustrative partial-payment case to explain connected context, permission, verification, ambiguity, and resumption. The six finance lanes support that mechanism rather than dictating the article's shape.",
+    "prose": "Explains tools as practical inputs and permissions—records, payment visibility, routine messages, and a configured start—without exposing provider contracts or converting the article into an implementation manual.",
+    "ending": "Ends with a fresh-session test: after resolving an unclear case, can the coordinator retrieve the decision and confirmed result and continue the permitted work without the owner reconstructing it?"
+  },
+  "durable_draft_ref": "artifact:2055",
+  "previous_rejected_angles": [
+    "Technical StackOS and financial-record architecture.",
+    "General solo-finance guidance with agents treated as an aside."
+  ]
+}

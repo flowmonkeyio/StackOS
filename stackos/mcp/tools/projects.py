@@ -302,6 +302,7 @@ def register(registry: ToolRegistry) -> None:
         registry,
         (
             "project.list",
+            "project.portfolio",
             "project.create",
             "project.get",
             "project.update",

@@ -24,8 +24,8 @@ from stackos.workflows import (
     WorkflowTemplateListOut,
     WorkflowTemplateLoader,
     WorkflowTemplateValidationOut,
-    parse_workflow_template_obj,
-    parse_workflow_template_yaml,
+    validate_workflow_template_obj,
+    validate_workflow_template_yaml,
     workflow_authoring_guide,
 )
 from stackos.workflows.template_schema import WorkflowTemplateIssue
@@ -417,9 +417,17 @@ def _parse_input_template(
     if template_json is not None and template_yaml is not None:
         raise ValidationError("pass only one of template_json or template_yaml")
     if template_json is not None:
-        return parse_workflow_template_obj(template_json)
-    assert template_yaml is not None
-    return parse_workflow_template_yaml(template_yaml)
+        validation = validate_workflow_template_obj(template_json)
+    else:
+        assert template_yaml is not None
+        validation = validate_workflow_template_yaml(template_yaml)
+    if not validation.valid:
+        raise ValidationError(
+            "workflow template validation failed",
+            data={"errors": [item.model_dump(mode="json") for item in validation.errors]},
+        )
+    assert validation.template is not None
+    return validation.template
 
 
 async def _template_save(

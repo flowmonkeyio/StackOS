@@ -18,6 +18,7 @@ from .action import (
     _compact_missing_item,
     _connections_url,
     _dedupe_missing,
+    _required_for,
 )
 from .schemas import (
     ReadinessActionOut,
@@ -129,6 +130,23 @@ def _workflow_readiness(
                 arguments={"project_id": project_id, "key": loaded.spec.key},
             )
         ]
+    elif any(item.code == "action_unresolved" for item in missing) or any(
+        item.code == "action_unresolved"
+        for group in route_groups
+        if group.required and not group.execution_ready
+        for route in group.routes
+        for item in route.missing
+    ):
+        next_steps.append(
+            ReadinessNextStepOut(
+                tool="action.list",
+                reason=(
+                    "Resolve the listed action contracts to registered actions before checking "
+                    "execution readiness for the concrete run plan."
+                ),
+                arguments={"project_id": project_id},
+            )
+        )
     elif missing:
         next_steps.append(
             ReadinessNextStepOut(
@@ -187,6 +205,17 @@ def _workflow_action_readiness(
                 f"Workflow {workflow_key} references unknown action contract {contract_key!r}."
             )
             continue
+        optional_auth = (
+            contract.auth_ref is not None
+            and (auth_by_key.get(contract.auth_ref) is not None)
+            and auth_by_key[contract.auth_ref].optional
+        )
+        optional_action = contract.optional
+        required_for = _required_for(
+            default="execution",
+            optional_auth=optional_auth,
+            optional_action=optional_action,
+        )
         action_ref = _contract_action_ref(
             contract,
             plugin_slug=plugin_slug,
@@ -194,17 +223,36 @@ def _workflow_action_readiness(
             action_index=action_index,
         )
         if action_ref is None:
-            warnings.append(
+            message = (
                 f"Action contract {contract.key!r} has no concrete action; a run plan must "
                 "resolve provider/action choice before execution readiness can be checked."
             )
+            warnings.append(message)
+            actions.append(
+                ReadinessActionOut(
+                    action_ref=None,
+                    contract_key=contract.key,
+                    provider_key=contract.provider,
+                    capability_key=contract.capability,
+                    executable=False,
+                    availability_status="action_unresolved",
+                    availability_reasons=["action_unresolved"],
+                    missing=[
+                        ReadinessMissingItemOut(
+                            kind="action",
+                            code="action_unresolved",
+                            message=message,
+                            required_for=required_for,
+                            workflow_key=workflow_key,
+                            next_tool="action.list",
+                        )
+                    ],
+                    route_group=contract.route_group,
+                    route_key=contract.route_key,
+                    optional=contract.optional,
+                )
+            )
             continue
-        optional_auth = (
-            contract.auth_ref is not None
-            and (auth_by_key.get(contract.auth_ref) is not None)
-            and auth_by_key[contract.auth_ref].optional
-        )
-        optional_action = contract.optional
         try:
             described = ActionRepository(ctx.session).describe(
                 project_id=project_id,
@@ -223,11 +271,12 @@ def _workflow_action_readiness(
                             kind="action",
                             code="action_not_found",
                             message=(
-                                f"Workflow {workflow_key} references action {action_ref!r}, "
-                                "but the action is not registered."
+                                f"Workflow {workflow_key} contract {contract.key!r} references "
+                                f"action {action_ref!r}, but the action is not registered."
                             ),
-                            required_for="execution",
+                            required_for=required_for,
                             action_ref=action_ref,
+                            action_refs=[action_ref],
                             workflow_key=workflow_key,
                             next_tool="action.list",
                         )
@@ -302,7 +351,11 @@ def _workflow_route_readiness(
                     route_key=route_key,
                     executable=executable,
                     structurally_ready=structurally_ready,
-                    action_refs=[action.action_ref for action in route_actions],
+                    action_refs=[
+                        action.action_ref
+                        for action in route_actions
+                        if action.action_ref is not None
+                    ],
                     missing=_dedupe_missing(
                         [item for action in route_actions for item in action.missing]
                     ),
@@ -343,14 +396,15 @@ def _annotate_route_missing(
                 missing.required_for = f"route_option:{action.route_group}:{action.route_key}"
             else:
                 missing.required_for = f"optional_route:{action.route_group}:{action.route_key}"
-    by_ref = {action.action_ref: action for action in actions}
     for group in route_groups:
         for route in group.routes:
             route.missing = _dedupe_missing(
                 [
                     missing
-                    for action_ref in route.action_refs
-                    for missing in by_ref[action_ref].missing
+                    for action in actions
+                    if action.route_group == group.route_group
+                    and action.route_key == route.route_key
+                    for missing in action.missing
                 ]
             )
 
@@ -444,7 +498,7 @@ def _contract_action_ref(
             return capability_matches[0]
     if candidates:
         return candidates[0]
-    return f"{plugin_slug}.{action}" if plugin_slug else None
+    return f"{plugin_slug}.{action}" if plugin_slug else action
 
 
 def _action_resolution_index(ctx: MCPContext, *, project_id: int) -> dict[str, list[str]]:

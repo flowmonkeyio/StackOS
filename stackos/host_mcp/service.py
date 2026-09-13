@@ -324,7 +324,7 @@ def _call_adapter(
             host_key=resolved_host_key,
             surface="unknown",
             status="register_failed",
-            message=f"Host MCP adapter failed: {type(exc).__name__}: {exc}",
+            message=f"Host MCP adapter failed: {type(exc).__name__}.",
             ok=False,
             available=True,
             blocking=True,

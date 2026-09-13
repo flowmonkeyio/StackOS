@@ -19,6 +19,40 @@ describe('ActionCallsView', () => {
     vi.restoreAllMocks()
   })
 
+  it('honors exact day and action drilldowns while ordinary ledger requests retain all dry-run modes', async () => {
+    const requestedUrls: string[] = []
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      requestedUrls.push(url)
+      if (url.includes('/action-calls'))
+        return json(page([actionCall({ id: 2, status: 'success' })]))
+      return catalogJson(url) ?? json({})
+    }) as typeof fetch
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/action-calls', component: ActionCallsView }],
+    })
+    await router.push(
+      '/projects/1/action-calls?created_from=2026-09-07T07:00:00Z&created_before=2026-09-07T23:00:00Z&dry_run=false&action_call_id=2&provider_key=stripe',
+    )
+    await router.isReady()
+    const wrapper = mount(ActionCallsView, { global: { plugins: [router] } })
+    await vi.waitFor(() =>
+      expect(requestedUrls.some((url) => url.includes('/action-calls?'))).toBe(true),
+    )
+    const query = new URL(
+      requestedUrls.find((url) => url.includes('/action-calls?'))!,
+      'http://stackos.local',
+    ).searchParams
+    expect(query.get('created_from')).toBe('2026-09-07T07:00:00Z')
+    expect(query.get('created_before')).toBe('2026-09-07T23:00:00Z')
+    expect(query.get('dry_run')).toBe('false')
+    expect(query.get('action_call_id')).toBe('2')
+    expect(query.get('provider_key')).toBe('stripe')
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Action call #2'))
+    wrapper.unmount()
+  })
+
   it('renders project action-call audit rows with sanitized details and filters', async () => {
     const requestedUrls: string[] = []
 
@@ -58,6 +92,7 @@ describe('ActionCallsView', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('utils:image.generate'))
 
     expect(requestedUrls.some((url) => url.includes('plugin_slug=utils'))).toBe(true)
+    expect(new URL(requestedUrls.find((url) => url.includes('/action-calls?'))!, 'http://stackos.local').searchParams.get('dry_run')).toBeNull()
     expect(wrapper.text()).not.toContain('Action call #1')
     expect(wrapper.get('button[aria-label="Filter to running calls"]').text()).toContain('1')
 

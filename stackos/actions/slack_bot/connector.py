@@ -54,7 +54,7 @@ from .storage import (
     _store_outbound_message,
     _store_reaction_add,
 )
-from .validation import validate_slack_request
+from .validation import history_content_option_issues, validate_slack_request
 
 
 class SlackBotActionConnector:
@@ -69,6 +69,8 @@ class SlackBotActionConnector:
         return 0
 
     async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
+        if option_issues := history_content_option_issues(request):
+            raise ValidationError(option_issues[0].message)
         match request.operation:
             case "identity.get":
                 # Slack auth.test:

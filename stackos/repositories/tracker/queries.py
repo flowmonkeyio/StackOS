@@ -39,6 +39,7 @@ from stackos.repositories.base import (
     ValidationError,
     cursor_paginate,
 )
+from stackos.repositories.tracker.counts import query_ticket_counts
 from stackos.repositories.tracker.schema import (
     TrackerBriefOut,
     TrackerChangedOut,
@@ -54,6 +55,7 @@ from stackos.repositories.tracker.schema import (
     TrackerSummaryOut,
     TrackerTaskOut,
     TrackerTaskTicketSummaryOut,
+    TrackerTicketCountsOut,
     TrackerTicketOut,
     TrackerVerifyOut,
     TrackerWorkflowHandoffOut,
@@ -77,6 +79,13 @@ from stackos.repositories.tracker.workflow_graph_analysis import (
 
 class TrackerQueryMixin:
     """Tracker read/query helpers and response shaping."""
+
+    def ticket_counts(self, *, project_id: int) -> TrackerTicketCountsOut:
+        self._tracker_or_none(project_id=project_id)
+        return query_ticket_counts(self._s, project_id=project_id)
+
+    def ticket_counts_all(self, *, is_active: bool | None = True) -> TrackerTicketCountsOut:
+        return query_ticket_counts(self._s, is_active=is_active)
 
     def status(self, *, project_id: int) -> TrackerStatusOut:
         tracker = self._tracker_or_none(project_id=project_id)

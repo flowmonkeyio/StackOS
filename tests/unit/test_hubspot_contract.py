@@ -246,7 +246,8 @@ def test_hubspot_operator_runbook_matches_manifest_oauth_scope_bundles() -> None
     assert '"distribution": "private"' in runbook
     assert '"type": "oauth"' in runbook
     assert "https://api.hubspot.com/oauth/2026-03/token" in runbook
-    assert "live at `auth.stackos.flowmonkey.io`" in runbook
+    assert "https://auth.stackos.flowmonkey.io/api/v1/auth/oauth/callback" in runbook
+    assert "workers/oauth-callback-relay/public" in runbook
     assert "Mocked and local verification must never be reported" in runbook
 
 

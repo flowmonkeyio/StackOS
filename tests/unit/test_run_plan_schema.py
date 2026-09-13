@@ -94,6 +94,17 @@ def test_run_plan_schema_rejects_admin_tool_grant(tool_name: str) -> None:
     assert "admin/setup tool" in result.errors[0].message
 
 
+@pytest.mark.parametrize("tool_name", ["workflowTemplate.save", "workflowTemplate.fork"])
+def test_template_authoring_remains_setup_not_a_run_plan_grant(tool_name: str) -> None:
+    data = _plan_dict()
+    data["grants"] = {
+        "mcp_tool_grants": [{"step_id": "create-campaign", "tool": tool_name}],
+    }
+    result = validate_run_plan_obj(data)
+    assert result.valid is False
+    assert "not a run-plan grantable tool" in result.errors[0].message
+
+
 def test_builtin_runtime_refs_follow_current_manifest_snapshot(monkeypatch) -> None:
     by_slug = {manifest.slug: manifest for manifest in BUILTIN_PLUGIN_MANIFESTS}
     current = [type("Snapshot", (), {"manifests": (by_slug["core"],)})()]

@@ -366,39 +366,21 @@ the event is ignored for activation. Once an allowlisted user asks for an
 outbound message, the target may be any reachable channel unless the project
 adds an explicit send/handoff restriction.
 
-### One-Brain Architecture Audit
+### Current Implementation Boundaries
 
-Current status: Slack and Telegram HTTP ingress now verify provider transport,
-normalize payloads, and call shared communication code for static policy
-evaluation, resource writes, stable request dedupe, click-state patches, and
-`agent_request` creation. The shared policy path splits visibility from
-activation: a bot can observe configured visible channels, but only approved
-users can create work or trigger responses. Local chat, SMTP, IMAP, outbound
-action recording, and route derivation still need to converge before more
-channels are added.
+Slack and Telegram HTTP adapters call
+`stackos/communications/processor.py` for policy evaluation, resource writes,
+stable request dedupe, click-state patches, and `agent_request` creation.
+Provider adapters verify and normalize; they do not independently decide when
+an agent should answer.
 
-Current deviations to remove:
-
-- Slack, Telegram, SMTP, and IMAP connectors write communication resources
-  directly instead of returning normalized outbound effects for shared recording.
-- Provider route derivation in `ingressEndpoint.*` is hard-coded for Slack and
-  Telegram instead of being driven by provider/plugin manifest metadata.
-- Local agent chat can create requests directly instead of feeding the same
-  normalized inbound-event path.
-- The UI now surfaces generic profiles, targets, and ingress state, but the
-  editable setup flow is still deepest for Telegram profiles.
-
-Required direction:
-
-1. Refactor provider ingress modules to keep only transport verification,
-   profile lookup, and provider-specific field mapping.
-2. Keep provider transport details in provider facets and prevent new
-   provider-specific profile resources from appearing.
-3. Make connectors return normalized outbound communication effects and record
-   them after the action call through shared lifecycle/audit code.
-4. Move ingress route capabilities into provider manifests so adding Slack,
-   Telegram, email, WhatsApp, Discord, or future channels does not require core
-   route code for each provider.
+Not every recording path uses that processor: outbound connectors and IMAP
+still record communication resources, and local chat creates requests through
+`stackos/operations/communications.py`. Ingress route derivation remains
+provider-aware in `stackos/operations/communication_platform/ingress.py`.
+These are current ownership boundaries, not an additional prerequisite for
+using the implemented actions. New providers must reuse shared policy and
+resource contracts without duplicating business decisions.
 
 ## Product Boundary
 
@@ -747,11 +729,11 @@ providers need their own contract review before execution.
 
 `slack-bot` is executable for Web API identity, message send, native message
 reaction add, message delete, conversation discovery, membership sync, and
-signed HTTP Events API/Interactivity ingress. Socket Mode, live history reads,
-files, reaction remove, and administration remain deferred until their provider
-contracts, runner lifecycle, tests, and safe audit paths are delivered. Stored
-Slack reads come through StackOS communication records; live channel/thread
-history and backfill require a future explicit Slack history action.
+signed HTTP Events API/Interactivity ingress. Live conversation history reads
+and external file uploads are also executable explicit actions. Socket Mode,
+thread-reply expansion, file downloads, reaction remove, and administration
+remain deferred. Stored Slack reads come through StackOS communication records;
+`communications.slack-bot.conversation.history` reads one live conversation page.
 
 ## Resource Model
 
@@ -761,7 +743,8 @@ one.
 
 ### `communication-profile`
 
-Represents a provider-neutral agent/human-facing communication identity.
+Represents one project-scoped, provider-neutral agent/human-facing identity
+and policy bundle.
 
 Example fields:
 
@@ -782,6 +765,11 @@ Example fields:
 - `handoff_policy`
 - `approval_policy`
 - `metadata_json`
+
+Telegram facets also carry `ingress_mode` (`webhook` or `disabled`),
+`ingress_enabled`, `allowed_updates`, and safe provider `refs`.
+See [Telegram Profiles](#telegram-profiles) for
+Account binding, inbound ownership, and policy semantics.
 
 ### `communication-contact`
 
@@ -902,34 +890,6 @@ Example fields:
 Provider object ids may be stored in provenance or safe refs after redaction,
 but reusable templates should refer to `channel_ref`, not raw Telegram chat ids
 or mailbox internals.
-
-### `communication-profile`
-
-Represents one project-scoped communication identity and policy bundle.
-
-Example fields:
-
-- `key`
-- `profile_ref`
-- `enabled`
-- `identity`
-- `agent_guidance`
-- `access_policy`
-- `trigger_policy`
-- `visibility_policy`
-- `context_policy`
-- `response_policy`
-- `send_policy`
-- `handoff_policy`
-- `approval_policy`
-- `metadata_json`
-- `provider_facets.telegram-bot.credential_ref`
-- `provider_facets.telegram-bot.bot_username`
-- `provider_facets.telegram-bot.ingress_mode`: `webhook` for the active
-  Telegram webhook listener, or `disabled` to stop storing inbound events for
-  that provider facet
-- `provider_facets.telegram-bot.allowed_updates`
-- `provider_facets.telegram-bot.refs`
 
 ### `ingress-endpoint`
 
@@ -1469,7 +1429,7 @@ MCP tools such as `telegram.sendMessage` or
 
 ### Telegram Actions
 
-Connector file: `stackos/actions/telegram_bot.py`
+Connector package: `stackos/actions/telegram_bot/`
 
 Action refs:
 
@@ -1509,6 +1469,9 @@ Executable in the current Telegram connector:
   uses `sendMediaGroup`; the first media item carries the caption and Telegram
   returns multiple message refs. Transient generated artifacts may be deleted
   after successful upload.
+
+Not exposed by the current actions:
+
 - edit message.
 - channel administration.
 - database artifact-id resolution for `photo.artifact_ref`; generated asset
@@ -1571,7 +1534,7 @@ Validation rules:
 
 ### Slack Actions
 
-Connector file: `stackos/actions/slack_bot.py`
+Connector package: `stackos/actions/slack_bot/`
 
 Action refs:
 
@@ -1584,6 +1547,7 @@ Action refs:
 - `communications.slack-bot.conversation.info`
 - `communications.slack-bot.conversation.list`
 - `communications.slack-bot.conversation.members`
+- `communications.slack-bot.conversation.history`
 
 Executable in the current Slack connector:
 
@@ -1597,6 +1561,7 @@ Executable in the current Slack connector:
 - `conversation.info` through Slack `conversations.info`
 - `conversation.list` through Slack `conversations.list`
 - `conversation.members` through Slack `conversations.members`
+- `conversation.history` through Slack `conversations.history`
 
 Validation rules:
 
@@ -1633,10 +1598,37 @@ Validation rules:
   metadata. They do not fetch live history.
 - Provider errors redact Slack token-shaped strings and authorization material.
 
+#### Reading complete selected Slack content
+
+`conversation.history` requires the selected project profile and channel/surface.
+Default results retain message refs and 500-character `text_preview` values.
+Each message reports `text_preview_truncated`. Set the strict boolean
+`include_content: true` only when the task needs full selected content; the
+response then includes untruncated `text`, `blocks`, `attachments`, and selected
+`files` descriptors. The option controls local output, not a Slack query field.
+Read these fields from the normal action response file; raw mode cannot recover
+content omitted by a preview-only call.
+
+File descriptors use `file_ref` and selected metadata, not private download URLs,
+thumbnail URLs or file bytes. Rich Slack file references are similarly mapped;
+URL-only Slack file objects report `url_omitted`. Secret-bearing URLs and known
+credential values remain sanitized. This read does not grant forwarding rights.
+
+`content_included` reports the selected output mode, not archive completeness.
+Inspect `has_more` and `next_cursor`, and continue with the same profile/channel
+and time bounds. Preserve optional provider `is_limited` as reported; an absent
+flag is not proof of complete retention or access. `reply_count` describes thread
+presence, not fetched replies. This endpoint does not fetch full thread replies
+or content beyond the Account's access/retention scope. Slack's rate limits and
+effective page caps vary by app class; honor returned cursors and `Retry-After`.
+Official contracts: [history](https://docs.slack.dev/reference/methods/conversations.history/),
+[file objects](https://docs.slack.dev/reference/objects/file-object/),
+[thread replies](https://docs.slack.dev/reference/methods/conversations.replies/).
+
 Deferred until separate tests/contracts:
 
 - Socket Mode listener and `apps.connections.open` runtime.
-- Slack history reads, reaction remove, user/profile lookup,
+- Thread reply reads, file downloads, reaction remove, user/profile lookup,
   channel administration, and message update.
 - Automatic response URL usage. Slack `response_url` is transient sensitive
   material and is not persisted by ingress.
@@ -1696,6 +1688,40 @@ Validation rules:
 - Persist mailbox cursor/channel/message/event resources from connector output
   without exposing IMAP passwords. Search cursor state is observation-only
   (`last_observed_uid`), never acknowledgement.
+
+#### IMAP result coverage and continuation
+
+`messages.search` returns `matched_count` before applying the caller's `limit`,
+`has_more`, and `next_after_uid` (null at the end). Counts describe the current
+remaining search, not a frozen mailbox snapshot. To continue, keep the Account,
+mailbox and criteria unchanged, pass `next_after_uid` as `after_uid`, and pass
+the observed `uidvalidity` as `expected_uidvalidity`. A changed/missing epoch
+stops continuation before search. `after_uid` is exclusive; it is not a message
+acknowledgement. Matching UIDs are ordered and filtered to the requested bounds:
+RFC 9051 defines `UID n:*` to include the last UID even when `n` exceeds it, so
+that provider behavior must not create repeated final pages. Mailbox mutation
+can change later results; neither `has_more: false` nor a cursor proves receipt
+processing or immutable coverage.
+
+`message.fetch` uses a nonzero bounded `max_body_bytes` MIME-prefix read and
+always returns `content_completeness`:
+
+- `scope: parsed_fields_from_mime_prefix` distinguishes selected parsed fields
+  from the complete original message and attachment evidence.
+- `fetched_bytes`, `parsed_bytes`, and `max_body_bytes` report the byte boundary;
+  top-level `size_bytes` is the provider's RFC822.SIZE observation.
+- `raw_message_complete` and `raw_message_truncated` compare that observation
+  with the available MIME bytes. Unknown size remains null, not a complete claim.
+- `truncated_fields` names selected previews/bodies clipped locally;
+  `mime_parse_defects` reports parser defects.
+- `full_content_action_ref` points to `communications.imap.message.export` for
+  complete original MIME and bounded attachment evidence under its own grant.
+
+A fully fetched MIME literal does not mean every MIME part is represented in
+`body_text`. For receipt intake, continue using the existing export/store/verify/
+acknowledge method, not preview text as financial evidence. See
+[RFC 9051 FETCH](https://www.rfc-editor.org/rfc/rfc9051.html#section-6.4.5) and
+[UID semantics](https://www.rfc-editor.org/rfc/rfc9051.html#section-6.4.9).
 
 ## Trigger And Ingestion Modes
 
@@ -2137,29 +2163,6 @@ Do not build bespoke workflow screens such as "Telegram Command Runner" or
 "Email Assistant" in the first pass. If a specialized operator screen is needed
 later, it must still render the same resources and queue records.
 
-## Refactor Watchlist
-
-Communications moved quickly and several files are now intentionally flagged
-for the next cleanup slice before adding more providers:
-
-- `stackos/operations/communication_platform.py`: split operation groups into
-  profile, surface, contact, membership, target, route, context, and ingress
-  modules once the shared communication processor lands.
-- `ui/src/views/ConnectionsView.vue`: extract reusable panels for connected
-  services, communication setup, Telegram communication profiles, and add-connection
-  forms. The page should keep composing generic setup state, not accumulate
-  provider-specific flows.
-- `docs/integration-contracts/communications.md`: keep as the canonical
-  contract, but move provider-specific method checklists into smaller linked
-  contract files if Slack, Telegram, email, or another channel grows further.
-- `stackos/api/slack_ingress.py` and `stackos/api/telegram_ingress.py`: move
-  duplicated policy/storage/request creation into the shared one-brain
-  processor; provider adapters should only verify and normalize.
-- `stackos/actions/slack_bot.py` and `stackos/actions/telegram_bot.py`: keep
-  provider calls in provider files, but return normalized outbound effects for
-  shared communication recording instead of each connector growing its own
-  resource lifecycle.
-
 ## Security And Privacy
 
 - Agents never receive secrets.
@@ -2179,7 +2182,9 @@ for the next cleanup slice before adding more providers:
 - Allowlist Telegram numeric user/chat ids through safe refs; do not trust
   mutable usernames as the only authorization boundary.
 - Message bodies can include PII, customer data, confidential plans, or access
-  instructions. Store raw/long bodies as artifacts with retention metadata.
+  instructions. Read selected content through sanitized action response files;
+  do not create artifacts just to read it. Original IMAP evidence follows the
+  [external evidence handoff](#external-evidence-handoff).
 - Provider raw events should be redacted before persistence.
 - Outbound actions should be approval-gated when they can send external
   messages on behalf of a business.
@@ -2221,11 +2226,15 @@ Before a communications action is marked executable:
 - SMTP delivery/read/open tracking.
 - Telegram read receipts.
 - OAuth/XOAUTH2 for custom SMTP/IMAP.
-- Telegram video/audio/document/media-group support beyond the explicitly
-  modeled first `photo.send` action.
+- Native Telegram video/audio-specific sends; `file.upload` already supports
+  photos/documents and bounded media groups as described in
+  [Telegram Actions](#telegram-actions).
 - Public webhook deployment automation.
 - Specialized workflow UI for each communication use case.
-- Slack Socket Mode, broad history sync, files, and admin actions.
+- Slack Socket Mode, broad history sync, file downloads, and admin actions.
+- Slack thread-reply reads and reaction removal; `conversation.history` reads
+  one selected page, not an entire thread or archive.
+- Automatic background callback acknowledgement jobs.
 
 ## Signoff Criteria
 

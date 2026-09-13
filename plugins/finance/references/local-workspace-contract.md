@@ -178,10 +178,10 @@ An unrelated receipt may change the file revision without changing an approved
 invoice; reread and rebase, then compare the scoped approved facts again.
 
 For a billing digest, select `version`, `customer_mapping_ref`,
-`recipient_settings_ref`, `external_project_ref` when present, `currency`,
-`terms`, `lines`, `subtotal`, `total`, `source_refs`, and `supersedes_ref` when
-present. Approval separately binds the stable `record_id`. Encode that selected
-object as UTF-8 JSON with sorted
+`recipient_settings_ref`, `external_project_ref` when present, `effective_at`
+when present, `currency`, `terms`, `lines`, `subtotal` and `total` when present,
+`source_refs`, and `supersedes_ref` when present. Approval separately binds the
+stable `record_id`. Encode that selected object as UTF-8 JSON with sorted
 object keys, compact separators, Unicode preserved, no NaN/Infinity and no
 trailing newline; hash those bytes with SHA-256. Preserve array order and exact
 strings. Do not hash the digest itself, record metadata, unrelated
@@ -243,21 +243,31 @@ original and converted amount/currency, date, rate/source and reviewer/policy.
 ## Billing and collections
 
 Billing versions are immutable: customer/mapping, optional
-`external_project_ref`, lines, currency, terms and version/digest. Mutation
-attempts are separate linked records in the same JSON document. Compare the provider invoice and all
-items, including description hashes, before approving and before mutating.
-One owner decision can cover the exact finalize/send pair. Its billing version
-also binds the recipient-settings version: approved primary/email hash, additional
-To/CC or `verified-none` versus `unknown`, account/customer/invoice scope,
-verifier/time/evidence, and validity/recheck condition. Follow the
-[recipient approval protocol](approval-matrix.md#invoice-approvals) immediately
-before sending. Reuse applicable current settings, but invalidate on change or
-uncertainty; an unknown extra-recipient scope blocks delivery, not draft work.
+`external_project_ref`/`effective_at`, lines, currency, terms and
+version/digest. A manual line carries its approved amount/currency/description.
+A catalog line carries an existing `price_ref` and explicit nonnegative
+`quantity`; after the independent draft read, retain its observed line `amount`
+and the observed subtotal/total in that same digest-bound version. Before that
+quote, omit unknown amounts/totals and record the named gap. The connector sends
+only `price_ref` and `quantity` for the catalog item, never the retained observed
+amount. Mutation attempts are separate linked records in the same JSON document.
+Compare the provider invoice and all items, including description hashes or the
+selected Price refs/quantities, before approving and before mutating. Its billing
+version binds the applicable recipient-settings version. The
+[recipient approval protocol](approval-matrix.md#invoice-approvals) owns exact
+scope, verification/reuse and finalize/send decisions; unknown recipients block
+delivery, not draft preparation.
 
 Collections records retain due status, contact/promise/pause/correction/dispute,
 reminder owner, decision version and next eligible time. Unknown automation or
 lifecycle evidence suppresses resend. Reread immediately before sending and
 record actual outcome, including no-send or unknown.
+
+Either follow-up route can retain its selected account and exact action input in
+`collection_decision.outreach`, covered by the decision's material digest;
+reviews and attempts reuse their existing collections. Follow the
+[follow-up approval protocol](approval-matrix.md#follow-up-approvals) for route,
+recipient and cross-channel suppression checks and truthful send outcomes.
 
 Received-payment settlement is an additive collection/reconciliation record,
 not a StackOS ledger entry. Retain one bank/Stripe source identity and hash,
@@ -266,25 +276,11 @@ customer/currency/received-state match, external decision/review, stable
 operation keys, provider action refs, and external write/reread proof. Do not
 copy payment references, credentials, or financial details into StackOS.
 
-For an already received direct bank payment, the normal route reports one
-PaymentRecord and attaches it to one invoice. A separately selected
-paid-out-of-band mark requires a current exact full-remaining-balance match;
-never report+mark the same source. Persist the exact UTF-8 `payment_reference`
-SHA-256 as `payment_reference_sha256` before the original report, separately
-from the source-file hash. A known PaymentRecord ref is retained before the next
-action. For an unknown report, follow the [bounded recovery protocol](backend-contract.md#duplicate-handling-and-retries):
-inspect retained action audit/response files, then retrieve a surviving known ref
-and match the exact reference digest and current account/mode/customer/currency/
-received/guaranteed amount and allocation facts. PaymentRecord listing is
-temporarily unavailable in StackOS; do not call it or change keys/URLs to try
-again. Without a verified surviving ref, hold for owner/provider resolution.
-Independently retrieve and persist the verified ref before attachment.
-Missing, ambiguous or incomplete evidence never permits a replacement report;
-same-key replay is limited to a verified window strictly shorter than 24 hours. An exact
-supported partial report-and-attach allocation leaves the invoice open without
-a resend. Unsupported or unsynchronized partials, split allocations, overpayments,
-mismatches and unknown outcomes remain explicit exceptions. Do not resend in the
-same occurrence after settlement work; an unsynchronized partial always suppresses.
+The [backend recovery protocol](backend-contract.md#duplicate-handling-and-retries)
+owns report/attach versus paid-out-of-band selection, the exact payment-reference
+digest, retained provider refs, partial allocations, unavailable actions and retry
+limits. Follow it before updating settlement outcomes; never substitute a local
+JSON edit for provider proof. Settlement-only does not send a reminder.
 
 ## Cashflow packet
 

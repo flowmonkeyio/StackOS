@@ -65,11 +65,12 @@ Connect an FTP client to the document root assigned to
 directory above, select everything inside it, and drag those files and folders
 into the remote document root.
 
-For the first deployment after July 10, 2026, remove every old `.br` and `.gz`
-file from the remote document root before uploading. Earlier builds generated
-precompressed sidecar files, and LiteSpeed can prefer an old `index.html.br`
-over a newly uploaded `index.html`. Current builds deliberately omit those
-sidecars because Hostinger compresses responses itself.
+Current builds omit precompressed `.br`/`.gz` sidecars because Hostinger
+compresses responses itself. If an existing deployment still contains obsolete
+sidecars, identify the exact files belonging to the replaced website artifact
+before removing them: LiteSpeed can serve an old `index.html.br` ahead of new
+HTML. Do not use an age-based or document-root-wide deletion; preserve
+operator-managed files and the separate `StackOS/` release feed below.
 
 Confirm that `index.html`, `.htaccess`, `getting-started`,
 `getting-started.md`, `_nuxt`, `library`, `robots.txt`, and `sitemap.xml` are

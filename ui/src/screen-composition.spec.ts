@@ -10,14 +10,16 @@ function source(relativePath: string): string {
 }
 
 describe('desktop screen composition contract', () => {
-  it('makes Home a prioritized control room instead of stacked inventory feeds', () => {
+  it('makes project Home a current ticket overview rather than live-agent claims', () => {
     const text = source('views/HomeConsoleView.vue')
 
-    expect(text).toContain("eyebrow: 'Your next decision'")
-    expect(text).toContain('Why this state')
-    expect(text).toContain('Supervision')
-    expect(text).toContain('Active work')
-    expect(text).toContain('Recent outcomes')
+    expect(text).toContain('Tickets by status')
+    expect(text).not.toContain('Latest action calls')
+    expect(text).toContain('Project connections')
+    expect(text).toContain('Configured workflows')
+    expect(text).toContain('Tracked work')
+    expect(text).not.toContain('Agents are working')
+    expect(text).not.toContain('status=running')
     expect(text).not.toContain('AttentionItemRow')
   })
 
@@ -27,20 +29,21 @@ describe('desktop screen composition contract', () => {
     const directory = source('views/home/HomeProjectsSection.vue')
 
     expect(home).toContain('<HomePortfolioOverview')
-    expect(overview).toContain('Portfolio operations')
-    expect(overview).toContain('Open work')
-    expect(overview).toContain('Workload by project')
-    expect(overview).toContain('Portfolio completion')
-    expect(directory).toContain("const filter = ref<'active' | 'archived' | 'all'>('active')")
-    expect(directory).toContain('Current workspace')
-    expect(directory).toContain('No open work')
+    expect(overview).toContain('Tickets by status')
+    expect(overview).not.toContain('summary-aside')
+    expect(overview).toContain('Current snapshot')
+    expect(overview).not.toContain('Portfolio completion')
+    expect(overview).toContain('Project visibility')
+    expect(directory).toContain('Latest tracked work')
+    expect(directory).toContain('Ticket status')
+    expect(directory).toContain('Load more projects')
   })
 
   it('opens Work on the dependency map while keeping one shared control surface', () => {
     const view = source('views/TaskTrackerView.vue')
     const stories = source('views/task-tracker/TrackerStoriesPanel.vue')
 
-    expect(view).toContain("const viewMode = ref<ViewMode>('graph')")
+    expect(view).toContain('const viewMode = ref<ViewMode>(viewModeFromQuery(route.query.view))')
     expect(view).toContain("{ key: 'graph', label: 'Dependency map'")
     expect(view).toContain('<TaskTrackerCommandPanel')
     expect(view).toContain('<TrackerStoriesPanel')

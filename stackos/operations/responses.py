@@ -736,6 +736,28 @@ def _compact_operation_summary(item: dict[str, Any]) -> dict[str, Any]:
 def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
     if not isinstance(data, dict):
         return {"value": data}
+    if operation_name in {"tracker.ticketCounts", "tracker.ticketCountsAll", "project.portfolio"}:
+        # Already bounded, payload-free read models. Preserve every day/row and exact bounds.
+        return copy.deepcopy(data)
+    if operation_name == "actionCall.query":
+        fields = {
+            "id",
+            "project_id",
+            "project_name",
+            "project_slug",
+            "run_id",
+            "run_plan_id",
+            "run_plan_step_id",
+            "action_key",
+            "plugin_slug",
+            "provider_key",
+            "operation",
+            "status",
+            "dry_run",
+            "created_at",
+            "completed_at",
+        }
+        return {key: value for key, value in data.items() if key in fields}
     if operation_name in {"action.run", "action.execute"}:
         return _compact_action_execution(data)
     if operation_name == "actionCall.get":
@@ -748,6 +770,10 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
         return _compact_account_inventory(data)
     if operation_name == "account.test":
         # This normalized AuthTestOut is the repair packet, not provider output.
+        return copy.deepcopy(data)
+    if operation_name == "readiness.check":
+        # Readiness owns its compact repair projection. Keep contract identities,
+        # optional/route requirements, and exact next tools for unresolved actions.
         return copy.deepcopy(data)
     if operation_name == "tracker.get":
         return compact_tracker_snapshot(data)

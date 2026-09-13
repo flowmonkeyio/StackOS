@@ -6,11 +6,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any
+from datetime import datetime
+from typing import Any, Literal
 
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import select
+from sqlmodel import col, select
 
 from stackos.actions.manifest import ExecutableActionManifest
 from stackos.artifacts import redact_secret_text
@@ -20,9 +21,20 @@ from stackos.generated_inventory import (
     generated_action_audit_key,
     generated_action_public_audit_metadata,
 )
-from stackos.repositories.base import ConflictError, NotFoundError, Page, cursor_paginate_desc
+from stackos.repositories.base import (
+    ConflictError,
+    NotFoundError,
+    Page,
+    ValidationError,
+    cursor_paginate_desc,
+)
 
-from .schema import ActionCallAuditOut, ActionCallOut, ActionExecutionOut
+from .audit_queries import audit_predicates
+from .schema import (
+    ActionCallAuditOut,
+    ActionCallOut,
+    ActionExecutionOut,
+)
 from .utils import _redact_for_audit, utcnow
 
 
@@ -51,24 +63,46 @@ class ActionAuditMixin:
         plugin_slug: str | None = None,
         action_key: str | None = None,
         status: ActionCallStatus | None = None,
+        action_call_id: int | None = None,
+        provider_key: str | None = None,
+        created_from: datetime | None = None,
+        created_before: datetime | None = None,
+        dry_run: bool | None = None,
+        sort: Literal["id", "created_at"] = "id",
         limit: int | None = None,
         after_id: int | None = None,
     ) -> Page[ActionCallAuditOut]:
         self._require_project(project_id)
-        filters = [ActionCall.project_id == project_id]
-        if run_id is not None:
-            filters.append(ActionCall.run_id == run_id)
-        if run_plan_id is not None:
-            filters.append(ActionCall.run_plan_id == run_plan_id)
-        if run_plan_step_id is not None:
-            filters.append(ActionCall.run_plan_step_id == run_plan_step_id)
-        if plugin_slug is not None:
-            filters.append(ActionCall.plugin_slug == plugin_slug)
-        if action_key is not None:
-            filters.append(ActionCall.action_key == action_key)
-        if status is not None:
-            filters.append(ActionCall.status == status)
-        stmt = select(ActionCall).where(*filters)
+        return self._query_audit_calls(
+            project_id=project_id,
+            run_id=run_id,
+            run_plan_id=run_plan_id,
+            run_plan_step_id=run_plan_step_id,
+            plugin_slug=plugin_slug,
+            action_key=action_key,
+            status=status,
+            action_call_id=action_call_id,
+            provider_key=provider_key,
+            created_from=created_from,
+            created_before=created_before,
+            dry_run=dry_run,
+            sort=sort,
+            limit=limit,
+            after_id=after_id,
+        )
+
+    def _query_audit_calls(
+        self,
+        *,
+        project_id: int | None,
+        limit: int | None = None,
+        after_id: int | None = None,
+        sort: Literal["id", "created_at"] = "id",
+        **filters: Any,
+    ) -> Page[ActionCallAuditOut]:
+        if sort not in {"id", "created_at"}:
+            raise ValidationError("sort must be id or created_at")
+        stmt = select(ActionCall).where(*audit_predicates(project_id=project_id, **filters))
         return cursor_paginate_desc(
             self._s,
             stmt,
@@ -76,6 +110,7 @@ class ActionAuditMixin:
             limit=limit,
             after_id=after_id,
             converter=self._call_audit_out,
+            order_col=col(ActionCall.created_at) if sort == "created_at" else None,
         )
 
     def _record_call(

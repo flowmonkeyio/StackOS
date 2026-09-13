@@ -47,12 +47,12 @@ const snapshot = ref<TrackerSnapshot | null>(null)
 const snapshotScope = ref<'index' | 'full'>('index')
 const loading = ref(false)
 const error = ref<string | null>(null)
-const viewMode = ref<ViewMode>('graph')
-const statusFilter = ref<StatusFilter>('all')
+const viewMode = ref<ViewMode>(viewModeFromQuery(route.query.view))
+const statusFilter = ref<StatusFilter>(statusFromQuery(route.query.status))
 const workflowFilter = ref('')
 const assigneeFilter = ref('')
 const search = ref('')
-const filtersExpanded = ref(false)
+const filtersExpanded = ref(statusFilter.value !== 'all')
 const activeTaskKey = ref(routeTaskKey())
 const taskDetailOpen = ref(false)
 
@@ -97,16 +97,21 @@ const taskRows = computed<TaskProgressRow[]>(() =>
 )
 
 const taskSelectOptions = computed(() =>
-  taskRows.value.map((row) => ({
+  [
+  ...(viewMode.value === 'tickets' ? [{ value: '', label: 'All tasks', rightLabel: '', rightMeta: '', rightTone: 'neutral' as SelectMetaTone }] : []),
+    ...taskRows.value.map((row) => ({
     value: row.key,
     label: `#${row.id} ${row.task.title}`,
     rightLabel: resolveStatus('tracker', row.task.status).label,
     rightMeta: `${row.terminalCount}/${row.totalCount} terminal`,
     rightTone: trackerStatusTone(row.task.status),
-  })),
+    })),
+  ],
 )
 
+const allTasksSelected = computed(() => viewMode.value === 'tickets' && !activeTaskKey.value)
 const activeTaskRow = computed<TaskProgressRow | null>(() => {
+  if (allTasksSelected.value) return null
   if (!taskRows.value.length) return null
   return taskRows.value.find((row) => row.key === activeTaskKey.value) ?? taskRows.value[0]
 })
@@ -177,6 +182,7 @@ const {
 const graphFlowId = computed(() => `tracker-flow-${projectId.value}`)
 
 const visibleTickets = computed(() => {
+  if (allTasksSelected.value) return taskRows.value.flatMap((row) => row.tickets.filter((ticket) => ticketMatchesControls(ticket, row.task, controlFilters.value)))
   const row = activeTaskRow.value
   if (!row) return []
   return row.tickets.filter((ticket) =>
@@ -306,9 +312,12 @@ async function load(options: { refocus?: boolean; restartStream?: boolean } = {}
 
 function setViewMode(value: ViewMode): void {
   viewMode.value = value
+  const taskKey = ensureActiveTask(false)
+  syncControlQuery()
   if (value === 'graph') {
     const restoredViewport = restoreGraphViewport()
-    void loadFocusedGraph(activeTaskKey.value, { refocus: !restoredViewport })
+    void loadFocusedGraph(taskKey, { refocus: !restoredViewport })
+    restartTrackerStatusStream()
     return
   }
   if (snapshotScope.value !== 'full') {
@@ -319,7 +328,7 @@ function setViewMode(value: ViewMode): void {
 function onTaskRow(row: TaskProgressRow): void {
   clearGraphFocus()
   activeTaskKey.value = row.key
-  syncActiveTaskToUrl(row.key)
+  syncControlQuery()
   if (viewMode.value === 'graph') {
     const restoredViewport = restoreGraphViewport()
     void loadFocusedGraph(row.key, { refocus: !restoredViewport })
@@ -330,6 +339,13 @@ function onTaskRow(row: TaskProgressRow): void {
 
 function onTaskSelect(value: string | number | null): void {
   const taskKey = typeof value === 'string' ? value : String(value ?? '')
+  if (!taskKey && viewMode.value === 'tickets') {
+    activeTaskKey.value = ''
+    syncControlQuery()
+    clearGraphFocus()
+    restartTrackerStatusStream()
+    return
+  }
   const row = taskRows.value.find((candidate) => candidate.key === taskKey)
   if (row) onTaskRow(row)
 }
@@ -339,8 +355,10 @@ function onPaneClick(event: MouseEvent): void {
 }
 
 function onTicketRow(row: TrackerTicket): void {
-  activeTaskKey.value = row.task_key
-  syncActiveTaskToUrl(row.task_key)
+  if (!allTasksSelected.value) {
+    activeTaskKey.value = row.task_key
+    syncControlQuery()
+  }
   selectTicket(row)
   restartTrackerStatusStream()
   if (taskDetailOpen.value) void loadTaskContexts(activeTask.value)
@@ -351,17 +369,18 @@ function openTaskDetail(): void {
   void loadTaskContexts(activeTask.value)
 }
 
-function ensureActiveTask(): string {
+function ensureActiveTask(syncUrl = true): string {
+  if (allTasksSelected.value) return ''
   if (!taskRows.value.length) {
     activeTaskKey.value = ''
-    syncActiveTaskToUrl('')
+    if (syncUrl) syncControlQuery()
     clearGraphFocus()
     return ''
   }
   const current = taskRows.value.find((row) => row.key === activeTaskKey.value)
   const nextRow = current ?? taskRows.value[0]
   activeTaskKey.value = nextRow.key
-  syncActiveTaskToUrl(nextRow.key)
+  if (syncUrl) syncControlQuery()
   if (
     selected.value?.kind === 'ticket' &&
     !nextRow.tickets.some((ticket) => ticket.key === selected.value?.key)
@@ -372,9 +391,9 @@ function ensureActiveTask(): string {
   return nextRow.key
 }
 
-async function reconcileActiveTask(): Promise<void> {
+async function reconcileActiveTask(syncUrl = true): Promise<void> {
   const previousTaskKey = activeTaskKey.value
-  const nextTaskKey = ensureActiveTask()
+  const nextTaskKey = ensureActiveTask(syncUrl)
   if (
     viewMode.value === 'graph' &&
     snapshot.value &&
@@ -395,7 +414,8 @@ function setSearch(value: string): void {
 
 function setStatusFilter(value: StatusFilter): void {
   statusFilter.value = value
-  void reconcileActiveTask()
+  void reconcileActiveTask(false)
+  syncControlQuery()
 }
 
 function setWorkflowFilter(value: string): void {
@@ -414,7 +434,8 @@ function clearFilters(): void {
   assigneeFilter.value = ''
   search.value = ''
   clearGraphFilters()
-  void reconcileActiveTask()
+  void reconcileActiveTask(false)
+  syncControlQuery()
 }
 
 function taskKeyFromQueryValue(raw: unknown): string {
@@ -422,19 +443,32 @@ function taskKeyFromQueryValue(raw: unknown): string {
   return typeof raw === 'string' ? raw : ''
 }
 
-function routeTaskKey(): string {
-  return taskKeyFromQueryValue(route.query.task)
+function viewModeFromQuery(raw: unknown): ViewMode {
+  return raw === 'tickets' || raw === 'stories' ? raw : 'graph'
 }
 
-function syncActiveTaskToUrl(taskKey: string): void {
-  if (routeTaskKey() === taskKey) return
-  const nextQuery = { ...route.query }
-  if (taskKey) {
-    nextQuery.task = taskKey
-  } else {
-    delete nextQuery.task
-  }
-  void router.replace({ query: nextQuery })
+function statusFromQuery(raw: unknown): StatusFilter {
+  return typeof raw === 'string' && Object.hasOwn(trackerStatus, raw) ? raw as TrackerStatus : 'all'
+}
+
+function syncControlQuery(): void {
+  const query = { ...route.query }
+  if (viewMode.value === 'graph') delete query.view
+  else query.view = viewMode.value
+  if (statusFilter.value === 'all') delete query.status
+  else query.status = statusFilter.value
+  if (activeTaskKey.value) query.task = activeTaskKey.value
+  else delete query.task
+  if (
+    query.view === route.query.view &&
+    query.status === route.query.status &&
+    query.task === route.query.task
+  ) return
+  void router.replace({ query })
+}
+
+function routeTaskKey(): string {
+  return taskKeyFromQueryValue(route.query.task)
 }
 
 useProjectScopedLoader({
@@ -448,11 +482,20 @@ useProjectScopedLoader({
 
 onBeforeRouteUpdate((to) => {
   if (changesProjectScope(to)) return
+  const nextView = viewModeFromQuery(to.query.view)
+  const nextStatus = statusFromQuery(to.query.status)
+  const viewChanged = nextView !== viewMode.value
+  const statusChanged = nextStatus !== statusFilter.value
+  viewMode.value = nextView
+  statusFilter.value = nextStatus
+  if (nextStatus !== 'all') filtersExpanded.value = true
   const nextTaskKey = taskKeyFromQueryValue(to.query.task)
-  if (nextTaskKey === activeTaskKey.value) return
+  if (!viewChanged && !statusChanged && nextTaskKey === activeTaskKey.value) return
   activeTaskKey.value = nextTaskKey
   clearGraphFocus()
-  void reconcileActiveTask()
+  if (viewChanged) void load()
+  // The incoming query has not committed yet; do not replace it with the previous URL.
+  else void reconcileActiveTask(false)
 })
 </script>
 
@@ -477,11 +520,17 @@ onBeforeRouteUpdate((to) => {
       </template>
     </ProjectPageHeader>
 
-    <UiCallout v-if="error" tone="danger">
+    <UiCallout
+      v-if="error"
+      tone="danger"
+    >
       {{ error }}
     </UiCallout>
 
-    <UiCallout v-if="liveError" tone="warning">
+    <UiCallout
+      v-if="liveError"
+      tone="warning"
+    >
       {{ liveError }}
     </UiCallout>
 
@@ -529,9 +578,17 @@ onBeforeRouteUpdate((to) => {
       @open-task-detail="openTaskDetail"
     />
 
-    <UiCallout v-else-if="viewMode === 'stories'" tone="neutral"> Loading work stories… </UiCallout>
+    <UiCallout
+      v-else-if="viewMode === 'stories'"
+      tone="neutral"
+    >
+      Loading work stories…
+    </UiCallout>
 
-    <TrackerWarningSummary v-if="viewMode === 'graph'" :warnings="flow.warnings" />
+    <TrackerWarningSummary
+      v-if="viewMode === 'graph'"
+      :warnings="flow.warnings"
+    />
 
     <UiCallout
       v-if="viewMode !== 'stories' && (initialLoading || fullSnapshotLoading)"
@@ -540,14 +597,20 @@ onBeforeRouteUpdate((to) => {
       Loading tracker work…
     </UiCallout>
 
-    <div v-else-if="viewMode !== 'stories' && taskRows.length === 0" class="min-h-[360px]">
+    <div
+      v-else-if="viewMode !== 'stories' && taskRows.length === 0"
+      class="min-h-[360px]"
+    >
       <UiEmptyState
         title="No tracker work"
         description="Agents can create tasks and tickets through tracker operations."
       />
     </div>
 
-    <div v-else-if="viewMode !== 'stories'" class="tracker-workspace">
+    <div
+      v-else-if="viewMode !== 'stories'"
+      class="tracker-workspace"
+    >
       <div class="tracker-focus">
         <div class="tracker-main">
           <TrackerGraphPanel

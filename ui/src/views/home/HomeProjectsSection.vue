@@ -1,270 +1,222 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import DataTable from '@/components/DataTable.vue'
+import StatusBadge from '@/components/StatusBadge.vue'
 import {
-  UiBadge,
   UiButton,
   UiCallout,
   UiCard,
   UiEmptyState,
-  UiIcon,
   UiInput,
-  UiSegmentedControl,
-  UiSkeleton,
+  UiSectionHeader,
+  UiSelect,
 } from '@/components/ui'
+import type { DataTableColumn } from '@/components/types'
 import { GETTING_STARTED_URL } from '@/lib/externalLinks'
-import { formatRelativeDateTime } from '@/lib/stackos/time'
-import type { Project } from '@/stores/projects'
-
-import type { ProjectPortfolioInsight } from './useHomePortfolioInsights'
+import { trackerStatus } from '@/design/status'
+import { ticketStatuses, ticketWorkUrl, type PortfolioProject } from './ticketOverview'
+import type { PortfolioFilters } from './useHomePortfolioInsights'
 
 const props = defineProps<{
-  items: Project[]
+  items: PortfolioProject[]
   loading: boolean
   error: string | null
-  currentProjectId?: number | null
-  insights: Record<number, ProjectPortfolioInsight>
+  nextCursor: number | null
+  total: number | null
+  filters: PortfolioFilters
 }>()
-
+const emit = defineEmits<{
+  filters: [value: PortfolioFilters]
+  more: []
+  clearStatus: []
+}>()
+const router = useRouter()
 const search = ref('')
-const filter = ref<'active' | 'archived' | 'all'>('active')
-const filterOptions = computed(() => [
-  { key: 'active', label: `Active ${props.items.filter((project) => project.is_active).length}` },
-  { key: 'archived', label: `Archived ${props.items.filter((project) => !project.is_active).length}` },
-  { key: 'all', label: `All ${props.items.length}` },
-])
-
-const visibleProjects = computed(() => {
-  const needle = search.value.trim().toLowerCase()
-  return props.items
-    .filter((project) => {
-      if (filter.value === 'active' && !project.is_active) return false
-      if (filter.value === 'archived' && project.is_active) return false
-      if (!needle) return true
-      return [project.name, project.slug, project.domain].some((value) =>
-        String(value ?? '').toLowerCase().includes(needle),
-      )
-    })
-    .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
-})
-
-const featuredProject = computed(() =>
-  filter.value === 'active' && search.value.trim() === ''
-    ? visibleProjects.value.find((project) => project.id === props.currentProjectId) ??
-      visibleProjects.value[0] ??
-      null
-    : null,
-)
-const listedProjects = computed(() =>
-  featuredProject.value
-    ? visibleProjects.value.filter((project) => project.id !== featuredProject.value?.id)
-    : visibleProjects.value,
-)
-
-function projectUpdated(project: Project): string {
-  return formatRelativeDateTime(project.updated_at)
+const sort = ref<'recent' | 'name'>('recent')
+const columns: DataTableColumn<PortfolioProject>[] = [
+  { key: 'name', label: 'Project', widthClass: 'w-64' },
+  { key: 'latest_task', label: 'Latest tracked work' },
+  { key: 'ticket_count', label: 'Tickets', widthClass: 'w-24' },
+  { key: 'ticket_counts', label: 'Ticket status', widthClass: 'w-80' },
+]
+function applyFilters(): void {
+  emit('filters', {
+    ...props.filters,
+    query: search.value.trim(),
+    sort: sort.value,
+  })
 }
-
-function projectState(project: Project): { label: string; tone: 'info' | 'warning' | 'neutral' } {
-  const insight = props.insights[project.id]
-  if (!project.is_active) return { label: 'Archived', tone: 'neutral' }
-  if (insight?.blockedTicketCount) {
-    return { label: `${insight.blockedTicketCount} blocked`, tone: 'warning' }
-  }
-  if (insight && (insight.activeTaskCount > 0 || insight.inProgressTicketCount > 0)) {
-    return {
-      label: `${insight.activeTaskCount} open task${insight.activeTaskCount === 1 ? '' : 's'}`,
-      tone: 'info',
-    }
-  }
-  return { label: 'No open work', tone: 'neutral' }
+function changeSort(value: string | number | null): void {
+  sort.value = value === 'name' ? 'name' : 'recent'
+  applyFilters()
 }
 </script>
 
 <template>
-  <section
+  <UiCard
+    section
     aria-label="Projects"
-    class="space-y-3"
   >
-    <div class="flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <div class="flex items-center gap-2">
-          <h2 class="t-h3 text-fg-strong">
-            Projects
-          </h2>
-          <UiBadge
-            tone="neutral"
+    <UiSectionHeader title="Projects">
+      <template #actions>
+        <form
+          class="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:w-auto sm:grid-cols-[13rem_auto_10rem]"
+          @submit.prevent="applyFilters"
+        >
+          <UiInput
+            v-model="search"
             size="sm"
+            placeholder="Search projects"
+            aria-label="Search projects"
+          />
+          <UiButton
+            type="submit"
+            size="sm"
+            variant="secondary"
           >
-            {{ items.length }}
-          </UiBadge>
-        </div>
-        <p class="mt-1 text-xs text-fg-muted">
-          Choose the project whose setup, work, and audit state you want to supervise.
-        </p>
-      </div>
-      <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-        <UiSegmentedControl
-          v-model="filter"
-          :options="filterOptions"
-          label="Project visibility"
-        />
-        <UiInput
-          v-if="items.length > 4"
-          v-model="search"
-          class="min-w-52 flex-1 sm:w-64 sm:flex-none"
+            Search
+          </UiButton>
+          <div class="col-span-2 sm:col-span-1">
+            <UiSelect
+              :model-value="sort"
+              :options="[
+                { value: 'recent', label: 'Recent activity' },
+                { value: 'name', label: 'Name' },
+              ]"
+              size="sm"
+              aria-label="Sort projects"
+              @update:model-value="changeSort"
+            />
+          </div>
+        </form>
+      </template>
+    </UiSectionHeader>
+    <div class="mt-3 flex items-center justify-between gap-3">
+      <div
+        v-if="filters.ticket_status"
+        class="flex flex-wrap items-center gap-2 text-xs text-fg-muted"
+      >
+        Projects with {{ trackerStatus[filters.ticket_status].label.toLowerCase() }} tickets
+        <UiButton
+          variant="ghost"
           size="sm"
-          placeholder="Find a project"
-          aria-label="Find a project"
-        />
+          aria-label="Clear ticket status filter"
+          @click="emit('clearStatus')"
+        >
+          Clear
+        </UiButton>
       </div>
+      <p class="text-2xs text-fg-subtle">
+        {{ items.length }} loaded<span v-if="total !== null"> of {{ total }}</span>
+      </p>
     </div>
-
     <UiCallout
       v-if="error"
-      tone="danger"
+      tone="warning"
+      class="mt-3"
     >
-      {{ error }}
+      {{ error }}<span v-if="items.length"> Previously loaded projects are shown.</span>
     </UiCallout>
-
-    <div
-      v-if="loading && items.length === 0"
-      class="space-y-2"
+    <UiEmptyState
+      v-if="!loading && !error && !items.length && !search && filters.is_active === true && !filters.ticket_status"
+      title="Ready for your first project"
+      description="Open a project in your AI tool and ask the agent to connect it to StackOS."
+      icon="folder"
+      class="mt-3"
     >
-      <UiSkeleton
-        v-for="n in 4"
-        :key="n"
-        shape="block"
-        height="3.75rem"
-      />
-    </div>
-
-    <UiCard
-      v-else-if="items.length === 0"
-      section
-    >
-      <UiEmptyState
-        icon="cube"
-        title="Ready for your first project"
-        description="Open the AI tool you already use. The short guide walks you through choosing a project and planning one useful first job."
-      >
-        <template #actions>
-          <UiButton
-            :href="GETTING_STARTED_URL"
-            target="_blank"
-            rel="noopener noreferrer"
-            variant="primary"
-            icon-right="external-link"
-            aria-label="Open the Getting Started guide in your browser"
-          >
-            Open getting started
-          </UiButton>
-        </template>
-      </UiEmptyState>
-    </UiCard>
-
-    <UiCard
-      v-else-if="visibleProjects.length === 0"
-      section
-    >
-      <UiEmptyState
-        icon="search"
-        :title="filter === 'archived' ? 'No archived projects' : 'No matching projects'"
-        :description="filter === 'archived' ? 'Archived projects will stay available here without cluttering active work.' : 'Try another name, slug, or domain, or change the visibility filter.'"
-        size="sm"
-      />
-    </UiCard>
-
-    <RouterLink
-      v-if="featuredProject"
-      :to="`/projects/${featuredProject.id}`"
-      class="focus-ring group grid gap-4 rounded-xl border border-strong bg-bg-surface p-5 shadow-sm transition hover:bg-bg-surface-alt sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center"
-    >
-      <span
-        class="inline-flex h-12 w-12 items-center justify-center rounded-lg bg-accent-subtle text-base font-semibold text-accent-fg"
-        aria-hidden="true"
-      >
-        {{ featuredProject.name.slice(0, 2).toUpperCase() }}
-      </span>
-      <span class="min-w-0">
-        <span class="t-overline text-accent-fg">Current workspace</span>
-        <span class="mt-1 block truncate text-lg font-semibold text-fg-strong">
-          {{ featuredProject.name }}
-        </span>
-        <span class="mt-1 block text-xs text-fg-muted">
-          {{ featuredProject.domain || 'No domain' }} · updated {{ projectUpdated(featuredProject) }}
-        </span>
-        <span
-          v-if="insights[featuredProject.id]"
-          class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-muted"
+      <template #actions>
+        <UiButton
+          :href="GETTING_STARTED_URL"
+          target="_blank"
+          rel="noopener noreferrer"
         >
-          <span>{{ insights[featuredProject.id].activeTaskCount }} open tasks</span>
-          <span>{{ insights[featuredProject.id].inProgressTicketCount }} delivery steps</span>
-          <span>{{ insights[featuredProject.id].completionPercent }}% closed</span>
-        </span>
-      </span>
-      <span class="inline-flex items-center gap-1.5 text-sm font-semibold text-fg-link">
-        Open project
-        <UiIcon
-          name="arrow-right"
-          class="h-4 w-4"
-          aria-hidden="true"
-        />
-      </span>
-    </RouterLink>
-
-    <div
-      v-if="visibleProjects.length > 0"
-      class="overflow-hidden rounded-lg border border-subtle bg-bg-surface"
+          Open getting started
+        </UiButton>
+      </template>
+    </UiEmptyState>
+    <DataTable
+      v-else
+      :items="items"
+      :columns="columns"
+      :loading="loading"
+      aria-label="Project portfolio"
+      empty-message="No projects match these filters."
+      interactive
+      class="mt-3"
+      @row-click="router.push(`/projects/${$event.id}`)"
     >
-      <div class="grid grid-cols-[minmax(0,1fr)_auto] border-b border-border-subtle bg-bg-surface-alt px-4 py-2 text-2xs font-medium uppercase tracking-wide text-fg-subtle sm:grid-cols-[minmax(0,1fr)_10rem_7rem]">
-        <span>Project</span>
-        <span class="hidden sm:block">Last updated</span>
-        <span class="text-right">State</span>
-      </div>
-      <ul class="divide-y divide-border-subtle">
-        <li
-          v-for="project in listedProjects"
-          :key="project.id"
+      <template #cell:name="{ row }">
+        <div class="min-w-0">
+          <span class="font-medium text-fg-strong">{{ row.name }}</span>
+          <p class="truncate text-xs text-fg-muted">
+            {{ row.domain || row.slug }}
+          </p>
+        </div>
+      </template>
+      <template #cell:latest_task="{ row }">
+        <UiButton
+          v-if="row.latest_task"
+          :href="`/projects/${row.id}/tasks?task=${encodeURIComponent(row.latest_task.key)}`"
+          variant="ghost"
+          size="sm"
+          @click.stop.prevent="
+            router.push(`/projects/${row.id}/tasks?task=${encodeURIComponent(row.latest_task.key)}`)
+          "
         >
-          <RouterLink
-            :to="`/projects/${project.id}`"
-            class="focus-ring-inset group grid min-h-16 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 transition-colors duration-fast hover:bg-bg-surface-alt sm:grid-cols-[auto_minmax(0,1fr)_10rem_7rem]"
+          {{ row.latest_task.title }}
+        </UiButton><StatusBadge
+          v-if="row.latest_task"
+          kind="tracker"
+          :status="row.latest_task.status"
+        /><span
+          v-else
+          class="text-fg-subtle"
+        >No tracked work</span>
+      </template>
+      <template #cell:ticket_count="{ row }">
+        <UiButton
+          :href="ticketWorkUrl(row.id)"
+          variant="ghost"
+          size="sm"
+          @click.stop.prevent="router.push(ticketWorkUrl(row.id))"
+        >
+          {{ row.ticket_count }}
+        </UiButton>
+      </template>
+      <template #cell:ticket_counts="{ row }">
+        <div
+          v-if="row.ticket_count"
+          class="flex flex-wrap gap-1"
+        >
+          <template
+            v-for="status in ticketStatuses"
+            :key="status"
           >
-            <span
-              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-accent-subtle text-sm font-semibold text-accent-fg"
-              aria-hidden="true"
+            <UiButton
+              v-if="row.ticket_counts[status]"
+              :href="ticketWorkUrl(row.id, status)"
+              variant="ghost"
+              size="sm"
+              @click.stop.prevent="router.push(ticketWorkUrl(row.id, status))"
             >
-              {{ project.name.slice(0, 2).toUpperCase() }}
-            </span>
-            <span class="min-w-0">
-              <span class="flex flex-wrap items-center gap-2">
-                <span class="truncate text-sm font-semibold text-fg-strong">{{ project.name }}</span>
-              </span>
-              <span class="mt-0.5 block truncate text-xs text-fg-muted">
-                {{ project.domain || 'No domain' }} · {{ project.slug }}
-              </span>
-            </span>
-            <span class="hidden text-xs text-fg-muted sm:block">
-              {{ projectUpdated(project) }}
-            </span>
-            <span class="flex justify-end">
-              <UiBadge
-                :tone="projectState(project).tone"
-                size="sm"
-              >
-                {{ projectState(project).label }}
-              </UiBadge>
-            </span>
-          </RouterLink>
-        </li>
-      </ul>
-      <div
-        v-if="listedProjects.length === 0"
-        class="px-4 py-5 text-center text-xs text-fg-muted"
-      >
-        No other active projects.
-      </div>
-    </div>
-  </section>
+              {{ trackerStatus[status].label }} {{ row.ticket_counts[status] }}
+            </UiButton>
+          </template>
+        </div>
+        <span
+          v-else
+          class="text-fg-subtle"
+        >No tickets</span>
+      </template>
+    </DataTable>
+    <UiButton
+      v-if="nextCursor !== null"
+      class="mt-3"
+      :loading="loading"
+      @click="emit('more')"
+    >
+      Load more projects
+    </UiButton>
+  </UiCard>
 </template>

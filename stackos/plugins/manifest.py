@@ -14,6 +14,21 @@ from typing import Any, Literal
 import yaml
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from stackos.integrations.aignc_contract import (
+    AIGNC_AUDIO_FORMATS,
+    AIGNC_AUDIO_MODELS,
+    AIGNC_GROUNDING_MODELS,
+    AIGNC_IMAGE_MODEL,
+    AIGNC_MODELS,
+    AIGNC_TEXT_MODELS,
+    DEFAULT_READ_TIMEOUT_SECONDS,
+    MAX_AUDIO_BYTES,
+    MAX_MESSAGES,
+    MAX_OUTPUT_TOKENS,
+    MAX_READ_TIMEOUT_SECONDS,
+    MAX_TEXT_LENGTH,
+    MIN_READ_TIMEOUT_SECONDS,
+)
 from stackos.plugins.builtin_utils_ftp import ftp_action_kwargs, ftp_provider_kwargs
 from stackos.plugins.builtin_utils_s3 import s3_action_kwargs, s3_provider_kwargs
 from stackos.provider_setup import find_provider_setup_secret_paths
@@ -338,7 +353,7 @@ _ARTIFACT_RESOURCE_SCHEMA = {
     },
     "required": ["uri"],
 }
-_IMAGE_ACTION_OUTPUT_SCHEMA = {
+_IMAGE_ACTION_OUTPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": True,
     "properties": {
@@ -359,6 +374,131 @@ _IMAGE_ACTION_OUTPUT_SCHEMA = {
         "artifact_refs": {"type": "array", "items": {"type": "string"}},
         "usage": {"type": "object", "additionalProperties": True},
     },
+}
+_AIGNC_DOCS = ["docs/integration-contracts/aignc.md"]
+_AIGNC_TEXT_SCHEMA = {"type": "string", "minLength": 1, "maxLength": MAX_TEXT_LENGTH}
+_AIGNC_OUTPUT_LIMIT_SCHEMA = {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": MAX_OUTPUT_TOKENS,
+    "description": (
+        "Maximum output token count, sent as provider max_tokens; 8192 is a StackOS request cap."
+    ),
+}
+_AIGNC_READ_TIMEOUT_SCHEMA = {
+    "type": "integer",
+    "minimum": MIN_READ_TIMEOUT_SECONDS,
+    "maximum": MAX_READ_TIMEOUT_SECONDS,
+    "default": DEFAULT_READ_TIMEOUT_SECONDS,
+    "description": (
+        "Maximum provider read inactivity in seconds; not a total request deadline. "
+        "The action runs in the background; poll actionCall.get with its action_call_id."
+    ),
+}
+_AIGNC_COMPLETION_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": True,
+    "properties": {
+        "id": {"type": "string"},
+        "requested_model": {"type": "string"},
+        "returned_model": {"type": "string"},
+        "text": {"type": "string"},
+        "finish_reason": {"type": "string"},
+        "usage": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                key: {"type": "integer", "minimum": 0}
+                for key in (
+                    "prompt_count",
+                    "completion_count",
+                    "total_count",
+                    "reasoning_count",
+                    "cached_count",
+                    "google_searches",
+                )
+            },
+        },
+        "grounding_metadata": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "webSearchQueries": {"type": "array", "items": {"type": "string"}},
+                "groundingChunks": {
+                    "type": "array",
+                    "description": "Provider source positions; invalid slots remain empty objects.",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "web": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "uri": {"type": "string"},
+                                    "title": {"type": "string"},
+                                },
+                            },
+                        },
+                    },
+                },
+                "groundingSupports": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["segment", "groundingChunkIndices"],
+                        "properties": {
+                            "segment": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "startIndex": {"type": "integer", "minimum": 0},
+                                    "endIndex": {"type": "integer", "minimum": 0},
+                                    "text": {"type": "string"},
+                                },
+                            },
+                            "groundingChunkIndices": {
+                                "type": "array",
+                                "items": {"type": "integer", "minimum": 0},
+                                "description": "Indices into the unchanged groundingChunks order.",
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        "provider_request_id": {"type": "string"},
+    },
+}
+_AIGNC_ACTION_CONFIG = {
+    "schema_version": "stackos.action.v1",
+    "connector": "aignc",
+    "requires_credential": True,
+    "enforce_budget": False,
+    "docs": _AIGNC_DOCS,
+}
+_AIGNC_GENERATION_CONFIG = {**_AIGNC_ACTION_CONFIG, "execution_mode": "background"}
+_AIGNC_GENERATION_EXECUTION = {
+    "mode": "background",
+    "provider_mode": "sync",
+    "provider_endpoint": "/v1/chat/completions",
+    "automatic_retry": False,
+    "poll_operation": "actionCall.get",
+}
+_AIGNC_UNDOCUMENTED_FEATURES = [
+    "streaming",
+    "tool/function calling",
+    "embeddings",
+    "image editing and image size controls",
+    "structured diarization and audio timestamps",
+]
+_AIGNC_SAFETY_METADATA = {
+    "source": "Operator-supplied AIGNC guide, reviewed 2026-09-12.",
+    "unverified": (
+        "Provider retention, moderation, watermarking, commercial terms, and region "
+        "restrictions are not established by the supplied guide."
+    ),
 }
 _VIDEO_ACTION_OUTPUT_SCHEMA = {
     "type": "object",
@@ -1055,6 +1195,62 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
             ),
         ],
         providers=[
+            ProviderManifest(
+                key="aignc",
+                name="AIGNC",
+                description=(
+                    "Explicit model discovery, text, image, and audio requests through "
+                    "the AIGNC API gateway."
+                ),
+                auth_type="api-key",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="api_key",
+                        label="API key",
+                        auth_type="api-key",
+                        payload_format="raw",
+                        payload_field="api_key",
+                        permission_verification=PermissionVerificationManifest(
+                            evidence_source="unavailable",
+                            enforcement="provider_enforced",
+                        ),
+                        fields=[
+                            AuthFieldManifest(
+                                key="api_key",
+                                label="AIGNC API key",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                            )
+                        ],
+                    )
+                ],
+                config={
+                    "setup_note": (
+                        "Store the supplier-issued AIGNC API key in StackOS Connections. "
+                        "The daemon sends bearer authentication only to the fixed "
+                        "https://cli-api.f2nd.com/v1 endpoint."
+                    ),
+                    "setup": {
+                        "credential_label": "AIGNC API key",
+                        "setup_note": (
+                            "Obtain an API key and account instructions from the AIGNC "
+                            "supplier, then connect provider aignc in StackOS. The "
+                            "supplied service address is not a verified signup, console, "
+                            "or public documentation page."
+                        ),
+                        "fallback_url": "https://cli-api.f2nd.com/",
+                        "fallback_reason": (
+                            "The operator-supplied guide names this API service only; "
+                            "vendor setup pages have not been independently verified. "
+                            "See docs/integration-contracts/aignc.md for the contract."
+                        ),
+                        "verified_at": "2026-09-12",
+                        "url_confidence": {"fallback_url": "directional"},
+                    },
+                    "docs": _AIGNC_DOCS,
+                },
+            ),
             ProviderManifest(
                 key="openai-images",
                 name="OpenAI Images",
@@ -2056,6 +2252,224 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
             ),
         ],
         actions=[
+            ActionManifest(
+                key="aignc.models.list",
+                name="List AIGNC Models",
+                description=(
+                    "Read the current AIGNC model IDs. Discovery does not enable "
+                    "unreviewed model capabilities or select a model."
+                ),
+                provider="aignc",
+                capability="model-access",
+                risk_level="read",
+                input_schema={"type": "object", "additionalProperties": False, "properties": {}},
+                output_schema={
+                    "type": "object",
+                    "additionalProperties": True,
+                    "properties": {
+                        "data": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "required": ["id"],
+                                "properties": {"id": {"type": "string"}},
+                            },
+                        },
+                        "provider_request_id": {"type": "string"},
+                    },
+                },
+                config={**_AIGNC_ACTION_CONFIG, "operation": "models.list"},
+            ),
+            ActionManifest(
+                key="aignc.chat.complete",
+                name="Complete AIGNC Chat",
+                description=(
+                    "Make one nonstreaming text request using the agent-selected model "
+                    "and messages, with optional explicit Google search on Gemini models. "
+                    "Returns an action-call ID for polling while the provider works."
+                ),
+                provider="aignc",
+                capability="model-access",
+                risk_level="cost",
+                input_schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["model", "messages", "output_limit"],
+                    "properties": {
+                        "model": {
+                            "type": "string",
+                            "enum": [model for model in AIGNC_MODELS if model in AIGNC_TEXT_MODELS],
+                        },
+                        "messages": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": MAX_MESSAGES,
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "required": ["role", "content"],
+                                "properties": {
+                                    "role": {
+                                        "type": "string",
+                                        "enum": ["system", "user", "assistant"],
+                                    },
+                                    "content": _AIGNC_TEXT_SCHEMA,
+                                },
+                            },
+                        },
+                        "output_limit": _AIGNC_OUTPUT_LIMIT_SCHEMA,
+                        "read_timeout_seconds": _AIGNC_READ_TIMEOUT_SCHEMA,
+                        "google_search": {
+                            "type": "boolean",
+                            "default": False,
+                            "description": (
+                                "Explicit Google grounding for reviewed Gemini text models."
+                            ),
+                        },
+                    },
+                },
+                output_schema=_AIGNC_COMPLETION_OUTPUT_SCHEMA,
+                config={
+                    **_AIGNC_GENERATION_CONFIG,
+                    "operation": "chat.complete",
+                    "capability_metadata": {
+                        "modalities": {"input": ["text"], "output": ["text"]},
+                        "modes": ["chat-completion", "google-search-grounding"],
+                        "execution": _AIGNC_GENERATION_EXECUTION,
+                        "models": {
+                            model: {
+                                "identifier_source": "AIGNC supplied guide",
+                                "google_search": model in AIGNC_GROUNDING_MODELS,
+                            }
+                            for model in AIGNC_MODELS
+                            if model in AIGNC_TEXT_MODELS
+                        },
+                        "safety": _AIGNC_SAFETY_METADATA,
+                        "unsupported_provider_features": _AIGNC_UNDOCUMENTED_FEATURES,
+                        "docs": _AIGNC_DOCS,
+                    },
+                },
+            ),
+            ActionManifest(
+                key="aignc.image.generate",
+                name="Generate AIGNC Image",
+                description=(
+                    "Make one text-to-image request and persist the returned JPEG as an artifact. "
+                    "Returns an action-call ID for polling while the provider works."
+                ),
+                provider="aignc",
+                capability="image-generation",
+                risk_level="cost",
+                input_schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["prompt"],
+                    "properties": {
+                        "prompt": _AIGNC_TEXT_SCHEMA,
+                        "output_limit": {**_AIGNC_OUTPUT_LIMIT_SCHEMA, "default": 2048},
+                        "read_timeout_seconds": _AIGNC_READ_TIMEOUT_SCHEMA,
+                    },
+                },
+                output_schema={
+                    **_IMAGE_ACTION_OUTPUT_SCHEMA,
+                    "properties": {
+                        **_IMAGE_ACTION_OUTPUT_SCHEMA["properties"],
+                        **_AIGNC_COMPLETION_OUTPUT_SCHEMA["properties"],
+                    },
+                },
+                config={
+                    **_AIGNC_GENERATION_CONFIG,
+                    "operation": "image.generate",
+                    "capability_metadata": {
+                        "modalities": {"input": ["text"], "output": ["image"]},
+                        "modes": ["text-to-image"],
+                        "execution": {
+                            **_AIGNC_GENERATION_EXECUTION,
+                            "response_format": (
+                                "JPEG base64 in assistant content or one inline JPEG data URI "
+                                "in message.images"
+                            ),
+                            "persistence": (
+                                "Decode into generated assets and register an image artifact."
+                            ),
+                        },
+                        "models": {
+                            AIGNC_IMAGE_MODEL: {
+                                "output_format": "jpeg",
+                                "count": 1,
+                                "size": "Provider-controlled; 1408x768 is a supplied example only.",
+                            },
+                        },
+                        "safety": _AIGNC_SAFETY_METADATA,
+                        "unsupported_provider_features": _AIGNC_UNDOCUMENTED_FEATURES,
+                        "docs": _AIGNC_DOCS,
+                    },
+                },
+            ),
+            ActionManifest(
+                key="aignc.audio.analyze",
+                name="Analyze AIGNC Audio",
+                description=(
+                    "Analyze a project-scoped managed audio artifact using the explicit "
+                    "instruction and selected model. The daemon resolves and encodes "
+                    "the audio artifact for this request. Returns an action-call ID "
+                    "for polling while the provider works."
+                ),
+                provider="aignc",
+                capability="model-access",
+                risk_level="cost",
+                input_schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["audio_artifact_id", "model", "instruction", "output_limit"],
+                    "properties": {
+                        "audio_artifact_id": {"type": "integer", "minimum": 1},
+                        "model": {
+                            "type": "string",
+                            "enum": [
+                                model for model in AIGNC_MODELS if model in AIGNC_AUDIO_MODELS
+                            ],
+                        },
+                        "instruction": _AIGNC_TEXT_SCHEMA,
+                        "output_limit": _AIGNC_OUTPUT_LIMIT_SCHEMA,
+                        "read_timeout_seconds": _AIGNC_READ_TIMEOUT_SCHEMA,
+                    },
+                },
+                output_schema={
+                    **_AIGNC_COMPLETION_OUTPUT_SCHEMA,
+                    "properties": {
+                        **_AIGNC_COMPLETION_OUTPUT_SCHEMA["properties"],
+                        "audio_artifact_id": {"type": "integer", "minimum": 1},
+                    },
+                },
+                config={
+                    **_AIGNC_GENERATION_CONFIG,
+                    "operation": "audio.analyze",
+                    "capability_metadata": {
+                        "modalities": {"input": ["audio", "text"], "output": ["text"]},
+                        "modes": ["audio-understanding", "transcription"],
+                        "execution": {
+                            **_AIGNC_GENERATION_EXECUTION,
+                            "input_source": (
+                                "Project-scoped artifact within daemon generated assets."
+                            ),
+                            "persistence": (
+                                "Text result uses the shared action response-file contract."
+                            ),
+                        },
+                        "models": {
+                            model: {"input_formats": sorted(AIGNC_AUDIO_FORMATS)}
+                            for model in AIGNC_MODELS
+                            if model in AIGNC_AUDIO_MODELS
+                        },
+                        "limits": {"stackos_audio_max_bytes": MAX_AUDIO_BYTES},
+                        "safety": _AIGNC_SAFETY_METADATA,
+                        "unsupported_provider_features": _AIGNC_UNDOCUMENTED_FEATURES,
+                        "docs": _AIGNC_DOCS,
+                    },
+                },
+            ),
             ActionManifest(
                 key="image.generate",
                 name="Generate Image",

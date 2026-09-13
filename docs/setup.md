@@ -145,6 +145,13 @@ Doctor just to render AI-tool status:
 stackos mcp-host-status --json
 ```
 
+Browser Home uses the authenticated local-admin `hostMcp.status` read operation
+over the same inspector. It returns safe host status fields, not commands or
+configuration contents, and does not change host registration or restart
+markers. All connection cards and Refresh are visible in both environments.
+Restart, Run doctor, and Install or repair remain native desktop controls;
+the browser shows them disabled with a desktop-only explanation.
+
 This reports the canonical connection state for ChatGPT / Codex, Claude Code,
 Claude Desktop, Gemini CLI, and Hermes. **Repair needed** means a selected,
 StackOS-owned entry is stale and safely repairable. Unselected detected hosts

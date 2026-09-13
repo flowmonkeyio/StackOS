@@ -1316,6 +1316,17 @@
         "line_id": {
           "$ref": "#/$defs/ref"
         },
+        "price_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "quantity": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
         "description": {
           "type": "string",
           "minLength": 1
@@ -1337,12 +1348,57 @@
       },
       "required": [
         "line_id",
-        "description",
-        "description_sha256",
-        "amount",
         "source_refs"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "description"
+            ]
+          },
+          "then": {
+            "required": [
+              "description_sha256"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "description_sha256"
+            ]
+          },
+          "then": {
+            "required": [
+              "description"
+            ]
+          }
+        },
+        {
+          "oneOf": [
+            {
+              "required": [
+                "amount",
+                "description",
+                "description_sha256"
+              ],
+              "not": {
+                "required": [
+                  "price_ref"
+                ]
+              }
+            },
+            {
+              "required": [
+                "price_ref",
+                "quantity"
+              ]
+            }
+          ]
+        }
+      ]
     },
     "billing_version": {
       "allOf": [
@@ -1365,6 +1421,10 @@
             },
             "external_project_ref": {
               "$ref": "#/$defs/ref"
+            },
+            "effective_at": {
+              "type": "integer",
+              "minimum": 0
             },
             "recipient_settings_ref": {
               "$ref": "#/$defs/ref"
@@ -1408,14 +1468,33 @@
             "currency",
             "terms",
             "lines",
-            "subtotal",
-            "total",
             "source_refs"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "lines": {
+                    "contains": {
+                      "required": [
+                        "price_ref"
+                      ]
+                    }
+                  }
+                }
+              },
+              "else": {
+                "required": [
+                  "subtotal",
+                  "total"
+                ]
+              }
+            }
           ]
         }
       ],
       "unevaluatedProperties": false,
-      "description": "Immutable proposal material. Compute digest_sha256 as SHA-256 of the UTF-8 JSON object containing exactly version, customer_mapping_ref, recipient_settings_ref, external_project_ref when present, currency, terms, lines, subtotal, total, source_refs, and supersedes_ref only when present. Preserve complete nested values and array order. Serialize with sorted object keys, no insignificant whitespace, unescaped Unicode, and no NaN/Infinity (Python: json.dumps(material, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8')). Do not normalize strings. Exclude record_id, digest_sha256, metadata, status/history, provenance/gaps, reviews, provider observations, mutation attempts and finance.json revision/hash. Approval separately binds record_id, version and this digest. Mapping and recipient refs identify immutable versions. Immutability, reference integrity and digest correctness require host comparison."
+      "description": "Immutable proposal material. Compute digest_sha256 as SHA-256 of the UTF-8 JSON object containing exactly version, customer_mapping_ref, recipient_settings_ref, external_project_ref when present, effective_at when present, currency, terms, lines, subtotal when present, total when present, source_refs, and supersedes_ref only when present. Preserve complete nested values and array order. A manual line preserves its approved amount/currency/description. A catalog line identifies the requested existing Price with price_ref and quantity; amount, when present, is the independently observed draft line amount retained for approval, but is not sent with the catalog invoice-item request. Stripe computes the catalog line total. Serialize with sorted object keys, no insignificant whitespace, unescaped Unicode, and no NaN/Infinity (Python: json.dumps(material, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8')). Do not normalize strings. Exclude record_id, digest_sha256, metadata, status/history, provenance/gaps, reviews, provider observations, mutation attempts and finance.json revision/hash. Approval separately binds record_id, version and this digest. Mapping and recipient refs identify immutable versions. Immutability, reference integrity and digest correctness require host comparison."
     },
     "provider_observation": {
       "allOf": [
@@ -1464,6 +1543,12 @@
               "pattern": "^[A-Z]{3}$"
             },
             "amount": {
+              "$ref": "#/$defs/money"
+            },
+            "subtotal": {
+              "$ref": "#/$defs/money"
+            },
+            "total": {
               "$ref": "#/$defs/money"
             },
             "amount_due": {
@@ -1519,6 +1604,10 @@
             "description_sha256": {
               "type": "string",
               "pattern": "^[a-f0-9]{64}$"
+            },
+            "effective_at": {
+              "type": "integer",
+              "minimum": 0
             }
           },
           "required": [
@@ -1912,11 +2001,35 @@
             "recipient_settings_ref": {
               "$ref": "#/$defs/ref"
             },
+            "outreach": {
+              "type": "object",
+              "properties": {
+                "route": {
+                  "enum": ["stripe-resend", "smtp-email"]
+                },
+                "account_ref": {
+                  "$ref": "#/$defs/ref"
+                },
+                "input_json": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "route",
+                "account_ref",
+                "input_json"
+              ],
+              "additionalProperties": false,
+              "description": "Optional selected follow-up route, safe Account reference and exact provider-action input payload. Choose the route from operator instruction or documented settings. Validate input_json with the existing finance.stripe.invoices.send or communications.smtp.email.send action contract; this financial record adds no provider-message restrictions or approval process."
+            },
             "send_outcome": {
               "enum": [
                 "not-attempted",
                 "test-accepted",
                 "accepted",
+                "partial",
+                "rejected",
                 "failed",
                 "unknown"
               ]
@@ -1939,7 +2052,7 @@
         }
       ],
       "unevaluatedProperties": false,
-      "description": "For these digest projections use SHA-256 over the UTF-8 JSON object, preserving complete nested values and array order; sorted object keys, no insignificant whitespace, unescaped Unicode, no string normalization and no NaN/Infinity (Python: json.dumps(material, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8')). Include optional named fields only when present, never insert null. Material projection: version, invoice_ref, invoice_observation_ref, eligibility, decision_reason, reminder_owner, due_status, dispute_state, pause_state, promise_state, correction_state, last_contact_at, cooldown_until, recipient_settings_ref, settlement_refs, gaps, supersedes_ref. Exclude send_outcome, attempt_ref, next_eligible_at, review_refs, approval_refs, record_id and common metadata/status/history/provenance. Approval separately binds record_id and version. Fresh lifecycle, recipient and suppression checks remain mandatory before sending; a matching digest is not permission to send."
+      "description": "For these digest projections use SHA-256 over the UTF-8 JSON object, preserving complete nested values and array order; sorted object keys, no insignificant whitespace, unescaped Unicode, no string normalization and no NaN/Infinity (Python: json.dumps(material, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8')). Include optional named fields only when present, never insert null. Material projection: version, invoice_ref, invoice_observation_ref, eligibility, decision_reason, reminder_owner, due_status, dispute_state, pause_state, promise_state, correction_state, last_contact_at, cooldown_until, recipient_settings_ref, outreach, settlement_refs, gaps, supersedes_ref. Include the entire outreach object when present, preserving the selected route, Account and provider input payload. Exclude send_outcome, attempt_ref, next_eligible_at, review_refs, approval_refs, record_id and common metadata/status/history/provenance. Approval separately binds record_id and version. Fresh lifecycle, recipient and suppression checks remain mandatory before sending; a matching digest is not permission to send. SMTP accepted/partial/rejected describe submission only, not delivery."
     },
     "difference": {
       "type": "object",

@@ -698,7 +698,7 @@ def test_claude_desktop_register_is_noop_when_connection_is_current(
     assert not state_path(tmp_path).exists()
 
 
-def test_claude_desktop_inspect_clears_restart_when_app_is_closed(
+def test_claude_desktop_inspect_reports_ready_without_writing_when_app_is_closed(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -713,6 +713,7 @@ def test_claude_desktop_inspect_clears_restart_when_app_is_closed(
     monkeypatch.setattr(claude_desktop, "_claude_desktop_running", lambda: "running")
 
     registered = claude_desktop.register(tmp_path)
+    marker_before = state_path(tmp_path).read_bytes()
     monkeypatch.setattr(claude_desktop, "_claude_desktop_running", lambda: "not_running")
     inspected = claude_desktop.inspect(tmp_path)
 
@@ -720,12 +721,10 @@ def test_claude_desktop_inspect_clears_restart_when_app_is_closed(
     assert inspected.ok is True
     assert inspected.status == "registered_current"
     assert inspected.needs_restart is False
-    assert not state_path(tmp_path).exists() or "claude-desktop" not in json.loads(
-        state_path(tmp_path).read_text(encoding="utf-8")
-    )
+    assert state_path(tmp_path).read_bytes() == marker_before
 
 
-def test_claude_desktop_inspect_clears_restart_after_app_relaunch(
+def test_claude_desktop_inspect_reports_ready_without_writing_after_app_relaunch(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -740,6 +739,7 @@ def test_claude_desktop_inspect_clears_restart_after_app_relaunch(
     monkeypatch.setattr(claude_desktop, "_claude_desktop_running", lambda: "running")
 
     registered = claude_desktop.register(tmp_path)
+    marker_before = state_path(tmp_path).read_bytes()
     monkeypatch.setattr(
         claude_desktop,
         "_claude_desktop_started_after",
@@ -751,9 +751,7 @@ def test_claude_desktop_inspect_clears_restart_after_app_relaunch(
     assert inspected.ok is True
     assert inspected.status == "registered_current"
     assert inspected.needs_restart is False
-    assert not state_path(tmp_path).exists() or "claude-desktop" not in json.loads(
-        state_path(tmp_path).read_text(encoding="utf-8")
-    )
+    assert state_path(tmp_path).read_bytes() == marker_before
 
 
 def test_claude_desktop_register_does_not_require_restart_when_app_is_closed(

@@ -390,6 +390,11 @@ missing capability.
 - `tool_statuses[].reason_code == "local_admin_required"` means the tool is a
   setup/admin control; use an explicit operator flow rather than trying to
   repair it with run-plan grants.
+- Project-scoped `workflowTemplate.save` and `workflowTemplate.fork` are normal
+  setup tools after operator authorization. If an older build labels them
+  `local_admin_required`, update the app and reconnect the agent session; do not
+  invent a grant switch or request the same consent again. Save the existing
+  validated draft after updating; starting a run remains separate.
 - `run_plan_step_grant_required` means the agent needs a started run plan, a
   claimed running step, and an `mcp_tool_grants` entry for that tool.
 - `not_granted_to_active_step` means the current step exists, but its grant

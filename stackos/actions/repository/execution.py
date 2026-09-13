@@ -310,9 +310,15 @@ class ActionExecutionMixin:
                     cost_cents=row.cost_cents,
                     replayed=replayed,
                     credential_ref=row.credential_ref,
-                    poll_operation="actionCall.get",
-                    poll_arguments={"action_call_id": row.id},
-                    next_poll_after_ms=500,
+                    poll_operation=(
+                        "actionCall.get" if row.status == ActionCallStatus.RUNNING else None
+                    ),
+                    poll_arguments=(
+                        {"action_call_id": row.id}
+                        if row.status == ActionCallStatus.RUNNING
+                        else None
+                    ),
+                    next_poll_after_ms=500 if row.status == ActionCallStatus.RUNNING else None,
                 ),
                 project_id=project_id,
                 run_id=run_id,

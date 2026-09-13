@@ -63,7 +63,7 @@ describe('desktop page layout contract', () => {
     const work = source('views/TaskTrackerView.vue')
     const stories = source('views/task-tracker/TrackerStoriesPanel.vue')
 
-    expect(work).toContain("const viewMode = ref<ViewMode>('graph')")
+    expect(work).toContain('const viewMode = ref<ViewMode>(viewModeFromQuery(route.query.view))')
     expect(work).toContain('<TaskTrackerCommandPanel')
     expect(work).not.toContain('v-if="viewMode !== \'stories\'"\n      :active-task-key')
     expect(stories).not.toContain('viewOptions')

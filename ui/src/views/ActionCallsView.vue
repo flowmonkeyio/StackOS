@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useRoute } from 'vue-router'
+import { onBeforeRouteUpdate, useRoute, type LocationQuery } from 'vue-router'
 
 import { ActionCallStatus } from '@/api'
 import type {
@@ -41,7 +41,7 @@ const route = useRoute()
 const catalogStore = useStackOsCatalogStore()
 const { actions, enabledPlugins } = storeToRefs(catalogStore)
 
-const { projectId } = useProjectRouteScope(route)
+const { projectId, changesProjectScope } = useProjectRouteScope(route)
 const rows = ref<SchemaActionCallAuditOut[]>([])
 const selectedCall = ref<SchemaActionCallAuditOut | null>(null)
 const detailPanelOpen = ref(false)
@@ -52,6 +52,33 @@ const pluginFilter = ref(String(route.query.plugin_slug ?? ''))
 const actionFilter = ref(String(route.query.action_ref ?? ''))
 const runFilter = ref(String(route.query.run_id ?? ''))
 const statusFilter = ref<StatusFilter>('all')
+const providerFilter = ref('')
+const createdFrom = ref('')
+const createdBefore = ref('')
+const dryRunFilter = ref('')
+const exactCallId = ref('')
+let requestGeneration = 0
+
+function applyQuery(query: LocationQuery): void {
+  const scalar = (key: string) => (typeof query[key] === 'string' ? query[key] : '')
+  providerFilter.value = scalar('provider_key')
+  createdFrom.value = scalar('created_from')
+  createdBefore.value = scalar('created_before')
+  dryRunFilter.value = ['true', 'false'].includes(scalar('dry_run')) ? scalar('dry_run') : ''
+  exactCallId.value = scalar('action_call_id')
+  pluginFilter.value = scalar('plugin_slug')
+  actionFilter.value = scalar('action_ref')
+  runFilter.value = scalar('run_id')
+  statusFilter.value = Object.values(ActionCallStatus).includes(
+    scalar('status') as ActionCallStatus,
+  )
+    ? (scalar('status') as StatusFilter)
+    : 'all'
+}
+applyQuery(route.query)
+onBeforeUnmount(() => {
+  requestGeneration += 1
+})
 
 const statusOptions: Array<{ key: StatusFilter; label: string }> = [
   { key: 'all', label: 'All' },
@@ -84,9 +111,10 @@ const actionOptions = computed(() => [
 const selectedAction = computed(() => {
   if (!actionFilter.value) return null
   const [pluginSlug, actionKey] = actionFilter.value.split(':')
-  return actions.value.find(
-    (action) => action.plugin_slug === pluginSlug && action.key === actionKey,
-  ) ?? null
+  return (
+    actions.value.find((action) => action.plugin_slug === pluginSlug && action.key === actionKey) ??
+    null
+  )
 })
 
 const loadedSuccess = computed(
@@ -121,9 +149,7 @@ const columns: DataTableColumn<SchemaActionCallAuditOut>[] = [
   },
 ]
 
-function newestFirst(
-  items: SchemaActionCallAuditOut[],
-): SchemaActionCallAuditOut[] {
+function newestFirst(items: SchemaActionCallAuditOut[]): SchemaActionCallAuditOut[] {
   return [...items].sort((left, right) => {
     const createdDiff = Date.parse(right.created_at) - Date.parse(left.created_at)
     return createdDiff || right.id - left.id
@@ -157,34 +183,50 @@ function buildQuery(after?: number | null): string {
   const runId = selectedRunId()
   if (runId) params.set('run_id', String(runId))
   if (statusFilter.value !== 'all') params.set('status', statusFilter.value)
+  if (providerFilter.value) params.set('provider_key', providerFilter.value)
+  if (createdFrom.value) params.set('created_from', createdFrom.value)
+  if (createdBefore.value) params.set('created_before', createdBefore.value)
+  if (dryRunFilter.value) params.set('dry_run', dryRunFilter.value)
+  if (exactCallId.value) params.set('action_call_id', exactCallId.value)
   return params.toString()
 }
 
-async function fetchCalls(
-  { append = false, scopedProjectId = projectId.value }:
-    { append?: boolean; scopedProjectId?: number } = {},
-): Promise<void> {
+async function fetchCalls({
+  append = false,
+  scopedProjectId = projectId.value,
+}: { append?: boolean; scopedProjectId?: number } = {}): Promise<void> {
+  const request = ++requestGeneration
   loading.value = true
   error.value = null
   try {
     const response = await apiFetch<SchemaPageResponseActionCallAuditOut>(
       `/api/v1/projects/${scopedProjectId}/action-calls?${buildQuery(append ? nextCursor.value : null)}`,
     )
+    if (request !== requestGeneration) return
     // Sort the combined window, not per page — appended cursor pages would
     // otherwise interleave older/newer blocks.
-    const nextRows = newestFirst(
-      append ? [...rows.value, ...response.items] : [...response.items],
-    )
+    const nextRows = newestFirst(append ? [...rows.value, ...response.items] : [...response.items])
     rows.value = nextRows
     nextCursor.value = response.next_cursor ?? null
-    if (!append && selectedCall.value && !nextRows.some((row) => row.id === selectedCall.value?.id)) {
+    if (!append && exactCallId.value) {
+      selectedCall.value = nextRows.find((row) => String(row.id) === exactCallId.value) ?? null
+      detailPanelOpen.value = Boolean(selectedCall.value)
+      if (!selectedCall.value)
+        error.value = 'That action record is not available within these project filters.'
+    }
+    if (
+      !append &&
+      selectedCall.value &&
+      !nextRows.some((row) => row.id === selectedCall.value?.id)
+    ) {
       selectedCall.value = null
       detailPanelOpen.value = false
     }
   } catch (err) {
-    error.value = formatApiError(err, 'failed to load action calls')
+    if (request === requestGeneration)
+      error.value = formatApiError(err, 'failed to load action calls')
   } finally {
-    loading.value = false
+    if (request === requestGeneration) loading.value = false
   }
 }
 
@@ -225,6 +267,13 @@ function resetFilters(): void {
   actionFilter.value = ''
   runFilter.value = ''
   statusFilter.value = 'all'
+  providerFilter.value = ''
+  createdFrom.value = ''
+  createdBefore.value = ''
+  dryRunFilter.value = ''
+  exactCallId.value = ''
+  selectedCall.value = null
+  detailPanelOpen.value = false
   void fetchCalls()
 }
 
@@ -257,6 +306,15 @@ useProjectScopedLoader({
   projectId,
   load: ({ projectId }) => load(projectId),
 })
+onBeforeRouteUpdate((to) => {
+  if (changesProjectScope(to)) return
+  applyQuery(to.query)
+  rows.value = []
+  selectedCall.value = null
+  detailPanelOpen.value = false
+  nextCursor.value = null
+  void fetchCalls()
+})
 </script>
 
 <template>
@@ -286,6 +344,27 @@ useProjectScopedLoader({
     >
       {{ error }}
     </UiCallout>
+
+    <div
+      v-if="createdFrom || createdBefore || dryRunFilter || providerFilter || exactCallId"
+      class="flex flex-wrap items-center gap-3 rounded-lg border border-subtle bg-bg-surface-alt px-4 py-3 text-xs text-fg-muted"
+      aria-label="Action drilldown filters"
+    >
+      <span v-if="createdFrom || createdBefore">UTC window: {{ createdFrom || 'any start' }} → {{ createdBefore || 'any end' }} (end
+        excluded)</span>
+      <span v-if="dryRunFilter">{{
+        dryRunFilter === 'false' ? 'Dry runs excluded' : 'Dry runs only'
+      }}</span>
+      <span v-if="providerFilter">Provider: {{ providerFilter }}</span>
+      <span v-if="exactCallId">Call #{{ exactCallId }}</span>
+      <UiButton
+        variant="ghost"
+        size="sm"
+        @click="resetFilters"
+      >
+        Clear drilldown
+      </UiButton>
+    </div>
 
     <div class="grid gap-3 md:grid-cols-5">
       <button

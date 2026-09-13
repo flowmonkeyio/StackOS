@@ -2,7 +2,180 @@
 
 from __future__ import annotations
 
+import pytest
+
 from .conftest import MCPClient
+
+
+def _project_workflow_readiness(
+    mcp_client: MCPClient,
+    project_id: int,
+    contracts: list[dict],
+    *,
+    response_mode: str = "raw",
+) -> dict:
+    key = "company.action-readiness"
+    saved = mcp_client.call_tool_structured(
+        "workflowTemplate.save",
+        {
+            "project_id": project_id,
+            "template_json": {
+                "schema_version": "stackos.workflow-template.v1",
+                "key": key,
+                "name": "Company action readiness",
+                "version": "0.1.0",
+                "action_contracts": contracts,
+                "steps": [
+                    {
+                        "id": "fetch",
+                        "title": "Fetch source",
+                        "action_refs": [contract["key"] for contract in contracts],
+                    }
+                ],
+            },
+        },
+    )
+    assert saved["data"]["summary"]["source"] == "project"
+    readiness = mcp_client.call_tool_structured(
+        "readiness.check",
+        {
+            "project_id": project_id,
+            "workflow_key": key,
+            "source": "project",
+            "response_mode": response_mode,
+        },
+    )
+    return readiness.get("data", readiness)
+
+
+@pytest.mark.parametrize("response_mode", ["raw", "compact"])
+@pytest.mark.parametrize(
+    ("action_ref", "code", "structurally_ready"),
+    [
+        ("mistyped.provider.read", "action_not_found", False),
+        ("utils.missing.read", "action_not_found", False),
+        (None, "action_unresolved", True),
+    ],
+)
+def test_project_workflow_required_unresolved_actions_block_execution(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    action_ref: str | None,
+    code: str,
+    structurally_ready: bool,
+    response_mode: str,
+) -> None:
+    readiness = _project_workflow_readiness(
+        mcp_client,
+        seeded_project["data"]["id"],
+        [{"key": "fetch_source", "action": action_ref, "capability": "source.read"}],
+        response_mode=response_mode,
+    )
+
+    assert readiness["workflow"]["plugin_slug"] is None
+    assert readiness["execution_ready"] is False
+    assert readiness["required_providers_ready"] is False
+    assert readiness["structurally_ready"] is structurally_ready
+    assert len(readiness["actions"]) == 1
+    action = readiness["actions"][0]
+    assert action["contract_key"] == "fetch_source"
+    assert action["action_ref"] == action_ref
+    assert action["executable"] is False
+    assert action["availability_status"] == code
+    assert readiness["missing"][0]["code"] == code
+    assert readiness["missing"][0]["required_for"] == "execution"
+    assert readiness["missing"][0]["next_tool"] == "action.list"
+    assert "fetch_source" in readiness["missing"][0]["message"]
+    assert readiness["warnings"] or action_ref is not None
+    assert not any(step["tool"] == "connection.list" for step in readiness["next_steps"])
+
+
+@pytest.mark.parametrize("route", [False, True])
+@pytest.mark.parametrize("action_ref", ["mistyped.provider.read", "utils.missing.read", None])
+def test_project_workflow_optional_unresolved_actions_remain_visible_without_blocking(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    action_ref: str | None,
+    route: bool,
+) -> None:
+    readiness = _project_workflow_readiness(
+        mcp_client,
+        seeded_project["data"]["id"],
+        [
+            {
+                "key": "optional_source",
+                "action": action_ref,
+                "optional": True,
+                **({"route_group": "source", "route_key": "provider"} if route else {}),
+            }
+        ],
+    )
+
+    assert readiness["execution_ready"] is True
+    assert readiness["structurally_ready"] is True
+    assert readiness["missing"] == []
+    action = readiness["actions"][0]
+    assert action["contract_key"] == "optional_source"
+    assert action["executable"] is False
+    assert action["missing"][0]["required_for"] == (
+        "optional_route:source:provider" if route else "optional_action_execution"
+    )
+    if route:
+        assert readiness["route_groups"][0]["required"] is False
+        assert readiness["route_groups"][0]["execution_ready"] is False
+
+
+@pytest.mark.parametrize("action_ref", ["mistyped.provider.read", None])
+@pytest.mark.parametrize("same_route", [True, False])
+def test_project_workflow_unresolved_route_retains_choose_one_semantics(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    action_ref: str | None,
+    same_route: bool,
+) -> None:
+    readiness = _project_workflow_readiness(
+        mcp_client,
+        seeded_project["data"]["id"],
+        [
+            {
+                "key": "public_source",
+                "action": "utils.sitemap.fetch",
+                "route_group": "source",
+                "route_key": "public",
+            },
+            {
+                "key": "unresolved_source",
+                "action": action_ref,
+                "route_group": "source",
+                "route_key": "public" if same_route else "provider",
+            },
+        ],
+    )
+
+    assert readiness["execution_ready"] is not same_route
+    assert len(readiness["actions"]) == 2
+    group = readiness["route_groups"][0]
+    assert group["execution_ready"] is not same_route
+    assert group["available_route_keys"] == ([] if same_route else ["public"])
+    unresolved = next(
+        action for action in readiness["actions"] if action["contract_key"] == "unresolved_source"
+    )
+    assert unresolved["missing"][0]["required_for"] == (
+        "route_option:source:public" if same_route else "alternative_route_not_selected"
+    )
+    if same_route:
+        assert readiness["missing"][0]["code"] == "no_executable_route"
+        assert not any(step["tool"] == "connection.list" for step in readiness["next_steps"])
+    else:
+        assert readiness["missing"] == []
+    unresolved_route = next(
+        route
+        for route in group["routes"]
+        if route["route_key"] == ("public" if same_route else "provider")
+    )
+    assert unresolved_route["missing"][0]["code"] == (
+        "action_unresolved" if action_ref is None else "action_not_found"
+    )
 
 
 def test_readiness_check_reports_ready_no_auth_action(

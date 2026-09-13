@@ -28,10 +28,10 @@ _MAX_UPLOAD_FILES = 10
 
 def validate_slack_request(request: ActionConnectorRequest) -> list[ActionValidationIssue]:
     payload = request.input_json
-    issues: list[ActionValidationIssue] = []
+    issues = history_content_option_issues(request)
     match request.operation:
         case "identity.get":
-            return []
+            return issues
         case "message.send":
             _required_any(payload, ("channel_ref", "surface_ref"), issues)
             _optional_text(payload, "profile_ref", issues)
@@ -125,6 +125,19 @@ def validate_slack_request(request: ActionConnectorRequest) -> list[ActionValida
         case _:
             issues.extend(unknown_operation(request))
     return issues
+
+
+def history_content_option_issues(request: ActionConnectorRequest) -> list[ActionValidationIssue]:
+    """The local output option is not an upstream Slack API argument."""
+    if "include_content" not in request.input_json:
+        return []
+    if request.operation != "conversation.history":
+        return [
+            issue("$.include_content", "include_content is only supported by conversation.history")
+        ]
+    if not isinstance(request.input_json["include_content"], bool):
+        return [issue("$.include_content", "include_content must be a boolean", "type_error")]
+    return []
 
 
 def _required_any(

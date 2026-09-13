@@ -6224,6 +6224,12 @@ export interface operations {
                 plugin_slug?: string | null;
                 action_key?: string | null;
                 status?: components["schemas"]["ActionCallStatus"] | null;
+                action_call_id?: number | null;
+                provider_key?: string | null;
+                created_from?: string | null;
+                created_before?: string | null;
+                dry_run?: boolean | null;
+                sort?: PathsApiV1ProjectsProject_idActionCallsGetParametersQuerySort;
                 limit?: number;
                 after?: number | null;
             };
@@ -8106,6 +8112,10 @@ export interface operations {
             };
         };
     };
+}
+export enum PathsApiV1ProjectsProject_idActionCallsGetParametersQuerySort {
+    id = "id",
+    created_at = "created_at"
 }
 export enum PathsApiV1ProjectsProject_idArtifactsGetParametersQueryStatusAnyOf0 {
     draft = "draft",

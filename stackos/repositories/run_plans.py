@@ -13,6 +13,8 @@ from stackos.db.models import (
     APPROVAL_REQUEST_STATUS_TRANSITIONS,
     RUN_PLAN_STATUS_TRANSITIONS,
     RUN_PLAN_STEP_STATUS_TRANSITIONS,
+    ActionCall,
+    ActionCallStatus,
     ApprovalRequest,
     ApprovalRequestStatus,
     ContextSnapshot,
@@ -826,6 +828,8 @@ class RunPlanRepository:
             _ensure_no_secrets(result_json, label="run plan step result")
         if error is not None:
             _ensure_no_secrets({"error": error}, label="run plan step error")
+        if status in {RunPlanStepStatus.SUCCESS, RunPlanStepStatus.SKIPPED}:
+            self._ensure_no_running_step_actions(plan, step)
         if status == RunPlanStepStatus.SUCCESS:
             self._ensure_dependencies_complete(run_plan_id, step)
             validate_step_expected_outputs(step, result_json)
@@ -850,6 +854,41 @@ class RunPlanRepository:
         self._s.commit()
         self._s.refresh(plan)
         return Envelope(data=self._plan_out(plan), run_id=plan.run_id, project_id=plan.project_id)
+
+    def _ensure_no_running_step_actions(self, plan: RunPlan, step: RunPlanStep) -> None:
+        action_call_ids = [
+            _required_id(action_call_id)
+            for action_call_id in self._s.exec(
+                select(ActionCall.id)
+                .where(
+                    ActionCall.project_id == plan.project_id,
+                    ActionCall.run_plan_id == plan.id,
+                    ActionCall.run_plan_step_id == step.id,
+                    ActionCall.status == ActionCallStatus.RUNNING,
+                )
+                .order_by(col(ActionCall.id))
+            )
+        ]
+        if action_call_ids:
+            raise ValidationError(
+                "run plan step action calls are still running; poll them before recording "
+                "success or skipped",
+                data={
+                    "project_id": plan.project_id,
+                    "run_plan_id": plan.id,
+                    "step_id": step.step_id,
+                    "action_call_ids": action_call_ids,
+                    "pending_actions": [
+                        {
+                            "action_call_id": action_call_id,
+                            "poll_operation": "actionCall.get",
+                            "poll_arguments": {"action_call_id": action_call_id},
+                        }
+                        for action_call_id in action_call_ids
+                    ],
+                    "next_operations": ["actionCall.get", "runPlan.recordStep"],
+                },
+            )
 
     def _sync_terminal_status(
         self,

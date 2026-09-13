@@ -8,10 +8,18 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 201
+    assert len(names) == 206
+    assert not names.intersection(
+        {"actionCall.aggregate", "actionCall.aggregateAll", "actionCall.queryAll"}
+    )
     assert {
         "action.execute",
         "actionCall.get",
+        "actionCall.query",
+        "tracker.ticketCounts",
+        "tracker.ticketCountsAll",
+        "hostMcp.status",
+        "project.portfolio",
         "secret.set",
         "schema.get",
         "account.list",
@@ -132,6 +140,21 @@ def test_operation_registry_documents_core_operations() -> None:
     assert action_call_get.surfaces["cli"].command == "ops call actionCall.get"
     assert action_call_get.grant_policy == "direct-read"
     assert action_call_get.read_only is True
+
+    for name, policy in {
+        "actionCall.query": "direct-read",
+        "tracker.ticketCounts": "direct-read",
+        "tracker.ticketCountsAll": "local-admin-read",
+        "project.portfolio": "local-admin-read",
+    }.items():
+        overview = registry.get(name).describe_out()
+        assert overview.read_only is True
+        assert overview.grant_policy == policy
+        assert overview.secret_policy == "no-secret-output"
+        assert overview.response_policy.allowed_modes == ["compact", "raw"]
+        assert overview.response_policy.ack_safe is False
+        assert all(surface.enabled for surface in overview.surfaces.values())
+        assert overview.surfaces["cli"].command == f"ops call {name}"
 
     integration_list = registry.get("integration.list").describe_out()
     assert integration_list.category == "setup"
@@ -409,6 +432,8 @@ def test_operation_registry_documents_core_operations() -> None:
     assert any("single source of truth" in item for item in [authoring_guide.purpose])
 
     workflow_save = registry.get("workflowTemplate.save").describe_out()
+    assert workflow_save.grant_policy == "direct-setup-write"
+    assert registry.get("workflowTemplate.fork").describe_out().grant_policy == "direct-setup-write"
     save_example = workflow_save.examples[0].arguments["template_json"]
     assert validate_workflow_template_obj(save_example).valid is True
 

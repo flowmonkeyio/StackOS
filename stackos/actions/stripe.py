@@ -28,6 +28,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -38,16 +39,48 @@ from stackos.actions.connectors import (
     ActionValidationIssue,
 )
 from stackos.actions.vendor_utils import issue, unknown_operation
-from stackos.artifacts import redact_secrets
-from stackos.integrations.stripe import STRIPE_API_VERSION, StripeIntegration
+from stackos.artifacts import redact_secret_text, redact_secrets
+from stackos.integrations.stripe import (
+    STRIPE_API_VERSION,
+    StripeIntegration,
+    parse_stripe_api_key_payload,
+)
 from stackos.mcp.errors import IntegrationDownError, RateLimitedError
 from stackos.repositories.base import ValidationError
 from stackos.repositories.provider_refs import ProviderObjectReferenceRepository
-from stackos.secret_refs import SECRET_REF_SENTINEL
+from stackos.secret_refs import SECRET_REF_SENTINEL, redact_secret_values
 
 STRIPE_OPERATION = "rest.v1"
 STRIPE_DEFAULT_LIMIT = 25
 STRIPE_MAX_LIMIT = 100
+STRIPE_BUSINESS_DETAIL_ACTIONS = frozenset(
+    {
+        "stripe.customers.retrieve",
+        "stripe.invoices.retrieve",
+        "stripe.invoice-items.list",
+        "stripe.charges.retrieve",
+        "stripe.products.list",
+        "stripe.products.retrieve",
+        "stripe.prices.list",
+        "stripe.prices.retrieve",
+    }
+)
+_BUSINESS_DETAIL_FIELDS = {
+    "stripe.customer": ("name", "email", "description"),
+    "stripe.invoice": (
+        "number",
+        "description",
+        "customer_name",
+        "customer_email",
+        "hosted_invoice_url",
+        "invoice_pdf",
+    ),
+    "stripe.invoice-item": ("description",),
+    "stripe.charge": ("description", "receipt_url"),
+    "stripe.product": ("name", "description", "unit_label"),
+    "stripe.price": ("nickname", "lookup_key"),
+}
+_BUSINESS_LINK_FIELDS = frozenset({"hosted_invoice_url", "invoice_pdf", "receipt_url"})
 
 
 @dataclass(frozen=True)
@@ -63,6 +96,12 @@ class StripeActionSpec:
 
 
 STRIPE_ACTION_SPECS: dict[str, StripeActionSpec] = {
+    "stripe.products.list": StripeActionSpec("GET", "/products", list_item_type="stripe.product"),
+    "stripe.products.retrieve": StripeActionSpec(
+        "GET", "/products/{product_ref}", "stripe.product"
+    ),
+    "stripe.prices.list": StripeActionSpec("GET", "/prices", list_item_type="stripe.price"),
+    "stripe.prices.retrieve": StripeActionSpec("GET", "/prices/{price_ref}", "stripe.price"),
     "stripe.customers.create": StripeActionSpec("POST", "/customers", "stripe.customer"),
     "stripe.customers.retrieve": StripeActionSpec(
         "GET", "/customers/{customer_ref}", "stripe.customer"
@@ -189,6 +228,7 @@ class StripeActionConnector:
         self._validate_safe_refs(request, issues)
         self._validate_sensitive_text_refs(request, issues)
         self._validate_semantics(request, issues)
+        issues.extend(_business_detail_option_issues(request))
         return issues
 
     def estimate_cost_cents(self, _request: ActionConnectorRequest) -> int:
@@ -202,6 +242,11 @@ class StripeActionConnector:
         spec = STRIPE_ACTION_SPECS.get(request.action_key)
         if spec is None:
             raise ValidationError(f"unsupported Stripe action {request.action_key!r}")
+        # Output selection is connector-owned, not a Stripe query parameter.
+        # Recheck before dispatch even when the caller bypasses the manifest.
+        detail_issues = _business_detail_option_issues(request)
+        if detail_issues:
+            raise ValidationError(detail_issues[0].message)
         if request.credential is None:
             raise ValidationError("Stripe action requires a resolved credential")
         if request.session is None:
@@ -240,6 +285,10 @@ class StripeActionConnector:
                 refs=refs,
                 credential=request.credential.credential,
                 correlation_key=request.input_json.get("correlation_key"),
+                include_business_details=request.input_json.get("include_business_details", False),
+                business_secret_values=(
+                    parse_stripe_api_key_payload(request.credential.secret_payload),
+                ),
             )
         except ValidationError as exc:
             raise _malformed_response_error(
@@ -294,6 +343,8 @@ class StripeActionConnector:
         issues: list[ActionValidationIssue],
     ) -> None:
         ref_keys = {
+            "product_ref",
+            "price_ref",
             "customer_ref",
             "invoice_ref",
             "charge_ref",
@@ -321,6 +372,31 @@ class StripeActionConnector:
         issues: list[ActionValidationIssue],
     ) -> None:
         payload = request.input_json
+        if "effective_at" in payload and (
+            not isinstance(payload["effective_at"], int)
+            or isinstance(payload["effective_at"], bool)
+            or payload["effective_at"] < 0
+        ):
+            issues.append(
+                issue("$.effective_at", "effective_at must be a nonnegative integer", "range")
+            )
+        if request.action_key in {"stripe.products.list", "stripe.prices.list"}:
+            if "active" in payload and not isinstance(payload["active"], bool):
+                issues.append(issue("$.active", "active must be a boolean", "type"))
+            if "currency" in payload and (
+                not isinstance(payload["currency"], str)
+                or re.fullmatch(r"[a-z]{3}", payload["currency"]) is None
+            ):
+                issues.append(
+                    issue("$.currency", "currency must be a lowercase ISO currency code", "format")
+                )
+            if "type" in payload and (
+                not isinstance(payload["type"], str)
+                or payload["type"] not in {"one_time", "recurring"}
+            ):
+                issues.append(
+                    issue("$.type", "type must be one_time or recurring", "enum_mismatch")
+                )
         correlation_key = payload.get("correlation_key")
         if "correlation_key" in payload and (
             not isinstance(correlation_key, str)
@@ -384,11 +460,48 @@ class StripeActionConnector:
                     )
                 )
         if request.action_key == "stripe.invoice-items.create":
-            amount = payload.get("amount")
-            if not isinstance(amount, int) or isinstance(amount, bool) or amount <= 0:
-                issues.append(issue("$.amount", "amount must be a positive integer", "range"))
+            if "currency" in payload and (
+                not isinstance(payload["currency"], str)
+                or re.fullmatch(r"[a-z]{3}", payload["currency"]) is None
+            ):
+                issues.append(
+                    issue("$.currency", "currency must be a lowercase ISO currency code", "format")
+                )
+            if "price_ref" in payload:
+                if "amount" in payload:
+                    issues.append(
+                        issue("$.amount", "price lines do not accept a manual amount", "forbidden")
+                    )
+                quantity = payload.get("quantity")
+                if not isinstance(quantity, int) or isinstance(quantity, bool) or quantity < 0:
+                    issues.append(
+                        issue(
+                            "$.quantity",
+                            "quantity must be an explicit nonnegative integer",
+                            "range",
+                        )
+                    )
+            else:
+                amount = payload.get("amount")
+                if not isinstance(amount, int) or isinstance(amount, bool) or amount <= 0:
+                    issues.append(issue("$.amount", "amount must be a positive integer", "range"))
+                if "quantity" in payload:
+                    issues.append(
+                        issue(
+                            "$.quantity", "manual amount lines do not accept quantity", "forbidden"
+                        )
+                    )
+                currency = payload.get("currency")
+                if not isinstance(currency, str) or re.fullmatch(r"[a-z]{3}", currency) is None:
+                    issues.append(
+                        issue(
+                            "$.currency", "currency must be a lowercase ISO currency code", "format"
+                        )
+                    )
             description = payload.get("description")
-            if not isinstance(description, str) or not description.strip():
+            if ("price_ref" not in payload or "description" in payload) and (
+                not isinstance(description, str) or not description.strip()
+            ):
                 issues.append(
                     issue(
                         "$.description",
@@ -477,6 +590,8 @@ def _path_for(
 ) -> str:
     path = spec.path
     replacement_types = {
+        "{product_ref}": ("product_ref", "stripe.product"),
+        "{price_ref}": ("price_ref", "stripe.price"),
         "{customer_ref}": ("customer_ref", "stripe.customer"),
         "{invoice_ref}": ("invoice_ref", "stripe.invoice"),
         "{charge_ref}": ("charge_ref", "stripe.charge"),
@@ -503,6 +618,8 @@ def _params_for(
         return {}
     payload = request.input_json
     params: dict[str, Any] = {}
+    if request.action_key == "stripe.prices.retrieve":
+        params["expand[]"] = ["tiers", "currency_options"]
     if request.action_key == "stripe.invoices.retrieve":
         # Invoice.customer_email freezes at finalization. Expand the current
         # customer too so an agent can detect a changed primary email.
@@ -518,6 +635,13 @@ def _params_for(
             params["starting_after"] = _resolve_ref(
                 request, refs, "page_cursor", spec.list_item_type
             )
+        if request.action_key in {"stripe.products.list", "stripe.prices.list"}:
+            if "active" in payload:
+                params["active"] = "true" if payload["active"] else "false"
+            if request.action_key == "stripe.prices.list":
+                if "product_ref" in payload:
+                    params["product"] = _resolve_ref(request, refs, "product_ref", "stripe.product")
+                params.update(_copy_fields(payload, "currency", "type"))
         if request.action_key == "stripe.invoices.list" and "status" in payload:
             params["status"] = payload["status"]
         if request.action_key == "stripe.invoices.list":
@@ -574,6 +698,7 @@ def _form_for(
             # The initial action always produces a draft; a workflow decides
             # whether/when the separate finalize and send actions are allowed.
             "auto_advance": "false",
+            **_copy_fields(payload, "effective_at"),
             **(
                 {"metadata[stackos_correlation]": payload["correlation_key"]}
                 if "correlation_key" in payload
@@ -621,10 +746,17 @@ def _form_for(
         form = {
             "customer": _resolve_ref(request, refs, "customer_ref", "stripe.customer"),
             "invoice": _resolve_ref(request, refs, "invoice_ref", "stripe.invoice"),
-            "amount": payload["amount"],
-            "currency": payload["currency"],
-            "description": payload["description"],
         }
+        if "price_ref" in payload:
+            form.update(
+                {
+                    "pricing[price]": _resolve_ref(request, refs, "price_ref", "stripe.price"),
+                    "quantity": payload["quantity"],
+                    **_copy_fields(payload, "currency", "description"),
+                }
+            )
+        else:
+            form.update(_copy_fields(payload, "amount", "currency", "description"))
         return form
     return {}
 
@@ -650,6 +782,28 @@ def _resolve_ref(
     ).provider_object_id
 
 
+def _business_detail_option_issues(request: ActionConnectorRequest) -> list[ActionValidationIssue]:
+    if "include_business_details" not in request.input_json:
+        return []
+    if request.action_key not in STRIPE_BUSINESS_DETAIL_ACTIONS:
+        return [
+            issue(
+                "$.include_business_details",
+                "include_business_details is supported only on reviewed scoped Stripe reads",
+                "forbidden",
+            )
+        ]
+    if type(request.input_json["include_business_details"]) is not bool:
+        return [
+            issue(
+                "$.include_business_details",
+                "include_business_details must be a boolean",
+                "type_mismatch",
+            )
+        ]
+    return []
+
+
 def _safe_response(
     body: Mapping[str, Any],
     *,
@@ -657,6 +811,8 @@ def _safe_response(
     refs: ProviderObjectReferenceRepository,
     credential: Any,
     correlation_key: str | None = None,
+    include_business_details: bool = False,
+    business_secret_values: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     if spec.list_item_type is not None:
         if body.get("object") != "list":
@@ -673,6 +829,8 @@ def _safe_response(
                 refs=refs,
                 credential=credential,
                 correlation_key=correlation_key,
+                include_business_details=include_business_details,
+                business_secret_values=business_secret_values,
             )
             for item in items
             if isinstance(item, Mapping)
@@ -698,6 +856,8 @@ def _safe_response(
             refs=refs,
             credential=credential,
             correlation_key=correlation_key,
+            include_business_details=include_business_details,
+            business_secret_values=business_secret_values,
         )
     # Balance has no provider id to turn into an opaque reference. Preserve only
     # the monetary availability buckets needed by cash-flow work.
@@ -770,11 +930,15 @@ def _safe_object(
     refs: ProviderObjectReferenceRepository,
     credential: Any,
     correlation_key: str | None = None,
+    include_business_details: bool = False,
+    business_secret_values: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     identifier = value.get("id")
     if not isinstance(identifier, str) or not identifier:
         raise ValidationError("Stripe object response is missing id")
     expected_discriminator = {
+        "stripe.product": "product",
+        "stripe.price": "price",
         "stripe.customer": "customer",
         "stripe.invoice": "invoice",
         "stripe.invoice-item": "invoiceitem",
@@ -794,29 +958,270 @@ def _safe_object(
         provider_object_id=identifier,
         display_name="",
     )
-    if object_type == "stripe.customer":
-        return _safe_customer(value, safe_ref)
-    if object_type == "stripe.invoice":
-        return _safe_invoice(
+    if object_type == "stripe.product":
+        result = _safe_product(value, safe_ref, refs=refs, credential=credential)
+    elif object_type == "stripe.price":
+        result = _safe_price(value, safe_ref, refs=refs, credential=credential)
+    elif object_type == "stripe.customer":
+        result = _safe_customer(value, safe_ref)
+    elif object_type == "stripe.invoice":
+        result = _safe_invoice(
             value, safe_ref, refs=refs, credential=credential, correlation_key=correlation_key
         )
-    if object_type == "stripe.invoice-item":
-        return _safe_invoice_item(value, safe_ref, refs=refs, credential=credential)
-    if object_type == "stripe.invoice-payment":
-        return _safe_invoice_payment(value, safe_ref, refs=refs, credential=credential)
-    if object_type == "stripe.payment-intent":
-        return _safe_payment_intent(value, safe_ref, refs=refs, credential=credential)
-    if object_type == "stripe.payment-record":
-        return _safe_payment_record(value, safe_ref, refs=refs, credential=credential)
-    if object_type == "stripe.charge":
-        return _safe_charge(value, safe_ref, refs=refs, credential=credential)
-    if object_type == "stripe.balance-transaction":
-        return _safe_balance_transaction(value, safe_ref, refs=refs, credential=credential)
-    if object_type == "stripe.refund":
-        return _safe_refund(value, safe_ref, refs=refs, credential=credential)
-    if object_type == "stripe.dispute":
-        return _safe_dispute(value, safe_ref, refs=refs, credential=credential)
-    raise ValidationError(f"unsupported Stripe output object type {object_type!r}")
+    elif object_type == "stripe.invoice-item":
+        result = _safe_invoice_item(value, safe_ref, refs=refs, credential=credential)
+    elif object_type == "stripe.invoice-payment":
+        result = _safe_invoice_payment(value, safe_ref, refs=refs, credential=credential)
+    elif object_type == "stripe.payment-intent":
+        result = _safe_payment_intent(value, safe_ref, refs=refs, credential=credential)
+    elif object_type == "stripe.payment-record":
+        result = _safe_payment_record(value, safe_ref, refs=refs, credential=credential)
+    elif object_type == "stripe.charge":
+        result = _safe_charge(value, safe_ref, refs=refs, credential=credential)
+    elif object_type == "stripe.balance-transaction":
+        result = _safe_balance_transaction(value, safe_ref, refs=refs, credential=credential)
+    elif object_type == "stripe.refund":
+        result = _safe_refund(value, safe_ref, refs=refs, credential=credential)
+    elif object_type == "stripe.dispute":
+        result = _safe_dispute(value, safe_ref, refs=refs, credential=credential)
+    else:
+        raise ValidationError(f"unsupported Stripe output object type {object_type!r}")
+    if include_business_details:
+        result["business_details"] = _safe_business_details(
+            value, object_type, secret_values=business_secret_values
+        )
+        if object_type == "stripe.charge":
+            _add_nested_ref(
+                result, value, "customer", "customer_ref", "stripe.customer", refs, credential
+            )
+    return result
+
+
+def _safe_business_details(
+    value: Mapping[str, Any],
+    object_type: str,
+    *,
+    secret_values: tuple[str, ...],
+) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key in _BUSINESS_DETAIL_FIELDS.get(object_type, ()):
+        if key not in value:
+            continue
+        item = value[key]
+        if item is None:
+            result[key] = None
+        elif key in _BUSINESS_LINK_FIELDS:
+            # A withheld/broken customer-facing link must not look usable or
+            # discard otherwise valid invoice/payment facts. No link is fetched.
+            if not _valid_business_link(item):
+                result[key] = None
+                result[f"{key}_state"] = "invalid"
+            elif redact_secret_text(redact_secret_values(item, secret_values)) != item:
+                result[key] = None
+                result[f"{key}_state"] = "redacted"
+            else:
+                result[key] = item
+        elif not isinstance(item, str):
+            raise ValidationError(f"Stripe {object_type}.{key} must be text or null")
+        else:
+            result[key] = redact_secret_text(redact_secret_values(item, secret_values))
+    return result
+
+
+def _valid_business_link(value: Any) -> bool:
+    if (
+        not isinstance(value, str)
+        or not value
+        or any(
+            char.isspace() or ord(char) < 32 or ord(char) == 127 or char == "\\" for char in value
+        )
+    ):
+        return False
+    try:
+        parsed = urlsplit(value)
+        # urlsplit alone does not validate the port; access it explicitly.
+        port = parsed.port
+        return bool(
+            parsed.scheme == "https"
+            and parsed.hostname
+            and parsed.username is None
+            and parsed.password is None
+            and (port is None or port > 0)
+        )
+    except ValueError:
+        return False
+
+
+def _safe_product(
+    value: Mapping[str, Any],
+    safe_ref: str,
+    *,
+    refs: ProviderObjectReferenceRepository,
+    credential: Any,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {"product_ref": safe_ref}
+    if "deleted" in value:
+        if value["deleted"] is not True:
+            raise ValidationError("Stripe deleted product must have deleted=true")
+        return {**result, "deleted": True}
+    for key in ("active", "livemode"):
+        result[key] = _safe_boolean(value.get(key), field=f"product.{key}")
+    for key in ("created", "updated"):
+        result[key] = _safe_nonnegative_integer(value.get(key), field=f"product.{key}")
+    _add_nested_ref(
+        result, value, "default_price", "default_price_ref", "stripe.price", refs, credential
+    )
+    return result
+
+
+def _safe_price(
+    value: Mapping[str, Any],
+    safe_ref: str,
+    *,
+    refs: ProviderObjectReferenceRepository,
+    credential: Any,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {"price_ref": safe_ref}
+    for key in ("active", "livemode"):
+        result[key] = _safe_boolean(value.get(key), field=f"price.{key}")
+    result["created"] = _safe_nonnegative_integer(value.get("created"), field="price.created")
+    result["currency"] = _safe_currency(value.get("currency"), field="price.currency")
+    result["type"] = _safe_enum(value.get("type"), {"one_time", "recurring"}, field="price.type")
+    result["billing_scheme"] = _safe_enum(
+        value.get("billing_scheme"), {"per_unit", "tiered"}, field="price.billing_scheme"
+    )
+    if not value.get("product"):
+        raise ValidationError("Stripe price must identify its product")
+    _add_nested_ref(result, value, "product", "product_ref", "stripe.product", refs, credential)
+    result.update(_safe_price_terms(value, field="price"))
+    if "tiers_mode" in value:
+        result["tiers_mode"] = (
+            None
+            if value["tiers_mode"] is None
+            else _safe_enum(value["tiers_mode"], {"graduated", "volume"}, field="price.tiers_mode")
+        )
+    if "recurring" in value:
+        recurring = value["recurring"]
+        if recurring is None:
+            result["recurring"] = None
+        elif isinstance(recurring, Mapping):
+            # Meter ids are outside this catalog read contract; usage_type
+            # preserves metered semantics without adding an unused ref type.
+            result["recurring"] = {
+                "interval": _safe_enum(
+                    recurring.get("interval"),
+                    {"day", "week", "month", "year"},
+                    field="price.recurring.interval",
+                ),
+                "interval_count": _safe_integer(
+                    recurring.get("interval_count"), field="price.recurring.interval_count"
+                ),
+                "usage_type": _safe_enum(
+                    recurring.get("usage_type"),
+                    {"licensed", "metered"},
+                    field="price.recurring.usage_type",
+                ),
+            }
+        else:
+            raise ValidationError("Stripe price recurring must be an object or null")
+    if "transform_quantity" in value:
+        transform = value["transform_quantity"]
+        if transform is None:
+            result["transform_quantity"] = None
+        elif isinstance(transform, Mapping):
+            result["transform_quantity"] = {
+                "divide_by": _safe_integer(
+                    transform.get("divide_by"), field="price.transform_quantity.divide_by"
+                ),
+                "round": _safe_enum(
+                    transform.get("round"), {"up", "down"}, field="price.transform_quantity.round"
+                ),
+            }
+        else:
+            raise ValidationError("Stripe price transform_quantity must be an object or null")
+    if "currency_options" in value:
+        options = value["currency_options"]
+        if not isinstance(options, Mapping):
+            raise ValidationError("Stripe price currency_options must be an object")
+        result["currency_options"] = {}
+        for currency, terms in options.items():
+            _safe_currency(currency, field="price.currency_options key")
+            if not isinstance(terms, Mapping):
+                raise ValidationError("Stripe price currency option must be an object")
+            result["currency_options"][currency] = _safe_price_terms(
+                terms, field=f"price.currency_options.{currency}"
+            )
+    return result
+
+
+def _safe_price_terms(value: Mapping[str, Any], *, field: str) -> dict[str, Any]:
+    """Project reviewed monetary shapes without choosing currency or computing a total."""
+    result: dict[str, Any] = {}
+    for key in ("unit_amount", "unit_amount_decimal"):
+        if key in value:
+            result[key] = (
+                None
+                if value[key] is None
+                else _safe_decimal(value[key], field=f"{field}.{key}")
+                if key.endswith("_decimal")
+                else _safe_integer(value[key], field=f"{field}.{key}")
+            )
+    if "tax_behavior" in value:
+        result["tax_behavior"] = (
+            None
+            if value["tax_behavior"] is None
+            else _safe_enum(
+                value["tax_behavior"],
+                {"exclusive", "inclusive", "unspecified"},
+                field=f"{field}.tax_behavior",
+            )
+        )
+    if "custom_unit_amount" in value:
+        custom = value["custom_unit_amount"]
+        if custom is None:
+            result["custom_unit_amount"] = None
+        elif isinstance(custom, Mapping):
+            result["custom_unit_amount"] = {
+                key: None
+                if custom[key] is None
+                else _safe_integer(custom[key], field=f"{field}.custom_unit_amount.{key}")
+                for key in ("minimum", "maximum", "preset")
+                if key in custom
+            }
+        else:
+            raise ValidationError("Stripe price custom_unit_amount must be an object or null")
+    if "tiers" in value:
+        tiers = value["tiers"]
+        if not isinstance(tiers, list):
+            raise ValidationError("Stripe price tiers must be an array")
+        result["tiers"] = []
+        for tier in tiers:
+            if not isinstance(tier, Mapping):
+                raise ValidationError("Stripe price tier must be an object")
+            projected: dict[str, Any] = {}
+            for key in (
+                "flat_amount",
+                "flat_amount_decimal",
+                "unit_amount",
+                "unit_amount_decimal",
+                "up_to",
+            ):
+                if key in tier:
+                    projected[key] = (
+                        None
+                        if tier[key] is None
+                        else _safe_decimal(tier[key], field=f"{field}.tiers.{key}")
+                        if key.endswith("_decimal")
+                        else _safe_integer(tier[key], field=f"{field}.tiers.{key}")
+                    )
+            result["tiers"].append(projected)
+    return result
+
+
+def _safe_decimal(value: Any, *, field: str) -> str:
+    if not isinstance(value, str) or re.fullmatch(r"-?[0-9]+(?:\.[0-9]+)?", value) is None:
+        raise ValidationError(f"Stripe {field} must be a decimal string")
+    return value
 
 
 def _safe_customer(value: Mapping[str, Any], safe_ref: str) -> dict[str, Any]:
@@ -893,6 +1298,12 @@ def _safe_invoice(
             if due_date is None
             else _safe_nonnegative_integer(due_date, field="invoice.due_date")
         )
+    if "effective_at" in value:
+        result["effective_at"] = (
+            None
+            if value["effective_at"] is None
+            else _safe_nonnegative_integer(value["effective_at"], field="invoice.effective_at")
+        )
     result["created"] = _safe_nonnegative_integer(value.get("created"), field="invoice.created")
     result["livemode"] = _safe_boolean(value.get("livemode"), field="invoice.livemode")
     result["invoice_customer_email_sha256"] = _email_sha256(value.get("customer_email"))
@@ -932,6 +1343,43 @@ def _safe_invoice_item(
     result["amount"] = _safe_integer(value.get("amount"), field="invoice_item.amount")
     result["currency"] = _safe_currency(value.get("currency"), field="invoice_item.currency")
     result["date"] = _safe_nonnegative_integer(value.get("date"), field="invoice_item.date")
+    result["quantity"] = _safe_integer(value.get("quantity"), field="invoice_item.quantity")
+    result["quantity_decimal"] = _safe_decimal(
+        value.get("quantity_decimal"), field="invoice_item.quantity_decimal"
+    )
+    if "pricing" in value:
+        pricing = value["pricing"]
+        if pricing is None:
+            result["pricing_type"] = None
+        elif isinstance(pricing, Mapping):
+            result["pricing_type"] = _safe_enum(
+                pricing.get("type"), {"price_details"}, field="invoice_item.pricing.type"
+            )
+            if "unit_amount_decimal" in pricing:
+                result["unit_amount_decimal"] = (
+                    None
+                    if pricing["unit_amount_decimal"] is None
+                    else _safe_decimal(
+                        pricing["unit_amount_decimal"],
+                        field="invoice_item.pricing.unit_amount_decimal",
+                    )
+                )
+            if "price_details" in pricing:
+                details = pricing["price_details"]
+                if not isinstance(details, Mapping):
+                    raise ValidationError("Stripe invoice item price_details must be an object")
+                if not isinstance(details.get("product"), str):
+                    raise ValidationError(
+                        "Stripe invoice item price_details.product must be a product id"
+                    )
+                for key, kind in (("price", "stripe.price"), ("product", "stripe.product")):
+                    if not details.get(key):
+                        raise ValidationError(
+                            f"Stripe invoice item price_details.{key} is required"
+                        )
+                    _add_nested_ref(result, details, key, f"{key}_ref", kind, refs, credential)
+        else:
+            raise ValidationError("Stripe invoice item pricing must be an object or null")
     for key in ("proration", "livemode"):
         result[key] = _safe_boolean(value.get(key), field=f"invoice_item.{key}")
     description = value.get("description")
@@ -1568,6 +2016,8 @@ def _safe_balance_amounts(value: Any, *, field: str) -> list[dict[str, Any]]:
 
 def _object_ref_for_type(value: Mapping[str, Any], object_type: str) -> str:
     ref_key = {
+        "stripe.product": "product_ref",
+        "stripe.price": "price_ref",
         "stripe.customer": "customer_ref",
         "stripe.invoice": "invoice_ref",
         "stripe.invoice-item": "invoice_item_ref",

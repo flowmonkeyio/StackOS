@@ -1,6 +1,6 @@
 slug: finance
 name: Finance Operations
-version: 0.8.0
+version: 0.8.2
 description: Backend-neutral finance workflows and provider transport for a solo US business. StackOS never becomes the finance system of record.
 display_order: 18
 source: builtin
@@ -38,7 +38,7 @@ providers:
       setup_note: Store a restricted Stripe API key in StackOS. Account testing uses the read-only account endpoint; Stripe enforces the key permissions for each action.
       setup:
         credential_label: Stripe restricted API key
-        setup_note: In the Stripe Dashboard, create a restricted API key with only the customer, invoice, invoice item, payment intent, payment record, charge, balance transaction, refund, and balance reads or writes required by your approved workflows. Connect it through StackOS; never share the key with an agent.
+        setup_note: In the Stripe Dashboard, create a restricted API key with Product and Price reads for catalog selection and only the customer, invoice, invoice item, payment intent, payment record, charge, balance transaction, refund, and balance reads or writes required by your approved workflows. Connect it through StackOS; never share the key with an agent.
         homepage_url: https://stripe.com/
         signup_url: https://dashboard.stripe.com/register
         console_url: https://dashboard.stripe.com/
@@ -93,7 +93,7 @@ actions:
         - https://docs.stripe.com/api/customers/create
   - key: stripe.customers.retrieve
     name: Retrieve Stripe Customer
-    description: Retrieve one previously discovered Stripe customer by an account-bound reference.
+    description: Retrieve one previously discovered Stripe customer by an account-bound reference; optionally return reviewed name, email and description as sensitive business details.
     provider: stripe
     capability: stripe-invoicing
     risk_level: read
@@ -103,6 +103,7 @@ actions:
       required: [customer_ref]
       properties:
         customer_ref: &opaque_ref {type: string, pattern: '^provider-object:', maxLength: 120}
+        include_business_details: &include_business_details {type: boolean, default: false, description: "Return the selected fields under data.business_details (data.items[].business_details for lists). These may contain private business data or grant invoice access; never publish or share beyond the operator-authorized destination. Connector output choice only, not sent to Stripe."}
     output_schema: *stripe_output
     config:
       schema_version: stackos.action.v1
@@ -135,6 +136,99 @@ actions:
       enforce_budget: false
       stripe: {method: GET, path: /customers, api_version: 2026-08-26.dahlia}
       docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/customers/list]
+  - key: stripe.products.list
+    name: List Stripe Products
+    description: Read one bounded catalog page with safe product and default-price references; optionally include product name, description, and unit label.
+    provider: stripe
+    capability: stripe-invoicing
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        active: {type: boolean}
+        limit: {type: integer, minimum: 1, maximum: 100, default: 25}
+        page_cursor: *opaque_ref
+        include_business_details: *include_business_details
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: /products, api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/products/list]
+  - key: stripe.products.retrieve
+    name: Retrieve Stripe Product
+    description: Read one account-bound product and its default-price reference, with optional selected business details.
+    provider: stripe
+    capability: stripe-invoicing
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [product_ref]
+      properties:
+        product_ref: *opaque_ref
+        include_business_details: *include_business_details
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: '/products/{product_ref}', api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/products/retrieve]
+  - key: stripe.prices.list
+    name: List Stripe Prices
+    description: Read one bounded catalog page preserving price type, currency and pricing structure; optionally include nickname and lookup key.
+    provider: stripe
+    capability: stripe-invoicing
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        product_ref: *opaque_ref
+        active: {type: boolean}
+        currency: {type: string, pattern: '^[a-z]{3}$'}
+        type: {type: string, enum: [one_time, recurring]}
+        limit: {type: integer, minimum: 1, maximum: 100, default: 25}
+        page_cursor: *opaque_ref
+        include_business_details: *include_business_details
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: /prices, api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/prices/list]
+  - key: stripe.prices.retrieve
+    name: Retrieve Stripe Price
+    description: Read an account-bound price with fixed tier and currency-option expansions; preserve pricing facts without computing totals.
+    provider: stripe
+    capability: stripe-invoicing
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [price_ref]
+      properties:
+        price_ref: *opaque_ref
+        include_business_details: *include_business_details
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: '/prices/{price_ref}', api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/prices/retrieve]
   - key: stripe.invoices.create
     name: Create Draft Stripe Invoice
     description: Create a Stripe draft invoice in the explicitly approved currency that will later be explicitly finalized and sent.
@@ -150,6 +244,7 @@ actions:
         collection_method: {type: string, enum: [send_invoice]}
         currency: {type: string, pattern: '^[a-z]{3}$', description: Approved invoice currency; do not inherit an account default or infer it from a later line.}
         days_until_due: {type: integer, minimum: 1}
+        effective_at: {type: integer, minimum: 0, description: Approved Unix timestamp for the invoice effective date; does not change its creation timestamp.}
         correlation_key: &correlation_key {type: string, pattern: '^[0-9a-f]{32}$', description: Random opaque key for one invoice occurrence; never encode customer or billing data.}
         description: {type: string, maxLength: 500, description: When supplied, use an opaque payload-secret marker rather than plaintext action input.}
     output_schema: *stripe_output
@@ -163,18 +258,28 @@ actions:
       docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/invoices/create]
   - key: stripe.invoice-items.create
     name: Create Stripe Invoice Item
-    description: Add one explicit positive-amount line item to an explicit Stripe customer and draft invoice.
+    description: Add one explicit draft line using either a positive manual amount or an existing account-bound Stripe price and explicit quantity.
     provider: stripe
     capability: stripe-invoicing
     risk_level: write
     input_schema: &invoice_item_create_input
       type: object
       additionalProperties: false
-      required: [customer_ref, invoice_ref, amount, currency, description]
+      required: [customer_ref, invoice_ref]
+      oneOf:
+        - required: [amount, currency, description]
+          not:
+            anyOf:
+              - required: [price_ref]
+              - required: [quantity]
+        - required: [price_ref, quantity]
+          not: {required: [amount]}
       properties:
         customer_ref: *opaque_ref
         invoice_ref: *opaque_ref
         amount: {type: integer, minimum: 1}
+        price_ref: *opaque_ref
+        quantity: {type: integer, minimum: 0, description: Explicit quantity for an existing-price line; zero is accepted by Stripe.}
         currency: {type: string, pattern: '^[a-z]{3}$'}
         description: {type: string, minLength: 1, maxLength: 500, description: Use an opaque payload-secret marker so line text is materialized only for provider dispatch.}
     output_schema: *stripe_output
@@ -188,7 +293,7 @@ actions:
       docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/invoiceitems/create]
   - key: stripe.invoice-items.list
     name: List Stripe Invoice Items
-    description: Read one bounded page of items for exactly one invoice or customer; descriptions are returned only as exact UTF-8 SHA-256 digests.
+    description: Read one bounded page of items for exactly one invoice or customer; descriptions are exact UTF-8 SHA-256 digests by default, with optional scoped business text.
     provider: stripe
     capability: stripe-invoicing
     risk_level: read
@@ -203,6 +308,7 @@ actions:
         customer_ref: *opaque_ref
         limit: {type: integer, minimum: 1, maximum: 100, default: 25}
         page_cursor: *opaque_ref
+        include_business_details: *include_business_details
     output_schema: *stripe_output
     config:
       schema_version: stackos.action.v1
@@ -387,7 +493,7 @@ actions:
       docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/payment-record, https://github.com/stripe/openapi/blob/9ac29c7795ab21c7711b4bc25bb2dd739552a5fa/latest/openapi.spec3.json]
   - key: stripe.invoices.retrieve
     name: Retrieve Stripe Invoice
-    description: Retrieve one invoice with its current customer expanded, exposing primary email digests and observed due date for comparison; additional billing recipients remain outside API visibility.
+    description: Retrieve one invoice with its current customer expanded, primary email digests and observed due date. Optional business details include invoice number, memo, customer snapshot name/email and hosted invoice/PDF links; additional billing recipients remain outside API visibility.
     provider: stripe
     capability: stripe-invoicing
     risk_level: read
@@ -398,6 +504,7 @@ actions:
       properties:
         invoice_ref: *opaque_ref
         correlation_key: *correlation_key
+        include_business_details: *include_business_details
     output_schema: *stripe_output
     config:
       schema_version: stackos.action.v1
@@ -458,7 +565,7 @@ actions:
       docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/invoice-payment/list]
   - key: stripe.charges.retrieve
     name: Retrieve Stripe Charge
-    description: Retrieve one previously discovered Stripe charge by its safe reference.
+    description: Retrieve one previously discovered Stripe charge by its safe reference; optionally include its description, receipt link and safe customer reference for matching.
     provider: stripe
     capability: stripe-reconciliation
     risk_level: read
@@ -468,6 +575,7 @@ actions:
       required: [charge_ref]
       properties:
         charge_ref: *opaque_ref
+        include_business_details: *include_business_details
     output_schema: *stripe_output
     config:
       schema_version: stackos.action.v1

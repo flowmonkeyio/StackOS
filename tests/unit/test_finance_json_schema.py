@@ -13,6 +13,8 @@ from pathlib import Path
 import pytest
 from jsonschema import Draft202012Validator, FormatChecker
 
+from tests.helpers.finance_workspace import material_record_digest
+
 ROOT = Path(__file__).resolve().parents[2]
 WORKSPACE = ROOT / "plugins/finance/templates/finance-workspace"
 SCHEMA_PATH = WORKSPACE / "schemas/finance-v1.schema.json"
@@ -282,11 +284,55 @@ def test_billing_versions_bind_exact_structured_scope_for_host_immutability_chec
         assert _errors(_document("billing_versions", broken)), field
 
 
+def test_billing_version_preserves_optional_issue_date_and_catalog_selection() -> None:
+    billing = _billing_version()
+    billing["effective_at"] = 1_787_520_000
+    billing["lines"] = [
+        {
+            "line_id": "line:fixture:catalog",
+            "price_ref": "provider-object:price-fixture",
+            "quantity": 0,
+            "currency": "EUR",
+            "description": "Synthetic catalog work",
+            "description_sha256": "d" * 64,
+            "source_refs": ["source:fixture"],
+        }
+    ]
+    # Before a draft quote, the immutable proposal identifies the chosen Price
+    # and quantity without guessing a total.
+    billing.pop("subtotal")
+    billing.pop("total")
+    assert not _errors(_document("billing_versions", billing))
+
+    # Once the independent draft read supplies current terms and totals, retain
+    # its observed catalog amount in the approval-bound proposal. The connector
+    # still sends only price_ref and quantity for this request mode.
+    observed = copy.deepcopy(billing)
+    observed["lines"][0]["amount"] = {"amount_minor": 1250, "currency": "EUR"}
+    observed["subtotal"] = {"amount_minor": 1250, "currency": "EUR"}
+    observed["total"] = {"amount_minor": 1250, "currency": "EUR"}
+    assert not _errors(_document("billing_versions", observed))
+
+    for quantity in (-1, "1", True):
+        invalid = copy.deepcopy(billing)
+        invalid["lines"][0]["quantity"] = quantity
+        assert _errors(_document("billing_versions", invalid)), quantity
+
+    incomplete_catalog = copy.deepcopy(_billing_version())
+    incomplete_catalog["lines"][0]["price_ref"] = "provider-object:price-fixture"
+    assert _errors(_document("billing_versions", incomplete_catalog))
+
+    invalid_timestamp = copy.deepcopy(billing)
+    invalid_timestamp["effective_at"] = -1
+    assert _errors(_document("billing_versions", invalid_timestamp))
+
+
 def test_billing_digest_description_defines_exact_material_and_canonical_serialization() -> None:
     description = _schema()["$defs"]["billing_version"]["description"]
     assert (
         "exactly version, customer_mapping_ref, recipient_settings_ref, "
-        "external_project_ref when present, currency, terms, lines, subtotal, total, "
+        "external_project_ref when present, effective_at when present, currency, terms, lines, "
+        "subtotal when present, total when present, "
         "source_refs, and supersedes_ref only when present"
     ) in description
     assert "Preserve complete nested values and array order" in description
@@ -477,3 +523,69 @@ def test_authority_digest_descriptions_preserve_material_gaps_and_exclude_outcom
             "review_refs, write_proof_refs and handoff_refs"
         ) in definitions[record_type]["description"]
         assert "Include record_id, provenance, gaps" in definitions[record_type]["description"]
+
+
+def _collection_decision() -> dict:
+    return {
+        **_record("collection:fixture:v1"),
+        "version": 1,
+        "invoice_ref": "invoice:fixture",
+        "eligibility": "eligible",
+        "decision_reason": "Reviewed synthetic follow-up",
+        "reminder_owner": "agent",
+        "recipient_settings_ref": "recipients:fixture:v1",
+        "send_outcome": "not-attempted",
+    }
+
+
+@pytest.mark.parametrize(
+    ("route", "payload"),
+    [
+        ("stripe-resend", {"invoice_ref": "invoice:fixture", "idempotency_key": "fixture-send"}),
+        (
+            "smtp-email",
+            {
+                "recipients": ["client@example.test"],
+                "subject": "Follow-up",
+                "text": "Hello",
+                "html": "<p>Hello</p>",
+                "bcc": ["copy@example.test"],
+                "headers": {"In-Reply-To": "<prior@example.test>"},
+            },
+        ),
+    ],
+)
+def test_followup_outreach_reuses_selected_action_payload(route: str, payload: dict) -> None:
+    decision = _collection_decision()
+    decision.pop("recipient_settings_ref")
+    outreach = {"route": route, "account_ref": "account:fixture", "input_json": payload}
+    decision["outreach"] = outreach
+    assert not _errors(_document("collection_decisions", decision))
+    original = material_record_digest(decision, "collection_decisions")
+    decision["send_outcome"] = "partial"
+    assert material_record_digest(decision, "collection_decisions") == original
+    outreach["input_json"] = {**payload, "subject": "Changed content"}
+    assert material_record_digest(decision, "collection_decisions") != original
+    for required in ("route", "account_ref", "input_json"):
+        incomplete = {key: value for key, value in outreach.items() if key != required}
+        assert _errors(_document("collection_decisions", {**decision, "outreach": incomplete}))
+    definition = _schema()["$defs"]["collection_decision"]["allOf"][1]["properties"]["outreach"]
+    assert definition["additionalProperties"] is False
+    assert definition["properties"]["input_json"] == {
+        "type": "object",
+        "additionalProperties": True,
+    }
+
+
+@pytest.mark.parametrize("outcome", ["partial", "rejected"])
+def test_collection_decision_retains_submission_outcomes(outcome: str) -> None:
+    decision = {**_collection_decision(), "send_outcome": outcome}
+    assert not _errors(_document("collection_decisions", decision))
+
+
+def test_existing_stripe_decision_and_digest_remain_unchanged() -> None:
+    decision = _collection_decision()
+    assert not _errors(_document("collection_decisions", decision))
+    assert material_record_digest(decision, "collection_decisions") == (
+        "99931591dfadc775a6bccb2acd8ba1989bcd45e28616562607087b1be14ee979"
+    )

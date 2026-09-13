@@ -56,6 +56,8 @@ _DIAGNOSTIC_STATIC_PATHS = frozenset(
         "/v1/invoices",
         "/v1/payment_records",
         "/v1/payment_records/report_payment",
+        "/v1/prices",
+        "/v1/products",
         "/v1/refunds",
     }
 )

@@ -2,6 +2,66 @@
 
 ## Unreleased
 
+- Moved AIGNC chat, image, and audio requests onto the existing background
+  action ID/polling flow used by FTP and S3. Generation read timeout defaults to
+  ten minutes and is configurable from one to thirty minutes. Run-plan success
+  or skip recording now waits for linked background actions to become terminal.
+- Fixed AIGNC image generation for the verified `message.images` JPEG data URI
+  response with null text content. Images use the existing generated artifact
+  path; malformed, multiple, or remote image outputs are rejected.
+- Updated the AIGNC service endpoint to `https://cli-api.f2nd.com/v1` per the
+  operator's 2026-09-13 instruction, preserving provider identity and existing
+  account bindings.
+- Added AIGNC Utilities actions for model discovery, explicit text with optional
+  Google grounding, JPEG generation, and managed-audio analysis. The connector
+  uses daemon-held credentials and existing grants, response files, and generic
+  artifacts, with no model routing or pricing integration. Verification uses
+  the supplier-provided contract and mocked provider responses.
+
+## 2.1.27 - 2026-09-07
+
+- Added Stripe product/price discovery and invoice lines using an existing price
+  and quantity, while preserving manual amount lines.
+- Added optional invoice issue dates through Stripe's `effective_at`, with
+  pricing and date readback for verification.
+- Aligned finance workflows and agent guidance for dated invoices, existing
+  payment attachment, and explicit no-send handoffs. Documented the additional
+  Products Read and Prices Read restricted-key permissions.
+
+## 2.1.26 - 2026-09-07
+
+- Replaced the Stripe initials with the supplied logo in the app and website.
+- Fixed custom workflow save/fork returning permission errors through approved
+  agent setup and CLI calls. Validated templates can be saved in the bound
+  project without starting a run or changing execution permissions.
+- Invalid workflow drafts and fork names now return validation details, and
+  unresolved required actions no longer report execution-ready.
+
+## 2.1.25 - 2026-09-07
+
+- Added compact, clickable ticket-status snapshots to the global Overview and
+  project Home, using the same design and existing status filters.
+- Restored the full local-service section and AI app connectivity cards on the
+  Overview, including real connection status in the browser.
+
+## 2.1.24 - 2026-09-07
+
+- Fixed SMTP preflight validation of protected recipient references while
+  preserving resolved email-address checks before delivery.
+
+- Finance follow-ups now use the same billing agent for operator-directed Stripe
+  resends or SMTP email, with optional IMAP reply evidence. Finance role guidance
+  reuses documented inputs and clarifies only material gaps or conflicts.
+
+- Fixed IMAP search continuation and explicit MIME/field completeness reporting,
+  Slack history's opt-in full selected content and provider-limit indicators,
+  and Google Ads report cursor round-tripping through sanitized action outputs.
+  Google Ads paging input is now `page_cursor`, matching GA4 and Tag Manager.
+
+- Added explicitly requested Stripe business-detail reads for invoice/PDF and
+  receipt links, invoice numbers, customer identity and invoice-item descriptions,
+  preserving compact defaults, account-bound references and credential redaction.
+
 ## 2.1.23 - 2026-09-06
 
 - Added minimal agency and client-project setup workflows using existing

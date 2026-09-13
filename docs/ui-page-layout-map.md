@@ -18,9 +18,9 @@ not become narrower when its data or selected mode changes.
 
 | Route | Human surface | Page-shell owner | Inner layout |
 | --- | --- | --- | --- |
-| `/` | Portfolio | `HomeView` | portfolio overview, workload visualization, project directory |
+| `/` | Overview | `HomeView` | full local service and host status, tickets by current status, project directory with tracked work and ticket counts |
 | `/auth-error` | Authentication recovery | `AuthErrorView` | centered recovery content within the full shell |
-| `/projects/:id` | Project Home | `HomeConsoleView` | priority banner, supervision metrics, active work, outcomes |
+| `/projects/:id` | Project Home | `HomeConsoleView` | tickets by current status, project connections and configured workflows, links to filtered Work |
 | `/projects/:id/setup` | Setup | `ProjectDetailView` | shared project-detail header and setup panel |
 | `/projects/:id/schedules` | Automation | `ProjectDetailView` | shared project-detail header and schedules panel |
 | `/projects/:id/cost-budget` | Spend | `ProjectDetailView` | shared project-detail header and budget panel |
@@ -34,7 +34,7 @@ not become narrower when its data or selected mode changes.
 | `/accounts` | Accounts | `AccountsView` | global named Account inventory and reusable Account setup |
 | `/projects/:id/connections` | Connections | `ConnectionsView` | Account attachment plus project-bound communication setup |
 | `/projects/:id/operations` | Operations | `OperationsView` | operation catalog and detail |
-| `/projects/:id/action-calls` | Action history | `ActionCallsView` | action inventory and result detail |
+| `/projects/:id/action-calls` | Action history | `ActionCallsView` | date-filtered action inventory and exact recorded result detail |
 | `/projects/:id/agent-requests` | Agent requests | `AgentRequestsView` | request intake/handoff inventory and detail |
 | `/projects/:id/agent-presets` | Agent roles | `AgentPresetsView` | preset catalog and detail drawer |
 | `/projects/:id/workflow-templates` | Workflow library | `WorkflowTemplatesView` | template inventory and wide visual workflow guide |

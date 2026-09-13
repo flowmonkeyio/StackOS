@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session, col, select
@@ -14,6 +14,7 @@ from stackos.db.models import (
     IntegrationCredential,
     Project,
     ScheduledJob,
+    TrackerItemStatus,
 )
 from stackos.repositories.base import (
     BudgetExceededError,
@@ -43,6 +44,28 @@ class ProjectOut(BaseModel):
     schedule_json: dict[str, Any] | None
     created_at: datetime
     updated_at: datetime
+
+
+class PortfolioTaskOut(BaseModel):
+    id: int
+    key: str
+    title: str
+    status: str
+    updated_at: datetime
+
+
+class ProjectPortfolioItemOut(BaseModel):
+    id: int
+    slug: str
+    name: str
+    domain: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    last_activity_at: datetime | None = None
+    latest_task: PortfolioTaskOut | None
+    ticket_count: int
+    ticket_counts: dict[str, int]
 
 
 class IntegrationCredentialOut(BaseModel):
@@ -161,6 +184,32 @@ class ProjectRepository:
             limit=limit,
             after_id=after_id,
             converter=lambda row: ProjectOut.model_validate(row),
+        )
+
+    def portfolio(
+        self,
+        *,
+        project_id: int | None = None,
+        is_active: bool | None = True,
+        query: str | None = None,
+        ticket_status: TrackerItemStatus | None = None,
+        sort: Literal["recent", "name"] = "recent",
+        limit: int | None = None,
+        after_id: int | None = None,
+    ) -> Page[ProjectPortfolioItemOut]:
+        from .project_portfolio import query_portfolio
+
+        if project_id is not None:
+            self._fetch_row(project_id)
+        return query_portfolio(
+            self._s,
+            project_id=project_id,
+            is_active=is_active,
+            query=query,
+            ticket_status=ticket_status,
+            sort=sort,
+            limit=limit,
+            after_id=after_id,
         )
 
     def update(self, project_id: int, **patch: Any) -> Envelope[ProjectOut]:

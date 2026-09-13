@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs
 
@@ -13,11 +14,176 @@ from sqlmodel import Session, select
 from stackos.auth_providers import AuthRepository
 from stackos.db.models import Credential, CredentialAccount
 from stackos.repositories.provider_refs import ProviderObjectReferenceRepository
-from tests.helpers.stripe import stripe_dispute, stripe_invoice
+from tests.helpers.stripe import (
+    stripe_charge,
+    stripe_customer,
+    stripe_dispute,
+    stripe_invoice,
+    stripe_invoice_item,
+    stripe_price,
+    stripe_product,
+)
 
 from .conftest import MCPClient
 
 STRIPE_SECRET = "sk_test_mcp_stripe_sentinel"
+
+
+@pytest.mark.parametrize("include_details", [None, False, True])
+@pytest.mark.parametrize(
+    ("action", "object_type", "object_id", "ref_field", "path", "provider_data", "details"),
+    [
+        (
+            "customers.retrieve",
+            "customer",
+            "cus_fixture",
+            "customer_ref",
+            "/customers/cus_fixture",
+            stripe_customer(
+                name="Fixture Customer",
+                email="fixture@example.test",
+                description="Customer business context",
+            ),
+            {
+                "name": "Fixture Customer",
+                "email": "fixture@example.test",
+                "description": "Customer business context",
+            },
+        ),
+        (
+            "invoices.retrieve",
+            "invoice",
+            "in_fixture",
+            "invoice_ref",
+            "/invoices/in_fixture?expand%5B%5D=customer",
+            stripe_invoice(
+                number="FIXTURE-0001",
+                description="Completed services",
+                customer_name="Fixture Customer",
+                customer_email="fixture@example.test",
+                hosted_invoice_url="https://invoice.stripe.com/i/acct_fixture/test_fixture",
+                invoice_pdf="https://pay.stripe.com/invoice/acct_fixture/test_fixture/pdf",
+            ),
+            {
+                "number": "FIXTURE-0001",
+                "description": "Completed services",
+                "customer_name": "Fixture Customer",
+                "customer_email": "fixture@example.test",
+                "hosted_invoice_url": "https://invoice.stripe.com/i/acct_fixture/test_fixture",
+                "invoice_pdf": "https://pay.stripe.com/invoice/acct_fixture/test_fixture/pdf",
+            },
+        ),
+        (
+            "invoice-items.list",
+            "invoice",
+            "in_fixture",
+            "invoice_ref",
+            "/invoiceitems?limit=1&invoice=in_fixture",
+            {
+                "object": "list",
+                "has_more": False,
+                "data": [
+                    stripe_invoice_item(invoice="in_fixture", description="Completed services")
+                ],
+            },
+            {"description": "Completed services"},
+        ),
+        (
+            "charges.retrieve",
+            "charge",
+            "ch_fixture",
+            "charge_ref",
+            "/charges/ch_fixture",
+            stripe_charge(
+                description="Completed services",
+                receipt_url="https://pay.stripe.com/receipts/fixture",
+            ),
+            {
+                "description": "Completed services",
+                "receipt_url": "https://pay.stripe.com/receipts/fixture",
+            },
+        ),
+    ],
+)
+def test_stripe_business_details_direct_file_and_audit_are_explicit_opt_in(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    include_details: bool | None,
+    action: str,
+    object_type: str,
+    object_id: str,
+    ref_field: str,
+    path: str,
+    provider_data: dict[str, Any],
+    details: dict[str, str],
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    credential_ref = _seed_stripe_credential(mcp_client, project_id)
+    object_ref = _seed_stripe_object_ref(
+        mcp_client,
+        project_id=project_id,
+        credential_ref=credential_ref,
+        object_type=f"stripe.{object_type}",
+        provider_object_id=object_id,
+    )
+    payload: dict[str, Any] = {ref_field: object_ref}
+    if action.endswith(".list"):
+        payload["limit"] = 1
+    if include_details is not None:
+        payload["include_business_details"] = include_details
+    httpx_mock.add_response(
+        method="GET",
+        url=f"https://api.stripe.com/v1{path}",
+        json={
+            **provider_data,
+            "client_secret": "pi_fixture_secret_never_return",
+            "api_key": STRIPE_SECRET,
+            "metadata": {"private": "private-metadata-sentinel"},
+        },
+    )
+    result = mcp_client.call_tool_structured(
+        "action.run",
+        {
+            "project_id": project_id,
+            "action_ref": f"finance.stripe.{action}",
+            "credential_ref": credential_ref,
+            "input_json": payload,
+        },
+    )["data"]
+    assert result["status"] == "success", result
+    assert result["output"]["output_mode"] == "file"
+    assert result["output"]["schema_ref"] == "stackos.action-output.v1"
+    saved = json.loads(Path(result["output"]["path"]).read_text(encoding="utf-8"))
+    data = saved["response"]["output_json"]["data"]
+    record = data["items"][0] if action.endswith(".list") else data
+    audit_response = mcp_client.test_client.get(
+        f"/api/v1/projects/{project_id}/action-calls",
+        params={"action_key": f"stripe.{action}", "status": "success"},
+        headers=mcp_client._headers(),
+    )
+    assert audit_response.status_code == 200
+    audit = audit_response.json()["items"][0]
+    assert audit["response_json"]["file"]["path"] == result["output"]["path"]
+    audit_file = json.loads(
+        Path(audit["response_json"]["file"]["path"]).read_text(encoding="utf-8")
+    )
+    audit_data = audit_file["response"]["output_json"]["data"]
+    audit_record = audit_data["items"][0] if action.endswith(".list") else audit_data
+    if include_details:
+        assert record["business_details"] == details
+        assert audit_record["business_details"] == details
+    else:
+        assert "business_details" not in record
+        assert "business_details" not in audit_record
+        for value in details.values():
+            assert value not in json.dumps({"file": saved, "audit": audit})
+    serialized = json.dumps({"mcp": result, "file": saved, "audit": audit})
+    for excluded in (STRIPE_SECRET, "pi_fixture_secret_never_return", "private-metadata-sentinel"):
+        assert excluded not in serialized
+    request = httpx_mock.get_requests()[0]
+    assert "include_business_details" not in request.url.params
+    assert request.content == b""
 
 
 @pytest.mark.parametrize("response_mode", ["compact", "raw"])
@@ -66,7 +232,7 @@ def test_payment_record_list_is_deferred_before_auth_or_http(
     listed = mcp_client.call_tool_structured(
         "action.list", {"project_id": project_id, "plugin_slug": "finance"}
     )
-    assert len(listed["items"]) == 25
+    assert len(listed["items"]) == 29
     assert action_ref not in {item["action_ref"] for item in listed["items"]}
     full = mcp_client.call_tool_structured(
         "action.list",
@@ -76,7 +242,7 @@ def test_payment_record_list_is_deferred_before_auth_or_http(
             "include_unavailable_integrations": True,
         },
     )
-    assert len(full["items"]) == 26
+    assert len(full["items"]) == 30
     deferred = next(item for item in full["items"] if item["action_ref"] == action_ref)
     assert deferred["availability_status"] == "deferred"
     assert deferred["executable"] is False
@@ -817,6 +983,558 @@ def test_settlement_actions_require_separate_owner_gates_and_safe_audit(
     )
     assert revised["data"]["id"] != plan_id
     assert {row["status"] for row in revised["data"]["approval_requests"]} == {"pending"}
+
+
+def test_stripe_business_details_granted_read_preserves_links_and_denies_other_actions(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    credential_ref = _seed_stripe_credential(mcp_client, project_id)
+    invoice_ref = _seed_stripe_object_ref(
+        mcp_client,
+        project_id=project_id,
+        credential_ref=credential_ref,
+    )
+    action_ref = "finance.stripe.invoices.retrieve"
+    plan = _stripe_balance_plan()
+    plan["grants"]["mcp_tool_grants"][0]["action_refs"] = [action_ref]
+    plan["steps"][0]["action_refs"] = [action_ref]
+    plan_id = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": plan},
+    )["data"]["id"]
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": plan_id},
+    )["data"]
+    claimed = mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {"run_plan_id": plan_id, "step_id": "read-balance", "run_token": started["run_token"]},
+    )["data"]
+    args = {
+        "project_id": project_id,
+        "credential_ref": credential_ref,
+        "run_token": started["run_token"],
+        "response_mode": "raw",
+        "output_policy_json": {"mode": "inline"},
+    }
+    denied = mcp_client.call_tool_error(
+        "action.execute",
+        {
+            **args,
+            "action_ref": "finance.stripe.charges.retrieve",
+            "input_json": {
+                "charge_ref": "provider-object:not-granted",
+                "include_business_details": True,
+            },
+        },
+    )
+    assert denied["message"] == "ToolNotGrantedError"
+    assert httpx_mock.get_requests() == []
+    link = "https://invoice.stripe.com/i/acct_fixture/granted_fixture"
+    httpx_mock.add_response(
+        method="GET",
+        url="https://api.stripe.com/v1/invoices/in_mcp_fixture?expand%5B%5D=customer",
+        json=stripe_invoice(
+            id="in_mcp_fixture",
+            status="paid",
+            amount_paid=1000,
+            amount_remaining=0,
+            hosted_invoice_url=link,
+            client_secret="pi_fixture_secret_never_return",
+        ),
+    )
+    executed = mcp_client.call_tool_structured(
+        "action.execute",
+        {
+            **args,
+            "action_ref": action_ref,
+            "input_json": {"invoice_ref": invoice_ref, "include_business_details": True},
+        },
+    )["data"]
+    assert executed["output_json"]["data"]["business_details"]["hosted_invoice_url"] == link
+    assert executed["action_call"]["run_plan_step_id"] == claimed["id"]
+    audit_response = mcp_client.test_client.get(
+        f"/api/v1/projects/{project_id}/action-calls",
+        params={"run_plan_id": plan_id, "run_plan_step_id": claimed["id"], "status": "success"},
+        headers=mcp_client._headers(),
+    )
+    assert audit_response.status_code == 200
+    audit = audit_response.json()["items"][0]
+    assert audit["id"] == executed["action_call"]["id"]
+    assert audit["response_json"]["data"]["business_details"]["hosted_invoice_url"] == link
+    serialized = json.dumps({"mcp": executed, "audit": audit})
+    assert STRIPE_SECRET not in serialized
+    assert "pi_fixture_secret_never_return" not in serialized
+    assert len(httpx_mock.get_requests()) == 1
+
+
+def test_stripe_catalog_granted_read_is_file_backed_and_denies_ungranted_sibling(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    credential_ref = _seed_stripe_credential(mcp_client, project_id)
+    action_ref = "finance.stripe.products.list"
+    plan = _stripe_balance_plan()
+    plan["grants"]["mcp_tool_grants"][0]["action_refs"] = [action_ref]
+    plan["steps"][0]["action_refs"] = [action_ref]
+    plan_id = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": plan},
+    )["data"]["id"]
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": plan_id},
+    )["data"]
+    claimed = mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "run_plan_id": plan_id,
+            "step_id": "read-balance",
+            "run_token": started["run_token"],
+        },
+    )["data"]
+    args = {
+        "project_id": project_id,
+        "credential_ref": credential_ref,
+        "run_token": started["run_token"],
+    }
+    denied = mcp_client.call_tool_error(
+        "action.execute",
+        {
+            **args,
+            "action_ref": "finance.stripe.prices.list",
+            "input_json": {"limit": 1},
+        },
+    )
+    assert denied["message"] == "ToolNotGrantedError"
+    assert httpx_mock.get_requests() == []
+    httpx_mock.add_response(
+        method="GET",
+        url="https://api.stripe.com/v1/products?limit=1",
+        json={
+            "object": "list",
+            "has_more": False,
+            "data": [stripe_product(name="Consulting package")],
+        },
+    )
+    executed = mcp_client.call_tool_structured(
+        "action.execute",
+        {
+            **args,
+            "action_ref": action_ref,
+            "input_json": {"limit": 1, "include_business_details": True},
+        },
+    )["data"]
+    assert executed["status"] == "success"
+    response_file = json.loads(Path(executed["output"]["path"]).read_text(encoding="utf-8"))
+    output = response_file["response"]["output_json"]["data"]
+    assert output["items"][0]["business_details"]["name"] == "Consulting package"
+    assert output["items"][0]["product_ref"].startswith("provider-object:")
+    audit_response = mcp_client.test_client.get(
+        f"/api/v1/projects/{project_id}/action-calls",
+        params={"run_plan_id": plan_id, "run_plan_step_id": claimed["id"], "status": "success"},
+        headers=mcp_client._headers(),
+    )
+    assert audit_response.status_code == 200
+    audit = audit_response.json()["items"]
+    assert len(audit) == 1
+    assert audit[0]["action_key"] == "stripe.products.list"
+    assert audit[0]["run_plan_step_id"] == claimed["id"]
+    serialized = json.dumps({"mcp": executed, "file": response_file, "audit": audit})
+    assert STRIPE_SECRET not in serialized
+    assert "prod_fixture" not in serialized
+    assert len(httpx_mock.get_requests()) == 1
+
+
+@pytest.mark.parametrize(
+    "use_catalog_price", [False, True], ids=["manual-amount", "dated-catalog-price"]
+)
+def test_stripe_business_details_email_to_existing_payment_invoice_handoff(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    use_catalog_price: bool,
+) -> None:
+    """Mocked explicit owner-scoped actions, not a financial/workflow signoff.
+
+    The fixture owner selects one full payment and its invoice text. It proves
+    transport and agent-readable output, without send, charge, or live accounts.
+    """
+    project_id = seeded_project["data"]["id"]
+    credential_ref = _seed_stripe_credential(mcp_client, project_id)
+    email = "fixture@example.test"
+    description = "Completed fixture consulting"
+    email_secret, description_secret = [
+        {
+            "$secret_ref": mcp_client.call_tool_structured(
+                "secret.set",
+                {"project_id": project_id, "value": value},
+            )["data"]["secret_ref"]
+        }
+        for value in (email, description)
+    ]
+    records: list[dict[str, Any]] = []
+
+    def run(action: str, payload: dict[str, Any], *, write: bool = False) -> dict[str, Any]:
+        result = mcp_client.call_tool_structured(
+            "action.run",
+            {
+                "project_id": project_id,
+                "credential_ref": credential_ref,
+                "action_ref": f"finance.stripe.{action}",
+                "input_json": payload,
+                **(
+                    {
+                        "confirm_direct": True,
+                        "intent_id": f"fixture-handoff-{action}",
+                        "intent_summary": (
+                            "Fixture owner approved one invoice for the selected existing payment; "
+                            "no send or charge."
+                        ),
+                    }
+                    if write
+                    else {}
+                ),
+            },
+        )["data"]
+        assert result.get("status") == "success", result
+        saved = json.loads(Path(result["output"]["path"]).read_text(encoding="utf-8"))
+        records.append(saved)
+        return saved["response"]["output_json"]["data"]
+
+    customer = stripe_customer(email=email, name="Fixture Customer")
+    httpx_mock.add_response(
+        method="GET",
+        url="https://api.stripe.com/v1/customers?limit=1&email=fixture%40example.test",
+        json={"object": "list", "data": [customer], "has_more": False},
+    )
+    customers = run("customers.list", {"email": email_secret, "limit": 1})
+    assert customers["has_more"] is False
+    customer_ref = customers["items"][0]["customer_ref"]
+    httpx_mock.add_response(
+        method="GET", url="https://api.stripe.com/v1/customers/cus_fixture", json=customer
+    )
+    customer_read = run(
+        "customers.retrieve", {"customer_ref": customer_ref, "include_business_details": True}
+    )
+    assert customer_read["business_details"]["email"] == email
+    httpx_mock.add_response(
+        method="GET",
+        url="https://api.stripe.com/v1/charges?limit=1&customer=cus_fixture",
+        json={
+            "object": "list",
+            "has_more": False,
+            "data": [
+                stripe_charge(
+                    customer="cus_fixture",
+                    payment_intent="pi_fixture",
+                    invoice=None,
+                )
+            ],
+        },
+    )
+    charges = run("charges.list", {"customer_ref": customer_ref, "limit": 1})
+    assert charges["has_more"] is False
+    payment_ref = charges["items"][0]["payment_intent_ref"]
+    httpx_mock.add_response(
+        method="GET",
+        url="https://api.stripe.com/v1/payment_intents/pi_fixture",
+        json={
+            "id": "pi_fixture",
+            "object": "payment_intent",
+            "customer": "cus_fixture",
+            "status": "succeeded",
+            "amount": 1000,
+            "amount_received": 1000,
+            "currency": "usd",
+            "livemode": False,
+            "created": 1700000000,
+            "client_secret": "pi_fixture_secret_never_return",
+        },
+    )
+    payment = run("payment-intents.retrieve", {"payment_intent_ref": payment_ref})
+    assert payment["status"] == "succeeded"
+    assert payment["customer_ref"] == customer_ref
+    assert payment["amount_received"] == 1000
+    assert payment["currency"] == "usd"
+    assert payment["livemode"] is False
+    issue_timestamp = 1698796800
+    price_ref = product_ref = None
+    if use_catalog_price:
+        product = stripe_product(name="Consulting package", description="Consulting services")
+        price = stripe_price(
+            unit_amount=500,
+            unit_amount_decimal="500",
+            nickname="Half-hour consulting",
+            lookup_key="consulting-half-hour",
+        )
+        httpx_mock.add_response(
+            method="GET",
+            url="https://api.stripe.com/v1/products?limit=1&active=true",
+            json={"object": "list", "data": [product], "has_more": False},
+        )
+        products = run(
+            "products.list", {"limit": 1, "active": True, "include_business_details": True}
+        )
+        product_ref = products["items"][0]["product_ref"]
+        assert products["items"][0]["business_details"]["name"] == product["name"]
+        httpx_mock.add_response(
+            method="GET", url="https://api.stripe.com/v1/products/prod_fixture", json=product
+        )
+        product_read = run(
+            "products.retrieve", {"product_ref": product_ref, "include_business_details": True}
+        )
+        httpx_mock.add_response(
+            method="GET",
+            url="https://api.stripe.com/v1/prices?limit=1&product=prod_fixture&currency=usd&type=one_time",
+            json={"object": "list", "data": [price], "has_more": False},
+        )
+        prices = run(
+            "prices.list",
+            {
+                "product_ref": product_ref,
+                "currency": "usd",
+                "type": "one_time",
+                "limit": 1,
+                "include_business_details": True,
+            },
+        )
+        price_ref = prices["items"][0]["price_ref"]
+        assert price_ref == product_read["default_price_ref"]
+        assert prices["items"][0]["business_details"]["nickname"] == price["nickname"]
+        httpx_mock.add_response(
+            method="GET",
+            url="https://api.stripe.com/v1/prices/price_fixture?expand%5B%5D=tiers&expand%5B%5D=currency_options",
+            json={
+                **price,
+                "currency_options": {"usd": {"unit_amount": 500, "unit_amount_decimal": "500"}},
+            },
+        )
+        price_read = run(
+            "prices.retrieve", {"price_ref": price_ref, "include_business_details": True}
+        )
+        assert price_read["product_ref"] == product_ref
+        assert price_read["unit_amount"] == 500
+        assert price_read["unit_amount_decimal"] == "500"
+    draft = stripe_invoice(
+        description=description,
+        customer_email=email,
+        **({"effective_at": issue_timestamp} if use_catalog_price else {}),
+    )
+    httpx_mock.add_response(method="POST", url="https://api.stripe.com/v1/invoices", json=draft)
+    created = run(
+        "invoices.create",
+        {
+            "customer_ref": customer_ref,
+            "collection_method": "send_invoice",
+            "currency": "usd",
+            "days_until_due": 30,
+            "description": description_secret,
+            **({"effective_at": issue_timestamp} if use_catalog_price else {}),
+        },
+        write=True,
+    )
+    assert created["status"] == "draft"
+    if use_catalog_price:
+        assert created["effective_at"] == issue_timestamp
+        assert created["created"] != issue_timestamp
+    assert description not in json.dumps(records[-1])
+    invoice_ref = created["invoice_ref"]
+    item_description = "Consulting package" if use_catalog_price else description
+    item = stripe_invoice_item(
+        invoice="in_fixture",
+        description=item_description,
+        **(
+            {
+                "quantity": 2,
+                "quantity_decimal": "2",
+                "pricing": {
+                    "type": "price_details",
+                    "unit_amount_decimal": "500",
+                    "price_details": {"price": "price_fixture", "product": "prod_fixture"},
+                },
+            }
+            if use_catalog_price
+            else {}
+        ),
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.stripe.com/v1/invoiceitems",
+        json=item,
+    )
+    line = run(
+        "invoice-items.create",
+        {
+            "customer_ref": customer_ref,
+            "invoice_ref": invoice_ref,
+            **(
+                {"price_ref": price_ref, "quantity": 2}
+                if use_catalog_price
+                else {
+                    "amount": 1000,
+                    "currency": "usd",
+                    "description": description_secret,
+                }
+            ),
+        },
+        write=True,
+    )
+    assert line["invoice_ref"] == invoice_ref
+    assert description not in json.dumps(records[-1])
+    httpx_mock.add_response(
+        method="GET",
+        url="https://api.stripe.com/v1/invoiceitems?limit=1&invoice=in_fixture",
+        json={"object": "list", "data": [item], "has_more": False},
+    )
+    independent_line = run(
+        "invoice-items.list",
+        {
+            "invoice_ref": invoice_ref,
+            "limit": 1,
+            "include_business_details": True,
+        },
+    )["items"][0]
+    assert independent_line["amount"] == 1000
+    assert independent_line["currency"] == "usd"
+    assert independent_line["business_details"]["description"] == item_description
+    if use_catalog_price:
+        assert independent_line["price_ref"] == price_ref
+        assert independent_line["product_ref"] == product_ref
+        assert independent_line["quantity"] == 2
+        assert independent_line["quantity_decimal"] == "2"
+        assert independent_line["unit_amount_decimal"] == "500"
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.stripe.com/v1/invoices/in_fixture/finalize",
+        json={**draft, "status": "open"},
+    )
+    finalized = run("invoices.finalize", {"invoice_ref": invoice_ref}, write=True)
+    assert finalized["status"] == "open"
+    link = "https://invoice.stripe.com/i/acct_fixture/paid_fixture"
+    pdf_link = "https://pay.stripe.com/invoice/acct_fixture/paid_fixture/pdf"
+    paid = {
+        **draft,
+        "status": "paid",
+        "amount_paid": 1000,
+        "amount_remaining": 0,
+        "hosted_invoice_url": link,
+        "invoice_pdf": pdf_link,
+        "number": "FIXTURE-0002",
+    }
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.stripe.com/v1/invoices/in_fixture/attach_payment",
+        json=paid,
+    )
+    attached = run(
+        "invoices.attach-payment",
+        {"invoice_ref": invoice_ref, "payment_intent_ref": payment_ref},
+        write=True,
+    )
+    assert attached["status"] == "paid"
+    assert "business_details" not in attached
+    httpx_mock.add_response(
+        method="GET",
+        url="https://api.stripe.com/v1/invoices/in_fixture?expand%5B%5D=customer",
+        json=paid,
+    )
+    invoice = run(
+        "invoices.retrieve", {"invoice_ref": invoice_ref, "include_business_details": True}
+    )
+    assert invoice["invoice_ref"] == invoice_ref
+    assert invoice["customer_ref"] == customer_ref
+    assert invoice["status"] == "paid"
+    assert invoice["amount_remaining"] == 0
+    assert invoice["business_details"]["hosted_invoice_url"] == link
+    assert invoice["business_details"]["invoice_pdf"] == pdf_link
+    if use_catalog_price:
+        assert invoice["effective_at"] == issue_timestamp
+        assert invoice["created"] != issue_timestamp
+    assert invoice["business_details"]["description"] == description
+    assert invoice["business_details"]["customer_email"] == email
+    httpx_mock.add_response(
+        method="GET",
+        url="https://api.stripe.com/v1/invoice_payments?limit=1&invoice=in_fixture",
+        json={
+            "object": "list",
+            "has_more": False,
+            "data": [
+                {
+                    "id": "inpay_fixture",
+                    "object": "invoice_payment",
+                    "invoice": "in_fixture",
+                    "amount_requested": 1000,
+                    "amount_paid": 1000,
+                    "currency": "usd",
+                    "created": 1700000000,
+                    "is_default": False,
+                    "livemode": False,
+                    "status": "paid",
+                    "status_transitions": {"paid_at": 1700000000},
+                    "payment": {"type": "payment_intent", "payment_intent": "pi_fixture"},
+                }
+            ],
+        },
+    )
+    allocations = run("invoice-payments.list", {"invoice_ref": invoice_ref, "limit": 1})
+    assert allocations["has_more"] is False
+    allocation = allocations["items"][0]
+    assert allocation["invoice_ref"] == invoice_ref
+    assert allocation["payment_intent_ref"] == payment_ref
+    assert allocation["status"] == "paid"
+    assert allocation["amount_paid"] == 1000
+    posts = [request for request in httpx_mock.get_requests() if request.method == "POST"]
+    assert [request.url.path for request in posts] == [
+        "/v1/invoices",
+        "/v1/invoiceitems",
+        "/v1/invoices/in_fixture/finalize",
+        "/v1/invoices/in_fixture/attach_payment",
+    ]
+    assert parse_qs(posts[0].content.decode())["auto_advance"] == ["false"]
+    assert parse_qs(posts[0].content.decode())["collection_method"] == ["send_invoice"]
+    if use_catalog_price:
+        assert parse_qs(posts[0].content.decode())["effective_at"] == [str(issue_timestamp)]
+        assert parse_qs(posts[1].content.decode()) == {
+            "customer": ["cus_fixture"],
+            "invoice": ["in_fixture"],
+            "pricing[price]": ["price_fixture"],
+            "quantity": ["2"],
+        }
+    assert parse_qs(posts[2].content.decode()) == {"auto_advance": ["false"]}
+    assert parse_qs(posts[3].content.decode()) == {"payment_intent": ["pi_fixture"]}
+    for request in httpx_mock.get_requests():
+        assert "include_business_details" not in request.url.params
+        assert b"include_business_details" not in request.content
+        assert request.headers["Stripe-Version"] == "2026-08-26.dahlia"
+        if request.method == "GET":
+            assert "Idempotency-Key" not in request.headers
+        else:
+            assert request.headers["Idempotency-Key"]
+    audit_response = mcp_client.test_client.get(
+        f"/api/v1/projects/{project_id}/action-calls",
+        params={"plugin_slug": "finance", "status": "success"},
+        headers=mcp_client._headers(),
+    )
+    assert audit_response.status_code == 200
+    audit = audit_response.json()["items"]
+    assert len(audit) == len(records)
+    serialized = json.dumps({"files": records, "audit": audit})
+    for excluded in (
+        STRIPE_SECRET,
+        "pi_fixture_secret_never_return",
+        "cus_fixture",
+        "in_fixture",
+        "prod_fixture",
+        "price_fixture",
+        'pi_fixture"',
+    ):
+        assert excluded not in serialized
 
 
 def _stripe_balance_plan() -> dict[str, Any]:

@@ -1,7 +1,7 @@
 {
   "source_url": "https://github.com/stripe/openapi/blob/9ac29c7795ab21c7711b4bc25bb2dd739552a5fa/latest/openapi.spec3.json",
   "api_version": "2026-08-26.dahlia",
-  "projection": "Full top-level required arrays and scalar types/enums only; not the complete provider response schema. Nullable OpenAPI fields converted to JSON Schema null unions.",
+  "projection": "Full top-level required arrays and selected scalar types/enums; reviewed Product/Price and invoice-item pricing shapes include nested schemas. Not the complete provider response schema. Nullable OpenAPI fields converted to JSON Schema null unions.",
   "schemas": {
     "balance_transaction": {
       "type": "object",
@@ -771,6 +771,16 @@
         },
         "quantity_decimal": {
           "type": "string"
+        },
+        "pricing": {
+          "anyOf": [
+            {
+              "$ref": "#/schemas/billing_bill_resource_invoicing_pricing_pricing"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
@@ -848,6 +858,456 @@
           "type": [
             "string",
             "null"
+          ]
+        }
+      }
+    },
+    "billing_bill_resource_invoicing_pricing_pricing": {
+      "required": [
+        "type"
+      ],
+      "type": "object",
+      "properties": {
+        "price_details": {
+          "$ref": "#/schemas/billing_bill_resource_invoicing_pricing_pricing_price_details"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "price_details"
+          ]
+        },
+        "unit_amount_decimal": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "decimal"
+        }
+      }
+    },
+    "billing_bill_resource_invoicing_pricing_pricing_price_details": {
+      "required": [
+        "price",
+        "product"
+      ],
+      "type": "object",
+      "properties": {
+        "price": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/schemas/price"
+            }
+          ]
+        },
+        "product": {
+          "type": "string"
+        }
+      }
+    },
+    "currency_option": {
+      "type": "object",
+      "properties": {
+        "custom_unit_amount": {
+          "anyOf": [
+            {
+              "$ref": "#/schemas/custom_unit_amount"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tax_behavior": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "exclusive",
+            "inclusive",
+            "unspecified",
+            null
+          ]
+        },
+        "tiers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/price_tier"
+          }
+        },
+        "unit_amount": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "unit_amount_decimal": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "decimal"
+        }
+      }
+    },
+    "custom_unit_amount": {
+      "type": "object",
+      "properties": {
+        "maximum": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "minimum": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "preset": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    },
+    "deleted_product": {
+      "required": [
+        "deleted",
+        "id",
+        "object"
+      ],
+      "type": "object",
+      "properties": {
+        "deleted": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "object": {
+          "type": "string",
+          "enum": [
+            "product"
+          ]
+        }
+      }
+    },
+    "price": {
+      "required": [
+        "active",
+        "billing_scheme",
+        "created",
+        "currency",
+        "id",
+        "livemode",
+        "metadata",
+        "object",
+        "product",
+        "type"
+      ],
+      "type": "object",
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "billing_scheme": {
+          "type": "string",
+          "enum": [
+            "per_unit",
+            "tiered"
+          ]
+        },
+        "created": {
+          "type": "integer",
+          "format": "unix-time"
+        },
+        "currency": {
+          "type": "string",
+          "format": "currency"
+        },
+        "currency_options": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/schemas/currency_option"
+          }
+        },
+        "custom_unit_amount": {
+          "anyOf": [
+            {
+              "$ref": "#/schemas/custom_unit_amount"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "livemode": {
+          "type": "boolean"
+        },
+        "lookup_key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "nickname": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "object": {
+          "type": "string",
+          "enum": [
+            "price"
+          ]
+        },
+        "product": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/schemas/product"
+            },
+            {
+              "$ref": "#/schemas/deleted_product"
+            }
+          ]
+        },
+        "recurring": {
+          "anyOf": [
+            {
+              "$ref": "#/schemas/recurring"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tax_behavior": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "exclusive",
+            "inclusive",
+            "unspecified",
+            null
+          ]
+        },
+        "tiers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/price_tier"
+          }
+        },
+        "tiers_mode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "graduated",
+            "volume",
+            null
+          ]
+        },
+        "transform_quantity": {
+          "anyOf": [
+            {
+              "$ref": "#/schemas/transform_quantity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "one_time",
+            "recurring"
+          ]
+        },
+        "unit_amount": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "unit_amount_decimal": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "decimal"
+        }
+      }
+    },
+    "price_tier": {
+      "type": "object",
+      "properties": {
+        "flat_amount": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "flat_amount_decimal": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "decimal"
+        },
+        "unit_amount": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "unit_amount_decimal": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "decimal"
+        },
+        "up_to": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    },
+    "product": {
+      "required": [
+        "active",
+        "created",
+        "id",
+        "images",
+        "livemode",
+        "marketing_features",
+        "metadata",
+        "name",
+        "object",
+        "updated"
+      ],
+      "type": "object",
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "created": {
+          "type": "integer",
+          "format": "unix-time"
+        },
+        "default_price": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/schemas/price"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "livemode": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "object": {
+          "type": "string",
+          "enum": [
+            "product"
+          ]
+        },
+        "unit_label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "updated": {
+          "type": "integer",
+          "format": "unix-time"
+        }
+      }
+    },
+    "recurring": {
+      "required": [
+        "interval",
+        "interval_count",
+        "usage_type"
+      ],
+      "type": "object",
+      "properties": {
+        "interval": {
+          "type": "string",
+          "enum": [
+            "day",
+            "month",
+            "week",
+            "year"
+          ]
+        },
+        "interval_count": {
+          "type": "integer"
+        },
+        "meter": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "usage_type": {
+          "type": "string",
+          "enum": [
+            "licensed",
+            "metered"
+          ]
+        }
+      }
+    },
+    "transform_quantity": {
+      "required": [
+        "divide_by",
+        "round"
+      ],
+      "type": "object",
+      "properties": {
+        "divide_by": {
+          "type": "integer"
+        },
+        "round": {
+          "type": "string",
+          "enum": [
+            "down",
+            "up"
           ]
         }
       }

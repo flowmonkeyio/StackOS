@@ -60,7 +60,9 @@ class ReadinessMissingItemOut(BaseModel):
 class ReadinessActionOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    action_ref: str
+    action_ref: str | None = Field(
+        description="Concrete action reference, or null while a workflow contract is unresolved."
+    )
     contract_key: str | None = None
     name: str | None = None
     provider_key: str | None = None

@@ -60,14 +60,14 @@ function riskLabel(risk: string) {
   if (risk === 'read') return 'Reads data'
   if (risk === 'write') return 'Can make changes'
   if (risk === 'cost') return 'Uses a paid service'
-  return 'Available action'
+  return 'Listed action'
 }
 
 watch([actionSearch, selectedCapability], () => { visibleLimit.value = 36 })
 
 useSiteSeo({
   title: `${provider.name} integration for AI agents and workflows`,
-  description: `${provider.description} Explore ${provider.actionCount} supported ${provider.name} actions and see how it fits into StackOS workflows.`,
+  description: `${provider.description} Explore ${provider.actionCount} listed ${provider.name} actions and see how it fits into StackOS workflows.`,
 })
 
 useSchemaOrg([
@@ -97,11 +97,11 @@ useHead({ script: [
         <div>
           <div class="integration-detail-hero__identity">
             <IntegrationMark :name="provider.name" :color="provider.color" :logo="provider.logo" size="large" />
-            <div><span>{{ provider.pluginName }} plugin</span><h1>{{ provider.name }}</h1></div>
+            <div><NuxtLink :to="pluginIntegrationPath(provider.pluginSlug)"><span>{{ provider.pluginName }} plugin</span></NuxtLink><h1>{{ provider.name }}</h1></div>
           </div>
           <p>{{ provider.description }}</p>
           <div class="integration-detail-hero__meta">
-            <span><strong>{{ provider.actionCount }}</strong> supported {{ provider.actionCount === 1 ? 'action' : 'actions' }}</span>
+            <span><strong>{{ provider.actionCount }}</strong> listed {{ provider.actionCount === 1 ? 'action' : 'actions' }}</span>
             <span><strong>{{ provider.capabilities.length }}</strong> capability groups</span>
           </div>
         </div>
@@ -150,8 +150,8 @@ useHead({ script: [
     <section class="integration-actions">
       <div class="shell">
         <div class="library-section__heading">
-          <div><p class="eyebrow">Supported work</p><h2>What StackOS can do with {{ provider.name }}.</h2></div>
-          <p>The catalog reflects the actions currently available through the {{ provider.pluginName }} plugin. A workflow still decides which actions belong in the job and where approval is required.</p>
+          <div><p class="eyebrow">Action catalog</p><h2>Actions listed for {{ provider.name }}.</h2></div>
+          <p>Actions listed for this integration. Individual descriptions note availability limits. A workflow still decides which actions belong in the job and where approval is required.</p>
         </div>
 
         <div v-if="provider.actions.length" class="integration-action-tools">

@@ -66,8 +66,6 @@ RUN_PLAN_ADMIN_ONLY_TOOL_NAMES: frozenset[str] = frozenset(
         "plugin.disable",
         "plugin.enable",
         "runPlan.update",
-        "workflowTemplate.fork",
-        "workflowTemplate.save",
     }
 )
 

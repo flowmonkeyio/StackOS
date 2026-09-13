@@ -250,6 +250,8 @@ UI consume the same contracts.
 Agent read operations:
 
 - `tracker.status`
+- `tracker.ticketCounts` (current seven-status ticket counts without loading the
+  full work graph)
 - `tracker.get` (compact snapshot by default; request `response_mode: raw` only
   when UI/debug/list review audits need the full tracker snapshot)
 - `tracker.next`
@@ -261,6 +263,15 @@ Agent read operations:
 - `tracker.history`
 - `tracker.changed`
 - `tracker.search`
+
+The local-admin `tracker.ticketCountsAll` read provides the same counts across
+active, archived, or all projects. Both count default-tracker ticket rows,
+including manual, group, and workflow-mirrored tickets, without adding task or
+run totals. `project.portfolio` supplies per-project counts and can select
+projects with tickets in one status before pagination. These are current
+snapshots, not historical trends; blocked remains a separate condition rather
+than a lifecycle status. Overview and project Home use these reads to open the
+corresponding Work status filter.
 
 Agent write operations:
 

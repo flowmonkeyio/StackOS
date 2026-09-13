@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
-from stackos.mcp.contract import WriteEnvelope
+from typing import Literal
+
+from pydantic import ConfigDict, Field, StrictBool
+from starlette.concurrency import run_in_threadpool
+
+from stackos.db.models import TrackerItemStatus
+from stackos.mcp.context import MCPContext
+from stackos.mcp.contract import MCPInput, WriteEnvelope
+from stackos.mcp.streaming import ProgressEmitter
 from stackos.mcp.tools.projects import (
     ProjectCreateInput,
     ProjectGetInput,
@@ -25,14 +33,16 @@ from stackos.mcp.tools.workspaces import (
     _workspace_start_session,
     _workspace_update_profile,
 )
+from stackos.operations._helpers import operation_spec
 from stackos.operations.spec import (
     OperationExample,
+    OperationResponsePolicy,
     OperationSpec,
     OperationSurface,
     OperationSurfaces,
 )
 from stackos.repositories.base import Page
-from stackos.repositories.projects import ProjectOut
+from stackos.repositories.projects import ProjectOut, ProjectPortfolioItemOut, ProjectRepository
 from stackos.repositories.workspaces import (
     AgentSessionOut,
     WorkspaceBindingOut,
@@ -41,8 +51,68 @@ from stackos.repositories.workspaces import (
 )
 
 
+class ProjectPortfolioInput(MCPInput):
+    model_config = ConfigDict(extra="forbid")
+    project_id: int | None = Field(default=None, ge=1)
+    is_active: StrictBool | None = True
+    query: str | None = Field(default=None, max_length=300)
+    ticket_status: TrackerItemStatus | None = None
+    sort: Literal["recent", "name"] = "recent"
+    limit: int = Field(default=50, ge=1, le=200)
+    after_id: int | None = Field(default=None, ge=1)
+
+
+async def project_portfolio(
+    inp: ProjectPortfolioInput, ctx: MCPContext, _emit: ProgressEmitter
+) -> Page[ProjectPortfolioItemOut]:
+    return await run_in_threadpool(
+        ProjectRepository(ctx.session).portfolio,
+        project_id=inp.project_id,
+        is_active=inp.is_active,
+        query=inp.query,
+        ticket_status=inp.ticket_status,
+        sort=inp.sort,
+        limit=inp.limit,
+        after_id=inp.after_id,
+    )
+
+
 def operation_specs() -> list[OperationSpec]:
     return [
+        operation_spec(
+            name="project.portfolio",
+            summary="Read a paginated local-admin project portfolio with last recorded work.",
+            input_model=ProjectPortfolioInput,
+            output_model=Page[ProjectPortfolioItemOut],
+            handler=project_portfolio,
+            response_policy=OperationResponsePolicy(
+                default_mode="compact",
+                allowed_modes=("compact", "raw"),
+                ack_safe=False,
+                compact_notes=(
+                    "Keep every bounded project row with latest task and all ticket counts, "
+                    "metadata, nullable last_activity_at, next_cursor and total_estimate.",
+                ),
+            ),
+            purpose=(
+                "Show project identity, latest task and current default-tracker ticket counts "
+                "without payloads or per-project discovery calls. Ticket status filters select "
+                "contributing projects before pagination; activity uses task/ticket updates only."
+            ),
+            grant_policy="local-admin-read",
+            mutating=False,
+            examples=(
+                OperationExample(
+                    title="Read recent active projects",
+                    arguments={"is_active": True, "sort": "recent", "limit": 50},
+                ),
+            ),
+            returns=(
+                "Complete filtered count, stable cursor, safe latest task/action refs. "
+                "last_activity_at uses task/action timestamps only; null means no recorded work. "
+                "It is not live agent activity.",
+            ),
+        ),
         OperationSpec(
             name="project.list",
             summary="List StackOS projects for setup and project selection.",

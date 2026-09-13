@@ -17,6 +17,7 @@ const pluginPresentation = {
   communications: { color: '#7ee2ad', description: 'Connect conversations, inboxes, files, and notifications across chat and email tools.' },
   core: { color: '#8ea6ff', description: 'Use the built-in StackOS services that keep local work, context, and browser tasks connected.' },
   engineering: { color: '#7892ff', description: 'Connect delivery work to code, browsers, tests, and the tools that help teams ship reliably.' },
+  finance: { color: '#635bff', description: 'Handle invoicing and payment evidence through Stripe, with financial records kept in your chosen system.' },
   gtm: { color: '#ff9f73', description: 'Research accounts, enrich leads, update CRM records, and prepare sales follow-up across your revenue tools.' },
   linear: { color: '#5e6ad2', description: 'Plan and track product work through Linear issues, projects, cycles, teams, comments, and workflow states.' },
   marketing: { color: '#ff78ac', description: 'Plan and produce campaigns across creative, landing pages, messaging, and distribution tools.' },

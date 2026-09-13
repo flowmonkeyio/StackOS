@@ -11,9 +11,12 @@ from pytest_httpx import HTTPXMock
 from sqlmodel import Session
 
 from stackos.actions import ActionRepository
+from stackos.actions.connectors import ActionConnectorRequest
+from stackos.actions.slack_bot import SlackBotActionConnector
+from stackos.actions.slack_bot.results import _safe_history_message
 from stackos.auth_providers import AuthRepository
 from stackos.repositories.agent_requests import AgentRequestRepository
-from stackos.repositories.base import ConflictError
+from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.resources import ResourceRepository
 
 _TOKEN = "xoxb-1234567890-safe-test-token"
@@ -747,3 +750,179 @@ def test_slack_conversation_history_returns_message_and_file_refs(
     assert out.output_json["message_refs"] == ["slack-message:D123:1770000000.000300"]
     assert out.output_json["messages"][0]["thread_ref"] == ("slack-thread:D123:1770000000.000300")
     assert out.output_json["messages"][0]["file_refs"] == ["slack-file:F123"]
+
+
+@pytest.mark.parametrize("include_content", [None, False, True])
+@pytest.mark.parametrize("is_limited", [None, False, True])
+def test_slack_history_preserves_opt_in_content_and_completeness(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+    include_content: bool | None,
+    is_limited: bool | None,
+) -> None:
+    credential_ref = _slack_credential_ref(session, project_id)
+    _slack_communication_profile(session, project_id)
+    text = "Detailed customer context " * 40
+    body = {
+        "ok": True,
+        "messages": [
+            {
+                "type": "message",
+                "ts": "1770000000.000300",
+                "user": "U111",
+                "text": text + " password=private-pass " + _TOKEN,
+                "reply_count": 3,
+                "blocks": [
+                    {"type": "section", "text": {"type": "mrkdwn", "text": text}},
+                    {
+                        "type": "image",
+                        "alt_text": "Receipt",
+                        "slack_file": {
+                            "id": "F123",
+                        },
+                    },
+                    {
+                        "type": "image",
+                        "alt_text": "Private image",
+                        "slack_file": {"url": "https://files.slack.com/private-original"},
+                    },
+                ],
+                "attachments": [
+                    {
+                        "text": text,
+                        "fields": [{"title": "Service", "value": "Design"}],
+                        "url_private": "https://files.slack.com/private-attachment",
+                    }
+                ],
+                "files": [
+                    {
+                        "id": "F123",
+                        "name": "receipt.pdf",
+                        "title": "Receipt",
+                        "mimetype": "application/pdf",
+                        "filetype": "pdf",
+                        "size": 1450,
+                        "url_private_download": "https://files.slack.com/private-download",
+                        "thumb_360": "https://files.slack.com/private-thumb",
+                        "user": "U111",
+                    }
+                ],
+            }
+        ],
+        "has_more": True,
+        "response_metadata": {"next_cursor": "next-page"},
+    }
+    if is_limited is not None:
+        body["is_limited"] = is_limited
+    httpx_mock.add_response(
+        method="GET", url=f"{_BASE}/conversations.history?channel=D123&limit=5", json=body
+    )
+    payload = {
+        "profile_ref": "communication-profile:support-agent",
+        "surface_ref": "slack-channel:D123",
+        "limit": 5,
+    }
+    if include_content is not None:
+        payload["include_content"] = include_content
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="communications.slack-bot.conversation.history",
+            input_json=payload,
+            credential_ref=credential_ref,
+        )
+    ).data
+    data = out.output_json
+    message = data["messages"][0]
+    assert data["content_included"] is (include_content is True)
+    assert data["has_more"] is True
+    assert data["next_cursor"] == "next-page"
+    assert ("is_limited" in data) is (is_limited is not None)
+    if is_limited is not None:
+        assert data["is_limited"] is is_limited
+    assert message["text_preview"] == text[:500]
+    assert message["text_preview_truncated"] is True
+    assert message["reply_count"] == 3
+    assert message["file_refs"] == ["slack-file:F123"]
+    if include_content:
+        assert message["text"].startswith(text)
+        assert message["blocks"][0]["text"]["text"] == text
+        assert message["blocks"][1]["slack_file"] == {"file_ref": "slack-file:F123"}
+        assert message["blocks"][2]["slack_file"] == {"url_omitted": True}
+        assert message["attachments"][0]["text"] == text
+        assert message["files"] == [
+            {
+                "file_ref": "slack-file:F123",
+                "name": "receipt.pdf",
+                "title": "Receipt",
+                "mimetype": "application/pdf",
+                "filetype": "pdf",
+                "size": 1450,
+                "user_ref": "slack-user:U111",
+            }
+        ]
+    else:
+        for field in ("text", "blocks", "attachments", "files"):
+            assert field not in message
+    serialized = json.dumps(data)
+    for omitted in (
+        _TOKEN,
+        "private-pass",
+        "private-original",
+        "private-attachment",
+        "private-download",
+        "private-thumb",
+    ):
+        assert omitted not in serialized
+    request = httpx_mock.get_request()
+    assert request is not None
+    assert "include_content" not in request.url.params
+
+
+@pytest.mark.parametrize("value", [None, 0, 1, "true", "false", [], {}])
+def test_slack_history_content_option_is_strict_even_without_manifest(value: object) -> None:
+    request = ActionConnectorRequest(
+        project_id=1,
+        plugin_slug="communications",
+        action_key="slack-bot.conversation.history",
+        action_ref="communications.slack-bot.conversation.history",
+        provider_key="slack-bot",
+        operation="conversation.history",
+        input_json={"channel_ref": "slack-channel:D123", "include_content": value},
+        config_json={},
+    )
+    connector = SlackBotActionConnector()
+    assert any(issue.path == "$.include_content" for issue in connector.validate(request))
+    with pytest.raises(ValidationError, match="include_content"):
+        asyncio.run(connector.execute(request))
+
+
+def test_slack_content_option_cannot_be_added_to_other_operations() -> None:
+    request = ActionConnectorRequest(
+        project_id=1,
+        plugin_slug="communications",
+        action_key="slack-bot.identity.get",
+        action_ref="communications.slack-bot.identity.get",
+        provider_key="slack-bot",
+        operation="identity.get",
+        input_json={"include_content": False},
+        config_json={},
+    )
+    connector = SlackBotActionConnector()
+    assert any(issue.path == "$.include_content" for issue in connector.validate(request))
+    with pytest.raises(ValidationError, match="include_content"):
+        asyncio.run(connector.execute(request))
+
+
+@pytest.mark.parametrize("text", [None, "", "x" * 500, "x" * 501])
+def test_slack_history_preview_boundary_and_nullable_content(text: str | None) -> None:
+    message = _safe_history_message(
+        {"ts": "1770000000.000300", "text": text}, channel="C123", include_content=True
+    )
+    assert message["text"] == text
+    assert message["text_preview"] == (text or "")[:500]
+    assert message["text_preview_truncated"] is (len(text or "") > 500)
+    assert "files" not in message
+    assert "blocks" not in message
+    assert "reply_count" not in message

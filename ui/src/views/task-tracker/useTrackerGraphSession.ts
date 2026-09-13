@@ -73,7 +73,7 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
 
   const tickets = computed(() => {
     if (focusedGraph.value) return focusedGraph.value.tickets
-    return activeTaskRow.value?.tickets ?? []
+    return activeTaskRow.value?.tickets ?? snapshot.value?.tickets ?? []
   })
 
   const graphDataAvailable = computed(() => {

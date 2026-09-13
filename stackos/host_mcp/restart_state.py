@@ -49,7 +49,6 @@ def pending_restart(
         return None
     marked_at = value.get("marked_at")
     if isinstance(marked_at, int | float) and time.time() - marked_at > max_age_seconds:
-        clear_restart_required(host_key, home=home)
         return None
     return value
 

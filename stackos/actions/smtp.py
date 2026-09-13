@@ -30,6 +30,7 @@ from stackos.actions.provider_utils import (
 )
 from stackos.repositories.base import ValidationError
 from stackos.repositories.resources import ResourceRepository
+from stackos.secret_refs import SECRET_REF_SENTINEL
 
 _MAX_RECIPIENTS = 100
 _MAX_HEADER_COUNT = 50
@@ -328,6 +329,9 @@ def _recipient_list(
     if len(value) > _MAX_RECIPIENTS:
         issues.append(issue(f"$.{key}", f"{key} must contain at most {_MAX_RECIPIENTS} items"))
     for index, item in enumerate(value):
+        # Preflight projects refs without decryption; _email_list validates resolved values.
+        if item == SECRET_REF_SENTINEL:
+            continue
         if not isinstance(item, str) or not _is_email(item):
             issues.append(issue(f"$.{key}[{index}]", "must be a valid email address", "format"))
 

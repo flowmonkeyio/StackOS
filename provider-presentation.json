@@ -47,6 +47,7 @@
   "shopify.shopify": { "src": "/images/integrations/shopify-icon.png", "kind": "icon" },
   "communications.slack-bot": { "src": "/images/integrations/slack-icon.png", "kind": "icon" },
   "communications.smtp": { "src": "/images/integrations/smtp.svg", "kind": "wordmark-dark" },
+  "finance.stripe": { "src": "/images/integrations/stripe-icon.jpeg", "kind": "icon" },
   "media-buying.taboola": { "src": "/images/integrations/taboola-logo.svg", "kind": "icon" },
   "communications.telegram-bot": { "src": "/images/integrations/telegram.png", "kind": "icon" },
   "trackbooth.trackbooth": { "src": "/images/integrations/trackbooth.png", "kind": "wordmark" },

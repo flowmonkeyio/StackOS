@@ -180,6 +180,11 @@ terminal evidence; stored status, output/error, and completion time are the
 authority. After a daemon restart, an orphaned running call is stored as
 `failed` with `outcome_unknown=true` and `retry_safe=false`.
 
+`runPlan.recordStep` rejects `success` and `skipped` while the same project's
+plan step has running action calls. Its validation error returns pending action
+IDs and polling repair context; no step lifecycle state changes on rejection.
+Failure and blocked recovery retain their normal semantics.
+
 MCP tools are generated from the same operation specs, so the daemon has one
 callable contract per StackOS primitive. The agent bridge advertises
 `workspace.startSession`, `workspace.resolve`, `toolbox.describe`,
@@ -562,9 +567,11 @@ When supplied, `source` is a template-origin filter (`plugin`, `project`,
 Use `readiness.check` before broad setup scans when the agent already knows a
 workflow key or action ref. It answers the scoped question: is this workflow or
 action executable now, and which exact credentials, budgets, connectors, or
-setup items are missing? For workflow templates, `ready=true` means the template
-is usable for planning/run-plan creation; `execution_ready=false` means only the
-listed action dependencies need setup before affected steps execute. Optional
+setup items are missing? Read `structurally_ready`, `context_status`,
+`required_providers_ready`, and `execution_ready` separately; structural validity
+does not mean execution is ready. Unresolved required action contracts and
+missing required provider setup block execution readiness and include repair
+context. Optional
 action-contract gaps are reported as `required_for:
 optional_action_execution`; resolve them only when the operator selected that
 branch. Missing credential rows include provider setup guidance from

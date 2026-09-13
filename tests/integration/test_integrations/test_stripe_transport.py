@@ -25,6 +25,36 @@ from stackos.mcp.errors import IntegrationDownError, RateLimitedError
 STRIPE_ROOT = "https://api.stripe.com/v1"
 
 
+@pytest.mark.parametrize(
+    "path,expected",
+    [
+        ("/products", "/v1/products"),
+        ("/prices", "/v1/prices"),
+        ("/products/prod_private", None),
+        ("/prices/price_private", None),
+    ],
+)
+def test_stripe_catalog_diagnostics_only_disclose_static_collection_paths(
+    path: str, expected: str | None
+) -> None:
+    response = httpx.Response(
+        404,
+        json={"error": {"type": "invalid_request_error"}},
+        request=httpx.Request(
+            "GET", f"{STRIPE_ROOT}{path}?catalog_query_sentinel=CATALOG_QUERY_VALUE"
+        ),
+    )
+    diagnostics = StripeIntegration._provider_error(response)
+    assert diagnostics["request_path"] == expected
+    for excluded in (
+        "CATALOG_QUERY_VALUE",
+        "catalog_query_sentinel",
+        "prod_private",
+        "price_private",
+    ):
+        assert excluded not in json.dumps(diagnostics)
+
+
 @pytest.mark.parametrize("unsafe", ["\n", "\r", "\0", "\x7f", "\u00e9", "\t", " "])
 def test_stripe_rejects_header_unsafe_key_before_real_h11_or_shared_logging(unsafe: str) -> None:
     """Use real HTTPX/httpcore/h11 serialization, with an in-memory network only."""

@@ -197,41 +197,18 @@ Project-local main-agent mappings:
   exact `tool_names`; do not request broad schemas. If operation names are not
   clear, call `operation.list` through `toolbox.call` with `mode="grouped"` and
   `response_mode="compact"`, then describe only the exact operations needed.
-- Project workflow setup must follow the workflow contract, not tracker prose,
-  and must select one `workflowTemplate.authoringGuide` intent mode before any
-  mutation. A setup request maps to `setup_existing`; it does not authorize a
-  new template, plugin change, or workflow execution. Keep three phases
-  distinct. First, workflow infrastructure setup: inspect the host identity,
-  binding mechanism, workflow choice, existing extension,
-  orchestrator/preset requirements, host-native file support, and StackOS write
-  grant model. Bind the workspace, describe the effective workflow, save only a
-  validated non-empty extension when needed, then re-describe. Resolve the
-  final workflow once with `agentPreset.resolveForWorkflow`; materialize
-  required roles, materialize recommended roles by default unless a reason is
-  recorded, and materialize optional roles only when selected. Keep skill
-  presets as main-agent guidance. Check the full readiness tuple, then prove
-  the path with structural and strict read-only `runPlan.validate` calls. Do not
-  call `runPlan.create` or create tracker work in infrastructure setup. Host
-  files are versioned execution contracts only; keep prerequisites, project
-  ids, state, and secrets in StackOS. Report proof: mode, binding, effective
-  workflow version, extension state, local files, exact preset mapping,
-  readiness tuple, deterministic future binding, strict prerequisite gate, both
-  validation outcomes, next safe action, and confirmation that no run plan,
-  workflow tracker state, external side effect, or workflow output was created.
-  Second, workflow prerequisite setup: collect durable workflow-specific inputs
-  such as voice/profile, sources, route choices, policy, account mappings, or
-  approval rules only after classifying them as durable prerequisites rather
-  than per-run inputs. Persist them through the declared project owner or an
-  explicitly granted onboarding run. If the workflow explicitly assigns a
-  prerequisite to another workflow, return that exact safe handoff; when the
-  operator authorizes workflow-family setup, resolve each selected workflow and
-  materialize the deduplicated union of required and recommended roles. Omit
-  unresolved values rather than saving placeholders, and do not produce
-  workflow output. Third, workflow operation:
-  collect concrete run inputs, require selected-route execution readiness,
-  strictly validate before creating new state, then create/resume/start the run
-  plan and execute through the resolved orchestrator/presets, grants, and
-  approval gates.
+- Project workflow setup follows `workflowTemplate.authoringGuide`, not tracker
+  prose. Select its intent mode before mutation: setup does not authorize a new
+  template, plugin change or execution. Follow its canonical three-phase
+  protocol, materialization policy and completion contract rather than copying
+  another checklist here. Infrastructure setup binds the workspace, resolves the
+  effective workflow and adapted roles, checks readiness and uses structural plus
+  strict read-only `runPlan.validate`; it creates no run plan, workflow tracker
+  work or business output. Prerequisite setup saves only applicable durable
+  inputs through their declared owner. Operation uses concrete inputs, strict
+  validation, active grants and approvals. Host files hold versioned execution
+  guidance, not project state, prerequisites or secrets. See
+  [workflow setup lifecycle](./docs/workflow-templates.md#agent-workflow-setup-lifecycle).
   `workflowExtension.upsert` preserves omitted fields by default; use
   `clear_fields_json` with merge for field-level clearing, or
   `update_mode="replace"` only for reviewed full rewrites.

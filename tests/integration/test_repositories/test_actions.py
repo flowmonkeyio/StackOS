@@ -3151,7 +3151,13 @@ def test_google_ads_builtin_report_search_sets_required_headers_and_body(
     httpx_mock.add_response(
         method="POST",
         url="https://googleads.googleapis.com/v22/customers/4445556666/googleAds:search",
-        json={"results": [{"campaign": {"id": "987"}}]},
+        json={
+            "results": [{"campaign": {"id": "987"}}],
+            "nextPageToken": "ads-page-2",
+            "fieldMask": "campaign.id",
+            "totalResultsCount": "2",
+            "access_token": "google-access",
+        },
         headers={"request-id": "req-1"},
     )
 
@@ -3161,7 +3167,7 @@ def test_google_ads_builtin_report_search_sets_required_headers_and_body(
             action_ref="media-buying.google.report.search",
             input_json={
                 "customer_ref": "main",
-                "query": "SELECT campaign.id FROM campaign LIMIT 1",
+                "query": "SELECT campaign.id FROM campaign",
             },
             credential_ref=credential_ref,
         )
@@ -3173,11 +3179,45 @@ def test_google_ads_builtin_report_search_sets_required_headers_and_body(
     assert request.headers["developer-token"] == "google-dev"
     assert request.headers["login-customer-id"] == "1112223333"
     assert json.loads(request.content.decode("utf-8")) == {
-        "query": "SELECT campaign.id FROM campaign LIMIT 1",
+        "query": "SELECT campaign.id FROM campaign",
     }
     assert out.metadata_json["request_id"] == "req-1"
     assert "google-access" not in rendered
     assert "google-dev" not in rendered
+    page = out.output_json["body"]
+    assert page["next_page_cursor"] == "ads-page-2"
+    assert "nextPageToken" not in page
+    assert page["access_token"] == "[redacted]"
+    assert page["fieldMask"] == "campaign.id"
+    assert page["totalResultsCount"] == "2"
+    assert out.action_call.response_json["body"]["next_page_cursor"] == "ads-page-2"
+
+    httpx_mock.add_response(
+        method="POST",
+        url="https://googleads.googleapis.com/v22/customers/4445556666/googleAds:search",
+        json={"results": [{"campaign": {"id": "988"}}], "fieldMask": "campaign.id"},
+        headers={"request-id": "req-2"},
+    )
+    second = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="media-buying.google.report.search",
+            input_json={
+                "customer_ref": "main",
+                "query": "SELECT campaign.id FROM campaign",
+                "page_cursor": page["next_page_cursor"],
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+    assert json.loads(httpx_mock.get_requests()[1].content) == {
+        "query": "SELECT campaign.id FROM campaign",
+        "pageToken": "ads-page-2",
+    }
+    assert "next_page_cursor" not in second.output_json["body"]
+    assert "nextPageToken" not in second.output_json["body"]
+    assert second.output_json["body"]["results"] == [{"campaign": {"id": "988"}}]
+    assert second.metadata_json["request_id"] == "req-2"
 
 
 def test_taboola_builtin_campaign_create_uses_backstage_account_endpoint(

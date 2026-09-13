@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
@@ -33,6 +33,177 @@ describe('TaskTrackerView route integration', () => {
   afterEach(() => {
     sessionStorage.clear()
     vi.restoreAllMocks()
+  })
+
+  it('opens and updates the existing ticket view from overview status links', async () => {
+    const task = trackerTask()
+    const secondTask = trackerTask({ id: 2, key: 'task-b', title: 'Second task' })
+    const open = trackerTicket({ id: 11, key: 'open-ticket', status: 'in-progress' })
+    const done = trackerTicket({ id: 12, key: 'done-ticket', status: 'complete' })
+    const group = trackerTicket({
+      id: 13,
+      key: 'group-row',
+      task_id: 2,
+      task_key: 'task-b',
+      status: 'complete',
+      kind: 'group',
+    })
+    const mirror = trackerTicket({
+      id: 14,
+      key: 'mirror-row',
+      task_id: 2,
+      task_key: 'task-b',
+      status: 'complete',
+      source_kind: 'run-plan',
+    })
+    operationMocks.callOperation.mockResolvedValue(
+      trackerSnapshot([task, secondTask], [open, done, group, mirror]),
+    )
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/tasks', component: TaskTrackerView }],
+    })
+    await router.push('/projects/7/tasks?view=tickets&status=complete')
+    await router.isReady()
+    const wrapper = mount(
+      { template: '<RouterView />' },
+      {
+        global: {
+          plugins: [router, createPinia()],
+          stubs: trackerRouteStubs(),
+        },
+      },
+    )
+    await vi.waitFor(() =>
+      expect(wrapper.findComponent({ name: 'TaskTrackerCommandPanel' }).props('viewMode')).toBe(
+        'tickets',
+      ),
+    )
+    expect(wrapper.findComponent({ name: 'TaskTrackerCommandPanel' }).props('statusFilter')).toBe(
+      'complete',
+    )
+    expect(
+      wrapper
+        .findComponent({ name: 'TrackerTicketTable' })
+        .props('tickets')
+        .map((ticket: TrackerTicket) => ticket.key)
+        .sort(),
+    ).toEqual(['done-ticket', 'group-row', 'mirror-row'])
+    expect(router.currentRoute.value.query.task).toBeUndefined()
+    wrapper.findComponent({ name: 'TrackerTicketTable' }).vm.$emit('row-click', group)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findComponent({ name: 'TrackerTicketDetailPanel' }).props('ticket')?.key).toBe(
+      'group-row',
+    )
+    expect(router.currentRoute.value.query.task).toBeUndefined()
+    expect(wrapper.findComponent({ name: 'TrackerTicketTable' }).props('tickets')).toHaveLength(3)
+    await router.push('/projects/7/tasks?view=tickets&status=in-progress')
+    await vi.waitFor(() =>
+      expect(
+        wrapper
+          .findComponent({ name: 'TrackerTicketTable' })
+          .props('tickets')
+          .map((ticket: TrackerTicket) => ticket.key),
+      ).toEqual(['open-ticket']),
+    )
+    await router.push('/projects/7/tasks?view=tickets&status=invalid')
+    await vi.waitFor(() =>
+      expect(wrapper.findComponent({ name: 'TaskTrackerCommandPanel' }).props('statusFilter')).toBe(
+        'all',
+      ),
+    )
+    await router.push('/projects/7/tasks?view=tickets&status=complete&task=task-b')
+    await vi.waitFor(() =>
+      expect(
+        wrapper
+          .findComponent({ name: 'TrackerTicketTable' })
+          .props('tickets')
+          .map((ticket: TrackerTicket) => ticket.key),
+      ).toEqual(['group-row', 'mirror-row']),
+    )
+    wrapper.unmount()
+  })
+
+  it('selects and loads a matching task when leaving all-task tickets for the dependency map', async () => {
+    const taskA = trackerTask({ key: 'task-a', status: 'complete' })
+    const taskB = trackerTask({ id: 2, key: 'task-b' })
+    const ticketA = trackerTicket({ key: 'done-ticket', status: 'complete' })
+    const ticketB = trackerTicket({ id: 12, task_id: 2, task_key: 'task-b' })
+    operationMocks.callOperation.mockImplementation(
+      async (operation: string, args: Record<string, unknown>) => {
+        if (operation !== 'tracker.get') throw new Error(`Unexpected operation: ${operation}`)
+        return args.include_graph === true
+          ? trackerSnapshot([taskA], [ticketA], true)
+          : trackerSnapshot([taskA, taskB], [ticketA, ticketB])
+      },
+    )
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/tasks', component: TaskTrackerView }],
+    })
+    await router.push('/projects/7/tasks?view=tickets&status=complete')
+    await router.isReady()
+    const wrapper = mount(
+      { template: '<RouterView />' },
+      { global: { plugins: [router, createPinia()], stubs: trackerRouteStubs() } },
+    )
+    await vi.waitFor(() =>
+      expect(wrapper.findComponent({ name: 'TrackerTicketTable' }).props('tickets')).toHaveLength(1),
+    )
+    const controls = wrapper.findComponent({ name: 'TaskTrackerCommandPanel' })
+    controls.vm.$emit('update:view-mode', 'graph')
+    await flushPromises()
+    expect(operationMocks.callOperation).toHaveBeenCalledWith('tracker.get', {
+      project_id: 7,
+      task_key: 'task-a',
+      include_graph: true,
+    })
+    expect(controls.props('activeTaskKey')).toBe('task-a')
+    expect(router.currentRoute.value.query).toEqual({ status: 'complete', task: 'task-a' })
+    expect(streamMocks.openTrackerStatusStream).toHaveBeenLastCalledWith(
+      expect.objectContaining({ projectId: 7, taskKey: 'task-a' }),
+    )
+    wrapper.unmount()
+  })
+
+  it('keeps the requested status when filtering replaces the selected task', async () => {
+    const taskA = trackerTask({ key: 'task-a' })
+    const taskB = trackerTask({ id: 2, key: 'task-b', status: 'complete' })
+    const ticketA = trackerTicket()
+    const ticketB = trackerTicket({
+      id: 12,
+      key: 'done-ticket',
+      task_id: 2,
+      task_key: 'task-b',
+      status: 'complete',
+    })
+    operationMocks.callOperation.mockResolvedValue(trackerSnapshot([taskA, taskB], [ticketA, ticketB]))
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/tasks', component: TaskTrackerView }],
+    })
+    await router.push('/projects/7/tasks?view=tickets&status=in-progress&task=task-a')
+    await router.isReady()
+    const wrapper = mount(
+      { template: '<RouterView />' },
+      { global: { plugins: [router, createPinia()], stubs: trackerRouteStubs() } },
+    )
+    await vi.waitFor(() =>
+      expect(wrapper.findComponent({ name: 'TrackerTicketTable' }).props('tickets')).toHaveLength(1),
+    )
+    const controls = wrapper.findComponent({ name: 'TaskTrackerCommandPanel' })
+    controls.vm.$emit('update:status-filter', 'complete')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({
+      view: 'tickets', status: 'complete', task: 'task-b',
+    })
+    expect(controls.props('statusFilter')).toBe('complete')
+    expect(controls.props('activeTaskKey')).toBe('task-b')
+    expect(
+      wrapper.findComponent({ name: 'TrackerTicketTable' }).props('tickets')
+        .map((ticket: TrackerTicket) => ticket.key),
+    ).toEqual(['done-ticket'])
+    wrapper.unmount()
   })
 
   it('preserves query, graph session, stream, and execution-context wiring', async () => {
@@ -268,7 +439,9 @@ function trackerRouteStubs() {
   return {
     ProjectPageHeader: { template: '<header><slot name="actions" /></header>' },
     TaskTrackerCommandPanel: {
-      emits: ['task-select'],
+      name: 'TaskTrackerCommandPanel',
+      props: ['viewMode', 'statusFilter', 'activeTaskKey'],
+      emits: ['task-select', 'update:view-mode', 'update:status-filter'],
       template:
         '<nav><button data-test="select-task-a" @click="$emit(\'task-select\', \'task-a\')">Task A</button></nav>',
     },

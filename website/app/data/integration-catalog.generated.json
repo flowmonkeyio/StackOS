@@ -2,9 +2,9 @@
   "generatedAt": "2026-07-27T06:03:02.013Z",
   "source": "StackOS catalog.list after provider catalog synchronization",
   "counts": {
-    "providers": 56,
-    "plugins": 11,
-    "actions": 685,
+    "providers": 57,
+    "plugins": 12,
+    "actions": 711,
     "trackboothActions": 337
   },
   "plugins": [
@@ -52,6 +52,21 @@
         "Slack Bot",
         "SMTP",
         "Telegram Bot"
+      ]
+    },
+    {
+      "slug": "finance",
+      "name": "Finance Operations",
+      "description": "Handle invoicing and payment evidence through Stripe, with financial records kept in your chosen system.",
+      "color": "#635bff",
+      "providerCount": 1,
+      "actionCount": 26,
+      "capabilityCount": 2,
+      "providerSlugs": [
+        "stripe"
+      ],
+      "providerNames": [
+        "Stripe"
       ]
     },
     {
@@ -5327,6 +5342,292 @@
       "primaryUrl": "https://www.rfc-editor.org/rfc/rfc5321.html",
       "docsUrl": "https://www.rfc-editor.org/rfc/rfc5321.html",
       "setupNote": "SMTP is a protocol, not one vendor. Use the mailbox provider's SMTP settings or app-password page, then enter host, port, TLS mode, username, and password in StackOS."
+    },
+    {
+      "key": "finance.stripe",
+      "slug": "stripe",
+      "providerKey": "stripe",
+      "name": "Stripe",
+      "description": "Stripe API transport for customers, invoices, payment lifecycle evidence, and balances. It contains no bookkeeping, collections, tax, or approval policy.",
+      "authType": "api-key",
+      "pluginSlug": "finance",
+      "pluginName": "Finance Operations",
+      "pluginDescription": "Handle invoicing and payment evidence through Stripe, with financial records kept in your chosen system.",
+      "color": "#635bff",
+      "logo": {
+        "src": "/images/integrations/stripe-icon.jpeg",
+        "kind": "icon"
+      },
+      "actionCount": 26,
+      "capabilities": [
+        "Stripe invoicing",
+        "Stripe payment lifecycle evidence"
+      ],
+      "actions": [
+        {
+          "key": "finance.stripe.invoices.attach-payment",
+          "name": "Attach Stripe Payment to Invoice",
+          "description": "Attach exactly one previously verified PaymentIntent or PaymentRecord to one invoice. Allocation and matching decisions remain in the workflow.",
+          "keywords": "Attach exactly one previously verified PaymentIntent or PaymentRecord to one invoice. Allocation and matching decisions remain in the workflow.",
+          "capability": "stripe-reconciliation",
+          "capabilityName": "Stripe payment lifecycle evidence",
+          "risk": "write"
+        },
+        {
+          "key": "finance.stripe.invoices.create",
+          "name": "Create Draft Stripe Invoice",
+          "description": "Create a Stripe draft invoice in the explicitly approved currency that will later be explicitly finalized and sent.",
+          "keywords": "Create a Stripe draft invoice in the explicitly approved currency that will later be explicitly finalized and sent.",
+          "capability": "stripe-invoicing",
+          "capabilityName": "Stripe invoicing",
+          "risk": "write"
+        },
+        {
+          "key": "finance.stripe.customers.create",
+          "name": "Create Stripe Customer",
+          "description": "Create one Stripe customer from explicit approved details and return an account-bound customer reference.",
+          "keywords": "Create one Stripe customer from explicit approved details and return an account-bound customer reference.",
+          "capability": "stripe-invoicing",
+          "capabilityName": "Stripe invoicing",
+          "risk": "write"
+        },
+        {
+          "key": "finance.stripe.invoice-items.create",
+          "name": "Create Stripe Invoice Item",
+          "description": "Add one explicit positive-amount line item to an explicit Stripe customer and draft invoice.",
+          "keywords": "Add one explicit positive-amount line item to an explicit Stripe customer and draft invoice.",
+          "capability": "stripe-invoicing",
+          "capabilityName": "Stripe invoicing",
+          "risk": "write"
+        },
+        {
+          "key": "finance.stripe.invoices.finalize",
+          "name": "Finalize Stripe Invoice",
+          "description": "Finalize one reviewed draft invoice with auto_advance=false; this does not send it.",
+          "keywords": "Finalize one reviewed draft invoice with auto_advance=false; this does not send it.",
+          "capability": "stripe-invoicing",
+          "capabilityName": "Stripe invoicing",
+          "risk": "write"
+        },
+        {
+          "key": "finance.stripe.balance-transactions.list",
+          "name": "List Stripe Balance Transactions",
+          "description": "Return one bounded Stripe balance transaction page with gross, fee, refund, and net evidence.",
+          "keywords": "Return one bounded Stripe balance transaction page with gross, fee, refund, and net evidence.",
+          "capability": "stripe-reconciliation",
+          "capabilityName": "Stripe payment lifecycle evidence",
+          "risk": "read"
+        },
+        {
+          "key": "finance.stripe.charges.list",
+          "name": "List Stripe Charges",
+          "description": "Return one bounded Stripe charge page and a safe continuation reference, optionally filtered by customer or payment intent.",
+          "keywords": "Return one bounded Stripe charge page and a safe continuation reference, optionally filtered by customer or payment intent.",
+          "capability": "stripe-reconciliation",
+          "capabilityName": "Stripe payment lifecycle evidence",
+          "risk": "read"
+        },
+        {
+          "key": "finance.stripe.customers.list",
+          "name": "List Stripe Customers by Exact Email",
+          "description": "Return one bounded page of Stripe customers matching one exact email, so an existing customer can be used without a raw provider ID.",
+          "keywords": "Return one bounded page of Stripe customers matching one exact email, so an existing customer can be used without a raw provider ID.",
+          "capability": "stripe-invoicing",
+          "capabilityName": "Stripe invoicing",
+          "risk": "read"
+        },
+        {
+          "key": "finance.stripe.disputes.list",
+          "name": "List Stripe Disputes",
+          "description": "Read one bounded dispute page for exactly one charge or payment intent; no evidence content or dispute mutation is exposed.",
+          "keywords": "Read one bounded dispute page for exactly one charge or payment intent; no evidence content or dispute mutation is exposed.",
+          "capability": "stripe-reconciliation",
+          "capabilityName": "Stripe payment lifecycle evidence",
+          "risk": "read"
+        },
+        {
+          "key": "finance.stripe.invoice-items.list",
+          "name": "List Stripe Invoice Items",
+          "description": "Read one bounded page of items for exactly one invoice or customer; descriptions are exact UTF-8 SHA-256 digests by default, with optional scoped business text.",
+          "keywords": "Read one bounded page of items for exactly one invoice or customer; descriptions are exact UTF-8 SHA-256 digests by default, with optional scoped business text.",
+          "capability": "stripe-invoicing",
+          "capabilityName": "Stripe invoicing",
+          "risk": "read"
+        },
+        {
+          "key": "finance.stripe.invoice-payments.list",
+          "name": "List Stripe Invoice Payments",
+          "description": "Return bounded payment lifecycle evidence for one Stripe invoice. Missing or null payment linkage preserves facts and pagination but cannot establish a payment match or settlement.",
+          "keywords": "Return bounded payment lifecycle evidence for one Stripe invoice. Missing or null payment linkage preserves facts and pagination but cannot establish a payment match or settlement.",
+          "capability": "stripe-reconciliation",
+          "capabilityName": "Stripe payment lifecycle evidence",
+          "risk": "read"
+        },
+        {
+          "key": "finance.stripe.invoices.list",
+          "name": "List Stripe Invoices",
+          "description": "Return one bounded Stripe invoice page and a safe continuation reference when more results exist.",
+          "keywords": "Return one bounded Stripe invoice page and a safe continuation reference when more results exist.",
+          "capability": "stripe-invoicing",
+          "capabilityName": "Stripe invoicing",
+          "risk": "read"
+        },
+        {
+          "key": "finance.stripe.payment-records.list",
+          "name": "List Stripe Payment Records",
+          "description": "Temporarily unavailable in StackOS while the documented Stripe PaymentRecord listing endpoint availability mismatch is resolved. Inspect retained action audit/response files and retrieve a known PaymentRecord ref; if the ref is missing, hold for owner/provider recovery and never create a replacement report.",
+          "keywords": "Temporarily unavailable in StackOS while the documented Stripe PaymentRecord listing endpoint availability mismatch is resolved. Inspect retained action audit/response files and retrieve a known PaymentRecord ref; if the ref is missing, hold for owner/provider recovery and never create a replacement report.",
+          "capability": "stripe-reconciliation",
+          "capabilityName": "Stripe payment lifecycle evidence",
+          "risk": "read"
+        },
+        {
+          "key": "finance.stripe.refunds.list",
+          "name": "List Stripe Refunds",
+          "description": "Return one bounded Stripe refund page for reconciliation evidence; this action never creates refunds.",
+          "keywords": "Return one bounded Stripe refund page for reconciliation evidence; this action never creates refunds.",
+          "capability": "stripe-reconciliation",
+          "capabilityName": "Stripe payment lifecycle evidence",
+          "risk": "read"
+        },
+        {
+          "key": "finance.stripe.invoices.mark-paid-out-of-band",
+          "name": "Mark Stripe Invoice Paid Out of Band",
+          "description": "Mark one verified fully settled invoice paid without creating a Stripe charge. It is never a partial-settlement fallback.",
+          "keywords": "Mark one verified fully settled invoice paid without creating a Stripe charge. It is never a partial-settlement fallback.",
+          "capability": "stripe-reconciliation",
+          "capabilityName": "Stripe payment lifecycle evidence",
+          "risk": "write"
+        },
+        {
+          "key": "finance.stripe.payment-records.report",
+          "name": "Report Verified Stripe Payment Record",
+          "description": "Report one verified bank transfer with a fixed custom Bank transfer method and guaranteed outcome. The bank reference is materialized only for provider dispatch and is never returned.",
+          "keywords": "Report one verified bank transfer with a fixed custom Bank transfer method and guaranteed outcome. The bank reference is materialized only for provider dispatch and is never returned.",
+          "capability": "stripe-reconciliation",
+          "capabilityName": "Stripe payment lifecycle evidence",
+          "risk": "write"
+        },
+        {
+          "key": "finance.stripe.balance.retrieve",
+          "name": "Retrieve Stripe Balance",
+          "description": "Retrieve current available and pending Stripe balance buckets for cashflow evidence; it never moves funds.",
+          "keywords": "Retrieve current available and pending Stripe balance buckets for cashflow evidence; it never moves funds.",
+          "capability": "stripe-reconciliation",
+          "capabilityName": "Stripe payment lifecycle evidence",
+          "risk": "read"
+        },
+        {
+          "key": "finance.stripe.balance-transactions.retrieve",
+          "name": "Retrieve Stripe Balance Transaction",
+          "description": "Retrieve gross, fee, and net evidence for one previously discovered Stripe balance transaction.",
+          "keywords": "Retrieve gross, fee, and net evidence for one previously discovered Stripe balance transaction.",
+          "capability": "stripe-reconciliation",
+          "capabilityName": "Stripe payment lifecycle evidence",
+          "risk": "read"
+        },
+        {
+          "key": "finance.stripe.charges.retrieve",
+          "name": "Retrieve Stripe Charge",
+          "description": "Retrieve one previously discovered Stripe charge by its safe reference; optionally include its description, receipt link and safe customer reference for matching.",
+          "keywords": "Retrieve one previously discovered Stripe charge by its safe reference; optionally include its description, receipt link and safe customer reference for matching.",
+          "capability": "stripe-reconciliation",
+          "capabilityName": "Stripe payment lifecycle evidence",
+          "risk": "read"
+        },
+        {
+          "key": "finance.stripe.customers.retrieve",
+          "name": "Retrieve Stripe Customer",
+          "description": "Retrieve one previously discovered Stripe customer by an account-bound reference; optionally return reviewed name, email and description as sensitive business details.",
+          "keywords": "Retrieve one previously discovered Stripe customer by an account-bound reference; optionally return reviewed name, email and description as sensitive business details.",
+          "capability": "stripe-invoicing",
+          "capabilityName": "Stripe invoicing",
+          "risk": "read"
+        },
+        {
+          "key": "finance.stripe.disputes.retrieve",
+          "name": "Retrieve Stripe Dispute",
+          "description": "Read a previously discovered dispute by its account-bound reference, excluding submitted evidence and customer content.",
+          "keywords": "Read a previously discovered dispute by its account-bound reference, excluding submitted evidence and customer content.",
+          "capability": "stripe-reconciliation",
+          "capabilityName": "Stripe payment lifecycle evidence",
+          "risk": "read"
+        },
+        {
+          "key": "finance.stripe.invoices.retrieve",
+          "name": "Retrieve Stripe Invoice",
+          "description": "Retrieve one invoice with its current customer expanded, primary email digests and observed due date. Optional business details include invoice number, memo, customer snapshot name/email and hosted invoice/PDF links; additional billing recipients remain outside API visibility.",
+          "keywords": "Retrieve one invoice with its current customer expanded, primary email digests and observed due date. Optional business details include invoice number, memo, customer snapshot name/email and hosted invoice/PDF links; additional billing recipients remain outside API visibility.",
+          "capability": "stripe-invoicing",
+          "capabilityName": "Stripe invoicing",
+          "risk": "read"
+        },
+        {
+          "key": "finance.stripe.payment-intents.retrieve",
+          "name": "Retrieve Stripe Payment Intent",
+          "description": "Retrieve verified PaymentIntent settlement evidence by an account-bound reference, excluding payment method, PII, metadata, and client-secret data.",
+          "keywords": "Retrieve verified PaymentIntent settlement evidence by an account-bound reference, excluding payment method, PII, metadata, and client-secret data.",
+          "capability": "stripe-reconciliation",
+          "capabilityName": "Stripe payment lifecycle evidence",
+          "risk": "read"
+        },
+        {
+          "key": "finance.stripe.payment-records.retrieve",
+          "name": "Retrieve Stripe Payment Record",
+          "description": "Retrieve one reported PaymentRecord by an account-bound reference, exposing only settlement state, safe account references, and a bank-reference digest.",
+          "keywords": "Retrieve one reported PaymentRecord by an account-bound reference, exposing only settlement state, safe account references, and a bank-reference digest.",
+          "capability": "stripe-reconciliation",
+          "capabilityName": "Stripe payment lifecycle evidence",
+          "risk": "read"
+        },
+        {
+          "key": "finance.stripe.refunds.retrieve",
+          "name": "Retrieve Stripe Refund",
+          "description": "Retrieve one previously discovered Stripe refund; this action never creates a refund.",
+          "keywords": "Retrieve one previously discovered Stripe refund; this action never creates a refund.",
+          "capability": "stripe-reconciliation",
+          "capabilityName": "Stripe payment lifecycle evidence",
+          "risk": "read"
+        },
+        {
+          "key": "finance.stripe.invoices.send",
+          "name": "Send Stripe Invoice",
+          "description": "Request a send for one already finalized Stripe invoice. Sandbox/test mode sends no email; an accepted test request is not sent/delivered. Live acceptance is not inbox-delivery proof. Workflow approval and exception policy remain outside the connector.",
+          "keywords": "Request a send for one already finalized Stripe invoice. Sandbox/test mode sends no email; an accepted test request is not sent/delivered. Live acceptance is not inbox-delivery proof. Workflow approval and exception policy remain outside the connector.",
+          "capability": "stripe-invoicing",
+          "capabilityName": "Stripe invoicing",
+          "risk": "write"
+        }
+      ],
+      "links": [
+        {
+          "key": "homepage_url",
+          "label": "Visit tool",
+          "url": "https://stripe.com/",
+          "confidence": "verified"
+        },
+        {
+          "key": "docs_url",
+          "label": "Documentation",
+          "url": "https://docs.stripe.com/api",
+          "confidence": "verified"
+        },
+        {
+          "key": "signup_url",
+          "label": "Create account",
+          "url": "https://dashboard.stripe.com/register",
+          "confidence": "verified"
+        },
+        {
+          "key": "console_url",
+          "label": "Open console",
+          "url": "https://dashboard.stripe.com/",
+          "confidence": "verified"
+        }
+      ],
+      "primaryUrl": "https://stripe.com/",
+      "docsUrl": "https://docs.stripe.com/api",
+      "setupNote": "In the Stripe Dashboard, create a restricted API key with only the customer, invoice, invoice item, payment intent, payment record, charge, balance transaction, refund, and balance reads or writes required by your approved workflows. Connect it through StackOS; never share the key with an agent."
     },
     {
       "key": "media-buying.taboola",

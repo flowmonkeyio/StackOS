@@ -12,6 +12,8 @@ def _tracker_operations() -> OperationRegistry:
     all_operations = build_operation_registry()
     for name in (
         "tracker.status",
+        "tracker.ticketCounts",
+        "tracker.ticketCountsAll",
         "tracker.get",
         "tracker.next",
         "tracker.blockers",

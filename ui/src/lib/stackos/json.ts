@@ -1,3 +1,5 @@
+import { formatAbsoluteDateTime } from './time'
+
 const SECRET_KEY_PATTERN =
   /(^|[_-])(access[_-]?token|api[_-]?key|apikey|authorization|client[_-]?secret|password|private[_-]?key|refresh[_-]?token|secret|token)([_-]|$)/i
 
@@ -34,9 +36,7 @@ export function sanitizeForDisplay(value: unknown): unknown {
 
 export function formatDateTime(value: string | null | undefined): string {
   if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString()
+  return formatAbsoluteDateTime(value)
 }
 
 export function shortValue(value: unknown): string {

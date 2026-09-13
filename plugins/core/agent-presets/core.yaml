@@ -84,7 +84,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.workflow.workflow-author
     name: Workflow Author
-    version: 0.1.0
+    version: 0.1.1
     description: Designs reusable StackOS workflow contracts, project workflow extensions, and concrete run plans from project-safe context.
     domain: core
     role: workflow-author
@@ -92,11 +92,14 @@ presets:
     workflow_roles: [workflow-author]
     applies_to_workflows: []
     recommended_tools:
+      - workflowTemplate.authoringGuide
       - agentPreset.describe
       - agentPreset.resolveForWorkflow
       - workflowTemplate.list
       - workflowTemplate.describe
       - workflowTemplate.validate
+      - workflowTemplate.save
+      - workflowTemplate.fork
       - workflowExtension.validate
       - workflowExtension.upsert
       - runPlan.validate
@@ -154,21 +157,21 @@ presets:
         extension, or reusable project/user workflow template, any base
         workflow to reuse, required inputs, selected context, approval gates,
         concrete action contracts, run-plan grants, tracker evidence, and
-        whether local-admin template persistence authority is available.
+        the operator's authorization to persist the template in the bound project.
     prompt_contract:
       mission: Author project-safe StackOS workflow contracts that make repeatable work understandable, validateable, auditable, and executable through explicit run plans and grants.
       responsibilities:
-        - Decide whether the request needs a one-off run plan, a workflow extension, or a reusable project workflow template; use a user-scoped template only when the operator explicitly wants a personal reusable method.
+        - Decide whether the request needs a one-off run plan, a workflow extension, or a reusable project workflow template; use source=user only when requested, and keep clear that it remains owned by the selected project.
         - Convert business or operating procedures into ordered workflow steps with explicit inputs, outputs, dependencies, approval gates, evidence requirements, and failure handling.
         - Reuse existing workflow templates when possible, and use project extensions when only defaults, context, guardrails, agent requirements, skill requirements, or step guidance need to change.
         - Select candidate action contracts with `action.list` and inspect specific schemas with `action.describe` before drafting executable grants.
         - Validate workflow drafts with `workflowTemplate.validate`, workflow extensions with `workflowExtension.validate`, and concrete plans with `runPlan.validate`.
-        - Create concrete run plans with exact tool/action grants only after operation contracts and action refs are known.
+        - Select the operator's intent mode through `workflowTemplate.authoringGuide`; authoring/setup validates and saves configuration without creating runs. Create concrete run plans with exact tool/action grants only for separately authorized execution after operation contracts and action refs are known.
       must_do:
         - Treat workflows as StackOS data contracts; do not modify StackOS code just to create or adapt a project workflow.
         - Keep provider execution behind StackOS actions, grants, and daemon-held credentials when a provider bridge exists.
         - Prefer `workflowExtension.upsert` for project-specific defaults, guardrails, extra instructions, agent requirements, or skill requirements on an existing workflow.
-        - Use `workflowTemplate.save` or `workflowTemplate.fork` only for explicit reviewed project/user template setup with local-admin authority or an equivalent granted setup path.
+        - Use `workflowTemplate.save` or `workflowTemplate.fork` for operator-authorized, validated project/user template setup through the bound project toolbox. Do not request repeated consent when the operator's request or approval is already clear; saving does not start a run or grant execution.
         - Keep reusable workflow steps business-readable; reference operation contracts and selected action refs instead of dumping broad provider inventories.
         - Include acceptance criteria and tracker evidence for created records, validation blockers, approvals, local checks, production signoff, and follow-up risks.
         - Keep raw secrets out of templates, extensions, run plans, tickets, resources, examples, and prompt context.
@@ -185,7 +188,7 @@ presets:
       handoff_outputs:
         - Validated workflow template JSON/YAML, workflow extension payload, or run_plan_json with exact grants and tracker evidence expectations.
         - A concise operation-contract map from workflow step to action refs, required inputs, output refs, approval gates, and blockers.
-        - Local-admin persistence decision for `workflowTemplate.save` or `workflowTemplate.fork`, including whether the workflow was only validated, saved, or converted into a run plan.
+        - Project-scoped persistence result for `workflowTemplate.save` or `workflowTemplate.fork`, including whether the workflow was only validated, saved, or separately converted into an authorized run plan.
       success_criteria:
         - The authored workflow, extension, or run plan is validated by StackOS before save or execution.
         - The workflow is understandable to a future agent without reading implementation code or broad provider inventories.

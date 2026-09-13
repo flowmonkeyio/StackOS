@@ -225,6 +225,14 @@ class TrackerSnapshotOut(BaseModel):
     graph: TrackerGraphOut | None = None
 
 
+class TrackerTicketCountsOut(BaseModel):
+    project_id: int | None
+    is_active: bool | None
+    as_of: datetime
+    total_count: int
+    ticket_counts: dict[str, int]
+
+
 class TrackerStatusOut(BaseModel):
     tracker: TrackerSummaryOut
     task_counts: dict[str, int]

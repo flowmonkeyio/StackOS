@@ -1,6 +1,6 @@
 slug: communications
 name: Communications
-version: 0.1.0
+version: 0.1.1
 description: First-party StackOS package for messaging, email send, mailbox/message lifecycle, and agent-trigger resources.
 display_order: 20
 source: builtin
@@ -1303,7 +1303,7 @@ actions:
         - https://docs.slack.dev/reference/methods/conversations.members/
   - key: slack-bot.conversation.history
     name: Inspect Slack Conversation History
-    description: Fetch bounded recent Slack conversation messages so agents can resolve provider message refs for follow-up actions.
+    description: Fetch one Slack history page with message refs and previews; explicitly request full selected message content with include_content. This does not fetch thread replies or file bytes.
     provider: slack-bot
     capability: messaging
     risk_level: read
@@ -1333,6 +1333,10 @@ actions:
           type: string
         inclusive:
           type: boolean
+        include_content:
+          type: boolean
+          default: false
+          description: Include full selected text, blocks, attachments and safe file descriptors in the response file. Default previews remain bounded. Inspect is_limited, has_more and next_cursor before claiming coverage.
         limit:
           type: integer
           minimum: 1
@@ -1432,7 +1436,7 @@ actions:
         - https://www.rfc-editor.org/rfc/rfc9051.html
   - key: imap.messages.search
     name: Search IMAP Messages
-    description: Search a bounded IMAP mailbox by safe mailbox reference and provider-valid criteria.
+    description: Search one bounded UID page and report matched_count, has_more and next_after_uid. Continue with unchanged mailbox and criteria plus after_uid and the returned UIDVALIDITY as expected_uidvalidity.
     provider: imap
     capability: email-inbox
     risk_level: read
@@ -1448,6 +1452,15 @@ actions:
           maxLength: 253
         cursor_ref:
           type: string
+        after_uid:
+          type: integer
+          minimum: 1
+          maximum: 4294967295
+          description: Exclusive UID lower bound for continuation; requires expected_uidvalidity from the preceding search.
+        expected_uidvalidity:
+          type: string
+          pattern: '^[1-9][0-9]*$'
+          description: Mailbox UIDVALIDITY from the preceding search. A changed epoch stops continuation before searching.
         criteria:
           type: object
           additionalProperties: false
@@ -1495,7 +1508,7 @@ actions:
         - https://www.rfc-editor.org/rfc/rfc9051.html
   - key: imap.message.fetch
     name: Fetch IMAP Message
-    description: Fetch selected fields for one IMAP message by UID and mailbox reference.
+    description: Fetch selected parsed fields from a bounded MIME prefix by UID. Inspect content_completeness for byte and field truncation; use imap.message.export for complete original MIME and attachment evidence.
     provider: imap
     capability: email-inbox
     risk_level: read
@@ -1530,7 +1543,7 @@ actions:
               - headers
         max_body_bytes:
           type: integer
-          minimum: 0
+          minimum: 1
           maximum: 1048576
     output_schema: *object_schema
     config:

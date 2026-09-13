@@ -5,19 +5,11 @@ communication state plus Telegram bot messaging, local chat interactions, SMTP
 email send, IMAP mailbox/message lifecycle, and communication-driven agent
 requests.
 
-The plugin is implemented in slices. Generic agent request operations are
-executable in core StackOS. Telegram bot identity checks, text sends, photo
-sends, callback answers, bounded diagnostic `updates.poll`, and webhook
-set/delete/info are executable through the generic action registry. Telegram
-secret-token ingress resolves project-scoped communication profiles, stores
-callback/message events as resources, and creates generic agent requests only
-when trigger/access policy allows it. Slack bot identity, message send,
-conversation discovery, membership sync, and signed HTTP Events
-API/Interactivity ingress are executable through the same action/resource
-model. SMTP send and IMAP mailbox/message lifecycle actions are executable
-through daemon-side credentials and mocked contract tests. Generic communication
-profile/surface/membership/target/context operations are executable setup/read
-operations; they do not call providers or models.
+Use the [provider contract](../../docs/integration-contracts/communications.md)
+for protocol, setup, output, and limitation details. The [manifest](plugin.yaml)
+declares resources and action schemas; `action.list`/`action.describe` report
+availability in the current project. Generic communication operations store
+setup and context without calling providers or models.
 
 ## Providers
 
@@ -35,128 +27,47 @@ operations; they do not call providers or models.
   field fetch, `Seen` flag lifecycle, and bounded staged-evidence export with
   transfer-id-only cleanup for the finance receipt route.
 
-## Resources
+## Reading provider content
 
-- `communication-profile`
-- `communication-contact`
-- `communication-target`
-- `communication-route`
-- `communication-membership`
-- `communication-profile`
-- `communication-channel`
-- `communication-thread`
-- `communication-message`
-- `communication-interaction`
-- `communication-event`
-- `communication-cursor`
-- `ingress-endpoint`
-- `agent-request-source`
+Stored context comes from `communicationContext.query`; live reads use provider
+actions. Slack history defaults to previews and accepts `include_content: true`
+for full selected content. IMAP search/fetch expose continuation and completeness
+facts; original MIME and attachments use export. Follow the exact
+[Slack](../../docs/integration-contracts/communications.md#reading-complete-selected-slack-content)
+and [IMAP](../../docs/integration-contracts/communications.md#imap-result-coverage-and-continuation)
+output contracts before treating a page or preview as complete.
 
-The generic `agent_requests` queue belongs to core StackOS, not this plugin.
-Its `agentRequest.*` operations are executable through REST, CLI, and MCP.
-Communications can feed it only through trusted daemon ingestion or a run-plan
-step that explicitly grants `agentRequest.create`.
-`agentRequest.prepareRunPlan` is the generic handoff from an inbound request to
-a caller-supplied run plan; it claims, creates, links, and returns the claim
-token without choosing strategy or executing tools.
+## Setup And Workflow Entry Points
 
-Telegram Accounts are global and reusable. Each project-scoped communication
-profile binds to one explicitly attached Account through `credential_ref`;
-there are no agent-visible bot tokens or provider-wide fallback lookups.
-Accounts store token material, webhook secrets, and safe transport configuration
-only; communication profiles store identity, agent guidance,
-structured command intents, access policy, trigger policy, context policy,
-response policy, and ingress mode. Visibility is
-not activation: visible messages may be stored as bounded context without
-creating an agent request; only allowlisted users can trigger work or replies.
-`webhook` is the normal listener path. Local development uses the same public
-ingress endpoint contract as production, usually with `driver=local-tunnel` and
-provider details in `driver_config`. `updates.poll` is diagnostic/bootstrap-only.
+- Attach a reusable Account, then configure project identity and policies through
+  `communicationProfile.*`. Credentials remain daemon-held; profiles bind safe
+  Account refs and own project-specific behavior.
+- Use `communicationSurface.*`, `communicationContact.*`, and
+  `communicationMembership.*` for people and surfaces; `communicationTarget.*`
+  and `communicationRoute.*` for destinations and sharing policy.
+- Configure public ingress through `ingressEndpoint.*`; use
+  `localAgentChat.createMessage` for local chat. Neither runs a model.
+- Deliver normal messages through `communication.send`/`communication.reply`.
+  Explicit provider actions remain available for provider-specific work and
+  workflow-granted execution.
 
-Slack Accounts are global and reusable. Each project-scoped communication
-profile binds to an explicitly attached `slack-bot` Account through
-`provider_facets.slack-bot.credential_ref`. Accounts store Slack token material
-and the signing secret only; communication profiles store identity,
-agent guidance, access policy, trigger policy, context policy, response policy,
-and send/handoff policy. HTTP ingress verifies Slack signatures before storing
-events or creating agent requests. `response_url` and `trigger_id` are transient
-sensitive values and are not persisted.
+The [resource model](../../docs/integration-contracts/communications.md#resource-model)
+and [operation contracts](../../docs/integration-contracts/communications.md#communication-platform-operations)
+own field and setup details. The generic core
+[agent-request queue](../../docs/integration-contracts/communications.md#core-agent-request-queue)
+owns claim/release/completion and caller-supplied run-plan handoff;
+communications does not choose a workflow or execute the resulting plan.
 
-SMTP and IMAP use reusable global Accounts with explicit project attachments.
-Agents see safe status and opaque credential refs; host, username, password, TLS
-mode, and mailbox mapping resolve only inside the daemon. SMTP acceptance is recorded as outbound message
-submission metadata, not delivery or read state. IMAP uses UID/UIDVALIDITY-based
-resources for mailbox cursor, message fetch, and local read/unread lifecycle.
+Built-in [templates](workflows/) cover inbox review, rich Telegram replies,
+callback follow-up, and outbound notifications. Concrete action payloads belong
+in run plans.
 
-For an external evidence backend such as the finance local Markdown workspace,
-IMAP remains a transport only. The receipt flow uses non-acknowledging UID
-`BODY.PEEK[]` export into a bounded connector staging directory under its
-daemon-owned asset path. Its safe result includes a project-contained
-`staging_uri`, opaque transfer id, source identity, canonical staged paths, and
-hash/byte manifest; it has no `host_handoff` field and exposes no raw MIME or
-attachment bytes. The `staging_uri` is a host-filesystem-only locator, never an
-HTTP URL; the daemon's static mount returns 404 for every normalized
-`imap-transfers` path even when a bearer token is supplied, and it rejects a
-public-looking symlink or path alias whose resolved target is inside that tree.
-The trusted host maps that locator through its own local filesystem runtime,
-verifies and writes the original outside StackOS, re-reads the external record,
-then separately invokes the granted epoch-qualified `mark_seen` action and
-transfer-id-only cleanup. The generic search cursor is observation-only, not
-receipt progress. Raw MIME and attachment bytes stay in temporary staging,
-never action output, communication resources, artifacts, or action-audit data.
-This narrow handoff does not create general filesystem access, storage
-infrastructure, or a finance evidence store.
-The complete handoff and recovery contract—including the fixed export limits and
-transfer-id-only staging cleanup—lives in
-[`plugins/finance/references/imap-host-handoff-contract.md`](../finance/references/imap-host-handoff-contract.md).
-Finance receipt intake requires a successfully verified SSL or STARTTLS
-credential before it searches, exports, or acknowledges; legacy plaintext IMAP
-operations remain outside that finance workflow.
-
-Built-in templates cover inbox review, rich Telegram replies, callback
-follow-up, and outbound notifications. They provide context/action structure for
-agents; concrete action payloads still belong in run plans.
-
-Project setup uses shared StackOS operations:
-
-- `localAgentChat.createMessage` stores local human/agent chat messages as
-  communication resources and can create a generic agent request for inbound
-  messages. It does not run a model or decide workflow intent. Agent responses
-  in the same local thread use `direction=outbound`, the same `thread_key`, a
-  new `message_key`, and `create_request=false`.
-- `communicationProfile.*` stores provider-neutral identity, guidance, facets,
-  and static policy.
-- `communicationSurface.*` stores safe channel/DM/mailbox/local-chat surface
-  metadata on the `communication-channel` resource, including audience,
-  durable intent, per-surface agent guidance, data-scope/share boundaries, and
-  safe external customer/account/ticket refs.
-- `communicationContact.*` stores safe cross-provider person, customer, team,
-  bot, or organization refs.
-- `communicationMembership.*` stores provider-neutral membership, permission,
-  role, and scope state.
-- `communicationTarget.*` stores and resolves named send destinations to
-  explicit provider action refs. It does not send messages. Resolve with
-  `profile_ref`, `source_surface_ref`, and `invoker_ref` when available so the
-  target can enforce both project profile policy and the approved human/bot
-  actor that requested the send. If `profile_ref` is omitted, resolve uses the
-  same target/default actor selection as `communication.send` and returns
-  `policy_profile_ref`.
-- `communicationRoute.*` stores static cross-surface handoff policy. It does
-  not send messages or choose workflow behavior.
-- `communicationContext.query` returns bounded stored communication-message
-  history. It never fetches live provider history. Invalid field errors return
-  both rejected `fields` and the safe `allowed_fields` set.
-- `communicationProfile.upsert` creates or updates safe bot identity,
-  guidance, and policy after a reusable `telegram-bot` Account is attached to
-  the project.
-- `communicationProfile.get` and `communicationProfile.list` let agents
-  inspect profiles without receiving token material.
-- `ingressEndpoint.*` stores one project-level public ingress endpoint, derives
-  provider webhook URLs, and syncs safe route metadata into profiles. Applying
-  Telegram webhooks uses `communications.telegram-bot.webhook.set/delete/info`
-  through `action.run` or granted `action.execute`.
-- REST, CLI `ops call`, MCP, and the local Connections UI all use the same
-  operation registry path for this setup.
+For finance receipt intake, use the existing
+[IMAP host handoff](../finance/references/imap-host-handoff-contract.md):
+verified TLS, non-acknowledging export, host-only staging, external persistence
+and reread, then separately granted acknowledgement and transfer cleanup.
+Original evidence belongs to the external finance workspace, not communication
+resources or action audit.
 
 ## Business Flow Model
 

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Literal
+
 from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session
 
@@ -27,6 +30,12 @@ async def query_action_calls(
     plugin_slug: str | None = Query(default=None),
     action_key: str | None = Query(default=None),
     status: ActionCallStatus | None = Query(default=None),
+    action_call_id: int | None = Query(default=None, ge=1),
+    provider_key: str | None = Query(default=None),
+    created_from: datetime | None = Query(default=None),
+    created_before: datetime | None = Query(default=None),
+    dry_run: bool | None = Query(default=None),
+    sort: Literal["id", "created_at"] = Query(default="id"),
     page: PaginationParams = Depends(pagination_params),
     session: Session = Depends(get_session),
 ) -> PageResponse[ActionCallAuditOut]:
@@ -40,6 +49,12 @@ async def query_action_calls(
             plugin_slug=plugin_slug,
             action_key=action_key,
             status=status,
+            action_call_id=action_call_id,
+            provider_key=provider_key,
+            created_from=created_from,
+            created_before=created_before,
+            dry_run=dry_run,
+            sort=sort,
             limit=page.limit,
             after_id=page.after,
         )

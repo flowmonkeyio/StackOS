@@ -32,6 +32,9 @@ from stackos.mcp.tools import (
 
 def register_all(registry: ToolRegistry) -> None:
     """Populate ``registry`` with the core StackOS tool catalog."""
+    from stackos.operations.adapters.mcp import register_mcp_operation_names
+
+    register_mcp_operation_names(registry, ("hostMcp.status",))
     agent_requests.register(registry)
     actions.register(registry)
     projects.register(registry)

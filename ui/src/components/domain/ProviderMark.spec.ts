@@ -47,6 +47,16 @@ describe('ProviderMark', () => {
     expect(wrapper.classes()).toContain('provider-mark--xs')
   })
 
+  it.each(['finance', undefined])('renders the supplied Stripe logo with plugin %s', (pluginSlug) => {
+    const wrapper = mount(ProviderMark, {
+      props: { name: 'Stripe', providerKey: 'stripe', pluginSlug },
+    })
+
+    expect(wrapper.get('img').attributes('src')).toBe('/images/integrations/stripe-icon.jpeg')
+    expect(wrapper.classes()).toContain('provider-mark--logo')
+    expect(wrapper.classes()).not.toContain('provider-mark--wordmark')
+  })
+
   it('renders stable initials when no logo is mapped', () => {
     const wrapper = mount(ProviderMark, {
       props: { name: 'Example Provider', providerKey: 'example-provider' },

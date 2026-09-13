@@ -11,7 +11,10 @@ from sqlmodel import Session
 
 from stackos.actions import ActionRepository
 from stackos.auth_providers import AuthRepository
+from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.resources import ResourceRepository
+from stackos.repositories.secrets import PayloadSecretRepository
+from stackos.secret_refs import SECRET_REF_SENTINEL
 
 
 class _FakeSMTP:
@@ -210,3 +213,140 @@ def test_smtp_ssl_path_uses_smtp_ssl(
     assert len(_FakeSMTPSSL.instances) == 1
     assert _FakeSMTPSSL.instances[0].starttls_called is False
     assert out.output_json["status"] == "accepted"
+
+
+@pytest.mark.parametrize("field", ["recipients", "cc", "bcc", "reply_to"])
+def test_smtp_address_secret_ref_validates_without_decrypting_then_sends(
+    session: Session,
+    project_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+) -> None:
+    import stackos.actions.smtp as smtp_module
+
+    _FakeSMTP.instances.clear()
+    _FakeSMTP.refused = {}
+    monkeypatch.setattr(smtp_module.smtplib, "SMTP", _FakeSMTP)
+    credential_ref = _credential_ref(session, project_id)
+    address = "reply@example.test" if field == "reply_to" else "private@example.test"
+    secret_ref = (
+        PayloadSecretRepository(session).set(project_id=project_id, value=address).secret_ref
+    )
+    marker = {"$secret_ref": secret_ref}
+    payload: dict[str, Any] = {
+        "recipients": ["recipient@example.test"],
+        "subject": "Status",
+        "text": "Body",
+        field: marker if field == "reply_to" else [marker],
+    }
+    repo = ActionRepository(session)
+
+    with monkeypatch.context() as preflight:
+
+        def no_decryption(*_args: Any, **_kwargs: Any) -> str:
+            pytest.fail("SMTP validation must not decrypt payload secrets")
+
+        preflight.setattr(PayloadSecretRepository, "resolve", no_decryption)
+        validation = repo.validate(
+            project_id=project_id,
+            action_ref="communications.smtp.email.send",
+            input_json=payload,
+            credential_ref=credential_ref,
+        )
+        assert validation.valid, validation.issues
+        assert not _FakeSMTP.instances
+
+    out = asyncio.run(
+        repo.execute(
+            project_id=project_id,
+            action_ref="communications.smtp.email.send",
+            input_json=payload,
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    assert len(_FakeSMTP.instances) == 1
+    sent = _FakeSMTP.instances[0].send_args
+    assert sent is not None
+    if field == "reply_to":
+        assert sent["message"]["Reply-To"] == address
+        assert sent["to_addrs"] == ["recipient@example.test"]
+    else:
+        expected = [address] if field == "recipients" else ["recipient@example.test", address]
+        assert sent["to_addrs"] == expected
+    assert sent["message"]["Bcc"] is None
+    assert SECRET_REF_SENTINEL not in sent["message"].as_string()
+    assert out.output_json["status"] == "accepted"
+    rendered = json.dumps(out.model_dump(mode="json"))
+    assert address not in rendered
+    assert secret_ref in rendered
+
+
+@pytest.mark.parametrize("field", ["recipients", "cc", "bcc", "reply_to"])
+@pytest.mark.parametrize("use_secret_ref", [False, True])
+def test_smtp_invalid_addresses_never_connect_or_send(
+    session: Session,
+    project_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    use_secret_ref: bool,
+) -> None:
+    import stackos.actions.smtp as smtp_module
+
+    _FakeSMTP.instances.clear()
+    monkeypatch.setattr(smtp_module.smtplib, "SMTP", _FakeSMTP)
+    credential_ref = _credential_ref(session, project_id)
+    invalid = "invalid-address"
+    value: Any = invalid
+    if use_secret_ref:
+        secret_ref = (
+            PayloadSecretRepository(session).set(project_id=project_id, value=invalid).secret_ref
+        )
+        value = {"$secret_ref": secret_ref}
+    payload = {
+        "recipients": ["recipient@example.test"],
+        "subject": "Status",
+        "text": "Body",
+        field: value if field == "reply_to" else [value],
+    }
+
+    error_type = ConflictError if use_secret_ref or field == "reply_to" else ValidationError
+    with pytest.raises(error_type):
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="communications.smtp.email.send",
+                input_json=payload,
+                credential_ref=credential_ref,
+            )
+        )
+
+    assert not _FakeSMTP.instances
+
+
+def test_smtp_literal_secret_projection_never_reaches_transport(
+    session: Session,
+    project_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import stackos.actions.smtp as smtp_module
+
+    _FakeSMTP.instances.clear()
+    monkeypatch.setattr(smtp_module.smtplib, "SMTP", _FakeSMTP)
+    credential_ref = _credential_ref(session, project_id)
+
+    with pytest.raises(ConflictError):
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="communications.smtp.email.send",
+                input_json={
+                    "recipients": [SECRET_REF_SENTINEL],
+                    "subject": "Status",
+                    "text": "Body",
+                },
+                credential_ref=credential_ref,
+            )
+        )
+
+    assert not _FakeSMTP.instances

@@ -1,0 +1,91 @@
+{
+  "title": "When is a receipt actually processed?",
+  "status": "review-ready; agentic-angle revision independently reviewed; not operator-approved or published",
+  "article_path": "reports/finance-articles/2026-09-06/02-receipt-processed.md",
+  "channel": "website",
+  "evidence_ledger": [
+    {
+      "ref": "urn:stackos:project:1:resource:985",
+      "type": "cleared operator intake intent and documented workflow design",
+      "public_use": "cleared within stated design scope",
+      "supports": [
+        "A proposed receipt-intake route can retain forwarded-email, attachment, and manual-upload originals; it does not replace the financial system of record.",
+        "Supported receipt details may be extracted, exact verified duplicates reuse provenance, semantic similarity remains a candidate rather than certainty, and partial intake progress can remain visible.",
+        "Business purpose is not invented, and intake is separate from bookkeeping posting, tax treatment, or professional judgment."
+      ]
+    }
+  ],
+  "claims": [
+    {
+      "text": "In the documented design, a receipt-intake agent may retain source originals and extract only document-supported date, vendor, and amount details.",
+      "claim_type": "cleared documented design",
+      "evidence_refs": [
+        "urn:stackos:project:1:resource:985"
+      ]
+    },
+    {
+      "text": "A verified exact duplicate can reuse the existing receipt record with added provenance; a vendor/date/amount resemblance remains a candidate until verified.",
+      "claim_type": "cleared documented decision boundary",
+      "evidence_refs": [
+        "urn:stackos:project:1:resource:985"
+      ]
+    },
+    {
+      "text": "The forwarded email containing one readable receipt and one unreadable attachment, including the owner reply about workshop materials, is an illustrative proposed case rather than a customer event or operating result.",
+      "claim_type": "illustrative scenario",
+      "evidence_refs": []
+    },
+    {
+      "text": "The agent’s focused question, linkage of the owner reply to the same receipt item, and resumption after a readable copy arrives are proposed operating behavior derived from the cleared intake design.",
+      "claim_type": "proposed operating method",
+      "evidence_refs": [
+        "urn:stackos:project:1:resource:985"
+      ]
+    },
+    {
+      "text": "Routine retention, extraction, and verified-duplicate work may proceed without approval at each keystroke only after the owner has configured an intake route, permitted access, and an authority boundary; unclear purpose, uncertain matches, and unreadable documents remain return points.",
+      "claim_type": "proposed authorization boundary",
+      "evidence_refs": [
+        "urn:stackos:project:1:resource:985"
+      ]
+    },
+    {
+      "text": "Receipt intake can hand an original, supported extracted facts, owner-supplied context, duplicate status, and visible gaps to bookkeeping preparation without posting books or deciding tax treatment.",
+      "claim_type": "cleared scope boundary and proposed handoff",
+      "evidence_refs": [
+        "urn:stackos:project:1:resource:985"
+      ]
+    }
+  ],
+  "unsupported-or-intentionally-omitted": [
+    "No real customer, sender, merchant, amount, date, invoice, account, mailbox, credential, provider, or operational-log data.",
+    "No production-use, accuracy, reliability, time-saving, financial-outcome, compliance, or return-on-investment claim.",
+    "No accounting, tax, legal, retention, software-selection, categorization, posting, or financial-treatment advice.",
+    "No protocol, JSON, storage-path, hash, provider, or security-sensitive implementation walkthrough."
+  ],
+  "open_questions_for_review": [],
+  "review_decisions": [
+    "Reopened after rejection of a technical StackOS/storage explanation and a general receipt-advice framing with agents treated as an aside.",
+    "The selected angle follows one hypothetical forwarded email through retained originals, supported extraction, duplicate uncertainty, an owner answer linked to the same item, and a bookkeeping handoff.",
+    "The piece uses no external research, imagery, site integration, publishing, or current-product feature claims.",
+    "Main made original/handoff readback and replacement-to-existing-item continuation explicit; independent claim reviewer /root/finance_agentic_claim02 found no unsupported material claim or required repair. Earlier host authentication failures were not review results.",
+    "Voice reviewer /root/finance_agentic_voice02 identified repeated hypothetical scene-setting. Removed the redundant Consider transition and Suppose reset while keeping the explicit imagined opening and proposed-design boundary. Targeted independent recheck cleared the repair.",
+    "Independent disclosure reviewer /root/finance_agentic_disclosure02 cleared the current article and map. Hypothetical workshop materials contain no customer-identifying implication; setup explanation remained proportionate in voice review."
+  ],
+  "voice-and-form-self-audit": {
+    "named_comparisons": [
+      "reports/finance-articles/2026-09-06/01-finance-department.md",
+      "website/content/articles/what-ai-agent-handoff-should-include.md",
+      "website/content/articles/how-ai-agents-should-explain-blockers-to-humans.md"
+    ],
+    "opening": "Opens at the two-document contradiction inside one forwarded email, rather than article 1’s broad solo-finance ambition, the handoff article’s direct-answer definition, or the blocker article’s observed-system interruption.",
+    "structure": "Follows a document pair and one owner reply in time. It does not reuse article 1’s coordinator-and-permission essay, the handoff article’s field taxonomy, or the blocker article’s condition/repair analysis.",
+    "cadence-and-boundaries": "Uses a short quoted owner question as the operating artifact, keeps technical setup at the purpose level, and places the bookkeeping boundary at the handoff rather than in a disclaimer paragraph.",
+    "ending": "Closes on the tangible split outcome—one receipt ready for preparation and one readable-copy request open—rather than article 1’s fresh-session test or either representative article’s generalized decision rule."
+  },
+  "durable_draft_ref": "artifact:2056",
+  "previous_rejected_angles": [
+    "Technical StackOS evidence-custody, mailbox-acknowledgement, protocol identity, or local-storage explanation.",
+    "General receipt advice with agents treated as an aside."
+  ]
+}

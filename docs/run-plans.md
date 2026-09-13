@@ -62,6 +62,11 @@ when the step should terminally fail the run plan. `runPlan.recordStep(success)`
 enforces lifecycle, approvals, transitive run-plan step dependencies, and the
 step's frozen required output keys and JSON schemas before changing state.
 Invalid output packets leave the step running with repair paths.
+Recording `success` or `skipped` also rejects linked action calls that are still
+running, returning their action-call IDs and `actionCall.get` polling context
+without changing the step, grants, or tracker state. Poll until their stored
+status is terminal before recording successful completion. This does not block
+the existing `failed` or `blocked` recovery paths.
 `runPlan.recordStep` does not hard-block on tracker graph warnings; agents
 should use graph warnings as planning and audit signals, and only block
 intentionally when a warning is material to the current step's definition of

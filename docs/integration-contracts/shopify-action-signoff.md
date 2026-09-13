@@ -9,11 +9,8 @@ Scope: Shopify Admin GraphQL `2026-07`/latest documentation, the local
 This is a documentation and contract signoff, not a live-store smoke. A real
 Shopify token remains a release gate for provider connectivity.
 
-This session also could not use `action.list` on the local MCP daemon as final
-registry proof because port `5180` was owned by the packaged
-`/Applications/StackOS.app` launchd daemon, which did not contain this source
-tree's Shopify plugin yet. Package/install reload must be run before production
-MCP registry verification.
+Installed-runtime registry verification was not established by this audit;
+the active packaged daemon did not contain the reviewed Shopify plugin.
 
 ## Verification Sources
 
@@ -43,13 +40,11 @@ MCP registry verification.
 
 ## Verifier Coverage
 
-- First-pass verifier agents reviewed the full copied catalog action by action
-  against official Shopify docs and found the blockers fixed in this patch.
-- Second-pass verifier agents rechecked the corrected analytics, customer,
-  inventory, and order slices that initially failed.
-- Additional agent spawns for the final product/order slices hit the thread cap;
-  those remaining rechecks were completed manually by the main agent against the
-  official docs above and backed by focused tests.
+Independent reviewers checked the copied catalog and rechecked corrected
+analytics, customer, inventory, and order contracts. Final product/order
+rechecks were completed by the main agent against the official sources and
+focused tests. The matrix records that dated documentation review, not current
+live-provider acceptance.
 
 The safe exposed surface is 58 curated actions. The original copied
 `shopifyql_query` action is intentionally removed because it accepted arbitrary
@@ -136,7 +131,3 @@ Status legend:
   `orderUpdate`, preserves variant `userErrors.code`, and verifies draft-order
   `note2`, inventory idempotency/CAS input shape, and collection creation
   argument shape.
-- `action.list` against this machine's active `5180` daemon returned zero
-  Shopify actions because the daemon was the packaged app runtime rather than
-  this checkout; package/install reload is required before live MCP registry
-  signoff.

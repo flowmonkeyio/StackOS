@@ -278,7 +278,9 @@ def _stripe_billing_fixture(httpx_mock: HTTPXMock, *, currency: str = "usd") -> 
     return state
 
 
-@pytest.mark.parametrize("outcome", ["accepted", "paid-before-send", "unknown-send"])
+@pytest.mark.parametrize(
+    "outcome", ["accepted", "paid-before-send", "unknown-send", "instructed-no-send"]
+)
 @pytest.mark.parametrize("currency", ["usd", "cad"])
 def test_actual_billing_template_two_lines_and_send_recovery(
     mcp_client: MCPClient,
@@ -386,18 +388,28 @@ def test_actual_billing_template_two_lines_and_send_recovery(
     run.record("finalized")
 
     run.claim("send-invoice")
-    before = len(httpx_mock.get_requests())
-    denied = mcp_client.call_tool_error(
-        "action.execute", run.args("invoices.send", {"invoice_ref": invoice_ref})
-    )
-    assert denied["data"]["approval_ref"] == "owner-invoice-send"
-    assert len(httpx_mock.get_requests()) == before
-    run.approve("owner-invoice-send")
-    run.summary["approval_refs"].append("approval:send-v1")
+    if outcome != "instructed-no-send":
+        before = len(httpx_mock.get_requests())
+        denied = mcp_client.call_tool_error(
+            "action.execute", run.args("invoices.send", {"invoice_ref": invoice_ref})
+        )
+        assert denied["data"]["approval_ref"] == "owner-invoice-send"
+        assert len(httpx_mock.get_requests()) == before
+        run.approve("owner-invoice-send")
+        run.summary["approval_refs"].append("approval:send-v1")
     if outcome == "paid-before-send":
         state["status"] = "paid"
     observed = read_and_compare()
-    if outcome == "paid-before-send":
+    if outcome == "instructed-no-send":
+        # The owner wants the finalized document for an existing payment, not
+        # an invoice email. No send action or send approval is needed to close.
+        assert observed["status"] == "open"
+        run.summary.update(
+            delivery_state="suppressed",
+            suppression_ref="suppression:owner-no-send-v1",
+        )
+        run.record("suppressed")
+    elif outcome == "paid-before-send":
         assert observed["amount_remaining"] == 0
         run.summary.update(delivery_state="suppressed", suppression_ref="suppression:paid-v1")
         run.record("suppressed")
@@ -445,13 +457,16 @@ def test_actual_billing_template_two_lines_and_send_recovery(
             "recorded",
             version=1,
             invoice_ref=invoice_ref,
-            eligibility="suppressed" if outcome == "paid-before-send" else "unknown",
+            eligibility="suppressed"
+            if outcome in {"paid-before-send", "instructed-no-send"}
+            else "unknown",
             decision_reason=f"Synthetic provider outcome: {outcome}",
             reminder_owner="agent",
             send_outcome={
                 "accepted": "test-accepted",
                 "unknown-send": "unknown",
                 "paid-before-send": "not-attempted",
+                "instructed-no-send": "not-attempted",
             }[outcome],
         )
     )
@@ -464,6 +479,8 @@ def test_actual_billing_template_two_lines_and_send_recovery(
         # Neither a test-only acceptance nor a paid-before-send suppression
         # creates a real customer contact or live follow-up handoff.
         run.summary.update(external_write_proof_ref="write-proof:billing-v1", handoff_refs=[])
+        if outcome == "instructed-no-send":
+            run.summary["handoff_refs"] = ["settlement-only-handoff:fixture"]
         completed = run.record("recorded")
         assert completed["status"] == "completed"
         if outcome == "accepted":
@@ -474,7 +491,7 @@ def test_actual_billing_template_two_lines_and_send_recovery(
             assert final_summary["delivery_state"] == "test-accepted"
             assert final_summary["handoff_refs"] == []
     sends = [r for r in httpx_mock.get_requests() if r.url.path.endswith("/send")]
-    assert len(sends) == (0 if outcome == "paid-before-send" else 1)
+    assert len(sends) == (0 if outcome in {"paid-before-send", "instructed-no-send"} else 1)
     assert (
         len(
             [
@@ -488,6 +505,16 @@ def test_actual_billing_template_two_lines_and_send_recovery(
     assert len(state["items"]) == 2
     final = run.call("runPlan.get", run_plan_id=run.plan)
     assert final["status"] == ("started" if outcome == "unknown-send" else "completed")
+    if outcome == "instructed-no-send":
+        approvals = {row["approval_key"]: row["status"] for row in final["approval_requests"]}
+        assert approvals["owner-invoice-send"] == "pending"
+        assert approvals["owner-invoice-finalization"] == "approved"
+        final_step = run.call("runPlan.getStep", run_plan_id=run.plan, step_id="record-and-handoff")
+        summary = final_step["result_json"]["payment_request_summary"]
+        assert summary["delivery_state"] == "suppressed"
+        assert summary["suppression_ref"] == "suppression:owner-no-send-v1"
+        assert summary["handoff_refs"] == ["settlement-only-handoff:fixture"]
+        assert summary["approval_refs"] == ["approval:finalize-v1"]
     for private in (EMAIL, *(line[1] for line in LINES)):
         assert private not in json.dumps(final)
 

@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 from stackos.integrations._base import BaseIntegration, IntegrationCallResult
 from stackos.integrations.ahrefs import AhrefsIntegration
+from stackos.integrations.aignc import AigncIntegration
 from stackos.integrations.alibaba_wan import AlibabaWanIntegration
 from stackos.integrations.byteplus_ark import BytePlusArkIntegration
 from stackos.integrations.cloudflare import CloudflareIntegration
@@ -58,6 +59,7 @@ if TYPE_CHECKING:
 
 
 REGISTRY: dict[str, type[BaseIntegration]] = {
+    "aignc": AigncIntegration,
     "dataforseo": DataForSeoIntegration,
     "alibaba-wan": AlibabaWanIntegration,
     "serper": SerperIntegration,
@@ -102,8 +104,8 @@ def integration_class_for(kind: str) -> type[BaseIntegration] | None:
 
     Returns ``None`` if no wrapper is registered. Runtime LLM keys for
     the current operator agent live outside StackOS; the daemon may register
-    setup probes such as OpenRouter, but should not register generic
-    prose-generation actions or spawn hidden writer sessions.
+    setup probes such as OpenRouter and explicit provider actions such as AIGNC.
+    These do not select models, run agent loops or spawn hidden writer sessions.
     """
     return REGISTRY.get(kind)
 
@@ -111,6 +113,7 @@ def integration_class_for(kind: str) -> type[BaseIntegration] | None:
 __all__ = [
     "REGISTRY",
     "AhrefsIntegration",
+    "AigncIntegration",
     "AlibabaWanIntegration",
     "BaseIntegration",
     "BytePlusArkIntegration",

@@ -1,79 +1,76 @@
 <script setup lang="ts">
-// HomeView — root local status plus the project list. Page-specific logic lives
-// in the home/* composables/components so this file stays as orchestration glue.
-
 import { onMounted, ref } from 'vue'
-import { storeToRefs } from 'pinia'
-
 import { UiButton, UiConfirmDialog, UiPageHeader, UiPageShell } from '@/components/ui'
 import { isDesktopShell } from '@/lib/desktop'
 import { GETTING_STARTED_URL } from '@/lib/externalLinks'
-import { useProjectsStore } from '@/stores/projects'
-
+import { usePolling } from '@/composables/usePolling'
+import type { TrackerStatus } from '@/lib/task-tracker/types'
 import HomeProjectsSection from './home/HomeProjectsSection.vue'
 import HomePortfolioOverview from './home/HomePortfolioOverview.vue'
 import HomeSystemStatusCard from './home/HomeSystemStatusCard.vue'
 import { useHomeAgentHostStatuses } from './home/useHomeAgentHostStatuses'
 import { useHomePortfolioInsights } from './home/useHomePortfolioInsights'
 import { useHomeSystemStatus } from './home/useHomeSystemStatus'
-
-const projects = useProjectsStore()
-const {
-  items: projectItems,
-  loading: projectsLoading,
-  error: projectsError,
-  activeProjectId,
-} = storeToRefs(projects)
+import { useTicketCounts } from './home/useTicketCounts'
 
 const isShell = isDesktopShell()
 const repairOpen = ref(false)
-
+const portfolio = useHomePortfolioInsights()
+const { items, loading: projectsLoading, error: projectsError, nextCursor, total, filters } = portfolio
+const tickets = useTicketCounts()
+const { summary, visibility, loading: countsLoading, error: countsError } = tickets
 const { hostStatuses, hostStatusSummary, loadHostStatuses, applyHostStatuses } =
   useHomeAgentHostStatuses(isShell)
-
 const { health, systemBusy, statusTone, statusLabel, systemFacts, loadHealth, runSystemAction } =
-  useHomeSystemStatus({
-    onDoctorResult: applyHostStatuses,
-    onRepairComplete: loadHostStatuses,
-  })
+  useHomeSystemStatus({ onDoctorResult: applyHostStatuses, onRepairComplete: loadHostStatuses })
 
-const {
-  insights,
-  insightByProjectId,
-  activeWork,
-  totals: portfolioTotals,
-  loading: portfolioLoading,
-  failedProjectCount,
-  load: loadPortfolioInsights,
-} = useHomePortfolioInsights()
-
+usePolling(tickets.load, { intervalMs: 30_000 })
 onMounted(() => {
   void loadHealth()
   void loadHostStatuses()
-  void (async () => {
-    await projects.refresh()
-    await loadPortfolioInsights(projectItems.value)
-  })()
+  void portfolio.load()
 })
 
+async function refresh(): Promise<void> {
+  await Promise.all([portfolio.load(), tickets.load(), loadHealth(), loadHostStatuses()])
+}
 function confirmRepair(): void {
   repairOpen.value = false
   void runSystemAction('repair')
+}
+async function setVisibility(value: string | number): Promise<void> {
+  const active = value === 'all' ? null : value === 'active'
+  await Promise.all([
+    tickets.setVisibility(active),
+    portfolio.setFilters({ ...filters.value, is_active: active }),
+  ])
+}
+function selectStatus(status: TrackerStatus | null): void {
+  void portfolio.setFilters({ ...filters.value, ticket_status: status })
 }
 </script>
 
 <template>
   <UiPageShell>
     <UiPageHeader
-      title="StackOS"
-      description="Local runtime, projects, and agent-client readiness."
+      title="Overview"
+      description="Your local runtime and projects"
     >
       <template #actions>
+        <UiButton
+          variant="secondary"
+          size="sm"
+          icon-left="refresh"
+          :loading="projectsLoading || countsLoading"
+          @click="refresh"
+        >
+          Refresh
+        </UiButton>
         <UiButton
           :href="GETTING_STARTED_URL"
           target="_blank"
           rel="noopener noreferrer"
-          variant="secondary"
+          variant="ghost"
           size="sm"
           icon-right="external-link"
           aria-label="Open the Getting Started guide in your browser"
@@ -82,7 +79,6 @@ function confirmRepair(): void {
         </UiButton>
       </template>
     </UiPageHeader>
-
     <HomeSystemStatusCard
       :health="health"
       :is-shell="isShell"
@@ -97,23 +93,26 @@ function confirmRepair(): void {
       @repair="repairOpen = true"
       @refresh-hosts="loadHostStatuses"
     />
-
     <HomePortfolioOverview
-      :insights="insights"
-      :active-work="activeWork"
-      :totals="portfolioTotals"
-      :loading="portfolioLoading"
-      :failed-project-count="failedProjectCount"
+      :summary="summary"
+      :visibility="visibility"
+      :selected-status="filters.ticket_status"
+      :loading="countsLoading"
+      :error="countsError"
+      @visibility="setVisibility"
+      @select="selectStatus"
     />
-
     <HomeProjectsSection
-      :items="projectItems"
+      :items="items"
       :loading="projectsLoading"
       :error="projectsError"
-      :current-project-id="activeProjectId"
-      :insights="insightByProjectId"
+      :next-cursor="nextCursor"
+      :total="total"
+      :filters="filters"
+      @filters="portfolio.setFilters"
+      @more="portfolio.loadMore"
+      @clear-status="selectStatus(null)"
     />
-
     <UiConfirmDialog
       v-model="repairOpen"
       title="Install or repair StackOS?"

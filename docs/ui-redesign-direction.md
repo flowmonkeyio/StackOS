@@ -11,12 +11,12 @@ Last reviewed: 2026-07-10
 
 This document defines what the StackOS desktop app is, what it is not, which
 actors own each action, the user flows the app must support, and the boundaries
-that must be proven before implementation resumes.
+that each implementation change must preserve.
 
 It supersedes the earlier website-led redesign direction. That direction
 incorrectly treated StackOS as an AI assistant that could receive a user request
-and perform work. Delivery is paused until the implementation and tracker agree
-with this contract.
+and perform work. Current delivery follows the actor boundaries below and the
+tracked scope of the change, not the state of that earlier implementation.
 
 Authoritative foundations:
 
@@ -297,10 +297,10 @@ idempotency/retry status, and any repair guidance.
 
 Source of truth: action spec/version and action-call audit row.
 
-### F7. Monitor active agent work
+### F7. Inspect recorded work
 
 ```text
-Home compact active-work section
+Home tracked-work section
 -> Work queue
 -> select task or run plan
 -> see goal, source agent/host when known, current step, elapsed time,
@@ -313,7 +313,9 @@ The UI must say “the agent” or name the host/actor when known. It must not s
 
 Source of truth: tracker, run plans, runs, steps, approval requests, links, and
 evidence records. Human summaries may join durable relationships but must not
-invent intent or outcomes.
+invent intent or outcomes. A persisted running run or registered MCP host is
+not proof that an agent is currently working. Home shows the recorded task
+state and timestamp, with execution details available through Work and audit.
 
 ### F8. Human approval or rejection
 
@@ -418,8 +420,8 @@ project database and user-owned state unless destructive cleanup is explicit.
 The primary project navigation answers the five highest-frequency human
 questions:
 
-1. **Home** — Is the project ready, what needs me, what are agents doing, and
-   what finished recently?
+1. **Home** — What calls were recorded, what is configured, and what tracked
+   work was updated recently?
 2. **Attention** — Which approvals, questions, failures, or setup problems need
    a human now?
 3. **Work** — What work have agents created, what is active or blocked, and
@@ -452,8 +454,8 @@ resource, provider, and setup URLs must continue to resolve.
 
 | Surface | Primary inspection question | Valid human actions |
 | --- | --- | --- |
-| Portfolio | Which project needs me or has active work? | Select, deliberate create/connect, lifecycle repair |
-| Home | What matters in this project now? | Navigate, refresh, open attention/setup/detail |
+| Overview | Is the local runtime ready, and how are tickets distributed across projects? | Inspect ticket statuses, filter projects, open work, refresh host status; lifecycle repair in the desktop app |
+| Home | What is the state of this project's tickets and setup? | Open status-filtered Work, inspect tracked work, open connections/workflow library |
 | Attention | What requires a human and why? | Approve/deny, answer, open setup, lifecycle repair |
 | Work | What agent-created work exists and what state is it in? | Inspect, filter, navigate; explicit operator override only if authorized |
 | Activity | What changed and where is the evidence? | Filter, search, inspect |
@@ -469,6 +471,34 @@ resource, provider, and setup URLs must continue to resolve.
 Every page should answer one inspection question in its first viewport. Use
 master/detail for large inspectable collections. Keep metrics compact and do not
 push the list or selected object below promotional content.
+
+Overview and project Home show current ticket counts by the seven canonical
+tracker statuses. Counts cover the default tracker, including manual and
+workflow-mirrored tickets, without adding task or run totals. They are a current
+snapshot, not a historical trend or evidence of live agents. A blocker is a
+separate work condition, not an additional lifecycle status.
+
+Both surfaces share one compact snapshot: a proportional stacked strip and
+seven equal-width status/count controls below it. Keep every status readable,
+including zeros; do not enlarge small segments or duplicate the counts in a
+separate legend. The current total belongs in the header, with freshness below.
+
+Global counts follow the selected active/archived/all project scope. Selecting
+a status shows contributing projects; project-level inspection opens Work with
+that status filter applied. Counts and filters are server-side, not derived
+from the visible page. Global inspection remains local-admin-only. Detailed
+action-call history stays on its existing audit surface rather than the home
+charts.
+
+The full Local service section stays visible: runtime facts, all app connection
+cards, Refresh, Restart, Run doctor, and Install or repair. Browser host status
+uses the shared inspector through an authenticated read operation. Lifecycle
+buttons remain desktop-only, visibly disabled and explained in the browser;
+they do not silently disappear or invoke unavailable native handlers.
+
+Project rows show tracked work and ticket counts. Connection status comes from
+attached Accounts, and configured workflows from project extensions, not the
+available template catalog. Empty and failed reads stay distinguishable.
 
 ## 8. Visual and interaction direction
 
@@ -548,37 +578,12 @@ or create a marketing story.
 
 ## 10. Delivery re-entry and cleanup
 
-Implementation must not resume directly from the current worktree. The safe
-sequence is:
-
-1. Freeze this product constitution and flow map in docs and tracker.
-2. Inventory every file changed by the invalid implementation slice and
-   distinguish it from pre-existing user work.
-3. Revert or rewrite only the invalid slice: request composer, human workflow
-   launch controls, primary Explore lane, promotional shell, website-like
-   density, and incorrect splash language.
-4. Audit every existing UI mutation against Section 3 and create explicit
-   tickets for violations or approved exceptions.
-5. Restore a green baseline: UI build/tests, desktop checks, and route smoke.
-6. Produce low-fidelity reference frames for Portfolio, Home, Attention, Work,
-   Activity, Setup, Connections, run detail, and startup/failure.
-7. Review the frames against the actor boundary and one-page/one-question rule.
-8. Implement in small vertical slices with tracker evidence.
-
-Recommended waves after re-entry:
-
-- **Wave A — cleanup and constitution:** remove the invalid slice, mutation
-  audit, route/source-of-truth matrix.
-- **Wave B — lifecycle and first use:** splash, runtime readiness, agent-client
-  registration, project binding, recovery.
-- **Wave C — supervision core:** Home, Attention, Work queue, Activity,
-  notifications, deep links.
-- **Wave D — setup:** Connections, scoped readiness, Automation, Spend, Plugins,
-  System.
-- **Wave E — inspection:** Runs, action calls, agent requests, catalog, data,
-  evidence, master/detail consistency.
-- **Wave F — packaged verification:** accessibility, performance, notifications,
-  deep links, lifecycle, installed-app restart, and release proof.
+Use [tracked engineering delivery](../plugins/engineering/workflows/tracked-delivery.yaml) for scoped
+UI changes. Review the affected actor boundaries, flows and registered mutations
+against this contract; preserve unrelated operator changes. Correct only the
+identified implementation slice and retain verification evidence in the tracker.
+The historical rejected redesign is not a standing instruction to reset the
+worktree, repeat its rollout waves or pause unrelated work.
 
 ## 11. Verification contract
 

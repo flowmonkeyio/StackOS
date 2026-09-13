@@ -508,11 +508,15 @@ def operation_specs() -> list[OperationSpec]:
             prerequisites=(
                 "Pass run_token from runPlan.start.",
                 "Pass run_plan_id, step_id, and status success, failed, skipped, or blocked.",
+                "Before success or skipped, poll linked background actions with actionCall.get "
+                "until their stored status is terminal.",
                 "Keep result_json concise and free of secrets.",
             ),
             returns=(
                 "A WriteEnvelope containing the updated run plan.",
                 "Completed or failed plan status when the recorded step is terminal for the plan.",
+                "Validation repair context with pending action-call IDs and polling arguments "
+                "when linked actions are still running; the step remains unchanged.",
             ),
             examples=(
                 OperationExample(

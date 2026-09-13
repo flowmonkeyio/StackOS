@@ -64,6 +64,50 @@ def stripe_invoice(**overrides: Any) -> dict[str, Any]:
     }
 
 
+def stripe_product(**overrides: Any) -> dict[str, Any]:
+    return {
+        "id": "prod_fixture",
+        "object": "product",
+        "active": True,
+        "created": 1700000000,
+        "updated": 1700000000,
+        "name": "Fixture service",
+        "description": None,
+        "unit_label": None,
+        "default_price": "price_fixture",
+        "images": [],
+        "marketing_features": [],
+        "metadata": {},
+        "livemode": False,
+        **overrides,
+    }
+
+
+def stripe_price(**overrides: Any) -> dict[str, Any]:
+    return {
+        "id": "price_fixture",
+        "object": "price",
+        "active": True,
+        "billing_scheme": "per_unit",
+        "created": 1700000000,
+        "currency": "usd",
+        "livemode": False,
+        "metadata": {},
+        "product": "prod_fixture",
+        "type": "one_time",
+        "unit_amount": 1000,
+        "unit_amount_decimal": "1000",
+        "recurring": None,
+        "tax_behavior": "unspecified",
+        "tiers_mode": None,
+        "transform_quantity": None,
+        "custom_unit_amount": None,
+        "nickname": None,
+        "lookup_key": None,
+        **overrides,
+    }
+
+
 def stripe_invoice_item(**overrides: Any) -> dict[str, Any]:
     return {
         "id": "ii_fixture",

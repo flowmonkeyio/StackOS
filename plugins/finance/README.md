@@ -14,8 +14,9 @@ The first backend is the host-managed local JSON workspace described in
 provides reusable workflows, daemon-held provider authentication, scoped action
 execution, technical approval gates, safe references, and the existing generic
 action audit. That audit is non-authoritative transport/recovery evidence; it
-may retain bounded sanitized provider lifecycle or monetary fields under the
-generic executor contract, but it is never the finance record.
+may retain bounded sanitized provider lifecycle or monetary fields and explicitly
+requested business-detail read snapshots under the generic executor contract,
+but it is never the finance record.
 
 ## Initial external backend
 
@@ -45,11 +46,10 @@ derived explanation; CSV is import/export interchange, never a second editable
 master. Original receipts, statements and emails are retained evidence. Stripe
 still owns actual Stripe state; JSON retains dated observations and provider refs.
 
-Use one designated host writer: specialists return proposed record changes,
-the writer validates schema and semantic checks, checks the current revision,
-atomically persists the document, and re-reads it. Follow the original-evidence,
-hash, deduplication, correction, and custody rules. The host agent has the filesystem
-authority for that directory; StackOS has none. QuickBooks, Google Sheets,
+Use one designated host writer; specialists propose changes. The
+[local persistence protocol](references/local-workspace-contract.md#single-writer-and-retry-safe-persistence)
+owns validation, concurrency, original custody and readback. The host needs
+filesystem authority for that directory; StackOS grants none. QuickBooks, Google Sheets,
 bank feeds, and another authoritative backend are future work, not aliases for
 this local format. Initialize this first-version workspace once; subsequent runs
 read and update the existing JSON rather than copying the empty template again.
@@ -100,7 +100,7 @@ automatic cost allocation or profitability engine. See the
 | [Receipt intake](workflows/receipt-intake.yaml) | Retain originals, extract one or more receipts per source, detect duplicates, and isolate item exceptions. | IMAP transport is optional; store and re-read before acknowledgement. Chat uploads are supported host inputs. |
 | [Bookkeeping close](workflows/bookkeeping-close.yaml) | Categorize supported transactions, match evidence, reconcile available source balances, and retain a `prepared/unposted` packet with explicit gaps. | Bank/card exports and other source records come from the external backend; receipts alone cannot establish complete books. Optional Stripe reads support reconciliation. |
 | [Payment request](workflows/payment-request.yaml) | Check customer mapping and exact line terms, create/recover one draft, finalize and send, then record the result. | One explicit owner decision may cover both distinct action gates for the same immutable invoice. Material changes require a fresh approval occurrence. |
-| [Payment follow-ups](workflows/payment-request-followups.yaml) | Review existing invoice state and, only when eligible, resend via Stripe; or reconcile one customer payment already received. | Followup-only remains the default. A settlement-only occurrence can report/attach one direct-bank or separately received Stripe payment, or explicitly mark one exact full verified external settlement paid out of band; it never sends a reminder. |
+| [Payment follow-ups](workflows/payment-request-followups.yaml) | One billing agent follows operator-provided or documented instructions to resend through Stripe or send an authored SMTP email; alternatively reconcile a payment already received. | IMAP reads replies, SMTP sends. Existing Stripe/settlement gates remain; no extra email approval gate. See the shared [follow-up protocol](references/approval-matrix.md#follow-up-approvals). |
 | [Cashflow management](workflows/cashflow-management.yaml) | Produce 13 dated base/downside weeks: opening cash, expected receipts, actual cash outflows, closing cash, earmarked reserves and spendable cash. | A reserve is not itself a bank outflow. A reviewed reserve version is applied once; no automatic tax/forecast loop. |
 | [Tax estimates](workflows/tax-estimates.yaml) | Gather annual taxpayer inputs and current official sources; calculate and document applicable estimates, or produce an explicitly incomplete packet. | Preparation can proceed before an advisor is selected. CPA/EA review then owner approval are required before adoption; no filing, remittance or payment. |
 
@@ -111,35 +111,53 @@ approval/proof references and bounded status. They do not contain receipt
 bytes, customer text, amounts, invoice detail, forecast entries, tax math, or
 approval scope content.
 
+The existing provider transport audit and SMTP delivery metadata are the narrow
+exception described in [backend ownership](references/backend-contract.md#business-and-project-scope),
+not a second financial master or permission to copy customer content into summaries.
+
 ## Provider transport
 
 ### Stripe
 
 The `stripe` provider is a narrow API transport: customer resolution/creation,
-draft invoice and line creation, explicit finalize/send, read-only invoice,
-payment, charge, balance-transaction, refund, and balance evidence, plus the
-reviewed received-payment routes needed to report/attach one payment already
-received or mark an invoice paid out of band. These routes never initiate a
-charge or move money. It has no charge, payout, transfer, refund creation,
-credit, write-off, webhook, tax, or money-movement action. Its canonical contract is
+bounded existing Product/Price discovery, draft invoice and line creation,
+explicit finalize/send, read-only invoice, payment, charge, balance-transaction,
+refund, and balance evidence, plus the reviewed received-payment routes needed
+to report/attach one payment already received or mark an invoice paid out of
+band. These routes never initiate a charge or move money. It has no catalog
+write, subscription, charge, payout, transfer, refund creation, credit,
+write-off, webhook, tax, or money-movement action. Its canonical contract is
 [`docs/integration-contracts/stripe.md`](../../docs/integration-contracts/stripe.md).
 
-Connect a restricted Stripe API key through the local Connections UI; do not
-paste it into chat or a workspace file. Customer-identifying text must use the
-existing payload-secret reference mechanism, not plaintext workflow input or an
-idempotency key. Invoice-item and dispute reads support recovery and suppression.
-Every Stripe `POST` uses a stable business-operation idempotency key. Inspect
-prior ActionCalls and reconcile before retrying; a resumed run must not create a
-new operation identity for the same attempted mutation. Stripe may prune keys
-after at least 24 hours, so key reuse is not permanent duplicate protection.
-An `open` invoice does not prove an earlier send succeeded. Successful send
-acceptance is not proof of delivery to the recipient's inbox. Sandbox/test-mode
-sends send no email: record `test-accepted`, not sent/delivered, and do not create
-a real customer contact, live reminder cooldown or live follow-up handoff.
-Invoice creation and every line use the explicit approved currency; neither
-provider defaults nor a later line substitute for the invoice's currency.
-Idempotency conflicts preserve the original key/request for reconciliation;
-an in-use key or different-parameter conflict never permits a fresh-key bypass.
+For customer identification, catalog selection, and invoice handoff, selected
+existing reads support `include_business_details=true`: customer retrieval returns
+name/email/description; Product reads return name/description/unit label; Price
+reads return nickname/lookup key; invoice retrieval returns invoice number, memo,
+customer name/email and provider hosted-page/PDF links; invoice-item listing returns
+line descriptions; charge retrieval returns its description/receipt link. Default
+responses still expose only bounded reconciliation data. These are confidential
+business snapshots in the existing action output/audit, not credentials or a
+second financial master. Read the response file; `raw` mode alone does not select these details. Never
+copy their contents into tracker/workflow/resource/artifact state or share a
+customer-facing link outside the authorized recipient scope.
+
+An already-paid customer's invoice uses the existing issuance path stopped
+after finalization, followed by a separately approved `settlement-only` run.
+The immutable request can include the optional printed issue date (`effective_at`)
+and manual lines or selected Price refs/quantities; reread current Price terms,
+currency, line amounts and draft totals into the approved version before finalizing.
+After verifying payment linkage and paid/remaining-balance state, retrieve the
+invoice with business details to return its available hosted link or PDF link
+to the owner. No send or new charge is required to obtain that link. Missing
+links, unidentified customers and ambiguous payments remain specific gaps, not
+permission to invent facts. See the
+[exact handoff steps](../../docs/integration-contracts/stripe.md#explicit-business-details-and-document-handoff).
+
+Connect a restricted Stripe API key through the local Connections UI; never
+paste it into chat or a workspace file. Use the existing payload-secret mechanism
+for customer-identifying action inputs. For stable operation keys, ambiguous
+writes, exact currency and test-versus-live send evidence, follow the
+[backend recovery contract](references/backend-contract.md#duplicate-handling-and-retries).
 
 The action connector has no business approval policy. Existing workflow grants
 and technical gates constrain execution; the orchestrator must separately compare
@@ -147,52 +165,19 @@ the exact account, customer, invoice version, line items, amounts, recipient and
 action against the external owner decision. StackOS does not automatically
 invalidate approvals when an external proposal changes.
 
-Independent invoice reads expose exact hashes of the invoice and current customer
-primary emails. Additional Dashboard Billing To/CC recipients are not available
-through this API; their externally verified scope must also match the approval.
-Unknown recipient settings stop the send while preserving draft preparation.
-The existing external billing record retains approved primary and additional
-To/CC or explicit `verified-none` versus `unknown`, account/customer/invoice scope,
-verifier/time/evidence, validity/recheck condition and the approval-bound settings
-version. Reuse current verified setup within scope, rechecking before send and
-invalidating on changes, expiry or uncertainty—not reinterviewing per invoice.
+The [invoice approval protocol](references/approval-matrix.md#invoice-approvals)
+owns primary-email hashes, externally verified Dashboard To/CC settings and
+their reuse/recheck rules. Unknown recipients hold the send, not draft work.
 
 For “the customer wired money” or another already-received payment, use the
-existing payment follow-ups workflow in `settlement-only` mode—there is no
-seventh settlement workflow. The external backend first matches one source
-identity and one allocation to the current invoice/account/customer/currency/
-received state. Direct-bank settlement normally reports a PaymentRecord then
-attaches it; existing succeeded Stripe payments are attached only after their
-PaymentIntent, charge/refund/dispute and allocation evidence has been read.
-`mark-paid-out-of-band` is an explicit alternative only for a verified source
-that exactly clears the current remaining balance. Report, attach, and mark use
-the distinct `owner-payment-record`, `owner-payment-attachment`, and
-`owner-external-settlement` gates; resend remains separately gated. Never
-report+mark the same source, create a new idempotency key after an unknown
-write, send in the same settlement-only occurrence, or turn partial/split/
-overpayment/mismatch evidence into a credit, refund, or paid invoice.
-
-Before reporting, retain exact UTF-8 `payment_reference_sha256` externally,
-separately from the source-file digest. Unknown reports inspect retained action
-audit/response files, then independently retrieve a surviving known ref and
-compare the exact digest and current payment/account/allocation facts before
-attachment. Persist the verified ref externally.
-
-`finance.stripe.payment-records.list` is temporarily unavailable in StackOS:
-the tested sandbox rejected its published endpoint with an unrecognized-route
-404. The action remains describable, but validation and execution return the
-unavailable reason before any provider request. Normal executable discovery
-hides it, and this optional recovery action does not block ordinary follow-ups
-or known-ref settlement. Do not retry it, change keys or guess another URL/header.
-If no verified ref survives, hold for owner/provider resolution; never create a
-replacement report or fall back to mark-paid. Re-enable listing only after a
-verified provider-availability fix. Follow the
-[recovery contract](references/backend-contract.md#duplicate-handling-and-retries).
-
-InvoicePayment rows with missing/null linkage preserve lifecycle facts and page
-coverage, but cannot identify a payment or prove settlement. Reconciliation uses
-safe BalanceTransaction source, Refund failure-transaction and Dispute transaction
-links when available; incomplete or unsupported sources remain explicit gaps.
+existing follow-ups workflow in `settlement-only` mode, not a seventh workflow.
+The [settlement approval protocol](references/approval-matrix.md#received-payment-settlement-approvals)
+owns route selection and distinct report/attach/paid-out-of-band gates. The
+[backend recovery contract](references/backend-contract.md#duplicate-handling-and-retries)
+owns source matching, partials, unknown outcomes and current PaymentRecord
+availability; [reconciliation guidance](references/backend-contract.md#corrections-and-reconciliation)
+owns missing payment links. Settlement records money already received; it does
+not charge or send a reminder.
 
 ### IMAP evidence delivery
 
@@ -264,15 +249,70 @@ report partial results when another item needs clarification or review.
 
 Fixture tests prove contracts, auth/grants, transport and recovery. A synthetic
 month rehearsal exercises the actual guidance and external record template.
-Neither substitutes for an operator-owned live activation check; see the
-[production activation gate](../../docs/release-signoff.md#finance-production-activation-gate).
+Neither substitutes for the separately authorized activation below.
+
+## Signoff and activation
+
+Use the generic [release signoff](../../docs/release-signoff.md) for test slices,
+packaged/native activation evidence and shared-runtime coordination. Automated
+checks use isolated fixtures, never live customers, mailboxes or financial work.
+
+For source-package closeout, rehearse a synthetic month in a disposable host
+workspace and have a separate agent inspect the resulting records/arithmetic:
+
+- Retain originals, extract multiple receipts from one source, recognize a
+  duplicate upload, isolate an unreadable item, and prepare supported rows with
+  a missing statement. Receipt-only setup must progress without tax inputs.
+- Check an exact two-line invoice and changed/unknown recipients; stale approval
+  must not authorize a send. Suppress follow-up after payment. Exercise the
+  selected Stripe/SMTP contact route without real delivery.
+- Exercise full/partial bank receipts, an existing succeeded Stripe payment,
+  duplicate-source rejection and report-success/attach-failure recovery. Prove
+  exact InvoicePayment linkage and external write/readback, or the bounded hold
+  required by the [recovery contract](references/backend-contract.md#duplicate-handling-and-retries).
+  Deferred actions must reject direct and granted calls without HTTP and must
+  not block unrelated executable routes.
+- Build the 13-week cash rollforward and annual tax packet, then resume the
+  rehearsal and apply a reviewed reserve version only once. Verify the
+  [cashflow](references/local-workspace-contract.md#cashflow-packet) and
+  [tax](references/local-workspace-contract.md#tax-packet) invariants independently.
+- Prove first-time setup, schema/ID/reference checks, immutable approval targets,
+  revision/hash conflicts, atomic replacement and readback under the
+  [writer protocol](references/local-workspace-contract.md#single-writer-and-retry-safe-persistence).
+  Unrelated updates require rebase but not a fresh unchanged proposal approval;
+  material changes do. Derived views cannot change JSON; exports identify their
+  source revision/digest.
+- Rehearse a specialist lacking toolbox or filesystem capability: it returns a
+  proposal to the capable main agent under the same grants, while required
+  independent review stays independent. Verify resolved preset reference paths.
+
+Record which provider responses and owner/advisor decisions were simulated.
+Static assertions do not prove agent behavior, OCR, inbox delivery or scheduling.
+
+Production activation is separate and applies only to selected routes:
+
+- Verify the operator-selected external workspace is writable, backed up and
+  access-controlled; create/re-read a non-production record without resetting
+  an existing workspace or introducing a second financial master.
+- For IMAP, use `account.test` and an operator-owned test message to prove the
+  [store-before-ack handoff](references/imap-host-handoff-contract.md). Private-CA
+  changes additionally require Account persistence/replacement/clearing,
+  isolation/default-root preservation, invalid-PEM/private-key rejection and
+  synthetic TLS trusted/untrusted/wrong-host/expired-leaf handshake coverage.
+- For Stripe, probe the selected restricted key and applicable permissions in
+  an explicitly authorized test account. Live issuance/settlement follows the
+  [approval matrix](references/approval-matrix.md); production customers are not
+  fixtures. SMTP follows the operator's sending instruction and active grant,
+  with acceptance recorded separately from delivery.
+- Cashflow/tax reliance requires current source coverage and the applicable
+  advisor/owner review. Preparation is not filing, remittance or payment.
 
 ## Initial non-goals
 
 This release does not add a StackOS finance ledger, finance resources/artifacts,
 database, filesystem connector, accounting/tax engine, finance UI, scheduler,
 QuickBooks/Google Sheets adapter, bank feed, AP/vendor payments, payroll,
-customer email outside Stripe invoice delivery, tax portal, filing, remittance,
+customer email outside the selected invoice/follow-up routes, tax portal, filing, remittance,
 or entity-election action. Engineering verification uses fixtures and local
 temporary workspaces only; it does not contact a live mailbox, Stripe customer,
 or tax service.

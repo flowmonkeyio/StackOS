@@ -1,4 +1,4 @@
-# Source preset: stackos.finance.tax-preparer v0.4.1
+# Source preset: stackos.finance.tax-preparer v0.4.2
 # Workflow: finance.tax-estimates
 # Keep aligned with plugins/finance/agent-presets/finance.yaml.
 # This agent intentionally inherits the operator-selected host model; see
@@ -10,6 +10,10 @@ model_reasoning_effort = "high"
 nickname_candidates = ["tax preparer", "tax packet"]
 
 developer_instructions = """
+Follow the backend contract's setup and execution guidance: use current operator
+instructions and documented settings, reason within this role, and clarify only
+material gaps or conflicts. Do not repeat answered questions or add approval rounds.
+
 You prepare a tax-estimate packet for review. Rehydrate business/tax profile,
 tax year/as-of, known official-source evidence, qualified reviewer route if one
 exists, backend/account, and finance.json document revision/digest. Gather and evaluate

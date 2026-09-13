@@ -1,6 +1,6 @@
 # Stripe Finance Transport Contract
 
-Last reviewed: 2026-09-06 (temporary list deferral; other API contracts unchanged)
+Last reviewed: 2026-09-07 (restricted-key permissions; temporary list deferral unchanged)
 
 Pinned Stripe API version: `2026-08-26.dahlia`
 
@@ -17,12 +17,14 @@ attachment tree retains immutable original evidence.
 | Concern | Official Stripe source | Contract consequence |
 | --- | --- | --- |
 | Authentication | [Authentication](https://docs.stripe.com/api/authentication) | A restricted secret API key is the only initial method. It is JSON credential payload material (`api_key`) held and resolved by the daemon. |
+| Restricted-key permissions | [Restricted API keys](https://docs.stripe.com/keys/restricted-api-keys), [permission reference](https://docs.stripe.com/stripe-apps/reference/permissions) | Map the implemented endpoints and expanded objects to the resource permissions below. Write includes Read; permissions remain provider-enforced. |
 | Temporary CLI sandbox | [CLI sandbox](https://docs.stripe.com/cli/sandbox), [restricted keys](https://docs.stripe.com/keys/restricted-api-keys) | An unclaimed CLI sandbox can have endpoint-restricted credentials. Claiming and selecting the correct test-key permissions are owner setup, not a connector permission upgrade. |
 | API version | [Versioning](https://docs.stripe.com/api/versioning) | Every request pins `Stripe-Version: 2026-08-26.dahlia`; changing it requires a contract and fixture review. |
 | Exact response schemas | [Stripe OpenAPI, pinned-version snapshot](https://github.com/stripe/openapi/blob/9ac29c7795ab21c7711b4bc25bb2dd739552a5fa/latest/openapi.spec3.json) | Selected required observations are checked against the generated schema, not inferred from abbreviated examples. PaymentRecord requires seven amount-state objects; PaymentIntent money observations can be absent. InvoicePayment requires its payment discriminator, but the selected reference is optional. Missing linkage cannot establish a match. |
 | Customers | [Create](https://docs.stripe.com/api/customers/create), [retrieve](https://docs.stripe.com/api/customers/retrieve), [list](https://docs.stripe.com/api/customers/list) | Explicit creation, safe retrieval, and a bounded exact-email list so a workflow can reuse an existing customer without receiving a raw id. |
-| Invoice lifecycle | [Create](https://docs.stripe.com/api/invoices/create), [finalize](https://docs.stripe.com/api/invoices/finalize), [send](https://docs.stripe.com/api/invoices/send), [retrieve](https://docs.stripe.com/api/invoices/retrieve), [list](https://docs.stripe.com/api/invoices/list) | Invoice creation requires explicit approved currency and remains draft (`auto_advance=false`); finalization and email sending are separate writes. `send_invoice` plus positive `days_until_due` is the only collection method exposed. Test-mode sends produce no email. |
-| Invoice lines | [Create invoice item](https://docs.stripe.com/api/invoiceitems/create), [list invoice items](https://docs.stripe.com/api/invoiceitems/list) | A positive line must target an explicit draft invoice. Reads target exactly one invoice or customer and expose an exact description digest. The connector rejects unassigned pending writes, negative adjustments, prices, subscriptions, tax behavior, and arbitrary metadata. |
+| Catalog discovery | [List products](https://docs.stripe.com/api/products/list), [retrieve product](https://docs.stripe.com/api/products/retrieve), [list prices](https://docs.stripe.com/api/prices/list), [retrieve price](https://docs.stripe.com/api/prices/retrieve) | Four bounded, read-only actions select an existing account-bound Product/Price. A Price retrieve fixes the reviewed tier and currency-option expansions. Safe refs prove identity, not a durable quote or a snapshot of mutable terms. |
+| Invoice lifecycle | [Create](https://docs.stripe.com/api/invoices/create), [finalize](https://docs.stripe.com/api/invoices/finalize), [send](https://docs.stripe.com/api/invoices/send), [retrieve](https://docs.stripe.com/api/invoices/retrieve), [list](https://docs.stripe.com/api/invoices/list) | Invoice creation requires explicit approved currency and remains draft (`auto_advance=false`). Optional `effective_at` controls the displayed Date of issue, not creation, due, or payment time. Finalization and email sending are separate writes. `send_invoice` plus positive `days_until_due` is the only collection method exposed. Test-mode sends produce no email. |
+| Invoice lines | [Create invoice item](https://docs.stripe.com/api/invoiceitems/create), [list invoice items](https://docs.stripe.com/api/invoiceitems/list) | A line targets an explicit draft invoice and is either the existing positive manual amount/currency/description form or an existing Price plus explicit nonnegative quantity. Stripe computes a Price line total. The connector rejects unassigned pending writes, mixed manual amount/Price input, subscriptions, negative adjustments, tax behavior, and arbitrary metadata. |
 | Disputes | [List](https://docs.stripe.com/api/disputes/list), [retrieve](https://docs.stripe.com/api/disputes/retrieve) | Read-only status evidence for an explicitly selected charge/payment intent or known dispute; evidence documents and customer content are excluded. |
 | Correlation and advancement | [Metadata](https://docs.stripe.com/metadata), [finalize parameters](https://docs.stripe.com/api/invoices/finalize), [automatic advancement](https://docs.stripe.com/invoicing/integration/automatic-advancement-collection) | One fixed metadata key carries a random opaque correlation value. Create and finalize both explicitly set `auto_advance=false`; reads expose the observed setting. |
 | Recipient and due-term observations | [Invoice object](https://docs.stripe.com/api/invoices/object), [expansion](https://docs.stripe.com/expand), [additional billing recipients](https://support.stripe.com/questions/can-i-specify-additional-recipients-or-add-cc-email-addresses-to-billing-emails), [email settings](https://docs.stripe.com/invoicing/send-email) | Invoice email is a frozen snapshot after finalization. Independent retrieval expands the current customer, hashes both primary email fields, and preserves the actual due timestamp. Additional billing To/CC recipients are not API-observable. |
@@ -127,21 +129,64 @@ a replacement report or silent settlement-route fallback. A successful account
 probe is not endpoint coverage; re-enabling needs verified availability evidence.
 
 All action selectors and object outputs use the existing account-bound opaque
-`provider-object:<opaque>` mechanism. Raw Stripe customer, invoice, charge,
+`provider-object:<opaque>` mechanism. Raw Stripe customer, product, price, invoice, charge,
 balance-transaction, refund, dispute, invoice-item, payment-intent, payment-record, and invoice-payment IDs do not
 become workflow inputs or finance workspace fields. A list action's
 `next_page_cursor` is simply its final item's typed safe reference—there is no
 second cursor record type.
 
-## Action matrix — 25 executable actions, one deferred
+### Restricted-key permissions
+
+For all currently executable Stripe actions, create one restricted key for the
+Stripe account being connected, for example named `StackOS Finance`. Configure
+the account's own permissions, not the separate Connect permissions for acting
+on connected accounts. The connector does not send a `Stripe-Account` header.
+Save the generated key in the StackOS Account form, never in chat or a file.
+
+The following maps the current connector to Stripe's documented permission
+groups. The identifiers are from Stripe's permission reference; in the
+restricted-key Dashboard, select the resource and Read/Write setting.
+
+| Stripe resource | Access | Reference identifier | Current connector use |
+| --- | --- | --- | --- |
+| Customers | Write | `customer_write` | Create, find by email, retrieve, and expand the invoice customer. |
+| Products | Read | `product_read` | Bounded existing-product discovery and retrieval. |
+| Prices | Read | `plan_read` | Bounded existing-Price discovery/retrieval, including its fixed pricing expansions. |
+| Invoices | Write | `invoice_write` | Create invoice/items, read invoice/items/payments, finalize, send, attach an existing payment, and mark paid out of band. |
+| Payment Records | Write | `payment_records_write` | Report a payment already received and retrieve a known record. |
+| Accounts | Read | `connected_account_read` | The connection test's `GET /v1/account` identity probe. |
+| Balance | Read | `balance_read` | Read available/pending balances and balance transactions. |
+| Balance Transaction Sources | Read | `balance_transaction_source_read` | Required by the connector's fixed balance-transaction source expansions. |
+| Charges and Refunds | Read | `charge_read` | List/retrieve existing charges and refunds. |
+| Payment Intents | Read | `payment_intent_read` | Retrieve an existing payment for verification and invoice attachment. |
+| Payment Disputes | Read | `dispute_read` | List/retrieve disputes for reconciliation. |
+
+Write includes Read. Leave unrelated permissions at None, retaining the read
+dependencies Stripe automatically implies; in particular, Balance Transaction
+Sources implies several other read permissions. No charge/refund, dispute,
+transfer, or payout **Write** access is needed. Invoice items and invoice-payment
+operations belong to invoice access, not separate permission groups in this
+mapping. Returning an invoice's hosted URL does not require Payment Links access.
+
+This is an endpoint-to-documentation mapping, not proof that a newly supplied
+restricted key has passed every action. A successful connection test covers
+only the account probe; any permission denial must be checked against the
+selected action's safe provider error. PaymentRecord listing remains explicitly
+unavailable in StackOS; granting Payment Records access does not enable it.
+
+## Action matrix — 29 executable actions, one deferred
 
 | Action ref | Stripe endpoint | Risk | Input boundary |
 | --- | --- | --- | --- |
 | `finance.stripe.customers.create` | `POST /v1/customers` | write | Explicit customer email and optional name/description; deterministic idempotency key. |
 | `finance.stripe.customers.retrieve` | `GET /v1/customers/:id` | read | Account-bound `customer_ref`. |
 | `finance.stripe.customers.list` | `GET /v1/customers` | read | One bounded page matching one exact `email`; continuation uses the final customer reference. |
-| `finance.stripe.invoices.create` | `POST /v1/invoices` | write | `customer_ref`, explicit lowercase approved `currency`, `collection_method=send_invoice`, positive `days_until_due`, optional memo description and opaque `correlation_key`; always draft. |
-| `finance.stripe.invoice-items.create` | `POST /v1/invoiceitems` | write | `customer_ref`, explicit `invoice_ref`, positive smallest-unit amount, lowercase ISO currency, reviewable description. |
+| `finance.stripe.products.list` | `GET /v1/products` | read | One bounded catalog page, optionally limited by `active`; returns safe Product/default-Price refs. |
+| `finance.stripe.products.retrieve` | `GET /v1/products/:id` | read | Account-bound `product_ref`. |
+| `finance.stripe.prices.list` | `GET /v1/prices` | read | One bounded catalog page, optionally scoped by Product, active state, currency, or Price type. |
+| `finance.stripe.prices.retrieve` | `GET /v1/prices/:id` | read | Account-bound `price_ref`; fixed `tiers` and `currency_options` expansions expose current price structure without computing a quote. |
+| `finance.stripe.invoices.create` | `POST /v1/invoices` | write | `customer_ref`, explicit lowercase approved `currency`, `collection_method=send_invoice`, positive `days_until_due`, optional `effective_at`, memo description and opaque `correlation_key`; always draft. `effective_at` is the printed issue date only. |
+| `finance.stripe.invoice-items.create` | `POST /v1/invoiceitems` | write | `customer_ref`, explicit `invoice_ref`, and either positive smallest-unit manual `amount` + lowercase ISO `currency` + description, or existing `price_ref` + explicit nonnegative `quantity` with only the supported optional currency/description. |
 | `finance.stripe.invoice-items.list` | `GET /v1/invoiceitems` | read | Exactly one of `invoice_ref` or `customer_ref`, bounded pagination; customer-scoped results can include attached and pending items. |
 | `finance.stripe.invoices.finalize` | `POST /v1/invoices/:id/finalize` | write | Explicit `invoice_ref`; forced `auto_advance=false`; no send implied. |
 | `finance.stripe.invoices.send` | `POST /v1/invoices/:id/send` | write | Explicit finalized `invoice_ref`; approval belongs to the workflow. |
@@ -159,21 +204,20 @@ second cursor record type.
 | `finance.stripe.refunds.retrieve/list` | `GET /v1/refunds/:id`, `GET /v1/refunds` | read | Safe refund ref or bounded page, optionally charge scoped. No refund creation. |
 | `finance.stripe.balance.retrieve` | `GET /v1/balance` | read | No input; safe available and pending balance buckets only. |
 
-The connector returns an allowlisted lifecycle/reconciliation projection plus
-safe refs. It does not return hosted invoice URLs, PDFs, raw customer PII,
-metadata bags, payment method details, payment instructions, or raw provider
-payloads. Stripe invoice numbers are also excluded because a user-defined
-number or prefix can identify a customer; the connector never writes them to
-safe action output, action-call audit responses, or provider-reference display
-names. Whenever it normalizes a direct or nested Stripe reference, it explicitly
-clears that reference's display name, including any legacy value it encounters.
+By default the connector returns an allowlisted lifecycle/reconciliation
+projection plus safe refs. Selected read actions also support the explicit
+`include_business_details=true` option described below. This distinguishes
+necessary business content from credentials without returning arbitrary provider
+payloads. Metadata bags, payment method details, bank/card data and client
+secrets remain excluded. Provider-reference display names remain empty even
+when a detailed read returns a customer name or invoice number.
 Customer-identifying textual inputs such as email, name, and invoice
 description must use the existing exact `{"$secret_ref":"secret_..."}` payload
 marker so their values are materialized only inside provider dispatch and are
 redacted if echoed by Stripe. Idempotency keys must never contain those values.
 
-Invoice-item descriptions are never returned as text, including independent
-list reads where the original payload secret is not present. The list output
+Invoice-item descriptions are omitted from default reads; the detailed list
+read can return their text for line inspection. The default list output
 `description_sha256` hashes the provider's exact UTF-8 text without trimming or
 Unicode normalization. Empty text has the SHA-256 of empty bytes; null or
 missing descriptions produce null. The agent hashes the approved external line
@@ -183,6 +227,95 @@ replaces occurrences of resolved secret text throughout POST responses, and a
 very short description can also redact substrings inside a digest, safe ref,
 or field name. The invoice-scoped list read has no description payload secret
 and recovers the actual item refs plus amount/currency/digest for comparison.
+
+### Explicit business details and document handoff
+
+The following existing read actions accept `include_business_details` (boolean,
+default `false`). It selects a connector output projection; it is **not** a
+Stripe query parameter, an auth override, or a new action grant.
+
+| Action | Additional `business_details` fields |
+| --- | --- |
+| `finance.stripe.customers.retrieve` | `name`, `email`, `description` for a selected customer. |
+| `finance.stripe.products.list` | `name`, `description`, `unit_label` on each returned product. |
+| `finance.stripe.products.retrieve` | `name`, `description`, `unit_label` for the selected product. |
+| `finance.stripe.prices.list` | `nickname`, `lookup_key` on each returned Price. |
+| `finance.stripe.prices.retrieve` | `nickname`, `lookup_key` for the selected Price. |
+| `finance.stripe.invoices.retrieve` | `number`, `description`, `customer_name`, `customer_email`, `hosted_invoice_url`, `invoice_pdf`. |
+| `finance.stripe.invoice-items.list` | `description` on each returned item; existing page limits/cursors still apply. |
+| `finance.stripe.charges.retrieve` | `description`, `receipt_url` for a selected charge. |
+
+For example, invoke `finance.stripe.invoices.retrieve` with
+`{"invoice_ref":"provider-object:<observed-ref>","include_business_details":true}`
+using the selected Account's normal action context. The action's `data` retains
+its existing lifecycle fields plus `business_details`; invoice-item pages put
+`business_details` on each `data.items[]` entry. Inspect the returned response
+file's `response.output_json.data` before any further provider call. A detailed
+charge read also exposes a safe `customer_ref` when Stripe supplies one.
+
+Business details are confidential task data, not provider authentication. Request
+them only for the current owner's customer identification, catalog selection,
+invoice inspection, or document handoff. Do not turn routine balance/reconciliation
+polling into a bulk customer or catalog export. Customer lists and all write
+responses keep their default projection. An exact-email lookup may return several customer refs; retrieve
+the relevant candidates to disambiguate, then inspect their customer-scoped
+charge pages. Do not assume that an email, name or equal amount proves a match.
+
+These fields follow the normal shared credential/payload-secret redaction and
+file-backed output path, including the non-authoritative action audit and
+idempotent readback. They are not copied into provider-reference display names,
+workflow results, resources, artifacts or tracker notes. The external backend
+remains the financial master. `response_mode=raw` changes the envelope, not
+the selection: callers must explicitly request business details.
+
+Links are provider observations, not constructed from an invoice ref. Draft
+invoices can have null links; missing or unavailable links are not evidence of
+failed payment. Keep hosted-page and PDF links distinct. Validation accepts
+provider-returned HTTPS hosts without inventing a Stripe-only hostname rule;
+this does not claim that Stripe offers custom domains for every invoice surface.
+No automatic browsing or download occurs. Generic
+credential/signed-URL redaction still applies: never share a redacted or invalid
+URL as a working link. Missing fields remain absent, provider null remains null,
+and invalid/redaction-changing URLs return null with the corresponding
+`<field>_state` of `invalid` or `redacted`. Valid URLs retain their exact value.
+Links can expire or be revoked; reread Stripe when a fresh
+link is needed and do not claim an HTTP fetch succeeded unless actually checked.
+An invoice link can reveal customer/invoice data to its recipient. Return it in
+the owner's requested private handoff, not a public channel or unrelated client
+project. A receipt URL is not an invoice URL.
+
+For “find this customer's existing payment, create its invoice, and give me the
+link,” compose the current paths:
+
+1. Select the correct attached Stripe Account and live/test mode; perform the
+   exact-email customer lookup and disambiguate candidates/current payments.
+2. Verify the succeeded PaymentIntent, customer/currency/account, refund and
+   dispute state, prior InvoicePayment linkage and external source allocation.
+   Obtain the invoice's service/line details; a payment does not supply missing
+   contractual or tax facts.
+3. Use payment-request to discover/retrieve any approved existing Price, create/recover
+   the reviewed draft and exact manual or Price/quantity lines, and pass the
+   approved optional `effective_at` as the printed issue date. Reread its exact
+   value and the draft totals before finalization with `auto_advance=false`,
+   stopping **before send**.
+4. Use the separately approved `settlement-only` occurrence to attach the
+   already-received payment. Do not create/confirm a PaymentIntent, charge again,
+   report the Stripe payment as a new bank receipt, or send a reminder.
+5. Reread invoice lifecycle and InvoicePayment linkage. When fully paid, verify
+   `status=paid` and `amount_remaining=0`; a link alone proves neither.
+6. Retrieve that invoice with `include_business_details=true`, read the returned
+   response file, and share the provider's available hosted invoice/PDF link in
+   the authorized handoff. No `invoices.send` call is needed just to get a link.
+
+This composes existing workflows; there is no new retroactive-invoicing engine.
+Whole-payment/single-invoice restrictions, source evidence, grants and owner
+approvals are unchanged. The unavailable PaymentRecord list is not used for a
+known succeeded PaymentIntent. These fields follow the official
+[Invoice](https://docs.stripe.com/api/invoices/object),
+[Customer](https://docs.stripe.com/api/customers/object),
+[Invoice Item](https://docs.stripe.com/api/invoiceitems/object), and
+[Charge](https://docs.stripe.com/api/charges/object) objects; see also
+[hosted invoice pages](https://docs.stripe.com/invoicing/hosted-invoice-page).
 Do not retry a POST just to obtain a cleaner response. Multiple matching items
 remain ambiguous and require review. A digest supports exact equality checks;
 it is neither a semantic match nor a claim that the text is anonymized. Invoice
@@ -190,13 +323,15 @@ reads expose `total` and `subtotal` separately from `amount_due`, because credit
 or other adjustments can make the current amount due differ from the invoice's
 economic total. Invoice creation requires the approved currency even though
 Stripe permits a customer-default currency when omitted. Independently verify
-the draft currency before adding any line; line currency and invoice currency
-must match the approved proposal.
+the draft currency before adding any line. A manual line's currency, or a
+catalog line's selected Price currency option where available, must match the
+approved invoice currency; do not reject a Price solely because its base
+currency differs when its selected option is applicable.
 
 ### Selected observation and reconciliation contract
 
 The projection validates the critical fields it consumes, not the entire raw
-Stripe object. Customer, Invoice, InvoiceItem, Charge, BalanceTransaction, Refund
+Stripe object. Customer, Product, Price, Invoice, InvoiceItem, Charge, BalanceTransaction, Refund
 and Dispute can no longer pass with only `id` and `object`: selected required
 money, mode, lifecycle and identity fields must be present and correctly typed.
 Published charge/dispute lifecycle enums are checked; optional/nullable fields
@@ -259,6 +394,15 @@ input, not a value to invent on reads. Retain the requested terms externally,
 review the actual resulting due date, and reread it before each mutation. A
 null date or changed terms do not imply the approved due date. Unsupported
 collection-method or malformed due-date values fail projection safely.
+
+When supplied at creation, `effective_at` is separately read from the Invoice
+as a nonnegative Unix timestamp and compared exactly with the approved printed
+issue date. It neither replaces `created`, `due_date`, nor any payment time.
+Missing or provider-null `effective_at` is unavailable evidence, not a match;
+it leaves finalization pending for correction/review. Retain the requested date
+and the independently observed draft line amounts, subtotal, and total in the
+immutable external billing version before approval, rather than treating a
+mutable Price ref or an action audit as the approved financial fact.
 
 The optional `correlation_key` must be a freshly generated random 32-character
 lowercase hexadecimal value for one invoice occurrence. It must not encode
@@ -517,7 +661,7 @@ checks do not establish real bank custody or account-specific Stripe readiness.
 
 PaymentRecord-list deferral fixtures cover discovery/description, validation,
 direct execution and valid step grants: the unavailable reason survives, no
-HTTP request or ActionCall is created, and the other 25 actions keep their
+HTTP request or ActionCall is created, and the other 29 actions keep their
 connector bindings. Optional deferral must not block ordinary follow-up
 readiness. Known-ref PaymentRecord reads retain reference-hash/privacy and
 projection coverage. Actual follow-up MCP fixtures cover retained-ref recovery
@@ -534,11 +678,12 @@ missing request ids and repeated normalization retain the no-secret boundary.
 The full action audit uses OpenAPI commit
 `9ac29c7795ab21c7711b4bc25bb2dd739552a5fa`, snapshot SHA-256
 `2c31317cdff103e4495b5b3501004d9ddc0af61f43b0ab819e2db392eef008f6`.
-All 26 declared method/path pairs match that snapshot; 25 remain executable and
+All 30 declared method/path pairs match that snapshot; 29 remain executable and
 PaymentRecord listing is explicitly deferred. Red-first repairs cover
 retry veto/idempotency conflicts, explicit nondefault invoice currency,
-required observations, missing allocation linkage, and typed reconciliation
-refs. Public MCP tests check structured errors and failed/success action audit;
+catalog selection/Price expansions, effective issue-date readback, required
+observations, missing allocation linkage, and typed reconciliation refs. Public
+MCP tests check structured errors and failed/success action audit;
 actual-template fixtures check the agent-facing currency and recovery paths.
 Mock/source correctness does not establish endpoint availability or live email
 delivery. Independent reviewers cover transport, action contracts and guidance.
