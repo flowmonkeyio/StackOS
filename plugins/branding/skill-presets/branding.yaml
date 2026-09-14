@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: branding.brand-orchestrator
     name: Brand Orchestrator
-    version: 0.4.1
+    version: 0.5.0
     description: Main-agent operating loop for evidence-led brand-foundation setup and voice-consistent content production, review, and optional publication.
     domain: branding
     skill_type: main-agent-orchestration
@@ -39,20 +39,13 @@ presets:
       - decision.record
       - action.execute
       - browser.runtime.status
-      - browser.method.manifest
       - browser.profile.list
       - browser.profile.create
       - browser.session.list
       - browser.session.start
       - browser.session.status
       - browser.session.stop
-      - browser.page.call
-      - browser.context.call
-      - browser.handle.call
-      - browser.script.run
-      - browser.script.inject
-      - browser.page.snapshot
-      - browser.page.screenshot
+      - browser.cli.run
     project_adaptation:
       required: true
       do_not_use_verbatim: true

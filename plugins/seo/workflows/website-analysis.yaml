@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: seo.website-analysis
 name: Website SEO Analysis
-version: 0.3.0
+version: 0.4.0
 description: Agency-style, evidence-led website mapping and SEO analysis that keeps one reviewed finding register, uses connected first-party and research tools when useful, and retains a public-site fallback.
 domain: seo
 owner:
@@ -502,7 +502,7 @@ steps:
       - Inspect each provider response file before deciding whether another call is necessary. Preserve its action_call_id and, when file-backed, checksum; promote only claim-supporting raw output that must remain readable to an intentional artifact.
       - Use paid sources only when they materially improve a scoped decision and fit the available operator or project budget. Prefer existing evidence and avoid redundant provider calls.
       - Mark every considered source used, unavailable, skipped, or failed with evaluation time, coverage, limitations, evidence class, and reason; include public and operator-supplied sources as well as connected providers.
-      - Build one typed evidence_index for evidence actually used by findings. Prior analyses remain historical until current evidence revalidates them, and every current entry must point to a durable action receipt, browser receipt, operator ref, or artifact ref.
+      - Build one typed evidence_index for evidence actually used by findings. Prior analyses remain historical until current evidence revalidates them, and every current entry must point to a durable action receipt, operator ref, or artifact ref. Preserve claim-supporting native browser captures as generic artifacts with the session ref and capture time.
       - Keep Search Console, GA4, GTM, and third-party semantics distinct and do not turn inventory or indexed-version data into live behavior claims.
     success_criteria:
       - source_ledger covers every source considered and evidence_index resolves every evidence ref used by public observations, inventory rows, and later findings without treating temporary response paths as durable proof.
@@ -714,7 +714,7 @@ outputs:
         required: [evidence_ref, kind, source, captured_at, lifecycle_state, scope, receipt_ref, limitations]
         properties:
           evidence_ref: {type: string, minLength: 1}
-          kind: {type: string, enum: [action-receipt, browser-receipt, operator-context, prior-analysis, artifact]}
+          kind: {type: string, enum: [action-receipt, operator-context, prior-analysis, artifact]}
           source: {type: string, minLength: 1}
           captured_at: {type: string, format: date-time}
           lifecycle_state: {type: string, enum: [current, historical, superseded]}
@@ -969,34 +969,22 @@ metadata:
     - resource.upsert
     - artifact.create
     - browser.runtime.status
-    - browser.method.manifest
     - browser.profile.list
     - browser.session.list
     - browser.session.start
     - browser.session.status
     - browser.session.stop
-    - browser.page.call
-    - browser.context.call
-    - browser.handle.call
-    - browser.script.run
-    - browser.page.snapshot
-    - browser.page.screenshot
+    - browser.cli.run
   mcp_tool_grants:
     - step_id: map-public-site
       tools:
         - browser.runtime.status
-        - browser.method.manifest
         - browser.profile.list
         - browser.session.list
         - browser.session.start
         - browser.session.status
         - browser.session.stop
-        - browser.page.call
-        - browser.context.call
-        - browser.handle.call
-        - browser.script.run
-        - browser.page.snapshot
-        - browser.page.screenshot
+        - browser.cli.run
     - step_id: finalize-and-store
       tools:
         - artifact.create

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import importlib.util
 import json
 import stat
 from collections import Counter
@@ -14,15 +13,12 @@ import typer
 
 from stackos import __milestone__, __version__
 from stackos.browser.runtime import (
-    PLAYWRIGHT_DRIVER_VERSION,
-    PLAYWRIGHT_EXPECTED_BROWSER_VERSION,
-    chromium_executable_path,
-    chromium_license_path,
-    playwright_driver_version,
+    BROWSER_PROVIDER,
+    gstack_executable_path,
 )
 from stackos.config import Settings, get_settings
 from stackos.install import _codex_mcp_line_is_bridge as _install_codex_mcp_line_is_bridge
-from stackos.install import verify_chromium_runtime
+from stackos.install import verify_gstack_runtime
 
 from . import daemon_processes, launchd
 from .app import _exit, app
@@ -150,38 +146,19 @@ def _check_scheduler_jobs(settings: Settings) -> tuple[bool, int]:
 
 
 def _check_browser_runtime() -> tuple[bool, dict[str, object]]:
-    """Return the daemon-owned Chromium runtime readiness without paths."""
-    if importlib.util.find_spec("playwright") is None:
-        return False, {
-            "package_installed": False,
-            "browser_downloaded": False,
-            "browser_path_present": False,
-            "driver_compatible": False,
-            "repair": ("install/sync StackOS Python dependencies, then run `stackos install`"),
-        }
-    driver_version = playwright_driver_version()
-    driver_compatible = driver_version == PLAYWRIGHT_DRIVER_VERSION
-    path = chromium_executable_path()
-    license_present = chromium_license_path().is_file()
-    runtime_ok, runtime_reason = verify_chromium_runtime()
-    ok = driver_compatible and runtime_ok
+    """Return gstack distribution readiness without paths or upstream state."""
+    path = gstack_executable_path()
+    runtime_ok, runtime_reason = verify_gstack_runtime()
+    ok = runtime_ok
     return ok, {
-        "package_installed": True,
+        "provider": BROWSER_PROVIDER,
+        "package_installed": runtime_ok,
         "browser_downloaded": ok,
         "browser_path_present": bool(path),
-        "browser_license_present": license_present,
-        "driver_version": driver_version,
-        "driver_compatible": driver_compatible,
         "repair": (
             None
             if ok
-            else (
-                "install/sync StackOS's pinned Playwright driver "
-                f"({PLAYWRIGHT_DRIVER_VERSION}; "
-                f"browserVersion {PLAYWRIGHT_EXPECTED_BROWSER_VERSION})"
-                if not driver_compatible
-                else f"{runtime_reason} Run `stackos install` or repair the packaged StackOS app."
-            )
+            else f"{runtime_reason} Run `stackos install` or repair the packaged StackOS app."
         ),
     }
 

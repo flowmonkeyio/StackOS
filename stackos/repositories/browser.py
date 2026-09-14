@@ -1,21 +1,16 @@
-"""Repository helpers and public models for StackOS browser automation."""
+"""Durable profile/session identity for the native gstack browser lifecycle."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session, col, select
 
-from stackos.browser.runtime import BROWSER_PROVIDER, sanitize_launch_options
-from stackos.db.models import (
-    Artifact,
-    BrowserActionReceipt,
-    BrowserProfile,
-    BrowserSession,
-    Project,
-)
+from stackos.browser.runtime import BROWSER_PROVIDER, NativeSessionState
+from stackos.db.models import BrowserProfile, BrowserSession, Project
 from stackos.repositories.base import Envelope, NotFoundError, Page
 
 
@@ -35,13 +30,13 @@ class BrowserRuntimeStatusOut(BaseModel):
     package_version: str | None
     browser_downloaded: bool
     browser_path_present: bool = False
-    executable_path: str | None
     live_session_refs: list[str]
     repair: str | None = None
-    method_manifest: list[dict[str, Any]]
 
 
 class BrowserProfileOut(BaseModel):
+    """Public profile identity; legacy database columns are not active controls."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -51,15 +46,13 @@ class BrowserProfileOut(BaseModel):
     provider: str
     status: str
     profile_ref: str
-    allowed_origins_json: list[str] | None
-    launch_options_json: dict[str, Any] | None
     metadata_json: dict[str, Any] | None
     created_at: datetime
     updated_at: datetime
 
 
 class BrowserSessionOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    """Safe selected-session detail or bulk session summary."""
 
     id: int
     project_id: int
@@ -68,47 +61,22 @@ class BrowserSessionOut(BaseModel):
     session_ref: str
     provider: str
     status: str
-    headless: bool
-    page_refs_json: list[str] | None
-    current_url: str | None
+    healthy: bool | None = None
+    repair: str | None = None
+    native_cli: dict[str, Any] | None = None
     metadata_json: dict[str, Any] | None
     started_at: datetime
     ended_at: datetime | None
     updated_at: datetime
 
 
-class BrowserActionReceiptOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    project_id: int
-    profile_id: int | None
-    session_id: int | None
-    artifact_id: int | None
-    session_ref: str | None
-    page_ref: str | None
-    operation: str
-    method: str
-    side_effect_class: str
-    target_url: str | None
-    target_origin: str | None
-    status: str
-    input_summary_json: dict[str, Any] | None
-    result_json: dict[str, Any] | None
-    error: str | None
-    created_at: datetime
-    completed_at: datetime | None
-
-
-class BrowserCallOut(BaseModel):
-    receipt: BrowserActionReceiptOut
-    session: BrowserSessionOut | None = None
-    artifact: dict[str, Any] | None = None
-    result: dict[str, Any]
-
-
 class BrowserRepository:
-    """Read and write browser profiles, sessions, and receipts."""
+    """The single durable project/profile/session owner.
+
+    BrowserActionReceipt and the historic Playwright-only columns remain in the
+    database for retention, but this repository intentionally has no active
+    receipt, artifact, page, URL, or launch-option writer.
+    """
 
     def __init__(self, session: Session) -> None:
         self._s = session
@@ -129,41 +97,31 @@ class BrowserRepository:
         project_id: int,
         profile_key: str,
         name: str,
-        allowed_origins_json: list[str] | None,
-        launch_options_json: dict[str, Any] | None,
         metadata_json: dict[str, Any] | None,
     ) -> Envelope[BrowserProfileOut]:
         self.require_project(project_id)
-        launch_options_json = sanitize_launch_options(launch_options_json)
         ref = self.profile_ref(project_id=project_id, profile_key=profile_key)
-        existing = self._s.exec(
+        row = self._s.exec(
             select(BrowserProfile).where(
                 col(BrowserProfile.project_id) == project_id,
                 col(BrowserProfile.profile_key) == profile_key,
             )
         ).first()
         now = _utcnow()
-        if existing is None:
+        if row is None:
             row = BrowserProfile(
                 project_id=project_id,
                 profile_key=profile_key,
                 name=name,
                 provider=BROWSER_PROVIDER,
                 profile_ref=ref,
-                allowed_origins_json=allowed_origins_json,
-                launch_options_json=launch_options_json,
                 metadata_json=metadata_json,
             )
         else:
-            row = existing
             row.name = name
             row.provider = BROWSER_PROVIDER
             row.status = "ready"
             row.profile_ref = ref
-            if allowed_origins_json is not None:
-                row.allowed_origins_json = allowed_origins_json
-            if launch_options_json is not None:
-                row.launch_options_json = launch_options_json
             row.metadata_json = metadata_json
             row.updated_at = now
         self._s.add(row)
@@ -181,8 +139,7 @@ class BrowserRepository:
             ).all()
         )
         return Page(
-            items=[BrowserProfileOut.model_validate(row) for row in rows],
-            total_estimate=len(rows),
+            items=[BrowserProfileOut.model_validate(row) for row in rows], total_estimate=len(rows)
         )
 
     def get_profile(self, *, project_id: int, profile_ref: str) -> BrowserProfile:
@@ -205,8 +162,6 @@ class BrowserRepository:
         project_id: int,
         profile: BrowserProfile,
         session_ref: str,
-        page_refs: list[str],
-        current_url: str | None,
         metadata_json: dict[str, Any] | None,
     ) -> Envelope[BrowserSessionOut]:
         row = self._s.exec(
@@ -216,8 +171,8 @@ class BrowserRepository:
             )
         ).first()
         now = _utcnow()
+        profile.provider = BROWSER_PROVIDER
         if row is None:
-            profile.provider = BROWSER_PROVIDER
             row = BrowserSession(
                 project_id=project_id,
                 profile_id=_required_id(profile.id),
@@ -225,21 +180,16 @@ class BrowserRepository:
                 provider=BROWSER_PROVIDER,
                 status="running",
                 headless=False,
-                page_refs_json=page_refs,
-                current_url=current_url,
                 metadata_json=metadata_json,
             )
         else:
-            profile.provider = BROWSER_PROVIDER
             row.profile_id = _required_id(profile.id)
             row.provider = BROWSER_PROVIDER
             row.status = "running"
-            row.headless = False
-            row.page_refs_json = page_refs
-            row.current_url = current_url
             row.metadata_json = metadata_json
             row.ended_at = None
             row.updated_at = now
+        self._s.add(profile)
         self._s.add(row)
         self._s.commit()
         self._s.refresh(row)
@@ -260,42 +210,47 @@ class BrowserRepository:
             total_estimate=len(rows),
         )
 
-    def reconcile_running_sessions(
-        self,
-        *,
-        project_id: int,
-        live_session_refs: list[str] | set[str] | tuple[str, ...],
+    def reconcile_sessions(
+        self, *, project_id: int, states: Mapping[str, NativeSessionState]
     ) -> list[str]:
-        """Mark DB-running sessions stale when this daemon has no live handle."""
+        """Persist observed lifecycle state without treating health failure as retirement."""
         self.require_project(project_id)
-        live = set(live_session_refs)
         rows = list(
             self._s.exec(
-                select(BrowserSession).where(
-                    col(BrowserSession.project_id) == project_id,
-                    col(BrowserSession.status) == "running",
-                )
+                select(BrowserSession).where(col(BrowserSession.project_id) == project_id)
             ).all()
         )
-        stale_refs: list[str] = []
+        changed: list[str] = []
         now = _utcnow()
         for row in rows:
-            if row.session_ref in live:
+            state = states.get(row.session_ref)
+            if state is None:
                 continue
-            row.status = "stale"
-            row.ended_at = now
-            row.updated_at = now
-            self._s.add(row)
-            stale_refs.append(row.session_ref)
-        if stale_refs:
+            next_status: str | None = None
+            ended_at: datetime | None | object = row.ended_at
+            if state.owned:
+                next_status = state.status
+                ended_at = None
+            elif state.status == "stopped":
+                next_status = "stopped"
+                ended_at = now
+            elif row.status == "running":
+                next_status = "stale"
+                ended_at = now
+            if next_status is None:
+                continue
+            if row.status != next_status or row.ended_at != ended_at:
+                row.status = next_status
+                row.ended_at = ended_at if isinstance(ended_at, datetime) else None
+                row.updated_at = now
+                self._s.add(row)
+                changed.append(row.session_ref)
+        if changed:
             self._s.commit()
-        return stale_refs
+        return changed
 
     def get_session(
-        self,
-        *,
-        project_id: int,
-        session_ref: str,
+        self, *, project_id: int, session_ref: str
     ) -> tuple[BrowserSession, BrowserProfile]:
         row = self._s.exec(
             select(BrowserSession, BrowserProfile)
@@ -312,140 +267,64 @@ class BrowserRepository:
             )
         return row
 
-    def stop_session(self, *, project_id: int, session_ref: str) -> Envelope[BrowserSessionOut]:
-        session_row, profile = self.get_session(project_id=project_id, session_ref=session_ref)
-        now = _utcnow()
-        session_row.status = "stopped"
-        session_row.ended_at = now
-        session_row.updated_at = now
-        self._s.add(session_row)
-        self._s.commit()
-        self._s.refresh(session_row)
-        return Envelope(data=self._session_out(session_row, profile), project_id=project_id)
-
-    def mark_session_stale(
-        self,
-        *,
-        project_id: int,
-        session_ref: str,
-    ) -> Envelope[BrowserSessionOut]:
-        session_row, profile = self.get_session(project_id=project_id, session_ref=session_ref)
-        now = _utcnow()
-        session_row.status = "stale"
-        session_row.ended_at = now
-        session_row.updated_at = now
-        self._s.add(session_row)
-        self._s.commit()
-        self._s.refresh(session_row)
-        return Envelope(data=self._session_out(session_row, profile), project_id=project_id)
-
-    def update_session_url(
-        self,
-        *,
-        project_id: int,
-        session_ref: str,
-        current_url: str | None,
-        page_refs: list[str] | None = None,
-    ) -> BrowserSessionOut:
-        session_row, profile = self.get_session(project_id=project_id, session_ref=session_ref)
-        session_row.current_url = current_url
-        if page_refs is not None:
-            session_row.page_refs_json = page_refs
-        session_row.updated_at = _utcnow()
-        self._s.add(session_row)
-        self._s.commit()
-        self._s.refresh(session_row)
-        return self._session_out(session_row, profile)
-
-    def create_artifact(
-        self,
-        *,
-        project_id: int,
-        uri: str,
-        name: str,
-        mime_type: str,
-        size_bytes: int | None,
-        metadata_json: dict[str, Any] | None,
-        provenance_json: dict[str, Any] | None,
-    ) -> Artifact:
-        row = Artifact(
-            project_id=project_id,
-            kind="browser-screenshot",
-            uri=uri,
-            name=name,
-            mime_type=mime_type,
-            size_bytes=size_bytes,
-            metadata_json=metadata_json,
-            provenance_json=provenance_json,
-        )
-        self._s.add(row)
-        self._s.commit()
-        self._s.refresh(row)
-        return row
-
-    def record_receipt(
-        self,
-        *,
-        project_id: int,
-        profile_id: int | None,
-        session_id: int | None,
-        artifact_id: int | None,
-        session_ref: str | None,
-        page_ref: str | None,
-        operation: str,
-        method: str,
-        side_effect_class: str,
-        target_url: str | None,
-        target_origin: str | None,
-        status: str,
-        input_summary_json: dict[str, Any] | None,
-        result_json: dict[str, Any] | None,
-        error: str | None = None,
-    ) -> BrowserActionReceiptOut:
-        row = BrowserActionReceipt(
-            project_id=project_id,
-            profile_id=profile_id,
-            session_id=session_id,
-            artifact_id=artifact_id,
-            session_ref=session_ref,
-            page_ref=page_ref,
-            operation=operation,
-            method=method,
-            side_effect_class=side_effect_class,
-            target_url=target_url,
-            target_origin=target_origin,
-            status=status,
-            input_summary_json=input_summary_json,
-            result_json=result_json,
-            error=error,
-            completed_at=_utcnow(),
-        )
-        self._s.add(row)
-        self._s.commit()
-        self._s.refresh(row)
-        return BrowserActionReceiptOut.model_validate(row)
-
     def session_out(
         self,
         session_row: BrowserSession,
-        profile: BrowserProfile,
+        profile: BrowserProfile | None = None,
+        *,
+        state: NativeSessionState | None = None,
+        include_native_cli: bool = False,
     ) -> BrowserSessionOut:
-        """Return the public output model for a session/profile pair."""
-        return self._session_out(session_row, profile)
+        if profile is None:
+            profile = self._s.get(BrowserProfile, session_row.profile_id)
+            if profile is None:
+                raise NotFoundError(
+                    "browser profile not found", data={"profile_id": session_row.profile_id}
+                )
+        return self._session_out(
+            session_row, profile, state=state, include_native_cli=include_native_cli
+        )
 
+    @staticmethod
     def _session_out(
-        self,
         session_row: BrowserSession,
         profile: BrowserProfile,
+        *,
+        state: NativeSessionState | None = None,
+        include_native_cli: bool = False,
     ) -> BrowserSessionOut:
-        data = session_row.model_dump()
-        data["profile_ref"] = profile.profile_ref
-        return BrowserSessionOut.model_validate(data)
+        native_cli: dict[str, Any] | None = None
+        healthy: bool | None = None
+        repair: str | None = None
+        if state is not None:
+            healthy = state.healthy if state.owned else None
+            repair = state.repair
+            if (
+                include_native_cli
+                and state.owned
+                and state.healthy
+                and state.native_cli is not None
+            ):
+                native_cli = state.native_cli.to_dict()
+        return BrowserSessionOut(
+            id=_required_id(session_row.id),
+            project_id=session_row.project_id,
+            profile_id=session_row.profile_id,
+            profile_ref=profile.profile_ref,
+            session_ref=session_row.session_ref,
+            provider=session_row.provider,
+            status=session_row.status,
+            healthy=healthy,
+            repair=repair,
+            native_cli=native_cli,
+            metadata_json=session_row.metadata_json,
+            started_at=session_row.started_at,
+            ended_at=session_row.ended_at,
+            updated_at=session_row.updated_at,
+        )
 
 
 __all__ = [
-    "BrowserActionReceiptOut",
-    "BrowserCallOut",
     "BrowserProfileOut",
     "BrowserRepository",
     "BrowserRuntimeStatusOut",

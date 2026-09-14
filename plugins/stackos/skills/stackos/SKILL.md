@@ -110,25 +110,21 @@ primitive.
    raw only when the next step truly needs the full public audit shape.
    Pass `response_mode=raw` only when the bounded response-file content itself
    should enter the context window.
-10. For browser automation, use the direct `browser.*` tools when mounted, or
-    `toolbox.call` for the same operation names before the current Codex session
-    is restarted. `browser.session.start` opens a persistent visible Chromium session;
-    it has no headless input, so operators can always inspect login and posting. Use
-    `browser.page.call` and `browser.context.call` for public Playwright
-    methods with raw args/kwargs or named `arguments`; prefer named
-    `arguments` for manifest convenience methods such as `goto`, `click`, and
-    `fill` so receipts and validation can identify fields like `url` and
-    `selector`. Use `browser.handle.call` for
-    returned locator/download/response-like object handles,
-    `browser.script.run` and `browser.script.inject` for arbitrary JavaScript, and
-    `browser.page.screenshot` for generated-assets evidence. Treat this as the
-    same class of browser control as a normal Playwright/test browser session:
-    this is local trusted-admin browser automation, not an externally exposed
-    sandbox. StackOS records redacted receipts, but it does not maintain a
-    restrictive browser-method allowlist. The daemon owns executable/profile
-    paths and visible mode, and accepts only locale, timezone_id, user_agent,
-    and viewport launch preferences. Treat
-    immediate browser tool output as sensitive raw browser data.
+10. For browser work, call `browser.session.list` to discover existing sessions,
+    then `browser.session.start` to create or reuse one with a stable
+    `profile_key`. The lifecycle opens native gstack visibly for login and
+    operator observation. Selected start/status returns `native_cli` with
+    the real upstream executable, working directory, and environment; use
+    those values directly when the host has CLI access. MCP-only clients call
+    `browser.cli.run` with the selected session ref, exact upstream `argv`
+    array, and optional `stdin`. StackOS does not interpret commands, retry,
+    redact native output, or automatically create browser receipts/artifacts.
+    The raw relay returns stdout, stderr, exit_code, and encoding (UTF-8 or
+    base64 for both streams when either contains invalid UTF-8). It rejects
+    idempotency and ETag values. Preserve useful browser captures explicitly
+    through generic artifact operations when authorized. Treat the selected
+    native context as a local capability and native output as working data;
+    state-file contents and authentication tokens are not discovery output.
 
 ## Common Flows
 
@@ -240,18 +236,15 @@ primitive.
   `{"surface":"mcp","mode":"grouped","response_mode":"compact"}`, then use
   `toolbox.describe` or `operation.describe` for the few exact operations you
   intend to call. Keep `toolbox.describe` scoped to exact tool names.
-- Use browser automation: call `browser.runtime.status`, then
-  `browser.session.start`. If the platform needs login, pause and let the
-  operator complete login in the opened browser session, then continue with
-  `browser.page.call`, `browser.context.call`, `browser.handle.call`,
-  `browser.script.run`, or `browser.script.inject`. Use
-  `browser.page.snapshot` for text state and `browser.page.screenshot` for
-  visual proof or publication evidence. Stop the session with
-  `browser.session.stop` when done. Treat the browser method
-  manifest as guidance, not an allowlist: public page/context methods may be
-  called through raw args/kwargs, while manifest convenience methods should use
-  named `arguments` when possible, for example
-  `arguments: {"url": "https://example.com"}` for `goto`.
+- Use browser automation: call `browser.runtime.status` and
+  `browser.session.list`, then select or create/reuse a session with
+  `browser.session.start`. If login is required, let the operator complete it
+  in that visible profile. Use the selected `native_cli` context directly, or
+  `browser.cli.run` with native argv such as `["goto","https://example.com"]`.
+  Native command vocabulary belongs to upstream gstack. Reuse the same profile
+  to retain cookies/storage; stop through `browser.session.stop` when done.
+  Session discovery survives StackOS daemon restart. A busy live owner keeps
+  its profile even when health is unavailable.
 - Repair denied tools: read `toolbox.describe.tool_statuses`. `unknown_tool`
   means the name is wrong or removed. `local_admin_required` means operator
   setup is needed. `run_plan_step_grant_required` means create/start the run

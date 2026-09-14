@@ -207,11 +207,11 @@ def install(
         if migration_result.stamped_existing_schema:
             typer.echo("==> Database schema stamped at alembic head")
         typer.echo(f"==> Database schema ready: {settings.db_path}")
-        browser_ok, browser_message = installer.ensure_chromium_runtime(
+        browser_ok, browser_message = installer.ensure_gstack_runtime(
             data_dir=Path(settings.data_dir)
         )
         typer.echo(f"==> Browser runtime: {browser_message}")
-        if not browser_ok and "not importable" not in browser_message:
+        if not browser_ok:
             raise typer.Exit(code=1)
 
     home = Path.home()

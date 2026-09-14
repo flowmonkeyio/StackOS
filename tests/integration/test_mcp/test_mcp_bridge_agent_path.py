@@ -203,13 +203,10 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
     assert "project.create" not in names
     assert "project.get" not in names
     assert "project.setActive" not in names
-    assert "browser.page.call" in names
-    assert "browser.context.call" in names
-    assert "browser.handle.call" in names
-    assert "browser.script.run" in names
-    assert "browser.page.screenshot" in names
+    assert "browser.cli.run" in names
     assert "agentRequest.list" not in names
     assert "agentRequest.claim" not in names
+
     assert "agentRequest.create" not in names
     assert "context.query" not in names
     assert "learning.query" not in names
@@ -227,6 +224,242 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
         tool for tool in envelope["result"]["tools"] if tool["name"] == "toolbox.describe"
     )
     assert "tool_names" in describe_tool["inputSchema"]["properties"]
+
+
+def test_bridge_native_browser_handoff_relay_and_project_scope(
+    mcp_client: MCPClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from dataclasses import replace
+
+    from typer.testing import CliRunner
+
+    import stackos.cli.operation_commands as operation_cli
+    import stackos.operations.browser as browser_ops
+    from stackos.browser.runtime import (
+        BrowserRuntime,
+        NativeCliContext,
+        NativeProcessResult,
+        NativeSessionState,
+    )
+    from stackos.cli import app as cli_app
+
+    runtime = BrowserRuntime()
+    states: dict[str, NativeSessionState] = {}
+    invocations: list[dict[str, Any]] = []
+    native = NativeCliContext(
+        executable=str(tmp_path / "browse"),
+        cwd=str(tmp_path),
+        env={"BROWSE_STATE_FILE": str(tmp_path / "owned.json"), "BROWSE_NO_AUTOSTART": "1"},
+    )
+
+    async def start(**kwargs: Any) -> NativeSessionState:
+        state = NativeSessionState(
+            session_ref=kwargs["session_ref"],
+            profile_ref=kwargs["profile_ref"],
+            status="running",
+            owned=True,
+            healthy=True,
+            pid=123,
+            repair=None,
+            native_cli=native,
+        )
+        states[state.session_ref] = state
+        return state
+
+    async def inspect(**kwargs: Any) -> NativeSessionState:
+        return states[kwargs["session_ref"]]
+
+    async def stop(**kwargs: Any) -> NativeSessionState:
+        state = replace(
+            states[kwargs["session_ref"]],
+            status="stopped",
+            owned=False,
+            healthy=False,
+            native_cli=None,
+        )
+        states[state.session_ref] = state
+        return state
+
+    async def command(
+        executable: Path, argv: list[str], cwd: Path, env: dict[str, str], stdin: bytes
+    ):
+        invocations.append({"argv": argv, "stdin": stdin, "cwd": str(cwd), "env": env})
+        return NativeProcessResult(b"raw\r\n\x00\n", b"stderr\n", 17)
+
+    monkeypatch.setattr(runtime, "start_session", start)
+    monkeypatch.setattr(runtime, "inspect_session", inspect)
+    monkeypatch.setattr(runtime, "stop_session", stop)
+    monkeypatch.setattr(runtime, "_command_runner", command)
+    monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: runtime)
+    workspace = tmp_path / "native-workspace"
+    workspace.mkdir()
+    proxy, client = _scoped_bridge(mcp_client, cwd=str(workspace))
+    _initialize(proxy, client)
+    bound = _operation_data(_structured(_tool_call(proxy, client, "workspace.startSession")))
+    project_id = bound["project_id"]
+    started = _operation_data(
+        _structured(
+            _tool_call(
+                proxy,
+                client,
+                "browser.session.start",
+                {"profile_key": "proof", "session_key": "main"},
+            )
+        )
+    )
+    session_ref = started["session_ref"]
+    assert started["native_cli"] == native.to_dict()
+    selected = _operation_data(
+        _structured(
+            _tool_call(proxy, client, "browser.session.status", {"session_ref": session_ref})
+        )
+    )
+    assert selected["native_cli"] == native.to_dict()
+    result = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "browser.cli.run",
+            {"session_ref": session_ref, "argv": ["unknown-native", "a b", ""], "stdin": "exact\n"},
+        )
+    )
+    assert result["data"] == {
+        "stdout": "raw\r\n\x00\n",
+        "stderr": "stderr\n",
+        "exit_code": 17,
+        "encoding": "utf-8",
+    }
+    assert invocations == [
+        {
+            "argv": ["unknown-native", "a b", ""],
+            "stdin": b"exact\n",
+            "cwd": str(tmp_path),
+            "env": native.env,
+        }
+    ]
+    foreign = _tool_call(
+        proxy,
+        client,
+        "browser.cli.run",
+        {"project_id": project_id + 100, "session_ref": session_ref, "argv": ["status"]},
+    )
+    assert _is_bridge_scope_error(foreign)
+    replay = _tool_call(
+        proxy,
+        client,
+        "browser.cli.run",
+        {"session_ref": session_ref, "argv": ["status"], "idempotency_key": "never-replay"},
+    )
+    assert replay["result"]["isError"]
+    assert len(invocations) == 1
+    # Exercise the same operation through generic REST and the real CLI command.
+    arguments = {
+        "project_id": project_id,
+        "session_ref": session_ref,
+        "argv": ["native-rest"],
+        "stdin": "REST\r\n",
+    }
+    response = mcp_client.test_client.post(
+        "/api/v1/operations/browser.cli.run/call",
+        json={"arguments": arguments},
+        headers=mcp_client._headers(),
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["data"] == result["data"]
+
+    def api_request(method, path, *, body=None, **kwargs):
+        response = mcp_client.test_client.request(
+            method,
+            path,
+            json=body,
+            headers={**mcp_client._headers(), "X-StackOS-Client-Surface": "cli"},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    monkeypatch.setattr(operation_cli, "_api_request", api_request)
+    arguments["argv"] = ["native-cli", "a b"]
+    input_file = tmp_path / "arguments.json"
+    input_file.write_text(json.dumps(arguments))
+    cli_result = CliRunner().invoke(
+        cli_app,
+        ["ops", "call", "browser.cli.run", "--input", str(input_file)],
+        catch_exceptions=False,
+    )
+    assert cli_result.exit_code == 0
+    assert json.loads(cli_result.stdout)["data"] == result["data"]
+    assert [call["argv"] for call in invocations] == [
+        ["unknown-native", "a b", ""],
+        ["native-rest"],
+        ["native-cli", "a b"],
+    ]
+    plan = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {
+            "project_id": project_id,
+            "run_plan_json": {
+                "schema_version": "stackos.run-plan.v1",
+                "key": "native-grant-proof",
+                "title": "Native grant proof",
+                "grants": {
+                    "mcp_tool_grants": [
+                        {"step_id": "inspect", "tool": "browser.runtime.status"},
+                        {"step_id": "operate", "tool": "browser.cli.run"},
+                    ]
+                },
+                "steps": [
+                    {"id": "inspect", "title": "Inspect"},
+                    {"id": "operate", "title": "Operate", "depends_on": ["inspect"]},
+                ],
+            },
+        },
+    )
+    plan_id = plan["data"]["id"]
+    run = mcp_client.call_tool_structured(
+        "runPlan.start", {"project_id": project_id, "run_plan_id": plan_id}
+    )
+    token = run["data"]["run_token"]
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep", {"run_plan_id": plan_id, "step_id": "inspect", "run_token": token}
+    )
+    denied = mcp_client.call_tool_error(
+        "browser.cli.run",
+        {
+            "project_id": project_id,
+            "session_ref": session_ref,
+            "argv": ["status"],
+            "run_token": token,
+        },
+    )
+    assert denied["code"] == -32007
+    assert len(invocations) == 3
+    mcp_client.call_tool_structured(
+        "runPlan.recordStep",
+        {"run_plan_id": plan_id, "step_id": "inspect", "status": "success", "run_token": token},
+    )
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep", {"run_plan_id": plan_id, "step_id": "operate", "run_token": token}
+    )
+    granted = mcp_client.call_tool_structured(
+        "browser.cli.run",
+        {
+            "project_id": project_id,
+            "session_ref": session_ref,
+            "argv": ["unknown-upstream-command"],
+            "run_token": token,
+        },
+    )
+    assert granted["data"] == result["data"]
+    assert invocations[-1]["argv"] == ["unknown-upstream-command"]
+    mcp_client.call_tool_structured(
+        "runPlan.recordStep",
+        {"run_plan_id": plan_id, "step_id": "operate", "status": "success", "run_token": token},
+    )
+    stopped = _operation_data(
+        _structured(_tool_call(proxy, client, "browser.session.stop", {"session_ref": session_ref}))
+    )
+    assert stopped["status"] == "stopped"
+    assert stopped["native_cli"] is None
 
 
 @pytest.mark.parametrize("source", ["project", "user"])

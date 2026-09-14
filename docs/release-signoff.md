@@ -77,7 +77,7 @@ touches committed UI assets.
 | AI-tool host lifecycle | Shared canonical states, fail-closed ownership, ChatGPT/Codex capability fallback, explicit Hermes profiles, desktop pre-ready reconciliation, and backend-owned UI labels stay aligned. | `uv run pytest tests/unit/test_host_mcp.py tests/unit/test_claude_mcp.py tests/unit/test_cli_install.py -q`<br>`pnpm --dir ui exec vitest run src/views/home/agentHostPresentation.spec.ts`<br>`node desktop/scripts/test-service-upgrade.cjs` |
 | Local daemon lifecycle | Restart ignores stale pid files and zombie/defunct children, refuses non-StackOS port blockers, and does not leave launchd booted out. | `uv run pytest tests/unit/test_cli_daemon.py -q` |
 | macOS desktop app | Electron metadata, service bridge, update endpoint config, frozen payload dependencies, executable packaged CLI, install/repair, and desktop docs stay aligned with the installer contract. | `make desktop-doctor` plus `make desktop-payload` for payload or dependency changes |
-| Visible Chromium runtime | The app ships one signed arm64 `Chromium.app`, no Chrome for Testing/headless shell, and a stable StackOS profile persists a nonce cookie across a visible restart. | `pnpm --dir desktop check` plus installed-app proof |
+| Native gstack browser | The app ships pinned upstream gstack, Bun, and its browser assets; native CLI/MCP relay agree, discovery survives daemon restart, and the existing profile directory persists a synthetic cookie/localStorage marker across visible browser restart. | Browser operation/runtime tests, `pnpm --dir desktop check`, and installed-app install/repair/restart proof |
 
 ## Finance Production Activation Gate
 

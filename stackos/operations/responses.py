@@ -736,9 +736,20 @@ def _compact_operation_summary(item: dict[str, Any]) -> dict[str, Any]:
 def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
     if not isinstance(data, dict):
         return {"value": data}
-    if operation_name in {"tracker.ticketCounts", "tracker.ticketCountsAll", "project.portfolio"}:
-        # Already bounded, payload-free read models. Preserve every day/row and exact bounds.
+    if operation_name in {
+        "tracker.ticketCounts",
+        "tracker.ticketCountsAll",
+        "project.portfolio",
+        "browser.runtime.status",
+    }:
+        # Already bounded read models; every field supports the next call.
         return copy.deepcopy(data)
+    if operation_name == "browser.session.list":
+        return {
+            key: copy.deepcopy(value)
+            for key, value in data.items()
+            if key not in {"native_cli", "metadata_json"}
+        }
     if operation_name == "actionCall.query":
         fields = {
             "id",

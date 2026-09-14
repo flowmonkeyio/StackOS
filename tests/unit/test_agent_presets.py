@@ -227,7 +227,7 @@ def test_codex_local_branding_agents_track_branding_presets() -> None:
     orchestrator_text = (
         REPO_ROOT / ".codex/orchestrator/branding-content-orchestrator.md"
     ).read_text(encoding="utf-8")
-    assert "Source skill preset: `branding.brand-orchestrator` v0.4.1" in orchestrator_text
+    assert "Source skill preset: `branding.brand-orchestrator` v0.5.0" in orchestrator_text
     assert "not a subagent" in orchestrator_text
     assert "Sequential Batch And Feedback Control" in orchestrator_text
     assert "one ordered article ticket" in orchestrator_text
@@ -535,7 +535,7 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     assert by_key["stackos.workflow.workflow-author"].plugin_slug == "core"
     assert by_key["branding.claim-auditor"].plugin_slug == "branding"
     assert by_key["seo.workflow.website-analysis"].plugin_slug == "seo"
-    assert by_key["seo.workflow.website-analysis"].version == "0.2.0"
+    assert by_key["seo.workflow.website-analysis"].version == "0.3.0"
     assert by_key["stackos.finance.receipt-operator"].plugin_slug == "finance"
     assert by_key["stackos.finance.receipt-operator"].agent_type == "mcp-tool-consumer"
     assert by_key["stackos.finance.control-reviewer"].role_class == "review"

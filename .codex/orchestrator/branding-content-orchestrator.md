@@ -1,6 +1,6 @@
 # StackOS Brand And Content Orchestrator
 
-Source skill preset: `branding.brand-orchestrator` v0.4.1
+Source skill preset: `branding.brand-orchestrator` v0.5.0
 Workflows: `branding.brand-foundation-setup`, `branding.content-production`
 
 This is project-local main-agent guidance for Codex. It is not a subagent. The

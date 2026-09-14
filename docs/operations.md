@@ -199,35 +199,30 @@ not a second registry; it renders `GET /api/v1/operations` and
 
 ## Browser Operations
 
-Browser automation is exposed as generic StackOS operations instead of
-provider-specific workflow glue. `browser.page.call` and
-`browser.context.call` mirror public Playwright methods through raw
-method names plus `args`, `kwargs`, or named `arguments`. Prefer named
-`arguments` for manifest-documented convenience methods, such as
-`arguments: {"url": "https://example.com"}` for `goto`, while raw `args` and
-`kwargs` remain available for direct public Playwright parity. Calls that return
-non-page browser objects return transient `handle_ref` values; use
-`browser.handle.call` to call public methods or properties on those returned
-objects. Convenience operations such as `browser.script.run`,
-`browser.script.inject`, and `browser.page.screenshot` sit on top of that
-parity model.
+The browser operation surface owns runtime status, profile create/list,
+session start/list/status/stop, and one native CLI relay. Session discovery
+reconciles owned gstack state and OS process identity after daemon restart.
+A healthy selected session returns `native_cli={executable,cwd,env}` for direct
+use of the upstream executable; bulk lists return scoped summaries.
 
-Do not turn the browser method manifest into an allowlist. It exists for
-discovery, guidance, and drift tests while preserving full browser control for
-agents. Browser side-effect operations are raw-only; persisted receipts store
-redacted summaries and artifact refs rather than raw scripts, returned values,
-or daemon-local paths.
+`browser.cli.run` accepts an arbitrary ordered `argv` array and optional UTF-8
+`stdin`. It invokes the native executable once and returns
+`{stdout,stderr,exit_code,encoding}` inside the ordinary write envelope.
+Both streams remain exact UTF-8 text when valid; if either is invalid UTF-8,
+both are base64 encoded. Native nonzero exit codes remain result data.
 
-Browser sessions always use StackOS's visible Chromium runtime. The session
-start contract has no headless field, and launch preferences are limited to
-`locale`, `timezone_id`, `user_agent`, and `viewport`; executable paths,
-channels, raw arguments, and profile controls are daemon-owned.
+The relay is raw-only and rejects non-null `idempotency_key` and
+`expected_etag` in its input model before dispatcher replay/storage. Normal
+project scope and run-plan grants apply. Upstream gstack owns browser command
+semantics, parsing, and native retries. StackOS adds no command translation,
+allowlist, browser receipts, or automatic screenshot artifacts.
 
-Browser side-effect operations advertise `secret_policy=raw-browser-output`.
-That means the immediate operation payload can contain page, cookie, storage,
-or JavaScript-returned data. Browser session state and generated artifacts are
-local operational state and must be treated as sensitive; receipts are redacted
-for audit, not as a browser capability restriction.
+The same OperationSpec supplies MCP, generic REST, generic CLI, and Operations
+UI discovery. No browser-specific REST route or CLI interpreter is needed.
+Selected native session paths are local capabilities; state contents and
+tokens are not exposed by lifecycle operations. Native output is returned
+unchanged and may contain page data requested by the client. See
+[browser sessions](browser-automation.md) for examples and profile continuity.
 
 ## Generic REST Calls
 
@@ -413,20 +408,13 @@ index for common core operations, not a replacement for registry discovery.
 - `agentRequest.complete`
 - `agentRequest.ignore`
 - `browser.runtime.status`
-- `browser.method.manifest`
 - `browser.profile.create`
 - `browser.profile.list`
 - `browser.session.start`
 - `browser.session.stop`
+- `browser.cli.run`
 - `browser.session.list`
 - `browser.session.status`
-- `browser.page.call`
-- `browser.context.call`
-- `browser.handle.call`
-- `browser.script.run`
-- `browser.script.inject`
-- `browser.page.snapshot`
-- `browser.page.screenshot`
 - `communication.reply`
 - `communication.send`
 - `communicationProfile.accountUsage`

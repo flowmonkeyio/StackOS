@@ -147,7 +147,7 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     foundation_outputs = {item.key: item for item in branding_foundation_described.spec.outputs}
     assert "out_of_scope" in foundation_outputs["voice_review_report"].schema_data["required"]
     assert branding_content_described.summary.plugin_slug == "branding"
-    assert branding_content_described.spec.version == "0.4.3"
+    assert branding_content_described.spec.version == "0.5.0"
     assert branding_content_described.spec.metadata_json["default_branding_workflow"] is True
     assert branding_content_described.spec.metadata_json["workflow_family"] == (
         "content-production"
@@ -253,11 +253,7 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "action.execute:publish_linkedin"
         in (branding_content_described.spec.metadata_json["grants"])
     )
-    assert "browser.page.call" in branding_content_described.spec.metadata_json["grants"]
-    assert "browser.handle.call" in branding_content_described.spec.metadata_json["grants"]
-    assert "browser.script.run" in branding_content_described.spec.metadata_json["grants"]
-    assert "browser.script.inject" in branding_content_described.spec.metadata_json["grants"]
-    assert "browser.page.screenshot" in branding_content_described.spec.metadata_json["grants"]
+    assert "browser.cli.run" in branding_content_described.spec.metadata_json["grants"]
     branding_template_tool_grants = {
         item["step_id"]: set(item["tools"])
         for item in branding_content_described.spec.metadata_json["mcp_tool_grants"]
@@ -276,20 +272,13 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert "decision.record" in branding_template_tool_grants["execute-publication"]
     assert {
         "browser.runtime.status",
-        "browser.method.manifest",
+        "browser.cli.run",
         "browser.profile.list",
         "browser.profile.create",
         "browser.session.list",
         "browser.session.start",
         "browser.session.status",
         "browser.session.stop",
-        "browser.page.call",
-        "browser.context.call",
-        "browser.handle.call",
-        "browser.script.run",
-        "browser.script.inject",
-        "browser.page.snapshot",
-        "browser.page.screenshot",
     } <= branding_template_tool_grants["execute-publication"]
     assert "content_memory_index" in {item.key for item in branding_content_described.spec.outputs}
     assert "publication_jobs" in {item.key for item in branding_content_described.spec.outputs}
@@ -333,20 +322,13 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "artifact.archive",
         "artifact.supersede",
         "browser.runtime.status",
-        "browser.method.manifest",
+        "browser.cli.run",
         "browser.profile.list",
         "browser.profile.create",
         "browser.session.list",
         "browser.session.start",
         "browser.session.status",
         "browser.session.stop",
-        "browser.page.call",
-        "browser.context.call",
-        "browser.handle.call",
-        "browser.script.run",
-        "browser.script.inject",
-        "browser.page.snapshot",
-        "browser.page.screenshot",
     } <= execute_publication_tools
     interview_grants = [
         grant
@@ -1072,7 +1054,7 @@ def test_website_seo_analysis_has_public_fallback_and_evidence_contract(
         plugin_slug="seo",
     )
     spec = described.spec
-    assert spec.version == "0.3.0"
+    assert spec.version == "0.4.0"
 
     assert [step.id for step in spec.steps] == [
         "scope-audit",
@@ -1251,4 +1233,4 @@ def test_website_seo_analysis_has_public_fallback_and_evidence_contract(
         if grant["step_id"] == "map-public-site"
         for tool in ([grant["tool"]] if "tool" in grant else grant["tools"])
     }
-    assert {"action.execute", "browser.session.start", "browser.page.snapshot"} <= map_tools
+    assert {"action.execute", "browser.session.start", "browser.cli.run"} <= map_tools

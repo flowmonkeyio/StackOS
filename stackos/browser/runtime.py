@@ -1,93 +1,41 @@
-"""Daemon-owned Playwright browser runtime."""
+"""Daemon-owned lifecycle for upstream gstack browser sessions.
+
+StackOS intentionally owns only profile/session custody and the gstack process
+lifecycle. The upstream ``browse`` executable owns every browser command and
+its browser semantics.
+"""
 
 from __future__ import annotations
 
 import asyncio
-import importlib.metadata
-import importlib.util
+import base64
+import inspect
+import json
 import os
 import re
+import subprocess
 import sys
-from dataclasses import dataclass, field
-from inspect import isawaitable
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, Protocol
+from urllib.error import URLError
+from urllib.request import urlopen
 
-from stackos.browser.manifest import BrowserMethodSpec
-from stackos.repositories.base import ValidationError
+from stackos.repositories.base import ConflictError, ValidationError
 
 _SAFE_KEY_RE = re.compile(r"[^a-zA-Z0-9_.-]+")
-BROWSER_PROVIDER = "playwright"
-BROWSER_ENGINE = "chromium"
-BROWSER_PROFILE_DIRNAME = f"{BROWSER_PROVIDER}-{BROWSER_ENGINE}"
-PLAYWRIGHT_DRIVER_VERSION = "1.60.0"
-PLAYWRIGHT_EXPECTED_BROWSER_VERSION = "148.0.7778.96"
-CHROMIUM_APP_NAME = "Chromium.app"
-CHROMIUM_EXECUTABLE_RELATIVE_PATH = Path("Contents") / "MacOS" / "Chromium"
-CHROMIUM_LICENSE_FILENAME = "CHROMIUM-LICENSE"
-CHROMIUM_RUNTIME_DIRNAME = "browser-runtime"
-CHROMIUM_RUNTIME_REPAIR = "Run `stackos install` to install StackOS Chromium."
-ALLOWED_LAUNCH_OPTION_KEYS = frozenset({"locale", "timezone_id", "user_agent", "viewport"})
+_PROFILE_LOCKS: dict[str, asyncio.Lock] = {}
+_IDENTITY_START_TOLERANCE = timedelta(minutes=2)
+_STOP_POLL_SECONDS = 0.05
+_STOP_TIMEOUT_SECONDS = 5.0
 
-
-def _merge_manifest_call_arguments(
-    *,
-    spec: BrowserMethodSpec | None,
-    arguments: dict[str, Any],
-    raw_args: list[Any] | None,
-    raw_kwargs: dict[str, Any] | None,
-) -> dict[str, Any]:
-    """Merge raw positional/keyword inputs into manifest argument names."""
-    merged = dict(arguments)
-    embedded_args = merged.pop("args", None)
-    embedded_kwargs = merged.pop("kwargs", None)
-    args = list(raw_args if raw_args is not None else embedded_args or [])
-    kwargs = dict(raw_kwargs if raw_kwargs is not None else embedded_kwargs or {})
-
-    if args:
-        arg_names = list(spec.allowed_arg_names if spec is not None else ())
-        if not arg_names:
-            return merged
-        if len(args) > len(arg_names):
-            raise ValidationError(
-                "too many positional browser method arguments",
-                data={
-                    "method": spec.method if spec is not None else None,
-                    "arg_count": len(args),
-                    "max_arg_count": len(arg_names),
-                    "allowed_arg_names": arg_names,
-                },
-            )
-        for name, value in zip(arg_names, args, strict=False):
-            if name in merged:
-                raise ValidationError(
-                    "browser method argument provided more than once",
-                    data={"argument": name},
-                )
-            merged[name] = value
-
-    for name, value in kwargs.items():
-        key = str(name)
-        if key in merged:
-            raise ValidationError(
-                "browser method argument provided more than once",
-                data={"argument": key},
-            )
-        merged[key] = value
-
-    return merged
-
-
-def _timeout(arguments: dict[str, Any]) -> Any:
-    return arguments.get("timeout_ms", arguments.get("timeout"))
-
-
-def _delay(arguments: dict[str, Any]) -> Any:
-    return arguments.get("delay_ms", arguments.get("delay"))
-
-
-def _click_count(arguments: dict[str, Any]) -> Any:
-    return arguments.get("click_count", arguments.get("clicks", 1))
+BROWSER_PROVIDER = "gstack"
+# Kept literally so existing persistent profiles are reused in place.
+BROWSER_PROFILE_DIRNAME = "playwright-chromium"
+GSTACK_RUNTIME_DIRNAME = "browser-runtime"
+GSTACK_RUNTIME_REPAIR = "Run `stackos install` to install the StackOS gstack runtime."
 
 
 def safe_browser_key(value: str) -> str:
@@ -99,9 +47,9 @@ def safe_browser_key(value: str) -> str:
 
 
 def browser_profile_dir(root: Path, *, project_id: int, profile_key: str) -> Path:
-    """Return the daemon-private profile directory for a project profile."""
+    """Return the stable daemon-private profile directory for one profile."""
     return (
-        root
+        Path(root)
         / "browser-profiles"
         / BROWSER_PROFILE_DIRNAME
         / f"project-{project_id}"
@@ -110,12 +58,7 @@ def browser_profile_dir(root: Path, *, project_id: int, profile_key: str) -> Pat
 
 
 def packaged_stackos_root() -> Path | None:
-    """Return the embedded StackOS payload root for a running desktop app only.
-
-    This deliberately derives containment from ``sys.executable``. Environment
-    variables, Playwright caches, system browsers, and caller-provided paths are
-    never considered browser-runtime candidates.
-    """
+    """Return the embedded StackOS payload root when running from the macOS app."""
     executable = Path(sys.executable).resolve()
     if executable.parent.name != "bin" or executable.parent.parent.name != ".venv":
         return None
@@ -130,190 +73,422 @@ def packaged_stackos_root() -> Path | None:
     return root
 
 
-def managed_chromium_app_path(data_dir: Path) -> Path:
-    """Return the only non-packaged Chromium bundle location StackOS manages."""
-    return data_dir / CHROMIUM_RUNTIME_DIRNAME / BROWSER_ENGINE / CHROMIUM_APP_NAME
+def _data_dir(data_dir: Path | None) -> Path:
+    if data_dir is not None:
+        return Path(data_dir)
+    from stackos.config import get_settings
+
+    return Path(get_settings().data_dir)
 
 
-def chromium_app_path(data_dir: Path | None = None) -> Path:
-    """Return the canonical bundled or managed Chromium application path."""
+def gstack_runtime_root(data_dir: Path | None = None) -> Path:
+    """Return the packaged or data-dir gstack runtime root, without installing it."""
     packaged_root = packaged_stackos_root()
     if packaged_root is not None:
-        return packaged_root / CHROMIUM_APP_NAME
-    if data_dir is None:
-        from stackos.config import get_settings
-
-        data_dir = Path(get_settings().data_dir)
-    return managed_chromium_app_path(Path(data_dir))
+        return packaged_root / GSTACK_RUNTIME_DIRNAME
+    return _data_dir(data_dir) / GSTACK_RUNTIME_DIRNAME
 
 
-def chromium_executable_path(data_dir: Path | None = None) -> Path | None:
-    """Return StackOS's canonical Chromium executable when its bundle is valid."""
-    executable = chromium_app_path(data_dir) / CHROMIUM_EXECUTABLE_RELATIVE_PATH
-    return executable if executable.is_file() and os.access(executable, os.X_OK) else None
+def gstack_executable_path(data_dir: Path | None = None) -> Path | None:
+    path = gstack_runtime_root(data_dir) / "gstack" / "browse" / "dist" / "browse"
+    return path if path.is_file() and os.access(path, os.X_OK) else None
 
 
-def chromium_license_path(data_dir: Path | None = None) -> Path:
-    """Return the notice shipped beside StackOS's canonical Chromium bundle."""
-    return chromium_app_path(data_dir).parent / CHROMIUM_LICENSE_FILENAME
+def gstack_bun_path(data_dir: Path | None = None) -> Path | None:
+    path = gstack_runtime_root(data_dir) / "bin" / "bun"
+    return path if path.is_file() and os.access(path, os.X_OK) else None
 
 
-def playwright_driver_version() -> str | None:
-    """Return the installed Playwright driver version without probing browser caches."""
-    if importlib.util.find_spec("playwright") is None:
-        return None
-    try:
-        return importlib.metadata.version("playwright")
-    except importlib.metadata.PackageNotFoundError:
-        return None
+def gstack_server_path(data_dir: Path | None = None) -> Path | None:
+    path = gstack_runtime_root(data_dir) / "gstack" / "browse" / "src" / "server.ts"
+    return path if path.is_file() else None
 
 
-def playwright_driver_is_compatible() -> bool:
-    """Return whether the driver matches the Chromium compatibility pin."""
-    return playwright_driver_version() == PLAYWRIGHT_DRIVER_VERSION
+def gstack_browser_assets_path(data_dir: Path | None = None) -> Path | None:
+    path = gstack_runtime_root(data_dir) / "browsers"
+    return path if path.is_dir() else None
 
 
-def sanitize_launch_options(raw: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Permit only non-sensitive browser preferences chosen by an agent."""
-    if raw is None:
-        return None
-    blocked = sorted(set(raw) - ALLOWED_LAUNCH_OPTION_KEYS)
-    if blocked:
-        raise ValidationError(
-            "browser launch options contain unsupported controls",
-            data={
-                "blocked_keys": blocked,
-                "repair": (
-                    "Only locale, timezone_id, user_agent, and viewport are allowed. "
-                    "StackOS owns the browser executable, visibility, profile directory, "
-                    "and all runtime launch behavior."
-                ),
-            },
+def gstack_manifest_path(data_dir: Path | None = None) -> Path:
+    return gstack_runtime_root(data_dir) / "manifest.json"
+
+
+def gstack_state_file(
+    data_dir: Path,
+    *,
+    project_id: int,
+    profile_key: str,
+    session_key: str,
+) -> Path:
+    """Return deterministic upstream state under daemon-owned storage."""
+    return (
+        Path(data_dir)
+        / "browser-state"
+        / "gstack"
+        / f"project-{project_id}"
+        / safe_browser_key(profile_key)
+        / safe_browser_key(session_key)
+        / ".gstack"
+        / "browse.json"
+    )
+
+
+def gstack_session_cwd(state_file: Path) -> Path:
+    """Return gstack's project directory derived from ``BROWSE_STATE_FILE``."""
+    return Path(state_file).parent.parent
+
+
+@dataclass(frozen=True)
+class ProcessIdentity:
+    """Safe process identity used to reject a reused PID."""
+
+    pid: int
+    started_at: datetime
+    command: str
+
+
+class ProcessInspector(Protocol):
+    def inspect(self, pid: int) -> ProcessIdentity | None: ...
+
+
+class SystemProcessInspector:
+    """Read a narrow process identity without shell invocation."""
+
+    def inspect(self, pid: int) -> ProcessIdentity | None:
+        if pid <= 0:
+            return None
+        try:
+            started = subprocess.run(
+                ["ps", "-p", str(pid), "-o", "lstart="],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            command = subprocess.run(
+                ["ps", "-p", str(pid), "-o", "command="],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except OSError:
+            return None
+        if started.returncode != 0 or command.returncode != 0:
+            return None
+        try:
+            started_at = datetime.strptime(started.stdout.strip(), "%a %b %d %H:%M:%S %Y")
+        except ValueError:
+            return None
+        raw_command = command.stdout.strip()
+        if not raw_command:
+            return None
+        local_zone = datetime.now().astimezone().tzinfo
+        return ProcessIdentity(
+            pid=pid,
+            started_at=started_at.replace(tzinfo=local_zone).astimezone(UTC),
+            command=raw_command,
         )
-    return dict(raw)
 
 
-@dataclass
+@dataclass(frozen=True)
+class NativeProcessResult:
+    stdout: bytes
+    stderr: bytes
+    exit_code: int
+
+
+@dataclass(frozen=True)
+class NativeCliContext:
+    executable: str
+    cwd: str
+    env: dict[str, str]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"executable": self.executable, "cwd": self.cwd, "env": dict(self.env)}
+
+
+@dataclass(frozen=True)
+class NativeCliResult:
+    stdout: str
+    stderr: str
+    exit_code: int
+    encoding: Literal["utf-8", "base64"]
+
+    @classmethod
+    def from_process(cls, result: NativeProcessResult) -> NativeCliResult:
+        try:
+            stdout = result.stdout.decode("utf-8", errors="strict")
+            stderr = result.stderr.decode("utf-8", errors="strict")
+        except UnicodeDecodeError:
+            return cls(
+                stdout=base64.b64encode(result.stdout).decode("ascii"),
+                stderr=base64.b64encode(result.stderr).decode("ascii"),
+                exit_code=result.exit_code,
+                encoding="base64",
+            )
+        return cls(stdout=stdout, stderr=stderr, exit_code=result.exit_code, encoding="utf-8")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "stdout": self.stdout,
+            "stderr": self.stderr,
+            "exit_code": self.exit_code,
+            "encoding": self.encoding,
+        }
+
+    def decode_stdout(self) -> bytes:
+        return (
+            self.stdout.encode("utf-8")
+            if self.encoding == "utf-8"
+            else base64.b64decode(self.stdout)
+        )
+
+    def decode_stderr(self) -> bytes:
+        return (
+            self.stderr.encode("utf-8")
+            if self.encoding == "utf-8"
+            else base64.b64decode(self.stderr)
+        )
+
+
+@dataclass(frozen=True)
+class NativeSessionState:
+    session_ref: str
+    profile_ref: str
+    status: Literal["running", "stale", "stopped", "failed"]
+    owned: bool
+    healthy: bool
+    pid: int | None
+    repair: str | None = None
+    native_cli: NativeCliContext | None = None
+
+    def to_safe_dict(self, *, include_native_cli: bool = False) -> dict[str, Any]:
+        data: dict[str, Any] = {
+            "status": self.status,
+            "owned": self.owned,
+            "healthy": self.healthy,
+            "pid": self.pid,
+            "repair": self.repair,
+        }
+        if include_native_cli and self.native_cli is not None:
+            data["native_cli"] = self.native_cli.to_dict()
+        return data
+
+
+@dataclass(frozen=True)
 class RuntimeStatus:
     provider: str
     package_installed: bool
     package_version: str | None
     browser_downloaded: bool
-    executable_path: str | None
     live_session_refs: list[str]
     repair: str | None = None
 
-    def to_dict(
-        self,
-        *,
-        project_id: int | None = None,
-        reveal_executable_path: bool = False,
-    ) -> dict[str, Any]:
-        if project_id is None:
-            live_session_refs: list[str] = []
-        else:
-            marker = f":project-{project_id}:"
-            live_session_refs = sorted(ref for ref in self.live_session_refs if marker in ref)
+    def to_dict(self, *, project_id: int | None = None) -> dict[str, Any]:
+        marker = f":project-{project_id}:" if project_id is not None else None
+        live = (
+            self.live_session_refs
+            if marker is None
+            else [ref for ref in self.live_session_refs if marker in ref]
+        )
         return {
             "provider": self.provider,
             "package_installed": self.package_installed,
             "package_version": self.package_version,
             "browser_downloaded": self.browser_downloaded,
-            "browser_path_present": self.executable_path is not None,
-            "executable_path": self.executable_path if reveal_executable_path else None,
-            "live_session_refs": live_session_refs,
+            "browser_path_present": self.browser_downloaded,
+            "live_session_refs": sorted(live),
             "repair": self.repair,
         }
 
 
-@dataclass
-class BrowserCallResult:
-    method: str
-    status: str
-    page_ref: str
-    url: str | None = None
-    title: str | None = None
-    value: Any | None = None
-    page_refs: list[str] | None = None
-    screenshot_path: Path | None = None
-    screenshot_mime_type: str | None = None
-
-    def to_public_result(self) -> dict[str, Any]:
-        out: dict[str, Any] = {
-            "method": self.method,
-            "status": self.status,
-            "page_ref": self.page_ref,
-        }
-        if self.url is not None:
-            out["url"] = self.url
-        if self.title is not None:
-            out["title"] = self.title
-        if self.value is not None:
-            out["value"] = self.value
-        if self.page_refs is not None:
-            out["page_refs"] = self.page_refs
-        return out
+@dataclass(frozen=True)
+class _GstackStateFile:
+    pid: int
+    port: int
+    started_at: datetime
+    server_path: Path
 
 
-@dataclass
-class LiveBrowserSession:
-    """In-memory Playwright context for a persistent profile."""
+def _parse_started_at(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.astimezone(UTC) if parsed.tzinfo is not None else None
 
-    session_ref: str
-    profile_ref: str
-    profile_dir: Path
-    manager: Any
-    context: Any
-    pages: dict[str, Any]
-    active_page_ref: str
-    handles: dict[str, Any] = field(default_factory=dict)
-    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
-    @property
-    def page(self) -> Any:
-        return self.pages[self.active_page_ref]
+def _read_state_file(path: Path) -> _GstackStateFile | None:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+    pid, port = raw.get("pid"), raw.get("port")
+    server_path, started_at = raw.get("serverPath"), _parse_started_at(raw.get("startedAt"))
+    if (
+        isinstance(pid, bool)
+        or not isinstance(pid, int)
+        or pid <= 0
+        or isinstance(port, bool)
+        or not isinstance(port, int)
+        or not 1 <= port <= 65535
+        or not isinstance(server_path, str)
+        or not server_path
+        or started_at is None
+    ):
+        return None
+    return _GstackStateFile(
+        pid=pid, port=port, started_at=started_at, server_path=Path(server_path).resolve()
+    )
 
-    @property
-    def page_ref(self) -> str:
-        return self.active_page_ref
 
-    @property
-    def page_refs(self) -> list[str]:
-        return sorted(self.pages)
+def _manifest_version(data_dir: Path) -> str | None:
+    try:
+        raw = json.loads(gstack_manifest_path(data_dir).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+    for key in ("gstack_version", "version"):
+        value = raw.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _runtime_paths_ready(data_dir: Path) -> bool:
+    # install owns the immutable distribution contract, including the pinned
+    # manifest and upstream-selected Chromium marker/executable. Import lazily:
+    # install imports this module for path helpers during its own initialization.
+    from stackos.install import verify_gstack_runtime
+
+    verified, _reason = verify_gstack_runtime(data_dir=data_dir)
+    return verified
+
+
+def _profile_lock(profile_dir: Path) -> asyncio.Lock:
+    key = str(profile_dir.resolve())
+    lock = _PROFILE_LOCKS.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _PROFILE_LOCKS[key] = lock
+    return lock
+
+
+async def _default_health_probe(port: int) -> bool:
+    def _probe() -> bool:
+        try:
+            with urlopen(f"http://127.0.0.1:{port}/health", timeout=2) as response:
+                if response.status != 200:
+                    return False
+                body = json.loads(response.read().decode("utf-8"))
+        except (OSError, URLError, UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        return isinstance(body, dict) and body.get("status") == "healthy"
+
+    return await asyncio.to_thread(_probe)
+
+
+async def _default_command_runner(
+    executable: Path, argv: list[str], cwd: Path, env: dict[str, str], stdin: bytes
+) -> NativeProcessResult:
+    child_env = os.environ.copy()
+    # An owned lifecycle must not inherit upstream controls that can select a
+    # different server, profile, proxy, or browser installation. Keep ordinary
+    # process context such as HOME and TMPDIR, then apply the deterministic
+    # context selected for this session below.
+    for key in tuple(child_env):
+        if key.startswith(("BROWSE_", "GSTACK_", "CHROMIUM_", "PLAYWRIGHT_")):
+            child_env.pop(key)
+    child_env.update(env)
+    process = await asyncio.create_subprocess_exec(
+        str(executable),
+        *argv,
+        cwd=str(cwd),
+        env=child_env,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await process.communicate(stdin)
+    return NativeProcessResult(stdout=stdout, stderr=stderr, exit_code=int(process.returncode or 0))
+
+
+HealthProbe = Callable[[int], bool | Awaitable[bool]]
+CommandRunner = Callable[
+    [Path, list[str], Path, dict[str, str], bytes], Awaitable[NativeProcessResult]
+]
 
 
 class BrowserRuntime:
-    """Process-local browser session manager.
+    """Inspect and manage gstack state without interpreting browser commands."""
 
-    The database stores durable metadata and receipts. The actual browser
-    handles are live Python objects and intentionally remain daemon-private.
-    """
+    def __init__(
+        self,
+        *,
+        data_dir: Path | None = None,
+        process_inspector: ProcessInspector | None = None,
+        health_probe: HealthProbe | None = None,
+        command_runner: CommandRunner | None = None,
+        stop_timeout_seconds: float = _STOP_TIMEOUT_SECONDS,
+    ) -> None:
+        self._data_dir = Path(data_dir) if data_dir is not None else None
+        self._process_inspector = process_inspector or SystemProcessInspector()
+        self._health_probe = health_probe or _default_health_probe
+        self._command_runner = command_runner or _default_command_runner
+        self._stop_timeout_seconds = stop_timeout_seconds
 
-    def __init__(self) -> None:
-        self._sessions: dict[str, LiveBrowserSession] = {}
-
-    def status(self) -> RuntimeStatus:
-        installed = importlib.util.find_spec("playwright") is not None
-        version = playwright_driver_version() if installed else None
-        repair: str | None = None
-        executable_path = chromium_executable_path() if installed else None
-        if not installed:
-            repair = "Install/sync StackOS Python dependencies, then run `stackos install`."
-        elif version != PLAYWRIGHT_DRIVER_VERSION:
-            repair = (
-                "Install the StackOS-pinned Playwright driver "
-                f"({PLAYWRIGHT_DRIVER_VERSION}) before starting Chromium."
-            )
-        elif executable_path is None:
-            repair = CHROMIUM_RUNTIME_REPAIR
+    def status(self, *, data_dir: Path | None = None) -> RuntimeStatus:
+        root = self._resolve_data_dir(data_dir)
+        ready = _runtime_paths_ready(root)
         return RuntimeStatus(
             provider=BROWSER_PROVIDER,
-            package_installed=installed,
-            package_version=version,
-            browser_downloaded=executable_path is not None,
-            executable_path=str(executable_path) if executable_path is not None else None,
-            live_session_refs=sorted(self._sessions),
-            repair=repair,
+            package_installed=ready,
+            package_version=_manifest_version(root),
+            browser_downloaded=gstack_browser_assets_path(root) is not None,
+            live_session_refs=[],
+            repair=None if ready else GSTACK_RUNTIME_REPAIR,
+        )
+
+    async def inspect_session(
+        self,
+        *,
+        session_ref: str,
+        profile_ref: str,
+        profile_dir: Path,
+        state_file: Path,
+        data_dir: Path | None = None,
+    ) -> NativeSessionState:
+        root = self._resolve_data_dir(data_dir)
+        state = _read_state_file(state_file)
+        if state is None:
+            return self._stale(session_ref, profile_ref, "gstack state is missing or invalid")
+        identity = self._process_inspector.inspect(state.pid)
+        if not self._matches_owned_identity(identity, state, root):
+            return self._stale(
+                session_ref, profile_ref, "gstack state no longer owns a matching process"
+            )
+        healthy = await self._is_healthy(state.port)
+        context = self._native_context(
+            profile_dir=profile_dir, state_file=state_file, data_dir=root, include_no_autostart=True
+        )
+        return NativeSessionState(
+            session_ref=session_ref,
+            profile_ref=profile_ref,
+            status="running" if healthy else "failed",
+            owned=True,
+            healthy=healthy,
+            pid=state.pid,
+            repair=None
+            if healthy
+            else (
+                "The owned gstack server is busy or unavailable; do not start another "
+                "session for this profile."
+            ),
+            native_cli=context if healthy else None,
         )
 
     async def start_session(
@@ -322,662 +497,376 @@ class BrowserRuntime:
         session_ref: str,
         profile_ref: str,
         profile_dir: Path,
-        launch_options: dict[str, Any] | None,
-    ) -> LiveBrowserSession:
-        if session_ref in self._sessions:
-            return self._sessions[session_ref]
-        if importlib.util.find_spec("playwright") is None:
-            raise ValidationError(
-                "Playwright package is not installed",
-                data={
-                    "provider": BROWSER_PROVIDER,
-                    "repair": (
-                        "Install/sync StackOS Python dependencies, then run `stackos install`."
-                    ),
-                },
+        state_file: Path,
+        data_dir: Path | None = None,
+    ) -> NativeSessionState:
+        root = self._resolve_data_dir(data_dir)
+        async with _profile_lock(profile_dir):
+            current = await self.inspect_session(
+                session_ref=session_ref,
+                profile_ref=profile_ref,
+                profile_dir=profile_dir,
+                state_file=state_file,
+                data_dir=root,
             )
-        if not playwright_driver_is_compatible():
-            raise ValidationError(
-                "Playwright driver is incompatible with StackOS Chromium",
-                data={
-                    "expected_playwright_version": PLAYWRIGHT_DRIVER_VERSION,
-                    "expected_browser_version": PLAYWRIGHT_EXPECTED_BROWSER_VERSION,
-                    "repair": "Install/sync StackOS Python dependencies, then retry.",
-                },
+            if current.owned:
+                if current.healthy:
+                    return current
+                raise ConflictError(
+                    "the selected gstack session still owns this profile but is unavailable",
+                    data={"session_ref": session_ref, "repair": current.repair},
+                )
+            owner = await self._other_profile_owner(
+                session_ref=session_ref,
+                profile_ref=profile_ref,
+                profile_dir=profile_dir,
+                state_file=state_file,
+                data_dir=root,
             )
-        executable_path = chromium_executable_path()
-        if executable_path is None:
-            raise ValidationError(
-                "StackOS Chromium runtime is not installed",
-                data={"provider": BROWSER_PROVIDER, "repair": CHROMIUM_RUNTIME_REPAIR},
-            )
-        from playwright.async_api import async_playwright
-
-        profile_dir.mkdir(parents=True, exist_ok=True)
-        os.chmod(profile_dir, 0o700)
-        options = sanitize_launch_options(launch_options) or {}
-        manager = async_playwright()
-        playwright = await manager.__aenter__()
-        try:
-            context = await playwright.chromium.launch_persistent_context(
-                user_data_dir=str(profile_dir),
-                executable_path=str(executable_path),
-                headless=False,
-                **options,
-            )
-        except Exception:
-            await manager.__aexit__(None, None, None)
-            raise
-        pages = list(getattr(context, "pages", []) or [])
-        page = pages[0] if pages else await context.new_page()
-        page_ref = f"{session_ref}:page-1"
-        live = LiveBrowserSession(
-            session_ref=session_ref,
-            profile_ref=profile_ref,
-            profile_dir=profile_dir,
-            manager=manager,
-            context=context,
-            pages={page_ref: page},
-            active_page_ref=page_ref,
-        )
-        self._sync_pages(live)
-        self._sessions[session_ref] = live
-        return live
-
-    async def stop_session(self, *, session_ref: str) -> bool:
-        live = self._sessions.get(session_ref)
-        if live is None:
-            return False
-        async with live.lock:
-            close = getattr(live.context, "close", None)
-            if close is not None:
-                result = close()
-                if isawaitable(result):
-                    await result
-            await live.manager.__aexit__(None, None, None)
-        self._sessions.pop(session_ref, None)
-        return True
-
-    def get_session(self, *, session_ref: str) -> LiveBrowserSession:
-        live = self._sessions.get(session_ref)
-        if live is None:
-            raise ValidationError(
-                "browser session is not live in this daemon process",
-                data={
-                    "session_ref": session_ref,
-                    "repair": "Start the session again with browser.session.start.",
-                },
-            )
-        return live
-
-    async def page_call(
-        self,
-        *,
-        session_ref: str,
-        spec: BrowserMethodSpec | None,
-        method: str | None = None,
-        arguments: dict[str, Any],
-        raw_args: list[Any] | None = None,
-        raw_kwargs: dict[str, Any] | None = None,
-        page_ref: str | None = None,
-    ) -> BrowserCallResult:
-        live = self.get_session(session_ref=session_ref)
-        async with live.lock:
-            page, selected_page_ref = self._page_for_ref(live, page_ref)
-            method = method or (spec.method if spec is not None else None)
-            if not method:
-                raise ValidationError("browser page method is required")
-            manifest_arguments = _merge_manifest_call_arguments(
-                spec=spec,
-                arguments=arguments,
-                raw_args=raw_args,
-                raw_kwargs=raw_kwargs,
-            )
-            if method == "goto":
-                response = await page.goto(
-                    manifest_arguments["url"],
-                    wait_until=manifest_arguments.get("wait_until"),
-                    timeout=_timeout(manifest_arguments),
-                    referer=manifest_arguments.get("referer"),
-                )
-                status = getattr(response, "status", None)
-                return BrowserCallResult(
-                    method=method,
-                    status="ok",
-                    page_ref=selected_page_ref,
-                    url=page.url,
-                    page_refs=live.page_refs,
-                    value={"response_status": status} if status is not None else None,
-                )
-            if method == "click":
-                await page.click(
-                    manifest_arguments["selector"],
-                    button=manifest_arguments.get("button", "left"),
-                    click_count=_click_count(manifest_arguments),
-                    timeout=_timeout(manifest_arguments),
-                )
-                return BrowserCallResult(
-                    method=method,
-                    status="ok",
-                    page_ref=selected_page_ref,
-                    url=page.url,
-                    page_refs=live.page_refs,
-                )
-            if method == "fill":
-                await page.fill(
-                    manifest_arguments["selector"],
-                    manifest_arguments["value"],
-                    timeout=_timeout(manifest_arguments),
-                )
-                return BrowserCallResult(
-                    method=method,
-                    status="ok",
-                    page_ref=selected_page_ref,
-                    url=page.url,
-                    page_refs=live.page_refs,
-                )
-            if method == "type":
-                await page.type(
-                    manifest_arguments["selector"],
-                    manifest_arguments["text"],
-                    delay=_delay(manifest_arguments),
-                    timeout=_timeout(manifest_arguments),
-                )
-                return BrowserCallResult(
-                    method=method,
-                    status="ok",
-                    page_ref=selected_page_ref,
-                    url=page.url,
-                    page_refs=live.page_refs,
-                )
-            if method == "press":
-                await page.press(
-                    manifest_arguments["selector"],
-                    manifest_arguments["key"],
-                    timeout=_timeout(manifest_arguments),
-                )
-                return BrowserCallResult(
-                    method=method,
-                    status="ok",
-                    page_ref=selected_page_ref,
-                    url=page.url,
-                    page_refs=live.page_refs,
-                )
-            if method == "select_option":
-                value = await page.select_option(
-                    manifest_arguments["selector"],
-                    manifest_arguments["values"],
-                    timeout=_timeout(manifest_arguments),
-                )
-                return BrowserCallResult(
-                    method=method,
-                    status="ok",
-                    page_ref=selected_page_ref,
-                    url=page.url,
-                    page_refs=live.page_refs,
-                    value=value,
-                )
-            if method == "wait_for_selector":
-                await page.wait_for_selector(
-                    manifest_arguments["selector"],
-                    state=manifest_arguments.get("state"),
-                    timeout=_timeout(manifest_arguments),
-                )
-                return BrowserCallResult(
-                    method=method,
-                    status="ok",
-                    page_ref=selected_page_ref,
-                    url=page.url,
-                    page_refs=live.page_refs,
-                )
-            if method == "wait_for_load_state":
-                await page.wait_for_load_state(
-                    state=manifest_arguments.get("state"),
-                    timeout=_timeout(manifest_arguments),
-                )
-                return BrowserCallResult(
-                    method=method,
-                    status="ok",
-                    page_ref=selected_page_ref,
-                    url=page.url,
-                    page_refs=live.page_refs,
-                )
-            if method == "wait_for_timeout":
-                await page.wait_for_timeout(_timeout(manifest_arguments))
-                return BrowserCallResult(
-                    method=method,
-                    status="ok",
-                    page_ref=selected_page_ref,
-                    url=page.url,
-                    page_refs=live.page_refs,
-                )
-            if method == "title":
-                return BrowserCallResult(
-                    method=method,
-                    status="ok",
-                    page_ref=selected_page_ref,
-                    url=page.url,
-                    page_refs=live.page_refs,
-                    title=await page.title(),
-                )
-            if method == "url":
-                return BrowserCallResult(
-                    method=method,
-                    status="ok",
-                    page_ref=selected_page_ref,
-                    url=page.url,
-                    page_refs=live.page_refs,
-                    value=page.url,
-                )
-            if method == "text_content":
-                value = await page.text_content(
-                    manifest_arguments["selector"],
-                    timeout=_timeout(manifest_arguments),
-                )
-                return BrowserCallResult(
-                    method=method,
-                    status="ok",
-                    page_ref=selected_page_ref,
-                    url=page.url,
-                    page_refs=live.page_refs,
-                    value=value,
-                )
-            if method == "inner_text":
-                value = await page.inner_text(
-                    manifest_arguments["selector"],
-                    timeout=_timeout(manifest_arguments),
-                )
-                return BrowserCallResult(
-                    method=method,
-                    status="ok",
-                    page_ref=selected_page_ref,
-                    url=page.url,
-                    page_refs=live.page_refs,
-                    value=value,
-                )
-            if method == "locator_count":
-                value = await page.locator(manifest_arguments["selector"]).count()
-                return BrowserCallResult(
-                    method=method,
-                    status="ok",
-                    page_ref=selected_page_ref,
-                    url=page.url,
-                    page_refs=live.page_refs,
-                    value=value,
-                )
-            if method == "evaluate":
-                if "arg" in manifest_arguments:
-                    value = await page.evaluate(
-                        manifest_arguments["script"],
-                        manifest_arguments.get("arg"),
-                    )
-                else:
-                    value = await page.evaluate(manifest_arguments["script"])
-                return BrowserCallResult(
-                    method=method,
-                    status="ok",
-                    page_ref=selected_page_ref,
-                    url=page.url,
-                    page_refs=live.page_refs,
-                    value=value,
-                )
-            if method == "add_init_script":
-                kwargs: dict[str, Any] = {}
-                if manifest_arguments.get("script") is not None:
-                    kwargs["script"] = manifest_arguments["script"]
-                if manifest_arguments.get("path") is not None:
-                    kwargs["path"] = manifest_arguments["path"]
-                await page.add_init_script(**kwargs)
-                return BrowserCallResult(
-                    method=method,
-                    status="ok",
-                    page_ref=selected_page_ref,
-                    url=page.url,
-                    page_refs=live.page_refs,
-                )
-            if method.startswith("_"):
-                raise ValidationError("private browser page methods are not callable")
-            target = getattr(page, method, None)
-            if not callable(target):
-                raise ValidationError(
-                    "browser page method is not callable",
-                    data={"method": method},
-                )
-            args = list(raw_args or arguments.pop("args", []) or [])
-            kwargs = dict(raw_kwargs or arguments.pop("kwargs", {}) or {})
-            if arguments:
-                kwargs.update(arguments)
-            value = target(*args, **kwargs)
-            if isawaitable(value):
-                value = await value
-            self._sync_pages(live)
-            result_page_ref = self._page_ref_for(live, value) or selected_page_ref
-            return BrowserCallResult(
-                method=method,
-                status="ok",
-                page_ref=result_page_ref,
-                url=page.url,
-                page_refs=live.page_refs,
-                value=_json_safe(value, live=live),
-            )
-        raise ValidationError("unsupported browser page method", data={"method": method})
-
-    async def run_script(
-        self,
-        *,
-        session_ref: str,
-        script: str,
-        arg: Any | None = None,
-        page_ref: str | None = None,
-    ) -> BrowserCallResult:
-        arguments: dict[str, Any] = {"script": script}
-        if arg is not None:
-            arguments["arg"] = arg
-        from stackos.browser.manifest import get_method_spec
-
-        spec = get_method_spec("evaluate")
-        if spec is None:
-            raise ValidationError("browser evaluate method is not registered")
-        return await self.page_call(
-            session_ref=session_ref,
-            spec=spec,
-            arguments=arguments,
-            page_ref=page_ref,
-        )
-
-    async def inject_script(
-        self,
-        *,
-        session_ref: str,
-        script: str,
-        page_ref: str | None = None,
-    ) -> BrowserCallResult:
-        from stackos.browser.manifest import get_method_spec
-
-        spec = get_method_spec("add_init_script")
-        if spec is None:
-            raise ValidationError("browser add_init_script method is not registered")
-        return await self.page_call(
-            session_ref=session_ref,
-            spec=spec,
-            arguments={"script": script},
-            page_ref=page_ref,
-        )
-
-    async def context_call(
-        self,
-        *,
-        session_ref: str,
-        method: str,
-        arguments: dict[str, Any],
-        raw_args: list[Any] | None = None,
-        raw_kwargs: dict[str, Any] | None = None,
-    ) -> BrowserCallResult:
-        live = self.get_session(session_ref=session_ref)
-        async with live.lock:
-            if method.startswith("_"):
-                raise ValidationError("private browser context methods are not callable")
-            target = getattr(live.context, method, None)
-            if not callable(target):
-                raise ValidationError(
-                    "browser context method is not callable",
-                    data={"method": method},
-                )
-            args = list(raw_args or arguments.pop("args", []) or [])
-            kwargs = dict(raw_kwargs or arguments.pop("kwargs", {}) or {})
-            if arguments:
-                kwargs.update(arguments)
-            value = target(*args, **kwargs)
-            if isawaitable(value):
-                value = await value
-            self._sync_pages(live)
-            result_page_ref = self._page_ref_for(live, value) or live.page_ref
-            if self._page_ref_for(live, value) is not None:
-                live.active_page_ref = result_page_ref
-            return BrowserCallResult(
-                method=method,
-                status="ok",
-                page_ref=result_page_ref,
-                url=live.page.url,
-                page_refs=live.page_refs,
-                value=_json_safe(value, live=live),
-            )
-
-    async def handle_call(
-        self,
-        *,
-        session_ref: str,
-        handle_ref: str,
-        method: str,
-        arguments: dict[str, Any],
-        raw_args: list[Any] | None = None,
-        raw_kwargs: dict[str, Any] | None = None,
-    ) -> BrowserCallResult:
-        live = self.get_session(session_ref=session_ref)
-        async with live.lock:
-            handle = live.handles.get(handle_ref)
-            if handle is None:
-                raise ValidationError(
-                    "browser handle ref is not live in this session",
+            if owner is not None:
+                raise ConflictError(
+                    "another gstack session owns this persistent profile",
                     data={
-                        "handle_ref": handle_ref,
-                        "live_handle_refs": sorted(live.handles),
+                        "owner_session_ref": owner.session_ref,
+                        "owner_healthy": owner.healthy,
                         "repair": (
-                            "Create a fresh handle with browser.page.call or browser.context.call."
+                            "Stop the existing owner and wait for retirement before using another "
+                            "session key."
                         ),
                     },
                 )
-            if method.startswith("_"):
-                raise ValidationError("private browser handle methods are not callable")
-            target = getattr(handle, method, None)
-            args = list(raw_args or arguments.pop("args", []) or [])
-            kwargs = dict(raw_kwargs or arguments.pop("kwargs", {}) or {})
-            if arguments:
-                kwargs.update(arguments)
-            if callable(target):
-                value = target(*args, **kwargs)
-            elif target is not None and not args and not kwargs:
-                value = target
-            else:
+            self._require_runtime(root)
+            self._prepare_owned_paths(profile_dir=profile_dir, state_file=state_file)
+            process = await self._command_runner(
+                self._require_executable(root),
+                ["status"],
+                gstack_session_cwd(state_file),
+                self._native_env(
+                    profile_dir=profile_dir,
+                    state_file=state_file,
+                    data_dir=root,
+                    include_no_autostart=False,
+                ),
+                b"",
+            )
+            if process.exit_code != 0:
                 raise ValidationError(
-                    "browser handle method is not callable",
-                    data={"handle_ref": handle_ref, "method": method},
+                    "gstack did not start a usable browser session",
+                    data={
+                        "provider": BROWSER_PROVIDER,
+                        "exit_code": process.exit_code,
+                        "repair": GSTACK_RUNTIME_REPAIR,
+                    },
                 )
-            if isawaitable(value):
-                value = await value
-            self._sync_pages(live)
-            result_page_ref = self._page_ref_for(live, value) or live.page_ref
-            return BrowserCallResult(
-                method=method,
-                status="ok",
-                page_ref=result_page_ref,
-                url=live.page.url,
-                page_refs=live.page_refs,
-                value=_json_safe(value, live=live),
+            started = await self.inspect_session(
+                session_ref=session_ref,
+                profile_ref=profile_ref,
+                profile_dir=profile_dir,
+                state_file=state_file,
+                data_dir=root,
             )
+            if not started.owned or not started.healthy:
+                raise ValidationError(
+                    "gstack start completed without a healthy owned session",
+                    data={"session_ref": session_ref, "repair": started.repair},
+                )
+            return started
 
-    async def snapshot(
+    async def stop_session(
         self,
         *,
         session_ref: str,
-        page_ref: str | None = None,
-    ) -> BrowserCallResult:
-        live = self.get_session(session_ref=session_ref)
-        async with live.lock:
-            page, selected_page_ref = self._page_for_ref(live, page_ref)
-            title = await page.title()
-            try:
-                body_text = await page.locator("body").inner_text(timeout=1000)
-            except Exception:
-                body_text = ""
-            return BrowserCallResult(
-                method="snapshot",
-                status="ok",
-                page_ref=selected_page_ref,
-                url=page.url,
-                title=title,
-                page_refs=live.page_refs,
-                value={"body_text": body_text[:8000]},
+        profile_ref: str,
+        profile_dir: Path,
+        state_file: Path,
+        data_dir: Path | None = None,
+    ) -> NativeSessionState:
+        root = self._resolve_data_dir(data_dir)
+        async with _profile_lock(profile_dir):
+            before = _read_state_file(state_file)
+            current = await self.inspect_session(
+                session_ref=session_ref,
+                profile_ref=profile_ref,
+                profile_dir=profile_dir,
+                state_file=state_file,
+                data_dir=root,
             )
+            if not current.owned or before is None:
+                return NativeSessionState(
+                    session_ref=session_ref,
+                    profile_ref=profile_ref,
+                    status="stale",
+                    owned=False,
+                    healthy=False,
+                    pid=None,
+                    repair="gstack session was already retired or could not be verified",
+                )
+            self._require_runtime(root)
+            result = await self._command_runner(
+                self._require_executable(root),
+                ["stop"],
+                gstack_session_cwd(state_file),
+                self._native_env(
+                    profile_dir=profile_dir,
+                    state_file=state_file,
+                    data_dir=root,
+                    include_no_autostart=False,
+                ),
+                b"",
+            )
+            if result.exit_code != 0:
+                raise ValidationError(
+                    "gstack stop command failed",
+                    data={"session_ref": session_ref, "exit_code": result.exit_code},
+                )
+            deadline = asyncio.get_running_loop().time() + self._stop_timeout_seconds
+            while True:
+                if self._state_retired(state_file, before) and not self._identity_is_alive(
+                    before, root
+                ):
+                    return NativeSessionState(
+                        session_ref=session_ref,
+                        profile_ref=profile_ref,
+                        status="stopped",
+                        owned=False,
+                        healthy=False,
+                        pid=None,
+                    )
+                if asyncio.get_running_loop().time() >= deadline:
+                    raise ValidationError(
+                        "gstack acknowledged stop but the owned process has not retired",
+                        data={
+                            "session_ref": session_ref,
+                            "pid": before.pid,
+                            "repair": (
+                                "Wait for the owned gstack process and state to retire; StackOS "
+                                "will not kill it or clear profile locks."
+                            ),
+                        },
+                    )
+                await asyncio.sleep(_STOP_POLL_SECONDS)
 
-    async def screenshot(
+    async def run_native(
         self,
         *,
         session_ref: str,
-        path: Path,
-        full_page: bool,
-        page_ref: str | None = None,
-    ) -> BrowserCallResult:
-        live = self.get_session(session_ref=session_ref)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        async with live.lock:
-            page, selected_page_ref = self._page_for_ref(live, page_ref)
-            await page.screenshot(path=str(path), full_page=full_page)
-            return BrowserCallResult(
-                method="screenshot",
-                status="ok",
-                page_ref=selected_page_ref,
-                url=page.url,
-                title=await page.title(),
-                page_refs=live.page_refs,
-                screenshot_path=path,
-                screenshot_mime_type="image/png",
-            )
-
-    def _sync_pages(self, live: LiveBrowserSession) -> None:
-        context_pages = list(getattr(live.context, "pages", []) or [])
-        known_ids = {id(page): ref for ref, page in live.pages.items()}
-        for page in context_pages:
-            if id(page) in known_ids:
-                continue
-            page_ref = f"{live.session_ref}:page-{len(live.pages) + 1}"
-            live.pages[page_ref] = page
-        if live.active_page_ref not in live.pages and live.pages:
-            live.active_page_ref = sorted(live.pages)[0]
-
-    def _page_ref_for(self, live: LiveBrowserSession, page: Any) -> str | None:
-        for ref, candidate in live.pages.items():
-            if candidate is page:
-                return ref
-        return None
-
-    def _handle_ref_for(self, live: LiveBrowserSession, value: Any) -> str | None:
-        for ref, candidate in live.handles.items():
-            if candidate is value:
-                return ref
-        return None
-
-    def _store_handle(self, live: LiveBrowserSession, value: Any) -> str:
-        existing = self._handle_ref_for(live, value)
-        if existing is not None:
-            return existing
-        handle_ref = f"{live.session_ref}:handle-{len(live.handles) + 1}"
-        live.handles[handle_ref] = value
-        return handle_ref
-
-    def _page_for_ref(
-        self,
-        live: LiveBrowserSession,
-        page_ref: str | None,
-    ) -> tuple[Any, str]:
-        self._sync_pages(live)
-        selected_ref = page_ref or live.active_page_ref
-        page = live.pages.get(selected_ref)
-        if page is None:
+        profile_ref: str,
+        profile_dir: Path,
+        state_file: Path,
+        data_dir: Path | None = None,
+        argv: list[str],
+        stdin: str | None = None,
+    ) -> NativeCliResult:
+        if not all(isinstance(arg, str) for arg in argv):
+            raise ValidationError("browser argv must contain only strings")
+        root = self._resolve_data_dir(data_dir)
+        current = await self.inspect_session(
+            session_ref=session_ref,
+            profile_ref=profile_ref,
+            profile_dir=profile_dir,
+            state_file=state_file,
+            data_dir=root,
+        )
+        if not current.owned or not current.healthy:
             raise ValidationError(
-                "browser page ref is not live in this session",
-                data={
-                    "page_ref": selected_ref,
-                    "live_page_refs": live.page_refs,
-                    "repair": (
-                        "Call browser.context.call(method='pages') to refresh known page refs."
-                    ),
-                },
+                "browser session is not available for native commands",
+                data={"session_ref": session_ref, "repair": current.repair},
             )
-        live.active_page_ref = selected_ref
-        return page, selected_ref
+        if current.native_cli is None:
+            raise ValidationError(
+                "browser session is missing its verified native CLI context",
+                data={"session_ref": session_ref},
+            )
+        result = await self._command_runner(
+            Path(current.native_cli.executable),
+            list(argv),
+            Path(current.native_cli.cwd),
+            dict(current.native_cli.env),
+            b"" if stdin is None else stdin.encode("utf-8"),
+        )
+        return NativeCliResult.from_process(result)
+
+    async def discover_sessions(
+        self, *, project_id: int, data_dir: Path | None = None
+    ) -> dict[str, NativeSessionState]:
+        """Inspect deterministic StackOS state only; ambient gstack is never adopted."""
+        root = self._resolve_data_dir(data_dir)
+        project_root = root / "browser-state" / "gstack" / f"project-{project_id}"
+        if not project_root.is_dir():
+            return {}
+        found: dict[str, NativeSessionState] = {}
+        for state_file in project_root.glob("*/*/.gstack/browse.json"):
+            profile_key = safe_browser_key(state_file.parents[2].name)
+            session_key = safe_browser_key(state_file.parents[1].name)
+            profile_ref = f"browser-profile:project-{project_id}:{profile_key}"
+            session_ref = f"browser-session:project-{project_id}:{profile_key}:{session_key}"
+            found[session_ref] = await self.inspect_session(
+                session_ref=session_ref,
+                profile_ref=profile_ref,
+                profile_dir=browser_profile_dir(
+                    root, project_id=project_id, profile_key=profile_key
+                ),
+                state_file=state_file,
+                data_dir=root,
+            )
+        return found
+
+    def _resolve_data_dir(self, data_dir: Path | None) -> Path:
+        return Path(data_dir) if data_dir is not None else _data_dir(self._data_dir)
+
+    def _require_runtime(self, data_dir: Path) -> None:
+        if not _runtime_paths_ready(data_dir):
+            raise ValidationError(
+                "StackOS gstack runtime is not installed",
+                data={"provider": BROWSER_PROVIDER, "repair": GSTACK_RUNTIME_REPAIR},
+            )
+
+    def _require_executable(self, data_dir: Path) -> Path:
+        executable = gstack_executable_path(data_dir)
+        if executable is None:
+            self._require_runtime(data_dir)
+            raise AssertionError("gstack runtime readiness did not provide an executable")
+        return executable
+
+    async def _is_healthy(self, port: int) -> bool:
+        result = self._health_probe(port)
+        return bool(await result) if inspect.isawaitable(result) else bool(result)
+
+    def _matches_owned_identity(
+        self, identity: ProcessIdentity | None, state: _GstackStateFile, data_dir: Path
+    ) -> bool:
+        expected_server = gstack_server_path(data_dir)
+        if identity is None or expected_server is None:
+            return False
+        if (
+            state.server_path != expected_server.resolve()
+            or str(expected_server.resolve()) not in identity.command
+        ):
+            return False
+        offset = state.started_at - identity.started_at.astimezone(UTC)
+        return timedelta(seconds=-5) <= offset <= _IDENTITY_START_TOLERANCE
+
+    def _identity_is_alive(self, state: _GstackStateFile, data_dir: Path) -> bool:
+        return self._matches_owned_identity(
+            self._process_inspector.inspect(state.pid), state, data_dir
+        )
+
+    async def _other_profile_owner(
+        self,
+        *,
+        session_ref: str,
+        profile_ref: str,
+        profile_dir: Path,
+        state_file: Path,
+        data_dir: Path,
+    ) -> NativeSessionState | None:
+        profile_state_root = state_file.parents[2]
+        if not profile_state_root.is_dir():
+            return None
+        prefix, _separator, _session_key = session_ref.rpartition(":")
+        for candidate in profile_state_root.glob("*/.gstack/browse.json"):
+            if candidate == state_file:
+                continue
+            owner = await self.inspect_session(
+                session_ref=f"{prefix}:{safe_browser_key(candidate.parents[1].name)}",
+                profile_ref=profile_ref,
+                profile_dir=profile_dir,
+                state_file=candidate,
+                data_dir=data_dir,
+            )
+            if owner.owned:
+                return owner
+        return None
+
+    def _native_context(
+        self, *, profile_dir: Path, state_file: Path, data_dir: Path, include_no_autostart: bool
+    ) -> NativeCliContext:
+        return NativeCliContext(
+            executable=str(self._require_executable(data_dir)),
+            cwd=str(gstack_session_cwd(state_file)),
+            env=self._native_env(
+                profile_dir=profile_dir,
+                state_file=state_file,
+                data_dir=data_dir,
+                include_no_autostart=include_no_autostart,
+            ),
+        )
+
+    def _native_env(
+        self, *, profile_dir: Path, state_file: Path, data_dir: Path, include_no_autostart: bool
+    ) -> dict[str, str]:
+        root = gstack_runtime_root(data_dir)
+        env = {
+            "BROWSE_STATE_FILE": str(state_file),
+            "CHROMIUM_PROFILE": str(profile_dir),
+            "BROWSE_HEADED": "1",
+            "BROWSE_PARENT_PID": "0",
+            "GSTACK_HOME": str(gstack_session_cwd(state_file) / "gstack-home"),
+            "PLAYWRIGHT_BROWSERS_PATH": str(root / "browsers"),
+            "PATH": os.pathsep.join([str(root / "bin"), "/usr/bin", "/bin", "/usr/sbin", "/sbin"]),
+        }
+        if include_no_autostart:
+            env["BROWSE_NO_AUTOSTART"] = "1"
+        return env
+
+    @staticmethod
+    def _prepare_owned_paths(*, profile_dir: Path, state_file: Path) -> None:
+        for path in (profile_dir, gstack_session_cwd(state_file), state_file.parent):
+            path.mkdir(parents=True, exist_ok=True)
+            os.chmod(path, 0o700)
+
+    def _state_retired(self, state_file: Path, before: _GstackStateFile) -> bool:
+        current = _read_state_file(state_file)
+        if current is None:
+            return True
+        return not (
+            current.pid == before.pid
+            and current.started_at == before.started_at
+            and current.server_path == before.server_path
+        )
+
+    @staticmethod
+    def _stale(session_ref: str, profile_ref: str, repair: str) -> NativeSessionState:
+        return NativeSessionState(
+            session_ref=session_ref,
+            profile_ref=profile_ref,
+            status="stale",
+            owned=False,
+            healthy=False,
+            pid=None,
+            repair=repair,
+        )
 
 
 _RUNTIME = BrowserRuntime()
 
 
-def _json_safe(value: Any, *, live: LiveBrowserSession | None = None) -> Any:
-    """Return a conservative JSON-compatible representation for raw calls."""
-    if live is not None:
-        page_ref = None
-        for ref, page in live.pages.items():
-            if page is value:
-                page_ref = ref
-                break
-        if page_ref is not None:
-            return {
-                "page_ref": page_ref,
-                "url": getattr(value, "url", None),
-                "title": _safe_sync_attr(value, "title"),
-            }
-    if value is None or isinstance(value, str | int | float | bool):
-        return value
-    if isinstance(value, list):
-        return [_json_safe(item, live=live) for item in value]
-    if isinstance(value, tuple):
-        return [_json_safe(item, live=live) for item in value]
-    if isinstance(value, dict):
-        return {str(key): _json_safe(item, live=live) for key, item in value.items()}
-    for attr in ("url", "title", "status"):
-        candidate = getattr(value, attr, None)
-        if isinstance(candidate, str | int | float | bool):
-            handle_ref = (
-                get_browser_runtime()._store_handle(live, value) if live is not None else None
-            )
-            out: dict[str, Any] = {attr: candidate, "repr": repr(value)[:120]}
-            if handle_ref is not None:
-                out["handle_ref"] = handle_ref
-                out["type"] = type(value).__name__
-            return out
-    if live is not None:
-        handle_ref = get_browser_runtime()._store_handle(live, value)
-        return {
-            "handle_ref": handle_ref,
-            "type": type(value).__name__,
-            "repr": repr(value)[:120],
-        }
-    return repr(value)
-
-
-def _safe_sync_attr(value: Any, name: str) -> Any | None:
-    candidate = getattr(value, name, None)
-    if callable(candidate) or isawaitable(candidate):
-        return None
-    if isinstance(candidate, str | int | float | bool):
-        return candidate
-    return None
-
-
 def get_browser_runtime() -> BrowserRuntime:
-    """Return the process-local browser runtime singleton."""
     return _RUNTIME
 
 
 __all__ = [
-    "ALLOWED_LAUNCH_OPTION_KEYS",
-    "CHROMIUM_APP_NAME",
-    "CHROMIUM_EXECUTABLE_RELATIVE_PATH",
-    "CHROMIUM_LICENSE_FILENAME",
-    "CHROMIUM_RUNTIME_DIRNAME",
-    "PLAYWRIGHT_DRIVER_VERSION",
-    "PLAYWRIGHT_EXPECTED_BROWSER_VERSION",
-    "BrowserCallResult",
+    "BROWSER_PROFILE_DIRNAME",
+    "BROWSER_PROVIDER",
+    "GSTACK_RUNTIME_DIRNAME",
+    "GSTACK_RUNTIME_REPAIR",
     "BrowserRuntime",
+    "NativeCliContext",
+    "NativeCliResult",
+    "NativeProcessResult",
+    "NativeSessionState",
+    "ProcessIdentity",
     "RuntimeStatus",
     "browser_profile_dir",
-    "chromium_app_path",
-    "chromium_executable_path",
-    "chromium_license_path",
     "get_browser_runtime",
-    "managed_chromium_app_path",
+    "gstack_browser_assets_path",
+    "gstack_bun_path",
+    "gstack_executable_path",
+    "gstack_manifest_path",
+    "gstack_runtime_root",
+    "gstack_server_path",
+    "gstack_session_cwd",
+    "gstack_state_file",
     "packaged_stackos_root",
-    "playwright_driver_is_compatible",
-    "playwright_driver_version",
     "safe_browser_key",
-    "sanitize_launch_options",
 ]

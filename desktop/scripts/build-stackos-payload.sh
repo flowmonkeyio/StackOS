@@ -182,9 +182,9 @@ PYTHONHOME="${PAYLOAD_DIR}/.venv" PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 \
   "${PAYLOAD_DIR}/.venv/bin/python" -B -c '
 from pathlib import Path
 import sys
-from stackos.install import ensure_chromium_runtime
+from stackos.install import ensure_gstack_runtime
 
-ok, message = ensure_chromium_runtime(runtime_root=Path(sys.argv[1]))
+ok, message = ensure_gstack_runtime(runtime_root=Path(sys.argv[1]))
 if not ok:
     raise SystemExit(message)
 print(message)

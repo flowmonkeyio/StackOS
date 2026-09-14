@@ -1,243 +1,42 @@
 from __future__ import annotations
 
-import asyncio
-import hashlib
-import importlib
+import base64
+import json
 import sys
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
-from typing import Any
+from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError as InputError
 from sqlmodel import Session, SQLModel, select
 
 import stackos.operations.browser as browser_ops
-from stackos.browser.manifest import browser_method_manifest, get_method_spec
-from stackos.browser.runtime import (
-    ALLOWED_LAUNCH_OPTION_KEYS,
-    BrowserCallResult,
-    BrowserRuntime,
-    LiveBrowserSession,
-    RuntimeStatus,
-    browser_profile_dir,
-    chromium_executable_path,
-    get_browser_runtime,
-    managed_chromium_app_path,
-    packaged_stackos_root,
-    sanitize_launch_options,
-)
 from stackos.db.connection import make_memory_engine
-from stackos.db.models import Artifact, BrowserActionReceipt, Project
+from stackos.db.models import (
+    Artifact,
+    BrowserActionReceipt,
+    BrowserProfile,
+    BrowserSession,
+    IdempotencyKey,
+    Project,
+)
 from stackos.mcp.context import MCPContext
 from stackos.mcp.server import ToolRegistry
 from stackos.mcp.tools import register_all
-from stackos.operations.browser import (
-    BrowserHandleCallInput,
-    BrowserPageCallInput,
-    BrowserPageSnapshotInput,
-    BrowserProfileCreateInput,
-    BrowserScreenshotInput,
-    BrowserScriptRunInput,
-    BrowserSessionRefInput,
-    BrowserSessionStartInput,
-)
+from stackos.operations.dispatcher import OperationDispatcher
 from stackos.operations.registry import build_operation_registry
-from stackos.repositories.base import RepositoryError, ValidationError
-from stackos.repositories.browser import BrowserRepository
+from stackos.repositories.base import NotFoundError, ValidationError
 
-browser_migration = importlib.import_module(
-    "stackos.db.migrations.versions.0025_visible_chromium_profiles"
-)
-
-
-class FakeBrowserRuntime:
-    async def page_call(
-        self,
-        *,
-        session_ref: str,
-        spec: Any,
-        method: str | None = None,
-        arguments: dict[str, Any],
-        raw_args: list[Any] | None = None,
-        raw_kwargs: dict[str, Any] | None = None,
-        page_ref: str | None = None,
-    ) -> BrowserCallResult:
-        _ = spec, raw_args, raw_kwargs
-        call_method = method or "dynamic"
-        if call_method == "explode":
-            raise RuntimeError("boom secret-token")
-        return BrowserCallResult(
-            method=call_method,
-            status="ok",
-            page_ref=page_ref or f"{session_ref}:page-1",
-            url="https://example.com/page?token=secret#frag",
-            title="Visible title secret-token",
-            value={"secret": "do-not-store", "count": 1, "arguments": arguments},
-            page_refs=[f"{session_ref}:page-1", f"{session_ref}:page-2"],
-        )
-
-    async def context_call(
-        self,
-        *,
-        session_ref: str,
-        method: str,
-        arguments: dict[str, Any],
-        raw_args: list[Any] | None = None,
-        raw_kwargs: dict[str, Any] | None = None,
-    ) -> BrowserCallResult:
-        _ = arguments, raw_args, raw_kwargs
-        if method == "explode":
-            raise RuntimeError("context secret-token")
-        return BrowserCallResult(
-            method=method,
-            status="ok",
-            page_ref=f"{session_ref}:page-1",
-            url="https://example.com/context?auth=secret",
-            value={"cookies": [{"name": "session", "value": "cookie-secret"}]},
-            page_refs=[f"{session_ref}:page-1", f"{session_ref}:page-2"],
-        )
-
-    async def handle_call(
-        self,
-        *,
-        session_ref: str,
-        handle_ref: str,
-        method: str,
-        arguments: dict[str, Any],
-        raw_args: list[Any] | None = None,
-        raw_kwargs: dict[str, Any] | None = None,
-    ) -> BrowserCallResult:
-        _ = arguments, raw_args, raw_kwargs
-        if method == "explode":
-            raise RuntimeError("handle secret-token")
-        return BrowserCallResult(
-            method=method,
-            status="ok",
-            page_ref=f"{session_ref}:page-1",
-            url="https://example.com/handle?auth=secret",
-            value={"handle_ref": handle_ref, "clicked": True},
-            page_refs=[f"{session_ref}:page-1", f"{session_ref}:page-2"],
-        )
-
-    async def screenshot(
-        self,
-        *,
-        session_ref: str,
-        path: Path,
-        full_page: bool,
-        page_ref: str | None = None,
-    ) -> BrowserCallResult:
-        _ = full_page
-        if "fail" in path.name:
-            raise RuntimeError("screenshot /private/profile secret-token")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(b"\x89PNG\r\n\x1a\nfake")
-        return BrowserCallResult(
-            method="screenshot",
-            status="ok",
-            page_ref=page_ref or f"{session_ref}:page-1",
-            url="https://example.com/shot?token=secret#frag",
-            title="Screenshot page secret-token",
-            page_refs=[f"{session_ref}:page-1", f"{session_ref}:page-2"],
-            screenshot_path=path,
-            screenshot_mime_type="image/png",
-        )
-
-    async def snapshot(
-        self,
-        *,
-        session_ref: str,
-        page_ref: str | None = None,
-    ) -> BrowserCallResult:
-        if page_ref and page_ref.endswith(":explode"):
-            raise RuntimeError("snapshot /private/profile secret-token")
-        return BrowserCallResult(
-            method="snapshot",
-            status="ok",
-            page_ref=page_ref or f"{session_ref}:page-1",
-            url="https://example.com/snapshot?token=secret#frag",
-            title="Snapshot title secret-token",
-            value={"text": "raw snapshot secret"},
-            page_refs=[f"{session_ref}:page-1", f"{session_ref}:page-2"],
-        )
-
-    async def start_session(
-        self,
-        *,
-        session_ref: str,
-        profile_ref: str,
-        profile_dir: Path,
-        launch_options: dict[str, Any] | None,
-    ) -> Any:
-        _ = profile_ref, profile_dir
-        if launch_options and launch_options.get("fail"):
-            raise RuntimeError("start /private/profile secret-token")
-        return SimpleNamespace(
-            page_ref=f"{session_ref}:page-1",
-            page_refs=[f"{session_ref}:page-1"],
-            page=SimpleNamespace(url="about:blank"),
-        )
-
-    async def stop_session(self, *, session_ref: str) -> bool:
-        return not session_ref.endswith(":missing-live")
-
-
-class FakeDynamicPage:
-    def __init__(self, url: str = "about:blank") -> None:
-        self.url = url
-        self.calls: list[dict[str, Any]] = []
-
-    async def goto(
-        self,
-        url: str,
-        *,
-        wait_until: str | None = None,
-        timeout: int | None = None,
-        referer: str | None = None,
-    ) -> SimpleNamespace:
-        self.url = url
-        self.calls.append(
-            {
-                "method": "goto",
-                "url": url,
-                "wait_until": wait_until,
-                "timeout": timeout,
-                "referer": referer,
-            }
-        )
-        return SimpleNamespace(status=204)
-
-    async def public_method(self, value: str, *, suffix: str) -> dict[str, str]:
-        return {"value": value, "suffix": suffix}
-
-    def locator(self, selector: str) -> FakeLocator:
-        return FakeLocator(selector)
-
-    async def title(self) -> str:
-        return "Fake Page"
-
-
-class FakeLocator:
-    def __init__(self, selector: str) -> None:
-        self.selector = selector
-
-    async def count(self) -> int:
-        return 3
-
-
-class FakeDynamicContext:
-    def __init__(self) -> None:
-        self.pages = [FakeDynamicPage("about:one")]
-
-    async def new_page(self) -> FakeDynamicPage:
-        page = FakeDynamicPage("about:two")
-        self.pages.append(page)
-        return page
-
-
-class FakeManager:
-    async def __aexit__(self, *_args: object) -> None:
-        return None
+BROWSER_OPERATIONS = {
+    "browser.runtime.status",
+    "browser.profile.create",
+    "browser.profile.list",
+    "browser.session.start",
+    "browser.session.list",
+    "browser.session.status",
+    "browser.session.stop",
+    "browser.cli.run",
+}
 
 
 @pytest.fixture
@@ -248,7 +47,7 @@ def browser_operation_context(tmp_path: Path):
         project = Project(
             slug="browser-unit",
             name="Browser Unit",
-            domain="example.com",
+            domain="browser-unit.example.test",
             locale="en-US",
             is_active=True,
         )
@@ -256,1007 +55,210 @@ def browser_operation_context(tmp_path: Path):
         session.commit()
         session.refresh(project)
         assert project.id is not None
-
-        repo = BrowserRepository(session)
-        profile_env = repo.create_profile(
+        profile = BrowserProfile(
             project_id=project.id,
             profile_key="default",
             name="Default",
-            allowed_origins_json=None,
-            launch_options_json=None,
-            metadata_json=None,
+            profile_ref=f"browser-profile:project-{project.id}:default",
+            metadata_json={"purpose": "synthetic proof"},
         )
-        profile = repo.get_profile(
-            project_id=project.id,
-            profile_ref=profile_env.data.profile_ref,
+        session.add(profile)
+        session.commit()
+        session.refresh(profile)
+        assert profile.id is not None
+        session_ref = f"browser-session:project-{project.id}:default:default"
+        session.add(
+            BrowserSession(
+                project_id=project.id,
+                profile_id=profile.id,
+                session_ref=session_ref,
+                status="running",
+            )
         )
-        session_ref = repo.session_ref(
-            project_id=project.id,
-            profile_key="default",
-            session_key="default",
-        )
-        repo.create_or_update_session(
-            project_id=project.id,
-            profile=profile,
-            session_ref=session_ref,
-            page_refs=[f"{session_ref}:page-1"],
-            current_url="https://example.com/start?token=old#frag",
-            metadata_json=None,
-        )
+        session.commit()
         ctx = MCPContext(
             session=session,
             request_id="browser-unit",
-            run_id=321,
             project_id=project.id,
-            extras={
-                "settings": SimpleNamespace(
-                    generated_assets_dir=tmp_path / "generated-assets",
-                    data_dir=tmp_path / "data",
-                )
-            },
+            extras={"settings": SimpleNamespace(data_dir=tmp_path / "data")},
         )
         yield project.id, session_ref, ctx, session
     engine.dispose()
 
 
-def _receipt_rows(session: Session) -> list[BrowserActionReceipt]:
-    return list(session.exec(select(BrowserActionReceipt)).all())
-
-
-def test_browser_manifest_is_full_control_not_restrictive() -> None:
-    methods = {row["method"]: row for row in browser_method_manifest()}
-
-    assert methods["evaluate"]["exposure"] == "supported"
-    assert methods["add_init_script"]["exposure"] == "supported"
-    assert "route" not in methods
-    assert "context_cookies" not in methods
-    assert "context_storage_state" not in methods
-    assert all(row["exposure"] == "supported" for row in methods.values())
-    assert get_method_spec("totally_dynamic_method") is None
-
-
-def test_browser_operation_specs_are_raw_side_effects() -> None:
+def test_native_browser_replaces_all_command_wrappers() -> None:
     registry = build_operation_registry()
-
-    for name in (
-        "browser.profile.create",
-        "browser.session.start",
-        "browser.session.stop",
-        "browser.page.call",
-        "browser.context.call",
-        "browser.handle.call",
-        "browser.script.run",
-        "browser.script.inject",
-        "browser.page.snapshot",
-        "browser.page.screenshot",
-    ):
-        described = registry.get(name).describe_out()
-        assert described.mutating is True
-        assert described.secret_policy == "raw-browser-output"
-        assert described.response_policy.default_mode == "raw"
-        assert described.response_policy.allowed_modes == ["raw"]
+    assert {
+        spec.name for spec in registry.all() if spec.name.startswith("browser.")
+    } == BROWSER_OPERATIONS
+    for surface in ("mcp", "rest", "cli"):
+        assert {
+            spec.name for spec in registry.by_surface(surface) if spec.name.startswith("browser.")
+        } == BROWSER_OPERATIONS
+    tools = ToolRegistry()
+    register_all(tools)
+    assert tools.get("browser.session.list").read_only
+    assert not tools.get("browser.cli.run").read_only
 
 
-def test_browser_mcp_tools_use_operation_read_only_flags() -> None:
-    registry = ToolRegistry()
-    register_all(registry)
-
-    assert registry.get("browser.runtime.status").read_only is True
-    assert registry.get("browser.profile.list").read_only is True
-    assert registry.get("browser.page.call").read_only is False
-    assert registry.get("browser.context.call").read_only is False
-    assert registry.get("browser.handle.call").read_only is False
-
-
-def test_browser_runtime_status_is_repair_or_ready() -> None:
-    status = get_browser_runtime().status()
-
-    assert status.provider == "playwright"
-    assert isinstance(status.package_installed, bool)
-    assert isinstance(status.browser_downloaded, bool)
-    if not status.browser_downloaded:
-        assert status.repair
+def test_native_relay_rejects_replay_and_preserves_unrestricted_argv() -> None:
+    spec = build_operation_registry().get("browser.cli.run")
+    args = {"project_id": 1, "session_ref": "selected", "argv": ["unknown", "a b", ""]}
+    for field in ("idempotency_key", "expected_etag"):
+        with pytest.raises(InputError):
+            spec.input_model.model_validate({**args, field: "do-not-replay"})
+    assert spec.input_model.model_validate(args).argv == args["argv"]
+    assert spec.response_policy.allowed_modes == ("raw",)
 
 
-def test_browser_runtime_status_redacts_paths_and_filters_sessions() -> None:
-    status = RuntimeStatus(
-        provider="playwright",
-        package_installed=True,
-        package_version="1.60.0",
-        browser_downloaded=True,
-        executable_path="/private/stackos/playwright/chromium",
-        live_session_refs=[
-            "browser-session:project-1:default:default",
-            "browser-session:project-2:default:default",
-        ],
+def _native_fixture(monkeypatch, tmp_path, session_ref, *, stdout: bytes, stderr: bytes):
+    from stackos.browser.runtime import BrowserRuntime, NativeCliContext, NativeSessionState
+
+    executable = tmp_path / "upstream-cli"
+    receipt = tmp_path / "invocations.jsonl"
+    executable.write_text(
+        f"#!{sys.executable}\n"
+        "import base64,json,os,sys\n"
+        f"with open({str(receipt)!r}, 'a') as f:\n"
+        " f.write(json.dumps({'argv':sys.argv[1:],"
+        "'stdin':base64.b64encode(sys.stdin.buffer.read()).decode(),"
+        "'cwd':os.getcwd(),'no_autostart':os.environ.get('BROWSE_NO_AUTOSTART')})+'\\n')\n"
+        f"sys.stdout.buffer.write({stdout!r})\n"
+        f"sys.stderr.buffer.write({stderr!r})\n"
+        "sys.exit(17)\n"
     )
-
-    public = status.to_dict(project_id=1)
-
-    assert public["browser_path_present"] is True
-    assert public["executable_path"] is None
-    assert public["live_session_refs"] == ["browser-session:project-1:default:default"]
-    assert status.to_dict()["live_session_refs"] == []
-
-
-def test_sanitize_launch_options_allows_only_non_sensitive_preferences() -> None:
-    with pytest.raises(ValidationError) as exc:
-        sanitize_launch_options(
-            {
-                "args": ["--user-data-dir=/private/main-account"],
-                "channel": "chrome",
-                "executable_path": "/Applications/Google Chrome.app",
-                "headless": False,
-                "humanize": True,
-                "ignore_default_args": True,
-                "proxy": {"server": "http://localhost"},
-                "user_data_dir": "/tmp/profile",
-            }
-        )
-
-    assert exc.value.data["blocked_keys"] == [
-        "args",
-        "channel",
-        "executable_path",
-        "headless",
-        "humanize",
-        "ignore_default_args",
-        "proxy",
-        "user_data_dir",
-    ]
-    assert (
-        frozenset({"locale", "timezone_id", "user_agent", "viewport"}) == ALLOWED_LAUNCH_OPTION_KEYS
+    executable.chmod(0o700)
+    native = NativeCliContext(
+        executable=str(executable), cwd=str(tmp_path), env={"BROWSE_NO_AUTOSTART": "1"}
     )
-    assert sanitize_launch_options(
-        {
-            "locale": "en-US",
-            "timezone_id": "UTC",
-            "user_agent": "StackOS",
-            "viewport": {"width": 1280, "height": 720},
-        }
-    ) == {
-        "locale": "en-US",
-        "timezone_id": "UTC",
-        "user_agent": "StackOS",
-        "viewport": {"width": 1280, "height": 720},
-    }
+    state = NativeSessionState(
+        session_ref=session_ref,
+        profile_ref=session_ref.replace("browser-session", "browser-profile").rsplit(":", 1)[0],
+        status="running",
+        owned=True,
+        healthy=True,
+        pid=123,
+        repair=None,
+        native_cli=native,
+    )
+    runtime = BrowserRuntime()
+
+    async def inspect_session(**kwargs):
+        assert kwargs["session_ref"] == session_ref
+        return state
+
+    monkeypatch.setattr(runtime, "inspect_session", inspect_session)
+    monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: runtime)
+    return runtime, state, receipt
 
 
-def test_browser_session_start_contract_rejects_headless() -> None:
-    with pytest.raises(ValueError):
-        BrowserSessionStartInput(project_id=1, headless=False)
-
-
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("raw", "expected"),
+    ("stdout", "stderr", "encoding"),
     [
-        (None, None),
-        ("not-json", None),
-        ("[]", None),
-        ("true", None),
-        ("{}", None),
-        (
-            '{"locale":"en-US","args":["--user-data-dir=/private/main"],"viewport":{"width":1}}',
-            '{"locale":"en-US","viewport":{"width":1}}',
-        ),
-        ('{"timezone_id":"UTC"}', '{"timezone_id":"UTC"}'),
+        ("こんにちは\r\n\x1b[31mraw\x00\n\n".encode(), b"cookie=synthetic-secret\r\n", "utf-8"),
+        (b"\xff\x00\r\n", b"valid stderr\n", "base64"),
+        (b"valid stdout\n", b"\xfe\x00", "base64"),
     ],
 )
-def test_browser_profile_migration_scrubs_only_unsafe_options(
-    raw: str | None,
-    expected: str | None,
+async def test_native_relay_preserves_argv_stdin_streams_and_nonzero_exit(
+    browser_operation_context, monkeypatch, tmp_path, stdout, stderr, encoding
 ) -> None:
-    assert browser_migration._serialized_safe_options(raw) == expected
-    assert browser_migration._serialized_safe_options(expected) == expected
-
-
-def test_runtime_resolves_only_packaged_or_managed_chromium(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    executable = (
-        tmp_path / "StackOS.app" / "Contents" / "Resources" / "stackos" / ".venv" / "bin" / "python"
+    project_id, session_ref, ctx, session = browser_operation_context
+    _runtime, _state, receipt = _native_fixture(
+        monkeypatch, tmp_path, session_ref, stdout=stdout, stderr=stderr
     )
-    executable.parent.mkdir(parents=True)
-    executable.write_text("", encoding="utf-8")
-    app = executable.parents[2] / "Chromium.app"
-    browser = app / "Contents" / "MacOS" / "Chromium"
-    browser.parent.mkdir(parents=True)
-    browser.write_text("", encoding="utf-8")
-    browser.chmod(0o755)
-    monkeypatch.setattr("stackos.browser.runtime.sys.executable", str(executable))
-
-    assert packaged_stackos_root() == executable.parents[2]
-    assert chromium_executable_path(tmp_path / "ignored-data-dir") == browser
-
-    clone_python = tmp_path / "clone" / ".venv" / "bin" / "python"
-    clone_python.parent.mkdir(parents=True)
-    clone_python.write_text("", encoding="utf-8")
-    monkeypatch.setattr("stackos.browser.runtime.sys.executable", str(clone_python))
-    managed = managed_chromium_app_path(tmp_path / "managed")
-    managed_executable = managed / "Contents" / "MacOS" / "Chromium"
-    managed_executable.parent.mkdir(parents=True)
-    managed_executable.write_text("", encoding="utf-8")
-    managed_executable.chmod(0o755)
-    assert packaged_stackos_root() is None
-    assert chromium_executable_path(tmp_path / "managed") == managed_executable
-
-
-def test_runtime_forces_visible_canonical_chromium(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    captured: dict[str, Any] = {}
-
-    class FakePage:
-        url = "about:blank"
-
-    class FakeContext:
-        def __init__(self) -> None:
-            self.pages: list[FakePage] = []
-
-        async def new_page(self) -> FakePage:
-            page = FakePage()
-            self.pages.append(page)
-            return page
-
-    class FakeChromium:
-        async def launch_persistent_context(self, **kwargs: Any) -> FakeContext:
-            captured.update(kwargs)
-            return FakeContext()
-
-    class FakeManager:
-        async def __aenter__(self) -> SimpleNamespace:
-            return SimpleNamespace(chromium=FakeChromium())
-
-        async def __aexit__(self, *_args: object) -> None:
-            return None
-
-    fake_async_api = ModuleType("playwright.async_api")
-    fake_async_api.async_playwright = lambda: FakeManager()
-    monkeypatch.setitem(sys.modules, "playwright.async_api", fake_async_api)
-    monkeypatch.setattr("stackos.browser.runtime.playwright_driver_is_compatible", lambda: True)
-    chromium = tmp_path / "Chromium.app" / "Contents" / "MacOS" / "Chromium"
-    monkeypatch.setattr("stackos.browser.runtime.chromium_executable_path", lambda: chromium)
-
-    live = asyncio.run(
-        BrowserRuntime().start_session(
-            session_ref="browser-session:project-1:visible:default",
-            profile_ref="browser-profile:project-1:visible",
-            profile_dir=tmp_path / "profile",
-            launch_options={"locale": "en-US"},
-        )
+    argv = ["unknown-command", "a b", "'quoted'", '"quoted"', "$(untouched)", ""]
+    stdin = '[ ["js", "Unicode 日本語"] ]\n\x00\r\n'
+    args = {"project_id": project_id, "session_ref": session_ref, "argv": argv, "stdin": stdin}
+    dispatched = await OperationDispatcher(build_operation_registry()).dispatch(
+        "browser.cli.run",
+        args,
+        session=session,
+        surface="mcp",
+        settings=ctx.extras["settings"],
     )
-
-    assert live.page_ref.endswith(":page-1")
-    assert captured == {
-        "user_data_dir": str(tmp_path / "profile"),
-        "executable_path": str(chromium),
-        "headless": False,
-        "locale": "en-US",
-    }
-
-
-def test_browser_profile_dir_is_provider_engine_scoped() -> None:
-    path = browser_profile_dir(
-        Path("/tmp/stackos"),
-        project_id=7,
-        profile_key="My Profile!",
-    )
-
-    assert path == (
-        Path("/tmp/stackos")
-        / "browser-profiles"
-        / "playwright-chromium"
-        / "project-7"
-        / "my-profile"
-    )
-
-
-def test_runtime_dynamic_page_and_context_methods_support_page_refs() -> None:
-    runtime = BrowserRuntime()
-    session_ref = "browser-session:project-1:default:dynamic"
-    context = FakeDynamicContext()
-    runtime._sessions[session_ref] = LiveBrowserSession(
-        session_ref=session_ref,
-        profile_ref="browser-profile:project-1:default",
-        profile_dir=Path("/tmp/browser-profile"),
-        manager=FakeManager(),
-        context=context,
-        pages={f"{session_ref}:page-1": context.pages[0]},
-        active_page_ref=f"{session_ref}:page-1",
-    )
-
-    opened = asyncio.run(
-        runtime.context_call(
-            session_ref=session_ref,
-            method="new_page",
-            arguments={},
-        )
-    )
-
-    assert opened.page_ref == f"{session_ref}:page-2"
-    assert opened.value == {
-        "page_ref": f"{session_ref}:page-2",
-        "url": "about:two",
-        "title": None,
-    }
-    assert opened.page_refs == [f"{session_ref}:page-1", f"{session_ref}:page-2"]
-
-    navigated = asyncio.run(
-        runtime.page_call(
-            session_ref=session_ref,
-            spec=get_method_spec("goto"),
-            method="goto",
-            arguments={},
-            raw_args=["https://example.test/login"],
-            raw_kwargs={"wait_until": "domcontentloaded", "timeout": 1234},
-            page_ref=f"{session_ref}:page-2",
-        )
-    )
-
-    assert navigated.status == "ok"
-    assert navigated.url == "https://example.test/login"
-    assert navigated.value == {"response_status": 204}
-    assert context.pages[1].calls == [
+    data = dispatched.payload["data"]
+    assert set(data) == {"stdout", "stderr", "exit_code", "encoding"}
+    assert data["exit_code"] == 17
+    assert data["encoding"] == encoding
+    decode = (lambda value: value.encode("utf-8")) if encoding == "utf-8" else base64.b64decode
+    assert decode(data["stdout"]) == stdout
+    assert decode(data["stderr"]) == stderr
+    calls = [json.loads(line) for line in receipt.read_text().splitlines()]
+    assert calls == [
         {
-            "method": "goto",
-            "url": "https://example.test/login",
-            "wait_until": "domcontentloaded",
-            "timeout": 1234,
-            "referer": None,
+            "argv": argv,
+            "stdin": base64.b64encode(stdin.encode()).decode(),
+            "cwd": str(tmp_path),
+            "no_autostart": "1",
         }
     ]
-
-    called = asyncio.run(
-        runtime.page_call(
-            session_ref=session_ref,
-            spec=None,
-            method="public_method",
-            arguments={},
-            raw_args=["hello"],
-            raw_kwargs={"suffix": "world"},
-            page_ref=f"{session_ref}:page-2",
-        )
-    )
-
-    assert called.page_ref == f"{session_ref}:page-2"
-    assert called.value == {"value": "hello", "suffix": "world"}
-
-    locator = asyncio.run(
-        runtime.page_call(
-            session_ref=session_ref,
-            spec=None,
-            method="locator",
-            arguments={"selector": "#submit"},
-            page_ref=f"{session_ref}:page-2",
-        )
-    )
-
-    assert locator.value["handle_ref"] == f"{session_ref}:handle-1"
-    assert locator.value["type"] == "FakeLocator"
-
-    counted = asyncio.run(
-        runtime.handle_call(
-            session_ref=session_ref,
-            handle_ref=locator.value["handle_ref"],
-            method="count",
-            arguments={},
-        )
-    )
-
-    assert counted.value == 3
-
-    with pytest.raises(ValidationError):
-        asyncio.run(
-            runtime.page_call(
-                session_ref=session_ref,
-                spec=None,
-                method="_private",
-                arguments={},
-            )
-        )
-
-    with pytest.raises(ValidationError):
-        asyncio.run(
-            runtime.page_call(
-                session_ref=session_ref,
-                spec=None,
-                method="public_method",
-                arguments={},
-                page_ref=f"{session_ref}:missing",
-            )
-        )
+    assert not session.exec(select(BrowserActionReceipt)).all()
+    assert not session.exec(select(Artifact)).all()
+    assert not session.exec(select(IdempotencyKey)).all()
 
 
-def test_browser_profile_create_rejects_daemon_owned_launch_options(
-    browser_operation_context: tuple[int, str, MCPContext, Session],
-) -> None:
-    project_id, _session_ref, ctx, _session = browser_operation_context
-
-    with pytest.raises(ValidationError):
-        asyncio.run(
-            browser_ops._browser_profile_create(
-                BrowserProfileCreateInput(
-                    project_id=project_id,
-                    profile_key="unsafe",
-                    launch_options_json={"executable_path": "/tmp/browser"},
-                ),
-                ctx,
-                _emit=None,
-            )
-        )
-
-
-def test_browser_session_start_rejects_daemon_owned_launch_options(
-    browser_operation_context: tuple[int, str, MCPContext, Session],
-) -> None:
-    project_id, _session_ref, ctx, _session = browser_operation_context
-
-    with pytest.raises(ValidationError):
-        asyncio.run(
-            browser_ops._browser_session_start(
-                BrowserSessionStartInput(
-                    project_id=project_id,
-                    profile_key="unsafe",
-                    session_key="unsafe",
-                    launch_options_json={"user_data_dir": "/tmp/browser-profile"},
-                ),
-                ctx,
-                _emit=None,
-            )
-        )
-
-
-def test_browser_session_start_uses_profile_launch_options(
-    browser_operation_context: tuple[int, str, MCPContext, Session],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    project_id, _session_ref, ctx, _session = browser_operation_context
-    captured: dict[str, Any] = {}
-
-    class CaptureStartRuntime(FakeBrowserRuntime):
-        async def start_session(self, **kwargs: Any) -> Any:
-            captured.update(kwargs)
-            return await super().start_session(**kwargs)
-
-    profile = asyncio.run(
-        browser_ops._browser_profile_create(
-            BrowserProfileCreateInput(
-                project_id=project_id,
-                profile_key="profile-launch",
-                launch_options_json={"locale": "en-US"},
-            ),
-            ctx,
-            _emit=None,
-        )
-    )
-    monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: CaptureStartRuntime())
-
-    asyncio.run(
-        browser_ops._browser_session_start(
-            BrowserSessionStartInput(
-                project_id=project_id,
-                profile_ref=profile.data.profile_ref,
-                session_key="profile-launch",
-                launch_options_json={"timezone_id": "UTC"},
-            ),
-            ctx,
-            _emit=None,
-        )
-    )
-
-    assert captured["launch_options"] == {"locale": "en-US", "timezone_id": "UTC"}
-
-
-def test_browser_script_run_only_passes_arg_when_supplied(monkeypatch: Any) -> None:
-    captured: list[dict[str, Any]] = []
-
-    async def fake_page_call(inp: Any, ctx: Any, emit: Any) -> str:
-        _ = ctx, emit
-        captured.append(inp.arguments)
-        return "ok"
-
-    monkeypatch.setattr(browser_ops, "_browser_page_call", fake_page_call)
-
-    asyncio.run(
-        browser_ops._browser_script_run(
-            BrowserScriptRunInput(
-                project_id=1,
-                session_ref="browser-session:project-1:default:default",
-                script="() => document.title",
-            ),
-            ctx=None,
-            _emit=None,
-        )
-    )
-    asyncio.run(
-        browser_ops._browser_script_run(
-            BrowserScriptRunInput(
-                project_id=1,
-                session_ref="browser-session:project-1:default:default",
-                script="arg => arg.ok",
-                arg={"ok": True},
-            ),
-            ctx=None,
-            _emit=None,
-        )
-    )
-
-    assert captured == [
-        {"script": "() => document.title"},
-        {"script": "arg => arg.ok", "arg": {"ok": True}},
-    ]
-
-
-def test_page_call_returns_full_result_but_receipt_is_redacted(
-    browser_operation_context: tuple[int, str, MCPContext, Session],
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["idempotency_key", "expected_etag", "response_mode"])
+async def test_relay_invalid_transport_controls_never_invoke_native(
+    browser_operation_context, monkeypatch, tmp_path, field
 ) -> None:
     project_id, session_ref, ctx, session = browser_operation_context
-    monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: FakeBrowserRuntime())
-
-    out = asyncio.run(
-        browser_ops._browser_page_call(
-            BrowserPageCallInput(
-                project_id=project_id,
-                session_ref=session_ref,
-                method="evaluate",
-                arguments={
-                    "script": "() => 'secret-output'",
-                    "arg": {"secret": "do-not-store"},
-                },
-            ),
-            ctx,
-            _emit=None,
-        )
+    _runtime, _state, receipt = _native_fixture(
+        monkeypatch, tmp_path, session_ref, stdout=b"", stderr=b""
     )
-
-    assert out.data.result["value"]["secret"] == "do-not-store"
-    assert out.data.receipt.target_url == "https://example.com/page?<redacted>#<redacted>"
-    assert out.data.receipt.result_json == {
-        "method": "evaluate",
-        "status": "ok",
-        "page_ref": f"{session_ref}:page-1",
-        "url": "https://example.com/page?<redacted>#<redacted>",
-        "title_summary": {
-            "type": "str",
-            "length": len("Visible title secret-token"),
-            "sha256": hashlib.sha256(b"Visible title secret-token").hexdigest(),
-        },
-        "value_summary": {"type": "object", "key_count": 3},
-        "page_refs": [f"{session_ref}:page-1", f"{session_ref}:page-2"],
-    }
-    assert out.data.receipt.input_summary_json == {
-        "method": "evaluate",
-        "script_length": len("() => 'secret-output'"),
-        "script_sha256": hashlib.sha256(b"() => 'secret-output'").hexdigest(),
-        "arg_summary": {"type": "object", "key_count": 1},
-    }
-    receipt_dump = str(out.data.receipt.model_dump())
-    assert "secret-output" not in receipt_dump
-    assert "do-not-store" not in receipt_dump
-    assert "secret-token" not in receipt_dump
-    assert len(_receipt_rows(session)) == 1
-
-
-def test_page_snapshot_accepts_page_ref_and_redacts_receipt(
-    browser_operation_context: tuple[int, str, MCPContext, Session],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    project_id, session_ref, ctx, session = browser_operation_context
-    repo = BrowserRepository(session)
-    repo.update_session_url(
-        project_id=project_id,
-        session_ref=session_ref,
-        current_url="https://example.com/start",
-        page_refs=[f"{session_ref}:page-1", f"{session_ref}:page-2"],
-    )
-    monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: FakeBrowserRuntime())
-
-    out = asyncio.run(
-        browser_ops._browser_page_snapshot(
-            BrowserPageSnapshotInput(
-                project_id=project_id,
-                session_ref=session_ref,
-                page_ref=f"{session_ref}:page-2",
-            ),
-            ctx,
-            _emit=None,
-        )
-    )
-
-    assert out.data.result["page_ref"] == f"{session_ref}:page-2"
-    assert out.data.result["value"] == {"text": "raw snapshot secret"}
-    receipt = _receipt_rows(session)[0]
-    assert receipt.page_ref == f"{session_ref}:page-2"
-    assert receipt.input_summary_json == {
+    args = {
+        "project_id": project_id,
         "session_ref": session_ref,
-        "page_ref": f"{session_ref}:page-2",
+        "argv": ["status"],
+        field: "compact" if field == "response_mode" else "replay",
     }
-    assert receipt.result_json["value_summary"] == {"type": "object", "key_count": 1}
-    receipt_dump = str(receipt.model_dump())
-    assert "raw snapshot secret" not in receipt_dump
-    assert "secret-token" not in receipt_dump
+    with pytest.raises(ValidationError):
+        await OperationDispatcher(build_operation_registry()).dispatch(
+            "browser.cli.run", args, session=session, surface="mcp", settings=ctx.extras["settings"]
+        )
+    assert not receipt.exists()
 
 
-def test_failed_page_snapshot_records_failed_receipt_without_raw_error(
-    browser_operation_context: tuple[int, str, MCPContext, Session],
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.asyncio
+async def test_relay_rejects_foreign_session_before_native_execution(
+    browser_operation_context, monkeypatch, tmp_path
 ) -> None:
-    project_id, session_ref, ctx, session = browser_operation_context
-    repo = BrowserRepository(session)
-    repo.update_session_url(
-        project_id=project_id,
-        session_ref=session_ref,
-        current_url="https://example.com/start?token=old#frag",
-        page_refs=[f"{session_ref}:page-1", f"{session_ref}:explode"],
+    spec = build_operation_registry().get("browser.cli.run")
+    _project_id, session_ref, ctx, session = browser_operation_context
+    _runtime, _state, receipt = _native_fixture(
+        monkeypatch, tmp_path, session_ref, stdout=b"", stderr=b""
     )
-    monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: FakeBrowserRuntime())
-
-    with pytest.raises(RepositoryError) as exc:
-        asyncio.run(
-            browser_ops._browser_page_snapshot(
-                BrowserPageSnapshotInput(
-                    project_id=project_id,
-                    session_ref=session_ref,
-                    page_ref=f"{session_ref}:explode",
-                ),
-                ctx,
-                _emit=None,
-            )
+    other = Project(
+        slug="other", name="Other", domain="other.example.test", locale="en-US", is_active=True
+    )
+    session.add(other)
+    session.commit()
+    with pytest.raises(NotFoundError):
+        await spec.handler(
+            spec.input_model(project_id=other.id, session_ref=session_ref, argv=["status"]),
+            ctx,
+            None,
         )
-
-    assert exc.value.detail == "browser operation failed"
-    assert "/private/profile" not in str(exc.value.to_dict())
-    receipt = _receipt_rows(session)[0]
-    assert receipt.operation == "browser.page.snapshot"
-    assert receipt.status == "failed"
-    assert receipt.page_ref == f"{session_ref}:explode"
-    assert receipt.target_url == "https://example.com/start?<redacted>#<redacted>"
-    assert receipt.input_summary_json == {
-        "session_ref": session_ref,
-        "page_ref": f"{session_ref}:explode",
-    }
-    receipt_dump = str(receipt.model_dump())
-    assert "/private/profile" not in receipt_dump
-    assert "secret-token" not in receipt_dump
+    assert not receipt.exists()
 
 
-def test_failed_page_call_records_failed_receipt_without_raw_error(
-    browser_operation_context: tuple[int, str, MCPContext, Session],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    project_id, session_ref, ctx, session = browser_operation_context
-    monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: FakeBrowserRuntime())
-
-    with pytest.raises(RepositoryError) as exc:
-        asyncio.run(
-            browser_ops._browser_page_call(
-                BrowserPageCallInput(
-                    project_id=project_id,
-                    session_ref=session_ref,
-                    method="explode",
-                    arguments={
-                        "url": "https://example.com/submit?token=input-secret",
-                        "value": "secret-value",
-                    },
-                ),
-                ctx,
-                _emit=None,
-            )
-        )
-
-    assert exc.value.detail == "browser operation failed"
-    assert "secret-token" not in str(exc.value.to_dict())
-    receipts = _receipt_rows(session)
-    assert len(receipts) == 1
-    receipt = receipts[0]
-    assert receipt.status == "failed"
-    assert receipt.target_url == "https://example.com/start?<redacted>#<redacted>"
-    assert receipt.input_summary_json == {
-        "method": "explode",
-        "url": "https://example.com/submit?<redacted>",
-        "value_length": len("secret-value"),
-        "value_sha256": hashlib.sha256(b"secret-value").hexdigest(),
-    }
-    assert receipt.result_json == {
-        "method": "explode",
-        "status": "failed",
-        "error_type": "RuntimeError",
-        "page_ref": f"{session_ref}:page-1",
-        "url": "https://example.com/start?<redacted>#<redacted>",
-    }
-    assert receipt.error is not None
-    assert "secret-token" not in receipt.error
-    assert "secret-value" not in str(receipt.model_dump())
-
-
-def test_failed_context_call_records_failed_receipt_without_raw_error(
-    browser_operation_context: tuple[int, str, MCPContext, Session],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    project_id, session_ref, ctx, session = browser_operation_context
-    monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: FakeBrowserRuntime())
-
-    with pytest.raises(RepositoryError) as exc:
-        asyncio.run(
-            browser_ops._browser_context_call(
-                browser_ops.BrowserContextCallInput(
-                    project_id=project_id,
-                    session_ref=session_ref,
-                    method="explode",
-                    arguments={},
-                ),
-                ctx,
-                _emit=None,
-            )
-        )
-
-    assert "secret-token" not in str(exc.value.to_dict())
-    receipt = _receipt_rows(session)[0]
-    assert receipt.operation == "browser.context.call"
-    assert receipt.status == "failed"
-    assert receipt.result_json["error_type"] == "RuntimeError"
-    assert receipt.error is not None
-    assert "secret-token" not in receipt.error
-
-
-def test_context_call_receipt_summarizes_result(
-    browser_operation_context: tuple[int, str, MCPContext, Session],
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.asyncio
+async def test_discovery_reconciles_owned_state_and_limits_handoff(
+    browser_operation_context, monkeypatch, tmp_path
 ) -> None:
     project_id, session_ref, ctx, _session = browser_operation_context
-    monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: FakeBrowserRuntime())
-
-    out = asyncio.run(
-        browser_ops._browser_context_call(
-            browser_ops.BrowserContextCallInput(
-                project_id=project_id,
-                session_ref=session_ref,
-                method="storage_state",
-                arguments={},
-            ),
-            ctx,
-            _emit=None,
-        )
+    _native_fixture(monkeypatch, tmp_path, session_ref, stdout=b"", stderr=b"")
+    registry = build_operation_registry()
+    listing = registry.get("browser.session.list")
+    status = registry.get("browser.session.status")
+    listed = await listing.handler(listing.input_model(project_id=project_id), ctx, None)
+    assert [row.session_ref for row in listed.items] == [session_ref]
+    assert listed.items[0].status == "running"
+    assert listed.items[0].native_cli is None
+    selected = await status.handler(
+        status.input_model(project_id=project_id, session_ref=session_ref), ctx, None
     )
-
-    assert out.data.result["value"]["cookies"][0]["value"] == "cookie-secret"
-    assert out.data.receipt.result_json == {
-        "method": "storage_state",
-        "status": "ok",
-        "page_ref": f"{session_ref}:page-1",
-        "url": "https://example.com/context?<redacted>",
-        "value_summary": {"type": "object", "key_count": 1},
-        "page_refs": [f"{session_ref}:page-1", f"{session_ref}:page-2"],
-    }
-    assert "cookie-secret" not in str(out.data.receipt.model_dump())
-
-
-def test_handle_call_receipt_summarizes_result(
-    browser_operation_context: tuple[int, str, MCPContext, Session],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    project_id, session_ref, ctx, _session = browser_operation_context
-    monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: FakeBrowserRuntime())
-
-    out = asyncio.run(
-        browser_ops._browser_handle_call(
-            BrowserHandleCallInput(
-                project_id=project_id,
-                session_ref=session_ref,
-                handle_ref=f"{session_ref}:handle-1",
-                method="click",
-                arguments={},
-            ),
-            ctx,
-            _emit=None,
-        )
-    )
-
-    assert out.data.result["value"]["clicked"] is True
-    assert out.data.receipt.operation == "browser.handle.call"
-    assert out.data.receipt.input_summary_json == {
-        "method": "click",
-        "handle_ref": f"{session_ref}:handle-1",
-    }
-    assert out.data.receipt.result_json["value_summary"] == {"type": "object", "key_count": 2}
-    assert "secret" not in str(out.data.receipt.model_dump())
-
-
-def test_session_list_marks_db_running_without_live_handle_stale(
-    browser_operation_context: tuple[int, str, MCPContext, Session],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    project_id, session_ref, ctx, session = browser_operation_context
-
-    class EmptyRuntime:
-        def status(self) -> RuntimeStatus:
-            return RuntimeStatus(
-                provider="playwright",
-                package_installed=True,
-                package_version="1.60.0",
-                browser_downloaded=True,
-                executable_path="/private/playwright/chromium",
-                live_session_refs=[],
-            )
-
-    monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: EmptyRuntime())
-
-    out = asyncio.run(
-        browser_ops._browser_session_list(
-            browser_ops.BrowserSessionListInput(project_id=project_id),
-            ctx,
-            _emit=None,
-        )
-    )
-
-    assert out.items[0].session_ref == session_ref
-    assert out.items[0].status == "stale"
-    repo = BrowserRepository(session)
-    row, _profile = repo.get_session(project_id=project_id, session_ref=session_ref)
-    assert row.status == "stale"
-
-
-def test_not_live_page_call_marks_session_stale(
-    browser_operation_context: tuple[int, str, MCPContext, Session],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    project_id, session_ref, ctx, session = browser_operation_context
-
-    class NotLiveRuntime:
-        async def page_call(self, **_kwargs: Any) -> BrowserCallResult:
-            raise ValidationError(
-                "browser session is not live in this daemon process",
-                data={"session_ref": session_ref},
-            )
-
-    monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: NotLiveRuntime())
-
-    with pytest.raises(RepositoryError):
-        asyncio.run(
-            browser_ops._browser_page_call(
-                BrowserPageCallInput(
-                    project_id=project_id,
-                    session_ref=session_ref,
-                    method="title",
-                ),
-                ctx,
-                _emit=None,
-            )
-        )
-
-    repo = BrowserRepository(session)
-    row, _profile = repo.get_session(project_id=project_id, session_ref=session_ref)
-    assert row.status == "stale"
-
-
-def test_failed_screenshot_records_failed_receipt_without_artifact(
-    browser_operation_context: tuple[int, str, MCPContext, Session],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    project_id, session_ref, ctx, session = browser_operation_context
-    monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: FakeBrowserRuntime())
-
-    with pytest.raises(RepositoryError) as exc:
-        asyncio.run(
-            browser_ops._browser_page_screenshot(
-                BrowserScreenshotInput(
-                    project_id=project_id,
-                    session_ref=session_ref,
-                    name="fail-shot",
-                    full_page=True,
-                ),
-                ctx,
-                _emit=None,
-            )
-        )
-
-    assert "/private/profile" not in str(exc.value.to_dict())
-    receipt = _receipt_rows(session)[0]
-    assert receipt.operation == "browser.page.screenshot"
-    assert receipt.status == "failed"
-    assert receipt.artifact_id is None
-    assert "secret-token" not in str(receipt.model_dump())
-    assert list(session.exec(select(Artifact)).all()) == []
-
-
-def test_screenshot_creates_artifact_and_receipt(
-    browser_operation_context: tuple[int, str, MCPContext, Session],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    project_id, session_ref, ctx, session = browser_operation_context
-    monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: FakeBrowserRuntime())
-
-    out = asyncio.run(
-        browser_ops._browser_page_screenshot(
-            BrowserScreenshotInput(
-                project_id=project_id,
-                session_ref=session_ref,
-                name="manual-smoke",
-                full_page=False,
-            ),
-            ctx,
-            _emit=None,
-        )
-    )
-
-    artifact = session.get(Artifact, out.data.artifact["id"])
-    assert artifact is not None
-    assert artifact.kind == "browser-screenshot"
-    assert artifact.uri.startswith("/generated-assets/browser/project-")
-    assert artifact.metadata_json["url"] == "https://example.com/shot?<redacted>#<redacted>"
-    assert out.data.receipt.artifact_id == artifact.id
-    assert out.data.receipt.target_url == "https://example.com/shot?<redacted>#<redacted>"
-    assert out.data.receipt.result_json["artifact_id"] == artifact.id
-    assert out.data.receipt.result_json["title_summary"] == {
-        "type": "str",
-        "length": len("Screenshot page secret-token"),
-        "sha256": hashlib.sha256(b"Screenshot page secret-token").hexdigest(),
-    }
-    assert "secret-token" not in str(out.data.receipt.model_dump())
-    path = Path(ctx.extras["settings"].generated_assets_dir) / artifact.uri.removeprefix(
-        "/generated-assets/"
-    )
-    assert path.read_bytes().startswith(b"\x89PNG")
-
-
-def test_failed_session_start_records_failed_receipt_without_raw_error(
-    browser_operation_context: tuple[int, str, MCPContext, Session],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    project_id, _session_ref, ctx, session = browser_operation_context
-
-    class FailingStartRuntime(FakeBrowserRuntime):
-        async def start_session(self, **_kwargs: Any) -> Any:
-            raise RuntimeError("start /private/profile secret-token")
-
-    monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: FailingStartRuntime())
-
-    with pytest.raises(RepositoryError) as exc:
-        asyncio.run(
-            browser_ops._browser_session_start(
-                BrowserSessionStartInput(
-                    project_id=project_id,
-                    profile_key="start-failure",
-                    session_key="start-failure",
-                ),
-                ctx,
-                _emit=None,
-            )
-        )
-
-    assert "/private/profile" not in str(exc.value.to_dict())
-    receipt = _receipt_rows(session)[0]
-    assert receipt.operation == "browser.session.start"
-    assert receipt.status == "failed"
-    assert "secret-token" not in str(receipt.model_dump())
-
-
-def test_failed_session_stop_records_failed_receipt(
-    browser_operation_context: tuple[int, str, MCPContext, Session],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    project_id, session_ref, ctx, session = browser_operation_context
-
-    class MissingLiveRuntime:
-        async def stop_session(self, *, session_ref: str) -> bool:
-            _ = session_ref
-            return False
-
-    monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: MissingLiveRuntime())
-
-    out = asyncio.run(
-        browser_ops._browser_session_stop(
-            BrowserSessionRefInput(project_id=project_id, session_ref=session_ref),
-            ctx,
-            _emit=None,
-        )
-    )
-
-    receipt = _receipt_rows(session)[0]
-    assert receipt.operation == "browser.session.stop"
-    assert receipt.status == "stale"
-    assert out.data.status == "stale"
-    assert receipt.result_json["status"] == "stale"
+    assert selected.status == "running"
+    assert selected.native_cli["executable"].endswith("upstream-cli")

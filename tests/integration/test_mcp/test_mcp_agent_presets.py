@@ -364,7 +364,7 @@ def test_website_seo_analysis_presets_resolve_end_to_end(
         for agent in resolved["required_agents"]
         if agent["preset"]["summary"]["key"] == "seo.workflow.website-analysis"
     )
-    assert website_agent["preset"]["summary"]["version"] == "0.2.0"
+    assert website_agent["preset"]["summary"]["version"] == "0.3.0"
     assert resolved["required_skill_presets"][0]["preset"]["summary"]["key"] == (
         "stackos.workflow-orchestrator"
     )

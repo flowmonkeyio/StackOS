@@ -137,7 +137,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: seo.workflow.website-analysis
     name: Website SEO Analysis Agent
-    version: 0.2.0
+    version: 0.3.0
     description: Maps a website, reconciles public and connected evidence, and produces one independently reviewed finding register and prioritized roadmap without inventing measurements.
     domain: seo
     role: seo-website-analysis
@@ -157,17 +157,12 @@ presets:
       - resource.upsert
       - artifact.create
       - browser.runtime.status
-      - browser.method.manifest
       - browser.profile.list
+      - browser.session.list
       - browser.session.start
       - browser.session.status
       - browser.session.stop
-      - browser.page.call
-      - browser.context.call
-      - browser.handle.call
-      - browser.script.run
-      - browser.page.snapshot
-      - browser.page.screenshot
+      - browser.cli.run
       - tracker.brief
       - tracker.updateTicket
     project_adaptation: *seo_project_adaptation
