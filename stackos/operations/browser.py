@@ -1,4 +1,4 @@
-"""Project-scoped browser lifecycle and an unchanged native CLI transport."""
+"""Project-scoped native browser lifecycle and selected-session handoff."""
 
 from __future__ import annotations
 
@@ -18,9 +18,6 @@ from stackos.mcp.contract import WriteEnvelope
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.operations._helpers import operation_spec
 from stackos.operations.browser_contracts import (
-    BROWSER_RAW_POLICY,
-    BrowserCliRunInput,
-    BrowserCliRunOut,
     BrowserProfileCreateInput,
     BrowserProfileListInput,
     BrowserRuntimeStatusInput,
@@ -136,15 +133,15 @@ async def _browser_session_start(
         profile_key=profile.profile_key,
         session_key=safe_browser_key(inp.session_key),
     )
-    state = await get_browser_runtime().start_session(
-        **_native_session_args(
-            ctx=ctx,
-            project_id=inp.project_id,
-            session_ref=session_ref,
-            profile_ref=profile.profile_ref,
-            profile_key=profile.profile_key,
-        )
+    runtime = get_browser_runtime()
+    native_args = _native_session_args(
+        ctx=ctx,
+        project_id=inp.project_id,
+        session_ref=session_ref,
+        profile_ref=profile.profile_ref,
+        profile_key=profile.profile_key,
     )
+    state = await runtime.start_session(**native_args)
     repo.create_or_update_session(
         project_id=inp.project_id,
         profile=profile,
@@ -153,8 +150,15 @@ async def _browser_session_start(
     )
     repo.reconcile_sessions(project_id=inp.project_id, states={session_ref: state})
     row, profile = repo.get_session(project_id=inp.project_id, session_ref=session_ref)
+    native_cli = await runtime.session_context(**native_args, observed=state)
     return WriteEnvelope(
-        data=repo.session_out(row, profile, state=state, include_native_cli=True),
+        data=repo.session_out(
+            row,
+            profile,
+            state=state,
+            include_native_cli=True,
+            native_cli=native_cli.to_dict(),
+        ),
         run_id=ctx.run_id,
         project_id=inp.project_id,
     )
@@ -205,45 +209,23 @@ async def _browser_session_status(
 ) -> BrowserSessionOut:
     repo = BrowserRepository(ctx.session)
     row, profile = repo.get_session(project_id=inp.project_id, session_ref=inp.session_ref)
-    state = await get_browser_runtime().inspect_session(
-        **_native_session_args(
-            ctx=ctx,
-            project_id=inp.project_id,
-            session_ref=row.session_ref,
-            profile_ref=profile.profile_ref,
-            profile_key=profile.profile_key,
-        )
-    )
-    repo.reconcile_sessions(project_id=inp.project_id, states={row.session_ref: state})
-    return repo.session_out(row, profile, state=state, include_native_cli=True)
-
-
-async def _browser_cli_run(
-    inp: BrowserCliRunInput, ctx: MCPContext, _emit: ProgressEmitter
-) -> WriteEnvelope[BrowserCliRunOut]:
-    repo = BrowserRepository(ctx.session)
-    row, profile = repo.get_session(project_id=inp.project_id, session_ref=inp.session_ref)
     runtime = get_browser_runtime()
-    result = await runtime.run_native(
-        **_native_session_args(
-            ctx=ctx,
-            project_id=inp.project_id,
-            session_ref=row.session_ref,
-            profile_ref=profile.profile_ref,
-            profile_key=profile.profile_key,
-        ),
-        argv=inp.argv,
-        stdin=inp.stdin,
-    )
-    return WriteEnvelope(
-        data=BrowserCliRunOut(
-            stdout=result.stdout,
-            stderr=result.stderr,
-            exit_code=result.exit_code,
-            encoding=result.encoding,
-        ),
-        run_id=ctx.run_id,
+    native_args = _native_session_args(
+        ctx=ctx,
         project_id=inp.project_id,
+        session_ref=row.session_ref,
+        profile_ref=profile.profile_ref,
+        profile_key=profile.profile_key,
+    )
+    state = await runtime.inspect_session(**native_args)
+    repo.reconcile_sessions(project_id=inp.project_id, states={row.session_ref: state})
+    native_cli = await runtime.session_context(**native_args, observed=state)
+    return repo.session_out(
+        row,
+        profile,
+        state=state,
+        include_native_cli=True,
+        native_cli=native_cli.to_dict(),
     )
 
 
@@ -257,7 +239,6 @@ def operation_specs():
             BrowserRuntimeStatusOut,
             _browser_runtime_status,
             False,
-            False,
         ),
         (
             "browser.profile.create",
@@ -265,7 +246,6 @@ def operation_specs():
             BrowserProfileCreateInput,
             WriteEnvelope[BrowserProfileOut],
             _browser_profile_create,
-            True,
             True,
         ),
         (
@@ -275,7 +255,6 @@ def operation_specs():
             Page[BrowserProfileOut],
             _browser_profile_list,
             False,
-            False,
         ),
         (
             "browser.session.start",
@@ -283,7 +262,6 @@ def operation_specs():
             BrowserSessionStartInput,
             WriteEnvelope[BrowserSessionOut],
             _browser_session_start,
-            True,
             True,
         ),
         (
@@ -293,7 +271,6 @@ def operation_specs():
             Page[BrowserSessionOut],
             _browser_session_list,
             False,
-            False,
         ),
         (
             "browser.session.status",
@@ -302,7 +279,6 @@ def operation_specs():
             BrowserSessionOut,
             _browser_session_status,
             False,
-            True,
         ),
         (
             "browser.session.stop",
@@ -310,16 +286,6 @@ def operation_specs():
             BrowserSessionRefInput,
             WriteEnvelope[BrowserSessionOut],
             _browser_session_stop,
-            True,
-            True,
-        ),
-        (
-            "browser.cli.run",
-            "Run the native gstack CLI in a selected session.",
-            BrowserCliRunInput,
-            WriteEnvelope[BrowserCliRunOut],
-            _browser_cli_run,
-            True,
             True,
         ),
     )
@@ -330,20 +296,13 @@ def operation_specs():
             input_model=input_model,
             output_model=output_model,
             handler=handler,
-            purpose=(
-                "Pass upstream argv and optional stdin unchanged. Native nonzero exit codes remain "
-                "data; streams are exact UTF-8 or both base64 when either stream is not UTF-8. "
-                "Use session.start/status native_cli for direct local CLI access."
-                if name == "browser.cli.run"
-                else summary
-            ),
+            purpose=summary,
             mutating=mutating,
             grant_policy=control if mutating else "direct-read",
-            secret_policy="raw-browser-output" if raw else "no-secret-output",
+            secret_policy="no-secret-output",
             category="browser",
-            response_policy=BROWSER_RAW_POLICY if raw else None,
         )
-        for name, summary, input_model, output_model, handler, mutating, raw in definitions
+        for name, summary, input_model, output_model, handler, mutating in definitions
     ]
 
 

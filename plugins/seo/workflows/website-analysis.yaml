@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: seo.website-analysis
 name: Website SEO Analysis
-version: 0.4.0
+version: 0.5.0
 description: Agency-style, evidence-led website mapping and SEO analysis that keeps one reviewed finding register, uses connected first-party and research tools when useful, and retains a public-site fallback.
 domain: seo
 owner:
@@ -474,6 +474,7 @@ steps:
       - Discover pages from the website root, robots.txt, declared sitemaps, navigation, and bounded internal-link traversal; inspect representative raw, rendered, and mobile views when they materially differ.
       - Capture detailed response, redirect, canonical, indexability, metadata, heading, content/media, structured-data, and template evidence in the working inventory; keep public_site_map as a bounded discovery and coverage summary rather than a second URL ledger.
       - Use the browser only for observation. Do not submit forms, activate state-changing controls, or reuse an authenticated profile outside the explicit access boundary.
+      - Discover or create/reuse the intended StackOS session, then append native gstack arguments to its cli_argv and execute stackos.browser --session <full-ref> directly in the host terminal. Consult native --help for command syntax and keep the same session/profile for continuity.
       - State the mapping methods, sampled coverage, exclusions, and limitations; claim bounded completeness only when the collected evidence proves it.
       - Use optional Firecrawl reads only when ready and useful; its absence or a submit-only crawl response does not block the public map.
     success_criteria:
@@ -974,7 +975,6 @@ metadata:
     - browser.session.start
     - browser.session.status
     - browser.session.stop
-    - browser.cli.run
   mcp_tool_grants:
     - step_id: map-public-site
       tools:
@@ -984,7 +984,6 @@ metadata:
         - browser.session.start
         - browser.session.status
         - browser.session.stop
-        - browser.cli.run
     - step_id: finalize-and-store
       tools:
         - artifact.create

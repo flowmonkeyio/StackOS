@@ -405,6 +405,20 @@ runStep(process.execPath, [
   ),
   pkg.version
 ]);
+runStep(process.execPath, [
+  "scripts/verify-stackos-browser-cli.cjs",
+  path.join(
+    desktopDir,
+    "dist",
+    "mac-arm64",
+    "StackOS.app",
+    "Contents",
+    "Resources",
+    "stackos",
+    "bin",
+    "stackos.browser"
+  )
+]);
 
 if (releaseIntent && !allowUnsignedRelease && !skipNotarization && notarization.configured) {
   notarizeDmgArtifacts();

@@ -8,14 +8,13 @@ its browser semantics.
 from __future__ import annotations
 
 import asyncio
-import base64
 import inspect
 import json
 import os
 import re
 import subprocess
 import sys
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -207,50 +206,6 @@ class NativeCliContext:
 
 
 @dataclass(frozen=True)
-class NativeCliResult:
-    stdout: str
-    stderr: str
-    exit_code: int
-    encoding: Literal["utf-8", "base64"]
-
-    @classmethod
-    def from_process(cls, result: NativeProcessResult) -> NativeCliResult:
-        try:
-            stdout = result.stdout.decode("utf-8", errors="strict")
-            stderr = result.stderr.decode("utf-8", errors="strict")
-        except UnicodeDecodeError:
-            return cls(
-                stdout=base64.b64encode(result.stdout).decode("ascii"),
-                stderr=base64.b64encode(result.stderr).decode("ascii"),
-                exit_code=result.exit_code,
-                encoding="base64",
-            )
-        return cls(stdout=stdout, stderr=stderr, exit_code=result.exit_code, encoding="utf-8")
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "stdout": self.stdout,
-            "stderr": self.stderr,
-            "exit_code": self.exit_code,
-            "encoding": self.encoding,
-        }
-
-    def decode_stdout(self) -> bytes:
-        return (
-            self.stdout.encode("utf-8")
-            if self.encoding == "utf-8"
-            else base64.b64decode(self.stdout)
-        )
-
-    def decode_stderr(self) -> bytes:
-        return (
-            self.stderr.encode("utf-8")
-            if self.encoding == "utf-8"
-            else base64.b64decode(self.stderr)
-        )
-
-
-@dataclass(frozen=True)
 class NativeSessionState:
     session_ref: str
     profile_ref: str
@@ -259,19 +214,6 @@ class NativeSessionState:
     healthy: bool
     pid: int | None
     repair: str | None = None
-    native_cli: NativeCliContext | None = None
-
-    def to_safe_dict(self, *, include_native_cli: bool = False) -> dict[str, Any]:
-        data: dict[str, Any] = {
-            "status": self.status,
-            "owned": self.owned,
-            "healthy": self.healthy,
-            "pid": self.pid,
-            "repair": self.repair,
-        }
-        if include_native_cli and self.native_cli is not None:
-            data["native_cli"] = self.native_cli.to_dict()
-        return data
 
 
 @dataclass(frozen=True)
@@ -392,23 +334,29 @@ async def _default_health_probe(port: int) -> bool:
     return await asyncio.to_thread(_probe)
 
 
-async def _default_command_runner(
-    executable: Path, argv: list[str], cwd: Path, env: dict[str, str], stdin: bytes
-) -> NativeProcessResult:
+def native_process_env(context_env: Mapping[str, str]) -> dict[str, str]:
+    """Bind a native child to one selected StackOS browser context.
+
+    Ordinary process context such as ``HOME`` and ``TMPDIR`` remains available,
+    but upstream controls cannot select another server, profile, proxy, or
+    browser installation ahead of the deterministic selected context.
+    """
     child_env = os.environ.copy()
-    # An owned lifecycle must not inherit upstream controls that can select a
-    # different server, profile, proxy, or browser installation. Keep ordinary
-    # process context such as HOME and TMPDIR, then apply the deterministic
-    # context selected for this session below.
     for key in tuple(child_env):
         if key.startswith(("BROWSE_", "GSTACK_", "CHROMIUM_", "PLAYWRIGHT_")):
             child_env.pop(key)
-    child_env.update(env)
+    child_env.update(context_env)
+    return child_env
+
+
+async def _default_command_runner(
+    executable: Path, argv: list[str], cwd: Path, env: dict[str, str], stdin: bytes
+) -> NativeProcessResult:
     process = await asyncio.create_subprocess_exec(
         str(executable),
         *argv,
         cwd=str(cwd),
-        env=child_env,
+        env=native_process_env(env),
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -472,9 +420,6 @@ class BrowserRuntime:
                 session_ref, profile_ref, "gstack state no longer owns a matching process"
             )
         healthy = await self._is_healthy(state.port)
-        context = self._native_context(
-            profile_dir=profile_dir, state_file=state_file, data_dir=root, include_no_autostart=True
-        )
         return NativeSessionState(
             session_ref=session_ref,
             profile_ref=profile_ref,
@@ -488,8 +433,60 @@ class BrowserRuntime:
                 "The owned gstack server is busy or unavailable; do not start another "
                 "session for this profile."
             ),
-            native_cli=context if healthy else None,
         )
+
+    async def session_context(
+        self,
+        *,
+        session_ref: str,
+        profile_ref: str,
+        profile_dir: Path,
+        state_file: Path,
+        data_dir: Path | None = None,
+        observed: NativeSessionState | None = None,
+    ) -> NativeCliContext:
+        """Return the selected native context without interpreting upstream argv.
+
+        A stored stopped or unhealthy session still needs a native handoff for
+        upstream control commands. StackOS only fences a distinct alive owner
+        of the same persistent profile; upstream decides every command's
+        semantics after the handoff.
+        """
+        root = self._resolve_data_dir(data_dir)
+        async with _profile_lock(profile_dir):
+            current = observed or await self.inspect_session(
+                session_ref=session_ref,
+                profile_ref=profile_ref,
+                profile_dir=profile_dir,
+                state_file=state_file,
+                data_dir=root,
+            )
+            if not current.owned:
+                owner = await self._other_profile_owner(
+                    session_ref=session_ref,
+                    profile_ref=profile_ref,
+                    profile_dir=profile_dir,
+                    state_file=state_file,
+                    data_dir=root,
+                )
+                if owner is not None:
+                    raise ConflictError(
+                        "another gstack session owns this persistent profile",
+                        data={
+                            "owner_session_ref": owner.session_ref,
+                            "owner_healthy": owner.healthy,
+                            "repair": (
+                                "Stop the existing owner and wait for retirement before using "
+                                "this session."
+                            ),
+                        },
+                    )
+            self._require_runtime(root)
+            return self._native_context(
+                profile_dir=profile_dir,
+                state_file=state_file,
+                data_dir=root,
+            )
 
     async def start_session(
         self,
@@ -646,46 +643,6 @@ class BrowserRuntime:
                     )
                 await asyncio.sleep(_STOP_POLL_SECONDS)
 
-    async def run_native(
-        self,
-        *,
-        session_ref: str,
-        profile_ref: str,
-        profile_dir: Path,
-        state_file: Path,
-        data_dir: Path | None = None,
-        argv: list[str],
-        stdin: str | None = None,
-    ) -> NativeCliResult:
-        if not all(isinstance(arg, str) for arg in argv):
-            raise ValidationError("browser argv must contain only strings")
-        root = self._resolve_data_dir(data_dir)
-        current = await self.inspect_session(
-            session_ref=session_ref,
-            profile_ref=profile_ref,
-            profile_dir=profile_dir,
-            state_file=state_file,
-            data_dir=root,
-        )
-        if not current.owned or not current.healthy:
-            raise ValidationError(
-                "browser session is not available for native commands",
-                data={"session_ref": session_ref, "repair": current.repair},
-            )
-        if current.native_cli is None:
-            raise ValidationError(
-                "browser session is missing its verified native CLI context",
-                data={"session_ref": session_ref},
-            )
-        result = await self._command_runner(
-            Path(current.native_cli.executable),
-            list(argv),
-            Path(current.native_cli.cwd),
-            dict(current.native_cli.env),
-            b"" if stdin is None else stdin.encode("utf-8"),
-        )
-        return NativeCliResult.from_process(result)
-
     async def discover_sessions(
         self, *, project_id: int, data_dir: Path | None = None
     ) -> dict[str, NativeSessionState]:
@@ -779,7 +736,7 @@ class BrowserRuntime:
         return None
 
     def _native_context(
-        self, *, profile_dir: Path, state_file: Path, data_dir: Path, include_no_autostart: bool
+        self, *, profile_dir: Path, state_file: Path, data_dir: Path
     ) -> NativeCliContext:
         return NativeCliContext(
             executable=str(self._require_executable(data_dir)),
@@ -788,7 +745,7 @@ class BrowserRuntime:
                 profile_dir=profile_dir,
                 state_file=state_file,
                 data_dir=data_dir,
-                include_no_autostart=include_no_autostart,
+                include_no_autostart=False,
             ),
         )
 
@@ -852,7 +809,6 @@ __all__ = [
     "GSTACK_RUNTIME_REPAIR",
     "BrowserRuntime",
     "NativeCliContext",
-    "NativeCliResult",
     "NativeProcessResult",
     "NativeSessionState",
     "ProcessIdentity",
@@ -867,6 +823,7 @@ __all__ = [
     "gstack_server_path",
     "gstack_session_cwd",
     "gstack_state_file",
+    "native_process_env",
     "packaged_stackos_root",
     "safe_browser_key",
 ]

@@ -8,7 +8,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 199
+    assert len(names) == 198
     assert not names.intersection(
         {"actionCall.aggregate", "actionCall.aggregateAll", "actionCall.queryAll"}
     )
@@ -67,7 +67,6 @@ def test_operation_registry_documents_core_operations() -> None:
         "skillPreset.resolveForWorkflow",
         "browser.runtime.status",
         "browser.session.start",
-        "browser.cli.run",
         "guide.gettingStarted",
     } <= names
 
@@ -325,13 +324,12 @@ def test_operation_registry_documents_core_operations() -> None:
     assert auth_callback.grant_policy == "public-oauth-callback"
     assert auth_callback.secret_policy == "no-secret-output"
 
-    browser_call = registry.get("browser.cli.run").describe_out()
-    assert browser_call.category == "browser"
-    assert browser_call.mutating is True
-    assert browser_call.response_policy.default_mode == "raw"
-    assert browser_call.response_policy.allowed_modes == ["raw"]
-    assert "native gstack CLI" in browser_call.summary
-    assert browser_call.input_schema["properties"]["argv"]["type"] == "array"
+    browser_status = registry.get("browser.session.status").describe_out()
+    assert browser_status.category == "browser"
+    assert browser_status.mutating is False
+    assert "native CLI context" in browser_status.summary
+    assert "cli_argv" in browser_status.output_schema["properties"]
+    assert "browser.cli.run" not in {operation.name for operation in registry.all()}
 
     project_list = registry.get("project.list").describe_out()
     assert project_list.surfaces["mcp"].enabled is True

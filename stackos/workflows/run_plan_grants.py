@@ -34,7 +34,6 @@ RUN_PLAN_GRANTABLE_TOOL_NAMES: frozenset[str] = frozenset(
         "browser.session.start",
         "browser.session.status",
         "browser.session.stop",
-        "browser.cli.run",
         "communication.reply",
         "communication.send",
         "context.query",

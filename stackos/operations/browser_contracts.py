@@ -1,20 +1,12 @@
-"""Session lifecycle and native CLI transport contracts."""
+"""Session lifecycle contracts for the native gstack browser."""
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict
 
 from stackos.mcp.contract import MCPInput
-from stackos.operations.spec import OperationResponsePolicy
-
-BROWSER_RAW_POLICY = OperationResponsePolicy(
-    default_mode="raw",
-    allowed_modes=("raw",),
-    ack_safe=False,
-    raw_only_reason="Preserve selected-session handoff and native command streams and exit status.",
-)
 
 
 class BrowserRuntimeStatusInput(MCPInput):
@@ -67,28 +59,3 @@ class BrowserSessionRefInput(MCPInput):
 class BrowserSessionListInput(MCPInput):
     model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"project_id": 1}})
     project_id: int
-
-
-class BrowserCliRunInput(BrowserSessionRefInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "example": {
-                "project_id": 1,
-                "session_ref": "browser-session:project-1:default:main",
-                "argv": ["status"],
-            }
-        },
-    )
-    # Validation precedes the generic dispatcher and MCP idempotency cache.
-    idempotency_key: None = Field(default=None, description="Native commands cannot be replayed.")
-    expected_etag: None = Field(default=None, description="Native CLI execution has no ETag.")
-    argv: list[str] = Field(description="Exact ordered upstream CLI arguments.")
-    stdin: str | None = Field(default=None, description="Exact UTF-8 stdin; no newline is added.")
-
-
-class BrowserCliRunOut(BaseModel):
-    stdout: str
-    stderr: str
-    exit_code: int
-    encoding: Literal["utf-8", "base64"]

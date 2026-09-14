@@ -22,7 +22,9 @@ Every supported setup path should land at the same state:
 2. Create `seed.bin` and `auth.token` with mode `0600`.
 3. Run database migrations.
 4. Install the pinned native gstack runtime for daemon-owned browser
-   automation.
+   automation and the managed `~/.local/bin/stackos.browser` command. Agent
+   terminals need `~/.local/bin` on `PATH`; use the returned session `cli_argv`
+   prefix followed by native browser arguments.
 5. Hydrate the `stackos` skill mirrors for Codex and Claude from the canonical
    package-managed skill.
 6. Hydrate the `stackos` Codex plugin from bundled assets and refresh any

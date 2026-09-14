@@ -215,6 +215,8 @@ install-launchd: ## Install launchd autostart for the daemon
 uninstall: ## Remove installed skills/plugins/MCP entries; preserve DB + seed
 	@echo "==> Booting out launchd job (if loaded)"
 	@bash scripts/install-launchd.sh --uninstall
+	@echo "==> Removing managed global browser launcher"
+	@$(PYTHON) -c 'from stackos.install import remove_browser_launcher; ok, message = remove_browser_launcher(); print(message); raise SystemExit(0 if ok else 1)'
 	@echo "==> Removing skills"
 	@rm -rf "$(HOME)/.codex/skills/stackos" "$(HOME)/.claude/skills/stackos"
 	@echo "==> Removing plugins"

@@ -1,31 +1,21 @@
 from __future__ import annotations
 
-import base64
-import json
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from pydantic import ValidationError as InputError
-from sqlmodel import Session, SQLModel, select
+from sqlmodel import Session, SQLModel
 
 import stackos.operations.browser as browser_ops
+from stackos.browser.runtime import BrowserRuntime, NativeCliContext, NativeSessionState
 from stackos.db.connection import make_memory_engine
-from stackos.db.models import (
-    Artifact,
-    BrowserActionReceipt,
-    BrowserProfile,
-    BrowserSession,
-    IdempotencyKey,
-    Project,
-)
+from stackos.db.models import BrowserProfile, BrowserSession, Project
 from stackos.mcp.context import MCPContext
 from stackos.mcp.server import ToolRegistry
 from stackos.mcp.tools import register_all
-from stackos.operations.dispatcher import OperationDispatcher
 from stackos.operations.registry import build_operation_registry
-from stackos.repositories.base import NotFoundError, ValidationError
+from stackos.repositories.base import ValidationError
+from stackos.repositories.browser import BrowserRepository
 
 BROWSER_OPERATIONS = {
     "browser.runtime.status",
@@ -35,7 +25,6 @@ BROWSER_OPERATIONS = {
     "browser.session.list",
     "browser.session.status",
     "browser.session.stop",
-    "browser.cli.run",
 }
 
 
@@ -86,7 +75,7 @@ def browser_operation_context(tmp_path: Path):
     engine.dispose()
 
 
-def test_native_browser_replaces_all_command_wrappers() -> None:
+def test_browser_surface_contains_only_lifecycle_operations() -> None:
     registry = build_operation_registry()
     assert {
         spec.name for spec in registry.all() if spec.name.startswith("browser.")
@@ -98,167 +87,84 @@ def test_native_browser_replaces_all_command_wrappers() -> None:
     tools = ToolRegistry()
     register_all(tools)
     assert tools.get("browser.session.list").read_only
-    assert not tools.get("browser.cli.run").read_only
+    with pytest.raises(KeyError):
+        tools.get("browser.cli.run")
 
 
-def test_native_relay_rejects_replay_and_preserves_unrestricted_argv() -> None:
-    spec = build_operation_registry().get("browser.cli.run")
-    args = {"project_id": 1, "session_ref": "selected", "argv": ["unknown", "a b", ""]}
-    for field in ("idempotency_key", "expected_etag"):
-        with pytest.raises(InputError):
-            spec.input_model.model_validate({**args, field: "do-not-replay"})
-    assert spec.input_model.model_validate(args).argv == args["argv"]
-    assert spec.response_policy.allowed_modes == ("raw",)
+def test_session_ref_parser_is_canonical_and_does_not_normalize() -> None:
+    ref = "browser-session:project-42:default:main"
 
-
-def _native_fixture(monkeypatch, tmp_path, session_ref, *, stdout: bytes, stderr: bytes):
-    from stackos.browser.runtime import BrowserRuntime, NativeCliContext, NativeSessionState
-
-    executable = tmp_path / "upstream-cli"
-    receipt = tmp_path / "invocations.jsonl"
-    executable.write_text(
-        f"#!{sys.executable}\n"
-        "import base64,json,os,sys\n"
-        f"with open({str(receipt)!r}, 'a') as f:\n"
-        " f.write(json.dumps({'argv':sys.argv[1:],"
-        "'stdin':base64.b64encode(sys.stdin.buffer.read()).decode(),"
-        "'cwd':os.getcwd(),'no_autostart':os.environ.get('BROWSE_NO_AUTOSTART')})+'\\n')\n"
-        f"sys.stdout.buffer.write({stdout!r})\n"
-        f"sys.stderr.buffer.write({stderr!r})\n"
-        "sys.exit(17)\n"
-    )
-    executable.chmod(0o700)
-    native = NativeCliContext(
-        executable=str(executable), cwd=str(tmp_path), env={"BROWSE_NO_AUTOSTART": "1"}
-    )
-    state = NativeSessionState(
-        session_ref=session_ref,
-        profile_ref=session_ref.replace("browser-session", "browser-profile").rsplit(":", 1)[0],
-        status="running",
-        owned=True,
-        healthy=True,
-        pid=123,
-        repair=None,
-        native_cli=native,
-    )
-    runtime = BrowserRuntime()
-
-    async def inspect_session(**kwargs):
-        assert kwargs["session_ref"] == session_ref
-        return state
-
-    monkeypatch.setattr(runtime, "inspect_session", inspect_session)
-    monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: runtime)
-    return runtime, state, receipt
+    assert BrowserRepository.project_id_from_session_ref(ref) == 42
+    for invalid in (
+        "browser-session:project-0:default:main",
+        "browser-session:project-42:Default:main",
+        "browser-session:project-42:default:main:extra",
+        "browser-session:project-42:default:main/escape",
+    ):
+        with pytest.raises(ValidationError):
+            BrowserRepository.project_id_from_session_ref(invalid)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("stdout", "stderr", "encoding"),
+    ("status", "owned", "healthy"),
     [
-        ("こんにちは\r\n\x1b[31mraw\x00\n\n".encode(), b"cookie=synthetic-secret\r\n", "utf-8"),
-        (b"\xff\x00\r\n", b"valid stderr\n", "base64"),
-        (b"valid stdout\n", b"\xfe\x00", "base64"),
+        ("running", True, True),
+        ("failed", True, False),
+        ("stopped", False, False),
+        ("stale", False, False),
     ],
 )
-async def test_native_relay_preserves_argv_stdin_streams_and_nonzero_exit(
-    browser_operation_context, monkeypatch, tmp_path, stdout, stderr, encoding
-) -> None:
-    project_id, session_ref, ctx, session = browser_operation_context
-    _runtime, _state, receipt = _native_fixture(
-        monkeypatch, tmp_path, session_ref, stdout=stdout, stderr=stderr
-    )
-    argv = ["unknown-command", "a b", "'quoted'", '"quoted"', "$(untouched)", ""]
-    stdin = '[ ["js", "Unicode 日本語"] ]\n\x00\r\n'
-    args = {"project_id": project_id, "session_ref": session_ref, "argv": argv, "stdin": stdin}
-    dispatched = await OperationDispatcher(build_operation_registry()).dispatch(
-        "browser.cli.run",
-        args,
-        session=session,
-        surface="mcp",
-        settings=ctx.extras["settings"],
-    )
-    data = dispatched.payload["data"]
-    assert set(data) == {"stdout", "stderr", "exit_code", "encoding"}
-    assert data["exit_code"] == 17
-    assert data["encoding"] == encoding
-    decode = (lambda value: value.encode("utf-8")) if encoding == "utf-8" else base64.b64decode
-    assert decode(data["stdout"]) == stdout
-    assert decode(data["stderr"]) == stderr
-    calls = [json.loads(line) for line in receipt.read_text().splitlines()]
-    assert calls == [
-        {
-            "argv": argv,
-            "stdin": base64.b64encode(stdin.encode()).decode(),
-            "cwd": str(tmp_path),
-            "no_autostart": "1",
-        }
-    ]
-    assert not session.exec(select(BrowserActionReceipt)).all()
-    assert not session.exec(select(Artifact)).all()
-    assert not session.exec(select(IdempotencyKey)).all()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("field", ["idempotency_key", "expected_etag", "response_mode"])
-async def test_relay_invalid_transport_controls_never_invoke_native(
-    browser_operation_context, monkeypatch, tmp_path, field
-) -> None:
-    project_id, session_ref, ctx, session = browser_operation_context
-    _runtime, _state, receipt = _native_fixture(
-        monkeypatch, tmp_path, session_ref, stdout=b"", stderr=b""
-    )
-    args = {
-        "project_id": project_id,
-        "session_ref": session_ref,
-        "argv": ["status"],
-        field: "compact" if field == "response_mode" else "replay",
-    }
-    with pytest.raises(ValidationError):
-        await OperationDispatcher(build_operation_registry()).dispatch(
-            "browser.cli.run", args, session=session, surface="mcp", settings=ctx.extras["settings"]
-        )
-    assert not receipt.exists()
-
-
-@pytest.mark.asyncio
-async def test_relay_rejects_foreign_session_before_native_execution(
-    browser_operation_context, monkeypatch, tmp_path
-) -> None:
-    spec = build_operation_registry().get("browser.cli.run")
-    _project_id, session_ref, ctx, session = browser_operation_context
-    _runtime, _state, receipt = _native_fixture(
-        monkeypatch, tmp_path, session_ref, stdout=b"", stderr=b""
-    )
-    other = Project(
-        slug="other", name="Other", domain="other.example.test", locale="en-US", is_active=True
-    )
-    session.add(other)
-    session.commit()
-    with pytest.raises(NotFoundError):
-        await spec.handler(
-            spec.input_model(project_id=other.id, session_ref=session_ref, argv=["status"]),
-            ctx,
-            None,
-        )
-    assert not receipt.exists()
-
-
-@pytest.mark.asyncio
-async def test_discovery_reconciles_owned_state_and_limits_handoff(
-    browser_operation_context, monkeypatch, tmp_path
+async def test_selected_status_keeps_observation_and_returns_generic_handoff(
+    browser_operation_context,
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+    owned: bool,
+    healthy: bool,
 ) -> None:
     project_id, session_ref, ctx, _session = browser_operation_context
-    _native_fixture(monkeypatch, tmp_path, session_ref, stdout=b"", stderr=b"")
+    native = NativeCliContext(
+        executable="/runtime/gstack/browse",
+        cwd="/owned/cwd",
+        env={"BROWSE_STATE_FILE": "/owned/.gstack/browse.json"},
+    )
+    state = NativeSessionState(
+        session_ref=session_ref,
+        profile_ref=f"browser-profile:project-{project_id}:default",
+        status=status,  # type: ignore[arg-type]
+        owned=owned,
+        healthy=healthy,
+        pid=123 if owned else None,
+        repair="busy" if status == "failed" else None,
+    )
+    runtime = BrowserRuntime()
+    context_calls: list[dict[str, object]] = []
+
+    async def inspect_session(**kwargs: object) -> NativeSessionState:
+        assert kwargs["session_ref"] == session_ref
+        return state
+
+    async def session_context(**kwargs: object) -> NativeCliContext:
+        context_calls.append(kwargs)
+        assert kwargs["observed"] == state
+        return native
+
+    monkeypatch.setattr(runtime, "inspect_session", inspect_session)
+    monkeypatch.setattr(runtime, "session_context", session_context, raising=False)
+    monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: runtime)
     registry = build_operation_registry()
     listing = registry.get("browser.session.list")
-    status = registry.get("browser.session.status")
+    selected = registry.get("browser.session.status")
+
     listed = await listing.handler(listing.input_model(project_id=project_id), ctx, None)
-    assert [row.session_ref for row in listed.items] == [session_ref]
-    assert listed.items[0].status == "running"
-    assert listed.items[0].native_cli is None
-    selected = await status.handler(
-        status.input_model(project_id=project_id, session_ref=session_ref), ctx, None
+    result = await selected.handler(
+        selected.input_model(project_id=project_id, session_ref=session_ref), ctx, None
     )
-    assert selected.status == "running"
-    assert selected.native_cli["executable"].endswith("upstream-cli")
+
+    assert listed.items[0].native_cli is None
+    assert listed.items[0].cli_argv == ["stackos.browser", "--session", session_ref]
+    assert result.status == status
+    assert result.healthy is (healthy if owned else None)
+    assert result.native_cli == native.to_dict()
+    assert result.cli_argv == ["stackos.browser", "--session", session_ref]
+    assert len(context_calls) == 1

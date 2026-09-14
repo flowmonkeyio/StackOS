@@ -30,8 +30,11 @@ import hashlib
 import json
 import os
 import platform
+import shlex
 import shutil
+import stat
 import subprocess
+import sys
 import tarfile
 import tempfile
 import urllib.request
@@ -48,11 +51,14 @@ from stackos.browser.runtime import (
     gstack_runtime_root,
     packaged_stackos_root,
 )
+from stackos.config import Settings
 
 InstallMode = Literal["clone", "pipx"]
 """How the daemon was installed: from a checked-out git repo or via pipx."""
 
 MCP_SERVER_NAME = "stackos"
+BROWSER_LAUNCHER_NAME = "stackos.browser"
+BROWSER_LAUNCHER_MANAGED_HEADER = "# StackOS managed browser launcher v1\n"
 GSTACK_VERSION = "1.84.1.0"
 GSTACK_REVISION = "71f6048e8ada25180e61438abc1d98cb151fe9a7"
 GSTACK_SOURCE_ARCHIVE_URL = f"https://github.com/garrytan/gstack/archive/{GSTACK_REVISION}.tar.gz"
@@ -122,6 +128,154 @@ def _repo_root_if_clone() -> Path | None:
 def detect_mode() -> InstallMode:
     """Return the install mode based on the on-disk layout."""
     return "clone" if _repo_root_if_clone() is not None else "pipx"
+
+
+# ---------------------------------------------------------------------------
+# Native browser launcher lifecycle
+# ---------------------------------------------------------------------------
+
+
+def browser_launcher_path(*, home: Path | None = None) -> Path:
+    """Return the user-level blind browser launcher path."""
+    return (home if home is not None else Path.home()) / ".local" / "bin" / BROWSER_LAUNCHER_NAME
+
+
+def _browser_launcher_command() -> list[str] | None:
+    """Return the current installation's launcher command without consulting PATH."""
+    packaged_cli = os.environ.get("STACKOS_PACKAGED_CLI")
+    if packaged_cli:
+        packaged_launcher = Path(packaged_cli).with_name(BROWSER_LAUNCHER_NAME)
+        if packaged_launcher.is_file() and os.access(packaged_launcher, os.X_OK):
+            return [str(packaged_launcher)]
+        return None
+    return [sys.executable, "-I", "-m", "stackos.browser_cli"]
+
+
+def _managed_browser_launcher_text(path: Path) -> str | None:
+    """Return managed launcher content only for a small regular file with our exact marker."""
+    try:
+        file_status = path.lstat()
+    except FileNotFoundError:
+        return None
+    except OSError:
+        return None
+    if not stat.S_ISREG(file_status.st_mode) or file_status.st_size > 16 * 1024:
+        return None
+    try:
+        content = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    return content if content.startswith(f"#!/bin/sh\n{BROWSER_LAUNCHER_MANAGED_HEADER}") else None
+
+
+def _browser_launcher_content(*, command: list[str], settings: Settings) -> str:
+    """Render the shell shim that fixes local daemon context and preserves every argv token."""
+    values = (
+        ("STACKOS_HOST", str(settings.host)),
+        ("STACKOS_PORT", str(settings.port)),
+        ("STACKOS_DATA_DIR", str(settings.data_dir)),
+        ("STACKOS_STATE_DIR", str(settings.state_dir)),
+    )
+    exports = "".join(f"export {name}={shlex.quote(value)}\n" for name, value in values)
+    return (
+        "#!/bin/sh\n"
+        f"{BROWSER_LAUNCHER_MANAGED_HEADER}"
+        "set -eu\n"
+        f"{exports}"
+        f'exec {shlex.join(command)} "$@"\n'
+    )
+
+
+def inspect_browser_launcher(
+    *, settings: Settings, home: Path | None = None
+) -> tuple[Literal["current", "missing", "stale", "unmanaged"], str]:
+    """Classify the user-level launcher without exposing its command or local paths."""
+    target = browser_launcher_path(home=home)
+    content = _managed_browser_launcher_text(target)
+    if content is None:
+        try:
+            target.lstat()
+        except FileNotFoundError:
+            return "missing", "browser launcher is not installed"
+        except OSError:
+            return "unmanaged", "browser launcher cannot be inspected safely"
+        return "unmanaged", "browser launcher is unmanaged and was preserved"
+    command = _browser_launcher_command()
+    if command is None:
+        return "stale", "browser launcher package entry is unavailable; repair the current install"
+    expected = _browser_launcher_content(command=command, settings=settings)
+    if content == expected:
+        try:
+            executable = bool(target.stat().st_mode & 0o111)
+        except OSError:
+            executable = False
+        if executable:
+            return "current", "browser launcher is installed"
+    return "stale", "browser launcher is stale; run `stackos install --browser-launcher-only`"
+
+
+def ensure_browser_launcher(*, settings: Settings, home: Path | None = None) -> tuple[bool, str]:
+    """Install or refresh only a StackOS-owned user-level browser shim."""
+    target = browser_launcher_path(home=home)
+    status, message = inspect_browser_launcher(settings=settings, home=home)
+    if status == "current":
+        return True, message
+    if status == "unmanaged":
+        return (
+            False,
+            "browser launcher path is unmanaged and was preserved; rename or remove it before "
+            "running `stackos install --browser-launcher-only`.",
+        )
+    command = _browser_launcher_command()
+    if command is None:
+        return False, "browser launcher package entry is unavailable; repair the current install"
+    content = _browser_launcher_content(command=command, settings=settings)
+    staged_path: Path | None = None
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if (target.exists() or target.is_symlink()) and _managed_browser_launcher_text(
+            target
+        ) is None:
+            return (
+                False,
+                "browser launcher path is unmanaged and was preserved; rename or remove it before "
+                "running `stackos install --browser-launcher-only`.",
+            )
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=target.parent, prefix=".stackos-browser-", delete=False
+        ) as staged:
+            staged.write(content)
+            staged_path = Path(staged.name)
+        os.chmod(staged_path, 0o755)
+        os.replace(staged_path, target)
+    except OSError:
+        if staged_path is not None:
+            with contextlib.suppress(OSError):
+                staged_path.unlink()
+        return (
+            False,
+            "browser launcher could not be installed; check your local bin directory permissions",
+        )
+    return True, "browser launcher installed"
+
+
+def remove_browser_launcher(*, home: Path | None = None) -> tuple[bool, str]:
+    """Remove the owned browser shim while preserving foreign same-name entries."""
+    target = browser_launcher_path(home=home)
+    content = _managed_browser_launcher_text(target)
+    if content is None:
+        try:
+            target.lstat()
+        except FileNotFoundError:
+            return True, "browser launcher was not installed"
+        except OSError:
+            return True, "browser launcher could not be inspected and was preserved"
+        return True, "unmanaged browser launcher was preserved"
+    try:
+        target.unlink()
+    except OSError:
+        return False, "managed browser launcher could not be removed"
+    return True, "managed browser launcher removed"
 
 
 def _sha256(path: Path) -> str:

@@ -322,6 +322,12 @@ gstack installer helper as normal installs and include `browser-runtime` with
 the pinned upstream source, compiled CLI, Bun, locked dependencies, browser
 assets, licenses, and notices. Native browser launch and persistent-profile
 continuity are release verification evidence rather than installer-time actions.
+The payload also ships `bin/stackos.browser` with the same Python isolation as
+`bin/stackos`. Canonical install/repair refreshes the owned
+`~/.local/bin/stackos.browser` launcher, retaining the configured daemon context.
+Prepared desktop startup reconciles this launcher as well as host MCP wiring;
+app moves refresh its target. Native browser arguments pass directly through
+the session selector to gstack. See [browser sessions](browser-automation.md).
 The wrapper sets the
 packaged `PYTHONHOME`, disables bytecode writes,
 ignores user site packages, and clears ambient Python environment variables so

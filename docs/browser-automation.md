@@ -1,145 +1,143 @@
 # Native Browser Sessions
 
-StackOS creates, reuses, discovers, and stops project browser sessions. Browser
-commands belong to the upstream [gstack browse CLI](https://github.com/garrytan/gstack/tree/71f6048e8ada25180e61438abc1d98cb151fe9a7/browse).
-A client can run that executable directly or send its exact arguments and stdin
-through `browser.cli.run` over MCP, REST, or the generic StackOS CLI.
+StackOS creates, reuses, discovers, and stops project browser sessions. Agents
+operate them from their terminal with the upstream
+[gstack browse CLI](https://github.com/garrytan/gstack/tree/71f6048e8ada25180e61438abc1d98cb151fe9a7/browse):
 
-## Ownership
+```sh
+stackos.browser --session browser-session:project-1:default:main goto https://example.com
+stackos.browser --session browser-session:project-1:default:main snapshot
+stackos.browser --session browser-session:project-1:default:main --help
+```
 
-StackOS owns the installed runtime, project/profile/session identities, persistent
-profile directories, session discovery, and lifecycle transitions. The existing
-operation registry supplies the MCP, REST, CLI, and generic Operations UI contracts.
+Pass the full session ref every time. There is no global active or last-used
+session. Session discovery returns `cli_argv`, a ready command prefix:
 
-Upstream gstack owns command names, argument parsing, browser behavior, snapshots,
-JavaScript, screenshots, tabs, retries inside its CLI, extensions, and companion
-processes. StackOS does not translate commands, maintain a browser-method allowlist,
-rewrite native output, or automatically create browser receipts or artifacts.
-Agents decide which captures to preserve as generic artifacts under normal grants.
-Historical browser receipt rows remain stored.
+```json
+{"cli_argv":["stackos.browser","--session","browser-session:project-1:default:main"]}
+```
 
 ## Client Flow
 
-1. Call `browser.runtime.status` and `browser.session.list`.
-2. Select an existing session, or call `browser.session.start` with a stable
-   `profile_key` and `session_key`. Starting the same healthy session reuses it.
-3. Read `browser.session.status` or the start result for `native_cli`.
-4. Run the upstream executable with that working directory and environment,
-   or call `browser.cli.run` with the session ref and upstream arguments.
-5. Call `browser.session.stop` when the session is no longer needed.
+1. Use `browser.session.list` to discover project sessions. Select the intended
+   session or call `browser.session.start` with stable `profile_key` and
+   `session_key` values to create/reuse it.
+2. Append native gstack arguments to its `cli_argv` and execute in the host
+   terminal. Use the same prefix for every command in that session.
+3. Consult native `--help` or the bundled
+   [command reference](https://github.com/garrytan/gstack/blob/71f6048e8ada25180e61438abc1d98cb151fe9a7/browse/sections/command-list.md)
+   for syntax. StackOS does not maintain a second command vocabulary.
 
-The lifecycle opens a visible browser. For authenticated work, let the operator
-complete login/MFA in that profile, then reuse its `profile_key`. A different
-profile key has separate cookies and storage. A live process exclusively owns a
-profile; a different session key cannot start another process against it.
+Session lifecycle/discovery remains available through MCP, generic REST,
+`stackos ops call`, and the generic Operations UI. The pinned upstream package
+provides a CLI; agents need host terminal access to operate it. StackOS does not
+install gstack's full skill suite or run its global setup.
 
-`browser.session.list` returns scoped metadata for known sessions, including
-stopped or stale records. It does not return native CLI contexts in bulk.
-Discovery inspects the owned native state and OS process identity, so a live
-session remains discoverable after the StackOS daemon restarts. An alive but busy
-or unhealthy process retains ownership; a health timeout does not permit a
-competing start. Stopping waits for actual process and state retirement, rather
-than treating upstream acknowledgement as completed shutdown.
+The browser opens visibly. For authenticated work, let the operator complete
+login/MFA in the selected profile, then keep reusing its `profile_key`. Different
+profiles have separate cookies and storage. One live process owns a profile;
+another session cannot use it concurrently.
 
-## Native CLI Handoff
+For background work in an existing tab, read native `tabs`, confirm the target
+ID, and append upstream `--tab-id <id>` to each command:
 
-A usable selected session returns:
-
-```json
-{"native_cli":{"executable":"<installed upstream browse>","cwd":"<session working directory>","env":{"BROWSE_STATE_FILE":"<owned state file>","BROWSE_NO_AUTOSTART":"1","CHROMIUM_PROFILE":"<persistent profile>","BROWSE_HEADED":"1","BROWSE_PARENT_PID":"0","GSTACK_HOME":"<owned home>","PLAYWRIGHT_BROWSERS_PATH":"<installed browsers>","PATH":"<bundled tool path>"}}}
+```bash
+stackos.browser --session <full-ref> tabs
+stackos.browser --session <full-ref> goto https://example.com --tab-id 3
+stackos.browser --session <full-ref> snapshot --tab-id 3
+stackos.browser --session <full-ref> screenshot /tmp/page.png --tab-id 3
 ```
 
-Use the returned values as supplied. For example, a client with subprocess access
-can invoke the real executable directly:
+Native `tab <id>` explicitly brings the page to the front; do not use it before
+each automated capture. `--tab-id` selects the command's tab without that focus
+call and restores the prior active tab afterward. This is upstream behavior,
+not a StackOS command rewrite. Verify the ID still exists before a work batch:
+the pinned upstream warns and continues on the active tab if pinning fails.
+Recheck page identity when accepting captures. Explicit `focus`, `connect`,
+`tab`, and opening a new browser/tab can still raise a window.
 
-```python
-subprocess.run(
-    [native_cli["executable"], "goto", "https://example.com"],
-    cwd=native_cli["cwd"],
-    env={**os.environ, **native_cli["env"]},
-)
-```
+## Launcher Contract
 
-No StackOS process receives that command. Native stdout, stderr, and exit status
-remain ordinary OS streams. The context includes paths needed to operate the
-selected local session; treat it as a local capability. StackOS never returns
-the state-file contents, authentication token, cookies, or stored credentials
-as part of session discovery.
+`stackos.browser` consumes only the leading `--session <full-ref>`. It resolves
+that exact project-scoped session with one authenticated `browser.session.status`
+request, applies its native working directory and environment, and replaces
+itself with the upstream executable using `execve`.
 
-## MCP Relay
+Every remaining argument goes to gstack unchanged, including `--help`, `stop`,
+`restart`, `--force-restart`, `--`, a later `--session`, and future commands or
+flags. Native stdin, stdout, stderr, terminal descriptors, exit status, and
+signals remain ordinary OS behavior. There is no command capture, response
+envelope, command filter, extra retry, or StackOS browser-command audit.
 
-The pinned upstream distribution exposes a CLI, not an upstream MCP server.
-`browser.cli.run` is a mechanical transport to that same executable for clients
-that only have MCP. After `workspace.startSession`, the bridge injects project
-scope. These are the equivalent toolbox payloads:
+The local daemon must be reachable to resolve the selection. Missing or malformed
+refs, unavailable runtime/context, and a competing live profile owner fail before
+native execution. A stopped, stale, busy, or unhealthy selected session can still
+resolve its native context; health is reported separately. Upstream decides what
+its requested command does, including native startup and recovery.
 
-```json
-{"tool_name":"browser.session.start","arguments":{"profile_key":"default","session_key":"main"}}
-```
+Native commands can stop or restart the selected browser. Later StackOS session
+observations reconcile its state. `browser.session.stop` remains available for
+StackOS-managed shutdown and waits for observed process/state retirement.
 
-```json
-{"tool_name":"browser.cli.run","arguments":{"session_ref":"browser-session:project-1:default:main","argv":["goto","https://example.com"]}}
-```
+## Context And Discovery
 
-```json
-{"tool_name":"browser.cli.run","arguments":{"session_ref":"browser-session:project-1:default:main","argv":["chain"],"stdin":"[[\"js\",\"document.title\"]]"}}
-```
+Selected start/status results retain `native_cli={executable,cwd,env}` for local
+clients that need the launch context. Ordinary agents use `cli_argv` to avoid
+assembling it themselves. Bulk discovery returns summary metadata and `cli_argv`
+for every known session, including stopped/stale rows, without native contexts.
+A prefix identifies a session; it does not promise that the runtime is ready.
 
-The relay invokes the native executable once. `argv` is an ordered array of
-strings; no shell joining, command filtering, flag insertion, or retries occur.
-Optional `stdin` is UTF-8 encoded without adding a newline. The selected command
-environment prevents automatic session creation. Native command errors remain
-native results, including nonzero exit codes.
+The native environment selects the exact state file, persistent profile,
+visible browser, bundled tools and browser assets. Ambient `BROWSE_`, `GSTACK_`,
+`CHROMIUM_`, and `PLAYWRIGHT_` controls are removed before applying that context.
+The handoff does not set `BROWSE_NO_AUTOSTART`. Other terminal environment and
+standard streams are inherited.
 
-The raw result contains exactly these command-result fields inside the normal
-StackOS write envelope:
+StackOS never returns state-file contents, authentication tokens, cookies, or
+stored credentials in session discovery. Selected paths are local capabilities.
+Native page output is working data; agents decide what to preserve with generic
+artifact operations under their normal authority. Historical browser receipts
+remain stored.
 
-```json
-{"stdout":"native output\n","stderr":"","exit_code":0,"encoding":"utf-8"}
-```
+Discovery inspects owned native state and OS process identity after daemon
+restart. A live busy/unhealthy owner keeps its profile. Runtime repair preserves
+profile directories and session history.
 
-Both streams are captured as bytes. When both strictly decode as UTF-8, their
-text is returned unchanged, including CRLF, control characters, and final
-newlines. If either stream is not valid UTF-8, both stream fields contain base64
-and `encoding` is `base64`. This preserves bytes across JSON transport. The
-relay rejects non-null `idempotency_key` and `expected_etag` before any generic
-replay/cache path. Compact and acknowledgement response modes are unavailable.
+## Install And Upgrade
 
-Normal project binding and run-plan grants apply to StackOS operations. Grant
-`browser.cli.run` for native browser work; grants do not enumerate gstack
-commands. Direct local CLI access uses the selected session capability and does
-not pass through StackOS grants or audit.
+Normal StackOS install/repair installs the current-user command at
+`~/.local/bin/stackos.browser`; that directory must be on the agent terminal's
+`PATH`. The managed launcher retains the configured daemon host, port, data and
+state directories and points to the current StackOS installation. Repair refreshes
+owned entries after package moves/upgrades and preserves unrelated same-name
+files. Uninstall removes only StackOS-owned launchers.
 
-## Runtime And Upgrade
+The desktop payload includes a relocatable `bin/stackos.browser`. Doctor checks
+launcher readiness and the installed upstream runtime. Restart host MCP sessions
+after upgrading to refresh the lifecycle-only tool catalog.
 
-Install and repair use the existing StackOS installer. The runtime pins gstack
-revision `71f6048e8ada25180e61438abc1d98cb151fe9a7` (version `1.84.1.0`) and Bun
-`1.3.8`, retaining the upstream locked dependencies, browser assets, licenses,
-and notices. The distribution lives under `browser-runtime` in the desktop
-payload or daemon data directory. Doctor checks this installed distribution.
-StackOS does not run gstack's global setup or install its agent skills.
+The distribution pins gstack revision `71f6048e8ada25180e61438abc1d98cb151fe9a7`
+(version `1.84.1.0`), Bun `1.3.8`, and the upstream locked dependencies/browser
+assets, retaining licenses and notices. It lives under `browser-runtime` in the
+desktop payload or daemon data directory.
 
-Persistent profiles keep their existing `browser-profiles/playwright-chromium`
-directory locations during replacement; the directory name preserves existing
-data and does not select the old driver. Profile/session/history rows and old
-stored launch fields remain intact. Retired launch fields are no longer active
-controls. Runtime repair replaces the runtime distribution, not browser profiles.
-
-Native gstack currently writes its extension authentication bootstrap to
-`~/.gstack/.auth.json` even with `GSTACK_HOME` set. That is upstream behavior;
-StackOS neither adopts it as a session registry nor reads or publishes it.
-
-The first-layer MCP catalog contains runtime status, profile create/list,
-session start/list/status/stop, and the CLI relay. Restart the host MCP session
-after upgrade to refresh its mounted catalog. Session operations are also
-available through `toolbox.call`, `stackos ops call`, and generic operation REST
-routes.
+Persistent profiles retain their existing `browser-profiles/playwright-chromium`
+paths; the directory name preserves data and does not select the old driver.
+Retired launch fields remain historical metadata. Native gstack may write its
+extension bootstrap to `~/.gstack/.auth.json`; StackOS does not use it as a
+session registry or expose its contents.
 
 ## Verification
 
-Use a synthetic localhost page and a stable `gstack-native-proof` profile.
-Start twice and verify one native process, use direct CLI and MCP relay, then
-set a synthetic cookie/localStorage marker. Restart the StackOS daemon and
-discover the same session. Stop the browser, verify process retirement, start
-again, and verify the marker persists. Installed-app signoff additionally runs
-doctor, supported install/repair, and restart from `/Applications/StackOS.app`.
+Capture helpers should wait for page-specific content after navigation and
+visually inspect each saved screenshot. Navigation success alone does not prove
+the page has rendered. Helpers own their command deadlines and failure evidence:
+retain elapsed time, exit status, stdout/stderr and host-tool errors. These are
+caller responsibilities; the browser launcher does not capture or time commands.
+
+Use a synthetic localhost page and stable proof profile. Create/reuse and
+discover the same session, then operate it with the global command from fresh
+shells. Verify native help, output, stdin, exit status, terminal behavior and
+signals. Set a synthetic cookie/localStorage marker and verify it survives native
+browser restart and StackOS daemon restart. Installed-app signoff also covers
+managed-launcher repair, doctor, and restart from `/Applications/StackOS.app`.

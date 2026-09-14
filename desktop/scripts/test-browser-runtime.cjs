@@ -16,6 +16,8 @@ const runtime = fs.readFileSync(path.join(repoRoot, "stackos", "browser", "runti
 const bunEntitlements = path.join(desktopDir, "scripts", "bun-entitlements.plist");
 
 assert.match(payload, /ensure_gstack_runtime/);
+assert.match(payload, /bin\/stackos\.browser/);
+assert.match(payload, /verify-stackos-browser-cli\.cjs/);
 assert.doesNotMatch(payload, /ensure_chromium_runtime/);
 assert.doesNotMatch(service, /PLAYWRIGHT_BROWSERS_PATH/);
 assert.match(signer, /bundledMachOFiles/);
@@ -30,6 +32,15 @@ assert.match(runtime, /packaged_stackos_root/);
 assert.match(runtime, /gstack_runtime_root/);
 assert.match(runtime, /gstack_executable_path/);
 assert.doesNotMatch(runtime, /Chromium\.app/);
+assert.match(service, /--browser-launcher-only/);
+assert.match(
+  fs.readFileSync(path.join(desktopDir, "scripts", "build-mac.mjs"), "utf8"),
+  /verify-stackos-browser-cli\.cjs/
+);
 assert.ok(fs.existsSync(bunEntitlements), "Bun hardened-runtime entitlements must ship with desktop scripts");
+assert.ok(
+  fs.existsSync(path.join(desktopDir, "scripts", "verify-stackos-browser-cli.cjs")),
+  "packaged browser launcher verifier must ship with desktop scripts"
+);
 
 console.log("desktop browser runtime contract test ok");

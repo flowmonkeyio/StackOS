@@ -965,6 +965,222 @@ def test_cli_install_default_installs_plugin_and_skill_mirrors(
     assert current_alembic_version(Settings()) == HEAD_REVISION
 
 
+def test_browser_launcher_installs_managed_context_and_repairs_owned_entry(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "payload with spaces" / "stackos.browser"
+    target.parent.mkdir(parents=True)
+    target.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    target.chmod(0o755)
+    monkeypatch.setattr(installer, "_browser_launcher_command", lambda: [str(target)])
+    monkeypatch.setenv("STACKOS_HOST", "localhost")
+    monkeypatch.setenv("STACKOS_PORT", "5199")
+    monkeypatch.setenv("STACKOS_DATA_DIR", str(sandbox / "custom data"))
+    monkeypatch.setenv("STACKOS_STATE_DIR", str(sandbox / "custom state"))
+
+    ok, message = installer.ensure_browser_launcher(settings=Settings(), home=sandbox)
+
+    launcher = sandbox / ".local" / "bin" / "stackos.browser"
+    assert ok is True, message
+    assert launcher.stat().st_mode & 0o777 == 0o755
+    content = launcher.read_text(encoding="utf-8")
+    assert content.startswith("#!/bin/sh\n# StackOS managed browser launcher v1\n")
+    assert "export STACKOS_HOST=localhost" in content
+    assert "export STACKOS_PORT=5199" in content
+    assert f"export STACKOS_DATA_DIR='{sandbox / 'custom data'}'" in content
+    assert f"export STACKOS_STATE_DIR='{sandbox / 'custom state'}'" in content
+    assert f"exec '{target}' \"$@\"" in content
+
+    replacement = tmp_path / "moved payload" / "stackos.browser"
+    replacement.parent.mkdir(parents=True)
+    replacement.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    replacement.chmod(0o755)
+    monkeypatch.setattr(installer, "_browser_launcher_command", lambda: [str(replacement)])
+
+    repaired, repaired_message = installer.ensure_browser_launcher(
+        settings=Settings(), home=sandbox
+    )
+
+    assert repaired is True, repaired_message
+    assert str(replacement) in launcher.read_text(encoding="utf-8")
+    assert str(target) not in launcher.read_text(encoding="utf-8")
+
+
+def test_browser_launcher_preserves_foreign_entry_and_uninstall_only_removes_managed(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    launcher = sandbox / ".local" / "bin" / "stackos.browser"
+    launcher.parent.mkdir(parents=True)
+    foreign = "#!/bin/sh\necho user-owned\n"
+    launcher.write_text(foreign, encoding="utf-8")
+    launcher.chmod(0o755)
+
+    ok, message = installer.ensure_browser_launcher(settings=Settings(), home=sandbox)
+
+    assert ok is False
+    assert "unmanaged" in message
+    assert launcher.read_text(encoding="utf-8") == foreign
+
+    removed, removal_message = installer.remove_browser_launcher(home=sandbox)
+
+    assert removed is True, removal_message
+    assert launcher.read_text(encoding="utf-8") == foreign
+
+
+def test_make_uninstall_uses_managed_browser_launcher_removal() -> None:
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+
+    assert "Removing managed global browser launcher" in makefile
+    assert "from stackos.install import remove_browser_launcher" in makefile
+
+
+def test_browser_launcher_preserves_foreign_symlink(
+    sandbox: Path,
+) -> None:
+    target = sandbox / "user-browser-launcher"
+    target.write_text("#!/bin/sh\necho user-owned\n", encoding="utf-8")
+    target.chmod(0o755)
+    launcher = sandbox / ".local" / "bin" / "stackos.browser"
+    launcher.parent.mkdir(parents=True)
+    launcher.symlink_to(target)
+
+    ok, message = installer.ensure_browser_launcher(settings=Settings(), home=sandbox)
+    removed, removal_message = installer.remove_browser_launcher(home=sandbox)
+
+    assert ok is False
+    assert "unmanaged" in message
+    assert launcher.is_symlink()
+    assert removed is True, removal_message
+    assert launcher.is_symlink()
+
+
+def test_browser_launcher_shell_shim_forwards_exact_native_tail_and_context(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "native browser"
+    target.write_text(
+        "#!/bin/sh\n"
+        "printf 'host=<%s>\\n' \"$STACKOS_HOST\"\n"
+        "printf 'port=<%s>\\n' \"$STACKOS_PORT\"\n"
+        "printf 'data=<%s>\\n' \"$STACKOS_DATA_DIR\"\n"
+        "printf 'state=<%s>\\n' \"$STACKOS_STATE_DIR\"\n"
+        'for arg in "$@"; do printf \'arg=<%s>\\n\' "$arg"; done\n',
+        encoding="utf-8",
+    )
+    target.chmod(0o755)
+    monkeypatch.setattr(installer, "_browser_launcher_command", lambda: [str(target)])
+    monkeypatch.setenv("STACKOS_HOST", "localhost")
+    monkeypatch.setenv("STACKOS_PORT", "5199")
+    monkeypatch.setenv("STACKOS_DATA_DIR", str(sandbox / "data with spaces"))
+    monkeypatch.setenv("STACKOS_STATE_DIR", str(sandbox / "state with spaces"))
+    ok, message = installer.ensure_browser_launcher(settings=Settings(), home=sandbox)
+    assert ok is True, message
+
+    result = subprocess.run(
+        [
+            str(sandbox / ".local" / "bin" / "stackos.browser"),
+            "--session",
+            "browser-session:project-1:profile:session",
+            "chain",
+            '{"key":"value with spaces"}',
+            "",
+            "--",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert result.stderr == ""
+    assert result.stdout.splitlines() == [
+        "host=<localhost>",
+        "port=<5199>",
+        f"data=<{sandbox / 'data with spaces'}>",
+        f"state=<{sandbox / 'state with spaces'}>",
+        "arg=<--session>",
+        "arg=<browser-session:project-1:profile:session>",
+        "arg=<chain>",
+        'arg=<{"key":"value with spaces"}>',
+        "arg=<>",
+        "arg=<-->",
+    ]
+
+
+def test_nonpackaged_browser_launcher_ignores_hostile_current_directory(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("STACKOS_PACKAGED_CLI", raising=False)
+    hostile_package = tmp_path / "hostile-cwd" / "stackos"
+    hostile_package.mkdir(parents=True)
+    (hostile_package / "__init__.py").write_text("", encoding="utf-8")
+    (hostile_package / "browser_cli.py").write_text(
+        "import sys\nprint('HOSTILE_MODULE_LOADED')\nsys.exit(0)\n",
+        encoding="utf-8",
+    )
+
+    ok, message = installer.ensure_browser_launcher(settings=Settings(), home=sandbox)
+    assert ok is True, message
+
+    result = subprocess.run(
+        [str(sandbox / ".local" / "bin" / "stackos.browser"), "--help"],
+        cwd=hostile_package.parent,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "Usage: stackos.browser --session <full-session-ref>" in result.stderr
+    assert "HOSTILE_MODULE_LOADED" not in result.stdout
+
+
+def test_cli_install_fails_closed_when_browser_launcher_path_is_foreign(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(installer, "ensure_gstack_runtime", lambda **_kwargs: (True, "browser ok"))
+    monkeypatch.setattr(installer, "repair_mcp_hosts", lambda home: (True, ["mcp ok"]))
+    monkeypatch.setattr(installer, "copy_skills", lambda runtime, home: (home / runtime, 1))
+    monkeypatch.setattr(
+        installer,
+        "copy_plugins",
+        lambda home: (home / ".codex/plugins/stackos", 1),
+    )
+    monkeypatch.setattr(installer, "register_plugin_marketplace", lambda home: "marketplace ok")
+    launcher = sandbox / ".local" / "bin" / "stackos.browser"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("#!/bin/sh\necho user-owned\n", encoding="utf-8")
+    launcher.chmod(0o755)
+
+    result = CliRunner().invoke(app, ["install", "--skip-doctor"], catch_exceptions=False)
+
+    assert result.exit_code == 1
+    assert "browser launcher" in result.output.lower()
+    assert launcher.read_text(encoding="utf-8") == "#!/bin/sh\necho user-owned\n"
+
+
+def test_doctor_browser_launcher_reports_unmanaged_entry(
+    sandbox: Path,
+) -> None:
+    launcher = sandbox / ".local" / "bin" / "stackos.browser"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("#!/bin/sh\necho user-owned\n", encoding="utf-8")
+
+    ok, details = doctor_cli._check_browser_launcher(sandbox, Settings())
+
+    assert ok is False
+    assert details["status"] == "unmanaged"
+    assert "repair" in details
+
+
 def test_cli_install_preserves_seed_and_token_on_rerun(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1856,6 +2072,11 @@ def test_doctor_plain_output_reports_claude_absent_without_blocking(
     monkeypatch.setattr(doctor_cli, "_check_browser_runtime", lambda: (True, {"repair": None}))
     monkeypatch.setattr(
         doctor_cli,
+        "_check_browser_launcher",
+        lambda home, settings: (True, {"status": "current", "repair": None}),
+    )
+    monkeypatch.setattr(
+        doctor_cli,
         "_check_installed_assets",
         lambda home: (
             {
@@ -1967,6 +2188,11 @@ def test_doctor_exits_9_for_stale_claude_registration(
     )
     monkeypatch.setattr(doctor_cli, "_check_scheduler_jobs", lambda settings: (True, 4))
     monkeypatch.setattr(doctor_cli, "_check_browser_runtime", lambda: (True, {"repair": None}))
+    monkeypatch.setattr(
+        doctor_cli,
+        "_check_browser_launcher",
+        lambda home, settings: (True, {"status": "current", "repair": None}),
+    )
     monkeypatch.setattr(
         doctor_cli,
         "_check_installed_assets",

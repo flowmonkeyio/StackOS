@@ -259,6 +259,7 @@ _LIST_KEEP_FIELDS = frozenset(
         "capability_requirements",
         "changed_fields",
         "cleared_fields",
+        "cli_argv",
         "commands",
         "consistency_issues",
         "connections",

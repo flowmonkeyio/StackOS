@@ -112,7 +112,6 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "browser.session.start",
         "browser.session.status",
         "browser.session.stop",
-        "browser.cli.run",
         "localAgentChat.createMessage",
         "communication.send",
         "communication.reply",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
@@ -11,7 +12,7 @@ from sqlmodel import Session, col, select
 
 from stackos.browser.runtime import BROWSER_PROVIDER, NativeSessionState
 from stackos.db.models import BrowserProfile, BrowserSession, Project
-from stackos.repositories.base import Envelope, NotFoundError, Page
+from stackos.repositories.base import Envelope, NotFoundError, Page, ValidationError
 
 
 def _utcnow() -> datetime:
@@ -22,6 +23,12 @@ def _required_id(value: int | None) -> int:
     if value is None:
         raise RuntimeError("expected persisted row id")
     return int(value)
+
+
+_CANONICAL_BROWSER_KEY = r"[a-z0-9](?:[a-z0-9_.-]{0,158}[a-z0-9])?"
+_SESSION_REF_RE = re.compile(
+    rf"^browser-session:project-([1-9][0-9]*):({_CANONICAL_BROWSER_KEY}):({_CANONICAL_BROWSER_KEY})$"
+)
 
 
 class BrowserRuntimeStatusOut(BaseModel):
@@ -63,6 +70,7 @@ class BrowserSessionOut(BaseModel):
     status: str
     healthy: bool | None = None
     repair: str | None = None
+    cli_argv: list[str]
     native_cli: dict[str, Any] | None = None
     metadata_json: dict[str, Any] | None
     started_at: datetime
@@ -90,6 +98,14 @@ class BrowserRepository:
 
     def session_ref(self, *, project_id: int, profile_key: str, session_key: str) -> str:
         return f"browser-session:project-{project_id}:{profile_key}:{session_key}"
+
+    @staticmethod
+    def project_id_from_session_ref(session_ref: str) -> int:
+        """Read project scope from one exact, canonical session reference."""
+        match = _SESSION_REF_RE.fullmatch(session_ref)
+        if match is None:
+            raise ValidationError("browser session_ref must be a canonical full session reference")
+        return int(match.group(1))
 
     def create_profile(
         self,
@@ -274,6 +290,7 @@ class BrowserRepository:
         *,
         state: NativeSessionState | None = None,
         include_native_cli: bool = False,
+        native_cli: dict[str, Any] | None = None,
     ) -> BrowserSessionOut:
         if profile is None:
             profile = self._s.get(BrowserProfile, session_row.profile_id)
@@ -282,7 +299,11 @@ class BrowserRepository:
                     "browser profile not found", data={"profile_id": session_row.profile_id}
                 )
         return self._session_out(
-            session_row, profile, state=state, include_native_cli=include_native_cli
+            session_row,
+            profile,
+            state=state,
+            include_native_cli=include_native_cli,
+            native_cli=native_cli,
         )
 
     @staticmethod
@@ -292,20 +313,16 @@ class BrowserRepository:
         *,
         state: NativeSessionState | None = None,
         include_native_cli: bool = False,
+        native_cli: dict[str, Any] | None = None,
     ) -> BrowserSessionOut:
-        native_cli: dict[str, Any] | None = None
+        selected_native_cli: dict[str, Any] | None = None
         healthy: bool | None = None
         repair: str | None = None
         if state is not None:
             healthy = state.healthy if state.owned else None
             repair = state.repair
-            if (
-                include_native_cli
-                and state.owned
-                and state.healthy
-                and state.native_cli is not None
-            ):
-                native_cli = state.native_cli.to_dict()
+        if include_native_cli and native_cli is not None:
+            selected_native_cli = dict(native_cli)
         return BrowserSessionOut(
             id=_required_id(session_row.id),
             project_id=session_row.project_id,
@@ -316,7 +333,8 @@ class BrowserRepository:
             status=session_row.status,
             healthy=healthy,
             repair=repair,
-            native_cli=native_cli,
+            cli_argv=["stackos.browser", "--session", session_row.session_ref],
+            native_cli=selected_native_cli,
             metadata_json=session_row.metadata_json,
             started_at=session_row.started_at,
             ended_at=session_row.ended_at,

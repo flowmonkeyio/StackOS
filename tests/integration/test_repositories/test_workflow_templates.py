@@ -147,7 +147,7 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     foundation_outputs = {item.key: item for item in branding_foundation_described.spec.outputs}
     assert "out_of_scope" in foundation_outputs["voice_review_report"].schema_data["required"]
     assert branding_content_described.summary.plugin_slug == "branding"
-    assert branding_content_described.spec.version == "0.5.0"
+    assert branding_content_described.spec.version == "0.6.0"
     assert branding_content_described.spec.metadata_json["default_branding_workflow"] is True
     assert branding_content_described.spec.metadata_json["workflow_family"] == (
         "content-production"
@@ -253,7 +253,7 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "action.execute:publish_linkedin"
         in (branding_content_described.spec.metadata_json["grants"])
     )
-    assert "browser.cli.run" in branding_content_described.spec.metadata_json["grants"]
+    assert "browser.cli.run" not in branding_content_described.spec.metadata_json["grants"]
     branding_template_tool_grants = {
         item["step_id"]: set(item["tools"])
         for item in branding_content_described.spec.metadata_json["mcp_tool_grants"]
@@ -272,7 +272,6 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert "decision.record" in branding_template_tool_grants["execute-publication"]
     assert {
         "browser.runtime.status",
-        "browser.cli.run",
         "browser.profile.list",
         "browser.profile.create",
         "browser.session.list",
@@ -322,7 +321,6 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "artifact.archive",
         "artifact.supersede",
         "browser.runtime.status",
-        "browser.cli.run",
         "browser.profile.list",
         "browser.profile.create",
         "browser.session.list",
@@ -1054,7 +1052,7 @@ def test_website_seo_analysis_has_public_fallback_and_evidence_contract(
         plugin_slug="seo",
     )
     spec = described.spec
-    assert spec.version == "0.4.0"
+    assert spec.version == "0.5.0"
 
     assert [step.id for step in spec.steps] == [
         "scope-audit",
@@ -1233,4 +1231,5 @@ def test_website_seo_analysis_has_public_fallback_and_evidence_contract(
         if grant["step_id"] == "map-public-site"
         for tool in ([grant["tool"]] if "tool" in grant else grant["tools"])
     }
-    assert {"action.execute", "browser.session.start", "browser.cli.run"} <= map_tools
+    assert {"action.execute", "browser.session.start"} <= map_tools
+    assert "browser.cli.run" not in map_tools

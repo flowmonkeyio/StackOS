@@ -11,7 +11,6 @@ _BROWSER_OPERATION_NAMES: tuple[str, ...] = (
     "browser.profile.list",
     "browser.session.start",
     "browser.session.stop",
-    "browser.cli.run",
     "browser.session.list",
     "browser.session.status",
 )

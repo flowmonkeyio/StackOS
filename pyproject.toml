@@ -45,6 +45,7 @@ dependencies = [
 
 [project.scripts]
 stackos = "stackos.cli:app"
+"stackos.browser" = "stackos.browser_cli:main"
 
 [project.urls]
 Homepage = "https://github.com/flowmonkeyio/stackos"

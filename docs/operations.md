@@ -199,30 +199,27 @@ not a second registry; it renders `GET /api/v1/operations` and
 
 ## Browser Operations
 
-The browser operation surface owns runtime status, profile create/list,
-session start/list/status/stop, and one native CLI relay. Session discovery
-reconciles owned gstack state and OS process identity after daemon restart.
-A healthy selected session returns `native_cli={executable,cwd,env}` for direct
-use of the upstream executable; bulk lists return scoped summaries.
+The browser operation surface owns runtime status, profile create/list, and
+session start/list/status/stop. Session discovery reconciles owned gstack state
+and OS process identity after daemon restart. Every session row includes a ready
+`cli_argv` prefix: `["stackos.browser","--session",session_ref]`.
 
-`browser.cli.run` accepts an arbitrary ordered `argv` array and optional UTF-8
-`stdin`. It invokes the native executable once and returns
-`{stdout,stderr,exit_code,encoding}` inside the ordinary write envelope.
-Both streams remain exact UTF-8 text when valid; if either is invalid UTF-8,
-both are base64 encoded. Native nonzero exit codes remain result data.
+Agents append upstream gstack arguments and run that command in their terminal.
+The standalone launcher resolves the exact session once through the existing
+authenticated status operation, then replaces itself with the native process.
+Native commands, output, terminal streams and exit status do not pass through
+StackOS operation dispatch. There is no browser command relay or browser-method
+allowlist. Upstream owns parsing and browser behavior.
 
-The relay is raw-only and rejects non-null `idempotency_key` and
-`expected_etag` in its input model before dispatcher replay/storage. Normal
-project scope and run-plan grants apply. Upstream gstack owns browser command
-semantics, parsing, and native retries. StackOS adds no command translation,
-allowlist, browser receipts, or automatic screenshot artifacts.
+Selected start/status returns `native_cli={executable,cwd,env}` independently of
+observed health when its runtime and profile binding are valid. Bulk lists omit
+that context. A live sibling profile owner prevents a competing handoff.
 
-The same OperationSpec supplies MCP, generic REST, generic CLI, and Operations
-UI discovery. No browser-specific REST route or CLI interpreter is needed.
-Selected native session paths are local capabilities; state contents and
-tokens are not exposed by lifecycle operations. Native output is returned
-unchanged and may contain page data requested by the client. See
-[browser sessions](browser-automation.md) for examples and profile continuity.
+The same OperationSpec supplies lifecycle MCP, generic REST, generic CLI, and
+Operations UI discovery. Selected paths are local capabilities; state contents
+and tokens are not exposed. Native output may contain requested page data.
+Agents preserve useful captures explicitly through generic artifacts. See
+[browser sessions](browser-automation.md) for usage and profile continuity.
 
 ## Generic REST Calls
 
@@ -412,7 +409,6 @@ index for common core operations, not a replacement for registry discovery.
 - `browser.profile.list`
 - `browser.session.start`
 - `browser.session.stop`
-- `browser.cli.run`
 - `browser.session.list`
 - `browser.session.status`
 - `communication.reply`

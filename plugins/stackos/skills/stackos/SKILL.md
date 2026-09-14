@@ -113,18 +113,26 @@ primitive.
 10. For browser work, call `browser.session.list` to discover existing sessions,
     then `browser.session.start` to create or reuse one with a stable
     `profile_key`. The lifecycle opens native gstack visibly for login and
-    operator observation. Selected start/status returns `native_cli` with
-    the real upstream executable, working directory, and environment; use
-    those values directly when the host has CLI access. MCP-only clients call
-    `browser.cli.run` with the selected session ref, exact upstream `argv`
-    array, and optional `stdin`. StackOS does not interpret commands, retry,
-    redact native output, or automatically create browser receipts/artifacts.
-    The raw relay returns stdout, stderr, exit_code, and encoding (UTF-8 or
-    base64 for both streams when either contains invalid UTF-8). It rejects
-    idempotency and ETag values. Preserve useful browser captures explicitly
-    through generic artifact operations when authorized. Treat the selected
-    native context as a local capability and native output as working data;
-    state-file contents and authentication tokens are not discovery output.
+    operator observation. Each session returns `cli_argv`, a ready terminal
+    prefix: `["stackos.browser", "--session", session_ref]`. Append native
+    gstack arguments and execute directly in the host terminal. Pass the same
+    full ref on every command. Use `stackos.browser --session <full-ref> --help`
+    for upstream syntax. Only the leading selector is consumed; all remaining
+    arguments, streams, exit status and signals stay native. The launcher
+    resolves session metadata once, then replaces itself with gstack. There is
+    no browser-command MCP relay. Preserve useful captures explicitly through
+    generic artifact operations when authorized. Selected start/status also
+    returns `native_cli` for clients needing the launch context; state-file
+    contents and authentication tokens are not discovery output.
+    For routine work in an existing tab, read native `tabs`, verify its ID,
+    and append `--tab-id <id>` to each native command. Avoid `tab <id>` before
+    captures: it deliberately brings the page to the front. Native tab pinning
+    avoids that focus call; a missing ID can fall back to the active tab, so
+    recheck the tab list and captured page identity. Explicit `focus`, `connect`,
+    `tab`, and creating a browser/tab can still raise a window.
+    After navigation, wait for page-specific content and inspect each saved
+    screenshot. Capture helpers own deadlines and retain elapsed time, exit
+    status, stdout/stderr, and host-tool errors when a command fails.
 
 ## Common Flows
 
@@ -239,10 +247,12 @@ primitive.
 - Use browser automation: call `browser.runtime.status` and
   `browser.session.list`, then select or create/reuse a session with
   `browser.session.start`. If login is required, let the operator complete it
-  in that visible profile. Use the selected `native_cli` context directly, or
-  `browser.cli.run` with native argv such as `["goto","https://example.com"]`.
-  Native command vocabulary belongs to upstream gstack. Reuse the same profile
-  to retain cookies/storage; stop through `browser.session.stop` when done.
+  in that visible profile. Run `stackos.browser --session <full-ref> goto
+  https://example.com` directly in the host terminal. Append native arguments
+  to the returned `cli_argv`; every invocation names its session. Native
+  command vocabulary belongs to upstream gstack. Reuse the same profile to
+  retain cookies/storage; native stop/restart pass through unchanged, and
+  `browser.session.stop` remains available for managed shutdown.
   Session discovery survives StackOS daemon restart. A busy live owner keeps
   its profile even when health is unavailable.
 - Repair denied tools: read `toolbox.describe.tool_statuses`. `unknown_tool`

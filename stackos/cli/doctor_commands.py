@@ -163,6 +163,18 @@ def _check_browser_runtime() -> tuple[bool, dict[str, object]]:
     }
 
 
+def _check_browser_launcher(home: Path, settings: Settings) -> tuple[bool, dict[str, object]]:
+    """Inspect the managed global browser shim without returning its target or context."""
+    from stackos import install as installer
+
+    status, message = installer.inspect_browser_launcher(settings=settings, home=home)
+    ready = status == "current"
+    return ready, {
+        "status": status,
+        "repair": None if ready else message,
+    }
+
+
 def _count_traversable_named(
     root: object, filename: str, *, exclude_dirs: frozenset[str] = frozenset()
 ) -> int:
@@ -612,6 +624,7 @@ def doctor(
     scheduler_ok, scheduler_job_count = _check_scheduler_jobs(settings)
     browser_ok, browser_info = _check_browser_runtime()
     home = _doctor_home()
+    browser_launcher_ok, browser_launcher_info = _check_browser_launcher(home, settings)
     install_checks, install_info = _check_installed_assets(home)
     mcp_registration_ready, mcp_host_infos = _check_mcp_hosts(home)
     mcp_host_by_key = {str(info["host_key"]): info for info in mcp_host_infos}
@@ -632,6 +645,7 @@ def doctor(
         "alembic_at_head": alembic_ok,
         "scheduler_jobs_healthy": scheduler_ok,
         "browser_runtime_ready": browser_ok,
+        "browser_launcher_ready": browser_launcher_ok,
         "codex_mcp_registered": codex_mcp_ok,
         "claude_mcp_registered": claude_mcp_ok,
         "mcp_registration_ready": mcp_registration_ready,
@@ -658,6 +672,7 @@ def doctor(
         "alembic_version": alembic_version,
         "scheduler_job_count": scheduler_job_count,
         "browser_runtime": browser_info,
+        "browser_launcher": browser_launcher_info,
         "home_dir": str(home),
         "install_checks": install_info,
         "codex_mcp": codex_mcp_info,
@@ -679,7 +694,12 @@ def doctor(
         code = 7
     elif not alembic_ok:
         code = 4
-    elif not all(install_checks.values()) or not browser_ok or not mcp_registration_ready:
+    elif (
+        not all(install_checks.values())
+        or not browser_ok
+        or not browser_launcher_ok
+        or not mcp_registration_ready
+    ):
         code = 9
     elif not daemon_up:
         code = 1
@@ -712,6 +732,11 @@ def doctor(
         if not browser_ok:
             repair = browser_info.get("repair")
             typer.echo(f"  note: browser runtime is not ready — {repair}.")
+        if not browser_launcher_ok:
+            typer.echo(
+                "  note: global browser launcher is not ready — "
+                f"{browser_launcher_info.get('repair')}."
+            )
         for host in mcp_host_infos:
             if host.get("advisory"):
                 typer.echo(f"  note: {host.get('message')}")

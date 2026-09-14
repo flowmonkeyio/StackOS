@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: branding.content-production
 name: Branding Content Production
-version: 0.5.0
+version: 0.6.0
 description: End-to-end journalist-led branding workflow that turns a topic, evidence, research, or current work into a voice-consistent canonical piece, optional generated image set, executable channel publication jobs, automated publishing, and durable content memory.
 domain: branding
 owner:
@@ -699,7 +699,7 @@ steps:
       - Every attempted external action maps to the explicit publication intent, one named target channel, and one destination.
       - API-capable channels execute through StackOS action.execute with provider responses recorded in distribution-records.
       - Browser or admin UI channels are operated by the agent in the platform UI using the final publication bundle and StackOS browser tools; login, MFA, or session setup is the only expected human participation.
-      - Discover or create/reuse the selected StackOS session, then use the upstream gstack CLI through its native_cli context or browser.cli.run with native argv. Keep a stable profile_key for login reuse and record claim-supporting native captures as explicit generic artifacts.
+      - Discover or create/reuse the selected StackOS session, then append native gstack arguments to its cli_argv and run stackos.browser --session <full-ref> directly in the host terminal. Use native --help for command syntax. Keep a stable profile_key for login reuse and record claim-supporting captures as explicit generic artifacts.
       - Script channels run the configured project publishing script or local admin command and record commit, deployment, URL, or provider result refs.
       - If the operator manually publishes the final copy and media, record operator-confirmed manual publication with channel, timestamp or URL when available, and the final publication bundle refs; do not require API or browser publication evidence for that channel.
       - Fallback handoff mode is used only when automation is unavailable, blocked by platform policy, or explicitly waived, and the blocker is recorded on the publication job and distribution-record.
@@ -969,7 +969,6 @@ metadata:
     - browser.session.start
     - browser.session.status
     - browser.session.stop
-    - browser.cli.run
   mcp_tool_grants:
     - step_id: produce-optional-images
       tools:
@@ -1004,4 +1003,3 @@ metadata:
         - browser.session.start
         - browser.session.status
         - browser.session.stop
-        - browser.cli.run

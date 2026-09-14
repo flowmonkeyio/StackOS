@@ -207,16 +207,15 @@ and state-file paths needed for direct CLI access; the state-file contents,
 root token, cookies, and stored credentials are never serialized by lifecycle
 or discovery operations. Bulk session discovery omits the native context.
 
-The native context is a local capability. Direct CLI commands bypass StackOS
-execution and audit. MCP clients can use `browser.cli.run`, which enforces normal
-project binding and run-plan grants while forwarding arbitrary native argv and
-optional stdin once. It does not inspect browser command semantics, redact
-native output, retry commands, or create browser receipts or artifacts.
-Non-null idempotency and ETag controls are rejected before replay/storage.
+The native context is a local capability. `stackos.browser --session <full-ref>`
+resolves it once through the authenticated project-scoped status operation, then
+executes the native CLI in the agent terminal. Only the leading selection is
+consumed; browser arguments never enter StackOS dispatch, grants, or audit.
+Ambient browser-control environment variables are removed before the selected
+context is applied. Ordinary terminal environment and streams are inherited.
 
 Native output may include sensitive page data when the client explicitly
-requests it. UTF-8 output is returned exactly; otherwise both streams are
-base64 encoded to preserve bytes. Agents choose what evidence to preserve
+requests it. Output remains native terminal bytes. Agents choose what evidence to preserve
 through generic artifact operations under their normal authority. Historical
 browser receipt rows remain stored.
 

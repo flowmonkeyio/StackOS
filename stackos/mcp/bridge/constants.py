@@ -16,7 +16,6 @@ _AGENT_VISIBLE_TOOL_ORDER: tuple[str, ...] = (
     "browser.profile.list",
     "browser.session.start",
     "browser.session.stop",
-    "browser.cli.run",
     "browser.session.list",
     "browser.session.status",
 )
@@ -136,7 +135,6 @@ _AGENT_SETUP_TOOLBOX_NAMES: frozenset[str] = frozenset(
         "browser.session.start",
         "browser.session.status",
         "browser.session.stop",
-        "browser.cli.run",
         "budget.list",
         "budget.queryProject",
         "budget.set",
