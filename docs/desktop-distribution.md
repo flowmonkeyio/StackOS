@@ -320,7 +320,12 @@ the payload build. The payload vendors a standalone CPython runtime under
 `bin/python`, and `libpython*.dylib`. Desktop payload builds use the same
 gstack installer helper as normal installs and include `browser-runtime` with
 the pinned upstream source, compiled CLI, Bun, locked dependencies, browser
-assets, licenses, and notices. Native browser launch and persistent-profile
+assets, licenses, and notices. After compilation and asset preparation, that
+shared installer removes the pinned Anthropic development SDK packages and
+ONNX Linux/Windows binaries from the ARM64 macOS payload. Darwin ONNX and
+Transformers remain for the native security classifier. The manifest's
+packaging revision invalidates older managed layouts during install/repair.
+Native browser launch and persistent-profile
 continuity are release verification evidence rather than installer-time actions.
 The payload also ships `bin/stackos.browser` with the same Python isolation as
 `bin/stackos`. Canonical install/repair refreshes the owned

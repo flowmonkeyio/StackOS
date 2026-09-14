@@ -350,6 +350,125 @@ def test_verify_gstack_runtime_accepts_complete_pinned_layout(
     assert message == "gstack runtime verified."
 
 
+def test_verify_gstack_runtime_rejects_legacy_packaging(tmp_path: Path) -> None:
+    root = tmp_path / "browser-runtime"
+    _write_gstack_runtime(root)
+    manifest = json.loads((root / "manifest.json").read_text())
+    manifest.pop("packaging_revision", None)
+    (root / "manifest.json").write_text(json.dumps(manifest))
+
+    ok, _message = installer._verify_gstack_runtime_root(root)
+
+    assert ok is False
+
+
+@pytest.mark.parametrize(
+    "excluded",
+    [
+        "@anthropic-ai/claude-agent-sdk",
+        "@anthropic-ai/claude-agent-sdk-darwin-arm64",
+        "@anthropic-ai/sdk",
+        "onnxruntime-node/bin/napi-v6/linux",
+        "onnxruntime-node/bin/napi-v6/win32",
+    ],
+)
+def test_verify_gstack_runtime_rejects_unpruned_dependencies(tmp_path: Path, excluded: str) -> None:
+    root = tmp_path / "browser-runtime"
+    _write_gstack_runtime(root)
+    path = root / "gstack" / "node_modules" / excluded
+    path.mkdir(parents=True)
+
+    ok, _message = installer._verify_gstack_runtime_root(root)
+
+    assert ok is False
+    assert path.is_dir()  # Read-only verification never repairs the installed tree.
+
+
+@pytest.mark.parametrize("sdk_symlink", [False, True])
+def test_build_gstack_runtime_prunes_only_unused_dependencies_after_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sdk_symlink: bool
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    bun = tmp_path / "bun"
+    bun.write_text("fixture")
+    candidate = tmp_path / "candidate"
+    excluded = [
+        "@anthropic-ai/claude-agent-sdk",
+        "@anthropic-ai/claude-agent-sdk-darwin-arm64",
+        "@anthropic-ai/sdk",
+        "onnxruntime-node/bin/napi-v6/linux",
+        "onnxruntime-node/bin/napi-v6/win32",
+    ]
+    retained = [
+        "node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64/onnxruntime_binding.node",
+        "node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64/libonnxruntime.1.24.3.dylib",
+        "node_modules/@huggingface/transformers/package.json",
+        "node_modules/onnxruntime-web/package.json",
+        "node_modules/xterm/package.json",
+        "extension/manifest.json",
+        "extension/sidepanel.html",
+        "extension/sidepanel.js",
+        "extension/sidepanel.css",
+        "extension/lib/xterm.js",
+        "extension/lib/xterm.css",
+        "extension/lib/xterm-addon-fit.js",
+    ]
+    outside = tmp_path / "outside-sdk"
+    outside.mkdir()
+    (outside / "keep").write_text("outside staging")
+    stages: list[str] = []
+
+    def run_build(_argv: list[str], *, stage: str, **_kwargs: object) -> None:
+        stages.append(stage)
+        modules = candidate / "gstack" / "node_modules"
+        if stage == "gstack dependency installation":
+            for item in excluded:
+                path = modules / item
+                path.parent.mkdir(parents=True, exist_ok=True)
+                if sdk_symlink and item == "@anthropic-ai/claude-agent-sdk":
+                    path.symlink_to(outside, target_is_directory=True)
+                else:
+                    path.mkdir()
+                    (path / "unused").write_text("remove")
+        else:
+            # Compilation and vendoring still have the complete locked install.
+            assert all((modules / item).is_dir() for item in excluded)
+        if stage == "gstack browser asset installation":
+            _write_gstack_runtime(candidate)
+            for item in retained:
+                path = candidate / "gstack" / item
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(item)
+
+    monkeypatch.setattr(installer, "_download_runtime_archive", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        installer,
+        "_sha256",
+        lambda path: (
+            installer.GSTACK_SOURCE_ARCHIVE_SHA256
+            if path.name == "gstack.tar.gz"
+            else installer.BUN_ARCHIVE_SHA256
+        ),
+    )
+    monkeypatch.setattr(installer, "_extract_gstack_source_archive", lambda *_a: None)
+    monkeypatch.setattr(installer, "_gstack_source_root", lambda _path: source)
+    monkeypatch.setattr(installer, "_extract_bun_archive", lambda *_a: bun)
+    monkeypatch.setattr(installer, "_run_gstack_build", run_build)
+
+    installer._build_gstack_runtime(candidate, timeout_seconds=1)
+
+    assert len(stages) == 5
+    for item in excluded:
+        path = candidate / "gstack" / "node_modules" / item
+        assert not path.exists() and not path.is_symlink()
+    for item in retained:
+        assert (candidate / "gstack" / item).read_text() == item
+    assert (outside / "keep").read_text() == "outside staging"
+    assert installer._verify_gstack_runtime_root(candidate)[0] is True
+    assert json.loads((candidate / "manifest.json").read_text())["packaging_revision"] == 1
+
+
 def test_verify_gstack_runtime_rejects_missing_native_cli_without_repairing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -442,6 +561,60 @@ def test_ensure_gstack_runtime_installs_pinned_distribution_atomically(
     assert installer.BUN_ARCHIVE_SHA256 == (
         "672a0a9a7b744d085a1d2219ca907e3e26f5579fca9e783a9510a4f98a36212f"
     )
+
+
+def test_ensure_gstack_runtime_rebuilds_legacy_packaging(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "browser-runtime"
+    _write_gstack_runtime(root)
+    manifest = json.loads((root / "manifest.json").read_text())
+    manifest.pop("packaging_revision", None)
+    (root / "manifest.json").write_text(json.dumps(manifest))
+    (root / "previous-runtime").write_text("old packaging")
+    monkeypatch.setattr(installer, "packaged_stackos_root", lambda: None)
+    monkeypatch.setattr(installer, "gstack_runtime_root", lambda _data_dir=None: root)
+    monkeypatch.setattr(
+        installer, "_build_gstack_runtime", lambda path, **_kw: _write_gstack_runtime(path)
+    )
+
+    ok, message = installer.ensure_gstack_runtime(data_dir=tmp_path)
+
+    assert ok is True
+    assert message == "Managed gstack runtime installed."
+    assert not (root / "previous-runtime").exists()
+    assert installer._verify_gstack_runtime_root(root)[0] is True
+
+
+def test_ensure_gstack_runtime_preserves_existing_tree_on_unsafe_pruning_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "browser-runtime"
+    root.mkdir()
+    sentinel = root / "previous-runtime"
+    sentinel.write_text("keep")
+    outside = tmp_path / "outside" / "claude-agent-sdk"
+    outside.mkdir(parents=True)
+    (outside / "keep").write_text("outside staging")
+    monkeypatch.setattr(installer, "packaged_stackos_root", lambda: None)
+    monkeypatch.setattr(installer, "gstack_runtime_root", lambda _data_dir=None: root)
+
+    def build(candidate: Path, **_kwargs: object) -> None:
+        _write_gstack_runtime(candidate)
+        (candidate / "gstack" / "node_modules" / "@anthropic-ai").symlink_to(
+            outside.parent, target_is_directory=True
+        )
+        installer._prune_gstack_dependencies(candidate)
+
+    monkeypatch.setattr(installer, "_build_gstack_runtime", build)
+
+    ok, message = installer.ensure_gstack_runtime(data_dir=tmp_path)
+
+    assert ok is False
+    assert "gstack dependency pruning" in message
+    assert str(tmp_path) not in message
+    assert sentinel.read_text() == "keep"
+    assert (outside / "keep").read_text() == "outside staging"
 
 
 def test_ensure_gstack_runtime_preserves_existing_runtime_when_candidate_fails(

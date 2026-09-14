@@ -128,6 +128,13 @@ The distribution pins gstack revision `71f6048e8ada25180e61438abc1d98cb151fe9a7`
 assets, retaining licenses and notices. It lives under `browser-runtime` in the
 desktop payload or daemon data directory.
 
+The macOS ARM64 installer prunes the Anthropic SDK development packages and
+ONNX's Linux/Windows binaries after compilation and sidebar asset preparation.
+Darwin ARM64 ONNX, Transformers, the security classifier, and sidebar assets
+remain. The runtime manifest includes a packaging revision so install/repair
+rebuilds an older managed distribution instead of accepting its bulkier layout.
+Packaged app runtimes stay immutable and are refreshed by replacing the app.
+
 Persistent profiles retain their existing `browser-profiles/playwright-chromium`
 paths; the directory name preserves data and does not select the old driver.
 Retired launch fields remain historical metadata. Native gstack may write its

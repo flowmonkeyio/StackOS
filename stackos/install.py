@@ -70,6 +70,16 @@ BUN_ARCHIVE_URL = (
 BUN_ARCHIVE_SHA256 = "672a0a9a7b744d085a1d2219ca907e3e26f5579fca9e783a9510a4f98a36212f"
 GSTACK_PLAYWRIGHT_VERSION = "1.62.1"
 GSTACK_RUNTIME_MANIFEST_SCHEMA = 1
+GSTACK_PACKAGING_REVISION = 1
+# These pinned dev/test packages and foreign ONNX binaries are not used by
+# gstack's darwin/arm64 runtime. Keep Darwin ONNX, Transformers and sidebar assets.
+_GSTACK_EXCLUDED_DEPENDENCIES = (
+    "@anthropic-ai/claude-agent-sdk",
+    "@anthropic-ai/claude-agent-sdk-darwin-arm64",
+    "@anthropic-ai/sdk",
+    "onnxruntime-node/bin/napi-v6/linux",
+    "onnxruntime-node/bin/napi-v6/win32",
+)
 _UPSTREAM_CHROMIUM_EXECUTABLE = (
     Path("chrome-mac-arm64")
     / "Google Chrome for Testing.app"
@@ -502,6 +512,7 @@ def _run_gstack_build(
 def _runtime_manifest() -> dict[str, object]:
     return {
         "schema_version": GSTACK_RUNTIME_MANIFEST_SCHEMA,
+        "packaging_revision": GSTACK_PACKAGING_REVISION,
         "provider": "gstack",
         "gstack_revision": GSTACK_REVISION,
         "gstack_version": GSTACK_VERSION,
@@ -554,6 +565,13 @@ def _verify_gstack_runtime_root(root: Path) -> tuple[bool, str]:
         return False, "gstack runtime manifest is missing or invalid."
     if manifest != _runtime_manifest():
         return False, "gstack runtime manifest does not match StackOS's pinned runtime."
+    for relative_path in _GSTACK_EXCLUDED_DEPENDENCIES:
+        path = root / "gstack" / "node_modules" / relative_path
+        if path.exists() or path.is_symlink():
+            return (
+                False,
+                "gstack runtime contains dependencies excluded from this platform package.",
+            )
     bun = root / "bin" / "bun"
     if not bun.is_file() or not os.access(bun, os.X_OK):
         return False, "gstack Bun runtime is missing."
@@ -585,6 +603,27 @@ def verify_gstack_runtime(
         else gstack_runtime_root(data_dir)
     )
     return _verify_gstack_runtime_root(root)
+
+
+def _prune_gstack_dependencies(candidate: Path) -> None:
+    """Remove only known unused dependencies from the completed staging tree."""
+    try:
+        staging_root = candidate.resolve()
+        for relative_path in _GSTACK_EXCLUDED_DEPENDENCIES:
+            path = candidate / "gstack" / "node_modules" / relative_path
+            # A final symlink is unlinked; a parent symlink must never lead a
+            # recursive deletion outside the installer-owned staging tree.
+            if not path.parent.resolve().is_relative_to(staging_root):
+                raise OSError("dependency parent escapes staging")
+            if path.is_symlink() or path.is_file():
+                path.unlink()
+            elif path.exists():
+                shutil.rmtree(path)
+    except OSError as exc:
+        raise _GstackRuntimeInstallError(
+            "gstack dependency pruning",
+            "could not prune the staged runtime; retry `stackos install`.",
+        ) from exc
 
 
 def _build_gstack_runtime(candidate: Path, *, timeout_seconds: int) -> None:
@@ -673,6 +712,7 @@ def _build_gstack_runtime(candidate: Path, *, timeout_seconds: int) -> None:
         timeout_seconds=timeout_seconds,
     )
     _remove_playwright_build_links(browsers)
+    _prune_gstack_dependencies(candidate)
     (candidate / "manifest.json").write_text(
         json.dumps(_runtime_manifest(), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
