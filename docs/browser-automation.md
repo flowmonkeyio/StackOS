@@ -24,7 +24,9 @@ session. Session discovery returns `cli_argv`, a ready command prefix:
    `session_key` values to create/reuse it.
 2. Append native gstack arguments to its `cli_argv` and execute in the host
    terminal. Use the same prefix for every command in that session.
-3. Consult native `--help` or the bundled
+3. Read the [native browser cookbook](../plugins/stackos/skills/stackos/references/browser.md)
+   shipped with the StackOS skill for interaction, screenshots, comparisons,
+   batching, and diagnostics. Consult native `--help` or the bundled
    [command reference](https://github.com/garrytan/gstack/blob/71f6048e8ada25180e61438abc1d98cb151fe9a7/browse/sections/command-list.md)
    for syntax. StackOS does not maintain a second command vocabulary.
 
@@ -32,6 +34,11 @@ Session lifecycle/discovery remains available through MCP, generic REST,
 `stackos ops call`, and the generic Operations UI. The pinned upstream package
 provides a CLI; agents need host terminal access to operate it. StackOS does not
 install gstack's full skill suite or run its global setup.
+
+The cookbook is the shared agent reference. Browser-assisted engineering, SEO,
+and branding guidance reaches it through this document or the installed
+`stackos:stackos` skill. Maintain command recipes there; upstream owns the full
+command vocabulary.
 
 The browser opens visibly. For authenticated work, let the operator complete
 login/MFA in the selected profile, then keep reusing its `profile_key`. Different

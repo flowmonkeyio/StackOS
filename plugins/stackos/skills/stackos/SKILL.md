@@ -113,7 +113,10 @@ primitive.
 10. For browser work, call `browser.session.list` to discover existing sessions,
     then `browser.session.start` to create or reuse one with a stable
     `profile_key`. The lifecycle opens native gstack visibly for login and
-    operator observation. Each session returns `cli_argv`, a ready terminal
+    operator observation. Read the [native browser cookbook](references/browser.md)
+    when operating a page: it covers snapshot/ref interaction, focused reads,
+    annotated screenshots, comparisons, batching, and console/network diagnosis.
+    Each session returns `cli_argv`, a ready terminal
     prefix: `["stackos.browser", "--session", session_ref]`. Append native
     gstack arguments and execute directly in the host terminal. Pass the same
     full ref on every command. Use `stackos.browser --session <full-ref> --help`
@@ -250,7 +253,9 @@ primitive.
   in that visible profile. Run `stackos.browser --session <full-ref> goto
   https://example.com` directly in the host terminal. Append native arguments
   to the returned `cli_argv`; every invocation names its session. Native
-  command vocabulary belongs to upstream gstack. Reuse the same profile to
+  command vocabulary belongs to upstream gstack; use the
+  [browser cookbook](references/browser.md) for practical command patterns.
+  Reuse the same profile to
   retain cookies/storage; native stop/restart pass through unchanged, and
   `browser.session.stop` remains available for managed shutdown.
   Session discovery survives StackOS daemon restart. A busy live owner keeps
