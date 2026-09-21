@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: finance.receipt-intake
 name: Finance Receipt Intake
-version: 0.3.1
+version: 0.3.2
 description: Safely move one receipt candidate into the selected external finance backend without making StackOS the evidence store or acknowledging an IMAP message before the host verifies the write.
 domain: finance
 owner:
@@ -202,7 +202,7 @@ steps:
     policy_refs: [external-backend-is-authoritative, local-json-single-source, operator-policy-is-guidance]
     output_refs: [receipt_intake_summary]
     instructions:
-      - "Read finance.json and its packaged local-json-v1 schema; resolve actual record refs and selected setup, document revision/digest and one-writer readback capability. For first-time setup use the empty bootstrap only in a new workspace; never overwrite existing files. Whole-document changes require reread/rebase; unrelated updates do not invalidate immutable proposal approval."
+      - "Follow the packaged local workspace contract: resolve current record IDs, confirmed account aliases, source scope and document revision/hash; use the optional shipped host helpers only with actual file/locking capability. A missing master needs authorized prerequisite setup, never an operation-time reset. Derived views require current source/freshness proof and are not financial authority. Whole-document changes require reread/rebase; unrelated updates do not invalidate immutable proposal approval."
       - "Read applicable finance.json setup once; FINANCE.md only routes guidance. Require mailbox_ref from run or setup only for IMAP. Chat/manual input uses a host-only source handle/path, original filename, observed timestamp, source id, bytes and SHA-256 packet; do not put that packet in StackOS."
       - "For IMAP, preflight the selected connection as verified SSL or STARTTLS and stop before discovery if the trusted host cannot read the staged handoff or write the external workspace."
       - "For chat/manual uploads, mailbox_ref is not applicable; require the original supplied file or screenshot and never manufacture a matching email original."

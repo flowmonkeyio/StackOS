@@ -43,7 +43,7 @@ def test_generic_workflow_orchestrator_keeps_the_normal_loop_small() -> None:
     ).lower()
 
     assert loaded.preset.metadata_json["boundary"]["not_a_subagent"] is True
-    assert loaded.preset.version == "0.1.2"
+    assert loaded.preset.version == "0.1.3"
     assert len(loaded.preset.applies_to_workflows) == 23
     assert {"agency.setup", "agency.project-setup"} <= set(loaded.preset.applies_to_workflows)
     assert "seo.website-analysis" in loaded.preset.applies_to_workflows
@@ -235,7 +235,7 @@ def test_finance_orchestrator_keeps_financial_authority_external() -> None:
     ]
 
     assert loaded.summary.plugin_slug == "finance"
-    assert loaded.preset.version == "0.7.1"
+    assert loaded.preset.version == "0.7.2"
     assert loaded.preset.skill_type == "main-agent-orchestration"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
@@ -247,7 +247,11 @@ def test_finance_orchestrator_keeps_financial_authority_external() -> None:
         "finance.cashflow-management",
         "finance.tax-estimates",
     }
-    assert {"AGENTS.md", "stackos:stackos", "finance-plugin:workflows"} <= set(refs)
+    assert {
+        "project instruction entrypoints and scoped guidance",
+        "stackos:stackos",
+        "finance-plugin:workflows",
+    } <= set(refs)
     assert "finance-plugin:references/local-workspace-contract.md" in conditional_refs
     assert "finance-plugin:references/imap-host-handoff-contract.md" in conditional_refs
     assert loaded.preset.metadata_json["boundary"]["not_a_subagent"] is True

@@ -7,7 +7,8 @@ Format version: `local-json-v1`. Backend key: `local-json`.
 `finance/finance.json` is the **single authoritative local financial record**.
 It owns financial facts, sourced mutable setup, decisions, versions, links and
 corrections. `FINANCE.md` is an operating guide, not a financial table or setup
-form. Originals stay in `attachments/YYYY/MM/`. The schema defines data shape,
+form. Originals may use `receipts/YYYY/MM/`, `attachments/YYYY/MM/`, or
+`attachments/<type>/YYYY/MM/`. The schema defines data shape,
 not facts. This is a host-owned convention, not a StackOS filesystem connector,
 schema registry, ledger or financial database.
 
@@ -17,11 +18,8 @@ finance/
 ├── FINANCE.md
 ├── schemas/
 │   └── finance-v1.schema.json
-└── attachments/
-    └── YYYY/
-        └── MM/
-            ├── rcpt_<stable-id>-original.eml
-            └── rcpt_<stable-id>-receipt.pdf
+├── receipts/YYYY/MM/            # optional receipt organization
+└── attachments/[type/]YYYY/MM/  # originals: emails, statements, exports
 ```
 
 Copy the [JSON template](../templates/finance-workspace/finance.json),
@@ -34,6 +32,22 @@ Fill only sourced facts; unknown does not mean zero. Apply the
 receipt custody does not require taxpayer/advisor/bank setup. Complete only
 currently applicable setup and reviewer choices; reuse confirmed defaults and
 retain partial work when one required fact is missing.
+
+This is an example for the selected local backend, not a mandatory company tree.
+Discover the root instruction router and scoped finance guidance first. Root
+instructions own cross-domain routing; scoped guidance owns finance method and
+links to the selected master, not copied account balances or business settings.
+Nonfinancial company/project context stays with its existing owner. Reusable
+procedures and their tests belong together in the host's established method
+location; dated research references and one-time outputs are distinct from that
+method. Do not turn a historical setup report, browser session or prior review
+into current readiness. A new session resolves its own binding and capabilities.
+
+Initialize financial storage only during explicitly authorized prerequisite
+setup, not infrastructure setup or preset materialization. Preserve an existing
+master and existing guidance. A future `projects/` directory is optional
+navigation: it creates no StackOS binding or inherited access and no additional
+business financial master.
 
 ## Structured records and views
 
@@ -57,6 +71,17 @@ and an explicit three-letter ISO currency; do not mix major/minor units or use
 floating-point amounts. Dates are ISO dates; observations are timezone-qualified
 timestamps. Omit unavailable values and explain the affected field in `gaps`.
 Zero is a known value, never a missing-data substitute.
+
+Use an optional `operating_settings.account_identity` for sourced account labels,
+purpose and exact opaque `aliases`. The setting's provenance and decision refs
+own the supporting evidence. Only a current `confirmed` setting with nonempty
+decision evidence establishes a mapping. Resolve superseding settings and
+corrections before lookup; multiple current owners of an alias are an ambiguity.
+Do not infer identity from prose, account masks, record-ID prefixes or array
+positions. Unmapped refs remain unresolved literal refs, not invented accounts.
+Purpose is optional unless current work needs it; it does not adopt transaction
+treatment. Keep account/subaccount periods, coverage and balances on `sources`
+and `reconciliations`, not this identity object.
 
 ## Optional project attribution
 
@@ -97,8 +122,36 @@ Inspect headers, encoding, date formats and amount units; map rows to typed
 records, retain source/hash/row provenance, detect duplicates and validate before
 the sole writer commits. Export a flattened view from a known JSON revision;
 do not expect a lossy CSV round trip to preserve nested approvals/history.
-There is no automatic import/export engine in this package. Keep this first
+There is no automatic import or CSV round-trip engine in this package. Keep this first
 version to one document; no per-month masters or event store.
+
+Retain complete raw exports, including multi-period exports, once. Normalize
+only records needed for the current preparation, lookup, association or decision.
+Before mapping, establish source currency, units, precision, sign/economic
+direction, and date/timestamp basis. Do not assume two decimal places or multiply
+every source amount by 100; unsupported precision remains a gap, not silent
+rounding. Posting date, transaction date, invoice date and capture time are not
+interchangeable. A statement covering a month does not establish an exact day.
+Preserve unknown, explicit source null, known zero and not-applicable distinctly;
+where a typed field cannot express source null, omit it with the precise gap and
+retain the original evidence.
+
+Use `provenance.kind` and `ref` to declare an exact locator, with
+`content_sha256` identifying the original. For example, `kind=csv-data-record`
+and `ref=attachment:example#data-record=2` means the second parsed data record
+after the header, not physical line 2 (quoted CSV can span lines). Document PDF
+page/item and provider-row locator conventions likewise. Never replace this
+identity with the normalized array index. Repeated equal rows retain their
+multiplicity; amount/date resemblance or array order alone cannot resolve them.
+Source checks compare canonical amount, currency, direction and date to the
+original, not just identity/description. A discrepancy remains unresolved.
+
+Check reuse by verified original hash/bytes plus exact locator and declared
+source/account scope, not attachment ID alone: two aliases of the same original
+row do not authorize two economic assignments. Distinct repeated row locators
+remain distinct. This is evidence for agent review, not an automatic matching or
+deduplication engine. Strong provider foreign keys can disambiguate a match;
+they still do not adopt accounting treatment.
 
 ## Safe common intake
 
@@ -122,6 +175,17 @@ bytes, media type, role, original filename and source identity.
 Reject absolute paths, `..`, unexpected symlinks and escaped attachment paths.
 Do not put secrets or payment instructions in filenames.
 
+For new files, use statement period/document issue month for statements and
+issued invoices when supported; use capture month for exports and undated
+evidence, and record that basis in source provenance/gaps. Never rename or move
+an existing original to fit the example tree. One retained original can support
+several receipts, periods or preparation records through existing refs without
+reimporting its economic activity. Originals, derived exports, temporary outputs
+and explicitly disposed historical evidence have different lifecycles. Preserve
+disposal history and identity; a disposed original is unavailable evidence, not
+a current file link or verified custody. No helper chooses retention or deletes
+evidence for the operator.
+
 ## Identity and deduplication
 
 Compare source identity plus hash for exact retries. IMAP transport identity
@@ -136,16 +200,18 @@ existing identity is a conflict; preserve earlier observations.
 
 ## Single writer and retry-safe persistence
 
-The orchestrator alone writes `finance.json`; specialists return proposed
-changes. Concurrent host sessions must serialize through the host's available
+The orchestrator designates exactly one writer for `finance.json`; specialists
+return proposals unless explicitly delegated sole-writer custody. Independent
+reviewers remain read-only. Concurrent host sessions serialize through the host's available
 exclusive write mechanism. If ownership cannot be established, retain the
 proposal and leave persistence pending; do not claim concurrency safety.
 
-1. Read the document revision and calculate its whole-file SHA-256. Keep the
-   expected revision/hash in the host operation context.
+1. Acquire exclusive writer ownership before rereading the document or retaining
+   new originals. Read revision and whole-file SHA-256; compare the expected
+   revision/hash from the host operation context.
 2. Validate/deduplicate. Write originals through unique temporary siblings,
    flush/hash them, and atomically rename to contained generated final paths.
-3. Under exclusive writer ownership, reread `finance.json`. If revision/hash changed,
+3. Still under exclusive writer ownership, reread `finance.json`. If revision/hash changed,
    discard the stale rewrite and reapply to the current document. Atomic rename
    alone does not prevent lost updates.
 4. Prepare one temporary JSON sibling, increment revision, validate the full
@@ -164,6 +230,61 @@ proposal and leave persistence pending; do not claim concurrency safety.
 Interrupted writes preserve the previous valid document or a visible repair
 condition. Recover final originals lacking JSON records by inspection, never by
 blind overwrite. Unrelated temporary files are not automatic cleanup targets.
+
+## Optional packaged host helpers
+
+Resolve the finance preset's `summary.origin_path` as described in the copied
+`FINANCE.md`; its plugin root owns `scripts/` and `templates/`. The optional
+helpers need Python 3.11+ and `jsonschema` in the selected host environment;
+guarded writes additionally need Unix `fcntl` file locking. Do not assume the
+desktop daemon exposes its Python environment to a host agent. Missing dependency,
+read permission or locking capability is a specific setup gap. The helpers are
+not StackOS operations, do not grant filesystem access and never call providers.
+
+From that resolved plugin location:
+
+```text
+python3 -B <finance-plugin>/scripts/finance_workspace.py validate --finance-dir <workspace>
+python3 -B <finance-plugin>/scripts/finance_views.py lookup --finance-dir <workspace> --collection bookkeeping --limit 25
+python3 -B <finance-plugin>/scripts/finance_views.py check --finance-dir <workspace> --view bookkeeping
+python3 -B <finance-plugin>/scripts/finance_views.py check-published --finance-dir <workspace> --view bookkeeping
+```
+
+`validate` checks strict JSON, schema and bounded record/custody invariants;
+`lookup` returns bounded current records (history only when explicitly selected).
+`check` validates and renders without publishing. These reads create no lock or
+workspace files; use `-B` to avoid host bytecode writes. Only `check-published`
+compares the generated files with the current master. None proves economic
+matching, policy adoption or complete reconciliation. These are confidential
+host-side outputs; do not copy their financial contents into StackOS results.
+
+Explicit prerequisite initialization uses `finance_workspace.py initialize`
+with the same `--finance-dir`; it refuses existing contents. For authorized
+record updates, import the shipped module and use
+`writer(path, expected_hash, expected_revision)` as a context manager. Its
+session owns the current document, `retain_original` and `commit`; inspect the
+actual API/signatures before supplying a proposed change. The persistent
+`.writer.lock` is never deleted/replaced or reclaimed by age. All cooperating
+writers must use that same lock. Hash checks detect observed outside changes,
+but cannot promise atomic compare-and-swap against an uncooperative editor.
+An error after JSON replacement may leave a committed revision: reread and
+reconcile before retrying. Original bytes retained before an interrupted commit
+may be orphaned; inspect and reuse verified bytes, never delete blindly.
+
+`finance_views.py publish` with the same directory/view selectors writes only
+derived outputs under `exports/current/`. Per-file replacement plus a final
+manifest is detectably complete, not a multi-file atomic transaction: interrupted
+publication is stale/incomplete until regeneration and freshness verification.
+Repeat the same selected `--view` set when checking a published generation;
+the default is all views. Unselected files are not deleted or claimed current.
+The manifest binds source revision/hash and generated file hashes; projected rows
+retain record IDs, explicit minor-unit/currency fields and source windows where
+applicable. CSV text is formula-escaped; it is not a lossless re-import
+format. Current projections resolve same-collection supersession and applied
+corrections before counting. Unknown targets, cross-collection links, cycles,
+forks, merges and applied corrections without a decision are errors, not a
+license to pick a record. Current does not mean unresolved or reconciled; views
+retain recorded statuses and gaps. No helper writes edited CSV back into JSON.
 
 ## Versions and digests
 
@@ -230,6 +351,24 @@ Proposed categories include evidence, confidence and rationale. Apply exact
 existing rules; ask only for missing business purpose/material decisions.
 Keep supported rows `prepared/unposted` with unresolved rows visible.
 Complete reconciliation requires full source coverage and explained balances.
+
+Assess coverage separately for each account/subaccount and period. Check opening
+evidence, missing middle windows and prior-close/next-open continuity. All rows
+matched or statement arithmetic balanced does not establish complete coverage.
+An empty result is not no activity without source evidence. Alternate available,
+current, pending or currency representations are not additive cash balances.
+Retain gross/fee components distinctly; an invoice, payment and bank deposit are
+not three revenues. Transfers need both supported legs and confirmed account
+identity; a plausible pair is not adopted treatment.
+
+Keep provider flags/observations, applicable category, proposed versus adopted
+policy, business purpose, receipt availability and reconciliation as separate
+dimensions in existing records/history/reviews. A provider's reviewed/reconciled
+flag does not prove local adoption or coverage. A proposed category can await
+review; an inapplicable alternate category is not a missing requirement. A
+missing receipt need not erase a supported transaction, and a retained receipt
+does not establish classification. Keep shared source gaps at their source or
+packet owner and link affected records rather than copying contradictory facts.
 
 If an optional `external_project_ref` on bookkeeping is corrected, preserve the
 original, create the supported replacement record, and link the two through the

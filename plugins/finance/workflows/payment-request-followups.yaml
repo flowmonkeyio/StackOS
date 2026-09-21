@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: finance.payment-request-followups
 name: Finance Payment Request Follow-Ups
-version: 0.7.0
+version: 0.7.1
 description: Evaluate a bounded external invoice follow-up or received-payment settlement scope. Reconcile a payment already received without charging a customer, or use the operator-selected Stripe resend or authored SMTP email route after lifecycle and contact-history checks.
 domain: finance
 owner:
@@ -359,7 +359,7 @@ steps:
     policy_refs: [external-backend-is-authoritative, local-json-single-source, approved-customer-effect, no-concessions-or-money-movement]
     output_refs: [followup_summary]
     instructions:
-      - "Read finance.json and its packaged local-json-v1 schema; resolve actual record refs and selected setup, document revision/digest and one-writer readback capability. For first-time setup use the empty bootstrap only in a new workspace; never overwrite existing files. Whole-document changes require reread/rebase; unrelated updates do not invalidate immutable proposal approval."
+      - "Follow the packaged local workspace contract: resolve current record IDs, confirmed account aliases, source scope and document revision/hash; use the optional shipped host helpers only with actual file/locking capability. A missing master needs authorized prerequisite setup, never an operation-time reset. Derived views require current source/freshness proof and are not financial authority. Whole-document changes require reread/rebase; unrelated updates do not invalidate immutable proposal approval."
       - "For followup-only, resolve external contact history, reminder owner and follow-up rules. For settlement-only, resolve the received-payment source, account and allocation; no reminder policy, contact history or recipient-setting setup is required because this occurrence never sends."
       - "For followup-only, resolve followup_route from operator instruction or documented settings and call readiness.check for the selected action/account. Ask if the route or sender/recipient is ambiguous; no automatic fallback. Follow references/approval-matrix.md#follow-up-approvals. Settlement-only ignores contact-route setup."
     success_criteria:

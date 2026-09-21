@@ -296,7 +296,7 @@ def test_codex_local_seo_agents_track_seo_workflows() -> None:
     assert "Additional workflow: seo.website-analysis" in (
         REPO_ROOT / ".codex/agents/sdlc-delivery-reviewer.toml"
     ).read_text(encoding="utf-8")
-    assert "Source skill preset: `stackos.workflow-orchestrator` v0.1.2" in (orchestrator_text)
+    assert "Source skill preset: `stackos.workflow-orchestrator` v0.1.3" in (orchestrator_text)
     assert "not a subagent" in orchestrator_text
     assert "unavailable optional providers do not block a ready route" in orchestrator_text
     assert "parallel planning, review, evidence" in orchestrator_text
@@ -331,12 +331,12 @@ def test_codex_local_finance_agents_track_finance_presets_without_model_override
         "finance_control_reviewer": "xhigh",
     }
     expected_versions = {
-        "finance_receipt_operator": "0.4.2",
-        "finance_bookkeeping_preparer": "0.5.2",
-        "finance_billing_collections_operator": "0.6.2",
-        "finance_cashflow_preparer": "0.4.2",
-        "finance_tax_preparer": "0.4.2",
-        "finance_control_reviewer": "0.6.2",
+        "finance_receipt_operator": "0.4.3",
+        "finance_bookkeeping_preparer": "0.5.3",
+        "finance_billing_collections_operator": "0.6.3",
+        "finance_cashflow_preparer": "0.4.3",
+        "finance_tax_preparer": "0.4.3",
+        "finance_control_reviewer": "0.6.3",
     }
     for agent_name, (config_file, preset_ref) in LOCAL_CODEX_FINANCE_AGENT_PRESETS.items():
         assert config["agents"][agent_name]["config_file"] == config_file
@@ -362,7 +362,7 @@ def test_codex_local_finance_agents_track_finance_presets_without_model_override
     orchestrator_text = (
         REPO_ROOT / ".codex/orchestrator/finance-department-orchestrator.md"
     ).read_text(encoding="utf-8")
-    assert "Source skill preset: `stackos.finance.department-orchestrator` v0.7.1" in (
+    assert "Source skill preset: `stackos.finance.department-orchestrator` v0.7.2" in (
         orchestrator_text
     )
     assert "not a subagent" in orchestrator_text
@@ -603,7 +603,7 @@ def test_finance_agent_presets_preserve_external_backend_and_role_boundaries() -
         assert preset.generic_preset is True
         assert preset.project_adaptation.required is True
         assert preset.project_adaptation.do_not_use_verbatim is True
-        assert "AGENTS.md" in refs
+        assert "project instruction entrypoints and scoped guidance" in refs
         assert "stackos:stackos" in refs
         assert "finance-plugin:workflows" in refs
         assert "finance-plugin:references/backend-contract.md" in refs

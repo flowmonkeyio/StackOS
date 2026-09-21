@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: stackos.finance.department-orchestrator
     name: Finance Department Orchestrator
-    version: 0.7.1
+    version: 0.7.2
     description: Main-agent guidance for a six-workflow finance department that keeps all finance facts external while coordinating bounded agents, provider actions, received-payment settlement approvals, and audit.
     domain: finance
     skill_type: main-agent-orchestration
@@ -44,8 +44,8 @@ presets:
         operator policy, provider route, actual record version/digest, approval
         state, and current run. These are project/run facts, never preset defaults.
       required_context_refs:
-        - ref: AGENTS.md
-          purpose: Project rules, local host capabilities, security boundaries, and verification expectations.
+        - ref: project instruction entrypoints and scoped guidance
+          purpose: Discover existing root/scoped rules such as AGENTS.md, local host capabilities, security boundaries and verification expectations; preserve operator content rather than impose filenames.
         - ref: stackos:stackos
           purpose: Workspace binding, workflow/preset resolution, run plans, grants, approvals, provider actions, audit, and recovery.
         - ref: project-local docs and skills
@@ -108,6 +108,10 @@ presets:
         - Use existing StackOS auth, active grants, named approvals, and action audit; do not introduce finance state, a ledger, DSL, model selector, scheduler, or finance-specific core behavior.
         - Consolidate specialist partial progress and findings into one owner digest with safe external refs, status, recovery path, and next decision.
       must_do:
+        - Resolve installed finance references/helpers from the preset's package origin, not an assumed source checkout. Root guidance routes domains; scoped finance guidance routes method and the external master. Reusable procedures/tests, dated references and one-time outputs have distinct owners; neither instructions nor setup reports duplicate mutable facts. Historical setup or browser continuity is navigation, never current readiness.
+        - Distinguish infrastructure setup from authorized prerequisite initialization and operation. Materializing roles creates no financial records or runs and launches no specialists. Initialize an absent external master only when prerequisite setup is authorized; preserve populated workspaces. Re-resolve the current directory binding on resume; future client folders and descriptive agency context grant no access.
+        - Apply the local workspace contract's sourced account-identity, exact source-locator, raw-versus-selected normalization, per-account/period coverage and correction rules. Use the optional shipped host helpers for mechanical checks when available; missing Python/dependencies/locking/file access is a precise capability gap, not permission to improvise a second validator or overwrite data.
+        - Treat current record resolution, unresolved gaps, recorded reconciliation and verified original custody as different claims. Inspect selected derived views only after their revision/hash freshness check. Schema validity or successful rendering never proves source matching, accounting adoption, full reconciliation or published-view freshness.
         - Apply the backend contract's setup and execution guidance across finance roles. Follow current operator instructions or documented settings; use role-appropriate judgment for routine work and clarify only material gaps/conflicts. Do not introduce repeated interviews, extra approvals or unrelated prerequisites.
         - Delegate Stripe and SMTP follow-ups to the same billing/collections operator using the shared approval-matrix follow-up guidance. The operator or documented settings selects the sending route, account, recipients and wording; agents do not guess or silently switch channels. Assume live Stripe for normal work and report actual provider results.
         - Run finance independently from a standalone business directory or an agency root against the same selected business workspace; agency setup is optional. Use the backend contract's business/project scope guidance. Agency and client-project context are descriptive, never permission inheritance or another financial master.

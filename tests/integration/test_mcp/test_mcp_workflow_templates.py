@@ -169,6 +169,18 @@ outputs:
         for item in setup_phases["infrastructure"]["prohibited_actions"]
     )
     assert any(
+        "instruction entrypoint" in item
+        for item in setup_phases["infrastructure"]["ordered_actions"]
+    )
+    assert any(
+        "effective response origin" in item
+        for item in setup_phases["infrastructure"]["ordered_actions"]
+    )
+    assert any(
+        "Historical setup records" in item
+        for item in setup_phases["infrastructure"]["completion_conditions"]
+    )
+    assert any(
         "recommended specialist roles by default" in item
         for item in authoring_guide["agent_materialization_policy"]
     )
