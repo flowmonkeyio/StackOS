@@ -1,172 +1,157 @@
-# Browser Automation
+# Native Browser Sessions
 
-StackOS includes a daemon-owned Chromium browser runtime driven by Playwright for agent-driven web
-work such as platform posting, admin UI publishing, QA, and operator-assisted
-login.
+StackOS creates, reuses, discovers, and stops project browser sessions. Agents
+operate them from their terminal with the upstream
+[gstack browse CLI](https://github.com/garrytan/gstack/tree/71f6048e8ada25180e61438abc1d98cb151fe9a7/browse):
 
-## Model
-
-- Browser automation is a core StackOS capability, not a branding-only plugin
-  action.
-- Setup installs the Python `playwright` driver and one pinned normal arm64
-  `Chromium.app` during `make install` or `stackos install`. StackOS never
-  installs Chrome for Testing, a Playwright browser cache, or a headless shell.
-- StackOS owns the Chromium pin, checksum, architecture, bundle layout, and
-  launch verification. The pin is snapshot `1610473` (`148.0.7778.0`),
-  visibly verified with Playwright `1.60.0` (declared browser version
-  `148.0.7778.96`) before the branch point; StackOS rejects driver drift.
-  Keep Playwright current through the normal Python dependency resolver; do
-  not install or select a browser through Playwright.
-- Profiles, sessions, pages, screenshots, and action receipts are
-  project-scoped. Profile directories stay inside the daemon data directory and
-  are never returned to agents.
-- Profiles are persistent across browser sessions. For platforms that require
-  login, choose a stable `profile_key` such as `default` or `linkedin`, let the
-  operator log in once, and reuse that same profile key for future sessions so
-  cookies and storage carry forward. A different profile key is a separate
-  browser profile and will not share the authenticated session.
-- The daemon owns the browser executable, visible mode, persistent-context
-  mode, and profile directory. Every agent browser session is visible.
-  `browser.session.start` has no `headless` input. Agent launch options may use
-  only `locale`, `timezone_id`, `user_agent`, and `viewport`; paths, channels,
-  raw arguments, default-argument bypasses, proxies, and all other launch
-  controls are rejected.
-- Agents get full public browser control, in the same capability class as a
-  normal Playwright/test browser session. `browser.page.call` and
-  `browser.context.call` accept a method name plus raw `args`, `kwargs`, or
-  named `arguments` so agents can use the Playwright API directly. Prefer named
-  `arguments` for manifest-documented convenience methods such as `goto`,
-  `click`, and `fill`; for example, call `goto` with
-  `arguments: {"url": "https://example.com"}`.
-- Page operations accept an optional `page_ref`. Context calls that create or
-  return pages refresh the session's page refs, so agents can target new
-  tabs/windows instead of being limited to the first page.
-- Calls that return a non-page browser object, such as a locator, download,
-  response, or popup-related handle, return a transient `handle_ref`. Use
-  `browser.handle.call` with that ref to call public methods or read public
-  properties on the returned object.
-- JavaScript execution and injection are first-class. Use
-  `browser.script.run` for `page.evaluate` and `browser.script.inject` for
-  `page.add_init_script`.
-- Screenshots are persisted under `/generated-assets/browser/...` and recorded
-  as generic artifacts plus browser receipts.
-- The method manifest is documentation and drift-test input only. It names
-  convenience methods, but it is not a restrictive allowlist. Safety lives in
-  daemon ownership, project scoping, run-plan grants, and receipts rather than
-  in a narrowed browser API. When a method is not listed in the manifest, use
-  the public Playwright page or context method name through
-  `browser.page.call` or `browser.context.call`.
-
-## Agent Flow
-
-1. Call `browser.runtime.status`.
-2. Call `browser.session.start` with a stable `profile_key` for platform work
-   that should keep cookies/session state. The browser always opens visibly so
-   the operator can log in and observe posting.
-3. Use `browser.page.call` for page operations such as `goto`, `click`, `fill`,
-   `press`, `set_input_files`, or any other public page method. Pass `page_ref`
-   to target a known tab/page. For manifest methods, prefer named `arguments`
-   so receipts and validation can identify fields such as `url` and `selector`
-   explicitly.
-4. Use `browser.context.call` for context operations such as `cookies`,
-   `storage_state`, `grant_permissions`, `pages`, downloads, routing, or any
-   other public context method.
-5. Use `browser.handle.call` when a page/context method returns a `handle_ref`
-   and the next operation belongs to that returned object.
-6. Use `browser.script.run` or `browser.script.inject` when direct DOM/page
-   JavaScript is the fastest or most faithful control path.
-7. Use `browser.page.snapshot` for text state and
-   `browser.page.screenshot` for visual evidence.
-8. Call `browser.session.stop` when the session is no longer needed.
-
-## First-Layer MCP
-
-The StackOS bridge exposes the browser tools directly alongside
-`workspace.startSession` and `workspace.resolve`. Existing Codex sessions need a
-restart after installing this change before native `mcp__stackos__browser...`
-tools appear. Until then, agents can call the same operations through
-`toolbox.call` after the daemon is restarted.
-
-## Toolbox Payloads
-
-Use these payloads when direct `browser.*` MCP tools are not mounted yet:
-
-```json
-{"tool_name":"browser.session.start","arguments":{"project_id":1,"profile_key":"default","session_key":"linkedin","response_mode":"raw"}}
+```sh
+stackos.browser --session browser-session:project-1:default:main goto https://example.com
+stackos.browser --session browser-session:project-1:default:main snapshot
+stackos.browser --session browser-session:project-1:default:main --help
 ```
 
-```json
-{"tool_name":"browser.page.call","arguments":{"project_id":1,"session_ref":"browser-session:project-1:default:linkedin","method":"goto","arguments":{"url":"https://www.linkedin.com/"},"response_mode":"raw"}}
-```
-
-Pause here for operator login/MFA when needed, then continue with the same
-session ref.
+Pass the full session ref every time. There is no global active or last-used
+session. Session discovery returns `cli_argv`, a ready command prefix:
 
 ```json
-{"tool_name":"browser.script.run","arguments":{"project_id":1,"session_ref":"browser-session:project-1:default:linkedin","script":"() => ({ title: document.title, url: location.href })","response_mode":"raw"}}
+{"cli_argv":["stackos.browser","--session","browser-session:project-1:default:main"]}
 ```
 
-```json
-{"tool_name":"browser.script.inject","arguments":{"project_id":1,"session_ref":"browser-session:project-1:default:linkedin","script":"window.__stackosInjected = true;","response_mode":"raw"}}
+## Client Flow
+
+1. Use `browser.session.list` to discover project sessions. Select the intended
+   session or call `browser.session.start` with stable `profile_key` and
+   `session_key` values to create/reuse it.
+2. Append native gstack arguments to its `cli_argv` and execute in the host
+   terminal. Use the same prefix for every command in that session.
+3. Read the [native browser cookbook](../plugins/stackos/skills/stackos/references/browser.md)
+   shipped with the StackOS skill for interaction, screenshots, comparisons,
+   batching, and diagnostics. Consult native `--help` or the bundled
+   [command reference](https://github.com/garrytan/gstack/blob/71f6048e8ada25180e61438abc1d98cb151fe9a7/browse/sections/command-list.md)
+   for syntax. StackOS does not maintain a second command vocabulary.
+
+Session lifecycle/discovery remains available through MCP, generic REST,
+`stackos ops call`, and the generic Operations UI. The pinned upstream package
+provides a CLI; agents need host terminal access to operate it. StackOS does not
+install gstack's full skill suite or run its global setup.
+
+The cookbook is the shared agent reference. Browser-assisted engineering, SEO,
+and branding guidance reaches it through this document or the installed
+`stackos:stackos` skill. Maintain command recipes there; upstream owns the full
+command vocabulary.
+
+The browser opens visibly. For authenticated work, let the operator complete
+login/MFA in the selected profile, then keep reusing its `profile_key`. Different
+profiles have separate cookies and storage. One live process owns a profile;
+another session cannot use it concurrently.
+
+For background work in an existing tab, read native `tabs`, confirm the target
+ID, and append upstream `--tab-id <id>` to each command:
+
+```bash
+stackos.browser --session <full-ref> tabs
+stackos.browser --session <full-ref> goto https://example.com --tab-id 3
+stackos.browser --session <full-ref> snapshot --tab-id 3
+stackos.browser --session <full-ref> screenshot /tmp/page.png --tab-id 3
 ```
 
-```json
-{"tool_name":"browser.page.call","arguments":{"project_id":1,"session_ref":"browser-session:project-1:default:linkedin","method":"locator","arguments":{"selector":"button[type=submit]"},"response_mode":"raw"}}
-```
+Native `tab <id>` explicitly brings the page to the front; do not use it before
+each automated capture. `--tab-id` selects the command's tab without that focus
+call and restores the prior active tab afterward. This is upstream behavior,
+not a StackOS command rewrite. Verify the ID still exists before a work batch:
+the pinned upstream warns and continues on the active tab if pinning fails.
+Recheck page identity when accepting captures. Explicit `focus`, `connect`,
+`tab`, and opening a new browser/tab can still raise a window.
 
-If that returns `{"handle_ref":"..."}`, call the handle directly:
+## Launcher Contract
 
-```json
-{"tool_name":"browser.handle.call","arguments":{"project_id":1,"session_ref":"browser-session:project-1:default:linkedin","handle_ref":"browser-session:project-1:default:linkedin:handle-1","method":"click","response_mode":"raw"}}
-```
+`stackos.browser` consumes only the leading `--session <full-ref>`. It resolves
+that exact project-scoped session with one authenticated `browser.session.status`
+request, applies its native working directory and environment, and replaces
+itself with the upstream executable using `execve`.
 
-```json
-{"tool_name":"browser.page.screenshot","arguments":{"project_id":1,"session_ref":"browser-session:project-1:default:linkedin","full_page":true,"name":"linkedin-publication-proof","response_mode":"raw"}}
-```
+Every remaining argument goes to gstack unchanged, including `--help`, `stop`,
+`restart`, `--force-restart`, `--`, a later `--session`, and future commands or
+flags. Native stdin, stdout, stderr, terminal descriptors, exit status, and
+signals remain ordinary OS behavior. There is no command capture, response
+envelope, command filter, extra retry, or StackOS browser-command audit.
 
-```json
-{"tool_name":"browser.session.stop","arguments":{"project_id":1,"session_ref":"browser-session:project-1:default:linkedin","response_mode":"raw"}}
-```
+The local daemon must be reachable to resolve the selection. Missing or malformed
+refs, unavailable runtime/context, and a competing live profile owner fail before
+native execution. A stopped, stale, busy, or unhealthy selected session can still
+resolve its native context; health is reported separately. Upstream decides what
+its requested command does, including native startup and recovery.
 
-## Receipts
+Native commands can stop or restart the selected browser. Later StackOS session
+observations reconcile its state. `browser.session.stop` remains available for
+StackOS-managed shutdown and waits for observed process/state retirement.
 
-Every mutating browser operation returns raw browser output and records a
-redacted receipt. Treat immediate operation output from page/context/script
-calls as potentially sensitive: it can include DOM text, cookies, storage
-state, or any value returned by arbitrary JavaScript.
+## Context And Discovery
 
-Receipts store:
+Selected start/status results retain `native_cli={executable,cwd,env}` for local
+clients that need the launch context. Ordinary agents use `cli_argv` to avoid
+assembling it themselves. Bulk discovery returns summary metadata and `cli_argv`
+for every known session, including stopped/stale rows, without native contexts.
+A prefix identifies a session; it does not promise that the runtime is ready.
 
-- project, profile, session, and page refs
-- operation and method
-- URL/origin when available
-- redacted input summary, including URL redaction plus script/value lengths and
-  SHA-256 hashes
-- result summary, with values represented as type/count/length/hash metadata
-  instead of raw returned payloads
-- title summaries as length/hash metadata, not raw page titles
-- screenshot artifact refs when applicable
+The native environment selects the exact state file, persistent profile,
+visible browser, bundled tools and browser assets. Ambient `BROWSE_`, `GSTACK_`,
+`CHROMIUM_`, and `PLAYWRIGHT_` controls are removed before applying that context.
+The handoff does not set `BROWSE_NO_AUTOSTART`. Other terminal environment and
+standard streams are inherited.
 
-Receipts are accountability and future continuity. They are not a policy layer
-that restricts what public browser actions agents can perform.
+StackOS never returns state-file contents, authentication tokens, cookies, or
+stored credentials in session discovery. Selected paths are local capabilities.
+Native page output is working data; agents decide what to preserve with generic
+artifact operations under their normal authority. Historical browser receipts
+remain stored.
 
-Failed live operations also record failed receipts once the project/session can
-be resolved. Failure receipts store error type plus a message hash/length, not
-the raw browser exception text.
+Discovery inspects owned native state and OS process identity after daemon
+restart. A live busy/unhealthy owner keeps its profile. Runtime repair preserves
+profile directories and session history.
 
-## Manual Smoke Checklist
+## Install And Upgrade
 
-Use this checklist after runtime or MCP wiring changes:
+Normal StackOS install/repair installs the current-user command at
+`~/.local/bin/stackos.browser`; that directory must be on the agent terminal's
+`PATH`. The managed launcher retains the configured daemon host, port, data and
+state directories and points to the current StackOS installation. Repair refreshes
+owned entries after package moves/upgrades and preserves unrelated same-name
+files. Uninstall removes only StackOS-owned launchers.
 
-1. Restart the StackOS daemon and run `stackos doctor`.
-2. Start a visible session with `browser.session.start`.
-3. Navigate to a simple page with
-   `browser.page.call(method="goto", arguments={"url": "https://example.com"})`.
-4. Exercise user actions with `fill` and `click`.
-5. Run arbitrary JavaScript with `browser.script.run`.
-6. Inject JavaScript with `browser.script.inject`, navigate, and verify it ran.
-7. Call at least one raw context method through `browser.context.call`.
-8. Create a returned-object handle, then call it with `browser.handle.call`.
-9. Capture a screenshot with `browser.page.screenshot` and confirm the artifact
-   URI opens under `/generated-assets/browser/...`.
-10. Stop the session with `browser.session.stop`.
+The desktop payload includes a relocatable `bin/stackos.browser`. Doctor checks
+launcher readiness and the installed upstream runtime. Restart host MCP sessions
+after upgrading to refresh the lifecycle-only tool catalog.
+
+The distribution pins gstack revision `71f6048e8ada25180e61438abc1d98cb151fe9a7`
+(version `1.84.1.0`), Bun `1.3.8`, and the upstream locked dependencies/browser
+assets, retaining licenses and notices. It lives under `browser-runtime` in the
+desktop payload or daemon data directory.
+
+The macOS ARM64 installer prunes the Anthropic SDK development packages and
+ONNX's Linux/Windows binaries after compilation and sidebar asset preparation.
+Darwin ARM64 ONNX, Transformers, the security classifier, and sidebar assets
+remain. The runtime manifest includes a packaging revision so install/repair
+rebuilds an older managed distribution instead of accepting its bulkier layout.
+Packaged app runtimes stay immutable and are refreshed by replacing the app.
+
+Persistent profiles retain their existing `browser-profiles/playwright-chromium`
+paths; the directory name preserves data and does not select the old driver.
+Retired launch fields remain historical metadata. Native gstack may write its
+extension bootstrap to `~/.gstack/.auth.json`; StackOS does not use it as a
+session registry or expose its contents.
+
+## Verification
+
+Capture helpers should wait for page-specific content after navigation and
+visually inspect each saved screenshot. Navigation success alone does not prove
+the page has rendered. Helpers own their command deadlines and failure evidence:
+retain elapsed time, exit status, stdout/stderr and host-tool errors. These are
+caller responsibilities; the browser launcher does not capture or time commands.
+
+Use a synthetic localhost page and stable proof profile. Create/reuse and
+discover the same session, then operate it with the global command from fresh
+shells. Verify native help, output, stdin, exit status, terminal behavior and
+signals. Set a synthetic cookie/localStorage marker and verify it survives native
+browser restart and StackOS daemon restart. Installed-app signoff also covers
+managed-launcher repair, doctor, and restart from `/Applications/StackOS.app`.

@@ -1,4 +1,4 @@
-"""Real receipt template/MCP proof with fake IMAP and a test-only host writer.
+"""Real receipt template/MCP proof with fake IMAP and the shipped host writer.
 
 The host procedure below is a rehearsal fixture, not a production backend or
 an assertion that StackOS implements filesystem custody or semantic dedupe.
@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-import tempfile
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
@@ -18,6 +16,7 @@ from typing import Any
 import pytest
 from sqlmodel import Session, select
 
+from plugins.finance.scripts.finance_workspace import atomic_write, writer
 from stackos.actions import ActionRepository
 from stackos.auth_providers import AuthRepository
 from stackos.config import Settings
@@ -48,12 +47,8 @@ def _persist_host_fixture(
 ) -> bool:
     """Return False for an already verified receipt; reject a stale writer."""
     index = finance / "finance.json"
-    lock = finance / ".fixture-writer.lock"
-    descriptor = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-    try:
-        if _digest(index) != expected_hash:
-            raise ValueError("stale host revision")
-        document = read_document(index)
+    with writer(index, expected_hash) as host:
+        document = host.document
         if any(row["record_id"] == RECEIPT_ID for row in document["receipts"]):
             _verify_host_fixture(finance, manifest)
             return False
@@ -75,14 +70,8 @@ def _persist_host_fixture(
             assert hashlib.sha256(payload).hexdigest() == item["sha256"]
             suffix = "original.eml" if ordinal == 0 else f"attachment-{ordinal:03}.txt"
             relative = f"attachments/2026/09/{RECEIPT_ID}-{suffix}"
-            final = finance / relative
-            final.parent.mkdir(parents=True, exist_ok=True)
-            assert not final.is_symlink()
-            assert final.resolve().is_relative_to(finance.resolve())
-            if final.exists():
-                assert final.read_bytes() == payload
-            else:
-                _atomic_fixture_write(final, payload)
+            retained = host.retain_original(relative, payload, expected_sha256=item["sha256"])
+            assert retained["relative_path"] == relative
             attachment_id = f"attachment_fixture_{ordinal}"
             attachment_ids.append(attachment_id)
             media_type = "message/rfc822" if ordinal == 0 else item["media_type"]
@@ -145,27 +134,9 @@ def _persist_host_fixture(
         document["revision"] = revision + 1
         validate(document)
         assert _digest(index) == expected_hash
-        _atomic_fixture_write(index, json.dumps(document, sort_keys=True).encode())
+        host.commit(document)
         _verify_host_fixture(finance, manifest)
         return True
-    finally:
-        os.close(descriptor)
-        lock.unlink()
-
-
-def _atomic_fixture_write(path: Path, payload: bytes) -> None:
-    """Exercise host-owned atomic custody only inside the pytest temp directory."""
-    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
-    temporary = Path(temporary_name)
-    try:
-        with os.fdopen(descriptor, "wb") as stream:
-            stream.write(payload)
-            stream.flush()
-            os.fsync(stream.fileno())
-        assert hashlib.sha256(temporary.read_bytes()).digest() == hashlib.sha256(payload).digest()
-        temporary.replace(path)
-    finally:
-        temporary.unlink(missing_ok=True)
 
 
 def _verify_host_fixture(finance: Path, manifest: dict[str, Any]) -> None:
@@ -439,7 +410,7 @@ def test_receipt_template_persists_before_ack_and_resumes_without_duplicate(
             affected_refs=[],
         )
     )
-    _atomic_fixture_write(index, json.dumps(concurrent).encode())
+    atomic_write(index, json.dumps(concurrent).encode())
     concurrent_bytes = index.read_bytes()
     with pytest.raises(ValueError, match="stale host revision"):
         _persist_host_fixture(finance, staged, manifest, original_hash)

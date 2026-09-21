@@ -8,7 +8,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 206
+    assert len(names) == 198
     assert not names.intersection(
         {"actionCall.aggregate", "actionCall.aggregateAll", "actionCall.queryAll"}
     )
@@ -67,12 +67,6 @@ def test_operation_registry_documents_core_operations() -> None:
         "skillPreset.resolveForWorkflow",
         "browser.runtime.status",
         "browser.session.start",
-        "browser.page.call",
-        "browser.context.call",
-        "browser.handle.call",
-        "browser.script.run",
-        "browser.script.inject",
-        "browser.page.screenshot",
         "guide.gettingStarted",
     } <= names
 
@@ -330,22 +324,12 @@ def test_operation_registry_documents_core_operations() -> None:
     assert auth_callback.grant_policy == "public-oauth-callback"
     assert auth_callback.secret_policy == "no-secret-output"
 
-    browser_call = registry.get("browser.page.call").describe_out()
-    assert browser_call.category == "browser"
-    assert browser_call.mutating is True
-    assert browser_call.response_policy.default_mode == "raw"
-    assert browser_call.response_policy.allowed_modes == ["raw"]
-    assert "public method" in browser_call.summary
-
-    browser_context = registry.get("browser.context.call").describe_out()
-    assert browser_context.mutating is True
-    assert browser_context.response_policy.default_mode == "raw"
-    assert "context-level browser control" in browser_context.purpose
-
-    browser_handle = registry.get("browser.handle.call").describe_out()
-    assert browser_handle.mutating is True
-    assert browser_handle.response_policy.default_mode == "raw"
-    assert "object handle" in browser_handle.summary
+    browser_status = registry.get("browser.session.status").describe_out()
+    assert browser_status.category == "browser"
+    assert browser_status.mutating is False
+    assert "native CLI context" in browser_status.summary
+    assert "cli_argv" in browser_status.output_schema["properties"]
+    assert "browser.cli.run" not in {operation.name for operation in registry.all()}
 
     project_list = registry.get("project.list").describe_out()
     assert project_list.surfaces["mcp"].enabled is True

@@ -27,16 +27,19 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
-import importlib.util
 import json
 import os
 import platform
-import plistlib
+import shlex
 import shutil
+import stat
 import subprocess
+import sys
+import tarfile
 import tempfile
 import urllib.request
 import uuid
+import zipfile
 from collections.abc import Iterable
 from importlib import resources
 from importlib.resources.abc import Traversable
@@ -44,35 +47,55 @@ from pathlib import Path
 from typing import Literal
 
 from stackos.browser.runtime import (
-    CHROMIUM_APP_NAME,
-    CHROMIUM_EXECUTABLE_RELATIVE_PATH,
-    CHROMIUM_LICENSE_FILENAME,
-    PLAYWRIGHT_DRIVER_VERSION,
-    PLAYWRIGHT_EXPECTED_BROWSER_VERSION,
-    chromium_app_path,
-    chromium_license_path,
-    managed_chromium_app_path,
+    GSTACK_RUNTIME_DIRNAME,
+    gstack_runtime_root,
     packaged_stackos_root,
-    playwright_driver_version,
 )
+from stackos.config import Settings
 
 InstallMode = Literal["clone", "pipx"]
 """How the daemon was installed: from a checked-out git repo or via pipx."""
 
 MCP_SERVER_NAME = "stackos"
-CHROMIUM_SNAPSHOT_REVISION = "1610473"
-CHROMIUM_BROWSER_VERSION = "148.0.7778.0"
-CHROMIUM_COMPATIBILITY_NOTE = (
-    "Chromium snapshot 1610473 (148.0.7778.0) is the closest snapshot before the "
-    "148.0.7778 branch point and was visibly verified with Playwright 1.60.0 "
-    "(declared browserVersion 148.0.7778.96)."
+BROWSER_LAUNCHER_NAME = "stackos.browser"
+BROWSER_LAUNCHER_MANAGED_HEADER = "# StackOS managed browser launcher v1\n"
+GSTACK_VERSION = "1.84.1.0"
+GSTACK_REVISION = "71f6048e8ada25180e61438abc1d98cb151fe9a7"
+GSTACK_SOURCE_ARCHIVE_URL = f"https://github.com/garrytan/gstack/archive/{GSTACK_REVISION}.tar.gz"
+GSTACK_SOURCE_ARCHIVE_SHA256 = "4740bfb9efb35fb407679496d890210bfc7c193bc8331f70cbf7d64bbf75cfb8"
+BUN_VERSION = "1.3.8"
+BUN_ARCHIVE_URL = (
+    f"https://github.com/oven-sh/bun/releases/download/bun-v{BUN_VERSION}/bun-darwin-aarch64.zip"
 )
-CHROMIUM_SNAPSHOT_URL = (
-    "https://commondatastorage.googleapis.com/chromium-browser-snapshots/"
-    f"Mac_Arm/{CHROMIUM_SNAPSHOT_REVISION}/chrome-mac.zip"
+BUN_ARCHIVE_SHA256 = "672a0a9a7b744d085a1d2219ca907e3e26f5579fca9e783a9510a4f98a36212f"
+GSTACK_PLAYWRIGHT_VERSION = "1.62.1"
+GSTACK_RUNTIME_MANIFEST_SCHEMA = 1
+GSTACK_PACKAGING_REVISION = 1
+# These pinned dev/test packages and foreign ONNX binaries are not used by
+# gstack's darwin/arm64 runtime. Keep Darwin ONNX, Transformers and sidebar assets.
+_GSTACK_EXCLUDED_DEPENDENCIES = (
+    "@anthropic-ai/claude-agent-sdk",
+    "@anthropic-ai/claude-agent-sdk-darwin-arm64",
+    "@anthropic-ai/sdk",
+    "onnxruntime-node/bin/napi-v6/linux",
+    "onnxruntime-node/bin/napi-v6/win32",
 )
-CHROMIUM_SNAPSHOT_SHA256 = "3961cef2b608396de21aec027ffaadd7e9a65ff025391fba64ae0023ffefc80a"
-CHROMIUM_ARCHIVE_APP_RELATIVE_PATH = Path("chrome-mac") / CHROMIUM_APP_NAME
+_UPSTREAM_CHROMIUM_EXECUTABLE = (
+    Path("chrome-mac-arm64")
+    / "Google Chrome for Testing.app"
+    / "Contents"
+    / "MacOS"
+    / "Google Chrome for Testing"
+)
+
+
+class _GstackRuntimeInstallError(RuntimeError):
+    """A safe, stage-specific runtime acquisition failure for CLI users."""
+
+    def __init__(self, stage: str, reason: str) -> None:
+        super().__init__(reason)
+        self.stage = stage
+        self.reason = reason
 
 
 # ---------------------------------------------------------------------------
@@ -117,8 +140,152 @@ def detect_mode() -> InstallMode:
     return "clone" if _repo_root_if_clone() is not None else "pipx"
 
 
-def _browser_license_source() -> Path:
-    return Path(__file__).resolve().parent / "browser" / CHROMIUM_LICENSE_FILENAME
+# ---------------------------------------------------------------------------
+# Native browser launcher lifecycle
+# ---------------------------------------------------------------------------
+
+
+def browser_launcher_path(*, home: Path | None = None) -> Path:
+    """Return the user-level blind browser launcher path."""
+    return (home if home is not None else Path.home()) / ".local" / "bin" / BROWSER_LAUNCHER_NAME
+
+
+def _browser_launcher_command() -> list[str] | None:
+    """Return the current installation's launcher command without consulting PATH."""
+    packaged_cli = os.environ.get("STACKOS_PACKAGED_CLI")
+    if packaged_cli:
+        packaged_launcher = Path(packaged_cli).with_name(BROWSER_LAUNCHER_NAME)
+        if packaged_launcher.is_file() and os.access(packaged_launcher, os.X_OK):
+            return [str(packaged_launcher)]
+        return None
+    return [sys.executable, "-I", "-m", "stackos.browser_cli"]
+
+
+def _managed_browser_launcher_text(path: Path) -> str | None:
+    """Return managed launcher content only for a small regular file with our exact marker."""
+    try:
+        file_status = path.lstat()
+    except FileNotFoundError:
+        return None
+    except OSError:
+        return None
+    if not stat.S_ISREG(file_status.st_mode) or file_status.st_size > 16 * 1024:
+        return None
+    try:
+        content = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    return content if content.startswith(f"#!/bin/sh\n{BROWSER_LAUNCHER_MANAGED_HEADER}") else None
+
+
+def _browser_launcher_content(*, command: list[str], settings: Settings) -> str:
+    """Render the shell shim that fixes local daemon context and preserves every argv token."""
+    values = (
+        ("STACKOS_HOST", str(settings.host)),
+        ("STACKOS_PORT", str(settings.port)),
+        ("STACKOS_DATA_DIR", str(settings.data_dir)),
+        ("STACKOS_STATE_DIR", str(settings.state_dir)),
+    )
+    exports = "".join(f"export {name}={shlex.quote(value)}\n" for name, value in values)
+    return (
+        "#!/bin/sh\n"
+        f"{BROWSER_LAUNCHER_MANAGED_HEADER}"
+        "set -eu\n"
+        f"{exports}"
+        f'exec {shlex.join(command)} "$@"\n'
+    )
+
+
+def inspect_browser_launcher(
+    *, settings: Settings, home: Path | None = None
+) -> tuple[Literal["current", "missing", "stale", "unmanaged"], str]:
+    """Classify the user-level launcher without exposing its command or local paths."""
+    target = browser_launcher_path(home=home)
+    content = _managed_browser_launcher_text(target)
+    if content is None:
+        try:
+            target.lstat()
+        except FileNotFoundError:
+            return "missing", "browser launcher is not installed"
+        except OSError:
+            return "unmanaged", "browser launcher cannot be inspected safely"
+        return "unmanaged", "browser launcher is unmanaged and was preserved"
+    command = _browser_launcher_command()
+    if command is None:
+        return "stale", "browser launcher package entry is unavailable; repair the current install"
+    expected = _browser_launcher_content(command=command, settings=settings)
+    if content == expected:
+        try:
+            executable = bool(target.stat().st_mode & 0o111)
+        except OSError:
+            executable = False
+        if executable:
+            return "current", "browser launcher is installed"
+    return "stale", "browser launcher is stale; run `stackos install --browser-launcher-only`"
+
+
+def ensure_browser_launcher(*, settings: Settings, home: Path | None = None) -> tuple[bool, str]:
+    """Install or refresh only a StackOS-owned user-level browser shim."""
+    target = browser_launcher_path(home=home)
+    status, message = inspect_browser_launcher(settings=settings, home=home)
+    if status == "current":
+        return True, message
+    if status == "unmanaged":
+        return (
+            False,
+            "browser launcher path is unmanaged and was preserved; rename or remove it before "
+            "running `stackos install --browser-launcher-only`.",
+        )
+    command = _browser_launcher_command()
+    if command is None:
+        return False, "browser launcher package entry is unavailable; repair the current install"
+    content = _browser_launcher_content(command=command, settings=settings)
+    staged_path: Path | None = None
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if (target.exists() or target.is_symlink()) and _managed_browser_launcher_text(
+            target
+        ) is None:
+            return (
+                False,
+                "browser launcher path is unmanaged and was preserved; rename or remove it before "
+                "running `stackos install --browser-launcher-only`.",
+            )
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=target.parent, prefix=".stackos-browser-", delete=False
+        ) as staged:
+            staged.write(content)
+            staged_path = Path(staged.name)
+        os.chmod(staged_path, 0o755)
+        os.replace(staged_path, target)
+    except OSError:
+        if staged_path is not None:
+            with contextlib.suppress(OSError):
+                staged_path.unlink()
+        return (
+            False,
+            "browser launcher could not be installed; check your local bin directory permissions",
+        )
+    return True, "browser launcher installed"
+
+
+def remove_browser_launcher(*, home: Path | None = None) -> tuple[bool, str]:
+    """Remove the owned browser shim while preserving foreign same-name entries."""
+    target = browser_launcher_path(home=home)
+    content = _managed_browser_launcher_text(target)
+    if content is None:
+        try:
+            target.lstat()
+        except FileNotFoundError:
+            return True, "browser launcher was not installed"
+        except OSError:
+            return True, "browser launcher could not be inspected and was preserved"
+        return True, "unmanaged browser launcher was preserved"
+    try:
+        target.unlink()
+    except OSError:
+        return False, "managed browser launcher could not be removed"
+    return True, "managed browser launcher removed"
 
 
 def _sha256(path: Path) -> str:
@@ -129,51 +296,6 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _verify_chromium_bundle(app_path: Path, *, timeout_seconds: int) -> tuple[bool, str]:
-    executable = app_path / CHROMIUM_EXECUTABLE_RELATIVE_PATH
-    info_path = app_path / "Contents" / "Info.plist"
-    if not executable.is_file() or not os.access(executable, os.X_OK) or not info_path.is_file():
-        return False, "Chromium bundle layout is incomplete."
-    try:
-        info = plistlib.loads(info_path.read_bytes())
-    except (OSError, ValueError):
-        return False, "Chromium bundle metadata is invalid."
-    if (
-        info.get("CFBundleName") != "Chromium"
-        or info.get("CFBundleShortVersionString") != CHROMIUM_BROWSER_VERSION
-    ):
-        return False, "Chromium bundle version does not match StackOS's pinned runtime."
-    if platform.system() != "Darwin" or platform.machine() != "arm64":
-        return False, "StackOS Chromium is available only for macOS arm64."
-    try:
-        arch = subprocess.run(
-            ["lipo", "-archs", str(executable)],
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
-            check=False,
-        )
-        if arch.returncode != 0 or "arm64" not in arch.stdout.split():
-            return False, "Chromium bundle is not arm64."
-        version = subprocess.run(
-            [str(executable), "--version"],
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
-            check=False,
-        )
-    except Exception:
-        return False, "Chromium bundle launch verification failed."
-    if version.returncode != 0 or CHROMIUM_BROWSER_VERSION not in version.stdout:
-        return False, "Chromium bundle launch verification failed."
-    return True, "Chromium bundle verified."
-
-
-def _copy_chromium_license(destination: Path) -> None:
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(_browser_license_source(), destination)
-
-
 def _remove_path(path: Path) -> None:
     if path.is_dir():
         shutil.rmtree(path)
@@ -181,187 +303,485 @@ def _remove_path(path: Path) -> None:
         path.unlink()
 
 
-def _install_chromium_runtime_atomically(
-    source_app: Path,
-    source_license: Path,
-    target_app: Path,
-    target_license: Path,
-) -> None:
-    """Replace the Chromium bundle and its notice as one recoverable transaction."""
-    app_backup = target_app.with_name(f".{target_app.name}.previous-{uuid.uuid4().hex}")
-    license_backup = target_license.with_name(f".{target_license.name}.previous-{uuid.uuid4().hex}")
-    moved_app = False
-    moved_license = False
-    try:
-        if target_app.exists():
-            target_app.replace(app_backup)
-            moved_app = True
-        if target_license.exists():
-            target_license.replace(license_backup)
-            moved_license = True
-        source_app.replace(target_app)
-        source_license.replace(target_license)
-    except Exception:
-        _remove_path(target_app)
-        _remove_path(target_license)
-        if moved_app and app_backup.exists():
-            app_backup.replace(target_app)
-        if moved_license and license_backup.exists():
-            license_backup.replace(target_license)
-        raise
-    finally:
-        _remove_path(app_backup)
-        _remove_path(license_backup)
-
-
-def _download_chromium_archive(destination: Path, *, timeout_seconds: int) -> None:
-    request = urllib.request.Request(
-        CHROMIUM_SNAPSHOT_URL,
-        headers={"User-Agent": "StackOS Chromium runtime installer"},
-    )
-    with (
-        urllib.request.urlopen(request, timeout=timeout_seconds) as response,
-        destination.open("wb") as out,
-    ):
-        shutil.copyfileobj(response, out)
-
-
-def _extract_chromium_archive(
-    archive: Path,
+def _download_runtime_archive(
+    url: str,
     destination: Path,
     *,
+    stage: str,
     timeout_seconds: int,
 ) -> None:
-    """Extract Chromium with macOS tooling so the app bundle stays executable."""
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": "StackOS gstack runtime installer"},
+    )
+    try:
+        with (
+            urllib.request.urlopen(request, timeout=timeout_seconds) as response,
+            destination.open("wb") as out,
+        ):
+            shutil.copyfileobj(response, out)
+    except Exception as exc:
+        raise _GstackRuntimeInstallError(
+            stage,
+            "download failed; check network access and run `stackos install` again.",
+        ) from exc
+
+
+def _safe_archive_destination(destination: Path, member_name: str) -> Path:
+    if not member_name or Path(member_name).is_absolute():
+        raise ValueError("unsafe archive member")
+    candidate = destination / member_name
+    try:
+        candidate.resolve().relative_to(destination.resolve())
+    except ValueError as exc:
+        raise ValueError("unsafe archive member") from exc
+    return candidate
+
+
+def _safe_archive_symlink_destination(destination: Path, member_name: str, link_name: str) -> Path:
+    if not link_name or Path(link_name).is_absolute():
+        raise ValueError("unsafe archive member")
+    member_path = _safe_archive_destination(destination, member_name)
+    link_target = member_path.parent / link_name
+    try:
+        link_target.resolve().relative_to(destination.resolve())
+    except ValueError as exc:
+        raise ValueError("unsafe archive member") from exc
+    return link_target
+
+
+def _extract_gstack_source_archive(archive: Path, destination: Path) -> None:
+    """Extract source while retaining only symlinks whose archive target is internal."""
+    destination.mkdir(parents=True, exist_ok=True)
+    try:
+        with tarfile.open(archive, "r:gz") as source:
+            members = source.getmembers()
+            root = destination.resolve()
+            archive_paths: set[str] = set()
+            for member in members:
+                target = _safe_archive_destination(destination, member.name)
+                archive_paths.add(target.resolve().relative_to(root).as_posix())
+                if not (member.isdir() or member.isreg() or member.issym()):
+                    raise ValueError("unsafe archive member")
+            for member in members:
+                if not member.issym():
+                    continue
+                link_target = _safe_archive_symlink_destination(
+                    destination,
+                    member.name,
+                    member.linkname,
+                )
+                if link_target.resolve().relative_to(root).as_posix() not in archive_paths:
+                    raise ValueError("unsafe archive member")
+            for member in members:
+                if not member.isdir():
+                    continue
+                target = _safe_archive_destination(destination, member.name)
+                target.mkdir(parents=True, exist_ok=True)
+            for member in members:
+                if not member.isreg():
+                    continue
+                target = _safe_archive_destination(destination, member.name)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                source_file = source.extractfile(member)
+                if source_file is None:
+                    raise _GstackRuntimeInstallError(
+                        "gstack source extraction",
+                        "archive could not be read; run `stackos install` again.",
+                    )
+                with source_file, target.open("wb") as output:
+                    shutil.copyfileobj(source_file, output)
+                os.chmod(target, member.mode & 0o777)
+            for member in members:
+                if not member.issym():
+                    continue
+                target = _safe_archive_destination(destination, member.name)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.symlink_to(member.linkname)
+    except _GstackRuntimeInstallError:
+        raise
+    except ValueError as exc:
+        raise _GstackRuntimeInstallError(
+            "gstack source extraction",
+            "archive contains an unsafe member; refresh the pinned runtime and retry.",
+        ) from exc
+    except (OSError, tarfile.TarError) as exc:
+        raise _GstackRuntimeInstallError(
+            "gstack source extraction",
+            "archive could not be extracted; run `stackos install` again.",
+        ) from exc
+
+
+def _extract_bun_archive(archive: Path, destination: Path) -> Path:
+    """Extract the official Bun zip and return its executable, rejecting unsafe entries."""
+    destination.mkdir(parents=True, exist_ok=True)
+    try:
+        with zipfile.ZipFile(archive) as source:
+            members = source.infolist()
+            for member in members:
+                _safe_archive_destination(destination, member.filename)
+                mode = member.external_attr >> 16
+                if mode and (mode & 0o170000) == 0o120000:
+                    raise ValueError("unsafe archive member")
+            for member in members:
+                target = _safe_archive_destination(destination, member.filename)
+                if member.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with source.open(member) as source_file, target.open("wb") as output:
+                    shutil.copyfileobj(source_file, output)
+                mode = member.external_attr >> 16
+                if mode:
+                    os.chmod(target, mode & 0o777)
+    except ValueError as exc:
+        raise _GstackRuntimeInstallError(
+            "Bun archive extraction",
+            "archive contains an unsafe member; refresh the pinned runtime and retry.",
+        ) from exc
+    except (OSError, zipfile.BadZipFile) as exc:
+        raise _GstackRuntimeInstallError(
+            "Bun archive extraction",
+            "archive could not be extracted; run `stackos install` again.",
+        ) from exc
+    bun = destination / "bun-darwin-aarch64" / "bun"
+    if not bun.is_file():
+        raise _GstackRuntimeInstallError(
+            "Bun archive extraction",
+            "archive layout is incomplete; refresh the pinned runtime and retry.",
+        )
+    return bun
+
+
+def _gstack_source_root(extracted: Path) -> Path:
+    roots = [child for child in extracted.iterdir() if child.is_dir()]
+    if len(roots) != 1 or not (roots[0] / "package.json").is_file():
+        raise _GstackRuntimeInstallError(
+            "gstack source extraction",
+            "archive layout is incomplete; refresh the pinned runtime and retry.",
+        )
+    return roots[0]
+
+
+def _remove_playwright_build_links(browsers: Path) -> None:
+    """Drop Playwright's build-directory registration, which cannot survive relocation."""
+    links = browsers / ".links"
+    try:
+        if links.is_symlink() or links.is_file():
+            links.unlink()
+        elif links.is_dir():
+            shutil.rmtree(links)
+    except OSError as exc:
+        raise _GstackRuntimeInstallError(
+            "gstack browser asset finalization",
+            "could not remove build-only browser registration metadata; retry `stackos install`.",
+        ) from exc
+
+
+def _run_gstack_build(
+    args: list[str],
+    *,
+    stage: str,
+    cwd: Path,
+    env: dict[str, str],
+    timeout_seconds: int,
+) -> None:
     try:
         result = subprocess.run(
-            ["/usr/bin/ditto", "-x", "-k", str(archive), str(destination)],
+            args,
+            cwd=cwd,
+            env=env,
             capture_output=True,
             text=True,
             timeout=timeout_seconds,
             check=False,
         )
     except Exception as exc:
-        raise RuntimeError(
-            f"Chromium archive extraction failed: {_safe_process_error(exc)}"
+        raise _GstackRuntimeInstallError(
+            stage,
+            "command could not start; run `stackos install` again.",
         ) from exc
     if result.returncode != 0:
-        detail = (result.stderr or result.stdout).strip()
-        raise RuntimeError(
-            "Chromium archive extraction failed: "
-            f"exit_code={result.returncode}; {_safe_process_output(detail)}"
+        detail = result.stderr or result.stdout
+        raise _GstackRuntimeInstallError(
+            stage,
+            f"command exited {result.returncode}; {_safe_process_output(detail)}",
         )
 
 
-def verify_chromium_runtime(
-    *,
-    data_dir: Path | None = None,
-    timeout_seconds: int = 10,
-) -> tuple[bool, str]:
-    """Verify StackOS's canonical Chromium bundle without downloading or changing it."""
-    app_path = chromium_app_path(data_dir)
-    if not app_path.exists():
-        return False, "Chromium bundle is missing."
-    valid, reason = _verify_chromium_bundle(app_path, timeout_seconds=timeout_seconds)
-    if not valid:
-        return False, reason
-    if not chromium_license_path(data_dir).is_file():
-        return False, "Chromium license notice is missing."
-    return True, "Chromium runtime verified."
+def _runtime_manifest() -> dict[str, object]:
+    return {
+        "schema_version": GSTACK_RUNTIME_MANIFEST_SCHEMA,
+        "packaging_revision": GSTACK_PACKAGING_REVISION,
+        "provider": "gstack",
+        "gstack_revision": GSTACK_REVISION,
+        "gstack_version": GSTACK_VERSION,
+        "gstack_source_archive_sha256": GSTACK_SOURCE_ARCHIVE_SHA256,
+        "bun_version": BUN_VERSION,
+        "bun_archive_sha256": BUN_ARCHIVE_SHA256,
+        "playwright_version": GSTACK_PLAYWRIGHT_VERSION,
+    }
 
 
-def ensure_chromium_runtime(
+def _upstream_chromium_executable(root: Path) -> tuple[Path | None, str | None]:
+    """Locate Chromium using gstack's installed Playwright metadata, not a StackOS pin."""
+    metadata_path = root / "gstack" / "node_modules" / "playwright-core" / "browsers.json"
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None, "gstack upstream browser metadata is missing or invalid."
+    descriptors = metadata.get("browsers") if isinstance(metadata, dict) else None
+    if not isinstance(descriptors, list):
+        return None, "gstack upstream browser metadata is missing or invalid."
+    chromium = next(
+        (
+            descriptor
+            for descriptor in descriptors
+            if isinstance(descriptor, dict)
+            and descriptor.get("name") == "chromium"
+            and descriptor.get("installByDefault") is True
+        ),
+        None,
+    )
+    revision = chromium.get("revision") if isinstance(chromium, dict) else None
+    if not isinstance(revision, str) or not revision.isdecimal():
+        return None, "gstack upstream Chromium metadata is missing or invalid."
+    browser_dir = root / "browsers" / f"chromium-{revision}"
+    executable = browser_dir / _UPSTREAM_CHROMIUM_EXECUTABLE
+    if not (browser_dir / "INSTALLATION_COMPLETE").is_file() or not executable.is_file():
+        return None, "gstack upstream Chromium executable is missing."
+    if not os.access(executable, os.X_OK):
+        return None, "gstack upstream Chromium executable is not executable."
+    return executable, None
+
+
+def _verify_gstack_runtime_root(root: Path) -> tuple[bool, str]:
+    if not root.is_dir():
+        return False, "gstack runtime is missing."
+    manifest_path = root / "manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False, "gstack runtime manifest is missing or invalid."
+    if manifest != _runtime_manifest():
+        return False, "gstack runtime manifest does not match StackOS's pinned runtime."
+    for relative_path in _GSTACK_EXCLUDED_DEPENDENCIES:
+        path = root / "gstack" / "node_modules" / relative_path
+        if path.exists() or path.is_symlink():
+            return (
+                False,
+                "gstack runtime contains dependencies excluded from this platform package.",
+            )
+    bun = root / "bin" / "bun"
+    if not bun.is_file() or not os.access(bun, os.X_OK):
+        return False, "gstack Bun runtime is missing."
+    cli = root / "gstack" / "browse" / "dist" / "browse"
+    if not cli.is_file() or not os.access(cli, os.X_OK):
+        return False, "gstack native CLI is missing."
+    if not (root / "gstack" / "browse" / "src" / "server.ts").is_file():
+        return False, "gstack native server is missing."
+    if not (root / "gstack" / "LICENSE").is_file() or not (root / "gstack" / "NOTICE.md").is_file():
+        return False, "gstack license notices are missing."
+    browsers = root / "browsers"
+    if not browsers.is_dir():
+        return False, "gstack browser assets are missing."
+    _chromium, chromium_reason = _upstream_chromium_executable(root)
+    if chromium_reason is not None:
+        return False, chromium_reason
+    return True, "gstack runtime verified."
+
+
+def verify_gstack_runtime(
     *,
     data_dir: Path | None = None,
     runtime_root: Path | None = None,
-    timeout_seconds: int = 180,
 ) -> tuple[bool, str]:
-    """Ensure one pinned normal Chromium.app exists at StackOS's owned location.
-
-    Playwright remains the driver. It never installs, selects, or falls back to
-    a browser executable; this helper is the sole acquisition and repair owner.
-    ``runtime_root`` is build-pipeline-only and writes a desktop payload, not a
-    runtime-selected browser path.
-    """
-    if importlib.util.find_spec("playwright") is None:
-        return (
-            False,
-            "Playwright package is not importable; install/sync Python dependencies first.",
-        )
-    if playwright_driver_version() != PLAYWRIGHT_DRIVER_VERSION:
-        return (
-            False,
-            "Playwright driver is incompatible with StackOS Chromium; "
-            f"expected version {PLAYWRIGHT_DRIVER_VERSION} "
-            f"(declared browserVersion {PLAYWRIGHT_EXPECTED_BROWSER_VERSION}).",
-        )
-
-    if runtime_root is not None:
-        app_path = Path(runtime_root) / CHROMIUM_APP_NAME
-        license_path = Path(runtime_root) / CHROMIUM_LICENSE_FILENAME
-    elif packaged_stackos_root() is not None:
-        app_path = chromium_app_path(data_dir)
-        license_path = chromium_license_path(data_dir)
-        runtime_ok, _reason = verify_chromium_runtime(data_dir=data_dir)
-        if runtime_ok:
-            return True, "Bundled Chromium runtime present."
-        return False, "Bundled Chromium runtime is missing; repair the StackOS app installation."
-    else:
-        if data_dir is None:
-            from stackos.config import get_settings
-
-            data_dir = Path(get_settings().data_dir)
-        app_path = managed_chromium_app_path(Path(data_dir))
-        license_path = app_path.parent / CHROMIUM_LICENSE_FILENAME
-
-    if runtime_root is None:
-        runtime_ok, _reason = verify_chromium_runtime(data_dir=data_dir)
-        if runtime_ok:
-            return True, "Managed Chromium runtime present."
-    elif app_path.exists():
-        valid, _reason = _verify_chromium_bundle(app_path, timeout_seconds=10)
-        if valid and license_path.is_file():
-            return True, "Bundled Chromium runtime present."
-
-    app_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with tempfile.TemporaryDirectory(
-            prefix="stackos-chromium-", dir=app_path.parent
-        ) as stage_name:
-            stage = Path(stage_name)
-            archive = stage / "chromium.zip"
-            _download_chromium_archive(archive, timeout_seconds=timeout_seconds)
-            if _sha256(archive) != CHROMIUM_SNAPSHOT_SHA256:
-                return False, "Chromium archive checksum did not match StackOS's pinned runtime."
-            extracted = stage / "extracted"
-            _extract_chromium_archive(archive, extracted, timeout_seconds=timeout_seconds)
-            candidate = extracted / CHROMIUM_ARCHIVE_APP_RELATIVE_PATH
-            valid, reason = _verify_chromium_bundle(candidate, timeout_seconds=10)
-            if not valid:
-                return False, reason
-            runtime_stage = stage / "runtime"
-            runtime_stage.mkdir()
-            candidate = candidate.replace(runtime_stage / CHROMIUM_APP_NAME)
-            staged_license = runtime_stage / CHROMIUM_LICENSE_FILENAME
-            _copy_chromium_license(staged_license)
-            _install_chromium_runtime_atomically(
-                candidate,
-                staged_license,
-                app_path,
-                license_path,
-            )
-    except Exception as exc:
-        return False, f"Chromium runtime install failed: {_safe_process_error(exc)}"
-    return True, "Managed Chromium runtime installed."
-
-
-def _safe_process_error(exc: Exception) -> str:
-    message = str(exc)
-    return (
-        f"error_type={type(exc).__name__}; "
-        f"message_sha256={hashlib.sha256(message.encode('utf-8')).hexdigest()}; "
-        f"message_length={len(message)}"
+    """Verify the immutable gstack distribution without downloading or changing it."""
+    root = (
+        Path(runtime_root) / GSTACK_RUNTIME_DIRNAME
+        if runtime_root is not None
+        else gstack_runtime_root(data_dir)
     )
+    return _verify_gstack_runtime_root(root)
+
+
+def _prune_gstack_dependencies(candidate: Path) -> None:
+    """Remove only known unused dependencies from the completed staging tree."""
+    try:
+        staging_root = candidate.resolve()
+        for relative_path in _GSTACK_EXCLUDED_DEPENDENCIES:
+            path = candidate / "gstack" / "node_modules" / relative_path
+            # A final symlink is unlinked; a parent symlink must never lead a
+            # recursive deletion outside the installer-owned staging tree.
+            if not path.parent.resolve().is_relative_to(staging_root):
+                raise OSError("dependency parent escapes staging")
+            if path.is_symlink() or path.is_file():
+                path.unlink()
+            elif path.exists():
+                shutil.rmtree(path)
+    except OSError as exc:
+        raise _GstackRuntimeInstallError(
+            "gstack dependency pruning",
+            "could not prune the staged runtime; retry `stackos install`.",
+        ) from exc
+
+
+def _build_gstack_runtime(candidate: Path, *, timeout_seconds: int) -> None:
+    """Build the fixed upstream distribution in a staging directory only."""
+    source_archive = candidate.parent / "gstack.tar.gz"
+    bun_archive = candidate.parent / "bun.zip"
+    _download_runtime_archive(
+        GSTACK_SOURCE_ARCHIVE_URL,
+        source_archive,
+        stage="gstack source download",
+        timeout_seconds=timeout_seconds,
+    )
+    if _sha256(source_archive) != GSTACK_SOURCE_ARCHIVE_SHA256:
+        raise _GstackRuntimeInstallError(
+            "gstack source verification",
+            "checksum did not match the pinned runtime; retry `stackos install`.",
+        )
+    _download_runtime_archive(
+        BUN_ARCHIVE_URL,
+        bun_archive,
+        stage="Bun download",
+        timeout_seconds=timeout_seconds,
+    )
+    if _sha256(bun_archive) != BUN_ARCHIVE_SHA256:
+        raise _GstackRuntimeInstallError(
+            "Bun verification",
+            "checksum did not match the pinned runtime; retry `stackos install`.",
+        )
+
+    source_unpack = candidate.parent / "gstack-source"
+    bun_unpack = candidate.parent / "bun-source"
+    _extract_gstack_source_archive(source_archive, source_unpack)
+    source_root = _gstack_source_root(source_unpack)
+    try:
+        candidate.mkdir(parents=True, exist_ok=False)
+        shutil.copytree(source_root, candidate / "gstack", symlinks=True)
+    except OSError as exc:
+        raise _GstackRuntimeInstallError(
+            "gstack runtime staging",
+            "could not stage the verified source; retry `stackos install`.",
+        ) from exc
+    bundled_bun = _extract_bun_archive(bun_archive, bun_unpack)
+    bun = candidate / "bin" / "bun"
+    bun.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(bundled_bun, bun)
+    bun.chmod(0o755)
+    browsers = candidate / "browsers"
+    browsers.mkdir()
+    env = os.environ.copy()
+    env["PATH"] = f"{bun.parent}{os.pathsep}{env.get('PATH', '')}"
+    env["PLAYWRIGHT_BROWSERS_PATH"] = str(browsers)
+    gstack_dir = candidate / "gstack"
+    _run_gstack_build(
+        [str(bun), "install", "--frozen-lockfile"],
+        stage="gstack dependency installation",
+        cwd=gstack_dir,
+        env=env,
+        timeout_seconds=timeout_seconds,
+    )
+    _run_gstack_build(
+        [str(bun), "build", "--compile", "browse/src/cli.ts", "--outfile", "browse/dist/browse"],
+        stage="gstack CLI compilation",
+        cwd=gstack_dir,
+        env=env,
+        timeout_seconds=timeout_seconds,
+    )
+    _run_gstack_build(
+        [str(bun), "run", "vendor:xterm"],
+        stage="gstack browser asset preparation",
+        cwd=gstack_dir,
+        env=env,
+        timeout_seconds=timeout_seconds,
+    )
+    _run_gstack_build(
+        ["bash", "scripts/write-version-files.sh", "browse/dist/.version"],
+        stage="gstack version metadata preparation",
+        cwd=gstack_dir,
+        env=env,
+        timeout_seconds=timeout_seconds,
+    )
+    _run_gstack_build(
+        [str(bun), "node_modules/playwright/cli.js", "install", "--no-shell", "chromium"],
+        stage="gstack browser asset installation",
+        cwd=gstack_dir,
+        env=env,
+        timeout_seconds=timeout_seconds,
+    )
+    _remove_playwright_build_links(browsers)
+    _prune_gstack_dependencies(candidate)
+    (candidate / "manifest.json").write_text(
+        json.dumps(_runtime_manifest(), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _install_gstack_runtime_atomically(candidate: Path, target: Path) -> None:
+    """Replace only the runtime directory, preserving session profiles beside it."""
+    backup = target.with_name(f".{target.name}.previous-{uuid.uuid4().hex}")
+    moved_target = False
+    try:
+        if target.exists():
+            target.replace(backup)
+            moved_target = True
+        candidate.replace(target)
+    except Exception:
+        _remove_path(target)
+        if moved_target and backup.exists():
+            backup.replace(target)
+        raise
+    finally:
+        _remove_path(backup)
+
+
+def ensure_gstack_runtime(
+    *,
+    data_dir: Path | None = None,
+    runtime_root: Path | None = None,
+    timeout_seconds: int = 900,
+) -> tuple[bool, str]:
+    """Install or repair the pinned, self-contained gstack browser distribution."""
+    if platform.system() != "Darwin" or platform.machine() != "arm64":
+        return False, "gstack runtime is available only for macOS arm64."
+    if runtime_root is not None:
+        target = Path(runtime_root) / GSTACK_RUNTIME_DIRNAME
+        runtime_ok, _reason = verify_gstack_runtime(runtime_root=Path(runtime_root))
+        if runtime_ok:
+            return True, "Bundled gstack runtime present."
+        result_message = "Bundled gstack runtime installed."
+    elif packaged_stackos_root() is not None:
+        runtime_ok, _reason = verify_gstack_runtime(data_dir=data_dir)
+        if runtime_ok:
+            return True, "Bundled gstack runtime present."
+        return False, "Bundled gstack runtime is missing; repair the StackOS app installation."
+    else:
+        target = gstack_runtime_root(data_dir)
+        runtime_ok, _reason = verify_gstack_runtime(data_dir=data_dir)
+        if runtime_ok:
+            return True, "Managed gstack runtime present."
+        result_message = "Managed gstack runtime installed."
+
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="stackos-gstack-", dir=target.parent) as stage_name:
+            candidate = Path(stage_name) / GSTACK_RUNTIME_DIRNAME
+            _build_gstack_runtime(candidate, timeout_seconds=timeout_seconds)
+            candidate_ok, candidate_reason = _verify_gstack_runtime_root(candidate)
+            if not candidate_ok:
+                return False, candidate_reason
+            _install_gstack_runtime_atomically(candidate, target)
+    except _GstackRuntimeInstallError as exc:
+        return False, f"gstack runtime install failed during {exc.stage}: {exc.reason}"
+    except Exception:
+        return (
+            False,
+            "gstack runtime install failed while staging the verified runtime; "
+            "run `stackos install` again.",
+        )
+    return True, result_message
 
 
 def _safe_process_output(output: str) -> str:
@@ -815,7 +1235,7 @@ __all__ = [
     "copy_skills_to",
     "copy_stackos_skill_to",
     "detect_mode",
-    "ensure_chromium_runtime",
+    "ensure_gstack_runtime",
     "register_mcp_claude",
     "register_mcp_codex",
     "register_plugin_marketplace",
@@ -823,5 +1243,5 @@ __all__ = [
     "remove_plugins",
     "remove_skills",
     "repair_mcp_hosts",
-    "verify_chromium_runtime",
+    "verify_gstack_runtime",
 ]

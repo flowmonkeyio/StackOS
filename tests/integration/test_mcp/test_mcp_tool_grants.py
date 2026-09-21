@@ -130,8 +130,9 @@ def test_run_plan_controller_can_call_browser_step_grant_tool(
     status = out
     while isinstance(status.get("data"), dict) and "provider" not in status:
         status = status["data"]
-    assert status["provider"] == "playwright"
-    assert status["executable_path"] is None
+    assert status["provider"] == "gstack"
+    assert "executable_path" not in status
+    assert "native_cli" not in status
 
 
 def test_run_plan_browser_grant_rejects_cross_project_arguments(

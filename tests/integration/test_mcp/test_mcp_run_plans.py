@@ -1298,7 +1298,7 @@ def test_website_seo_analysis_strict_validation_and_create_preserve_grants(
     assert validation["valid"] is True
     assert validation["warnings"] == []
     assert created["data"]["template_key"] == "seo.website-analysis"
-    assert fetched["template_snapshot_json"]["version"] == "0.3.0"
+    assert fetched["template_snapshot_json"]["version"] == "0.5.0"
     assert fetched["status"] == "draft"
     assert all(step["instructions_json"] for step in fetched["steps"])
     assert all(step["success_criteria_json"] for step in fetched["steps"])

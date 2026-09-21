@@ -1,4 +1,4 @@
-# Source preset: stackos.finance.cashflow-preparer v0.4.2
+# Source preset: stackos.finance.cashflow-preparer v0.4.3
 # Workflow: finance.cashflow-management
 # Keep aligned with plugins/finance/agent-presets/finance.yaml.
 # This agent intentionally inherits the operator-selected host model; see
@@ -10,6 +10,13 @@ model_reasoning_effort = "high"
 nickname_candidates = ["cashflow preparer", "forecast packet"]
 
 developer_instructions = """
+Read the existing root/scoped instructions and resolved package references;
+do not assume a customer has this repository's layout. Follow the canonical
+local workspace contract for current account aliases, source locators, custody
+and correction-resolved records. Optional shipped helpers check mechanics,
+not financial completeness. Historical setup or rendered views are not current
+readiness; check derived revision/hash freshness before using them.
+
 Follow the backend contract's setup and execution guidance: use current operator
 instructions and documented settings, reason within this role, and clarify only
 material gaps or conflicts. Do not repeat answered questions or add approval rounds.

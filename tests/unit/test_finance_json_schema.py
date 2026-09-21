@@ -47,6 +47,67 @@ COLLECTIONS = {
 AT = "2026-09-06T12:00:00Z"
 
 
+def test_account_identity_is_optional_sourced_setting_not_another_register() -> None:
+    document = _template()
+    document["operating_settings"] = [
+        {
+            **_record("setting:account", "confirmed"),
+            "version": 1,
+            "scope": "source-account",
+            "decision_refs": ["external:owner-decision"],
+            "account_identity": {
+                "display_name": "Example operating account",
+                "purpose": "Operator-confirmed business receipts",
+                "aliases": ["bank:opaque-account", "export:opaque-account"],
+            },
+        }
+    ]
+    assert not _errors(document)
+    for invalid in ([], [""], ["same", "same"]):
+        changed = copy.deepcopy(document)
+        changed["operating_settings"][0]["account_identity"]["aliases"] = invalid
+        assert _errors(changed)
+    changed = copy.deepcopy(document)
+    changed["operating_settings"][0]["account_identity"]["opening_balance"] = 123
+    assert _errors(changed)
+    del document["operating_settings"][0]["account_identity"]
+    assert not _errors(document)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "attachments/2026/09/original.csv",
+        "attachments/statements/2026/09/original.pdf",
+        "attachments/exports/2026/09/original.csv",
+        "receipts/2026/09/receipt-001.png",
+    ],
+)
+def test_evidence_path_accepts_flat_typed_and_receipt_layouts(path: str) -> None:
+    schema = _schema()
+    validator = Draft202012Validator({"$ref": "#/$defs/evidence_path", "$defs": schema["$defs"]})
+    assert not list(validator.iter_errors(path))
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/receipts/2026/09/a.pdf",
+        "receipts/2026/13/a.pdf",
+        "attachments/../2026/09/a.pdf",
+        "attachments/statements/2026/09/../a.pdf",
+        "attachments/statements/2026/09/a/b.pdf",
+        "receipts/2026/09/a.pdf/",
+        "receipts\\2026\\09\\a.pdf",
+        "receipts/2026/09/a.pdf\n",
+    ],
+)
+def test_evidence_path_rejects_unsafe_or_ambiguous_layouts(path: str) -> None:
+    schema = _schema()
+    validator = Draft202012Validator({"$ref": "#/$defs/evidence_path", "$defs": schema["$defs"]})
+    assert list(validator.iter_errors(path))
+
+
 def _schema() -> dict:
     return json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 

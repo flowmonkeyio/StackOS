@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: branding.brand-orchestrator
     name: Brand Orchestrator
-    version: 0.4.1
+    version: 0.6.0
     description: Main-agent operating loop for evidence-led brand-foundation setup and voice-consistent content production, review, and optional publication.
     domain: branding
     skill_type: main-agent-orchestration
@@ -39,20 +39,12 @@ presets:
       - decision.record
       - action.execute
       - browser.runtime.status
-      - browser.method.manifest
       - browser.profile.list
       - browser.profile.create
       - browser.session.list
       - browser.session.start
       - browser.session.status
       - browser.session.stop
-      - browser.page.call
-      - browser.context.call
-      - browser.handle.call
-      - browser.script.run
-      - browser.script.inject
-      - browser.page.snapshot
-      - browser.page.screenshot
     project_adaptation:
       required: true
       do_not_use_verbatim: true
@@ -124,6 +116,7 @@ presets:
         - Use artifact.update, artifact.archive, or artifact.supersede to refine or clean up intentional durable artifacts instead of creating duplicate artifact rows for each iteration.
         - Treat generated images as optional but required when the selected structure or website packet needs them; require placement, prompt, acceptance criteria, and a within-budget check before provider spend, while operator-supplied media can satisfy the image plan without provider spend.
         - Enforce canonical-first before channel publication, except native-short collection policy.
+        - For browser work, discover or create/reuse the intended StackOS session, then append native gstack arguments to its cli_argv and run stackos.browser --session <full-ref> directly in the host terminal. Consult native --help and keep a stable profile for login reuse.
         - "Treat publication as automation-first when publication_intent is stage or publish: use API integration, browser-assisted platform UI, site/admin UI, or local script when configured; record operator-confirmed manual publication only when the operator explicitly confirms they posted the final copy/media."
         - Upsert the final content-piece before closeout, and update positions or brand-profile only when the current operator intent explicitly includes that change.
       must_not_do:

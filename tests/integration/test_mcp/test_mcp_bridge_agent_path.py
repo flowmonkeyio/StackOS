@@ -203,13 +203,10 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
     assert "project.create" not in names
     assert "project.get" not in names
     assert "project.setActive" not in names
-    assert "browser.page.call" in names
-    assert "browser.context.call" in names
-    assert "browser.handle.call" in names
-    assert "browser.script.run" in names
-    assert "browser.page.screenshot" in names
+    assert "browser.cli.run" not in names
     assert "agentRequest.list" not in names
     assert "agentRequest.claim" not in names
+
     assert "agentRequest.create" not in names
     assert "context.query" not in names
     assert "learning.query" not in names
@@ -227,6 +224,83 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
         tool for tool in envelope["result"]["tools"] if tool["name"] == "toolbox.describe"
     )
     assert "tool_names" in describe_tool["inputSchema"]["properties"]
+
+
+def test_bridge_native_browser_status_exposes_handoff_without_relay(
+    mcp_client: MCPClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import stackos.operations.browser as browser_ops
+    from stackos.browser.runtime import (
+        BrowserRuntime,
+        NativeCliContext,
+        NativeSessionState,
+    )
+
+    runtime = BrowserRuntime()
+    states: dict[str, NativeSessionState] = {}
+    native = NativeCliContext(
+        executable=str(tmp_path / "browse"),
+        cwd=str(tmp_path),
+        env={"BROWSE_STATE_FILE": str(tmp_path / "owned.json")},
+    )
+
+    async def start(**kwargs: Any) -> NativeSessionState:
+        state = NativeSessionState(
+            session_ref=kwargs["session_ref"],
+            profile_ref=kwargs["profile_ref"],
+            status="running",
+            owned=True,
+            healthy=True,
+            pid=123,
+            repair=None,
+        )
+        states[state.session_ref] = state
+        return state
+
+    async def inspect(**kwargs: Any) -> NativeSessionState:
+        return states[kwargs["session_ref"]]
+
+    async def session_context(**kwargs: Any) -> NativeCliContext:
+        assert kwargs["observed"] is states[kwargs["session_ref"]]
+        return native
+
+    monkeypatch.setattr(runtime, "start_session", start)
+    monkeypatch.setattr(runtime, "inspect_session", inspect)
+    monkeypatch.setattr(runtime, "session_context", session_context)
+    monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: runtime)
+    workspace = tmp_path / "native-workspace"
+    workspace.mkdir()
+    proxy, client = _scoped_bridge(mcp_client, cwd=str(workspace))
+    _initialize(proxy, client)
+    _operation_data(_structured(_tool_call(proxy, client, "workspace.startSession")))
+    started = _operation_data(
+        _structured(
+            _tool_call(
+                proxy,
+                client,
+                "browser.session.start",
+                {"profile_key": "proof", "session_key": "main"},
+            )
+        )
+    )
+    session_ref = started["session_ref"]
+    assert started["cli_argv"] == ["stackos.browser", "--session", session_ref]
+    listed = _operation_data(_structured(_tool_call(proxy, client, "browser.session.list")))
+    assert listed["items"][0]["cli_argv"] == ["stackos.browser", "--session", session_ref]
+    selected = _operation_data(
+        _structured(
+            _tool_call(
+                proxy,
+                client,
+                "browser.session.status",
+                {"session_ref": session_ref, "response_mode": "raw"},
+            )
+        )
+    )
+    assert selected["native_cli"] == native.to_dict()
+    assert selected["cli_argv"] == ["stackos.browser", "--session", session_ref]
+    assert "BROWSE_NO_AUTOSTART" not in selected["native_cli"]["env"]
+    assert "browser.cli.run" not in _AGENT_VISIBLE_TOOL_ORDER
 
 
 @pytest.mark.parametrize("source", ["project", "user"])

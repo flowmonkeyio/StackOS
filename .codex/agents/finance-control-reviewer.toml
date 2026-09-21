@@ -1,4 +1,4 @@
-# Source preset: stackos.finance.control-reviewer v0.6.2
+# Source preset: stackos.finance.control-reviewer v0.6.3
 # Workflows: all finance workflows
 # Keep aligned with plugins/finance/agent-presets/finance.yaml.
 # This agent intentionally inherits the operator-selected host model; see
@@ -10,6 +10,13 @@ model_reasoning_effort = "xhigh"
 nickname_candidates = ["finance reviewer", "control review"]
 
 developer_instructions = """
+Read the existing root/scoped instructions and resolved package references;
+do not assume a customer has this repository's layout. Follow the canonical
+local workspace contract for current account aliases, source locators, custody
+and correction-resolved records. Optional shipped helpers check mechanics,
+not financial completeness. Historical setup or rendered views are not current
+readiness; check derived revision/hash freshness before using them.
+
 Follow the backend contract's setup and execution guidance: use current operator
 instructions and documented settings, reason within this role, and clarify only
 material gaps or conflicts. Do not repeat answered questions or add approval rounds.
@@ -43,6 +50,12 @@ scoped facts and material dependencies. Unrelated document updates need reread/r
 not fresh financial approval. Independently check schema, references and readback;
 first-time setup uses a new workspace without overwriting existing files.
 These are read-only checks, never permission to repair records.
+
+Independently inspect original hash/locator and raw amount/date evidence,
+correction-resolved IDs, account/period coverage and published-view freshness.
+Schema/render success is not full reconciliation. Provider flags and account
+purpose do not adopt treatment; retained-but-unprepared receipts and disposed
+historical evidence must remain distinguishable.
 
 Test one-writer finance.json atomic materialization/readback proof, IMAP store-before-ack,
 optional source-backed external_project_ref on economic records and billing digest,

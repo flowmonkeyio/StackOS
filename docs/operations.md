@@ -199,35 +199,27 @@ not a second registry; it renders `GET /api/v1/operations` and
 
 ## Browser Operations
 
-Browser automation is exposed as generic StackOS operations instead of
-provider-specific workflow glue. `browser.page.call` and
-`browser.context.call` mirror public Playwright methods through raw
-method names plus `args`, `kwargs`, or named `arguments`. Prefer named
-`arguments` for manifest-documented convenience methods, such as
-`arguments: {"url": "https://example.com"}` for `goto`, while raw `args` and
-`kwargs` remain available for direct public Playwright parity. Calls that return
-non-page browser objects return transient `handle_ref` values; use
-`browser.handle.call` to call public methods or properties on those returned
-objects. Convenience operations such as `browser.script.run`,
-`browser.script.inject`, and `browser.page.screenshot` sit on top of that
-parity model.
+The browser operation surface owns runtime status, profile create/list, and
+session start/list/status/stop. Session discovery reconciles owned gstack state
+and OS process identity after daemon restart. Every session row includes a ready
+`cli_argv` prefix: `["stackos.browser","--session",session_ref]`.
 
-Do not turn the browser method manifest into an allowlist. It exists for
-discovery, guidance, and drift tests while preserving full browser control for
-agents. Browser side-effect operations are raw-only; persisted receipts store
-redacted summaries and artifact refs rather than raw scripts, returned values,
-or daemon-local paths.
+Agents append upstream gstack arguments and run that command in their terminal.
+The standalone launcher resolves the exact session once through the existing
+authenticated status operation, then replaces itself with the native process.
+Native commands, output, terminal streams and exit status do not pass through
+StackOS operation dispatch. There is no browser command relay or browser-method
+allowlist. Upstream owns parsing and browser behavior.
 
-Browser sessions always use StackOS's visible Chromium runtime. The session
-start contract has no headless field, and launch preferences are limited to
-`locale`, `timezone_id`, `user_agent`, and `viewport`; executable paths,
-channels, raw arguments, and profile controls are daemon-owned.
+Selected start/status returns `native_cli={executable,cwd,env}` independently of
+observed health when its runtime and profile binding are valid. Bulk lists omit
+that context. A live sibling profile owner prevents a competing handoff.
 
-Browser side-effect operations advertise `secret_policy=raw-browser-output`.
-That means the immediate operation payload can contain page, cookie, storage,
-or JavaScript-returned data. Browser session state and generated artifacts are
-local operational state and must be treated as sensitive; receipts are redacted
-for audit, not as a browser capability restriction.
+The same OperationSpec supplies lifecycle MCP, generic REST, generic CLI, and
+Operations UI discovery. Selected paths are local capabilities; state contents
+and tokens are not exposed. Native output may contain requested page data.
+Agents preserve useful captures explicitly through generic artifacts. See
+[browser sessions](browser-automation.md) for usage and profile continuity.
 
 ## Generic REST Calls
 
@@ -413,20 +405,12 @@ index for common core operations, not a replacement for registry discovery.
 - `agentRequest.complete`
 - `agentRequest.ignore`
 - `browser.runtime.status`
-- `browser.method.manifest`
 - `browser.profile.create`
 - `browser.profile.list`
 - `browser.session.start`
 - `browser.session.stop`
 - `browser.session.list`
 - `browser.session.status`
-- `browser.page.call`
-- `browser.context.call`
-- `browser.handle.call`
-- `browser.script.run`
-- `browser.script.inject`
-- `browser.page.snapshot`
-- `browser.page.screenshot`
 - `communication.reply`
 - `communication.send`
 - `communicationProfile.accountUsage`

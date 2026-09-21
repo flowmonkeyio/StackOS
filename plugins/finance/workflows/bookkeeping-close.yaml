@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: finance.bookkeeping-close
 name: Finance Bookkeeping Preparation and Reconciliation
-version: 0.4.1
+version: 0.4.2
 description: Prepare and reconcile a bounded bookkeeping close in the selected external backend without creating a StackOS ledger or claiming an authoritative posting.
 domain: finance
 owner:
@@ -232,7 +232,7 @@ steps:
     policy_refs: [external-backend-is-authoritative, local-json-single-source, prepared-not-posted, no-inferred-accounting-or-tax-policy]
     output_refs: [bookkeeping_close_summary]
     instructions:
-      - "Read finance.json and its packaged local-json-v1 schema; resolve actual record refs and selected setup, document revision/digest and one-writer readback capability. For first-time setup use the empty bootstrap only in a new workspace; never overwrite existing files. Whole-document changes require reread/rebase; unrelated updates do not invalidate immutable proposal approval."
+      - "Follow the packaged local workspace contract: resolve current record IDs, confirmed account aliases, source scope and document revision/hash; use the optional shipped host helpers only with actual file/locking capability. A missing master needs authorized prerequisite setup, never an operation-time reset. Derived views require current source/freshness proof and are not financial authority. Whole-document changes require reread/rebase; unrelated updates do not invalidate immutable proposal approval."
     success_criteria:
       - "Period entry criteria and required evidence gaps are explicit before records are prepared."
   - id: collect-evidence
@@ -246,6 +246,7 @@ steps:
       - "Use only read actions and bounded safe provider references; do not create, send, refund, transfer, or mutate Stripe evidence."
       - "Read the connector's supported typed BalanceTransaction source_ref/source_type when source_state=available and retain balance_type. Use Refund failure_balance_transaction_ref and any independently available Dispute balance_transaction_refs under existing read authority; this does not add a dispute action grant. Missing/null/unexpanded/unsupported sources and InvoicePayment missing payment linkage remain evidence gaps, not inferred equal-amount matches."
       - "Read the external bank/card account register and supplied statements/exports, opening and closing balances, dates and expected coverage. Stripe and receipts alone are not complete books. Create source_completeness_ref here, naming complete/missing windows and statement evidence; request missing exports once while processing available evidence."
+      - "Use sourced current account aliases and assess coverage per account/subaccount and period, including opening/middle evidence and adjacent-balance continuity. Retain full raw sources while normalizing only needed records. Follow the local contract's exact hash/data-record locator and currency/units/sign/date rules; equal rows retain multiplicity, not arbitrary pairing."
     success_criteria:
       - "Evidence is either available by safe ref or recorded as a bounded gap."
   - id: prepare-and-reconcile
@@ -258,6 +259,7 @@ steps:
       - "Use additive corrections with explicit external approval refs; never silently overwrite a prior observation."
       - "For a sourced single-project expense, optionally retain external_project_ref on the prepared bookkeeping record and verify the nonfinancial identity and business/client ownership. Company-wide costs stay unassigned; ambiguous or shared attribution stays absent with a gap. Do not duplicate amounts or allocate shared costs. Receipt custody never depends on project metadata."
       - "Keep unresolved differences, duplicate evidence, and ambiguous matches as exceptions rather than manufacturing a balanced result."
+      - "Compare canonical date/amount/currency/direction to original evidence before claiming source matching. Prevent repeated assignments through aliases of the same verified source row. Distinguish provider flags, category proposals/adoption, business purpose, receipt availability and reconciliation. Supported transfer legs or foreign-key matches do not themselves adopt treatment."
       - "Propose categories from the established category set using merchant, source and business-purpose evidence; retain confidence/rationale and distinguish proposed from policy-matched/reviewed. Do not invent business purpose, deductibility, accounting basis, or unsupported settlement allocations."
       - "Separate invoice/payment/fee/refund/payout evidence, match bank transfers without double-counting revenue, and reconcile each covered account using its opening and closing balance. Preserve gross receipts and fees separately."
       - "Keep supported rows prepared/unposted even when other rows need clarification. Persist through the single-writer revision check and reread; produce external_write_proof_ref."

@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: finance.payment-request
 name: Finance Payment Request
-version: 0.5.0
+version: 0.5.1
 description: Prepare, review, finalize, and either send or explicitly hand off one Stripe invoice for an approved external payment request without making StackOS the billing system of record.
 domain: finance
 owner:
@@ -270,7 +270,7 @@ steps:
     policy_refs: [external-backend-is-authoritative, local-json-single-source, no-credit-or-money-movement]
     output_refs: [payment_request_summary]
     instructions:
-      - "Read finance.json and its packaged local-json-v1 schema; resolve actual record refs and selected setup, document revision/digest and one-writer readback capability. For first-time setup use the empty bootstrap only in a new workspace; never overwrite existing files. Whole-document changes require reread/rebase; unrelated updates do not invalidate immutable proposal approval."
+      - "Follow the packaged local workspace contract: resolve current record IDs, confirmed account aliases, source scope and document revision/hash; use the optional shipped host helpers only with actual file/locking capability. A missing master needs authorized prerequisite setup, never an operation-time reset. Derived views require current source/freshness proof and are not financial authority. Whole-document changes require reread/rebase; unrelated updates do not invalidate immutable proposal approval."
       - "Read the immutable version behind billing_request_ref. Require source-approved customer identity, invoice currency, due terms, and either complete manual line amount/currency/description facts, selected catalog Price refs with explicit quantities, or source-approved catalog selection criteria for create-draft discovery to resolve an existing Price without guessing. A pre-quote catalog request may name unavailable line amounts/totals as gaps; approval/finalization needs their independently observed draft values in a new immutable version. An optional effective_at is the approved printed issue-date timestamp for this invoice occurrence, not its created, due, or payment date. Ask only for missing business facts. Preserve the version and digest externally."
     success_criteria:
       - "The external request ref, Stripe route, approval requirements, and safe stopping point are explicit."

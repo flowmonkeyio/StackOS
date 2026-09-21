@@ -2,6 +2,7 @@
 
 const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
 const desktopDir = path.resolve(__dirname, "..");
@@ -117,16 +118,55 @@ function nestedBundleDirectories(root, outerBundle) {
   return [...new Set(bundles)].sort((a, b) => b.length - a.length);
 }
 
-function chromiumSigningTargets(stackosRoot) {
-  const chromiumApp = path.join(stackosRoot, "Chromium.app");
-  if (!fs.existsSync(chromiumApp)) {
+function browserAppBundles(stackosRoot) {
+  const browsersRoot = path.join(stackosRoot, "browser-runtime", "browsers");
+  if (!fs.existsSync(browsersRoot)) {
     return [];
   }
+  const apps = [];
+  const visit = (directory) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      const child = path.join(directory, entry.name);
+      if (/\.app$/i.test(entry.name)) {
+        apps.push(child);
+      }
+      visit(child);
+    }
+  };
+  visit(browsersRoot);
+  return apps.sort((a, b) => b.length - a.length);
+}
+
+function browserSigningTargets(appBundle) {
   return [
-    ...bundledMachOFiles(chromiumApp),
-    ...nestedBundleDirectories(chromiumApp, chromiumApp),
-    chromiumApp
+    ...bundledMachOFiles(appBundle),
+    ...nestedBundleDirectories(appBundle, appBundle),
+    appBundle
   ];
+}
+
+function preservedEntitlements(target, temporaryDir, index) {
+  const output = runCapture("codesign", ["-d", "--entitlements", ":-", target]);
+  const start = output.indexOf("<?xml");
+  const end = output.indexOf("</plist>");
+  if (start === -1 || end === -1) {
+    return null;
+  }
+  const destination = path.join(temporaryDir, `browser-entitlements-${index}.plist`);
+  fs.writeFileSync(destination, output.slice(start, end + "</plist>".length));
+  return destination;
+}
+
+function signTarget(identity, target, entitlementsPath = null) {
+  const args = ["--force", "--sign", identity, "--timestamp", "--options", "runtime"];
+  if (entitlementsPath) {
+    args.push("--entitlements", entitlementsPath);
+  }
+  args.push(target);
+  run("codesign", args);
 }
 
 module.exports = async function signStackosRuntime(context) {
@@ -159,11 +199,39 @@ module.exports = async function signStackosRuntime(context) {
     return;
   }
 
-  const chromiumApp = path.join(stackosRoot, "Chromium.app");
-  for (const filePath of bundledMachOFiles(stackosRoot).filter((filePath) => !filePath.startsWith(chromiumApp))) {
-    run("codesign", ["--force", "--sign", identity, "--timestamp", "--options", "runtime", filePath]);
+  const appBundles = browserAppBundles(stackosRoot);
+  const protectedRoots = appBundles.map((appBundle) => `${appBundle}${path.sep}`);
+  const bunPath = path.join(stackosRoot, "browser-runtime", "bin", "bun");
+  const browsePath = path.join(stackosRoot, "browser-runtime", "gstack", "browse", "dist", "browse");
+  const jitEntitlements = path.join(__dirname, "bun-entitlements.plist");
+  if (!fs.existsSync(bunPath) || !fs.existsSync(browsePath)) {
+    throw new Error("packaged gstack Bun and browse executables are missing");
   }
-  for (const target of chromiumSigningTargets(stackosRoot)) {
-    run("codesign", ["--force", "--sign", identity, "--timestamp", "--options", "runtime", target]);
+  if (!fs.existsSync(jitEntitlements)) {
+    throw new Error(`Bun hardened-runtime entitlements are missing at ${jitEntitlements}`);
+  }
+
+  for (const filePath of bundledMachOFiles(stackosRoot).filter(
+    (filePath) =>
+      filePath !== bunPath &&
+      filePath !== browsePath &&
+      !protectedRoots.some((root) => filePath.startsWith(root))
+  )) {
+    signTarget(identity, filePath);
+  }
+  signTarget(identity, bunPath, jitEntitlements);
+  signTarget(identity, browsePath, jitEntitlements);
+
+  const temporaryDir = fs.mkdtempSync(path.join(os.tmpdir(), "stackos-browser-entitlements-"));
+  try {
+    let index = 0;
+    for (const appBundle of appBundles) {
+      for (const target of browserSigningTargets(appBundle)) {
+        signTarget(identity, target, preservedEntitlements(target, temporaryDir, index));
+        index += 1;
+      }
+    }
+  } finally {
+    fs.rmSync(temporaryDir, { recursive: true, force: true });
   }
 };

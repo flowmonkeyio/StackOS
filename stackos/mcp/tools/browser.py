@@ -7,20 +7,12 @@ from stackos.operations.adapters.mcp import register_mcp_operation_names
 
 _BROWSER_OPERATION_NAMES: tuple[str, ...] = (
     "browser.runtime.status",
-    "browser.method.manifest",
     "browser.profile.create",
     "browser.profile.list",
     "browser.session.start",
     "browser.session.stop",
     "browser.session.list",
     "browser.session.status",
-    "browser.page.call",
-    "browser.context.call",
-    "browser.handle.call",
-    "browser.script.run",
-    "browser.script.inject",
-    "browser.page.snapshot",
-    "browser.page.screenshot",
 )
 
 

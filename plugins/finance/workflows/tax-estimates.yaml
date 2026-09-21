@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: finance.tax-estimates
 name: Finance Tax Estimates
-version: 0.3.1
+version: 0.3.2
 description: Prepare a current-source US/California tax-estimate packet in the selected external backend, distinguish projected annual liability from the current installment, and require CPA/EA then owner approval before it is relied on.
 domain: finance
 owner:
@@ -180,7 +180,7 @@ steps:
     policy_refs: [external-backend-is-authoritative, local-json-single-source, no-tax-action-or-advice]
     output_refs: [tax_estimate_summary]
     instructions:
-      - "Read finance.json and its packaged local-json-v1 schema; resolve actual record refs and selected setup, document revision/digest and one-writer readback capability. For first-time setup use the empty bootstrap only in a new workspace; never overwrite existing files. Whole-document changes require reread/rebase; unrelated updates do not invalidate immutable proposal approval."
+      - "Follow the packaged local workspace contract: resolve current record IDs, confirmed account aliases, source scope and document revision/hash; use the optional shipped host helpers only with actual file/locking capability. A missing master needs authorized prerequisite setup, never an operation-time reset. Derived views require current source/freshness proof and are not financial authority. Whole-document changes require reread/rebase; unrelated updates do not invalidate immutable proposal approval."
     success_criteria:
       - "Legal form, federal/California tax treatment, effective election dates and accounting basis are separately sourced or marked unknown; the agent does not force LLC and S-Corp into mutually exclusive choices."
   - id: validate-current-sources

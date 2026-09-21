@@ -321,7 +321,13 @@ def test_finance_workflows_route_every_local_packet_to_one_json_record() -> None
         preflight = next(step for step in workflow["steps"] if step["id"] == "preflight")
         assert "local-json-single-source" in preflight["policy_refs"]
         instructions = " ".join(preflight["instructions"]).lower()
-        for required in ("schema", "revision", "digest", "first-time setup", "readback"):
+        for required in (
+            "local workspace contract",
+            "revision",
+            "hash",
+            "prerequisite setup",
+            "freshness",
+        ):
             assert required in instructions, (key, required)
         assert "local-markdown" not in str(workflow).lower()
 
@@ -557,7 +563,7 @@ def test_followup_authored_email_uses_selected_route_and_step_grant() -> None:
     auth = _by_key(followups["auth_requirements"])
     capabilities = _by_key(followups["capability_requirements"])
     steps = {item["id"]: item for item in followups["steps"]}
-    assert followups["version"] == "0.7.0"
+    assert followups["version"] == "0.7.1"
     assert "default" not in inputs["followup_route"]
     assert inputs["followup_route"]["schema"]["enum"] == ["stripe-resend", "smtp-email"]
     assert inputs["followup_route"]["required"] is False

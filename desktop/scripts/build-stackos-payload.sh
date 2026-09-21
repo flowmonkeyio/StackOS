@@ -182,9 +182,9 @@ PYTHONHOME="${PAYLOAD_DIR}/.venv" PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 \
   "${PAYLOAD_DIR}/.venv/bin/python" -B -c '
 from pathlib import Path
 import sys
-from stackos.install import ensure_chromium_runtime
+from stackos.install import ensure_gstack_runtime
 
-ok, message = ensure_chromium_runtime(runtime_root=Path(sys.argv[1]))
+ok, message = ensure_gstack_runtime(runtime_root=Path(sys.argv[1]))
 if not ok:
     raise SystemExit(message)
 print(message)
@@ -233,9 +233,26 @@ exec "${ROOT_DIR}/.venv/bin/python" -P -B -m stackos "$@"
 WRAPPER
 chmod +x "${PAYLOAD_DIR}/bin/stackos"
 
+cat > "${PAYLOAD_DIR}/bin/stackos.browser" <<'WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export STACKOS_PACKAGED_CLI="${ROOT_DIR}/bin/stackos"
+export PYTHONHOME="${ROOT_DIR}/.venv"
+export PYTHONDONTWRITEBYTECODE=1
+export PYTHONNOUSERSITE=1
+unset PYTHONPATH
+unset VIRTUAL_ENV
+unset __PYVENV_LAUNCHER__
+exec "${ROOT_DIR}/.venv/bin/python" -P -B -m stackos.browser_cli "$@"
+WRAPPER
+chmod +x "${PAYLOAD_DIR}/bin/stackos.browser"
+
 node "${DESKTOP_DIR}/scripts/verify-stackos-cli.cjs" \
   "${PAYLOAD_DIR}/bin/stackos" \
   "${PACKAGE_VERSION}"
+node "${DESKTOP_DIR}/scripts/verify-stackos-browser-cli.cjs" \
+  "${PAYLOAD_DIR}/bin/stackos.browser"
 
 find "${PAYLOAD_DIR}/.venv" -type d -name "__pycache__" -prune -exec rm -rf {} +
 find "${PAYLOAD_DIR}/.venv" -name "*.pyc" -delete

@@ -364,13 +364,50 @@ def test_website_seo_analysis_presets_resolve_end_to_end(
         for agent in resolved["required_agents"]
         if agent["preset"]["summary"]["key"] == "seo.workflow.website-analysis"
     )
-    assert website_agent["preset"]["summary"]["version"] == "0.2.0"
+    assert website_agent["preset"]["summary"]["version"] == "0.4.0"
     assert resolved["required_skill_presets"][0]["preset"]["summary"]["key"] == (
         "stackos.workflow-orchestrator"
     )
-    assert resolved["required_skill_presets"][0]["preset"]["summary"]["version"] == "0.1.2"
+    assert resolved["required_skill_presets"][0]["preset"]["summary"]["version"] == "0.1.3"
     assert resolved["unresolved_requirements"] == []
     assert resolved["unresolved_skill_preset_requirements"] == []
+
+
+def test_agency_setup_presets_resolve_without_specialists(
+    mcp_client: MCPClient,
+) -> None:
+    for workflow_key in ("agency.setup", "agency.project-setup"):
+        raw = mcp_client.call_tool_structured(
+            "agentPreset.resolveForWorkflow",
+            {
+                "workflow_key": workflow_key,
+                "plugin_slug": "agency",
+                "response_mode": "raw",
+            },
+        )
+        compact = mcp_client.call_tool_structured(
+            "agentPreset.resolveForWorkflow",
+            {"workflow_key": workflow_key, "plugin_slug": "agency"},
+        )
+        compact = compact.get("data", compact)
+
+        assert raw["workflow"]["key"] == workflow_key
+        assert raw["required_agents"] == []
+        assert raw["recommended_agents"] == []
+        assert raw["optional_agents"] == []
+        assert raw["unresolved_requirements"] == []
+        assert raw["unresolved_skill_preset_requirements"] == []
+        raw_summary = raw["required_skill_presets"][0]["preset"]["summary"]
+        assert raw_summary["key"] == "stackos.workflow-orchestrator"
+        assert raw_summary["version"] == "0.1.3"
+        assert raw_summary["generic_preset"] is True
+        assert raw_summary["adaptation_required"] is True
+        assert compact["required_agents"] == []
+        assert compact["recommended_agents"] == []
+        assert compact["required_skill_presets"][0]["preset"]["key"] == (
+            "stackos.workflow-orchestrator"
+        )
+        assert compact["required_skill_presets"][0]["preset"]["version"] == "0.1.3"
 
 
 def test_finance_workflow_presets_resolve_end_to_end(mcp_client: MCPClient) -> None:
@@ -455,7 +492,7 @@ def test_finance_operational_guidance_survives_compact_workflow_resolution(
         compact = compact.get("data", compact)
         raw_skill = raw["required_skill_presets"][0]
         compact_skill = compact["required_skill_presets"][0]
-        assert compact_skill["preset"]["version"] == "0.7.1"
+        assert compact_skill["preset"]["version"] == "0.7.2"
         assert compact_skill["project_adaptation"] == raw_skill["project_adaptation"]
         assert any("capability preflight" in item for item in compact_skill["preset"]["must_do"])
         conditional = {

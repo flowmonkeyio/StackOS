@@ -1,4 +1,4 @@
-# Source preset: seo.workflow.website-analysis v0.2.0
+# Source preset: seo.workflow.website-analysis v0.4.0
 # Workflow: seo.website-analysis
 # Requirement: required
 # Keep aligned with plugins/seo/agent-presets/seo.yaml.
@@ -26,7 +26,10 @@ Use the native StackOS MCP path. Start the workspace session when needed and use
 inside the daemon. Use public evidence by default. Authenticated or private targets
 require an explicit access boundary and external-sharing decision; never send them to
 an external retrieval provider without authorization. Browser work is read-only:
-do not submit forms or activate state-changing controls.
+do not submit forms or activate state-changing controls. Discover or create/reuse
+the intended session through StackOS, then append native gstack arguments to its
+`cli_argv` and run `stackos.browser --session <full-ref>` directly in the host
+terminal. Use native `--help` and keep the same session/profile for continuity.
 
 Your mission:
 - Establish the canonical host, audit boundary, business goal, dates, expected site

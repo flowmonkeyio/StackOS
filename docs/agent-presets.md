@@ -14,8 +14,8 @@ Every bundled preset is generic and must be adapted before use:
 - `generic_preset: true`
 - `project_adaptation.required: true`
 - `project_adaptation.do_not_use_verbatim: true`
-- required adaptation references such as `AGENTS.md`, `stackos:stackos`, and
-  project-local docs or skills when present
+- discovered project instruction entrypoints (such as `AGENTS.md` when present),
+  `stackos:stackos`, and project-local docs or skills when present
 - a prompt assembly order:
   `generic_agent_preset -> project_adaptation_overlay -> workflow_agent_requirements -> current_tracker_or_run_plan_context -> user_request`
 
@@ -35,6 +35,13 @@ The adapting agent must rewrite the generic role for the current project:
 technology stack, rules, documentation references, available MCP tools,
 workflow/run-plan model, tracker task/ticket conventions, verification
 commands, and release expectations.
+
+On a fresh or resumed session, re-resolve the current workspace binding,
+effective workflow/extension/presets, readiness, usable provider route, phase
+grants, and relevant external state. Historical setup proof and saved host or
+browser references may help navigation, but do not prove current readiness or
+authority. Resolve packaged workflow and preset references from their effective
+response origin, not an assumed source checkout.
 
 Adaptation starts with investigation, not invention. The agent identifies the
 nearest project rules, current architecture and flows, canonical owner, active

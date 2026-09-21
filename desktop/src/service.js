@@ -612,12 +612,44 @@ async function repairMcpRegistrations(options = 60) {
   });
 }
 
+async function repairBrowserLauncher(options = 60) {
+  const lifecycle = normalizeLifecycleOptions(options, 60);
+  const timeoutSeconds = lifecycle.timeoutSeconds;
+  await reportProgress(lifecycle, "Refreshing browser launcher...", 36);
+  return runStackos(["install", "--browser-launcher-only", "--skip-doctor"], {
+    timeoutMs: timeoutSeconds * 1000,
+    onStdout: createInstallProgressReporter(lifecycle)
+  });
+}
+
+async function repairPreparedIntegrations(options = 60) {
+  const mcp = await repairMcpRegistrations(options);
+  if (!mcp.ok) {
+    return mcp;
+  }
+  const launcher = await repairBrowserLauncher(options);
+  if (!launcher.ok) {
+    return {
+      ok: false,
+      phase: "browser-launcher",
+      mcp,
+      launcher
+    };
+  }
+  return {
+    ok: true,
+    phase: "external-registration",
+    mcp,
+    launcher
+  };
+}
+
 async function repairPreparedInstall(options = 180) {
   const lifecycle = normalizeLifecycleOptions(options, 180);
   const timeoutSeconds = lifecycle.timeoutSeconds;
   const commandInfo = resolveStackosCommand();
   if (process.platform !== "darwin" || commandInfo.mode !== "packaged") {
-    return repairMcpRegistrations(lifecycle);
+    return repairPreparedIntegrations(lifecycle);
   }
 
   await reportProgress(lifecycle, "Checking autostart...", 20);
@@ -626,7 +658,7 @@ async function repairPreparedInstall(options = 180) {
     timeoutSeconds: 20
   });
   if (packagedLaunchdIsCurrent(status)) {
-    return repairMcpRegistrations(lifecycle);
+    return repairPreparedIntegrations(lifecycle);
   }
 
   await reportProgress(lifecycle, "Repairing autostart...", 46);
@@ -827,6 +859,7 @@ module.exports = {
   readPackagedBuildInfo,
   packagedLaunchdIsCurrent,
   repairMcpRegistrations,
+  repairBrowserLauncher,
   repairPreparedInstall,
   resolveStackosCommand,
   restartDaemon,

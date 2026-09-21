@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -172,7 +173,10 @@ def test_finance_markdown_template_routes_to_canonical_collections_and_controls(
     assert "temporarily unavailable in StackOS" in _read(BACKEND_CONTRACT)
 
 
-def _add_receipt(document: dict, *, record_id: str = "receipt:fixture") -> None:
+def _add_receipt(document: dict, *, finance: Path, record_id: str = "receipt:fixture") -> None:
+    original = finance / "attachments/2026/09/fixture-original.txt"
+    original.parent.mkdir(parents=True, exist_ok=True)
+    original.write_bytes(b"x")
     document["sources"].append(
         record(
             "source:receipt",
@@ -190,7 +194,7 @@ def _add_receipt(document: dict, *, record_id: str = "receipt:fixture") -> None:
             source_ref="source:receipt",
             role="original",
             relative_path="attachments/2026/09/fixture-original.txt",
-            sha256="a" * 64,
+            sha256=hashlib.sha256(b"x").hexdigest(),
             bytes=1,
             media_type="text/plain",
             original_filename="synthetic.txt",
@@ -214,7 +218,7 @@ def test_first_run_and_resume_never_replace_existing_canonical_records(tmp_path:
     assert (path.parent / "schemas/finance-v1.schema.json").read_bytes() == (
         WORKSPACE_TEMPLATE.parent / "schemas/finance-v1.schema.json"
     ).read_bytes()
-    _add_receipt(document)
+    _add_receipt(document, finance=path.parent)
     document["revision"] = 1
     write_document(path, document, digest(path))
     prior = path.read_bytes()
@@ -229,12 +233,12 @@ def test_host_rejects_duplicate_ids_dangling_refs_and_silent_history_changes(
 ) -> None:
     path = initialize(tmp_path / "finance")
     document = read_document(path)
-    _add_receipt(document)
+    _add_receipt(document, finance=path.parent)
     document["revision"] = 1
     write_document(path, document, digest(path))
     duplicate = copy.deepcopy(document)
     duplicate["receipts"].append(copy.deepcopy(duplicate["receipts"][0]))
-    with pytest.raises(ValueError, match="duplicate canonical record_id"):
+    with pytest.raises(ValueError, match="Duplicate global record identity"):
         validate(duplicate)
     broken = copy.deepcopy(document)
     broken["receipts"][0]["source_ref"] = "source:missing"
@@ -253,15 +257,16 @@ def test_stale_or_competing_host_writer_cannot_lose_a_canonical_update(tmp_path:
     expected = digest(path)
     stale = read_document(path)
     current = read_document(path)
-    _add_receipt(current)
+    _add_receipt(current, finance=path.parent)
     current["revision"] = 1
     write_document(path, current, expected)
     stale["revision"] = 1
     with pytest.raises(ValueError, match="stale host revision"):
         write_document(path, stale, expected)
-    lock = path.with_name(".fixture-writer.lock")
-    lock.write_text("another isolated host writer owns this lock")
-    with pytest.raises(FileExistsError):
+    from plugins.finance.scripts.finance_workspace import exclusive_lock
+
+    lock = path.with_name(".writer.lock")
+    with exclusive_lock(path.parent), pytest.raises(BlockingIOError, match="writer busy"):
         write_document(path, stale, digest(path))
     assert lock.exists() and read_document(path) == current
 
@@ -269,7 +274,7 @@ def test_stale_or_competing_host_writer_cannot_lose_a_canonical_update(tmp_path:
 def test_markdown_and_csv_are_non_authoritative_views(tmp_path: Path) -> None:
     path = initialize(tmp_path / "finance")
     document = read_document(path)
-    _add_receipt(document)
+    _add_receipt(document, finance=path.parent)
     document["revision"] = 1
     write_document(path, document, digest(path))
     before = digest(path)
@@ -294,7 +299,7 @@ def test_unrelated_receipt_does_not_invalidate_exact_billing_approval(tmp_path: 
     approved_digest = billing["digest_sha256"]
     document["revision"] = 1
     write_document(path, document, digest(path))
-    _add_receipt(document)
+    _add_receipt(document, finance=path.parent)
     document["revision"] = 2
     write_document(path, document, digest(path))
     current = read_document(path)
@@ -340,6 +345,7 @@ def test_catalog_proposal_preserves_unknown_then_observed_amounts(tmp_path: Path
     document = read_document(initialize(tmp_path / "finance"))
     billing = add_billing_fixture(document)
     billing["status"] = "prepared"
+    billing["status_history"][-1]["to_status"] = "prepared"
     line = billing["lines"][0]
     line["price_ref"] = "provider-object:fixture-price"
     line["quantity"] = 2
@@ -423,7 +429,7 @@ def test_unversioned_receipt_handoff_and_versioned_settlement_review_bind_real_s
 ) -> None:
     path = initialize(tmp_path / "finance")
     document = read_document(path)
-    _add_receipt(document)
+    _add_receipt(document, finance=path.parent)
     receipt = document["receipts"][0]
     handoff = record(
         "handoff:receipt",

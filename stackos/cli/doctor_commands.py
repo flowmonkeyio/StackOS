@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import importlib.util
 import json
 import stat
 from collections import Counter
@@ -14,15 +13,12 @@ import typer
 
 from stackos import __milestone__, __version__
 from stackos.browser.runtime import (
-    PLAYWRIGHT_DRIVER_VERSION,
-    PLAYWRIGHT_EXPECTED_BROWSER_VERSION,
-    chromium_executable_path,
-    chromium_license_path,
-    playwright_driver_version,
+    BROWSER_PROVIDER,
+    gstack_executable_path,
 )
 from stackos.config import Settings, get_settings
 from stackos.install import _codex_mcp_line_is_bridge as _install_codex_mcp_line_is_bridge
-from stackos.install import verify_chromium_runtime
+from stackos.install import verify_gstack_runtime
 
 from . import daemon_processes, launchd
 from .app import _exit, app
@@ -150,39 +146,32 @@ def _check_scheduler_jobs(settings: Settings) -> tuple[bool, int]:
 
 
 def _check_browser_runtime() -> tuple[bool, dict[str, object]]:
-    """Return the daemon-owned Chromium runtime readiness without paths."""
-    if importlib.util.find_spec("playwright") is None:
-        return False, {
-            "package_installed": False,
-            "browser_downloaded": False,
-            "browser_path_present": False,
-            "driver_compatible": False,
-            "repair": ("install/sync StackOS Python dependencies, then run `stackos install`"),
-        }
-    driver_version = playwright_driver_version()
-    driver_compatible = driver_version == PLAYWRIGHT_DRIVER_VERSION
-    path = chromium_executable_path()
-    license_present = chromium_license_path().is_file()
-    runtime_ok, runtime_reason = verify_chromium_runtime()
-    ok = driver_compatible and runtime_ok
+    """Return gstack distribution readiness without paths or upstream state."""
+    path = gstack_executable_path()
+    runtime_ok, runtime_reason = verify_gstack_runtime()
+    ok = runtime_ok
     return ok, {
-        "package_installed": True,
+        "provider": BROWSER_PROVIDER,
+        "package_installed": runtime_ok,
         "browser_downloaded": ok,
         "browser_path_present": bool(path),
-        "browser_license_present": license_present,
-        "driver_version": driver_version,
-        "driver_compatible": driver_compatible,
         "repair": (
             None
             if ok
-            else (
-                "install/sync StackOS's pinned Playwright driver "
-                f"({PLAYWRIGHT_DRIVER_VERSION}; "
-                f"browserVersion {PLAYWRIGHT_EXPECTED_BROWSER_VERSION})"
-                if not driver_compatible
-                else f"{runtime_reason} Run `stackos install` or repair the packaged StackOS app."
-            )
+            else f"{runtime_reason} Run `stackos install` or repair the packaged StackOS app."
         ),
+    }
+
+
+def _check_browser_launcher(home: Path, settings: Settings) -> tuple[bool, dict[str, object]]:
+    """Inspect the managed global browser shim without returning its target or context."""
+    from stackos import install as installer
+
+    status, message = installer.inspect_browser_launcher(settings=settings, home=home)
+    ready = status == "current"
+    return ready, {
+        "status": status,
+        "repair": None if ready else message,
     }
 
 
@@ -635,6 +624,7 @@ def doctor(
     scheduler_ok, scheduler_job_count = _check_scheduler_jobs(settings)
     browser_ok, browser_info = _check_browser_runtime()
     home = _doctor_home()
+    browser_launcher_ok, browser_launcher_info = _check_browser_launcher(home, settings)
     install_checks, install_info = _check_installed_assets(home)
     mcp_registration_ready, mcp_host_infos = _check_mcp_hosts(home)
     mcp_host_by_key = {str(info["host_key"]): info for info in mcp_host_infos}
@@ -655,6 +645,7 @@ def doctor(
         "alembic_at_head": alembic_ok,
         "scheduler_jobs_healthy": scheduler_ok,
         "browser_runtime_ready": browser_ok,
+        "browser_launcher_ready": browser_launcher_ok,
         "codex_mcp_registered": codex_mcp_ok,
         "claude_mcp_registered": claude_mcp_ok,
         "mcp_registration_ready": mcp_registration_ready,
@@ -681,6 +672,7 @@ def doctor(
         "alembic_version": alembic_version,
         "scheduler_job_count": scheduler_job_count,
         "browser_runtime": browser_info,
+        "browser_launcher": browser_launcher_info,
         "home_dir": str(home),
         "install_checks": install_info,
         "codex_mcp": codex_mcp_info,
@@ -702,7 +694,12 @@ def doctor(
         code = 7
     elif not alembic_ok:
         code = 4
-    elif not all(install_checks.values()) or not browser_ok or not mcp_registration_ready:
+    elif (
+        not all(install_checks.values())
+        or not browser_ok
+        or not browser_launcher_ok
+        or not mcp_registration_ready
+    ):
         code = 9
     elif not daemon_up:
         code = 1
@@ -735,6 +732,11 @@ def doctor(
         if not browser_ok:
             repair = browser_info.get("repair")
             typer.echo(f"  note: browser runtime is not ready — {repair}.")
+        if not browser_launcher_ok:
+            typer.echo(
+                "  note: global browser launcher is not ready — "
+                f"{browser_launcher_info.get('repair')}."
+            )
         for host in mcp_host_infos:
             if host.get("advisory"):
                 typer.echo(f"  note: {host.get('message')}")

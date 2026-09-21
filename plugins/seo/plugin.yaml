@@ -1556,7 +1556,7 @@ resources:
             required: [evidence_ref, kind, source, captured_at, lifecycle_state, scope, receipt_ref, limitations]
             properties:
               evidence_ref: {type: string, minLength: 1}
-              kind: {type: string, enum: [action-receipt, browser-receipt, operator-context, prior-analysis, artifact]}
+              kind: {type: string, enum: [action-receipt, operator-context, prior-analysis, artifact]}
               source: {type: string, minLength: 1}
               captured_at: {type: string, format: date-time}
               lifecycle_state: {type: string, enum: [current, historical, superseded]}

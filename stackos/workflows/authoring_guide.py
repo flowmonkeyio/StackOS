@@ -438,9 +438,16 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
                     "resolved "
                     "skill presets; call skillPreset.resolveForWorkflow separately only when a "
                     "standalone skill-preset packet is specifically needed.",
-                    "Inspect project rules and existing host-local agent, skill, command, and "
-                    "orchestrator files. Produce an exact required/recommended/optional role "
-                    "materialization plan before editing them.",
+                    "Discover the project's instruction entrypoint(s) and follow their routed "
+                    "scoped guidance; do not require a particular filename or directory tree. "
+                    "Inspect existing host-local agent, skill, command, and orchestrator files. "
+                    "Produce an exact required/recommended/optional role materialization plan "
+                    "before editing them.",
+                    "Resolve workflow and preset package references from their effective response "
+                    "origin, not an assumed source checkout. On a fresh or resumed session, "
+                    "re-resolve the current directory binding, effective workflow, extension, "
+                    "presets, readiness, provider route, phase grants, and relevant external "
+                    "state before relying on them.",
                     "Materialize or update host-local execution contracts according to "
                     "agent_materialization_policy, preserving unrelated operator-authored "
                     "content and recording applicable workflow keys, source preset versions, "
@@ -478,6 +485,9 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
                     "Strict validation either passes or reports only explicitly deferred "
                     "prerequisite "
                     "keys; context/provider readiness limitations remain visible.",
+                    "Historical setup records, saved host or browser references, and host-local "
+                    "artifacts were used only for navigation; current binding, effective "
+                    "configuration, readiness, and authority evidence were re-resolved.",
                     "No run plan, workflow task/ticket, business output, artifact, resource, "
                     "decision, "
                     "learning, experiment, communication, or provider side effect was created.",

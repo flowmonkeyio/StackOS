@@ -528,6 +528,11 @@ Bind the intended workspace, describe the effective workflow, inspect its
 extension and resolve its agents/main-agent guidance. Adapt required, recommended
 and selected optional roles under the guide's materialization policy, preserving existing
 host content. Host files are execution contracts, not prerequisite/state stores.
+Discover project instruction entrypoints and routed scoped guidance rather than
+requiring a particular filename or directory tree. Resolve package references from
+the effective workflow or preset response origin, not an assumed source checkout.
+Historical setup records and host or browser references are navigation aids, not
+current binding, readiness, or authority proof.
 Prove readiness with structural and strict read-only `runPlan.validate` calls;
 return the guide's complete setup proof, including deferred inputs and exact
 preset mappings. Do not create a run plan, workflow tracker work or business

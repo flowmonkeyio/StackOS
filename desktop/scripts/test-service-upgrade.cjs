@@ -31,6 +31,7 @@ async function main() {
 
   const tempPaths = [];
   const originalDesktopCli = process.env.STACKOS_DESKTOP_CLI;
+  const originalLauncherLog = process.env.STACKOS_TEST_BROWSER_LAUNCHER_LOG;
   try {
     const userDataPath = makeUserDataPath();
     tempPaths.push(userDataPath);
@@ -239,6 +240,25 @@ async function main() {
     assert.equal(movedInstallCalls, 2);
     delete process.env.STACKOS_DESKTOP_CLI;
 
+    const launcherRepairLog = path.join(makeUserDataPath(), "launcher-repair.log");
+    tempPaths.push(path.dirname(launcherRepairLog));
+    const fakeStackos = path.join(path.dirname(launcherRepairLog), "stackos");
+    fs.writeFileSync(
+      fakeStackos,
+      "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$STACKOS_TEST_BROWSER_LAUNCHER_LOG\"\n",
+      { encoding: "utf8", mode: 0o755 }
+    );
+    process.env.STACKOS_DESKTOP_CLI = fakeStackos;
+    process.env.STACKOS_TEST_BROWSER_LAUNCHER_LOG = launcherRepairLog;
+    const launcherRepair = await service.repairBrowserLauncher({ timeoutSeconds: 5 });
+    assert.equal(launcherRepair.ok, true);
+    assert.deepEqual(
+      fs.readFileSync(launcherRepairLog, "utf8").trim().split("\n"),
+      ["install", "--browser-launcher-only", "--skip-doctor"]
+    );
+    delete process.env.STACKOS_DESKTOP_CLI;
+    delete process.env.STACKOS_TEST_BROWSER_LAUNCHER_LOG;
+
     const failedUserDataPath = makeUserDataPath();
     tempPaths.push(failedUserDataPath);
     const failed = await service.prepareInstalledVersion({
@@ -313,6 +333,11 @@ async function main() {
       delete process.env.STACKOS_DESKTOP_CLI;
     } else {
       process.env.STACKOS_DESKTOP_CLI = originalDesktopCli;
+    }
+    if (originalLauncherLog === undefined) {
+      delete process.env.STACKOS_TEST_BROWSER_LAUNCHER_LOG;
+    } else {
+      process.env.STACKOS_TEST_BROWSER_LAUNCHER_LOG = originalLauncherLog;
     }
     cleanup(tempPaths);
   }

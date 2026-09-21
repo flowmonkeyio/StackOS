@@ -31,7 +31,7 @@ install: ## Full dev install — deps + migrate + UI bundle + plugin + MCP + doc
 	$(PYTHON) -m stackos init
 	@echo "==> Running migrations"
 	$(PYTHON) -m stackos migrate
-	@echo "==> Installing StackOS Chromium runtime"
+	@echo "==> Installing native gstack browser runtime"
 	$(PYTHON) -m stackos install --skip-doctor
 	@echo "==> Verifying committed UI bundle (stackos/ui_dist/ is committed)"
 	@if [ -f stackos/ui_dist/index.html ]; then \
@@ -215,6 +215,8 @@ install-launchd: ## Install launchd autostart for the daemon
 uninstall: ## Remove installed skills/plugins/MCP entries; preserve DB + seed
 	@echo "==> Booting out launchd job (if loaded)"
 	@bash scripts/install-launchd.sh --uninstall
+	@echo "==> Removing managed global browser launcher"
+	@$(PYTHON) -c 'from stackos.install import remove_browser_launcher; ok, message = remove_browser_launcher(); print(message); raise SystemExit(0 if ok else 1)'
 	@echo "==> Removing skills"
 	@rm -rf "$(HOME)/.codex/skills/stackos" "$(HOME)/.claude/skills/stackos"
 	@echo "==> Removing plugins"

@@ -123,6 +123,13 @@ def install(
         bool,
         typer.Option("--plugins-only", help="Only mirror plugins and register marketplace."),
     ] = False,
+    browser_launcher_only: Annotated[
+        bool,
+        typer.Option(
+            "--browser-launcher-only",
+            help="Only install or repair the global stackos.browser launcher.",
+        ),
+    ] = False,
     launchd: Annotated[
         bool,
         typer.Option("--launchd", help="Also install the launchd plist (macOS)."),
@@ -152,10 +159,11 @@ def install(
     """
     from stackos import install as installer
 
-    selectors = [skills_only, mcp_only, plugins_only]
+    selectors = [skills_only, mcp_only, plugins_only, browser_launcher_only]
     if sum(1 for s in selectors if s) > 1:
         typer.echo(
-            "error: --skills-only, --mcp-only, and --plugins-only are mutually exclusive.",
+            "error: --skills-only, --mcp-only, --plugins-only, and --browser-launcher-only "
+            "are mutually exclusive.",
             err=True,
         )
         raise typer.Exit(code=2)
@@ -184,9 +192,10 @@ def install(
             err=True,
         )
         raise typer.Exit(code=2)
-    do_skills = skills_only or not (mcp_only or plugins_only)
-    do_mcp = mcp_only or not (skills_only or plugins_only)
-    do_plugins = plugins_only or not (skills_only or mcp_only)
+    do_skills = skills_only or not (mcp_only or plugins_only or browser_launcher_only)
+    do_mcp = mcp_only or not (skills_only or plugins_only or browser_launcher_only)
+    do_plugins = plugins_only or not (skills_only or mcp_only or browser_launcher_only)
+    do_browser_launcher = browser_launcher_only or not (skills_only or mcp_only or plugins_only)
 
     mode = installer.detect_mode()
     typer.echo(f"==> Install mode: {mode}")
@@ -200,18 +209,24 @@ def install(
     ensure_token(settings.token_path)
     typer.echo(f"==> Bootstrap state ready: {settings.state_dir}")
 
-    if not (skills_only or mcp_only or plugins_only):
+    if not (skills_only or mcp_only or plugins_only or browser_launcher_only):
         from stackos.db.migrate import upgrade_to_head
 
         migration_result = upgrade_to_head(settings)
         if migration_result.stamped_existing_schema:
             typer.echo("==> Database schema stamped at alembic head")
         typer.echo(f"==> Database schema ready: {settings.db_path}")
-        browser_ok, browser_message = installer.ensure_chromium_runtime(
+        browser_ok, browser_message = installer.ensure_gstack_runtime(
             data_dir=Path(settings.data_dir)
         )
         typer.echo(f"==> Browser runtime: {browser_message}")
-        if not browser_ok and "not importable" not in browser_message:
+        if not browser_ok:
+            raise typer.Exit(code=1)
+
+    if do_browser_launcher:
+        launcher_ok, launcher_message = installer.ensure_browser_launcher(settings=settings)
+        typer.echo(f"==> Browser launcher: {launcher_message}")
+        if not launcher_ok:
             raise typer.Exit(code=1)
 
     home = Path.home()
@@ -294,6 +309,11 @@ def uninstall() -> None:
         typer.echo(f"==> launchd autostart removal failed: {message}", err=True)
         raise typer.Exit(code=1)
     typer.echo(f"==> {message}")
+
+    launcher_ok, launcher_message = installer.remove_browser_launcher(home=home)
+    typer.echo(f"==> Browser launcher: {launcher_message}")
+    if not launcher_ok:
+        raise typer.Exit(code=1)
 
     for runtime in ("codex", "claude"):
         target = installer.remove_skills(runtime, home=home)

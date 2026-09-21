@@ -198,38 +198,36 @@ apply. These operations do not create runs or grant actions, are not run-step
 tools, and remain unavailable to the browser console token. Their CLI path uses
 the ordinary authenticated operation route, not a caller-asserted admin bypass.
 
-## Daemon-Owned Browser Automation
+## Daemon-Owned Browser Sessions
 
-StackOS browser automation uses a daemon-owned visible Chromium runtime driven by Playwright. Agents can
-open persistent sessions, call public page/context methods, run arbitrary page
-JavaScript, inject scripts, and capture screenshots. This is intentionally a
-full-control automation surface, similar to a normal browser automation test
-session, because publishing/admin workflows often require the same freedom.
-It is a local trusted-administrator capability, not an externally exposed
-multi-tenant browser sandbox.
+StackOS owns project-scoped profile/session lifecycle for the native gstack
+browser. A selected usable session returns its real executable, working
+directory, and environment through `native_cli`. This includes local profile
+and state-file paths needed for direct CLI access; the state-file contents,
+root token, cookies, and stored credentials are never serialized by lifecycle
+or discovery operations. Bulk session discovery omits the native context.
 
-The boundary is not a browser-method allowlist. The boundary is local daemon
-auth, workspace/project scoping, run-plan grants when a workflow step uses the
-tools, and audit receipts. Browser profile directories, executable paths, raw
-handles, and daemon-local profile storage stay daemon-side. Screenshots are
-stored as generated-assets artifacts, and browser receipts record method names,
-session/page refs, URL/origin where available, hashed input summaries, result
-summaries, and artifact refs.
+The native context is a local capability. `stackos.browser --session <full-ref>`
+resolves it once through the authenticated project-scoped status operation, then
+executes the native CLI in the agent terminal. Only the leading selection is
+consumed; browser arguments never enter StackOS dispatch, grants, or audit.
+Ambient browser-control environment variables are removed before the selected
+context is applied. Ordinary terminal environment and streams are inherited.
 
-Immediate browser operation responses are intentionally raw. Page/context calls,
-storage-state reads, cookie reads, DOM reads, screenshots, and arbitrary
-JavaScript can return sensitive page data to the calling agent because that is
-the requested full-control browser surface. Persisted receipts and transport
-errors are the redacted surfaces; callers must treat raw browser outputs as
-sensitive working data.
+Native output may include sensitive page data when the client explicitly
+requests it. Output remains native terminal bytes. Agents choose what evidence to preserve
+through generic artifact operations under their normal authority. Historical
+browser receipt rows remain stored.
 
-Every session is visible and `browser.session.start` accepts no `headless`
-input. Agents may pass only `locale`, `timezone_id`, `user_agent`, and
-`viewport`; StackOS rejects executable paths, browser channels, profile paths,
-raw arguments, default-argument bypasses, proxies, and every other launch
-control. Runtime status exposes readiness booleans and same-project live
-session refs; it does not expose local browser executable paths or profile
-paths.
+A live native process owns its profile even when unhealthy or busy. Startup
+cannot replace that process based on health alone, and stop waits for exact
+process/state retirement. Discovery after daemon restart validates the owned
+state and OS process identity. Runtime repair preserves profile directories.
+The native upstream extension may write `~/.gstack/.auth.json`; StackOS does not
+read it or use it as its session registry.
+
+See [native browser sessions](browser-automation.md) for the full transport and
+lifecycle contract.
 
 ## UI Token Bootstrap Trade-Off
 

@@ -11,7 +11,7 @@ from sqlmodel import Field, SQLModel
 
 from stackos.db.model_base import _utcnow
 
-BROWSER_PROVIDER = "playwright"
+BROWSER_PROVIDER = "gstack"
 
 
 class BrowserProfile(SQLModel, table=True):

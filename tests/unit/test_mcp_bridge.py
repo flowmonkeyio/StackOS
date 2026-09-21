@@ -1169,10 +1169,7 @@ def test_bridge_does_not_advertise_step_tools_without_cached_token() -> None:
 def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> None:
     assert set(_AGENT_VISIBLE_TOOL_ORDER) == _AGENT_VISIBLE_TOOL_NAMES
     assert {"workspace.startSession", "workspace.resolve"} <= _AGENT_VISIBLE_TOOL_NAMES
-    assert "browser.page.call" in _AGENT_VISIBLE_TOOL_NAMES
-    assert "browser.context.call" in _AGENT_VISIBLE_TOOL_NAMES
-    assert "browser.handle.call" in _AGENT_VISIBLE_TOOL_NAMES
-    assert "browser.script.run" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "browser.cli.run" not in _AGENT_VISIBLE_TOOL_NAMES
     assert "operation.list" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "operation.describe" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "guide.gettingStarted" in _AGENT_SETUP_TOOLBOX_NAMES
@@ -1420,17 +1417,9 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
         "artifact.update",
         "artifact.archive",
         "artifact.supersede",
-        "browser.context.call",
-        "browser.handle.call",
-        "browser.method.manifest",
-        "browser.page.call",
-        "browser.page.screenshot",
-        "browser.page.snapshot",
         "browser.profile.create",
         "browser.profile.list",
         "browser.runtime.status",
-        "browser.script.inject",
-        "browser.script.run",
         "browser.session.list",
         "browser.session.start",
         "browser.session.status",

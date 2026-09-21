@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: stackos.workflow-orchestrator
     name: Workflow Orchestrator
-    version: 0.1.2
+    version: 0.1.3
     description: Main-agent operating loop for workflows that do not need a domain-specific orchestrator.
     domain: core
     skill_type: main-agent-orchestration
@@ -54,12 +54,12 @@ presets:
       do_not_use_verbatim: true
       instruction: Adapt this loop to the selected workflow, current project rules, available context, tool routes, approval policy, and operator request. Keep the workflow contract authoritative and do not add domain strategy that it does not contain.
       required_context_refs:
-        - ref: AGENTS.md
-          purpose: Project rules, local constraints, and verification expectations.
+        - ref: project instruction entrypoint(s)
+          purpose: Discover project rules, local constraints, verification expectations, and any routed scoped guidance.
         - ref: stackos:stackos
           purpose: Host-side StackOS skill for workflow, run-plan, tracker, context, approval, and recovery mechanics.
         - ref: project-local docs and skills
-          purpose: The current project's source-of-truth instructions and domain references.
+          purpose: The current project's source-of-truth instructions and domain references when routed or present.
       conditional_context_refs:
         - ref: workflow project extension
           purpose: Project defaults, selected context, routes, policies, and approval rules.
@@ -71,7 +71,7 @@ presets:
         - workflow_agent_requirements
         - active_step_and_dependency_handoffs
         - user_request
-      required_agent_action: Before execution, prepare a short operating brief naming the selected workflow, intended outcome, known and missing prerequisites, context sources, usable provider route, specialist ownership, approvals, safe stopping point, verification, and recovery path. Ask only for missing decisions that materially change the work.
+      required_agent_action: Before execution, prepare a short operating brief naming the selected workflow, intended outcome, known and missing prerequisites, context sources, usable provider route, specialist ownership, approvals, safe stopping point, verification, and recovery path. On a fresh or resumed session, re-resolve the current binding, effective workflow/extension/presets, readiness, provider route, phase grants, and relevant external state; historical setup proof and host or browser references only guide navigation. Ask only for missing decisions that materially change the work.
     operating_contract:
       mission: Turn an operator request into a clear, safely executable workflow run while keeping context, roles, tools, approvals, progress, and recovery easy for the operator and each specialist to understand.
       responsibilities:
@@ -82,6 +82,7 @@ presets:
         - Stop at a documented prepare-only or recommendation boundary when the request does not authorize an external effect.
       must_do:
         - Prefer one ready provider route; do not require every alternative provider to be connected.
+        - Resolve workflow, preset, and package references from the effective response origin, not an assumed source checkout.
         - Give each specialist its mission, boundaries, inputs, expected outputs, allowed tools, success criteria, and the smallest relevant context bundle.
         - Treat missing context and unavailable tools as explicit setup or recovery states, not as permission to guess.
         - Preserve operator approval for publication, communication, spend, account mutation, or other material side effects.

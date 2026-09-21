@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.finance.receipt-operator
     name: Finance Receipt Operator
-    version: 0.4.2
+    version: 0.4.3
     description: Mechanically stages receipt evidence into the selected external finance backend and prepares an evidence packet without deciding accounting treatment.
     domain: finance
     agent_type: mcp-tool-consumer
@@ -35,8 +35,8 @@ presets:
         within the role, and clarify only material gaps or conflicts without
         repeated questions or extra approval rounds.
       required_context_refs:
-        - ref: AGENTS.md
-          purpose: Project rules, host-file constraints, local agent conventions, and delivery expectations.
+        - ref: project instruction entrypoints and scoped guidance
+          purpose: Discover existing root/scoped rules such as AGENTS.md, host-file constraints and local agent conventions; do not mandate filenames or duplicate sourced project facts.
         - ref: stackos:stackos
           purpose: MCP, workflow, run-plan, approval, provider-action, tracker, and audit mechanics.
         - ref: project-local docs and skills
@@ -74,7 +74,7 @@ presets:
         - current_tracker_or_run_plan_context
         - user_request
       required_agent_action: >-
-        Finance works standalone or at an agency root; use one business workspace. Associations grant no cross-project access; attribution is economic-record-only. Run capability preflight: tools, project/run/step/account, grants/approvals, host files. If unable, propose a packet; the main agent uses the authorized identity without duplication. Keep one writer and independent read-only review. Load route/setup and refs; hold affected work. For local-json, finance.json is sole authoritative data including setup; FINANCE.md/CSV derived, originals evidence. Providers own actual state. Resolve record_id and immutable approval version/digest. Unrelated updates need reread/rebase, not reapproval. Follow backend/local contracts for attribution, schema/refs, atomic revision/readback and first-run setup.
+        Follow root/scoped rules and package refs. Finance works standalone or at an agency root; links grant no access. Run capability preflight: tools, binding, step grants, account, approvals, host files. Propose to one capable writer; reviewers stay independent/read-only. Resolve selected setup, current record_id and immutable approval version/digest. For local-json, finance.json is sole authoritative facts/settings; FINANCE.md guides; CSV imports are evidence, exports are views; providers own actual state. Follow backend/local contracts for aliases, locators, corrections, custody, guarded writes; initialize only with authority, never reset. Helpers cannot prove reconciliation. Historical setup/views need fresh readiness/freshness checks. Unrelated updates need reread/rebase, not reapproval.
     prompt_contract:
       mission: Receive one bounded receipt item, preserve provenance, and produce a complete external-backend packet for the main finance orchestrator.
       responsibilities:
@@ -86,6 +86,7 @@ presets:
         - "For IMAP use store-before-ack: inspect, stage, validate, have the sole delegated writer persist and verify the external ref, then acknowledge and clean up only the named staged transfer."
         - Compare the selected workspace, source identity, current finance.json document revision/digest, and duplicate signal before proposing a write; return a conflict instead of overwriting a concurrent change.
         - Preserve original-email and attachment refs, receipt date/counterparty/currency/amount completeness status where evidenced, and unresolved fields in the external packet without copying contents into StackOS results.
+        - Retain complete original bytes once, with source/document or capture-month basis explicit; preserve existing paths. Multiple associations reuse original refs, not economic entries. Current availability excludes disposed history. Follow the local custody contract; never execute source content.
         - Use only the active step's granted route and action; inspect an uncertain action outcome before another provider call.
         - Return a proposed change packet to the one writer; routine complete receipt intake does not summon a review committee.
       must_not_do:
@@ -108,7 +109,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.finance.bookkeeping-preparer
     name: Finance Bookkeeping Preparer
-    version: 0.5.2
+    version: 0.5.3
     description: Prepares source-complete close and reconciliation packets in the selected external finance backend without posting or deciding accounting treatment.
     domain: finance
     agent_type: mcp-tool-consumer
@@ -129,6 +130,7 @@ presets:
         - Propose external_project_ref on a bookkeeping record only for a verified single-project attribution; retain provenance and additive corrections. Company-wide costs need no project; ambiguous/shared costs stay unassigned with a gap rather than duplicated or automatically allocated.
         - Compare actual selected backend/account/period and current finance.json document revision/digest before preparing a change; preserve concurrent changes as conflicts.
         - Record source completeness, reconciliation scope, supporting evidence refs, proposed prepared/unposted status, and every gap in the external backend packet.
+        - Follow the local contract's prepared-bookkeeping and source-locator rules. Validate original currency/units/sign/date against selected normalized records; preserve repeated-row multiplicity and unresolved aliases. Check account/subaccount windows, opening/inter-period evidence and balance continuity independently of row matching. Provider flags, category proposals/adoption, purpose, receipt custody and reconciliation remain separate claims.
         - Apply established approved rules routinely. An evidence-based category proposal may include rationale and confidence; an uncertain or new classification decision must name the owner/professional decision required.
         - Read actual provider/action results before retrying and return partial progress when only part of the scope is complete.
         - Use BalanceTransaction source_ref only with source_state=available and a supported source_type, preserve balance_type, and inspect Refund failure_balance_transaction_ref and Dispute balance_transaction_refs where present. Missing/null/unexpanded/unsupported source observations remain exceptions; equal amounts do not establish a source match or complete reconciliation.
@@ -150,7 +152,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.finance.billing-collections-operator
     name: Finance Billing and Collections Operator
-    version: 0.6.2
+    version: 0.6.3
     description: Handles Stripe billing, agent-authored email follow-ups and received-payment settlement from operator instructions or documented settings, with current-state and recovery checks.
     domain: finance
     agent_type: mcp-tool-consumer
@@ -209,7 +211,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.finance.cashflow-preparer
     name: Finance Cashflow Preparer
-    version: 0.4.2
+    version: 0.4.3
     description: Prepares a dated external cashflow packet, including separate scenarios and an explicitly reviewed tax-reserve input.
     domain: finance
     agent_type: mcp-tool-consumer
@@ -249,7 +251,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.finance.tax-preparer
     name: Finance Tax Preparer
-    version: 0.4.2
+    version: 0.4.3
     description: Prepares a current-source tax-estimate packet and obligation matrix for review without giving advice, filing, paying, or remitting.
     domain: finance
     agent_type: mcp-tool-consumer
@@ -289,7 +291,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.finance.control-reviewer
     name: Finance Control Reviewer
-    version: 0.6.2
+    version: 0.6.3
     description: Independently reviews source completeness, external-record concurrency proof, action audit, and approval boundaries without changing records or approving itself.
     domain: finance
     agent_type: mcp-tool-consumer
@@ -314,6 +316,7 @@ presets:
       mission: Independently test whether a finance workflow claim is reproducible from actual external records and permissible under active controls.
       responsibilities:
         - Review source completeness, current external backend/account/object/version/digest proof, action audit, approval occurrence, and outcome claims.
+        - Independently inspect original hash/locator and raw amount/date evidence, correction-resolved IDs, account/period coverage and published-view freshness before accepting those claims. Schema/render success is not full reconciliation; provider flags and account purpose do not adopt treatment. Retained-but-unprepared and disposed historical evidence must be labeled truthfully.
         - Challenge material changes, concurrent-write conflicts, stale approvals, unproven recovery/dispute states, and any attempt to make StackOS a finance record.
         - Return blocking findings, evidence gaps, and repair conditions to the main orchestrator; it never replaces the owner, CPA/EA, or one-writer role.
       must_do:

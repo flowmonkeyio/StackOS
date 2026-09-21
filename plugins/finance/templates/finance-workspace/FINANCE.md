@@ -6,11 +6,19 @@ Format: `local-json-v1` · Backend: `local-json`
 record**. Read its current revision before operating. This Markdown file is
 guidance and navigation, not an editable financial table or business setup form.
 The [JSON Schema](schemas/finance-v1.schema.json) defines the record structure;
-it contains no business data. Original evidence stays in `attachments/YYYY/MM/`.
+it contains no business data. Original evidence may use `receipts/YYYY/MM/` or
+`attachments/[type/]YYYY/MM/`; keep existing valid paths unchanged.
 
 ## Start and resume
 
-Initialize once from the templates. On resume load existing JSON; never reset it.
+Initialize once from the templates during authorized prerequisite setup, not
+infrastructure setup. On resume load existing JSON; never reset it.
+
+Follow the existing root instruction router and scoped finance rules. This guide
+routes to data and method; it does not own company facts or account settings.
+Keep reusable procedures/tests, dated research and one-time outputs distinct in
+the host's existing layout. Historical setup notes/browser references do not
+establish current readiness. Do not create a mandatory document or folder tree.
 
 Resolve the selected workflow, account/source route, current grants, approvals,
 prior action audit and host-file capabilities. Load `finance.json`, validate its
@@ -33,6 +41,12 @@ the same plugin root contains these canonical references:
   `#follow-up-approvals` for the selected contact route.
 - `finance-plugin:references/backend-contract.md`: setup and provider recovery.
 - `finance-plugin:references/imap-host-handoff-contract.md`: IMAP custody/ack.
+
+The same plugin's optional `scripts/finance_workspace.py` and
+`scripts/finance_views.py` supply host-side integrity and derived-view helpers.
+Read their `--help` and the local contract before using them; they need host file
+access and Python/dependency support, not a StackOS filesystem grant. They never
+choose accounting treatment or prove full reconciliation.
 
 These paths are relative to that installed plugin, not this copied workspace.
 Read only the references relevant to current work; if unavailable, preserve
@@ -66,8 +80,9 @@ a local edit cannot change a Stripe invoice or prove received funds.
 
 ## One writer and verified custody
 
-The main orchestrator is the only writer; specialists propose changes and
-independent reviewers stay read-only. Follow the local contract's
+The main orchestrator designates exactly one writer; specialists propose changes
+unless explicitly delegated sole-writer custody. Independent reviewers stay
+read-only. Follow the local contract's
 `#single-writer-and-retry-safe-persistence`: exclusive ownership, revision/hash
 conflict detection, validation, atomic replacement and actual readback. Missing
 ownership or validation capability leaves persistence pending.
@@ -99,6 +114,14 @@ Bookkeeping stays `prepared/unposted`, with source windows and reconciliation
 gaps visible. Receipts alone do not establish complete books. Do not count an
 invoice, payment and payout as three revenues.
 
+Use sourced `operating_settings.account_identity` for confirmed exact aliases,
+not account masks or ID prefixes. Follow the local contract for full-raw versus
+selected normalization, original hash/data-record locators and source units/date
+basis. Repeated rows, missing windows, ambiguous matches and unadopted category
+proposals remain explicit; row matching, source coverage and reconciliation are
+different claims. One original can serve several associations without duplicating
+economic activity. Disposed history is not currently available evidence.
+
 Follow-ups use fresh lifecycle/suppression evidence across Stripe and email.
 Use the same billing agent and the operator-provided or documented sending
 instructions for Stripe or email. Keep the selected route and action input in
@@ -116,9 +139,12 @@ Handoffs propose work; they do not automatically launch workflows.
 ## Reports, CSV and corrections
 
 Optional Markdown reports and CSV exports are regenerable views labeled with
-their source JSON revision and record IDs. Do not edit them as another master.
+their source JSON revision/hash and record IDs. Resolve corrections before
+projection; current does not mean resolved. Validate published freshness
+separately from in-memory rendering, and regenerate stale/incomplete output sets.
+Do not edit them as another master.
 Retain imported CSV as original evidence and validate its mapping before proposed
-JSON updates; there is no automatic import/export service. Correct facts through
+JSON updates; there is no automatic import or CSV round-trip service. Correct facts through
 sourced additive records/superseding versions, not rewritten history. Resolve
 report conflicts from original/provider evidence. The operator owns backup,
 restore, retention, permissions, encryption and secure disposal.

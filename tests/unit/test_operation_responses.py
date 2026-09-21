@@ -47,6 +47,47 @@ def test_provider_side_effect_operations_are_raw_only() -> None:
     assert exc.value.data["allowed_modes"] == ["raw"]
 
 
+def test_browser_runtime_compact_keeps_readiness_and_repair() -> None:
+    payload = {
+        "provider": "gstack",
+        "package_installed": False,
+        "package_version": "1.84.1.0",
+        "browser_downloaded": False,
+        "browser_path_present": False,
+        "live_session_refs": [],
+        "repair": "Run stackos install to repair the native browser runtime.",
+    }
+    compact = shape_operation_response(
+        _spec("browser.runtime.status", mutating=False), payload, response_mode="compact"
+    )
+    assert compact["data"] == payload
+
+
+def test_browser_session_discovery_compact_keeps_health_without_native_context() -> None:
+    item = {
+        "id": 2,
+        "project_id": 1,
+        "profile_id": 4,
+        "profile_ref": "browser-profile:project-1:default",
+        "session_ref": "browser-session:project-1:default:main",
+        "provider": "gstack",
+        "status": "failed",
+        "healthy": False,
+        "repair": "The owned process is unavailable; stop this session before restarting.",
+        "native_cli": None,
+        "metadata_json": {"large_project_context": "omitted from bulk discovery"},
+    }
+    compact = shape_operation_response(
+        _spec("browser.session.list", mutating=False),
+        {"items": [item], "next_cursor": None, "total_estimate": 1},
+        response_mode="compact",
+    )
+    assert compact["items"] == [
+        {key: value for key, value in item.items() if key not in {"native_cli", "metadata_json"}}
+    ]
+    assert compact["total_estimate"] == 1
+
+
 def test_action_operations_use_surface_response_defaults() -> None:
     specs = {spec.name: spec for spec in action_operation_specs()}
 

@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+from stackos.browser.runtime import BROWSER_PROFILE_DIRNAME, browser_profile_dir
+
 EXPECTED_TABLES: frozenset[str] = frozenset(
     {
         "action_calls",
@@ -1131,13 +1133,17 @@ def test_workflow_extension_migration_recovers_partial_table(
     assert "template_overrides_json" in columns
 
 
-def test_visible_chromium_migration_scrubs_options_without_touching_session_history(
+def test_browser_replacement_preserves_historic_rows_and_profile_path(
     isolated_alembic: Path,
     tmp_path: Path,
 ) -> None:
     _run_alembic(["upgrade", "0024_provider_object_references"])
     external_cookie = tmp_path / "main-account-cookie-sentinel"
     external_cookie.write_text("do-not-touch", encoding="utf-8")
+    legacy_profile_dir = browser_profile_dir(tmp_path / "data", project_id=1, profile_key="stable")
+    legacy_profile_dir.mkdir(parents=True)
+    profile_sentinel = legacy_profile_dir / "synthetic-cookie-sentinel"
+    profile_sentinel.write_text("preserve-profile", encoding="utf-8")
 
     conn = sqlite3.connect(isolated_alembic)
     try:
@@ -1169,6 +1175,20 @@ def test_visible_chromium_migration_scrubs_options_without_touching_session_hist
             """,
             (now, now),
         )
+        conn.execute(
+            """
+            INSERT INTO browser_action_receipts
+            (id, project_id, profile_id, session_id, session_ref, page_ref,
+             operation, method, side_effect_class, status, input_summary_json,
+             result_json, created_at, completed_at)
+            VALUES (1, 1, 1, 1, 'browser-session:project-1:stable:historic',
+                    'browser-session:project-1:stable:historic:page-1',
+                    'browser.page.call', 'goto', 'navigation', 'ok',
+                    '{"url":"https://historic.example.test"}',
+                    '{"status":"ok"}', ?, ?)
+            """,
+            (now, now),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -1182,9 +1202,15 @@ def test_visible_chromium_migration_scrubs_options_without_touching_session_hist
             "SELECT launch_options_json FROM browser_profiles WHERE id = 1"
         ).fetchone()
         historic = conn.execute("SELECT headless FROM browser_sessions WHERE id = 1").fetchone()
+        receipt = conn.execute(
+            "SELECT operation, method, status FROM browser_action_receipts WHERE id = 1"
+        ).fetchone()
     finally:
         conn.close()
     assert options is not None
     assert json.loads(options[0]) == {"locale": "en-US"}
     assert historic == (1,)
+    assert receipt == ("browser.page.call", "goto", "ok")
+    assert BROWSER_PROFILE_DIRNAME == "playwright-chromium"
+    assert profile_sentinel.read_text(encoding="utf-8") == "preserve-profile"
     assert external_cookie.read_text(encoding="utf-8") == "do-not-touch"

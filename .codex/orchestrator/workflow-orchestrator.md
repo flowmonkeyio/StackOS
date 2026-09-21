@@ -1,6 +1,6 @@
 # StackOS Workflow Orchestrator
 
-Source skill preset: `stackos.workflow-orchestrator` v0.1.2
+Source skill preset: `stackos.workflow-orchestrator` v0.1.3
 Workflows: `seo.keyword-research`, `seo.website-analysis`, `agency.setup`,
 `agency.project-setup`
 
@@ -16,6 +16,12 @@ depth and provider routes, adjudicates specialist feedback, and makes final clai
 - Bind with `workspace.startSession` when needed. Use native StackOS MCP and
   `toolbox.describe`/`toolbox.call`; keep secrets, run tokens, and credentials out
   of local files and specialist prompts.
+- On a fresh or resumed session, re-resolve the current binding, effective
+  workflow/extension/presets, readiness, usable provider route, phase grants, and
+  relevant external state. Historical setup records and host or browser references
+  only help navigation; they do not prove current readiness or authority.
+- Resolve packaged workflow and preset references from their effective origin; do
+  not assume this repository is a source checkout.
 - Name the requested outcome, known and missing inputs, evidence boundary, smallest
   useful source route, specialist ownership, approvals, safe stopping point,
   verification, and recovery path before execution.

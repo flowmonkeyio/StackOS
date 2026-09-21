@@ -28,14 +28,11 @@ finance/
 ├── FINANCE.md                   # operating guide and navigation
 ├── schemas/
 │   └── finance-v1.schema.json    # structural contract, not financial records
-└── attachments/
-    └── YYYY/
-        └── MM/
-            ├── rcpt_<stable-id>-original.eml
-            └── rcpt_<stable-id>-receipt.pdf
+├── receipts/YYYY/MM/            # optional retained receipt originals
+└── attachments/[type/]YYYY/MM/  # emails, statements and complete exports
 ```
 
-During authorized setup of a **new** workspace, copy the
+During authorized prerequisite setup of a **new** workspace, copy the
 [JSON template](templates/finance-workspace/finance.json), its
 [schema](templates/finance-workspace/schemas/finance-v1.schema.json), and the
 [operating guide](templates/finance-workspace/FINANCE.md), preserving their layout.
@@ -53,6 +50,15 @@ filesystem authority for that directory; StackOS grants none. QuickBooks, Google
 bank feeds, and another authoritative backend are future work, not aliases for
 this local format. Initialize this first-version workspace once; subsequent runs
 read and update the existing JSON rather than copying the empty template again.
+
+This layout illustrates the selected local backend, not a mandated company tree.
+Follow the root/scoped instruction router and keep financial settings in the
+master. The local contract owns sourced account aliases, exact source locators,
+coverage, corrections and optional packaged host helpers. Those helpers validate
+mechanics and generate derived views; they do not establish complete books.
+Installed helper/reference paths resolve from the package origin, without a
+StackOS source checkout. Separate infrastructure setup from financial
+prerequisites and actual workflow operation.
 
 Resolve safe durable defaults once through project setup: backend/workspace and
 policy refs, selected provider account refs, recording mode, and source routes.

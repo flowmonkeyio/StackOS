@@ -8,12 +8,14 @@ code paths in isolation so they stay green on platforms that lack
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import plistlib
 import sqlite3
 import subprocess
 import sys
+import tarfile
 import zipfile
 from pathlib import Path
 
@@ -298,289 +300,477 @@ def test_doctor_reports_stale_stackos_plugin_skill_cache(sandbox: Path) -> None:
     assert "stackos install" in skill["repair"]
 
 
-def test_ensure_chromium_runtime_reports_missing_driver(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: None)
+def _write_gstack_runtime(root: Path) -> None:
+    """Write the smallest valid browser-runtime fixture without a browser process."""
+    bun = root / "bin" / "bun"
+    browse = root / "gstack" / "browse" / "dist" / "browse"
+    server = root / "gstack" / "browse" / "src" / "server.ts"
+    browser_dir = root / "browsers" / "chromium-1234"
+    browser_marker = browser_dir / "INSTALLATION_COMPLETE"
+    browser = (
+        browser_dir
+        / "chrome-mac-arm64"
+        / "Google Chrome for Testing.app"
+        / "Contents"
+        / "MacOS"
+        / "Google Chrome for Testing"
+    )
+    vendor_metadata = root / "gstack" / "node_modules" / "playwright-core" / "browsers.json"
+    for path in (bun, browse, server, browser_marker, browser, vendor_metadata):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("fixture", encoding="utf-8")
+    bun.chmod(0o755)
+    browse.chmod(0o755)
+    browser.chmod(0o755)
+    vendor_metadata.write_text(
+        json.dumps(
+            {"browsers": [{"name": "chromium", "revision": "1234", "installByDefault": True}]}
+        ),
+        encoding="utf-8",
+    )
+    (root / "gstack" / "LICENSE").write_text("MIT", encoding="utf-8")
+    (root / "gstack" / "NOTICE.md").write_text("notice", encoding="utf-8")
+    (root / "manifest.json").write_text(
+        json.dumps(installer._runtime_manifest()),
+        encoding="utf-8",
+    )
 
-    ok, message = installer.ensure_chromium_runtime()
 
-    assert ok is False
-    assert "not importable" in message
-
-
-def test_ensure_chromium_runtime_rejects_driver_drift(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: object())
-    monkeypatch.setattr(installer, "playwright_driver_version", lambda: "1.59.0")
-
-    ok, message = installer.ensure_chromium_runtime()
-
-    assert ok is False
-    assert "expected version 1.60.0" in message
-    assert "148.0.7778.96" in message
-
-
-def test_ensure_chromium_runtime_hides_managed_browser_path(
+def test_verify_gstack_runtime_accepts_complete_pinned_layout(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: object())
-    monkeypatch.setattr(installer, "packaged_stackos_root", lambda: None)
-    app = installer.managed_chromium_app_path(tmp_path)
-    app.mkdir(parents=True)
-    (app.parent / installer.CHROMIUM_LICENSE_FILENAME).write_text("license", encoding="utf-8")
-    monkeypatch.setattr(
-        installer,
-        "_verify_chromium_bundle",
-        lambda *_args, **_kwargs: (True, "ok"),
-    )
+    root = tmp_path / "browser-runtime"
+    _write_gstack_runtime(root)
+    monkeypatch.setattr(installer, "gstack_runtime_root", lambda _data_dir=None: root)
 
-    ok, message = installer.ensure_chromium_runtime(data_dir=tmp_path)
+    ok, message = installer.verify_gstack_runtime(data_dir=tmp_path)
 
     assert ok is True
-    assert message == "Managed Chromium runtime present."
-    assert "/private" not in message
+    assert message == "gstack runtime verified."
 
 
-def test_verify_chromium_runtime_rejects_wrong_arch_without_repairing(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(installer, "packaged_stackos_root", lambda: None)
-    app = installer.managed_chromium_app_path(tmp_path)
-    app.mkdir(parents=True)
-    (app.parent / installer.CHROMIUM_LICENSE_FILENAME).write_text("license", encoding="utf-8")
-    monkeypatch.setattr(
-        installer,
-        "_verify_chromium_bundle",
-        lambda *_args, **_kwargs: (False, "Chromium bundle is not arm64."),
-    )
+def test_verify_gstack_runtime_rejects_legacy_packaging(tmp_path: Path) -> None:
+    root = tmp_path / "browser-runtime"
+    _write_gstack_runtime(root)
+    manifest = json.loads((root / "manifest.json").read_text())
+    manifest.pop("packaging_revision", None)
+    (root / "manifest.json").write_text(json.dumps(manifest))
 
-    ok, message = installer.verify_chromium_runtime(data_dir=tmp_path)
+    ok, _message = installer._verify_gstack_runtime_root(root)
 
     assert ok is False
-    assert message == "Chromium bundle is not arm64."
-    assert app.is_dir()
 
 
-def test_ensure_chromium_runtime_installs_pinned_normal_bundle(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    "excluded",
+    [
+        "@anthropic-ai/claude-agent-sdk",
+        "@anthropic-ai/claude-agent-sdk-darwin-arm64",
+        "@anthropic-ai/sdk",
+        "onnxruntime-node/bin/napi-v6/linux",
+        "onnxruntime-node/bin/napi-v6/win32",
+    ],
+)
+def test_verify_gstack_runtime_rejects_unpruned_dependencies(tmp_path: Path, excluded: str) -> None:
+    root = tmp_path / "browser-runtime"
+    _write_gstack_runtime(root)
+    path = root / "gstack" / "node_modules" / excluded
+    path.mkdir(parents=True)
+
+    ok, _message = installer._verify_gstack_runtime_root(root)
+
+    assert ok is False
+    assert path.is_dir()  # Read-only verification never repairs the installed tree.
+
+
+@pytest.mark.parametrize("sdk_symlink", [False, True])
+def test_build_gstack_runtime_prunes_only_unused_dependencies_after_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sdk_symlink: bool
 ) -> None:
-    calls: list[tuple[Path, Path]] = []
-    monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: object())
-    monkeypatch.setattr(installer, "packaged_stackos_root", lambda: None)
-    monkeypatch.setattr(
-        installer,
-        "_download_chromium_archive",
-        lambda destination, **_kwargs: destination.write_bytes(b"pinned-archive"),
-    )
-    monkeypatch.setattr(installer, "_sha256", lambda _path: installer.CHROMIUM_SNAPSHOT_SHA256)
+    source = tmp_path / "source"
+    source.mkdir()
+    bun = tmp_path / "bun"
+    bun.write_text("fixture")
+    candidate = tmp_path / "candidate"
+    excluded = [
+        "@anthropic-ai/claude-agent-sdk",
+        "@anthropic-ai/claude-agent-sdk-darwin-arm64",
+        "@anthropic-ai/sdk",
+        "onnxruntime-node/bin/napi-v6/linux",
+        "onnxruntime-node/bin/napi-v6/win32",
+    ]
+    retained = [
+        "node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64/onnxruntime_binding.node",
+        "node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64/libonnxruntime.1.24.3.dylib",
+        "node_modules/@huggingface/transformers/package.json",
+        "node_modules/onnxruntime-web/package.json",
+        "node_modules/xterm/package.json",
+        "extension/manifest.json",
+        "extension/sidepanel.html",
+        "extension/sidepanel.js",
+        "extension/sidepanel.css",
+        "extension/lib/xterm.js",
+        "extension/lib/xterm.css",
+        "extension/lib/xterm-addon-fit.js",
+    ]
+    outside = tmp_path / "outside-sdk"
+    outside.mkdir()
+    (outside / "keep").write_text("outside staging")
+    stages: list[str] = []
 
+    def run_build(_argv: list[str], *, stage: str, **_kwargs: object) -> None:
+        stages.append(stage)
+        modules = candidate / "gstack" / "node_modules"
+        if stage == "gstack dependency installation":
+            for item in excluded:
+                path = modules / item
+                path.parent.mkdir(parents=True, exist_ok=True)
+                if sdk_symlink and item == "@anthropic-ai/claude-agent-sdk":
+                    path.symlink_to(outside, target_is_directory=True)
+                else:
+                    path.mkdir()
+                    (path / "unused").write_text("remove")
+        else:
+            # Compilation and vendoring still have the complete locked install.
+            assert all((modules / item).is_dir() for item in excluded)
+        if stage == "gstack browser asset installation":
+            _write_gstack_runtime(candidate)
+            for item in retained:
+                path = candidate / "gstack" / item
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(item)
+
+    monkeypatch.setattr(installer, "_download_runtime_archive", lambda *_a, **_k: None)
     monkeypatch.setattr(
         installer,
-        "_extract_chromium_archive",
-        lambda _archive, destination, **_kwargs: (
-            destination / installer.CHROMIUM_ARCHIVE_APP_RELATIVE_PATH
-        ).mkdir(parents=True),
-    )
-    monkeypatch.setattr(
-        installer,
-        "_verify_chromium_bundle",
-        lambda *_args, **_kwargs: (True, "ok"),
-    )
-    monkeypatch.setattr(
-        installer,
-        "_install_chromium_runtime_atomically",
-        lambda source_app, source_license, target_app, target_license: calls.append(
-            (source_app, target_app)
+        "_sha256",
+        lambda path: (
+            installer.GSTACK_SOURCE_ARCHIVE_SHA256
+            if path.name == "gstack.tar.gz"
+            else installer.BUN_ARCHIVE_SHA256
         ),
     )
-    monkeypatch.setattr(
-        installer,
-        "_copy_chromium_license",
-        lambda destination: destination.write_text("license", encoding="utf-8"),
-    )
+    monkeypatch.setattr(installer, "_extract_gstack_source_archive", lambda *_a: None)
+    monkeypatch.setattr(installer, "_gstack_source_root", lambda _path: source)
+    monkeypatch.setattr(installer, "_extract_bun_archive", lambda *_a: bun)
+    monkeypatch.setattr(installer, "_run_gstack_build", run_build)
 
-    ok, message = installer.ensure_chromium_runtime(data_dir=tmp_path)
+    installer._build_gstack_runtime(candidate, timeout_seconds=1)
+
+    assert len(stages) == 5
+    for item in excluded:
+        path = candidate / "gstack" / "node_modules" / item
+        assert not path.exists() and not path.is_symlink()
+    for item in retained:
+        assert (candidate / "gstack" / item).read_text() == item
+    assert (outside / "keep").read_text() == "outside staging"
+    assert installer._verify_gstack_runtime_root(candidate)[0] is True
+    assert json.loads((candidate / "manifest.json").read_text())["packaging_revision"] == 1
+
+
+def test_verify_gstack_runtime_rejects_missing_native_cli_without_repairing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "browser-runtime"
+    _write_gstack_runtime(root)
+    (root / "gstack" / "browse" / "dist" / "browse").unlink()
+    monkeypatch.setattr(installer, "gstack_runtime_root", lambda _data_dir=None: root)
+
+    ok, message = installer.verify_gstack_runtime(data_dir=tmp_path)
+
+    assert ok is False
+    assert message == "gstack native CLI is missing."
+    assert root.is_dir()
+
+
+def test_verify_gstack_runtime_rejects_links_or_ffmpeg_without_upstream_chromium(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "browser-runtime"
+    _write_gstack_runtime(root)
+    browser = (
+        root
+        / "browsers"
+        / "chromium-1234"
+        / "chrome-mac-arm64"
+        / "Google Chrome for Testing.app"
+        / "Contents"
+        / "MacOS"
+        / "Google Chrome for Testing"
+    )
+    browser.unlink()
+    links = root / "browsers" / ".links"
+    links.mkdir()
+    (links / "install").write_text("/private/staged/playwright-core", encoding="utf-8")
+    ffmpeg = root / "browsers" / "ffmpeg-1011" / "ffmpeg-mac"
+    ffmpeg.parent.mkdir()
+    ffmpeg.write_text("fixture", encoding="utf-8")
+    ffmpeg.chmod(0o755)
+    monkeypatch.setattr(installer, "gstack_runtime_root", lambda _data_dir=None: root)
+
+    ok, message = installer.verify_gstack_runtime(data_dir=tmp_path)
+
+    assert ok is False
+    assert message == "gstack upstream Chromium executable is missing."
+
+
+def test_ensure_gstack_runtime_hides_managed_runtime_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "browser-runtime"
+    _write_gstack_runtime(root)
+    monkeypatch.setattr(installer, "packaged_stackos_root", lambda: None)
+    monkeypatch.setattr(installer, "gstack_runtime_root", lambda _data_dir=None: root)
+
+    ok, message = installer.ensure_gstack_runtime(data_dir=tmp_path)
 
     assert ok is True
-    assert message == "Managed Chromium runtime installed."
-    assert installer.CHROMIUM_SNAPSHOT_URL.endswith("Mac_Arm/1610473/chrome-mac.zip")
-    assert installer.CHROMIUM_SNAPSHOT_SHA256 == (
-        "3961cef2b608396de21aec027ffaadd7e9a65ff025391fba64ae0023ffefc80a"
-    )
+    assert message == "Managed gstack runtime present."
+    assert str(root) not in message
+
+
+def test_ensure_gstack_runtime_installs_pinned_distribution_atomically(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "browser-runtime"
+    calls: list[Path] = []
+    monkeypatch.setattr(installer, "packaged_stackos_root", lambda: None)
+    monkeypatch.setattr(installer, "gstack_runtime_root", lambda _data_dir=None: root)
+
+    def build(candidate: Path, **_kwargs: object) -> None:
+        calls.append(candidate)
+        _write_gstack_runtime(candidate)
+
+    monkeypatch.setattr(installer, "_build_gstack_runtime", build)
+
+    ok, message = installer.ensure_gstack_runtime(data_dir=tmp_path)
+
+    assert ok is True
+    assert message == "Managed gstack runtime installed."
     assert len(calls) == 1
-    assert calls[0][0].name == "Chromium.app"
-    assert calls[0][1] == installer.managed_chromium_app_path(tmp_path)
-
-
-def test_ensure_chromium_runtime_rejects_bad_checksum_without_raw_output(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: object())
-    monkeypatch.setattr(installer, "packaged_stackos_root", lambda: None)
-    monkeypatch.setattr(
-        installer,
-        "_download_chromium_archive",
-        lambda destination, **_kwargs: destination.write_bytes(b"secret /private/main-account"),
+    assert root.is_dir()
+    assert (root / "manifest.json").is_file()
+    assert installer.GSTACK_SOURCE_ARCHIVE_SHA256 == (
+        "4740bfb9efb35fb407679496d890210bfc7c193bc8331f70cbf7d64bbf75cfb8"
     )
-    monkeypatch.setattr(installer, "_sha256", lambda _path: "not-the-pin")
+    assert installer.BUN_ARCHIVE_SHA256 == (
+        "672a0a9a7b744d085a1d2219ca907e3e26f5579fca9e783a9510a4f98a36212f"
+    )
 
-    ok, message = installer.ensure_chromium_runtime(data_dir=tmp_path)
+
+def test_ensure_gstack_runtime_rebuilds_legacy_packaging(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "browser-runtime"
+    _write_gstack_runtime(root)
+    manifest = json.loads((root / "manifest.json").read_text())
+    manifest.pop("packaging_revision", None)
+    (root / "manifest.json").write_text(json.dumps(manifest))
+    (root / "previous-runtime").write_text("old packaging")
+    monkeypatch.setattr(installer, "packaged_stackos_root", lambda: None)
+    monkeypatch.setattr(installer, "gstack_runtime_root", lambda _data_dir=None: root)
+    monkeypatch.setattr(
+        installer, "_build_gstack_runtime", lambda path, **_kw: _write_gstack_runtime(path)
+    )
+
+    ok, message = installer.ensure_gstack_runtime(data_dir=tmp_path)
+
+    assert ok is True
+    assert message == "Managed gstack runtime installed."
+    assert not (root / "previous-runtime").exists()
+    assert installer._verify_gstack_runtime_root(root)[0] is True
+
+
+def test_ensure_gstack_runtime_preserves_existing_tree_on_unsafe_pruning_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "browser-runtime"
+    root.mkdir()
+    sentinel = root / "previous-runtime"
+    sentinel.write_text("keep")
+    outside = tmp_path / "outside" / "claude-agent-sdk"
+    outside.mkdir(parents=True)
+    (outside / "keep").write_text("outside staging")
+    monkeypatch.setattr(installer, "packaged_stackos_root", lambda: None)
+    monkeypatch.setattr(installer, "gstack_runtime_root", lambda _data_dir=None: root)
+
+    def build(candidate: Path, **_kwargs: object) -> None:
+        _write_gstack_runtime(candidate)
+        (candidate / "gstack" / "node_modules" / "@anthropic-ai").symlink_to(
+            outside.parent, target_is_directory=True
+        )
+        installer._prune_gstack_dependencies(candidate)
+
+    monkeypatch.setattr(installer, "_build_gstack_runtime", build)
+
+    ok, message = installer.ensure_gstack_runtime(data_dir=tmp_path)
 
     assert ok is False
-    assert message == "Chromium archive checksum did not match StackOS's pinned runtime."
-    assert "/private" not in message
+    assert "gstack dependency pruning" in message
+    assert str(tmp_path) not in message
+    assert sentinel.read_text() == "keep"
+    assert (outside / "keep").read_text() == "outside staging"
 
 
-def test_ensure_chromium_runtime_preserves_existing_bundle_when_candidate_fails(
+def test_ensure_gstack_runtime_preserves_existing_runtime_when_candidate_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: object())
-    monkeypatch.setattr(installer, "packaged_stackos_root", lambda: None)
-    app = installer.managed_chromium_app_path(tmp_path)
-    app.mkdir(parents=True)
-    sentinel = app / "previous-runtime"
+    root = tmp_path / "browser-runtime"
+    root.mkdir(parents=True)
+    sentinel = root / "previous-runtime"
     sentinel.write_text("keep", encoding="utf-8")
+    monkeypatch.setattr(installer, "packaged_stackos_root", lambda: None)
+    monkeypatch.setattr(installer, "gstack_runtime_root", lambda _data_dir=None: root)
     monkeypatch.setattr(
         installer,
-        "_download_chromium_archive",
-        lambda destination, **_kwargs: destination.write_bytes(b"archive"),
-    )
-    monkeypatch.setattr(installer, "_sha256", lambda _path: installer.CHROMIUM_SNAPSHOT_SHA256)
-    monkeypatch.setattr(
-        installer,
-        "_verify_chromium_bundle",
-        lambda *_args, **_kwargs: (False, "candidate failed"),
+        "_build_gstack_runtime",
+        lambda candidate, **_kwargs: (candidate / "incomplete").write_text("bad", encoding="utf-8"),
     )
 
-    monkeypatch.setattr(
-        installer,
-        "_extract_chromium_archive",
-        lambda _archive, destination, **_kwargs: (
-            destination / installer.CHROMIUM_ARCHIVE_APP_RELATIVE_PATH
-        ).mkdir(parents=True),
-    )
-
-    ok, message = installer.ensure_chromium_runtime(data_dir=tmp_path)
+    ok, message = installer.ensure_gstack_runtime(data_dir=tmp_path)
 
     assert ok is False
-    assert message == "candidate failed"
+    assert "runtime" in message
     assert sentinel.read_text(encoding="utf-8") == "keep"
 
 
-def test_extract_chromium_archive_uses_fixed_macos_ditto(
+def test_ensure_gstack_runtime_reports_safe_stage_for_acquisition_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: list[tuple[list[str], dict[str, object]]] = []
+    root = tmp_path / "browser-runtime"
+    monkeypatch.setattr(installer, "packaged_stackos_root", lambda: None)
+    monkeypatch.setattr(installer, "gstack_runtime_root", lambda _data_dir=None: root)
 
-    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        calls.append((args, kwargs))
-        return subprocess.CompletedProcess(args, 0, "", "")
+    def fail_build(_candidate: Path, **_kwargs: object) -> None:
+        raise installer._GstackRuntimeInstallError(
+            "gstack source extraction",
+            "archive contains an unsafe member; refresh the pinned runtime and retry.",
+        )
 
-    monkeypatch.setattr(installer.subprocess, "run", fake_run)
-    archive = tmp_path / "chromium.zip"
+    monkeypatch.setattr(installer, "_build_gstack_runtime", fail_build)
+
+    ok, message = installer.ensure_gstack_runtime(data_dir=tmp_path)
+
+    assert ok is False
+    assert message == (
+        "gstack runtime install failed during gstack source extraction: "
+        "archive contains an unsafe member; refresh the pinned runtime and retry."
+    )
+    assert str(tmp_path) not in message
+
+
+def test_extract_gstack_source_rejects_path_traversal(tmp_path: Path) -> None:
+    archive = tmp_path / "gstack.tar.gz"
+    with tarfile.open(archive, "w:gz") as output:
+        entry = tarfile.TarInfo("../outside")
+        entry.size = 0
+        output.addfile(entry)
+
+    with pytest.raises(RuntimeError, match="unsafe member"):
+        installer._extract_gstack_source_archive(archive, tmp_path / "extracted")
+
+
+def test_extract_gstack_source_preserves_internal_connect_chrome_symlink(tmp_path: Path) -> None:
+    """The pinned upstream source links connect-chrome to its sibling launcher."""
+    archive = tmp_path / "gstack.tar.gz"
+    root = "gstack-71f6048e8ada25180e61438abc1d98cb151fe9a7"
+    with tarfile.open(archive, "w:gz") as output:
+        directory = tarfile.TarInfo(root)
+        directory.type = tarfile.DIRTYPE
+        output.addfile(directory)
+        launcher = tarfile.TarInfo(f"{root}/open-gstack-browser")
+        launcher.type = tarfile.DIRTYPE
+        output.addfile(launcher)
+        skill = tarfile.TarInfo(f"{root}/open-gstack-browser/SKILL.md")
+        skill.size = len(b"launcher")
+        output.addfile(skill, io.BytesIO(b"launcher"))
+        connect = tarfile.TarInfo(f"{root}/connect-chrome")
+        connect.type = tarfile.SYMTYPE
+        connect.linkname = "open-gstack-browser"
+        output.addfile(connect)
+
     destination = tmp_path / "extracted"
+    installer._extract_gstack_source_archive(archive, destination)
 
-    installer._extract_chromium_archive(archive, destination, timeout_seconds=42)
-
-    assert calls == [
-        (
-            ["/usr/bin/ditto", "-x", "-k", str(archive), str(destination)],
-            {"capture_output": True, "text": True, "timeout": 42, "check": False},
-        )
-    ]
+    link = destination / root / "connect-chrome"
+    assert link.is_symlink()
+    assert (link / "SKILL.md").read_bytes() == b"launcher"
 
 
-def test_extract_chromium_archive_redacts_ditto_failure(
+def test_extract_gstack_source_rejects_escaping_symlink(tmp_path: Path) -> None:
+    archive = tmp_path / "gstack.tar.gz"
+    with tarfile.open(archive, "w:gz") as output:
+        link = tarfile.TarInfo("gstack/connect-chrome")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "../../outside"
+        output.addfile(link)
+
+    with pytest.raises(RuntimeError, match="unsafe member"):
+        installer._extract_gstack_source_archive(archive, tmp_path / "extracted")
+
+
+def test_extract_bun_archive_rejects_path_traversal(tmp_path: Path) -> None:
+    archive = tmp_path / "bun.zip"
+    with zipfile.ZipFile(archive, "w") as output:
+        output.writestr("../bun", "not a runtime")
+
+    with pytest.raises(RuntimeError, match="unsafe member"):
+        installer._extract_bun_archive(archive, tmp_path / "extracted")
+
+
+def test_playwright_build_link_metadata_is_removed_before_runtime_relocation(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        _ = kwargs
-        return subprocess.CompletedProcess(args, 2, "", "failed /private/main-account secret-token")
+    browsers = tmp_path / "browsers"
+    links = browsers / ".links"
+    links.mkdir(parents=True)
+    (links / "install").write_text("/private/build/playwright-core", encoding="utf-8")
 
-    monkeypatch.setattr(installer.subprocess, "run", fake_run)
+    installer._remove_playwright_build_links(browsers)
 
-    with pytest.raises(RuntimeError) as exc:
-        installer._extract_chromium_archive(
-            tmp_path / "chromium.zip",
-            tmp_path / "extracted",
-            timeout_seconds=42,
-        )
-
-    assert "exit_code=2" in str(exc.value)
-    assert "output_sha256=" in str(exc.value)
-    assert "/private" not in str(exc.value)
-    assert "secret-token" not in str(exc.value)
+    assert not links.exists()
 
 
 def test_doctor_browser_runtime_hides_existing_browser_path(
-    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(doctor_cli.importlib.util, "find_spec", lambda name: object())
     monkeypatch.setattr(
         doctor_cli,
-        "chromium_executable_path",
-        lambda **_kwargs: Path("/private/stackos/Chromium.app/Contents/MacOS/Chromium"),
+        "gstack_executable_path",
+        lambda **_kwargs: Path("/private/stackos/browser-runtime/gstack/browse/dist/browse"),
     )
-    license_path = tmp_path / "CHROMIUM-LICENSE"
-    license_path.write_text("license", encoding="utf-8")
-    monkeypatch.setattr(doctor_cli, "chromium_license_path", lambda: license_path)
-    monkeypatch.setattr(doctor_cli, "verify_chromium_runtime", lambda: (True, "verified"))
+    monkeypatch.setattr(doctor_cli, "verify_gstack_runtime", lambda: (True, "verified"))
 
     ok, details = doctor_cli._check_browser_runtime()
 
     assert ok is True
     assert details["browser_downloaded"] is True
     assert details["browser_path_present"] is True
+    assert details["provider"] == "gstack"
     assert "executable_path" not in details
 
 
-def test_doctor_browser_runtime_reports_driver_drift(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(doctor_cli.importlib.util, "find_spec", lambda name: object())
-    monkeypatch.setattr(doctor_cli, "playwright_driver_version", lambda: "1.59.0")
-    monkeypatch.setattr(doctor_cli, "chromium_executable_path", lambda **_kwargs: None)
-    monkeypatch.setattr(doctor_cli, "chromium_license_path", lambda: Path("/missing/license"))
-    monkeypatch.setattr(doctor_cli, "verify_chromium_runtime", lambda: (False, "bundle missing"))
-
-    ok, details = doctor_cli._check_browser_runtime()
-
-    assert ok is False
-    assert details["driver_compatible"] is False
-    assert "1.60.0" in str(details["repair"])
-
-
-def test_doctor_browser_runtime_rejects_wrong_version_or_arch(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(doctor_cli.importlib.util, "find_spec", lambda name: object())
-    monkeypatch.setattr(doctor_cli, "playwright_driver_version", lambda: "1.60.0")
+def test_doctor_browser_runtime_reports_missing_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(doctor_cli, "gstack_executable_path", lambda **_kwargs: None)
     monkeypatch.setattr(
         doctor_cli,
-        "chromium_executable_path",
-        lambda **_kwargs: Path("/private/stackos/Chromium.app/Contents/MacOS/Chromium"),
-    )
-    license_path = tmp_path / "CHROMIUM-LICENSE"
-    license_path.write_text("license", encoding="utf-8")
-    monkeypatch.setattr(doctor_cli, "chromium_license_path", lambda: license_path)
-    monkeypatch.setattr(
-        doctor_cli,
-        "verify_chromium_runtime",
-        lambda: (False, "Chromium bundle version does not match StackOS's pinned runtime."),
+        "verify_gstack_runtime",
+        lambda: (False, "gstack bundle missing"),
     )
 
     ok, details = doctor_cli._check_browser_runtime()
 
     assert ok is False
-    assert details["driver_compatible"] is True
-    assert details["browser_path_present"] is True
+    assert details["browser_path_present"] is False
     assert details["browser_downloaded"] is False
-    assert "version does not match" in str(details["repair"])
+    assert "gstack bundle missing" in str(details["repair"])
     assert "/private" not in str(details)
 
 
@@ -926,7 +1116,7 @@ def test_cli_install_default_installs_plugin_and_skill_mirrors(
 ) -> None:
     monkeypatch.setattr(
         installer,
-        "ensure_chromium_runtime",
+        "ensure_gstack_runtime",
         lambda **_kwargs: (True, "browser ok"),
     )
     monkeypatch.setattr(
@@ -948,13 +1138,229 @@ def test_cli_install_default_installs_plugin_and_skill_mirrors(
     assert current_alembic_version(Settings()) == HEAD_REVISION
 
 
+def test_browser_launcher_installs_managed_context_and_repairs_owned_entry(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "payload with spaces" / "stackos.browser"
+    target.parent.mkdir(parents=True)
+    target.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    target.chmod(0o755)
+    monkeypatch.setattr(installer, "_browser_launcher_command", lambda: [str(target)])
+    monkeypatch.setenv("STACKOS_HOST", "localhost")
+    monkeypatch.setenv("STACKOS_PORT", "5199")
+    monkeypatch.setenv("STACKOS_DATA_DIR", str(sandbox / "custom data"))
+    monkeypatch.setenv("STACKOS_STATE_DIR", str(sandbox / "custom state"))
+
+    ok, message = installer.ensure_browser_launcher(settings=Settings(), home=sandbox)
+
+    launcher = sandbox / ".local" / "bin" / "stackos.browser"
+    assert ok is True, message
+    assert launcher.stat().st_mode & 0o777 == 0o755
+    content = launcher.read_text(encoding="utf-8")
+    assert content.startswith("#!/bin/sh\n# StackOS managed browser launcher v1\n")
+    assert "export STACKOS_HOST=localhost" in content
+    assert "export STACKOS_PORT=5199" in content
+    assert f"export STACKOS_DATA_DIR='{sandbox / 'custom data'}'" in content
+    assert f"export STACKOS_STATE_DIR='{sandbox / 'custom state'}'" in content
+    assert f"exec '{target}' \"$@\"" in content
+
+    replacement = tmp_path / "moved payload" / "stackos.browser"
+    replacement.parent.mkdir(parents=True)
+    replacement.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    replacement.chmod(0o755)
+    monkeypatch.setattr(installer, "_browser_launcher_command", lambda: [str(replacement)])
+
+    repaired, repaired_message = installer.ensure_browser_launcher(
+        settings=Settings(), home=sandbox
+    )
+
+    assert repaired is True, repaired_message
+    assert str(replacement) in launcher.read_text(encoding="utf-8")
+    assert str(target) not in launcher.read_text(encoding="utf-8")
+
+
+def test_browser_launcher_preserves_foreign_entry_and_uninstall_only_removes_managed(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    launcher = sandbox / ".local" / "bin" / "stackos.browser"
+    launcher.parent.mkdir(parents=True)
+    foreign = "#!/bin/sh\necho user-owned\n"
+    launcher.write_text(foreign, encoding="utf-8")
+    launcher.chmod(0o755)
+
+    ok, message = installer.ensure_browser_launcher(settings=Settings(), home=sandbox)
+
+    assert ok is False
+    assert "unmanaged" in message
+    assert launcher.read_text(encoding="utf-8") == foreign
+
+    removed, removal_message = installer.remove_browser_launcher(home=sandbox)
+
+    assert removed is True, removal_message
+    assert launcher.read_text(encoding="utf-8") == foreign
+
+
+def test_make_uninstall_uses_managed_browser_launcher_removal() -> None:
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+
+    assert "Removing managed global browser launcher" in makefile
+    assert "from stackos.install import remove_browser_launcher" in makefile
+
+
+def test_browser_launcher_preserves_foreign_symlink(
+    sandbox: Path,
+) -> None:
+    target = sandbox / "user-browser-launcher"
+    target.write_text("#!/bin/sh\necho user-owned\n", encoding="utf-8")
+    target.chmod(0o755)
+    launcher = sandbox / ".local" / "bin" / "stackos.browser"
+    launcher.parent.mkdir(parents=True)
+    launcher.symlink_to(target)
+
+    ok, message = installer.ensure_browser_launcher(settings=Settings(), home=sandbox)
+    removed, removal_message = installer.remove_browser_launcher(home=sandbox)
+
+    assert ok is False
+    assert "unmanaged" in message
+    assert launcher.is_symlink()
+    assert removed is True, removal_message
+    assert launcher.is_symlink()
+
+
+def test_browser_launcher_shell_shim_forwards_exact_native_tail_and_context(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "native browser"
+    target.write_text(
+        "#!/bin/sh\n"
+        "printf 'host=<%s>\\n' \"$STACKOS_HOST\"\n"
+        "printf 'port=<%s>\\n' \"$STACKOS_PORT\"\n"
+        "printf 'data=<%s>\\n' \"$STACKOS_DATA_DIR\"\n"
+        "printf 'state=<%s>\\n' \"$STACKOS_STATE_DIR\"\n"
+        'for arg in "$@"; do printf \'arg=<%s>\\n\' "$arg"; done\n',
+        encoding="utf-8",
+    )
+    target.chmod(0o755)
+    monkeypatch.setattr(installer, "_browser_launcher_command", lambda: [str(target)])
+    monkeypatch.setenv("STACKOS_HOST", "localhost")
+    monkeypatch.setenv("STACKOS_PORT", "5199")
+    monkeypatch.setenv("STACKOS_DATA_DIR", str(sandbox / "data with spaces"))
+    monkeypatch.setenv("STACKOS_STATE_DIR", str(sandbox / "state with spaces"))
+    ok, message = installer.ensure_browser_launcher(settings=Settings(), home=sandbox)
+    assert ok is True, message
+
+    result = subprocess.run(
+        [
+            str(sandbox / ".local" / "bin" / "stackos.browser"),
+            "--session",
+            "browser-session:project-1:profile:session",
+            "chain",
+            '{"key":"value with spaces"}',
+            "",
+            "--",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert result.stderr == ""
+    assert result.stdout.splitlines() == [
+        "host=<localhost>",
+        "port=<5199>",
+        f"data=<{sandbox / 'data with spaces'}>",
+        f"state=<{sandbox / 'state with spaces'}>",
+        "arg=<--session>",
+        "arg=<browser-session:project-1:profile:session>",
+        "arg=<chain>",
+        'arg=<{"key":"value with spaces"}>',
+        "arg=<>",
+        "arg=<-->",
+    ]
+
+
+def test_nonpackaged_browser_launcher_ignores_hostile_current_directory(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("STACKOS_PACKAGED_CLI", raising=False)
+    hostile_package = tmp_path / "hostile-cwd" / "stackos"
+    hostile_package.mkdir(parents=True)
+    (hostile_package / "__init__.py").write_text("", encoding="utf-8")
+    (hostile_package / "browser_cli.py").write_text(
+        "import sys\nprint('HOSTILE_MODULE_LOADED')\nsys.exit(0)\n",
+        encoding="utf-8",
+    )
+
+    ok, message = installer.ensure_browser_launcher(settings=Settings(), home=sandbox)
+    assert ok is True, message
+
+    result = subprocess.run(
+        [str(sandbox / ".local" / "bin" / "stackos.browser"), "--help"],
+        cwd=hostile_package.parent,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "Usage: stackos.browser --session <full-session-ref>" in result.stderr
+    assert "HOSTILE_MODULE_LOADED" not in result.stdout
+
+
+def test_cli_install_fails_closed_when_browser_launcher_path_is_foreign(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(installer, "ensure_gstack_runtime", lambda **_kwargs: (True, "browser ok"))
+    monkeypatch.setattr(installer, "repair_mcp_hosts", lambda home: (True, ["mcp ok"]))
+    monkeypatch.setattr(installer, "copy_skills", lambda runtime, home: (home / runtime, 1))
+    monkeypatch.setattr(
+        installer,
+        "copy_plugins",
+        lambda home: (home / ".codex/plugins/stackos", 1),
+    )
+    monkeypatch.setattr(installer, "register_plugin_marketplace", lambda home: "marketplace ok")
+    launcher = sandbox / ".local" / "bin" / "stackos.browser"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("#!/bin/sh\necho user-owned\n", encoding="utf-8")
+    launcher.chmod(0o755)
+
+    result = CliRunner().invoke(app, ["install", "--skip-doctor"], catch_exceptions=False)
+
+    assert result.exit_code == 1
+    assert "browser launcher" in result.output.lower()
+    assert launcher.read_text(encoding="utf-8") == "#!/bin/sh\necho user-owned\n"
+
+
+def test_doctor_browser_launcher_reports_unmanaged_entry(
+    sandbox: Path,
+) -> None:
+    launcher = sandbox / ".local" / "bin" / "stackos.browser"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("#!/bin/sh\necho user-owned\n", encoding="utf-8")
+
+    ok, details = doctor_cli._check_browser_launcher(sandbox, Settings())
+
+    assert ok is False
+    assert details["status"] == "unmanaged"
+    assert "repair" in details
+
+
 def test_cli_install_preserves_seed_and_token_on_rerun(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         installer,
-        "ensure_chromium_runtime",
+        "ensure_gstack_runtime",
         lambda **_kwargs: (True, "browser ok"),
     )
     monkeypatch.setattr(
@@ -1332,7 +1738,7 @@ def test_cli_install_tolerates_daemon_down_doctor(
 ) -> None:
     monkeypatch.setattr(
         installer,
-        "ensure_chromium_runtime",
+        "ensure_gstack_runtime",
         lambda **_kwargs: (True, "browser ok"),
     )
     monkeypatch.setattr(
@@ -1360,7 +1766,7 @@ def test_cli_install_preserves_blocking_doctor_failures(
 ) -> None:
     monkeypatch.setattr(
         installer,
-        "ensure_chromium_runtime",
+        "ensure_gstack_runtime",
         lambda **_kwargs: (True, "browser ok"),
     )
     monkeypatch.setattr(
@@ -1407,7 +1813,7 @@ def test_cli_install_launchd_force_overwrites_plist(
     monkeypatch.setattr(installer, "detect_mode", lambda: "package")
     monkeypatch.setattr(
         installer,
-        "ensure_chromium_runtime",
+        "ensure_gstack_runtime",
         lambda **_kwargs: (True, "browser ok"),
     )
     monkeypatch.setattr(installer, "copy_skills", lambda runtime, home: (home / runtime, 1))
@@ -1839,6 +2245,11 @@ def test_doctor_plain_output_reports_claude_absent_without_blocking(
     monkeypatch.setattr(doctor_cli, "_check_browser_runtime", lambda: (True, {"repair": None}))
     monkeypatch.setattr(
         doctor_cli,
+        "_check_browser_launcher",
+        lambda home, settings: (True, {"status": "current", "repair": None}),
+    )
+    monkeypatch.setattr(
+        doctor_cli,
         "_check_installed_assets",
         lambda home: (
             {
@@ -1950,6 +2361,11 @@ def test_doctor_exits_9_for_stale_claude_registration(
     )
     monkeypatch.setattr(doctor_cli, "_check_scheduler_jobs", lambda settings: (True, 4))
     monkeypatch.setattr(doctor_cli, "_check_browser_runtime", lambda: (True, {"repair": None}))
+    monkeypatch.setattr(
+        doctor_cli,
+        "_check_browser_launcher",
+        lambda home, settings: (True, {"status": "current", "repair": None}),
+    )
     monkeypatch.setattr(
         doctor_cli,
         "_check_installed_assets",

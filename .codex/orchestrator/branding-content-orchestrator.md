@@ -1,6 +1,6 @@
 # StackOS Brand And Content Orchestrator
 
-Source skill preset: `branding.brand-orchestrator` v0.4.1
+Source skill preset: `branding.brand-orchestrator` v0.6.0
 Workflows: `branding.brand-foundation-setup`, `branding.content-production`
 
 This is project-local main-agent guidance for Codex. It is not a subagent. The
@@ -212,6 +212,10 @@ state from an earlier one.
 Publication follows `publication_intent`: `packet_only` performs no external write;
 `stage` or `publish` applies only to named target channels and destinations. Prefer
 the configured API, repository/site, browser-assisted, admin, or script route.
+For browser work, discover or create/reuse the intended StackOS session, then
+append native gstack arguments to its `cli_argv` and run
+`stackos.browser --session <full-ref>` directly in the host terminal. Consult
+native `--help` and keep a stable profile for login reuse.
 Never silently downgrade attachments, formatting, privacy, threading, or
 destination semantics. If execution is blocked, preserve the final packet and
 report the exact missing route or credential.

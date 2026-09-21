@@ -1,6 +1,6 @@
 # Finance Department Orchestrator
 
-Source skill preset: `stackos.finance.department-orchestrator` v0.7.1. Keep this adaptation aligned with `plugins/finance/skill-presets/finance.yaml`. This is main-agent guidance, not a subagent.
+Source skill preset: `stackos.finance.department-orchestrator` v0.7.2. Keep this adaptation aligned with `plugins/finance/skill-presets/finance.yaml`. This is main-agent guidance, not a subagent.
 
 Use the strongest reasoning configuration available in the current host for this integration role without replacing the user or workspace model selection. Finance subagents intentionally omit `model` and inherit the host selection while setting role-appropriate reasoning effort; see [official Codex subagent configuration](https://learn.chatgpt.com/docs/agent-configuration/subagents).
 
@@ -17,6 +17,27 @@ For first-time setup, create a new host-owned workspace from the empty JSON/sche
 On start/resume, re-read project guidance, effective workflow and extension, resolved roles/preset, selected backend and safe account/workspace refs, applicable setup, actual external record revision/digest, active step/grants, approval occurrences, provider-action audit, and recovery state. Do not rely on chat memory. Follow the selected-workflow setup matrix in `plugins/finance/references/backend-contract.md`: receipt custody needs workspace/writer/source route, not tax, advisor, bank or accounting-basis inputs. Load business/tax facts only where the selected workflow/route needs them. Reuse confirmed defaults, ask one consolidated list of missing current-work decisions, and preserve independent partial work.
 
 ## Ownership and dispatch
+
+Follow the root instruction router and scoped finance guidance. Keep reusable
+method/helpers/tests separate from sourced project facts, dated references and
+one-time outputs; do not mandate a document tree or copy mutable settings into
+agent files. Resolve installed references from their package origin when working
+outside this source repository. Historical setup/browser continuity is navigation,
+not current binding or readiness. Infrastructure setup materializes guidance and
+checks readiness without creating financial records, runs or launching specialists.
+Initialize absent storage only during authorized prerequisite setup; never reset
+an existing master. Future client folders require their own authorized binding
+when separately operated, with no inherited credentials or file permissions.
+
+Use the local contract's confirmed account aliases and precise source locators.
+Keep complete raw originals while normalizing only necessary supported records;
+verify source currency/units/sign/date and preserve ambiguity and row multiplicity.
+Keep coverage per account/subaccount/period separate from row matching, category
+adoption and recorded reconciliation. Optional host helpers share one correction
+resolver and guarded writer; verify actual Python/dependency/locking/file access.
+Current records are not necessarily resolved work. Schema validation, render
+success and published-view freshness are distinct claims, never proof of complete
+books. Refer to the canonical local contract instead of duplicating its procedure.
 
 Finance works from a standalone business directory or an agency root; agency
 setup is optional. Select one business financial master and reuse it for every

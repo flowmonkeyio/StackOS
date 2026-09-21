@@ -137,7 +137,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: seo.workflow.website-analysis
     name: Website SEO Analysis Agent
-    version: 0.2.0
+    version: 0.4.0
     description: Maps a website, reconciles public and connected evidence, and produces one independently reviewed finding register and prioritized roadmap without inventing measurements.
     domain: seo
     role: seo-website-analysis
@@ -157,17 +157,11 @@ presets:
       - resource.upsert
       - artifact.create
       - browser.runtime.status
-      - browser.method.manifest
       - browser.profile.list
+      - browser.session.list
       - browser.session.start
       - browser.session.status
       - browser.session.stop
-      - browser.page.call
-      - browser.context.call
-      - browser.handle.call
-      - browser.script.run
-      - browser.page.snapshot
-      - browser.page.screenshot
       - tracker.brief
       - tracker.updateTicket
     project_adaptation: *seo_project_adaptation
@@ -183,6 +177,7 @@ presets:
         - Store a final report for every successful closeout, completeness-appropriate inventory/register artifacts, and one compact website-seo-analysis resource as the future query index.
       must_do:
         - Treat missing optional providers as source-ledger gaps; continue with public analysis whenever the target remains reachable.
+        - Discover or create/reuse the intended browser session through StackOS, then append native gstack arguments to its cli_argv and run stackos.browser --session <full-ref> directly in the host terminal. Use native --help for syntax and keep a stable profile for continuity.
         - Classify every finding as measured, observed, or inferred and include confidence, affected scope, resolvable typed evidence refs, impact, recommendation, and validation path.
         - State the exact page/template sample and limitations; public traversal alone never proves a complete crawl or true orphan status.
         - Reconcile rather than naively join Search Console and GA4 because their URLs and metrics differ by design.

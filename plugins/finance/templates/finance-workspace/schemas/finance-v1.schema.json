@@ -196,6 +196,27 @@
   ],
   "additionalProperties": false,
   "$defs": {
+    "evidence_path": {
+      "type": "string",
+      "pattern": "^(receipts/|attachments/([A-Za-z][A-Za-z0-9_-]*/)?)[0-9]{4}/(0[1-9]|1[0-2])/[A-Za-z0-9][A-Za-z0-9_-]*(\\.[A-Za-z0-9_-]+)+(?![\\s\\S])",
+      "description": "Workspace-relative generated original path. Existing flat attachments paths remain valid; receipt and one typed evidence directory are optional. Host containment, no-symlink and hash/byte checks are also required. Folder month is documented source/document or capture month, never an inferred transaction date."
+    },
+    "account_identity": {
+      "type": "object",
+      "properties": {
+        "display_name": {"type": "string", "minLength": 1},
+        "purpose": {"type": "string", "minLength": 1},
+        "aliases": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/ref"},
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      },
+      "required": ["display_name", "aliases"],
+      "additionalProperties": false,
+      "description": "Optional source-account identity on an existing sourced operating setting. Only a current confirmed setting with decision evidence establishes exact opaque aliases. Purpose does not classify transactions; coverage and balances remain on sources/reconciliations. No credentials."
+    },
     "ref": {
       "type": "string",
       "minLength": 1
@@ -499,6 +520,9 @@
         {
           "type": "object",
           "properties": {
+            "account_identity": {
+              "$ref": "#/$defs/account_identity"
+            },
             "version": {
               "type": "integer",
               "minimum": 1
@@ -743,8 +767,7 @@
               "minLength": 1
             },
             "relative_path": {
-              "type": "string",
-              "pattern": "^attachments/[0-9]{4}/(0[1-9]|1[0-2])/[A-Za-z0-9][A-Za-z0-9_-]*(\\.[A-Za-z0-9_-]+)+$"
+              "$ref": "#/$defs/evidence_path"
             },
             "quarantine_ref": {
               "$ref": "#/$defs/ref"
