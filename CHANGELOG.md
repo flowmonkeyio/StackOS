@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## 2.1.28 - 2026-09-21
+
+- Replaced browser command wrappers with native gstack sessions and a packaged
+  `stackos.browser` session selector; aligned browser guidance and install wiring.
+- Expanded company-root and standalone finance setup guidance with explicit
+  document ownership, source evidence, account identity, and receipt custody.
+  Optional host-side helpers validate and update the external JSON master and
+  generate derived views; financial records remain outside StackOS.
+- Refreshed the website's public workflow, agent, and integration catalogs.
 
 - Moved AIGNC chat, image, and audio requests onto the existing background
   action ID/polling flow used by FTP and S3. Generation read timeout defaults to

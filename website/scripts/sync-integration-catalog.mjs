@@ -141,6 +141,8 @@ const plugins = []
 for (const entry of catalogPlugins) {
   const plugin = entry.plugin
   const pluginSlug = plugin.slug
+  const entryProviders = requiredArray(entry.providers, `${pluginSlug}.providers`)
+  if (!entryProviders.length) continue
   const presentation = pluginPresentation[pluginSlug]
   if (!presentation) throw new Error(`Missing required public presentation metadata for plugin "${pluginSlug}".`)
   const { color } = presentation
@@ -151,7 +153,7 @@ for (const entry of catalogPlugins) {
   ]))
   const pluginProviders = []
 
-  for (const provider of requiredArray(entry.providers, `${pluginSlug}.providers`)) {
+  for (const provider of entryProviders) {
     const providerCatalogKey = `${pluginSlug}.${provider.key}`
     const logo = providerLogoAssets[providerCatalogKey] ?? null
     if (logo) {

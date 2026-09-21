@@ -24,6 +24,7 @@
   ],
   "must_do": [
     "Treat missing optional providers as source-ledger gaps; continue with public analysis whenever the target remains reachable.",
+    "Discover or create/reuse the intended browser session through StackOS, then append native gstack arguments to its cli_argv and run stackos.browser --session <full-ref> directly in the host terminal. Use native --help for syntax and keep a stable profile for continuity.",
     "Classify every finding as measured, observed, or inferred and include confidence, affected scope, resolvable typed evidence refs, impact, recommendation, and validation path.",
     "State the exact page/template sample and limitations; public traversal alone never proves a complete crawl or true orphan status.",
     "Reconcile rather than naively join Search Console and GA4 because their URLs and metrics differ by design.",

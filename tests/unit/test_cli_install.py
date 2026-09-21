@@ -466,7 +466,7 @@ def test_build_gstack_runtime_prunes_only_unused_dependencies_after_build(
         assert (candidate / "gstack" / item).read_text() == item
     assert (outside / "keep").read_text() == "outside staging"
     assert installer._verify_gstack_runtime_root(candidate)[0] is True
-    assert json.loads((candidate / "manifest.json").read_text())["packaging_revision"] == 1
+    assert json.loads((candidate / "manifest.json").read_text())["packaging_revision"] == 2
 
 
 def test_verify_gstack_runtime_rejects_missing_native_cli_without_repairing(

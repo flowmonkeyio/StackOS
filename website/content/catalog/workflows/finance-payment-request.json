@@ -2,13 +2,13 @@
   "key": "finance.payment-request",
   "slug": "finance-payment-request",
   "name": "Finance Payment Request",
-  "description": "One external payment request linked to a safe Stripe invoice reference, with deterministic mutation recovery and separate owner-approved finalization and send gates.",
+  "description": "One external payment request linked to a safe Stripe invoice reference, with deterministic mutation recovery and separate owner-approved finalization and send gates; an instructed no-send…",
   "domain": "finance",
   "audience": "Solo entrepreneurs issuing a reviewed Stripe invoice from an external payment-request record",
   "color": "#8ea6ff",
   "featured": true,
   "problem": "Sending an invoice is repetitive, but a draft, finalization, customer delivery, recovery, and external records must remain distinguishable.",
-  "outcome": "One external payment request linked to a safe Stripe invoice reference, with deterministic mutation recovery and separate owner-approved finalization and send gates.",
+  "outcome": "One external payment request linked to a safe Stripe invoice reference, with deterministic mutation recovery and separate owner-approved finalization and send gates; an instructed no-send settlement handoff remains distinct from delivery.",
   "whyAi": "An agent can prepare a bounded Stripe invoice from the selected external record while enforcing idempotency, separating draft work from customer delivery, and preserving owner decisions.",
   "operatorPath": [
     "Request an invoice from the external billing record; the agent resolves workspace defaults and prepares the draft.",
@@ -17,9 +17,9 @@
   ],
   "agentPath": [
     "Preflight one external payment request and resolve only safe account-bound Stripe references.",
-    "Create/reconcile a draft customer, invoice, and invoice item with deterministic idempotency keys.",
+    "Discover approved existing catalog choices when needed, then create/reconcile a draft customer, invoice, and invoice item with deterministic idempotency keys.",
     "Use action-level owner approvals for finalize and send; a standing policy is guidance and cannot waive either technical gate.",
-    "Write safe provider/status/proof refs back to the selected external backend and hand open invoices to follow-up work when appropriate."
+    "Write safe provider/status/proof refs back to the selected external backend and hand sent/open invoices or an instructed finalized no-send settlement to follow-up work when appropriate."
   ],
   "progressSignals": [
     "Request scoped",
@@ -35,13 +35,13 @@
   ],
   "safeStoppingPoints": [
     "Stop with a draft/reconciliation recommendation before finalization when approval is not recorded.",
-    "Stop after finalization but before send when the send gate is absent or delivery outcome is uncertain."
+    "Stop after finalization but before send when the send gate is absent, delivery outcome is uncertain, or the external record instructs a separate settlement-only attachment."
   ],
   "handoffs": [
     {
       "workflowKey": "finance.payment-request-followups",
       "relationship": "next",
-      "when": "A safely recorded sent/open invoice is eligible for follow-up policy evaluation."
+      "when": "A safely recorded sent/open invoice is eligible for follow-up policy evaluation, or a finalized invoice has an instructed known-payment settlement-only attachment."
     },
     {
       "workflowKey": "finance.bookkeeping-close",
@@ -97,7 +97,7 @@
     {
       "id": "record-and-handoff",
       "title": "Record External Status And Handoff",
-      "summary": "Record safe Stripe outcome refs in the selected external backend and hand eligible open invoices to follow-up work."
+      "summary": "Record safe Stripe outcome refs in the selected external backend and hand eligible open invoices or instructed no-send settlement work to follow-up."
     }
   ],
   "agentNames": [
