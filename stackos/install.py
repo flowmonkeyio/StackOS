@@ -70,13 +70,15 @@ BUN_ARCHIVE_URL = (
 BUN_ARCHIVE_SHA256 = "672a0a9a7b744d085a1d2219ca907e3e26f5579fca9e783a9510a4f98a36212f"
 GSTACK_PLAYWRIGHT_VERSION = "1.62.1"
 GSTACK_RUNTIME_MANIFEST_SCHEMA = 1
-GSTACK_PACKAGING_REVISION = 1
+GSTACK_PACKAGING_REVISION = 2
 # These pinned dev/test packages and foreign ONNX binaries are not used by
 # gstack's darwin/arm64 runtime. Keep Darwin ONNX, Transformers and sidebar assets.
 _GSTACK_EXCLUDED_DEPENDENCIES = (
     "@anthropic-ai/claude-agent-sdk",
     "@anthropic-ai/claude-agent-sdk-darwin-arm64",
     "@anthropic-ai/sdk",
+    # Bun's SDK command link would otherwise point into the removed package.
+    ".bin/anthropic-ai-sdk",
     "onnxruntime-node/bin/napi-v6/linux",
     "onnxruntime-node/bin/napi-v6/win32",
 )

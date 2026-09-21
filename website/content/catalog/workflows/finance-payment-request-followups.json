@@ -2,24 +2,24 @@
   "key": "finance.payment-request-followups",
   "slug": "finance-payment-request-followups",
   "name": "Finance Payment Request Follow-Ups",
-  "description": "A safe external follow-up or settlement decision record. Every invoice is suppressed, exception-bound, or eligible for one owner-approved Stripe resend; a selected received payment is…",
+  "description": "A safe external follow-up or settlement decision record. Every invoice is suppressed, exception-bound, or eligible for one instructed contact through the selected Stripe resend or SMTP…",
   "domain": "finance",
   "audience": "Solo entrepreneurs reviewing Stripe invoice follow-ups or reconciling a customer payment already received",
   "color": "#8ea6ff",
   "featured": true,
   "problem": "A solo operator needs overdue-payment follow-ups and a safe way to reconcile money already received, but a generic reminder or an unverified paid mark can duplicate a payment or misstate what a customer owes.",
-  "outcome": "A safe external follow-up or settlement decision record. Every invoice is suppressed, exception-bound, or eligible for one owner-approved Stripe resend; a selected received payment is reported/attached or marked paid only with exact evidence, without charging or moving money.",
+  "outcome": "A safe external follow-up or settlement decision record. Every invoice is suppressed, exception-bound, or eligible for one instructed contact through the selected Stripe resend or SMTP email route; settlement never charges, moves money, or contacts the customer.",
   "whyAi": "An agent can re-check bounded provider lifecycle and received-payment evidence against the external record, leaving collection judgment, allocation choices, customer terms, and material settlement approval with the operator.",
   "operatorPath": [
     "Request a collections check for a review window, or report that a customer wired or otherwise paid money directly; the agent resolves the selected external scope, invoice mappings, recent contacts and reminder policy.",
     "Review exceptions, active promises, the independently prepared eligible set, or the exact received-payment match/allocation.",
-    "Record an owner approval for the exact resend, PaymentRecord report, payment attachment, or verified full out-of-band settlement action; do not authorize generic autonomous outreach."
+    "Specify the contact route and requested follow-up or use documented settings; existing Stripe approvals still apply to Stripe actions."
   ],
   "agentPath": [
     "Read bounded Stripe invoice and invoice-payment lifecycle evidence plus the selected external follow-up or received-payment state.",
     "For a settlement-only occurrence, match one source and allocation, obtain independent review, then report/attach it or mark the exact verified full remaining balance as paid out of band.",
     "Suppress every paid, voided, disputed, paused, corrected, active-promise, mismatch, or unresolved received-payment case before any send action.",
-    "Have the control reviewer challenge the eligibility/suppression or settlement decision, then call only the separately owner-gated permitted action.",
+    "Have the control reviewer challenge the eligibility/suppression or settlement decision, then use the selected action's grant and existing authority; Stripe mutations retain their owner gates.",
     "Write safe outcome and recovery refs to the selected external backend."
   ],
   "progressSignals": [
@@ -32,11 +32,11 @@
   ],
   "recovery": [
     "If invoice lifecycle or promise state is incomplete, suppress by default and record an external exception.",
-    "If a resend outcome is unknown, retrieve the same invoice and reconcile it; do not use generic communication delivery or a new send path.",
+    "Reconcile unknown or partial contact outcomes through the selected transport's audit and retained evidence; an open invoice does not resolve SMTP acceptance. Do not switch routes or blindly retry.",
     "If a PaymentRecord report, payment attachment, or paid-out-of-band mark is unknown, re-read the known provider object and selected external record before any retry; never create a new source identity or idempotency key to bypass uncertainty."
   ],
   "safeStoppingPoints": [
-    "Stop after suppression/eligibility review when no owner resend approval is recorded.",
+    "Stop contact when the selected route is unavailable or the instruction/settings are ambiguous; existing Stripe action approvals remain required.",
     "Stop after settlement preparation or review when no matching owner settlement approval is recorded.",
     "Stop with a safe recovery ref when delivery or settlement outcome is uncertain."
   ],
@@ -56,11 +56,11 @@
   "prerequisites": [
     "A selected workspace and review window; resolve follow-up rules/history/reminder ownership for followup-only, or the received-payment source/allocation for settlement-only",
     "Restricted Stripe invoice/payment read access",
-    "A separately recorded owner approval for any Stripe invoice resend, PaymentRecord report, payment attachment, or full paid-out-of-band mark"
+    "An operator instruction or documented follow-up settings selecting the route; SMTP credentials when smtp-email is selected, and existing Stripe approval gates for Stripe mutations"
   ],
   "proof": [
     "Safe invoice/payment/external-follow-up refs and suppression, settlement, or eligibility state",
-    "Control-reviewer, owner approval, source/allocation, and external-record version refs",
+    "Control-reviewer, applicable Stripe owner approval, source/allocation, and external-record version refs",
     "Action-call and external-write proof refs for any approved settlement or resend"
   ],
   "whenToUse": [
@@ -76,7 +76,7 @@
     {
       "id": "read-invoice-lifecycle",
       "title": "Read Bounded Invoice Lifecycle",
-      "summary": "Retrieve only safe Stripe invoice/payment evidence needed to evaluate the external scope."
+      "summary": "Retrieve bounded Stripe lifecycle evidence and, only when selected, retain customer reply evidence externally."
     },
     {
       "id": "prepare-settlement",
@@ -101,12 +101,12 @@
     {
       "id": "review-eligible",
       "title": "Independently Review Eligible Set",
-      "summary": "Require the control reviewer to challenge the safe lifecycle/suppression record before an owner chooses an exact resend."
+      "summary": "Review lifecycle/suppression and the requested contact under the selected route's existing authority."
     },
     {
       "id": "resend-approved",
-      "title": "Resend Owner-Approved Invoice",
-      "summary": "Call the exact owner-gated Stripe invoice resend action for an eligible invoice and reconcile its result through invoice reads."
+      "title": "Send Requested Follow-Up",
+      "summary": "Submit the requested contact through its selected action and preserve truthful transport outcome evidence."
     },
     {
       "id": "record-outcome",
@@ -131,6 +131,8 @@
     }
   ],
   "integrations": [
+    "Smtp",
+    "Imap",
     "Stripe"
   ]
 }

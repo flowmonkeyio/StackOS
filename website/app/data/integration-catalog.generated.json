@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-07-27T06:03:02.013Z",
+  "generatedAt": "2026-09-21T20:19:31.225Z",
   "source": "StackOS catalog.list after provider catalog synchronization",
   "counts": {
-    "providers": 57,
+    "providers": 58,
     "plugins": 12,
-    "actions": 711,
+    "actions": 721,
     "trackboothActions": 337
   },
   "plugins": [
@@ -37,7 +37,7 @@
       "description": "Connect conversations, inboxes, files, and notifications across chat and email tools.",
       "color": "#7ee2ad",
       "providerCount": 5,
-      "actionCount": 28,
+      "actionCount": 30,
       "capabilityCount": 4,
       "providerSlugs": [
         "imap",
@@ -60,7 +60,7 @@
       "description": "Handle invoicing and payment evidence through Stripe, with financial records kept in your chosen system.",
       "color": "#635bff",
       "providerCount": 1,
-      "actionCount": 26,
+      "actionCount": 30,
       "capabilityCount": 2,
       "providerSlugs": [
         "stripe"
@@ -234,10 +234,11 @@
       "name": "Utilities",
       "description": "Reusable research, media generation, data, and productivity tools for any workflow.",
       "color": "#9aa7bd",
-      "providerCount": 18,
-      "actionCount": 48,
+      "providerCount": 19,
+      "actionCount": 52,
       "capabilityCount": 8,
       "providerSlugs": [
+        "aignc",
         "alibaba-wan",
         "aws-s3",
         "byteplus-ark",
@@ -258,6 +259,7 @@
         "xai-imagine"
       ],
       "providerNames": [
+        "AIGNC",
         "Alibaba Wan",
         "Amazon S3",
         "BytePlus ModelArk",
@@ -348,6 +350,66 @@
       "primaryUrl": "https://ahrefs.com/",
       "docsUrl": "https://docs.ahrefs.com/",
       "setupNote": "Confirm the Ahrefs plan has Direct API access/API units, then create or copy the API key and store it in StackOS. StackOS checks subscription usage before costed Ahrefs row calls."
+    },
+    {
+      "key": "utils.aignc",
+      "slug": "aignc",
+      "providerKey": "aignc",
+      "name": "AIGNC",
+      "description": "Explicit model discovery, text, image, and audio requests through the AIGNC API gateway.",
+      "authType": "api-key",
+      "pluginSlug": "utils",
+      "pluginName": "Utilities",
+      "pluginDescription": "Reusable research, media generation, data, and productivity tools for any workflow.",
+      "color": "#9aa7bd",
+      "logo": null,
+      "actionCount": 4,
+      "capabilities": [
+        "Image Generation",
+        "Model Access"
+      ],
+      "actions": [
+        {
+          "key": "utils.aignc.audio.analyze",
+          "name": "Analyze AIGNC Audio",
+          "description": "Analyze a project-scoped managed audio artifact using the explicit instruction and selected model. The daemon resolves and encodes the audio artifact for this request. Returns an action-call ID for polling while the provider works.",
+          "keywords": "Analyze a project-scoped managed audio artifact using the explicit instruction and selected model. The daemon resolves and encodes the audio artifact for this request. Returns an action-call ID for polling while the provider works.",
+          "capability": "model-access",
+          "capabilityName": "Model Access",
+          "risk": "cost"
+        },
+        {
+          "key": "utils.aignc.chat.complete",
+          "name": "Complete AIGNC Chat",
+          "description": "Make one nonstreaming text request using the agent-selected model and messages, with optional explicit Google search on Gemini models. Returns an action-call ID for polling while the provider works.",
+          "keywords": "Make one nonstreaming text request using the agent-selected model and messages, with optional explicit Google search on Gemini models. Returns an action-call ID for polling while the provider works.",
+          "capability": "model-access",
+          "capabilityName": "Model Access",
+          "risk": "cost"
+        },
+        {
+          "key": "utils.aignc.image.generate",
+          "name": "Generate AIGNC Image",
+          "description": "Make one text-to-image request and persist the returned JPEG as an artifact. Returns an action-call ID for polling while the provider works.",
+          "keywords": "Make one text-to-image request and persist the returned JPEG as an artifact. Returns an action-call ID for polling while the provider works.",
+          "capability": "image-generation",
+          "capabilityName": "Image Generation",
+          "risk": "cost"
+        },
+        {
+          "key": "utils.aignc.models.list",
+          "name": "List AIGNC Models",
+          "description": "Read the current AIGNC model IDs. Discovery does not enable unreviewed model capabilities or select a model.",
+          "keywords": "Read the current AIGNC model IDs. Discovery does not enable unreviewed model capabilities or select a model.",
+          "capability": "model-access",
+          "capabilityName": "Model Access",
+          "risk": "read"
+        }
+      ],
+      "links": [],
+      "primaryUrl": null,
+      "docsUrl": null,
+      "setupNote": "Obtain an API key and account instructions from the AIGNC supplier, then connect provider aignc in StackOS. The supplied service address is not a verified signup, console, or public documentation page."
     },
     {
       "key": "utils.alibaba-wan",
@@ -1596,8 +1658,8 @@
         {
           "key": "media-buying.google.report.search",
           "name": "Search Google Ads Report",
-          "description": "Run a bounded Google Ads reporting search from explicit GAQL or query parts and paging controls.",
-          "keywords": "Run a bounded Google Ads reporting search from explicit GAQL or query parts and paging controls.",
+          "description": "Run one Google Ads GAQL search page. Read body.next_page_cursor from the response file and pass it as page_cursor with the same customer_ref and query to continue; no cursor means the final page.",
+          "keywords": "Run one Google Ads GAQL search page. Read body.next_page_cursor from the response file and pass it as page_cursor with the same customer_ref and query to continue; no cursor means the final page.",
           "capability": "media-measurement",
           "capabilityName": "Media Measurement",
           "risk": "read"
@@ -2926,7 +2988,7 @@
       "slug": "imap",
       "providerKey": "imap",
       "name": "IMAP",
-      "description": "IMAP provider for mailbox listing, search, fetch, and message flag lifecycle.",
+      "description": "IMAP provider for mailbox listing, search, metadata fetch, bounded evidence staging, and message flag lifecycle.",
       "authType": "imap-password",
       "pluginSlug": "communications",
       "pluginName": "Communications",
@@ -2936,16 +2998,34 @@
         "src": "/images/integrations/imap.svg",
         "kind": "wordmark-dark"
       },
-      "actionCount": 5,
+      "actionCount": 7,
       "capabilities": [
         "Email Inbox"
       ],
       "actions": [
         {
+          "key": "communications.imap.message.export.cleanup",
+          "name": "Clean Up IMAP Evidence Export",
+          "description": "Delete one completed IMAP evidence staging transfer by its opaque transfer id only.",
+          "keywords": "Delete one completed IMAP evidence staging transfer by its opaque transfer id only.",
+          "capability": "email-inbox",
+          "capabilityName": "Email Inbox",
+          "risk": "write"
+        },
+        {
+          "key": "communications.imap.message.export",
+          "name": "Export IMAP Message Evidence",
+          "description": "Stage one exact IMAP RFC822 message and bounded attachments for a host-owned evidence backend without acknowledging the message.",
+          "keywords": "Stage one exact IMAP RFC822 message and bounded attachments for a host-owned evidence backend without acknowledging the message.",
+          "capability": "email-inbox",
+          "capabilityName": "Email Inbox",
+          "risk": "write"
+        },
+        {
           "key": "communications.imap.message.fetch",
           "name": "Fetch IMAP Message",
-          "description": "Fetch selected fields for one IMAP message by UID and mailbox reference.",
-          "keywords": "Fetch selected fields for one IMAP message by UID and mailbox reference.",
+          "description": "Fetch selected parsed fields from a bounded MIME prefix by UID. Inspect content_completeness for byte and field truncation; use imap.message.export for complete original MIME and attachment evidence.",
+          "keywords": "Fetch selected parsed fields from a bounded MIME prefix by UID. Inspect content_completeness for byte and field truncation; use imap.message.export for complete original MIME and attachment evidence.",
           "capability": "email-inbox",
           "capabilityName": "Email Inbox",
           "risk": "read"
@@ -2980,8 +3060,8 @@
         {
           "key": "communications.imap.messages.search",
           "name": "Search IMAP Messages",
-          "description": "Search a bounded IMAP mailbox by safe mailbox reference and provider-valid criteria.",
-          "keywords": "Search a bounded IMAP mailbox by safe mailbox reference and provider-valid criteria.",
+          "description": "Search one bounded UID page and report matched_count, has_more and next_after_uid. Continue with unchanged mailbox and criteria plus after_uid and the returned UIDVALIDITY as expected_uidvalidity.",
+          "keywords": "Search one bounded UID page and report matched_count, has_more and next_after_uid. Continue with unchanged mailbox and criteria plus after_uid and the returned UIDVALIDITY as expected_uidvalidity.",
           "capability": "email-inbox",
           "capabilityName": "Email Inbox",
           "risk": "read"
@@ -5219,8 +5299,8 @@
         {
           "key": "communications.slack-bot.conversation.history",
           "name": "Inspect Slack Conversation History",
-          "description": "Fetch bounded recent Slack conversation messages so agents can resolve provider message refs for follow-up actions.",
-          "keywords": "Fetch bounded recent Slack conversation messages so agents can resolve provider message refs for follow-up actions.",
+          "description": "Fetch one Slack history page with message refs and previews; explicitly request full selected message content with include_content. This does not fetch thread replies or file bytes.",
+          "keywords": "Fetch one Slack history page with message refs and previews; explicitly request full selected message content with include_content. This does not fetch thread replies or file bytes.",
           "capability": "messaging",
           "capabilityName": "Messaging",
           "risk": "read"
@@ -5358,7 +5438,7 @@
         "src": "/images/integrations/stripe-icon.jpeg",
         "kind": "icon"
       },
-      "actionCount": 26,
+      "actionCount": 30,
       "capabilities": [
         "Stripe invoicing",
         "Stripe payment lifecycle evidence"
@@ -5394,8 +5474,8 @@
         {
           "key": "finance.stripe.invoice-items.create",
           "name": "Create Stripe Invoice Item",
-          "description": "Add one explicit positive-amount line item to an explicit Stripe customer and draft invoice.",
-          "keywords": "Add one explicit positive-amount line item to an explicit Stripe customer and draft invoice.",
+          "description": "Add one explicit draft line using either a positive manual amount or an existing account-bound Stripe price and explicit quantity.",
+          "keywords": "Add one explicit draft line using either a positive manual amount or an existing account-bound Stripe price and explicit quantity.",
           "capability": "stripe-invoicing",
           "capabilityName": "Stripe invoicing",
           "risk": "write"
@@ -5479,6 +5559,24 @@
           "keywords": "Temporarily unavailable in StackOS while the documented Stripe PaymentRecord listing endpoint availability mismatch is resolved. Inspect retained action audit/response files and retrieve a known PaymentRecord ref; if the ref is missing, hold for owner/provider recovery and never create a replacement report.",
           "capability": "stripe-reconciliation",
           "capabilityName": "Stripe payment lifecycle evidence",
+          "risk": "read"
+        },
+        {
+          "key": "finance.stripe.prices.list",
+          "name": "List Stripe Prices",
+          "description": "Read one bounded catalog page preserving price type, currency and pricing structure; optionally include nickname and lookup key.",
+          "keywords": "Read one bounded catalog page preserving price type, currency and pricing structure; optionally include nickname and lookup key.",
+          "capability": "stripe-invoicing",
+          "capabilityName": "Stripe invoicing",
+          "risk": "read"
+        },
+        {
+          "key": "finance.stripe.products.list",
+          "name": "List Stripe Products",
+          "description": "Read one bounded catalog page with safe product and default-price references; optionally include product name, description, and unit label.",
+          "keywords": "Read one bounded catalog page with safe product and default-price references; optionally include product name, description, and unit label.",
+          "capability": "stripe-invoicing",
+          "capabilityName": "Stripe invoicing",
           "risk": "read"
         },
         {
@@ -5581,6 +5679,24 @@
           "risk": "read"
         },
         {
+          "key": "finance.stripe.prices.retrieve",
+          "name": "Retrieve Stripe Price",
+          "description": "Read an account-bound price with fixed tier and currency-option expansions; preserve pricing facts without computing totals.",
+          "keywords": "Read an account-bound price with fixed tier and currency-option expansions; preserve pricing facts without computing totals.",
+          "capability": "stripe-invoicing",
+          "capabilityName": "Stripe invoicing",
+          "risk": "read"
+        },
+        {
+          "key": "finance.stripe.products.retrieve",
+          "name": "Retrieve Stripe Product",
+          "description": "Read one account-bound product and its default-price reference, with optional selected business details.",
+          "keywords": "Read one account-bound product and its default-price reference, with optional selected business details.",
+          "capability": "stripe-invoicing",
+          "capabilityName": "Stripe invoicing",
+          "risk": "read"
+        },
+        {
           "key": "finance.stripe.refunds.retrieve",
           "name": "Retrieve Stripe Refund",
           "description": "Retrieve one previously discovered Stripe refund; this action never creates a refund.",
@@ -5627,7 +5743,7 @@
       ],
       "primaryUrl": "https://stripe.com/",
       "docsUrl": "https://docs.stripe.com/api",
-      "setupNote": "In the Stripe Dashboard, create a restricted API key with only the customer, invoice, invoice item, payment intent, payment record, charge, balance transaction, refund, and balance reads or writes required by your approved workflows. Connect it through StackOS; never share the key with an agent."
+      "setupNote": "In the Stripe Dashboard, create a restricted API key with Product and Price reads for catalog selection and only the customer, invoice, invoice item, payment intent, payment record, charge, balance transaction, refund, and balance reads or writes required by your approved workflows. Connect it through StackOS; never share the key with an agent."
     },
     {
       "key": "media-buying.taboola",

@@ -6,28 +6,28 @@
       "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 updated the homepage source"
     },
     "/library/": {
-      "updatedAt": "2026-07-28",
-      "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 updated the library index source"
+      "updatedAt": "2026-09-13",
+      "evidence": "git:0ff6c04 updated the featured finance workflow and agent catalog copy"
     },
     "/library/articles/": {
       "updatedAt": "2026-07-28",
       "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 updated the article index source"
     },
     "/library/workflows/": {
-      "updatedAt": "2026-07-28",
-      "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 updated the workflow index source"
+      "updatedAt": "2026-09-13",
+      "evidence": "git:0ff6c04 updated the payment-request and follow-up workflow catalog copy"
     },
     "/library/agents/": {
-      "updatedAt": "2026-07-28",
-      "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 updated the agent index source"
+      "updatedAt": "2026-09-13",
+      "evidence": "git:0ff6c04 updated the finance billing and collections agent description"
     },
     "/library/orchestrators/": {
       "updatedAt": "2026-07-28",
       "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 updated the orchestrator index source"
     },
     "/library/integrations/": {
-      "updatedAt": "2026-08-08",
-      "evidence": "website Linear provider/plugin canonical consolidation"
+      "updatedAt": "2026-09-13",
+      "evidence": "git:0ff6c04 added AIGNC and updated Stripe, IMAP, Slack and Google Ads public action contracts"
     }
   },
   "catalogFamilies": {
@@ -36,14 +36,44 @@
         "updatedAt": "2026-07-28",
         "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 materially updated the workflow detail template and catalog"
       },
-      "items": {}
+      "items": {
+        "finance-payment-request": {
+          "updatedAt": "2026-09-13",
+          "evidence": "git:0ff6c04 added existing catalog choices and explicit no-send settlement handoffs to the public workflow contract"
+        },
+        "finance-payment-request-followups": {
+          "updatedAt": "2026-09-13",
+          "evidence": "git:0ff6c04 updated the public Stripe resend and SMTP email follow-up contract"
+        }
+      }
     },
     "agents": {
       "default": {
         "updatedAt": "2026-08-08",
         "evidence": "website shared agent detail title-intent correction"
       },
-      "items": {}
+      "items": {
+        "seo-workflow-website-analysis": {
+          "updatedAt": "2026-09-13",
+          "evidence": "git:f81ae70 added native gstack session selection and host-terminal browser operation to the public agent contract"
+        },
+        "stackos-finance-billing-collections-operator": {
+          "updatedAt": "2026-09-13",
+          "evidence": "git:0ff6c04 updated instructed email follow-ups, existing Price selection and no-send settlement guidance"
+        },
+        "stackos-finance-bookkeeping-preparer": {
+          "updatedAt": "2026-09-21",
+          "evidence": "git:bea3f58 added source locators, original amount/date checks and independent account-period coverage guidance"
+        },
+        "stackos-finance-control-reviewer": {
+          "updatedAt": "2026-09-21",
+          "evidence": "git:bea3f58 added independent original-evidence, correction, coverage and derived-view freshness review"
+        },
+        "stackos-finance-receipt-operator": {
+          "updatedAt": "2026-09-21",
+          "evidence": "git:bea3f58 added original-byte custody, multiple-association reuse and disposed-history guidance"
+        }
+      }
     },
     "orchestrators": {
       "default": {
@@ -58,9 +88,29 @@
         "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 materially updated the provider detail template and catalog"
       },
       "items": {
+        "aignc": {
+          "updatedAt": "2026-09-13",
+          "evidence": "git:0ff6c04 added the AIGNC provider and four public action contracts"
+        },
+        "google-ads": {
+          "updatedAt": "2026-09-13",
+          "evidence": "git:0ff6c04 clarified the public Google Ads report pagination contract"
+        },
+        "imap": {
+          "updatedAt": "2026-09-13",
+          "evidence": "git:0ff6c04 updated bounded IMAP fetch/search guidance and the exported-evidence action catalog"
+        },
         "linear": {
           "updatedAt": "2026-08-08",
           "evidence": "website Linear provider/plugin canonical consolidation"
+        },
+        "slack-bot": {
+          "updatedAt": "2026-09-13",
+          "evidence": "git:0ff6c04 clarified the public Slack history content and thread boundary"
+        },
+        "stripe": {
+          "updatedAt": "2026-09-13",
+          "evidence": "git:0ff6c04 added existing Stripe Product/Price discovery actions and applicable setup guidance"
         }
       }
     },
@@ -69,7 +119,20 @@
         "updatedAt": "2026-07-28",
         "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 materially updated the plugin detail template and catalog"
       },
-      "items": {}
+      "items": {
+        "communications": {
+          "updatedAt": "2026-09-13",
+          "evidence": "git:0ff6c04 updated the public IMAP provider inventory and supported actions"
+        },
+        "finance": {
+          "updatedAt": "2026-09-13",
+          "evidence": "git:0ff6c04 added four existing Stripe Product/Price discovery actions"
+        },
+        "utils": {
+          "updatedAt": "2026-09-13",
+          "evidence": "git:0ff6c04 added the AIGNC provider and supported action inventory"
+        }
+      }
     }
   }
 }
