@@ -179,8 +179,6 @@ export function useIngressEndpointEditor(options: IngressEndpointEditorOptions) 
         'ingressEndpoint.sync',
         {
           project_id: options.projectId.value,
-          apply_provider_webhooks: true,
-          dry_run_provider_webhooks: false,
         },
       )
       lastProviderResults.value = synced.data.provider_results ?? []
@@ -189,7 +187,7 @@ export function useIngressEndpointEditor(options: IngressEndpointEditorOptions) 
     } catch (err) {
       message.value = {
         tone: 'danger',
-        text: formatApiError(err, 'failed to sync webhooks'),
+        text: formatApiError(err, 'failed to refresh provider routes'),
       }
     } finally {
       options.busyAction.value = null

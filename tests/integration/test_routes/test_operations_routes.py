@@ -8,12 +8,12 @@ from fastapi.testclient import TestClient
 from pytest_httpx import HTTPXMock
 from sqlmodel import Session, select
 
-from stackos.actions import ActionRepository
+from stackos.actions.telegram import TelegramActionConnector
 from stackos.config import Settings
-from stackos.db.models import CredentialUsageEvent
-from stackos.repositories.agent_requests import AgentRequestRepository
+from stackos.db.models import Credential, CredentialUsageEvent
 from stackos.repositories.resources import ResourceRepository
 from stackos.repositories.run_plans import RunPlanRepository
+from tests.integration.test_repositories.test_telegram_actions import FakeTelegram
 
 
 def _sitemap_action_plan_json() -> dict:
@@ -143,21 +143,40 @@ def _store_smtp_credential(api: TestClient, project_id: int) -> str:
 
 
 def _store_telegram_credential(api: TestClient, project_id: int) -> str:
+    _install_fake_telegram_connector(api)
     credential = api.post(
-        "/api/v1/auth/accounts/telegram-bot",
+        "/api/v1/auth/accounts/telegram",
         json={
-            "auth_method_key": "bot-token",
+            "auth_method_key": "tdlib-bot-token",
             "display_name": "Support Bot",
             "fields": {
+                "api_id": 12345,
+                "api_hash": "test-telegram-application-hash",
                 "bot_token": "123456:ABC",
-                "webhook_secret_token": "telegram-secret",
-                "api_base_url": "http://127.0.0.1:8081",
+                "proxy_enabled": False,
             },
             "attach_project_id": project_id,
         },
     )
     assert credential.status_code == 201, credential.text
-    return str(credential.json()["data"]["credential_ref"])
+    credential_ref = str(credential.json()["data"]["credential_ref"])
+    engine = api.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        stored = session.exec(
+            select(Credential).where(Credential.credential_ref == credential_ref)
+        ).one()
+        stored.status = "connected"
+        session.add(stored)
+        session.commit()
+    return credential_ref
+
+
+def _install_fake_telegram_connector(api: TestClient) -> FakeTelegram:
+    """Exercise native action shapes without loading an ambient TDLib library."""
+    runtime = FakeTelegram()
+    services = api.app.state.operation_services  # type: ignore[attr-defined]
+    services["action_connectors"].register(TelegramActionConnector(runtime))
+    return runtime
 
 
 def _store_slack_credential(api: TestClient, project_id: int) -> str:
@@ -1047,7 +1066,7 @@ def test_operation_rest_agent_request_vertical_slice(
                 "request_key": "telegram:update:agent-request-slice",
                 "title": "Authorization: Bearer secret",
                 "body_preview": "api_key=hidden",
-                "source_provider": "telegram-bot",
+                "source_provider": "telegram",
                 "source_kind": "telegram-message",
                 "metadata_json": {"access_token": "hidden"},
                 "response_mode": "raw",
@@ -1283,151 +1302,6 @@ def test_operation_rest_idempotency_replay_can_expand_from_ack_to_raw(
     )
 
 
-def test_operation_rest_telegram_profile_setup_to_ingress_slice(
-    api: TestClient,
-    project_id: int,
-) -> None:
-    credential_ref = _store_telegram_credential(api, project_id)
-
-    created = api.post(
-        "/api/v1/operations/communicationProfile.upsert/call",
-        json={
-            "arguments": {
-                "project_id": project_id,
-                "key": "support-bot",
-                "identity": {
-                    "display_name": "Support Bot",
-                    "purpose": "Handle support requests from approved Telegram users.",
-                    "voice": "Concise and calm.",
-                },
-                "agent_guidance": {
-                    "default_instructions": (
-                        "Triage support requests and inspect project context before replying."
-                    ),
-                    "boundaries": (
-                        "Do not change billing, legal, or account state without approval."
-                    ),
-                },
-                "access_policy": {
-                    "dm_mode": "allowlist",
-                    "group_mode": "allowlist",
-                    "user_mode": "allowlist",
-                    "allowed_chat_refs": ["telegram-chat:999"],
-                    "allowed_user_refs": ["telegram-user:555"],
-                },
-                "trigger_policy": {
-                    "dm_trigger": "always",
-                    "group_trigger": "mention_or_command",
-                    "commands": [
-                        {
-                            "command": "/support",
-                            "description": "Handle a support request.",
-                            "guidance": (
-                                "Classify the request, gather relevant context, and return "
-                                "the next safe action."
-                            ),
-                        }
-                    ],
-                    "mention_patterns": ["@support_bot"],
-                    "reply_to_bot_triggers": True,
-                },
-                "visibility_policy": {"store_non_trigger_messages": True},
-                "response_policy": {
-                    "reply_in_same_chat": True,
-                    "origin_required": True,
-                    "reply_to_source_message": True,
-                    "same_thread": True,
-                },
-                "provider_facets": {
-                    "telegram-bot": {
-                        "credential_ref": credential_ref,
-                        "bot_username": "support_bot",
-                        "ingress_mode": "webhook",
-                        "allowed_updates": ["message", "callback_query"],
-                        "reply_to_message_refs": {"telegram-message:999:88": 88},
-                        "thread_refs": {"telegram-thread:999:default": 1},
-                        "direct_messages_topic_refs": {"telegram-dm-topic:999:555": 22},
-                        "allowed_webhook_hosts": ["127.0.0.1"],
-                    }
-                },
-                "response_mode": "raw",
-            }
-        },
-    )
-    assert created.status_code == 200, created.text
-    body = created.json()["data"]
-    assert body["key"] == "support-bot"
-    telegram_facet = body["provider_facets"]["telegram-bot"]
-    assert telegram_facet["credential_ref"] == credential_ref
-    assert telegram_facet["bot_username"] == "support_bot"
-    assert body["identity"]["display_name"] == "Support Bot"
-    assert body["agent_guidance"]["boundaries"].startswith("Do not change")
-    assert body["access_policy"]["allowed_user_refs"] == ["telegram-user:555"]
-    assert telegram_facet["reply_to_message_refs"] == {"telegram-message:999:88": 88}
-    assert telegram_facet["thread_refs"] == {"telegram-thread:999:default": 1}
-    assert telegram_facet["direct_messages_topic_refs"] == {"telegram-dm-topic:999:555": 22}
-    assert "123456:ABC" not in json.dumps(created.json())
-
-    fetched = api.post(
-        "/api/v1/operations/communicationProfile.get/call",
-        json={
-            "arguments": {
-                "project_id": project_id,
-                "key": "support-bot",
-                "response_mode": "raw",
-            }
-        },
-    )
-    assert fetched.status_code == 200, fetched.text
-    assert fetched.json()["key"] == "support-bot"
-    assert fetched.json()["provider_facets"]["telegram-bot"]["reply_to_message_refs"] == {
-        "telegram-message:999:88": 88
-    }
-
-    listed = api.post(
-        "/api/v1/operations/communicationProfile.list/call",
-        json={"arguments": {"project_id": project_id}},
-    )
-    assert listed.status_code == 200, listed.text
-    assert [item["key"] for item in listed.json()["items"]] == ["support-bot"]
-
-    original_auth = api.headers.pop("Authorization", None)
-    try:
-        ingress = api.post(
-            f"/api/v1/ingress/telegram/{project_id}/support-bot",
-            headers={"X-Telegram-Bot-Api-Secret-Token": "telegram-secret"},
-            json={
-                "update_id": 789,
-                "message": {
-                    "message_id": 88,
-                    "date": 1_779_526_000,
-                    "from": {"id": 555, "username": "ada"},
-                    "chat": {"id": 999, "type": "private", "username": "ada"},
-                    "text": "/support check campaign",
-                },
-            },
-        )
-    finally:
-        if original_auth is not None:
-            api.headers["Authorization"] = original_auth
-
-    assert ingress.status_code == 202, ingress.text
-    assert ingress.json()["agent_request_id"] is not None
-
-    engine = api.app.state.engine  # type: ignore[attr-defined]
-    with Session(engine) as session:
-        requests = AgentRequestRepository(session).list(project_id=project_id)
-    assert requests.total_estimate == 1
-    assert requests.items[0].request_key == "telegram-update:support-bot:789"
-    assert requests.items[0].metadata_json["identity"]["display_name"] == "Support Bot"
-    assert (
-        requests.items[0]
-        .metadata_json["agent_guidance"]["default_instructions"]
-        .startswith("Triage support")
-    )
-    assert requests.items[0].metadata_json["matched_command"]["command"] == "/support"
-
-
 def test_operation_rest_communication_setup_rejects_secret_like_fields(
     api: TestClient,
     project_id: int,
@@ -1440,7 +1314,7 @@ def test_operation_rest_communication_setup_rejects_secret_like_fields(
                 "key": "support",
                 "identity": {"display_name": "Support"},
                 "provider_facets": {
-                    "telegram-bot": {
+                    "telegram": {
                         "credential_ref": "cred_support",
                         "webhook_secret_token": "raw-secret",
                     }
@@ -1454,7 +1328,7 @@ def test_operation_rest_communication_setup_rejects_secret_like_fields(
             "arguments": {
                 "project_id": project_id,
                 "key": "operator",
-                "provider_key": "telegram-bot",
+                "provider_key": "telegram",
                 "surface_ref": "telegram-chat:1",
                 "action_input_defaults": {"credential_ref": "cred_safe", "api_key": "bad"},
             }
@@ -1484,7 +1358,6 @@ def test_operation_rest_ingress_endpoint_syncs_provider_routes(
     api: TestClient,
     project_id: int,
 ) -> None:
-    credential_ref = _store_telegram_credential(api, project_id)
     slack_credential_ref = _store_slack_credential(api, project_id)
 
     profile = api.post(
@@ -1504,24 +1377,6 @@ def test_operation_rest_ingress_endpoint_syncs_provider_routes(
         },
     )
     assert profile.status_code == 200, profile.text
-
-    bot = api.post(
-        "/api/v1/operations/communicationProfile.upsert/call",
-        json={
-            "arguments": {
-                "project_id": project_id,
-                "key": "support-bot",
-                "identity": {"display_name": "Support Telegram Bot"},
-                "provider_facets": {"telegram-bot": {"credential_ref": credential_ref}},
-                "access_policy": {
-                    "dm_mode": "all",
-                    "group_mode": "all",
-                    "user_mode": "all",
-                },
-            }
-        },
-    )
-    assert bot.status_code == 200, bot.text
 
     configured = api.post(
         "/api/v1/operations/ingressEndpoint.configure/call",
@@ -1544,7 +1399,6 @@ def test_operation_rest_ingress_endpoint_syncs_provider_routes(
     assert routes.status_code == 200, routes.text
     urls = {route["provider_key"]: route["ingress_url"] for route in routes.json()["routes"]}
     assert urls["slack-bot"].endswith(f"/api/v1/ingress/slack/{project_id}/support")
-    assert urls["telegram-bot"].endswith(f"/api/v1/ingress/telegram/{project_id}/support-bot")
 
     synced = api.post(
         "/api/v1/operations/ingressEndpoint.sync/call",
@@ -1554,7 +1408,6 @@ def test_operation_rest_ingress_endpoint_syncs_provider_routes(
     provider_results = synced.json()["data"]["provider_results"]
     assert {(result["provider_key"], result["status"]) for result in provider_results} == {
         ("slack-bot", "manual_provider_update_required"),
-        ("telegram-bot", "profile_updated"),
     }
 
     fetched_profile = api.post(
@@ -1622,88 +1475,6 @@ def test_operation_rest_ingress_endpoint_syncs_provider_routes(
     assert refreshed_profile.status_code == 200, refreshed_profile.text
     slack_facet = refreshed_profile.json()["provider_facets"]["slack-bot"]
     assert slack_facet["manual_ingress_confirmation"]["ingress_url"] == slack_route["ingress_url"]
-
-    fetched_bot = api.post(
-        "/api/v1/operations/communicationProfile.get/call",
-        json={
-            "arguments": {
-                "project_id": project_id,
-                "key": "support-bot",
-                "response_mode": "raw",
-            }
-        },
-    )
-    assert fetched_bot.status_code == 200, fetched_bot.text
-    telegram_facet = fetched_bot.json()["provider_facets"]["telegram-bot"]
-    assert telegram_facet["ingress_mode"] == "webhook"
-    assert telegram_facet["webhook_base_url"] == "https://stackos.example.com"
-    assert telegram_facet["allowed_webhook_hosts"] == ["stackos.example.com"]
-
-
-def test_operation_rest_ingress_sync_redacts_provider_failure(
-    api: TestClient,
-    project_id: int,
-    monkeypatch,
-) -> None:  # type: ignore[no-untyped-def]
-    credential_ref = _store_telegram_credential(api, project_id)
-
-    bot = api.post(
-        "/api/v1/operations/communicationProfile.upsert/call",
-        json={
-            "arguments": {
-                "project_id": project_id,
-                "key": "support-bot",
-                "identity": {"display_name": "Support Telegram Bot"},
-                "provider_facets": {"telegram-bot": {"credential_ref": credential_ref}},
-                "access_policy": {
-                    "dm_mode": "all",
-                    "group_mode": "all",
-                    "user_mode": "all",
-                },
-            }
-        },
-    )
-    assert bot.status_code == 200, bot.text
-
-    configured = api.post(
-        "/api/v1/operations/ingressEndpoint.configure/call",
-        json={
-            "arguments": {
-                "project_id": project_id,
-                "driver": "public-url",
-                "public_base_url": "https://stackos.example.com",
-                "response_mode": "raw",
-            }
-        },
-    )
-    assert configured.status_code == 200, configured.text
-
-    async def fail_execute(self, **_kwargs: object) -> object:
-        raise RuntimeError(
-            "Telegram failed https://api.telegram.org/bot123456:ABC/setWebhook "
-            "Authorization: Bearer leaked-token token=telegram-secret"
-        )
-
-    monkeypatch.setattr(ActionRepository, "execute", fail_execute)
-
-    synced = api.post(
-        "/api/v1/operations/ingressEndpoint.sync/call",
-        json={
-            "arguments": {
-                "project_id": project_id,
-                "apply_provider_webhooks": True,
-                "response_mode": "raw",
-            }
-        },
-    )
-
-    assert synced.status_code == 200, synced.text
-    result = synced.json()["data"]["provider_results"][0]
-    assert result["status"] == "failed"
-    assert "[redacted]" in result["error"]
-    assert "123456:ABC" not in result["error"]
-    assert "leaked-token" not in result["error"]
-    assert "telegram-secret" not in result["error"]
 
 
 def test_operation_rest_mock_provider_failure_records_redacted_audit(

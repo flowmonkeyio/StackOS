@@ -342,7 +342,7 @@ def actions_execute(
 def actions_run(
     action_ref: Annotated[
         str | None,
-        typer.Argument(help="Action ref, e.g. communications.telegram-bot.message.send."),
+        typer.Argument(help="Action ref, e.g. communications.telegram.message.send."),
     ] = None,
     input_path: Annotated[
         str | None,

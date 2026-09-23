@@ -617,7 +617,7 @@
       ],
       "integrations": [
         "Smtp",
-        "Telegram Bot",
+        "Telegram",
         "Slack Bot"
       ]
     },
@@ -715,7 +715,7 @@
       ],
       "integrations": [
         "Slack Bot",
-        "Telegram Bot"
+        "Telegram"
       ]
     },
     {
@@ -1219,7 +1219,7 @@
       "whyAi": "An agent can prepare a bounded Stripe invoice from the selected external record while enforcing idempotency, separating draft work from customer delivery, and preserving owner decisions.",
       "operatorPath": [
         "Request an invoice from the external billing record; the agent resolves workspace defaults and prepares the draft.",
-        "Review the exact draft once and approve its finalization and initial send together if desired; the agent records that decision against both technical gates.",
+        "Review the independently retrieved customer and invoice facts. For visual review, locate the saved draft in Stripe Dashboard and check whether its overflow Download PDF action works for this invoice/account; StackOS has no draft PDF API URL or stable Dashboard deep link. Approve finalization and customer send as separate decisions, or one exact-version decision recorded under both technical gates.",
         "Inspect a safe provider result, exception, or recovery recommendation; never provide customer data or payment instructions in chat."
       ],
       "agentPath": [
@@ -1238,7 +1238,8 @@
       ],
       "recovery": [
         "For an unknown write outcome, retrieve/reconcile the same safe provider refs with the same deterministic key; never create a new key or duplicate customer/invoice/item.",
-        "If approval is absent, stop at the review-ready draft and do not finalize or send."
+        "If approval is absent, stop at the review-ready draft and do not finalize or send.",
+        "If direct-deposit-only Pay online absence or a required visual draft review cannot be verified, hold the draft and report the specific Dashboard/manual-review gap. Stripe documents a Dashboard Email invoice without link option and a general Download PDF action; verify both for the selected account and invoice before relying on them. Never finalize merely to obtain a review PDF or link."
       ],
       "safeStoppingPoints": [
         "Stop with a draft/reconciliation recommendation before finalization when approval is not recorded.",
@@ -1260,7 +1261,7 @@
       "prerequisites": [
         "A restricted Stripe connection with the invoice route selected",
         "A selected workspace and one billing-request reference resolving an immutable external version with customer, lines, currency and terms",
-        "Owner approval of the concrete draft before finalization and send; these approvals are produced during the run"
+        "Explicit owner approval of the concrete draft before finalization and send; existing exact-scope decisions are verified and recorded without requesting approval again"
       ],
       "proof": [
         "Safe external payment-request and Stripe invoice/customer refs",
@@ -1299,7 +1300,7 @@
         {
           "id": "send-invoice",
           "title": "Send Approved Invoice",
-          "summary": "Run only the owner-approved Stripe customer send action and reconcile unknown outcomes with reads."
+          "summary": "Execute the approved API send or reconcile independently verified prior manual delivery without another send."
         },
         {
           "id": "record-and-handoff",
@@ -3445,7 +3446,7 @@
         }
       ],
       "integrations": [
-        "Telegram Bot"
+        "Telegram"
       ]
     },
     {
@@ -3728,7 +3729,7 @@
         }
       ],
       "integrations": [
-        "Telegram Bot"
+        "Telegram"
       ]
     },
     {
@@ -4841,7 +4842,11 @@
         "For an instructed existing payment, finish the finalized source issuance with no send/suppression evidence, then hand off only the known-payment settlement to the existing `settlement-only` route. An open balance before linkage never implies an invoice send.",
         "For actions requiring approval, require a fresh approval occurrence when recipient, object/account, action, content, amount, or version/digest materially changes.",
         "Before Stripe send/resend compare both primary email hashes and the approval-bound recipient-settings version, scope, additional To/CC or verified-none versus unknown, verifier/time/evidence and validity. Reuse valid setup within scope; reverify changed, expired or uncertain settings. Missing recipient evidence preserves drafting and does not block settlement-only.",
+        "For direct-deposit-only send/resend, use the external delivery evidence contract and finance_delivery.check-presentation for the exact billing version, account/invoice snapshot and stripe-api-send route. Unknown or stale proof, incomplete recipients, footer/method-only evidence or a Dashboard-only preview blocks the API action. Never use a customer send as a probe.",
+        "Reconcile a prior manual Dashboard no-link send only through finance_delivery.reconcile-manual-delivery with prior exact owner send approval and independent retained delivery evidence. Preserve manual-sent and its proof refs; never create an API-send record or issue another initial send. Treat its actual contact time as cross-channel follow-up history; uncertain outcomes suppress contact.",
+        "Download an invoice PDF only through the explicit finalized-invoice PDF action when needed, verify external custody, then clean private staging. Draft PDFs, no-link API send parameters, recipient overrides and additional To/CC API enumeration are unsupported; preserve customer billing details and never finalize merely for review.",
         "A single human decision may bind distinct finalize and send gates only when it identifies the same immutable facts/version; record and validate each technical gate separately.",
+        "Record an existing explicit owner decision through runPlan.update without asking again for unchanged exact scope, including a verbal or conversation approval retained externally. Identify the owner in decided_by and pass safe existing decision/evidence refs and original decision time in decision_json as applicable; preserve actor/time/evidence in the external record and read back the gate. Recording the owner's decision is not agent self-approval. One decision may populate both finalize and initial-send gates only when it explicitly covers both; initial-send approval is not general resend or settlement permission. No new approval handoff or record format is needed, and missing recipient/presentation proof remains a separate blocker.",
         "Inspect actual provider response, idempotency state, and external record result before retrying; return a recovery/dispute/suppression packet instead of guessing.",
         "Normal operation assumes live Stripe. Report actual provider outcomes; if Stripe explicitly returns livemode=false, its send is test-accepted rather than customer contact. SMTP acceptance is not inbox delivery; record partial or uncertain results without inventing success or repeating a send.",
         "On idempotency_key_in_use or different-parameter conflicts, preserve the original key and request, reconcile its running/prior attempt and approved parameters, and never create a fresh key to bypass the conflict.",
@@ -4982,6 +4987,9 @@
         "Return blocking findings, evidence gaps, and repair conditions to the main orchestrator; it never replaces the owner, CPA/EA, or one-writer role."
       ],
       "must_do": [
+        "Verify direct-deposit-only send/resend uses current typed external presentation proof for the exact invoice/account/snapshot/version and selected API route, with retained originals and complete recipients. Independently reject Dashboard-only, footer/method-only, stale, unresolved or mismatched proof; preserve unknown drafts.",
+        "For manual-sent completion inspect prior exact owner send approval and independent retained delivery evidence through the external read-only reconciliation helper. Require distinct manual delivery refs and no invented API-send audit or duplicate send; unresolved manual outcomes suppress follow-ups.",
+        "Check finalized-PDF download and cleanup preserve verified external custody. A PDF is not email-presentation or send evidence; the API supplies no draft PDF, no-link send control, review-recipient override or complete additional To/CC readback.",
         "Check standalone finance has no agency prerequisite and agency-root work uses one business financial master. Optional external_project_ref must match sourced nonfinancial identity and the billing digest where applicable; no copied receipt/settlement attribution, duplicated amounts, or implied cross-project access.",
         "Compare claimed action outcome with actual provider action-call/audit evidence and the selected external record/current version, not a specialist narrative.",
         "Where approval is required, confirm material changes have fresh approval and separate finalize/send gates bind the same immutable facts when one human decision covers both.",

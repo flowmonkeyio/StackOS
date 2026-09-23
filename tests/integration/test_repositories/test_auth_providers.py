@@ -720,64 +720,6 @@ def test_pending_interactive_profile_can_be_edited_without_reentering_secrets(
     assert credential.config_json["default_site_url"] == "https://updated.example.test/"
 
 
-def test_telegram_bot_store_generates_webhook_secret(
-    session: Session,
-    project_id: int,
-) -> None:
-    repo = AuthRepository(session)
-
-    stored = repo.store_credential(
-        attach_project_id=project_id,
-        provider_key="telegram-bot",
-        auth_method_key="bot-token",
-        display_name="support",
-        fields={"bot_token": "123456:ABC"},
-    ).data
-
-    row = _integration_for_account(session, stored.credential_ref)
-    assert row.id is not None
-    payload = json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id).decode())
-    assert stored.credential_ref.startswith("cred_")
-    assert payload["bot_token"] == "123456:ABC"
-    assert isinstance(payload["webhook_secret_token"], str)
-    assert len(payload["webhook_secret_token"]) >= 32
-    credential = _credential_for_account(session, stored.credential_ref)
-    assert credential.config_json["provider_account_id"] == "123456"
-    assert "webhook_secret_token" not in credential.config_json
-
-
-def test_telegram_bot_token_can_only_claim_one_active_account(
-    session: Session,
-    project_id: int,
-) -> None:
-    repo = AuthRepository(session)
-
-    first = repo.store_credential(
-        attach_project_id=project_id,
-        provider_key="telegram-bot",
-        auth_method_key="bot-token",
-        display_name="support",
-        fields={"bot_token": "123456:ABC"},
-    ).data
-    replacement = repo.update_credential(
-        credential_ref=first.credential_ref,
-        fields={"bot_token": "123456:ROTATED"},
-        display_name=None,
-    ).data
-
-    assert replacement.credential_ref == first.credential_ref
-    with pytest.raises(ConflictError) as exc:
-        repo.store_credential(
-            attach_project_id=project_id,
-            provider_key="telegram-bot",
-            auth_method_key="bot-token",
-            display_name="analytics",
-            fields={"bot_token": "123456:ROTATED"},
-        )
-    assert exc.value.data["provider_account_id"] == "123456"
-    assert exc.value.data["existing_credential_ref"] == first.credential_ref
-
-
 def test_slack_bot_auth_test_syncs_safe_workspace_account(
     session: Session,
     project_id: int,

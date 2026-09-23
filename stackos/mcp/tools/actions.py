@@ -18,6 +18,11 @@ def _action_operations() -> OperationRegistry:
         "action.run",
         "actionCall.get",
         "actionCall.query",
+        "actionCall.items",
+        "actionCall.pause",
+        "actionCall.resume",
+        "actionCall.retry",
+        "actionCall.cancel",
         "secret.set",
     ):
         operations.register(all_operations.get(name))

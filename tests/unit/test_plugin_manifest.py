@@ -960,8 +960,6 @@ def test_finance_stripe_manifest_is_transport_only_and_complete() -> None:
         "stripe.customers.tax-ids.retrieve",
         "stripe.invoices.create",
         "stripe.invoices.update",
-        "stripe.invoices.pdf.download",
-        "stripe.invoices.pdf.cleanup",
         "stripe.invoice-items.create",
         "stripe.invoice-items.list",
         "stripe.invoices.finalize",
@@ -970,6 +968,8 @@ def test_finance_stripe_manifest_is_transport_only_and_complete() -> None:
         "stripe.invoices.attach-payment",
         "stripe.invoices.retrieve",
         "stripe.invoices.list",
+        "stripe.invoices.pdf.download",
+        "stripe.invoices.pdf.cleanup",
         "stripe.invoice-payments.list",
         "stripe.payment-intents.retrieve",
         "stripe.payment-records.report",
@@ -1058,7 +1058,9 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
             f"{plugin_slug}:{provider.key} missing setup note"
         )
         expected_verified_at = (
-            "2026-09-12"
+            "2026-09-22"
+            if plugin_slug == "communications" and provider.key == "telegram"
+            else "2026-09-12"
             if plugin_slug == "utils" and provider.key == "aignc"
             else "2026-09-04"
             if plugin_slug == "finance" and provider.key == "stripe"
@@ -1156,25 +1158,30 @@ def test_communications_plugin_yaml_facade_validates() -> None:
     assert {provider.key for provider in manifest.providers} == {
         "local-agent-chat",
         "slack-bot",
-        "telegram-bot",
+        "telegram",
         "smtp",
         "imap",
     }
     providers = {provider.key: provider for provider in manifest.providers}
     assert providers["local-agent-chat"].auth_type == "none"
-    assert _auth_field_keys(providers["telegram-bot"], "bot-token")[:2] == [
+    assert {
         "bot_token",
-        "webhook_secret_token",
-    ]
+        "proxy_enabled",
+        "proxy_host",
+        "proxy_port",
+        "proxy_type",
+    } <= set(_auth_field_keys(providers["telegram"], "tdlib-bot-token"))
+    assert {"proxy_enabled", "proxy_host", "proxy_port", "proxy_type"} <= set(
+        _auth_field_keys(providers["telegram"], "tdlib-user-session")
+    )
+    assert not {"api_id", "api_hash"} & set(
+        _auth_field_keys(providers["telegram"], "tdlib-bot-token")
+        + _auth_field_keys(providers["telegram"], "tdlib-user-session")
+    )
     assert _auth_field_keys(providers["slack-bot"], "bot-token")[:2] == [
         "bot_token",
         "signing_secret",
     ]
-    assert (
-        providers["telegram-bot"]
-        .config["setup_note"]
-        .startswith("Create a reusable Telegram Account containing only token material")
-    )
     assert _auth_field_keys(providers["smtp"], "smtp-password")[:4] == [
         "password",
         "host",
@@ -1188,41 +1195,42 @@ def test_communications_plugin_yaml_facade_validates() -> None:
         "tls_mode",
     ]
     actions = {action.key: action for action in manifest.actions}
-    assert actions["telegram-bot.identity.get"].provider == "telegram-bot"
-    assert actions["telegram-bot.message.send"].risk_level == "write"
-    reply_markup = actions["telegram-bot.message.send"].input_schema["properties"]["reply_markup"]
-    button_schema = reply_markup["properties"]["inline_keyboard"]["items"]["items"]
-    assert button_schema["properties"]["callback_data"]["maxLength"] == 64
-    assert button_schema["additionalProperties"] is False
-    assert actions["telegram-bot.photo.send"].provider == "telegram-bot"
-    assert actions["telegram-bot.photo.send"].config["connector"] == "telegram-bot"
-    assert actions["telegram-bot.photo.send"].config["operation"] == "photo.send"
-    assert actions["telegram-bot.photo.send"].input_schema["required"] == [
-        "chat_ref",
-        "profile_key",
-        "photo",
-    ]
-    photo_schema = actions["telegram-bot.photo.send"].input_schema["properties"]["photo"]
-    assert photo_schema["oneOf"] == [
-        {"required": ["file_id"]},
-        {"required": ["url"]},
-        {"required": ["artifact_ref"]},
-    ]
-    assert photo_schema["properties"]["url"]["pattern"] == "^https://"
-    assert actions["telegram-bot.file.download"].config["operation"] == "file.download"
-    assert (
-        actions["telegram-bot.file.download"].input_schema["properties"]["max_bytes"]["maximum"]
-        == 20 * 1024 * 1024
+    from stackos.actions.telegram_schema import TELEGRAM_ACTION_MODELS
+
+    assert not any(key.startswith("telegram-bot.") for key in actions)
+    for operation, model in TELEGRAM_ACTION_MODELS.items():
+        action = actions[f"telegram.{operation}"]
+        assert action.provider == "telegram"
+        assert action.config["connector"] == "telegram"
+        assert action.config["operation"] == operation
+        assert action.input_schema == model.model_json_schema()
+    assert actions["telegram.message.send"].config["durable_delivery"] is True
+    for key in (
+        "telegram.message.send",
+        "telegram.message.broadcast",
+        "telegram.album.send",
+        "telegram.message.forward",
+    ):
+        assert actions[key].config["durable_pacing_json"] == {
+            "account_interval_seconds": 1.0,
+            "destination_interval_seconds": 1.43,
+        }
+        assert actions[key].config["durable_destination_interval_multipliers_json"] == [
+            {"destination_ref_prefix": "telegram-chat:-", "multiplier": 3.0}
+        ]
+        assert actions[key].config["durable_pacing_by_auth_method_json"] == [
+            {
+                "auth_method_key": "tdlib-bot-token",
+                "pacing_json": {"account_interval_seconds": 0.047619},
+            }
+        ]
+    assert actions["telegram.album.send"].config["durable_pacing_units_input_field"] == ("contents")
+    assert actions["telegram.message.forward"].config["durable_pacing_units_input_field"] == (
+        "message_ids"
     )
-    assert actions["telegram-bot.file.upload"].config["operation"] == "file.upload"
-    assert actions["telegram-bot.file.upload"].input_schema["properties"]["files"]["maxItems"] == 10
-    assert actions["telegram-bot.callback.answer"].capability == "agent-triggering"
-    assert actions["telegram-bot.callback.answer"].config["operation"] == "callback.answer"
-    assert actions["telegram-bot.updates.poll"].capability == "agent-triggering"
-    assert actions["telegram-bot.updates.poll"].config["operation"] == "updates.poll"
-    assert actions["telegram-bot.identity.get"].config["connector"] == "telegram-bot"
-    assert actions["telegram-bot.webhook.set"].config["connector"] == "telegram-bot"
-    assert actions["telegram-bot.webhook.set"].config["operation"] == "webhook.set"
+    assert not any(
+        "webhook" in key or "updates.poll" in key for key in actions if key.startswith("telegram.")
+    )
     assert actions["slack-bot.identity.get"].provider == "slack-bot"
     assert actions["slack-bot.identity.get"].config["operation"] == "identity.get"
     assert actions["slack-bot.message.send"].risk_level == "write"

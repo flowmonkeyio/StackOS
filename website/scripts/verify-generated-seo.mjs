@@ -22,7 +22,7 @@ const topProviderSlugs = [
   'shopify',
   'linear',
   'meta-ads',
-  'telegram-bot',
+  'telegram',
   'google-ads',
   'slack-bot',
   'taboola',

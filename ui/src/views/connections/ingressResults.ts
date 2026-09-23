@@ -12,9 +12,7 @@ export interface IngressMessage {
   text: string
 }
 
-const UPDATED_STATUSES = new Set(['remote_webhook_updated'])
 const CONFIRMED_STATUSES = new Set(['manual_provider_confirmed'])
-const DRY_RUN_STATUSES = new Set(['remote_webhook_dry_run'])
 const MANUAL_STATUSES = new Set(['manual_provider_update_required'])
 const SKIPPED_STATUSES = new Set(['skipped'])
 const FAILED_STATUSES = new Set(['failed'])
@@ -36,8 +34,6 @@ export function discoveryFailureMessage(
 
 export function summarizeProviderResults(results: IngressProviderResult[]): IngressMessage {
   const counts = {
-    updated: countStatuses(results, UPDATED_STATUSES),
-    dryRun: countStatuses(results, DRY_RUN_STATUSES),
     manual: countStatuses(results, MANUAL_STATUSES),
     skipped: countStatuses(results, SKIPPED_STATUSES),
     failed: countStatuses(results, FAILED_STATUSES),
@@ -45,9 +41,6 @@ export function summarizeProviderResults(results: IngressProviderResult[]): Ingr
   }
   const parts: string[] = []
 
-  if (counts.updated > 0) {
-    parts.push(`Synced ${counts.updated} ${plural('provider webhook', counts.updated)}.`)
-  }
   if (counts.confirmed > 0) {
     parts.push(
       `Confirmed ${counts.confirmed} manual ${plural('provider update', counts.confirmed)}.`,
@@ -55,11 +48,6 @@ export function summarizeProviderResults(results: IngressProviderResult[]): Ingr
   }
   if (counts.manual > 0) {
     parts.push(manualProviderSummary(results))
-  }
-  if (counts.dryRun > 0) {
-    parts.push(
-      `${counts.dryRun} ${plural('provider webhook', counts.dryRun)} checked in dry-run mode.`,
-    )
   }
   if (counts.skipped > 0) {
     parts.push(`${counts.skipped} ${plural('provider', counts.skipped)} skipped.`)
@@ -72,14 +60,14 @@ export function summarizeProviderResults(results: IngressProviderResult[]): Ingr
   }
 
   if (parts.length === 0) {
-    return { tone: 'info', text: 'No provider webhook changes were needed.' }
+    return { tone: 'info', text: 'No provider route updates were needed.' }
   }
 
   return {
     tone:
       counts.failed > 0 || counts.skipped > 0
         ? 'danger'
-        : counts.manual > 0 || counts.dryRun > 0
+        : counts.manual > 0
           ? 'info'
           : 'success',
     text: parts.join(' '),
@@ -135,7 +123,7 @@ function matchingProviderResult(
     if (result.provider_key !== route.provider_key) return false
     if (result.profile_key && result.profile_key !== route.profile_key) return false
 
-    const resultUrl = result.webhook_url ?? result.request_url
+    const resultUrl = result.request_url
     if (resultUrl && resultUrl !== route.ingress_url) return false
 
     return true

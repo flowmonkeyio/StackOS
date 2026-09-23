@@ -26,11 +26,12 @@ import {
 } from './accounts/useAccountCredentials'
 import {
   accountLabel,
+  accountRowNeedsAttention,
   connectionActionKey,
-  connectionNeedsAttention,
   connectionStatusKey,
   formatAuthType,
   providerLabel,
+  telegramAuthorizationSaved,
 } from './connections/formatters'
 import type { OAuthReturnStatus } from './connections/types'
 import { credentialVerificationMessage } from './connections/credentialPresentation'
@@ -55,6 +56,19 @@ const {
   pendingRevoke,
   editing,
   editingSecretPresent,
+  nativeAuthorization,
+  nativeAuthorizationActive,
+  nativeAuthorizationMode,
+  nativeAuthorizationAllowsQr,
+  nativeAuthorizationBusy,
+  nativeSession,
+  nativeSessionActive,
+  nativeSessionBusy,
+  nativeAccountDraftDirty,
+  telegramApplicationConfigured,
+  telegramApplicationBusy,
+  telegramApplicationError,
+  refreshTelegramApplicationStatus,
   authMethods,
   selectedMethodKey,
   selectedMethod,
@@ -78,8 +92,18 @@ const {
   load: loadAccounts,
   openAddAccount,
   openEditAccount,
+  resetNativeAccountDraft,
   saveAccount,
+  saveAndContinueNativeAuthorization,
   startProvider: startProviderAction,
+  restartNativeAuthorization,
+  setNativeAuthorizationMode,
+  refreshNativeAuthorization,
+  refreshNativeSession,
+  connectNativeSession,
+  disconnectNativeSession,
+  submitNativeAuthorization,
+  cancelNativeAuthorization,
   testAccount,
   requestRevoke,
   confirmRevoke,
@@ -180,6 +204,7 @@ async function startProvider(...args: Parameters<typeof startProviderAction>): P
 
 function closePanel(open: boolean): void {
   panelOpen.value = open
+  if (!open) resetNativeAccountDraft()
   if (!open && route.query.account) {
     const query = { ...route.query }
     delete query.account
@@ -190,6 +215,32 @@ function closePanel(open: boolean): void {
 function safeAccountIdentity(account: AccountRow): string | null {
   const identity = accountLabel(account)
   return identity !== '-' && identity !== account.display_name ? identity : null
+}
+
+function isTelegramUserAccount(account: AccountRow): boolean {
+  return account.provider_key === 'telegram' && account.auth_method_key === 'tdlib-user-session'
+}
+
+function isTelegramBotAccount(account: AccountRow): boolean {
+  return account.provider_key === 'telegram' && account.auth_method_key === 'tdlib-bot-token'
+}
+
+function hasSavedTelegramSignIn(account: AccountRow): boolean {
+  if (!isTelegramUserAccount(account) || account.setup_required) return false
+  const providerAccountId = account.account?.provider_account_id
+  return (
+    (typeof providerAccountId === 'string' && providerAccountId.trim().length > 0) ||
+    (typeof providerAccountId === 'number' && Number.isFinite(providerAccountId))
+  )
+}
+
+function duplicateVerificationMessage(account: AccountRow): boolean {
+  const message = accountMessages.value[account.credential_ref]
+  return (
+    account.last_test?.ok === false &&
+    message?.tone === 'danger' &&
+    message.text === credentialVerificationMessage(account.last_test)
+  )
 }
 
 function groupProjectCount(rows: AccountRow[]): number {
@@ -336,7 +387,7 @@ onMounted(load)
                 v-for="account in group.accounts"
                 :key="account.credential_ref"
                 class="px-4 py-3"
-                :class="connectionNeedsAttention(account) ? 'bg-warning-subtle' : ''"
+                :class="accountRowNeedsAttention(account) ? 'bg-warning-subtle' : ''"
               >
                 <div class="flex flex-wrap items-start gap-x-4 gap-y-2">
                   <div class="min-w-0 flex-1">
@@ -345,6 +396,12 @@ onMounted(load)
                         {{ account.display_name }}
                       </h3>
                       <StatusBadge domain="connection" :status="connectionStatusKey(account)" />
+                      <UiBadge
+                        v-if="telegramAuthorizationSaved(account)"
+                        variant="outline"
+                      >
+                        {{ isTelegramUserAccount(account) ? 'Sign-in saved' : 'Authorization saved' }}
+                      </UiBadge>
                     </div>
                     <p class="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-fg-muted">
                       <span>{{ formatAuthType(account.auth_type) }}</span>
@@ -371,12 +428,22 @@ onMounted(load)
 
                   <div class="flex shrink-0 items-center gap-1">
                     <UiButton
+                      v-if="isTelegramUserAccount(account) && account.revoked_at === null"
                       size="sm"
-                      variant="ghost"
+                      :variant="hasSavedTelegramSignIn(account) ? 'ghost' : 'primary'"
                       :loading="busyAction === connectionActionKey(account.credential_ref, 'edit')"
                       @click="openEditAccount(account)"
                     >
-                      Edit
+                      {{ hasSavedTelegramSignIn(account) ? 'Manage sign-in' : 'Sign in' }}
+                    </UiButton>
+                    <UiButton
+                      v-else
+                      size="sm"
+                      :variant="isTelegramBotAccount(account) && account.setup_required ? 'primary' : 'ghost'"
+                      :loading="busyAction === connectionActionKey(account.credential_ref, 'edit')"
+                      @click="openEditAccount(account)"
+                    >
+                      {{ isTelegramBotAccount(account) && account.setup_required ? 'Review verification' : 'Edit' }}
                     </UiButton>
                     <UiButton
                       size="sm"
@@ -495,7 +562,7 @@ onMounted(load)
                 </UiCallout>
 
                 <UiCallout
-                  v-if="accountMessages[account.credential_ref]"
+                  v-if="accountMessages[account.credential_ref] && !duplicateVerificationMessage(account)"
                   :tone="accountMessages[account.credential_ref].tone"
                   density="compact"
                   class="mt-2"
@@ -519,6 +586,18 @@ onMounted(load)
       :busy-action="busyAction"
       :editing="editing"
       :secret-present="editingSecretPresent"
+      :native-authorization-active="nativeAuthorizationActive"
+      :native-authorization-state="nativeAuthorization"
+      :native-authorization-mode="nativeAuthorizationMode"
+      :native-authorization-allows-qr="nativeAuthorizationAllowsQr"
+      :native-authorization-busy="nativeAuthorizationBusy"
+      :native-session-active="nativeSessionActive"
+      :native-session-state="nativeSession"
+      :native-session-busy="nativeSessionBusy"
+      :native-account-draft-dirty="nativeAccountDraftDirty"
+      :telegram-application-configured="telegramApplicationConfigured"
+      :telegram-application-busy="telegramApplicationBusy"
+      :telegram-application-error="telegramApplicationError"
       :auth-methods="authMethods"
       :selected-method-key="selectedMethodKey"
       :selected-method="selectedMethod"
@@ -537,6 +616,16 @@ onMounted(load)
       @select-method="setSelectedMethod"
       @start-provider="startProvider"
       @save-account="saveAccount"
+      @save-and-continue="saveAndContinueNativeAuthorization"
+      @update:native-authorization-mode="setNativeAuthorizationMode"
+      @start-native-authorization="restartNativeAuthorization"
+      @submit-native-authorization="submitNativeAuthorization"
+      @cancel-native-authorization="cancelNativeAuthorization"
+      @refresh-native-authorization="refreshNativeAuthorization"
+      @connect-native-session="connectNativeSession"
+      @disconnect-native-session="disconnectNativeSession"
+      @refresh-native-session="refreshNativeSession"
+      @refresh-telegram-application="refreshTelegramApplicationStatus"
       @go-plugins="router.push('/')"
     />
 

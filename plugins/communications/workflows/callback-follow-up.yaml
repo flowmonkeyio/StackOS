@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: communications.callback-follow-up
 name: Telegram Callback Follow-Up
-version: 0.1.0
+version: 0.2.0
 description: Reusable setup for handling Telegram inline button callbacks through stored interaction context.
 domain: communications
 owner:
@@ -99,23 +99,23 @@ capability_requirements:
   - key: messaging
     required: false
 auth_requirements:
-  - key: telegram_bot
-    provider: telegram-bot
-    auth_type: bot-token
+  - key: telegram_account
+    provider: telegram
+    auth_type: tdlib
     optional: false
 action_contracts:
   - key: answer_callback
-    action: telegram-bot.callback.answer
-    capability: agent-triggering
-    provider: telegram-bot
-    risk_level: write
-    auth_ref: telegram_bot
-  - key: send_message
-    action: telegram-bot.message.send
+    action: telegram.callback.answer
     capability: messaging
-    provider: telegram-bot
+    provider: telegram
     risk_level: write
-    auth_ref: telegram_bot
+    auth_ref: telegram_account
+  - key: send_message
+    action: telegram.message.send
+    capability: messaging
+    provider: telegram
+    risk_level: write
+    auth_ref: telegram_account
 policies:
   - key: callback_data_untrusted
     kind: safety

@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
-import { compareConnections } from './credentialPresentation'
+import { accountRowNeedsAttention, compareConnections, telegramAuthorizationSaved } from './credentialPresentation'
 import {
   channelKindLabel,
-  commandSummary,
   connectionAttentionTone,
   connectionNeedsAttention,
   connectionStatusKey,
@@ -19,7 +18,6 @@ import {
   slackIdentified,
   surfaceAudienceLabel,
   targetPolicySummary,
-  toCommandSpecs,
 } from './formatters'
 import type {
   CommunicationProfile,
@@ -34,7 +32,7 @@ const surface = (partial: Partial<CommunicationSurface>): CommunicationSurface =
 
 describe('connections formatters', () => {
   it('humanizes provider keys', () => {
-    expect(providerLabel('telegram-bot')).toBe('Telegram')
+    expect(providerLabel('telegram')).toBe('Telegram')
     expect(providerLabel('slack-bot')).toBe('Slack')
     expect(providerLabel('smtp')).toBe('Email (SMTP)')
     expect(providerLabel(null)).toBe('Unknown')
@@ -95,6 +93,27 @@ describe('connections formatters', () => {
     expect(connectionNeedsAttention({ ...connection, last_test: null })).toBe(false)
   })
 
+  it('keeps saved offline Telegram Accounts neutral without treating them as connected', () => {
+    for (const auth_method_key of ['tdlib-user-session', 'tdlib-bot-token']) {
+      const saved = {
+        provider_key: 'telegram',
+        auth_method_key,
+        status: 'disconnected',
+        setup_required: false,
+      }
+      expect(telegramAuthorizationSaved(saved)).toBe(true)
+      expect(accountRowNeedsAttention(saved)).toBe(false)
+      expect(connectionNeedsAttention(saved)).toBe(true)
+      expect(accountRowNeedsAttention({ ...saved, setup_required: true })).toBe(true)
+      expect(accountRowNeedsAttention({ ...saved, last_test: { ok: false } })).toBe(true)
+    }
+    expect(accountRowNeedsAttention({
+      provider_key: 'slack-bot',
+      status: 'disconnected',
+      setup_required: false,
+    })).toBe(true)
+  })
+
   it('sorts failed verification ahead of other connected Accounts', () => {
     const connected = { display_name: 'Alpha', status: 'connected' } as ConnectionRow
     const unverified = {
@@ -131,14 +150,14 @@ describe('connections formatters', () => {
 
   it('picks the first provider facet as the primary provider', () => {
     const profile = {
-      provider_facets: { 'telegram-bot': {}, 'slack-bot': {} },
+      provider_facets: { telegram: {}, 'slack-bot': {} },
     } as unknown as CommunicationProfile
     expect(profilePrimaryProvider(profile)).toBe('slack-bot') // sorted
   })
 
   it('uses provider-appropriate audience counts for bot cards', () => {
     const telegram = {
-      provider_facets: { 'telegram-bot': {} },
+      provider_facets: { telegram: {} },
       access_policy: { allowed_chat_refs: ['telegram-chat:1', 'telegram-chat:2'] },
     } as unknown as CommunicationProfile
     const slack = {
@@ -173,13 +192,7 @@ describe('connections formatters', () => {
     expect(routePurpose(route({ metadata_json: {} }))).toBe('')
   })
 
-  it('parses CSV refs and normalizes commands', () => {
+  it('parses CSV refs', () => {
     expect(parseCsv('a, b ,, c')).toEqual(['a', 'b', 'c'])
-    const specs = toCommandSpecs([
-      { command: 'support', description: 'd', guidance: 'g', enabled: true },
-      { command: '', description: '', guidance: '', enabled: true },
-    ])
-    expect(specs).toEqual([{ command: '/support', description: 'd', guidance: 'g', enabled: true }])
-    expect(commandSummary(specs)).toBe('/support')
   })
 })

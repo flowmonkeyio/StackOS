@@ -3,15 +3,36 @@
 from __future__ import annotations
 
 import os
+import plistlib
 import shutil
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+from xml.parsers.expat import ExpatError
 
 from stackos.config import Settings
 
 from . import daemon_processes
 from .constants import _DESKTOP_BUNDLE_IDENTIFIER, _LAUNCHD_LABEL
+
+
+@dataclass(frozen=True)
+class _LaunchdDaemonContext:
+    data_dir: Path
+    state_dir: Path
+    host: str
+    port: int
+
+
+@dataclass(frozen=True)
+class _LaunchdContextOwnership:
+    """The installed launchd service and the context it declares, if parseable."""
+
+    plist_path: Path | None
+    persisted: _LaunchdDaemonContext | None
+    matches: bool
 
 
 def _launchd_plist_path(home: Path) -> Path:
@@ -131,6 +152,119 @@ def _installed_launchd_plist(home: Path) -> Path | None:
     return plist_path if plist_path.exists() else None
 
 
+def _absolute_path(value: object) -> Path | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            return None
+        return path.resolve(strict=False)
+    except (OSError, ValueError):
+        return None
+
+
+def _program_option(arguments: list[str], option: str) -> str | None:
+    values: list[str] = []
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument == option:
+            if index + 1 >= len(arguments) or arguments[index + 1].startswith("--"):
+                return None
+            values.append(arguments[index + 1])
+            index += 2
+            continue
+        if argument.startswith(f"{option}="):
+            value = argument.removeprefix(f"{option}=")
+            if not value:
+                return None
+            values.append(value)
+        index += 1
+    return values[0] if len(values) == 1 else None
+
+
+def _port(value: object) -> int | None:
+    if not isinstance(value, str) or not value.isdecimal():
+        return None
+    try:
+        port = int(value)
+    except ValueError:
+        return None
+    return port if 1 <= port <= 65535 else None
+
+
+def _read_launchd_context(plist_path: Path) -> _LaunchdDaemonContext | None:
+    try:
+        payload: Any = plistlib.loads(plist_path.read_bytes())
+    except (ExpatError, OSError, ValueError, plistlib.InvalidFileException):
+        return None
+    if not isinstance(payload, dict) or payload.get("Label") != _LAUNCHD_LABEL:
+        return None
+
+    environment = payload.get("EnvironmentVariables")
+    arguments = payload.get("ProgramArguments")
+    if (
+        not isinstance(environment, dict)
+        or not isinstance(arguments, list)
+        or not all(isinstance(argument, str) for argument in arguments)
+        or len(arguments) < 4
+        or arguments[1:4] != ["-m", "stackos", "serve"]
+    ):
+        return None
+
+    argument_host = _program_option(arguments, "--host")
+    argument_port = _port(_program_option(arguments, "--port"))
+    environment_host = environment.get("STACKOS_HOST")
+    environment_port = _port(environment.get("STACKOS_PORT"))
+    data_dir = _absolute_path(environment.get("STACKOS_DATA_DIR"))
+    state_dir = _absolute_path(environment.get("STACKOS_STATE_DIR"))
+    if (
+        not isinstance(environment_host, str)
+        or not argument_host
+        or not daemon_processes._is_loopback_host(argument_host)
+        or environment_host != argument_host
+        or argument_port is None
+        or environment_port != argument_port
+        or data_dir is None
+        or state_dir is None
+    ):
+        return None
+    return _LaunchdDaemonContext(
+        data_dir=data_dir,
+        state_dir=state_dir,
+        host=argument_host,
+        port=argument_port,
+    )
+
+
+def _launchd_context_ownership(
+    home: Path,
+    *,
+    settings: Settings,
+    host: str,
+    port: int,
+) -> _LaunchdContextOwnership:
+    """Return launchd ownership only when its persisted context is unambiguous."""
+    plist_path = _installed_launchd_plist(home)
+    if plist_path is None:
+        return _LaunchdContextOwnership(None, None, False)
+
+    persisted = _read_launchd_context(plist_path)
+    data_dir = _absolute_path(str(settings.data_dir))
+    state_dir = _absolute_path(str(settings.state_dir))
+    matches = (
+        persisted is not None
+        and data_dir is not None
+        and state_dir is not None
+        and persisted.data_dir == data_dir
+        and persisted.state_dir == state_dir
+        and persisted.host == host
+        and persisted.port == port
+    )
+    return _LaunchdContextOwnership(plist_path, persisted, matches)
+
+
 def _launchd_plist_content(
     settings: Settings,
     *,
@@ -245,6 +379,7 @@ __all__ = [
     "_launchctl",
     "_launchd_bootout",
     "_launchd_bootstrap",
+    "_launchd_context_ownership",
     "_launchd_domain",
     "_launchd_loaded",
     "_launchd_plist_content",

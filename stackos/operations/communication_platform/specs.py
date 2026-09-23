@@ -109,8 +109,7 @@ def operation_specs() -> list[OperationSpec]:
                 "driver_config and routes are derived from project communication profiles."
             ),
             when_to_use=(
-                "A project needs Slack/Telegram/webhook ingress routes derived from one "
-                "public base URL.",
+                "A project needs provider webhook ingress routes derived from one public base URL.",
                 "The operator changed deployment or local tunnel configuration.",
             ),
             prerequisites=(
@@ -182,7 +181,7 @@ def operation_specs() -> list[OperationSpec]:
             output_model=IngressEndpointRoutesOut,
             handler=ingress_endpoint_routes,
             surfaces=_surfaces("ingressEndpoint.routes", "ops call ingressEndpoint.routes"),
-            purpose="Use this to get exact Slack and Telegram webhook URLs without guessing.",
+            purpose="Use this to get exact provider webhook URLs without guessing.",
             when_to_use=(
                 "An operator or setup agent needs exact webhook URLs to copy or verify.",
                 "The agent is diagnosing route shape without changing provider state.",
@@ -208,13 +207,12 @@ def operation_specs() -> list[OperationSpec]:
             ),
             purpose=(
                 "Use this after configuring profiles or public_base_url. It updates safe route "
-                "metadata and can apply Telegram setWebhook through daemon-held credentials."
+                "metadata and reports any required provider-console update."
             ),
             when_to_use=(
                 "Communication profiles or public_base_url changed and provider route "
                 "metadata needs to catch up.",
-                "The agent intentionally wants daemon-side provider route sync, such as "
-                "Telegram setWebhook.",
+                "The agent needs current provider routes and their required follow-up actions.",
             ),
             prerequisites=("Configure ingressEndpoint and communication profiles first.",),
             returns=("Updated routes and per-provider sync results.",),
@@ -308,17 +306,22 @@ def operation_specs() -> list[OperationSpec]:
                 "A project needs a safe actor identity for communication sends or replies.",
                 "The agent is configuring provider-neutral policy, guidance, or safe "
                 "provider facets for an actor.",
+                "For a Telegram bot or user Account, an agent selects which chat surfaces "
+                "and native update types are retained automatically.",
             ),
             prerequisites=(
                 "Pass identity.display_name.",
                 "Keep policy declarative; agents still decide work and provider calls.",
                 "Use provider_facets only for safe provider refs, never tokens or secrets; "
                 "each credential_ref must name a connected Account attached to this project.",
-                "Set Slack or Telegram provider_facets.<provider>.ingress_enabled=false "
+                "Set Slack provider_facets.slack-bot.ingress_enabled=false "
                 "for outbound-only Account reuse. One inbound-enabled profile may own "
                 "provider ingress for each Account.",
                 "Do not pass ingress URLs, webhook host policy, ingress refs, or manual "
                 "confirmation state; ingressEndpoint owns and derives those fields.",
+                "Telegram retains no inbound updates by default. Set "
+                "visibility_policy.allowed_surface_refs and allowed_update_types "
+                "to opt in to selected chats and native TDLib updates.",
             ),
             returns=("A WriteEnvelope with the safe CommunicationProfileOut record.",),
             examples=(
@@ -328,6 +331,21 @@ def operation_specs() -> list[OperationSpec]:
                         "project_id": 1,
                         "key": "support",
                         "identity": {"display_name": "Support Agent"},
+                    },
+                ),
+                OperationExample(
+                    title="Retain new messages from one selected Telegram chat",
+                    arguments={
+                        "project_id": 1,
+                        "key": "telegram-operator",
+                        "identity": {"display_name": "Telegram Operator"},
+                        "provider_facets": {"telegram": {"credential_ref": "cred_example"}},
+                        "visibility_policy": {
+                            "surface_mode": "allowlist",
+                            "allowed_surface_refs": ["telegram-chat:123"],
+                            "allowed_update_types": ["updateNewMessage"],
+                            "store_non_trigger_messages": True,
+                        },
                     },
                 ),
             ),
@@ -428,7 +446,10 @@ def operation_specs() -> list[OperationSpec]:
                 "The agent needs to store audience, purpose, capability, and data-scope "
                 "guidance for future work.",
             ),
-            prerequisites=("Pass provider_key, surface_ref, and kind.",),
+            prerequisites=(
+                "Pass provider_key, surface_ref, kind, and profile_ref when more than one "
+                "profile owns the provider.",
+            ),
             returns=("A WriteEnvelope with CommunicationSurfaceOut.",),
             examples=(
                 OperationExample(
@@ -437,6 +458,7 @@ def operation_specs() -> list[OperationSpec]:
                         "project_id": 1,
                         "surface_ref": "slack-channel:C123",
                         "provider_key": "slack-bot",
+                        "profile_ref": "communication-profile:support",
                         "kind": "slack-channel",
                     },
                 ),

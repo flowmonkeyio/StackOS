@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from sqlmodel import Session, col, select
 
@@ -87,10 +87,6 @@ def _normalize_profile_ref(value: str) -> str:
     return _communication_profile_ref(raw)
 
 
-def _surface_external_id(surface_ref: str) -> str:
-    return f"communication-surface:{surface_ref.strip()}"
-
-
 def _membership_ref(surface_ref: str, member_ref: str) -> str:
     return f"communication-membership:{surface_ref.strip()}:{member_ref.strip()}"
 
@@ -138,6 +134,71 @@ def _resource_records(
             )
             .order_by(col(ResourceRecord.id).asc())
         ).all()
+    )
+
+
+def _surface_profile_ref(
+    session: Session,
+    *,
+    project_id: int,
+    provider_key: str,
+    profile_ref: str | None,
+    credential_ref: str | None,
+) -> str:
+    """Resolve the one profile that physically owns a provider surface."""
+
+    if profile_ref is not None:
+        _validate_ref(profile_ref, "profile_ref")
+    normalized = _normalize_profile_ref(profile_ref) if profile_ref else None
+    candidates: list[tuple[str, dict[str, Any]]] = []
+    for row in _resource_records(
+        session,
+        project_id=project_id,
+        resource_key="communication-profile",
+    ):
+        data = dict(row.data_json or {})
+        candidate_ref = str(data.get("profile_ref") or row.external_id or "").strip()
+        if not candidate_ref or (normalized is not None and candidate_ref != normalized):
+            continue
+        facets = data.get("provider_facets")
+        facet = facets.get(provider_key) if isinstance(facets, dict) else None
+        local_surface = provider_key == "local-agent-chat" and not credential_ref
+        if not isinstance(facet, dict) and not local_surface:
+            continue
+        facet = facet if isinstance(facet, dict) else {}
+        bound_credential_ref = str(facet.get("credential_ref") or "").strip() if facet else ""
+        if credential_ref and bound_credential_ref != credential_ref.strip():
+            continue
+        candidates.append((candidate_ref, facet))
+
+    if normalized is not None:
+        if not candidates:
+            raise ValidationError(
+                "profile_ref must name a communication profile bound to provider_key",
+                data={
+                    "profile_ref": normalized,
+                    "provider_key": provider_key,
+                    "next_action": "Select a profile with a matching provider facet.",
+                },
+            )
+        return normalized
+    if len(candidates) == 1:
+        return candidates[0][0]
+    if not candidates:
+        raise ValidationError(
+            "profile_ref is required because no communication profile owns provider_key",
+            data={
+                "provider_key": provider_key,
+                "next_action": "Create or select a communication profile with this provider facet.",
+            },
+        )
+    raise ValidationError(
+        "profile_ref is required because provider_key has multiple communication profiles",
+        data={
+            "provider_key": provider_key,
+            "candidate_profile_refs": [candidate[0] for candidate in candidates],
+            "next_action": "Pass profile_ref to bind this surface to one profile.",
+        },
     )
 
 
@@ -189,12 +250,23 @@ def _communication_surface_out(
     data: dict[str, Any],
 ) -> CommunicationSurfaceOut:
     surface_ref = str(data.get("surface_ref") or data.get("channel_ref") or "")
+    raw_binding_state = str(data.get("surface_binding_state") or "ready")
+    binding_state: Literal["ready", "repair-required"] = (
+        "repair-required" if raw_binding_state == "repair-required" else "ready"
+    )
+    binding_issue = data.get("surface_binding_issue")
+    binding_issues = (
+        [{"code": binding_issue}]
+        if binding_state == "repair-required" and isinstance(binding_issue, str) and binding_issue
+        else []
+    )
     return CommunicationSurfaceOut(
         record_id=int(record_id or 0),
         project_id=project_id,
         surface_ref=surface_ref,
         channel_ref=str(data.get("channel_ref") or surface_ref),
         provider_key=str(data.get("provider_key") or ""),
+        profile_ref=str(data.get("profile_ref") or ""),
         kind=str(data.get("kind") or data.get("channel_type") or ""),
         display_name=(
             data.get("display_name") if isinstance(data.get("display_name"), str) else None
@@ -216,6 +288,8 @@ def _communication_surface_out(
         data_scope=dict(data.get("data_scope") or {}),
         external_context=dict(data.get("external_context") or {}),
         metadata_json=dict(data.get("metadata_json") or data.get("metadata") or {}),
+        binding_state=binding_state,
+        binding_issues=binding_issues,
     )
 
 
@@ -314,8 +388,8 @@ def _communication_route_out(
 
 def _default_action_ref(provider_key: str) -> str | None:
     match provider_key.strip():
-        case "telegram-bot":
-            return "communications.telegram-bot.message.send"
+        case "telegram":
+            return "communications.telegram.message.send"
         case "slack-bot":
             return "communications.slack-bot.message.send"
         case "smtp":
@@ -339,83 +413,13 @@ def _target_action_defaults(
             defaults.setdefault("profile_ref", target.profile_ref)
         if target.thread_ref:
             defaults.setdefault("thread_ref", target.thread_ref)
-    elif target.provider_key == "telegram-bot":
-        defaults.setdefault("chat_ref", target.surface_ref)
-        profile_key = _telegram_profile_key(session, target)
-        if profile_key:
-            defaults.setdefault("profile_key", profile_key)
-        if target.thread_ref:
-            defaults.setdefault("thread_ref", target.thread_ref)
+    elif target.provider_key == "telegram":
+        defaults["surface_ref"] = target.surface_ref
+        if target.profile_ref:
+            defaults["profile_ref"] = target.profile_ref
     elif target.provider_key == "hubspot":
         defaults.setdefault("contact_ref", target.surface_ref)
     return defaults
-
-
-def _telegram_profile_key(
-    session: Session,
-    target: CommunicationTargetOut,
-) -> str | None:
-    explicit = target.action_input_defaults.get("profile_key")
-    if isinstance(explicit, str) and explicit.strip():
-        return explicit.strip()
-    if isinstance(target.profile_ref, str) and target.profile_ref.startswith(
-        "communication-profile:"
-    ):
-        row = _record_by_resource_external_id(
-            session,
-            project_id=target.project_id,
-            resource_key="communication-profile",
-            external_id=target.profile_ref,
-        )
-        if row is not None:
-            facets = dict((row.data_json or {}).get("provider_facets") or {})
-            if isinstance(facets.get("telegram-bot"), dict):
-                return target.profile_ref.split(":", 1)[1].strip() or None
-    return None
-
-
-def _target_policy_allowed(
-    policy: dict[str, Any],
-    *,
-    target_ref: str,
-    profile_ref: str | None,
-    source_surface_ref: str | None,
-    invoker_ref: str | None,
-) -> tuple[bool, str | None]:
-    mode = str(policy.get("mode") or "explicit-target")
-    if mode in {"disabled", "deny"}:
-        return False, "send_policy_disabled"
-    denied_invokers = set(_string_list(policy.get("denied_invoker_refs")))
-    if invoker_ref is not None and invoker_ref in denied_invokers:
-        return False, "invoker_denied"
-    allowed_profiles = set(_string_list(policy.get("allowed_profile_refs")))
-    allowed_sources = set(_string_list(policy.get("allowed_source_surface_refs")))
-    allowed_targets = set(_string_list(policy.get("allowed_target_refs")))
-    allowed_invokers = set(_string_list(policy.get("allowed_invoker_refs")))
-    if mode == "denylist" and not (
-        allowed_profiles or allowed_sources or allowed_targets or allowed_invokers
-    ):
-        if policy.get("requires_approval") is True:
-            return False, "approval_required"
-        return True, None
-    if (
-        not allowed_profiles
-        and not allowed_sources
-        and not allowed_targets
-        and not allowed_invokers
-    ):
-        return False, "send_policy_missing_allowlist"
-    if allowed_profiles and profile_ref not in allowed_profiles:
-        return False, "profile_not_allowed"
-    if allowed_sources and source_surface_ref not in allowed_sources:
-        return False, "source_surface_not_allowed"
-    if allowed_targets and target_ref not in allowed_targets:
-        return False, "target_not_allowed"
-    if allowed_invokers and invoker_ref not in allowed_invokers:
-        return False, "invoker_not_allowed"
-    if policy.get("requires_approval") is True:
-        return False, "approval_required"
-    return True, None
 
 
 def _target_policy_profile_ref(

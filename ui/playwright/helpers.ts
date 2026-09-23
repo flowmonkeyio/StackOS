@@ -163,6 +163,17 @@ export async function storeAccount(input: {
   return { credentialRef: body.data.credential_ref }
 }
 
+export async function attachAccount(projectId: number, credentialRef: string): Promise<void> {
+  const res = await fetch(
+    `${getBaseUrl()}/api/v1/projects/${projectId}/connections/accounts/${encodeURIComponent(credentialRef)}`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${getDaemonToken()}` },
+    },
+  )
+  if (!res.ok) throw new Error(`attach Account failed: ${res.status} ${await res.text()}`)
+}
+
 export async function getAccountEditState(
   credentialRef: string,
 ): Promise<{ values: Record<string, unknown>; secret_present: Record<string, boolean> }> {

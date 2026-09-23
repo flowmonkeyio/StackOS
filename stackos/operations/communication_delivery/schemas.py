@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -67,6 +68,25 @@ class CommunicationDeliveryInput(BaseModel):
     reply_mode: Literal["default", "same_thread", "new_thread", "message_reply", "none"] = "default"
     disable_notification: bool | None = None
     reply_broadcast: bool | None = None
+    due_at: datetime | None = Field(
+        default=None, description="Earliest UTC dispatch time; requires durable delivery support."
+    )
+    expires_at: datetime | None = Field(
+        default=None,
+        description="UTC deadline after which no new delivery attempts may start.",
+    )
+    account_interval_seconds: float | None = Field(
+        default=None,
+        gt=0,
+        allow_inf_nan=False,
+        description="Optional Account pacing; may only slow the provider's minimum interval.",
+    )
+    destination_interval_seconds: float | None = Field(
+        default=None,
+        gt=0,
+        allow_inf_nan=False,
+        description="Optional destination pacing; may only slow the provider's minimum interval.",
+    )
 
 
 class CommunicationFallbackInput(BaseModel):
@@ -103,6 +123,17 @@ class CommunicationSendInput(MCPInput):
     intent_id: str | None = None
     intent_summary: str | None = None
     dry_run: bool = False
+
+
+class CommunicationSendBatchInput(CommunicationSendInput):
+    recipients: list[str] = Field(
+        min_length=1,
+        max_length=1000,
+        description=(
+            "Explicit provider recipient refs. Telegram accepts telegram-user:<known-user-id> "
+            "or telegram-chat:<native-chat-id>."
+        ),
+    )
 
 
 class CommunicationReplyInput(MCPInput):
@@ -158,3 +189,7 @@ class CommunicationSendOut(BaseModel):
     metadata_json: dict[str, Any] | None = None
     credential_ref: str | None = None
     cost_cents: int = 0
+    replayed: bool = False
+    poll_operation: str | None = None
+    poll_arguments: dict[str, Any] | None = None
+    next_poll_after_ms: int | None = None

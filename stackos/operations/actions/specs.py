@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from stackos.actions import ActionDescribeOut, ActionExecutionOut, ActionValidationOut
+from stackos.actions.repository.durable import DurableActionJobOut
 from stackos.actions.repository.schema import ActionCallAuditOut
 from stackos.mcp.contract import WriteEnvelope
 from stackos.operations._helpers import operation_spec
@@ -17,13 +18,26 @@ from stackos.repositories.base import Page
 from .discovery import action_describe, action_list, action_validate
 from .execution import action_call_get, action_execute, action_run
 from .history import action_call_query
+from .lifecycle import (
+    action_call_cancel,
+    action_call_items,
+    action_call_pause,
+    action_call_resume,
+    action_call_retry,
+)
 from .schemas import (
     ACTION_CALL_HISTORY_RESPONSE_POLICY,
+    ACTION_CALL_LIFECYCLE_RESPONSE_POLICY,
     ACTION_CALL_POLL_RESPONSE_POLICY,
     ACTION_FILE_OUTPUT_RESPONSE_POLICY,
+    ActionCallControlInput,
+    ActionCallDurableItemsOut,
     ActionCallGetInput,
     ActionCallGetOut,
+    ActionCallItemsInput,
     ActionCallQueryInput,
+    ActionCallResumeInput,
+    ActionCallRetryInput,
     ActionDescribeInput,
     ActionExecuteInput,
     ActionListInput,
@@ -255,6 +269,190 @@ def operation_specs() -> list[OperationSpec]:
             response_policy=ACTION_CALL_POLL_RESPONSE_POLICY,
         ),
         OperationSpec(
+            name="actionCall.items",
+            summary="List the sealed item receipts for one durable action call.",
+            input_model=ActionCallItemsInput,
+            output_model=ActionCallDurableItemsOut,
+            handler=action_call_items,
+            surfaces=OperationSurfaces(
+                mcp=OperationSurface(enabled=True),
+                rest=OperationSurface(
+                    enabled=True,
+                    path="/api/v1/operations/actionCall.items/call",
+                ),
+                cli=OperationSurface(enabled=True, command="ops call actionCall.items"),
+            ),
+            purpose=(
+                "Inspect the immutable destination snapshot and persisted delivery receipts for "
+                "one accepted durable action."
+            ),
+            when_to_use=(
+                "A caller needs item-level progress, a deferred retry time, or an unknown receipt.",
+            ),
+            prerequisites=("Pass the owning action_call_id and project scope.",),
+            returns=("The durable job state and ordered item-level receipt records.",),
+            examples=(
+                OperationExample(
+                    title="Inspect durable delivery items",
+                    arguments={"project_id": 1, "action_call_id": 42},
+                ),
+            ),
+            mutating=False,
+            grant_policy="direct-read",
+            response_policy=ACTION_CALL_LIFECYCLE_RESPONSE_POLICY,
+        ),
+        OperationSpec(
+            name="actionCall.pause",
+            summary="Pause future claims for one durable action call.",
+            input_model=ActionCallControlInput,
+            output_model=WriteEnvelope[DurableActionJobOut],
+            handler=action_call_pause,
+            surfaces=OperationSurfaces(
+                mcp=OperationSurface(enabled=True),
+                rest=OperationSurface(
+                    enabled=True,
+                    browser_safe=True,
+                    path="/api/v1/operations/actionCall.pause/call",
+                ),
+                cli=OperationSurface(enabled=True, command="ops call actionCall.pause"),
+            ),
+            purpose="Stop new durable-item claims while preserving exact receipts and retry state.",
+            when_to_use=("An operator needs to stop future delivery attempts temporarily.",),
+            prerequisites=("Pass a non-terminal durable action_call_id.",),
+            returns=("The paused durable job and its item counters.",),
+            examples=(
+                OperationExample(
+                    title="Pause a durable delivery",
+                    arguments={"project_id": 1, "action_call_id": 42},
+                ),
+            ),
+            grant_policy="direct-action-policy",
+            response_policy=ACTION_CALL_LIFECYCLE_RESPONSE_POLICY,
+        ),
+        OperationSpec(
+            name="actionCall.resume",
+            summary="Resume future claims for one paused durable action call.",
+            input_model=ActionCallResumeInput,
+            output_model=WriteEnvelope[DurableActionJobOut],
+            handler=action_call_resume,
+            surfaces=OperationSurfaces(
+                mcp=OperationSurface(enabled=True),
+                rest=OperationSurface(
+                    enabled=True,
+                    browser_safe=True,
+                    path="/api/v1/operations/actionCall.resume/call",
+                ),
+                cli=OperationSurface(enabled=True, command="ops call actionCall.resume"),
+            ),
+            purpose="Resume the sealed job from its persisted next-eligible item state.",
+            when_to_use=(
+                "An operator has reviewed a paused durable delivery and wants it to continue.",
+            ),
+            prerequisites=(
+                "Pass a paused durable action_call_id.",
+                "Direct resumes require confirm_direct=true and a concrete intent_summary.",
+                "Workflow resumes require the active original step and its matching action or "
+                "communication grant.",
+            ),
+            returns=("The resumed durable job and its item counters.",),
+            examples=(
+                OperationExample(
+                    title="Resume a durable delivery",
+                    arguments={
+                        "project_id": 1,
+                        "action_call_id": 42,
+                        "confirm_direct": True,
+                        "intent_summary": (
+                            "Operator reviewed the paused delivery and approved resuming it."
+                        ),
+                    },
+                ),
+            ),
+            grant_policy="direct-action-policy",
+            response_policy=ACTION_CALL_LIFECYCLE_RESPONSE_POLICY,
+        ),
+        OperationSpec(
+            name="actionCall.cancel",
+            summary=(
+                "Cancel the remaining receipt-proven-no-effect items of one durable action call."
+            ),
+            input_model=ActionCallControlInput,
+            output_model=WriteEnvelope[DurableActionJobOut],
+            handler=action_call_cancel,
+            surfaces=OperationSurfaces(
+                mcp=OperationSurface(enabled=True),
+                rest=OperationSurface(
+                    enabled=True,
+                    browser_safe=True,
+                    path="/api/v1/operations/actionCall.cancel/call",
+                ),
+                cli=OperationSurface(enabled=True, command="ops call actionCall.cancel"),
+            ),
+            purpose="End only remaining items that can still prove no provider effect occurred.",
+            when_to_use=("An operator no longer wants the safe remaining delivery subset to run.",),
+            prerequisites=(
+                "Pass a durable action_call_id with a pending or deferred no-effect item.",
+            ),
+            returns=("The updated job receipt and item counters.",),
+            examples=(
+                OperationExample(
+                    title="Cancel the safe remaining delivery items",
+                    arguments={"project_id": 1, "action_call_id": 42},
+                ),
+            ),
+            grant_policy="direct-action-policy",
+            response_policy=ACTION_CALL_LIFECYCLE_RESPONSE_POLICY,
+        ),
+        OperationSpec(
+            name="actionCall.retry",
+            summary=(
+                "Retry selected durable items only after their receipts prove no provider effect."
+            ),
+            input_model=ActionCallRetryInput,
+            output_model=WriteEnvelope[DurableActionJobOut],
+            handler=action_call_retry,
+            surfaces=OperationSurfaces(
+                mcp=OperationSurface(enabled=True),
+                rest=OperationSurface(
+                    enabled=True,
+                    browser_safe=True,
+                    path="/api/v1/operations/actionCall.retry/call",
+                ),
+                cli=OperationSurface(enabled=True, command="ops call actionCall.retry"),
+            ),
+            purpose=(
+                "Requeue only explicit failed, cancelled, or deferred item receipts that prove "
+                "the provider never accepted a delivery."
+            ),
+            when_to_use=(
+                "An operator has inspected specific item receipts and wants to retry only the "
+                "known no-effect subset.",
+            ),
+            prerequisites=(
+                "Pass one or more unique item_ids from this durable action call.",
+                "Direct retries require confirm_direct=true and a concrete intent_summary.",
+                "Workflow retries require the active original step and its matching action or "
+                "communication grant.",
+            ),
+            returns=("The reopened durable job and its current item counters.",),
+            examples=(
+                OperationExample(
+                    title="Retry selected no-effect delivery items",
+                    arguments={
+                        "project_id": 1,
+                        "action_call_id": 42,
+                        "item_ids": [7, 9],
+                        "confirm_direct": True,
+                        "intent_summary": (
+                            "Operator reviewed the no-effect receipts and approved retrying them."
+                        ),
+                    },
+                ),
+            ),
+            grant_policy="direct-action-policy",
+            response_policy=ACTION_CALL_LIFECYCLE_RESPONSE_POLICY,
+        ),
+        OperationSpec(
             name="action.execute",
             summary=(
                 "Execute one action inside an explicitly granted run-plan step and return "
@@ -291,12 +489,17 @@ def operation_specs() -> list[OperationSpec]:
                 "inspect the returned path before rerunning the provider call. CLI calls "
                 "default to raw inline output. Explicit output_policy_json and "
                 "execution-context policies override the surface default.",
+                "For a foreground provider read, transient output requires response_mode=raw. "
+                "Only a content-free audit receipt remains linked to the run-plan step; "
+                "caller-supplied idempotency keys are rejected.",
             ),
             returns=(
                 "A WriteEnvelope containing the public ActionExecutionOut.",
                 "A redacted audit row linked to run_id, run_plan_id, and run_plan_step_id.",
                 "For MCP and REST external provider calls, compact file path, schema_ref, "
                 "schema_operation, and metadata for the sanitized request+response envelope.",
+                "For a transient read, only the immediate raw response contains the "
+                "bounded provider result; the linked action call retains an audit receipt.",
             ),
             examples=(
                 OperationExample(
@@ -350,25 +553,30 @@ def operation_specs() -> list[OperationSpec]:
                 "inspect the returned path before rerunning the provider call. CLI calls "
                 "default to raw inline output. Explicit output_policy_json and "
                 "execution-context policies override the surface default.",
+                "For an ephemeral foreground provider read, pass output_policy_json with "
+                "mode=transient and response_mode=raw. The result is bounded to 256 KiB, "
+                "cannot be replayed, and actionCall.get retains only an audit receipt.",
             ),
             returns=(
                 "A redacted action-call audit id linked to the project.",
                 "MCP and REST calls return compact output metadata with file path, "
                 "schema_ref, schema_operation, checksum, and summaries. CLI calls return "
                 "the raw redacted operation payload by default.",
+                "A transient read returns its bounded redacted result only in the immediate "
+                "raw response; the ActionCall audit contains shape and count only.",
             ),
             examples=(
                 OperationExample(
                     title="Send one Telegram message directly",
                     arguments={
-                        "action_ref": "communications.telegram-bot.message.send",
+                        "action_ref": "communications.telegram.message.send",
                         "confirm_direct": True,
                         "intent_summary": "User asked to send one status message.",
                         "idempotency_key": "telegram-send-status-1",
                         "input_json": {
-                            "profile_key": "support",
-                            "chat_ref": "telegram-chat:123",
-                            "text": "Done.",
+                            "profile_ref": "communication-profile:support",
+                            "surface_ref": "telegram-chat:123",
+                            "content": {"kind": "text", "text": "Done."},
                         },
                     },
                 ),

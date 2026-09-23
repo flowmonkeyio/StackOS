@@ -17,8 +17,8 @@ make signoff
   integration, action, MCP/grant/audit, response-file, regression, and wheel
   packaging proof
 - targeted pytest coverage for unit contracts, REST operations, CLI mock
-  provider execution, REST/CLI/MCP operation parity, auth setup, Telegram
-  setup-to-action flow, Slack signed-ingress/action flow, SMTP/IMAP mocked
+  provider execution, REST/CLI/MCP operation parity, auth setup, Telegram TDLib
+  Account setup-to-action flow, Slack signed-ingress/action flow, SMTP/IMAP mocked
   connectors, MCP action, tracker, and communication setup execution, workflow
   template loading, and action/auth/tracker repositories
 - UI unit tests
@@ -70,7 +70,7 @@ touches committed UI assets.
 | Workflow/run-plan execution | `runPlan.validate/create/start/claimStep/recordStep`, step grants, and non-executable warnings behave predictably. | `uv run pytest tests/unit/test_run_plan_schema.py tests/integration/test_mcp/test_mcp_run_plans.py tests/integration/test_mcp/test_mcp_tool_grants.py -q` |
 | Tracker task/ticket workflow | Bulk create/review/update, dependency previews, compact reads, history, and verification stay agent-friendly. | `uv run pytest tests/integration/test_mcp/test_mcp_tracker.py tests/integration/test_repositories/test_tracker.py tests/unit/test_operation_responses.py tests/unit/test_operations_registry.py -q` |
 | Communication delivery | `communicationTarget.resolve`, `communication.send/reply`, dry-run effects, rich-feature rejection, local chat, and stored context field repair are clear. | `uv run pytest tests/integration/test_mcp/test_mcp_communications.py -q` |
-| Communication ingress | Slack/Telegram ingress verifies transport auth, stores normalized resources, and creates agent requests only through shared policy. | `uv run pytest tests/integration/test_routes/test_slack_ingress_routes.py tests/integration/test_routes/test_telegram_ingress_routes.py -q` |
+| Communication ingress | Slack ingress verifies transport auth, stores normalized resources, and creates agent requests only through shared policy. Telegram updates are verified and normalized by the Account-owned TDLib runtime. | `uv run pytest tests/integration/test_routes/test_slack_ingress_routes.py tests/integration/test_routes/test_telegram_ingress_retirement.py -q` |
 | Agent request handoff | Agent requests claim, prepare run plans atomically, link, complete, release, and hide claim tokens correctly. | `uv run pytest tests/integration/test_mcp/test_mcp_agent_requests.py tests/integration/test_repositories/test_agent_requests.py -q` |
 | UI human signoff surfaces | Tracker, setup, connections, runs, resources, and operation pages render the generic objects agents act on. | `pnpm --dir ui test && pnpm --dir ui build` |
 | Setup/package smoke | Install, daemon start/doctor, MCP registration, assets, and docs match the release shape. | `make install && make doctor` |

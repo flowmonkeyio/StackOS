@@ -191,6 +191,41 @@ def _abort_restart_after_launchd_bootout(launchd_plist: Path, message: str) -> N
     raise typer.Exit(code=1)
 
 
+def _launchd_plist_for_requested_context(
+    settings: Settings,
+    *,
+    host: str,
+    port: int,
+) -> Path | None:
+    """Return launchd's plist only when it owns this exact daemon context."""
+    ownership = launchd._launchd_context_ownership(
+        _doctor_home(),
+        settings=settings,
+        host=host,
+        port=port,
+    )
+    if ownership.plist_path is None:
+        return None
+    if ownership.persisted is None:
+        typer.echo(
+            "error: installed launchd daemon context is malformed or incomplete; "
+            "repair it with `stackos autostart install --force` before lifecycle control.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    if ownership.matches:
+        return ownership.plist_path
+    if ownership.persisted.port == port:
+        typer.echo(
+            "error: installed launchd daemon context does not match the requested daemon "
+            "context on this port; refusing before process discovery. Use its matching "
+            "data/state/host settings or choose a different port.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    return None
+
+
 @app.command()
 def start(
     host: Annotated[
@@ -293,9 +328,16 @@ def stop(
         )
         raise typer.Exit(code=1)
 
-    launchd_plist = launchd._loaded_launchd_plist(_doctor_home())
-    if launchd_plist is not None:
-        ok, message = launchd._launchd_bootout(launchd_plist, wait_timeout=timeout)
+    launchd_plist = _launchd_plist_for_requested_context(
+        settings,
+        host=daemon_host,
+        port=daemon_port,
+    )
+    loaded_launchd_plist = (
+        launchd._loaded_launchd_plist(_doctor_home()) if launchd_plist is not None else None
+    )
+    if loaded_launchd_plist is not None:
+        ok, message = launchd._launchd_bootout(loaded_launchd_plist, wait_timeout=timeout)
         if not ok:
             typer.echo(f"stop: launchd bootout failed: {message}", err=True)
             raise typer.Exit(code=1)
@@ -370,7 +412,11 @@ def restart(
         )
         raise typer.Exit(code=1)
 
-    launchd_plist = launchd._installed_launchd_plist(_doctor_home())
+    launchd_plist = _launchd_plist_for_requested_context(
+        settings,
+        host=daemon_host,
+        port=daemon_port,
+    )
     restart_via_launchd = launchd_plist is not None
     launchd_loaded, _launchd_message = (
         launchd._launchd_loaded() if restart_via_launchd else (False, "")

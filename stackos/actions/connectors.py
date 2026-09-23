@@ -27,9 +27,9 @@ class ActionValidationIssue(BaseModel):
 class ActionConnectorRequest:
     """In-process request sent to a connector adapter.
 
-    ``credential`` may contain decrypted secret material. It is deliberately kept as a
-    dataclass field instead of JSON so it cannot accidentally become an agent
-    response through Pydantic serialization.
+    ``credential_ref`` is safe Account identity for validation without secret
+    resolution. ``credential`` may contain decrypted secret material and stays
+    in-process rather than being serialized into an agent response.
     """
 
     project_id: int
@@ -41,11 +41,16 @@ class ActionConnectorRequest:
     input_json: dict[str, Any] = field(repr=False)
     config_json: Mapping[str, Any]
     provider_context_json: dict[str, Any] = field(default_factory=dict)
+    credential_ref: str | None = None
     credential: ResolvedCredential | None = field(default=None, repr=False)
     asset_dir: Path | None = None
     session: Any | None = field(default=None, repr=False)
     dry_run: bool = False
     idempotency_key: str | None = field(default=None, repr=False)
+    action_call_id: int | None = field(default=None, repr=False)
+    attempt_ref: str | None = field(default=None, repr=False)
+    correlation_ref: str | None = field(default=None, repr=False)
+    delivery_item_id: int | None = field(default=None, repr=False)
     progress_callback: ActionProgressCallback | None = field(
         default=None,
         repr=False,

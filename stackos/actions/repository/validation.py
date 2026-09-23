@@ -111,6 +111,7 @@ class ActionValidationMixin:
                     provider_context_json=runtime_context.provider_context_json,
                     credential=None,
                     dry_run=True,
+                    credential_ref=runtime_context.credential_ref,
                     idempotency_key=idempotency_key,
                 )
                 issues.extend(connector.validate(request))
@@ -354,10 +355,14 @@ class ActionValidationMixin:
             ]
         except ConflictError as exc:
             status = str(exc.data.get("status") or "")
+            repair_operation = manifest.config_json.get("credential_repair_operation")
+            message = exc.detail
+            if status and isinstance(repair_operation, str) and repair_operation:
+                message = f"{message}; call {repair_operation} for this Account"
             return [
                 ActionValidationIssue(
                     path="$.credential_ref",
-                    message=exc.detail,
+                    message=message,
                     code=("credential_not_connected" if status else "credential_revoked"),
                 )
             ]

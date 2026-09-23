@@ -85,7 +85,7 @@
   ],
   "integrations": [
     "Smtp",
-    "Telegram Bot",
+    "Telegram",
     "Slack Bot"
   ]
 }

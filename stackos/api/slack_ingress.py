@@ -34,6 +34,7 @@ from stackos.communications import (
     NormalizedResourceWrite,
     candidate_refs,
     communication_record_by_external_id,
+    communication_surface_binding_external_id,
     config_policy,
     evaluate_inbound_policy,
     process_inbound_event,
@@ -640,11 +641,16 @@ def _slack_surface_write(
         return None
     return NormalizedResourceWrite(
         resource_key="communication-channel",
-        external_id=f"slack-channel:{profile.key}:{channel_id}",
+        external_id=communication_surface_binding_external_id(
+            provider_key="slack-bot",
+            profile_ref=f"communication-profile:{profile.key}",
+            surface_ref=_surface_ref(channel_id),
+        ),
         title=channel_id,
         data_json={
             "provider_key": "slack-bot",
             "profile_key": profile.key,
+            "profile_ref": f"communication-profile:{profile.key}",
             "credential_ref": profile.credential_ref,
             "team_id": parsed.get("team_id"),
             "surface_ref": _surface_ref(channel_id),

@@ -68,6 +68,14 @@ def process_inbound_event(
         write=event.surface,
     )
     _ = surface_record_id
+    for related_resource in event.related_resources:
+        _upsert_optional(
+            session,
+            resources,
+            project_id=project_id,
+            write=related_resource,
+            deduped=existing_request is not None,
+        )
     event_write = _merge_write(event.event, policy_fields)
     assert event_write is not None
     event_record_id = _upsert_required(

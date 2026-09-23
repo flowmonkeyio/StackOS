@@ -1,11 +1,21 @@
 import { computed, nextTick, ref, type ComputedRef } from 'vue'
 import { storeToRefs } from 'pinia'
 
-import type { SchemaAccountOut, SchemaAuthProviderOut } from '@/api'
+import type {
+  SchemaAccountAuthStatusOut,
+  SchemaAccountOut,
+  SchemaAuthProviderOut,
+  SchemaAuthStartRequest,
+  SchemaAuthStartOut,
+} from '@/api'
+import { AuthStartRequestAuthorization_mode } from '@/api'
 import { useConnectionForm } from '@/composables/useConnectionForm'
 import { formatApiError } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
-import { useStackOsCatalogStore } from '@/stores/plugins'
+import {
+  type TelegramAccountSessionStatus,
+  useStackOsCatalogStore,
+} from '@/stores/plugins'
 import {
   connectionActionKey,
   credentialTestMessage,
@@ -43,6 +53,8 @@ export interface CommunicationAccountUse {
   ingress_url: string | null
 }
 
+type NativeAuthorizationMode = 'phone' | 'qr'
+
 export function useAccountCredentials(attachProjectId: ComputedRef<number | null>) {
   const catalogStore = useStackOsCatalogStore()
   const { globalAccountsStatus, authProviders, loading, error } = storeToRefs(catalogStore)
@@ -79,6 +91,15 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
   const editingCredentialRef = ref<string | null>(null)
   const editingSecretPresent = ref<Record<string, boolean>>({})
   const communicationAccountUses = ref<CommunicationAccountUse[]>([])
+  const nativeAuthorization = ref<SchemaAccountAuthStatusOut | null>(null)
+  const nativeAuthorizationCredentialRef = ref<string | null>(null)
+  const nativeAuthorizationMode = ref<NativeAuthorizationMode>('phone')
+  const nativeSession = ref<TelegramAccountSessionStatus | null>(null)
+  const nativeAccountDraftDirty = ref(false)
+  const telegramApplicationConfigured = ref<boolean | null>(null)
+  const telegramApplicationBusy = ref(false)
+  const telegramApplicationError = ref<string | null>(null)
+  let telegramApplicationRequestId = 0
   const editing = computed(() => editingCredentialRef.value !== null)
 
   const accounts = computed<AccountRow[]>(() =>
@@ -108,6 +129,33 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
     }
     return visibleAuthProviders.value[0] ?? null
   })
+  const nativeAuthorizationEnabled = computed(
+    () => isNativeAuthorization(selectedProvider.value ? selectedMethod(selectedProvider.value) : null),
+  )
+  const nativeAuthorizationAllowsQr = computed(
+    () =>
+      nativeAccountKind(selectedProvider.value ? selectedMethod(selectedProvider.value) : null) ===
+      'user',
+  )
+  const nativeAuthorizationActive = computed(
+    () => nativeAuthorizationEnabled.value && nativeAuthorizationCredentialRef.value !== null,
+  )
+  const nativeAuthorizationBusy = computed(
+    () =>
+      nativeAuthorizationCredentialRef.value !== null &&
+      busyAction.value === connectionActionKey(nativeAuthorizationCredentialRef.value, 'authorize'),
+  )
+  const nativeSessionActive = computed(
+    () =>
+      isNativeAuthorization(selectedProvider.value ? selectedMethod(selectedProvider.value) : null) &&
+      nativeAuthorizationCredentialRef.value !== null &&
+      attachProjectId.value !== null,
+  )
+  const nativeSessionBusy = computed(
+    () =>
+      nativeAuthorizationCredentialRef.value !== null &&
+      busyAction.value === connectionActionKey(nativeAuthorizationCredentialRef.value, 'session'),
+  )
 
   async function load(): Promise<void> {
     const [, usage] = await Promise.all([
@@ -149,6 +197,8 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
   function openAddAccount(providerKey?: string): void {
     editingCredentialRef.value = null
     editingSecretPresent.value = {}
+    nativeAccountDraftDirty.value = false
+    clearNativeAuthorization()
     if (providerKey && providerByKey.value.has(providerKey)) {
       setRawSelectedProvider(providerKey)
     }
@@ -164,9 +214,11 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
     }
     fieldErrors.value = {}
     panelOpen.value = true
+    if (provider?.key === 'telegram') void refreshTelegramApplicationStatus()
   }
 
   async function openEditAccount(account: AccountRow): Promise<void> {
+    nativeAccountDraftDirty.value = false
     busyAction.value = connectionActionKey(account.credential_ref, 'edit')
     try {
       const state = await catalogStore.getCredential(account.credential_ref)
@@ -190,6 +242,20 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
       editingSecretPresent.value = state.secret_present
       fieldErrors.value = {}
       panelOpen.value = true
+      if (isNativeAuthorization(method)) {
+        nativeAuthorizationCredentialRef.value = account.credential_ref
+        nativeAuthorization.value = {
+          credential_ref: account.credential_ref,
+          provider_key: provider.key,
+          status: state.account.status,
+          generation: null,
+          challenge: null,
+        }
+        await refreshNativeAuthorization(account.credential_ref)
+        await refreshNativeSession(account.credential_ref, { silent: true })
+      } else {
+        clearNativeAuthorization()
+      }
     } catch (err) {
       setAccountMessage(
         account.credential_ref,
@@ -203,12 +269,36 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
 
   function selectProvider(value: string | number | null): void {
     fieldErrors.value = {}
+    clearNativeAuthorization()
     setRawSelectedProvider(value)
     const provider = providerByKey.value.get(String(value ?? ''))
     if (!provider) return
     clearProviderForms(provider.key)
     if (authMethods(provider).length > 1) setRawSelectedMethod(provider.key, '')
     else seedDisplayName(provider)
+    if (provider.key === 'telegram') void refreshTelegramApplicationStatus()
+  }
+
+  async function refreshTelegramApplicationStatus(): Promise<void> {
+    const requestId = ++telegramApplicationRequestId
+    telegramApplicationBusy.value = true
+    telegramApplicationConfigured.value = null
+    telegramApplicationError.value = null
+    try {
+      const status = await callOperation<{ configured: boolean }>('account.application.status', {})
+      if (typeof status.configured !== 'boolean') {
+        throw new Error('Telegram application status is unavailable.')
+      }
+      if (requestId === telegramApplicationRequestId) {
+        telegramApplicationConfigured.value = status.configured
+      }
+    } catch (err) {
+      if (requestId === telegramApplicationRequestId) {
+        telegramApplicationError.value = formatApiError(err, 'Telegram application status is unavailable')
+      }
+    } finally {
+      if (requestId === telegramApplicationRequestId) telegramApplicationBusy.value = false
+    }
   }
 
   function setSelectedMethod(providerKey: string, value: string | number | null): void {
@@ -216,6 +306,7 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
     const methodKey = String(value ?? '')
     if (!provider || !authMethods(provider).some((method) => method.key === methodKey)) return
     clearProviderForms(providerKey)
+    clearNativeAuthorization()
     setRawSelectedMethod(providerKey, methodKey)
     seedDisplayName(provider)
   }
@@ -232,6 +323,7 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
       fieldErrors.value = next
     }
     setRawFieldValue(providerKey, methodKey, fieldKey, value)
+    markNativeAccountDraftDirty(providerKey, methodKey)
   }
 
   function setDisplayNameValue(
@@ -245,15 +337,32 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
       fieldErrors.value = next
     }
     setRawDisplayNameValue(providerKey, methodKey, value)
+    markNativeAccountDraftDirty(providerKey, methodKey)
   }
 
   function accountDraft(
     provider: SchemaAuthProviderOut,
     method: AuthMethod,
-  ): { fields: Record<string, string>; displayName: string } | null {
-    const fields: Record<string, string> = {}
+  ): { fields: Record<string, string | number>; displayName: string } | null {
+    const fields: Record<string, string | number> = {}
     const errors: Record<string, string> = {}
+    if (provider.key === 'telegram' && !editing.value) {
+      if (telegramApplicationConfigured.value === null) {
+        setProviderMessage(provider.key, 'danger', 'Check Telegram application setup before saving.')
+        return null
+      }
+      if (!telegramApplicationConfigured.value) {
+        const apiId = fieldValue(provider.key, method.key, 'api_id').trim()
+        const apiHash = fieldValue(provider.key, method.key, 'api_hash').trim()
+        if (!/^[1-9]\d*$/.test(apiId) || !Number.isSafeInteger(Number(apiId)))
+          errors.api_id = 'Enter a valid application API ID.'
+        if (!apiHash) errors.api_hash = 'Application API hash is required.'
+        if (apiId && !errors.api_id) fields.api_id = Number(apiId)
+        if (apiHash) fields.api_hash = apiHash
+      }
+    }
     for (const field of method.fields ?? []) {
+      if (provider.key === 'telegram' && ['api_id', 'api_hash'].includes(field.key)) continue
       const value = fieldValue(provider.key, method.key, field.key)
       const blank = value.trim() === ''
       const preservedSecret = editing.value && field.secret && editingSecretPresent.value[field.key]
@@ -262,6 +371,20 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
       if (editing.value && field.secret && blank) continue
       if (!editing.value && blank) continue
       fields[field.key] = value
+    }
+    if (provider.key === 'telegram' && fieldValue(provider.key, method.key, 'proxy_enabled') === 'true') {
+      const proxyType = fieldValue(provider.key, method.key, 'proxy_type').trim()
+      const proxyHost = fieldValue(provider.key, method.key, 'proxy_host').trim()
+      const proxyPort = Number(fieldValue(provider.key, method.key, 'proxy_port'))
+      if (!proxyType) errors.proxy_type = 'Choose a proxy type.'
+      if (!proxyHost) errors.proxy_host = 'Proxy host is required.'
+      if (!Number.isInteger(proxyPort) || proxyPort < 1 || proxyPort > 65535)
+        errors.proxy_port = 'Enter a port from 1 to 65535.'
+      if (
+        proxyType === 'mtproto' &&
+        !fieldValue(provider.key, method.key, 'proxy_secret').trim() &&
+        !(editing.value && editingSecretPresent.value.proxy_secret)
+      ) errors.proxy_secret = 'MTProto proxy secret is required.'
     }
     const displayName = displayNameValue(provider.key, method.key).trim()
     if (!displayName) errors.display_name = 'Account name is required.'
@@ -283,7 +406,10 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
     return { fields, displayName }
   }
 
-  async function saveAccount(provider: SchemaAuthProviderOut): Promise<string | null> {
+  async function saveAccount(
+    provider: SchemaAuthProviderOut,
+    onNativeSaved?: () => void,
+  ): Promise<string | null> {
     const method = selectedMethod(provider)
     if (!method || method.payload_format === 'none') return null
     const draft = accountDraft(provider, method)
@@ -292,10 +418,27 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
     try {
       if (editingCredentialRef.value) {
         const credentialRef = editingCredentialRef.value
-        await catalogStore.updateCredential(credentialRef, {
+        const response = await catalogStore.updateCredential(credentialRef, {
           display_name: draft.displayName,
           fields: draft.fields,
         })
+        nativeAccountDraftDirty.value = false
+        if (isNativeAuthorization(method)) {
+          clearProviderMessage(provider.key)
+          nativeAuthorizationCredentialRef.value = credentialRef
+          nativeAuthorization.value = {
+            credential_ref: credentialRef,
+            provider_key: provider.key,
+            status: response.data.status,
+            generation: null,
+            challenge: null,
+          }
+          await refreshNativeAuthorization(credentialRef)
+          await refreshNativeSession(credentialRef, { silent: true })
+          setAccountMessage(credentialRef, 'success', 'Account updated.')
+          onNativeSaved?.()
+          return credentialRef
+        }
         clearForm(provider.key, method.key)
         editingCredentialRef.value = null
         editingSecretPresent.value = {}
@@ -310,9 +453,36 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
         attach_project_id: attachProjectId.value,
       })
       const credentialRef = response.data.credential_ref
+      if (provider.key === 'telegram') telegramApplicationConfigured.value = true
       clearForm(provider.key, method.key)
       if (attachProjectId.value) {
         await catalogStore.refreshAuth(attachProjectId.value, { silent: true })
+      }
+      if (isNativeAuthorization(method)) {
+        clearProviderMessage(provider.key)
+        nativeAuthorizationCredentialRef.value = credentialRef
+        nativeAuthorizationMode.value = 'phone'
+        nativeAuthorization.value = {
+          credential_ref: credentialRef,
+          provider_key: provider.key,
+          status: response.data.status,
+          generation: null,
+          challenge: null,
+        }
+        if (nativeAccountKind(method) === 'bot' && response.data.setup_required) {
+          await refreshNativeAuthorization(credentialRef)
+        }
+        await refreshNativeSession(credentialRef, { silent: true })
+        setAccountMessage(
+          credentialRef,
+          response.data.setup_required && nativeAccountKind(method) === 'bot' ? 'warning' : 'success',
+          nativeAccountKind(method) === 'user'
+            ? 'Account saved. Start local authorization when you are ready.'
+            : response.data.setup_required
+              ? 'Account saved, but bot verification needs attention. Retry in the Account drawer.'
+              : 'Telegram bot authorization saved. The session is disconnected.',
+        )
+        return credentialRef
       }
       try {
         const tested = await catalogStore.testCredential(credentialRef)
@@ -334,10 +504,21 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
       return credentialRef
     } catch (err) {
       setProviderMessage(provider.key, 'danger', formatApiError(err, 'failed to save Account'))
+      if (provider.key === 'telegram' && !editing.value) void refreshTelegramApplicationStatus()
       return null
     } finally {
       busyAction.value = null
     }
+  }
+
+  async function saveAndContinueNativeAuthorization(provider: SchemaAuthProviderOut): Promise<string | null> {
+    const method = selectedMethod(provider)
+    if (provider.key !== 'telegram' || nativeAccountKind(method) !== 'user' || editing.value)
+      return null
+    const credentialRef = await saveAccount(provider)
+    if (!credentialRef) return null
+    await startNativeAuthorization(credentialRef, 'phone')
+    return credentialRef
   }
 
   async function startProvider(provider: SchemaAuthProviderOut): Promise<string | null> {
@@ -368,6 +549,7 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
         credential_ref: credentialRef,
         attach_project_id: attachProjectId.value,
         return_surface: attachProjectId.value ? 'project-connections' : 'accounts',
+        authorization_mode: AuthStartRequestAuthorization_mode.phone,
       })
       const safeUrl = safeAuthorizationUrl(response.data.authorization_url)
       if (!safeUrl || response.data.credential_ref !== credentialRef) {
@@ -413,6 +595,223 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
     }
   }
 
+  async function startNativeAuthorization(
+    credentialRef: string,
+    mode: NativeAuthorizationMode,
+  ): Promise<void> {
+    const provider = selectedProvider.value
+    const method = provider ? selectedMethod(provider) : null
+    if (
+      nativeAccountDraftDirty.value ||
+      !provider ||
+      provider.key !== 'telegram' ||
+      !method ||
+      !isNativeAuthorization(method)
+    )
+      return
+    if (mode === 'qr' && nativeAccountKind(method) !== 'user') return
+    nativeAuthorizationCredentialRef.value = credentialRef
+    nativeAuthorizationMode.value = mode
+    busyAction.value = connectionActionKey(credentialRef, 'authorize')
+    try {
+      const response = await catalogStore.startCredential(provider.key, {
+        auth_method_key: method.key,
+        credential_ref: credentialRef,
+        attach_project_id: attachProjectId.value,
+        return_surface: attachProjectId.value ? 'project-connections' : 'accounts',
+        authorization_mode: requestAuthorizationMode(mode),
+      })
+      setNativeAuthorizationFromStart(credentialRef, response.data)
+      clearProviderMessage(provider.key)
+      if (nativeAccountKind(method) === 'bot' && ['connected', 'disconnected'].includes(response.data.status)) {
+        setAccountMessage(credentialRef, 'success', 'Telegram bot authorization saved. The session is disconnected.')
+      } else {
+        clearAccountMessage(credentialRef)
+      }
+      await refreshNativeSession(credentialRef, { silent: true })
+    } catch (err) {
+      const message = formatApiError(err, 'failed to start Telegram authorization')
+      if (nativeAccountKind(method) === 'bot') await refreshNativeAuthorization(credentialRef)
+      if (nativeAuthorization.value?.repair_hint) clearProviderMessage(provider.key)
+      else setProviderMessage(provider.key, 'danger', message)
+      setAccountMessage(credentialRef, 'danger', message)
+    } finally {
+      busyAction.value = null
+    }
+  }
+
+  async function refreshNativeAuthorization(credentialRef?: string): Promise<void> {
+    const target = credentialRef ?? nativeAuthorizationCredentialRef.value
+    if (!target || nativeAuthorizationCredentialRef.value !== target) return
+    busyAction.value = connectionActionKey(target, 'authorize')
+    try {
+      const state = await catalogStore.getAccountAuthorization(target)
+      if (nativeAuthorizationCredentialRef.value === target) nativeAuthorization.value = state
+      clearProviderMessage('telegram')
+    } catch (err) {
+      const message = formatApiError(err, 'failed to refresh Telegram authorization')
+      setProviderMessage('telegram', 'danger', message)
+      setAccountMessage(target, 'danger', message)
+    } finally {
+      busyAction.value = null
+    }
+  }
+
+  async function restartNativeAuthorization(mode: NativeAuthorizationMode): Promise<void> {
+    const credentialRef = nativeAuthorizationCredentialRef.value
+    if (!credentialRef) return
+    await startNativeAuthorization(credentialRef, mode)
+  }
+
+  async function submitNativeAuthorization(value: {
+    generation: number
+    answer: Record<string, string>
+  }): Promise<void> {
+    const credentialRef = nativeAuthorizationCredentialRef.value
+    if (nativeAccountDraftDirty.value || !credentialRef) return
+    busyAction.value = connectionActionKey(credentialRef, 'authorize')
+    try {
+      const response = await catalogStore.submitAccountAuthorization(credentialRef, value)
+      if (nativeAuthorizationCredentialRef.value === credentialRef) {
+        nativeAuthorization.value = response.data
+      }
+      clearProviderMessage('telegram')
+      clearAccountMessage(credentialRef)
+      await refreshNativeSession(credentialRef, { silent: true })
+    } catch (err) {
+      const message = formatApiError(err, 'Telegram authorization could not continue')
+      setProviderMessage('telegram', 'danger', message)
+      setAccountMessage(credentialRef, 'danger', message)
+    } finally {
+      busyAction.value = null
+    }
+  }
+
+  async function cancelNativeAuthorization(generation: number): Promise<void> {
+    const credentialRef = nativeAuthorizationCredentialRef.value
+    if (!credentialRef) return
+    busyAction.value = connectionActionKey(credentialRef, 'authorize')
+    try {
+      const response = await catalogStore.cancelAccountAuthorization(credentialRef, generation)
+      if (nativeAuthorizationCredentialRef.value === credentialRef) {
+        nativeAuthorization.value = response.data
+      }
+      clearProviderMessage('telegram')
+      await refreshNativeSession(credentialRef, { silent: true })
+    } catch (err) {
+      const message = formatApiError(err, 'Telegram authorization could not be canceled')
+      setProviderMessage('telegram', 'danger', message)
+      setAccountMessage(credentialRef, 'danger', message)
+    } finally {
+      busyAction.value = null
+    }
+  }
+
+  function clearNativeAuthorization(): void {
+    nativeAuthorization.value = null
+    nativeAuthorizationCredentialRef.value = null
+    nativeAuthorizationMode.value = 'phone'
+    nativeSession.value = null
+  }
+
+  async function refreshNativeSession(
+    credentialRef?: string,
+    options: { silent?: boolean } = {},
+  ): Promise<void> {
+    const projectId = attachProjectId.value
+    const target = credentialRef ?? nativeAuthorizationCredentialRef.value
+    if (!projectId || !target || nativeAuthorizationCredentialRef.value !== target) {
+      nativeSession.value = null
+      return
+    }
+    if (!options.silent) busyAction.value = connectionActionKey(target, 'session')
+    try {
+      const state = await catalogStore.getTelegramAccountSession(projectId, target)
+      if (nativeAuthorizationCredentialRef.value === target) nativeSession.value = state
+    } catch (err) {
+      const message = formatApiError(err, 'failed to load Telegram session status')
+      setProviderMessage('telegram', 'danger', message)
+      setAccountMessage(target, 'danger', message)
+    } finally {
+      if (!options.silent) busyAction.value = null
+    }
+  }
+
+  async function connectNativeSession(): Promise<void> {
+    const projectId = attachProjectId.value
+    const credentialRef = nativeAuthorizationCredentialRef.value
+    if (nativeAccountDraftDirty.value || !projectId || !credentialRef) return
+    busyAction.value = connectionActionKey(credentialRef, 'session')
+    try {
+      nativeSession.value = await catalogStore.connectTelegramAccountSession(projectId, credentialRef)
+      setAccountMessage(credentialRef, 'success', 'Telegram session connect requested.')
+    } catch (err) {
+      const message = formatApiError(err, 'failed to connect the Telegram session')
+      setProviderMessage('telegram', 'danger', message)
+      setAccountMessage(credentialRef, 'danger', message)
+    } finally {
+      busyAction.value = null
+    }
+  }
+
+  async function disconnectNativeSession(): Promise<void> {
+    const projectId = attachProjectId.value
+    const credentialRef = nativeAuthorizationCredentialRef.value
+    if (!projectId || !credentialRef) return
+    busyAction.value = connectionActionKey(credentialRef, 'session')
+    try {
+      nativeSession.value = await catalogStore.disconnectTelegramAccountSession(projectId, credentialRef)
+      setAccountMessage(credentialRef, 'success', 'Telegram session disconnected.')
+    } catch (err) {
+      const message = formatApiError(err, 'failed to disconnect the Telegram session')
+      setProviderMessage('telegram', 'danger', message)
+      setAccountMessage(credentialRef, 'danger', message)
+    } finally {
+      busyAction.value = null
+    }
+  }
+
+  function setNativeAuthorizationMode(mode: NativeAuthorizationMode): void {
+    if (mode === 'qr' && !nativeAuthorizationAllowsQr.value) return
+    nativeAuthorizationMode.value = mode
+  }
+
+  function markNativeAccountDraftDirty(providerKey: string, methodKey: string): void {
+    const provider = selectedProvider.value
+    const method = provider ? selectedMethod(provider) : null
+    if (
+      editing.value &&
+      provider?.key === providerKey &&
+      method?.key === methodKey &&
+      isNativeAuthorization(method)
+    ) {
+      nativeAccountDraftDirty.value = true
+    }
+  }
+
+  function resetNativeAccountDraft(): void {
+    nativeAccountDraftDirty.value = false
+  }
+
+  function setNativeAuthorizationFromStart(
+    credentialRef: string,
+    result: SchemaAuthStartOut,
+  ): void {
+    if (
+      result.credential_ref !== credentialRef ||
+      nativeAuthorizationCredentialRef.value !== credentialRef
+    ) {
+      return
+    }
+    nativeAuthorization.value = {
+      credential_ref: credentialRef,
+      provider_key: result.provider_key,
+      status: result.status,
+      generation: result.challenge?.generation ?? null,
+      challenge: result.challenge ?? null,
+    }
+  }
+
   function requestRevoke(account: AccountRow): void {
     pendingRevoke.value = account
   }
@@ -452,8 +851,22 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
     providerMessages.value = { ...providerMessages.value, [providerKey]: { tone, text } }
   }
 
+  function clearProviderMessage(providerKey: string): void {
+    if (!providerMessages.value[providerKey]) return
+    const next = { ...providerMessages.value }
+    delete next[providerKey]
+    providerMessages.value = next
+  }
+
   function setAccountMessage(credentialRef: string, tone: MessageTone, text: string): void {
     accountMessages.value = { ...accountMessages.value, [credentialRef]: { tone, text } }
+  }
+
+  function clearAccountMessage(credentialRef: string): void {
+    if (!accountMessages.value[credentialRef]) return
+    const next = { ...accountMessages.value }
+    delete next[credentialRef]
+    accountMessages.value = next
   }
 
   return {
@@ -468,6 +881,19 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
     pendingRevoke,
     editing,
     editingSecretPresent,
+    nativeAuthorization,
+    nativeAuthorizationActive,
+    nativeAuthorizationMode,
+    nativeAuthorizationAllowsQr,
+    nativeAuthorizationBusy,
+    nativeSession,
+    nativeSessionActive,
+    nativeSessionBusy,
+    nativeAccountDraftDirty,
+    telegramApplicationConfigured,
+    telegramApplicationBusy,
+    telegramApplicationError,
+    refreshTelegramApplicationStatus,
     authMethods,
     selectedMethodKey,
     selectedMethod,
@@ -491,14 +917,42 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
     load,
     openAddAccount,
     openEditAccount,
+    resetNativeAccountDraft,
     saveAccount,
+    saveAndContinueNativeAuthorization,
     startProvider,
+    startNativeAuthorization,
+    restartNativeAuthorization,
+    setNativeAuthorizationMode,
+    refreshNativeAuthorization,
+    refreshNativeSession,
+    connectNativeSession,
+    disconnectNativeSession,
+    submitNativeAuthorization,
+    cancelNativeAuthorization,
     testAccount,
     requestRevoke,
     confirmRevoke,
     applyOAuthReturn,
     connectionActionKey,
   }
+}
+
+function isNativeAuthorization(method: AuthMethod | null): boolean {
+  return method?.config?.native_authorization === true
+}
+
+function nativeAccountKind(method: AuthMethod | null): 'bot' | 'user' | null {
+  const kind = method?.config?.account_kind
+  return kind === 'bot' || kind === 'user' ? kind : null
+}
+
+function requestAuthorizationMode(
+  mode: NativeAuthorizationMode,
+): SchemaAuthStartRequest['authorization_mode'] {
+  return mode === 'qr'
+    ? AuthStartRequestAuthorization_mode.qr
+    : AuthStartRequestAuthorization_mode.phone
 }
 
 function safeAuthorizationUrl(value: string | null | undefined): string | null {

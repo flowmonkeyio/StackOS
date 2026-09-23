@@ -1,5 +1,3 @@
-import type { SchemaAccountOut } from '@/api'
-
 import type {
   CommunicationProfile,
   CommunicationRoute,
@@ -7,8 +5,6 @@ import type {
   CommunicationTarget,
   ConnectionRow,
   IngressEndpointRoute,
-  TelegramCommandDraft,
-  TelegramCommandSpec,
 } from './types'
 
 export * from './credentialPresentation'
@@ -83,7 +79,6 @@ export function surfaceAudienceLabel(surface: CommunicationSurface): string {
 }
 
 const ROUTE_STATUS_LABELS: Record<string, string> = {
-  remote_webhook_updated: 'Webhook ready',
   ready: 'Ready',
   manual_provider_update_required: 'Manual update needed',
 }
@@ -121,7 +116,7 @@ export function credentialDiscoveryLabel(
   providerKey: string,
   metadata: Record<string, unknown> | undefined,
 ): string {
-  if (providerKey === 'telegram-bot') {
+  if (providerKey === 'telegram') {
     const username = metadataText(metadata, 'username')
     return username ? `@${username}` : metadataText(metadata, 'first_name')
   }
@@ -144,7 +139,7 @@ export function credentialTestMessage(
 ): string {
   const label = credentialDiscoveryLabel(providerKey, metadata)
   if (!label) return fallback
-  if (providerKey === 'telegram-bot') return `Telegram bot verified as ${label}.`
+  if (providerKey === 'telegram') return `Telegram Account verified as ${label}.`
   if (providerKey === 'slack-bot') return `Slack bot verified for ${label}.`
   return fallback
 }
@@ -154,50 +149,6 @@ export function parseCsv(value: string): string[] {
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean)
-}
-
-export function normalizeCommand(value: string): string {
-  const command = value.trim()
-  if (!command) return ''
-  return command.startsWith('/') ? command : `/${command}`
-}
-
-export function toCommandDrafts(commands: TelegramCommandSpec[]): TelegramCommandDraft[] {
-  const drafts = commands.map((command) => ({
-    command: normalizeCommand(command.command),
-    description: command.description ?? '',
-    guidance: command.guidance ?? '',
-    enabled: command.enabled !== false,
-  }))
-  return drafts.length > 0
-    ? drafts
-    : [
-        {
-          command: '',
-          description: '',
-          guidance: '',
-          enabled: true,
-        },
-      ]
-}
-
-export function toCommandSpecs(commands: TelegramCommandDraft[]): TelegramCommandSpec[] {
-  return commands
-    .map((command) => ({
-      command: normalizeCommand(command.command),
-      description: command.description.trim(),
-      guidance: command.guidance.trim(),
-      enabled: command.enabled,
-    }))
-    .filter((command) => command.command)
-}
-
-export function commandSummary(commands: TelegramCommandSpec[] | undefined): string {
-  const values = (commands ?? [])
-    .filter((command) => command.enabled !== false)
-    .map((command) => command.command)
-    .filter(Boolean)
-  return values.length > 0 ? values.join(', ') : '-'
 }
 
 export function profileAudienceMeta(profile: CommunicationProfile): {
@@ -214,27 +165,6 @@ export function profileAudienceMeta(profile: CommunicationProfile): {
     label: 'Chats',
     count: profile.access_policy.allowed_chat_refs?.length ?? 0,
   }
-}
-
-export function telegramFacet(profile: CommunicationProfile): Record<string, unknown> {
-  return profile.provider_facets?.['telegram-bot'] ?? {}
-}
-
-export function telegramFacetString(profile: CommunicationProfile, key: string): string {
-  const value = telegramFacet(profile)[key]
-  return typeof value === 'string' ? value : ''
-}
-
-export function telegramProfileCredentialRef(profile: CommunicationProfile): string {
-  return telegramFacetString(profile, 'credential_ref')
-}
-
-export function telegramProfileUsername(profile: CommunicationProfile): string {
-  return telegramFacetString(profile, 'bot_username').replace(/^@/, '')
-}
-
-export function telegramProfileIngressMode(profile: CommunicationProfile): string {
-  return telegramFacetString(profile, 'ingress_mode') || 'not configured'
 }
 
 export function slackFacet(profile: CommunicationProfile): Record<string, unknown> {
@@ -263,51 +193,17 @@ export function slackFacetFromConnection(connection: ConnectionRow | null): Reco
   return facet
 }
 
-export function telegramCommands(profile: CommunicationProfile): TelegramCommandSpec[] {
-  const commands = profile.trigger_policy['commands']
-  return Array.isArray(commands) ? (commands as TelegramCommandSpec[]) : []
-}
-
-export function telegramConnectionForProfile(
-  credentialRef: string,
-  telegramConnections: ConnectionRow[],
-): ConnectionRow | null {
-  return (
-    telegramConnections.find((connection) => connection.credential_ref === credentialRef) ?? null
-  )
-}
-
-export function botUsernameFromConnection(
-  connection: SchemaAccountOut | null,
-): string | null {
-  const metadata = connection?.account?.metadata_json
-  const username =
-    metadata && typeof metadata === 'object' && 'username' in metadata
-      ? String((metadata as Record<string, unknown>).username ?? '').trim()
-      : ''
-  if (username) return username.replace(/^@/, '')
-  const displayName = String(connection?.account?.display_name ?? '').trim()
-  return displayName.startsWith('@') ? displayName.slice(1) : null
-}
-
-export function preferredTelegramConnection(
-  identifiedTelegramConnections: ConnectionRow[],
-  telegramConnections: ConnectionRow[],
-): ConnectionRow | null {
-  return identifiedTelegramConnections[0] ?? telegramConnections[0] ?? null
-}
-
 // --- Plain-language helpers for the Messaging sections ---
 
 const PROVIDER_LABELS: Record<string, string> = {
-  'telegram-bot': 'Telegram',
+  telegram: 'Telegram',
   'slack-bot': 'Slack',
   smtp: 'Email (SMTP)',
   imap: 'Email (IMAP)',
   'local-agent-chat': 'Local chat',
 }
 
-/** Friendly provider name (e.g. `telegram-bot` -> "Telegram"). */
+/** Friendly provider name (e.g. `telegram` -> "Telegram"). */
 export function providerLabel(providerKey: string | null | undefined): string {
   if (!providerKey) return 'Unknown'
   return PROVIDER_LABELS[providerKey] ?? titleCase(providerKey.replace(/-bot$/, ''))
@@ -332,7 +228,7 @@ export function channelKindLabel(surface: CommunicationSurface): string {
   return CHANNEL_KIND_LABELS[surface.kind] ?? titleCase(surface.kind)
 }
 
-/** First (primary) provider a bot profile is bound to, e.g. `telegram-bot`. */
+/** First (primary) provider a bot profile is bound to, e.g. `telegram`. */
 export function profilePrimaryProvider(profile: CommunicationProfile): string {
   return profileProviderKeys(profile)[0] ?? ''
 }

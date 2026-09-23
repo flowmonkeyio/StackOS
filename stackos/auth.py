@@ -41,12 +41,6 @@ PROTECTED_PREFIXES: tuple[str, ...] = ("/api/v1", "/mcp")
 #   this endpoint. The HostHeaderMiddleware (loopback-only) and CORSMiddleware
 #   (same-origin) form the upstream guard. Trade-off documented in
 #   ``docs/security.md`` and in ``stackos/api/auth.py``.
-# - ``/api/v1/ingress/telegram``: Telegram webhooks and local relay processes
-#   cannot carry the daemon bearer token. The route validates Telegram's
-#   `X-Telegram-Bot-Api-Secret-Token` against the encrypted provider
-#   credential before it writes resources or agent requests. HostHeaderMiddleware
-#   permits tunnel/deployed Host headers only on provider ingress paths; every
-#   non-ingress API path remains loopback-host guarded.
 # - ``/api/v1/ingress/slack``: Slack Events API and Interactivity requests
 #   cannot carry the daemon bearer token. The route verifies Slack's
 #   `X-Slack-Signature` HMAC against the encrypted Slack signing secret and
@@ -61,7 +55,6 @@ PROTECTED_PREFIXES: tuple[str, ...] = ("/api/v1", "/mcp")
 WHITELIST_PREFIXES: tuple[str, ...] = (
     "/api/v1/health",
     "/api/v1/auth/ui-token",
-    "/api/v1/ingress/telegram",
     "/api/v1/ingress/slack",
     "/api/v1/ingress/hubspot",
 )
@@ -221,7 +214,19 @@ def _allows_ui_auth_setup(path: str, method: str) -> bool:
             return method in {"POST", "PATCH"}
         if len(segments) == 6 and segments[5] in {"start", "test", "revoke"}:
             return method == "POST"
+        if len(segments) == 6 and segments[5] == "authorization":
+            return method in {"POST", "DELETE"}
         return False
+    if (
+        len(segments) == 9
+        and segments[:3] == ["api", "v1", "projects"]
+        and segments[3].isdigit()
+        and segments[4:6] == ["connections", "accounts"]
+        and bool(segments[6])
+        and segments[7] == "session"
+        and segments[8] in {"connect", "disconnect"}
+    ):
+        return method == "POST"
     return (
         len(segments) == 7
         and segments[:3] == ["api", "v1", "projects"]

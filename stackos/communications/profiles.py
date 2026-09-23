@@ -11,7 +11,7 @@ from stackos.communications.resources import communication_record_by_external_id
 from stackos.db.models import Credential, Plugin, ProjectCredential, Resource, ResourceRecord
 from stackos.repositories.base import ConflictError, ValidationError
 
-_PROVIDER_OWNED_INGRESS_KEYS = frozenset({"slack-bot", "telegram-bot"})
+_PROVIDER_OWNED_INGRESS_KEYS = frozenset({"slack-bot"})
 _DAEMON_OWNED_INGRESS_FIELDS = frozenset(
     {
         "ingress_path",
@@ -20,9 +20,6 @@ _DAEMON_OWNED_INGRESS_FIELDS = frozenset(
         "ingress_driver",
         "ingress_endpoint_ref",
         "manual_ingress_confirmation",
-        "webhook_base_url",
-        "allowed_webhook_hosts",
-        "webhook_policy",
     }
 )
 CommunicationProfileBindingStatus = Literal["ready", "repair-required", "disabled"]
@@ -426,16 +423,5 @@ def merged_provider_profile(profile: dict[str, Any], provider_key: str) -> dict[
         "context_policy": dict(profile.get("context_policy") or {}),
         "response_policy": dict(profile.get("response_policy") or {}),
         "refs": dict(facet.get("refs") or {}),
-        "allowed_webhook_hosts": list(facet.get("allowed_webhook_hosts") or []),
     }
-    if "bot_username" in facet:
-        merged["bot_username"] = facet.get("bot_username")
-    if "ingress_mode" in facet:
-        merged["ingress_mode"] = facet.get("ingress_mode")
-    if "allowed_updates" in facet:
-        merged["allowed_updates"] = facet.get("allowed_updates")
-    if "webhook_base_url" in facet:
-        merged["webhook_base_url"] = facet.get("webhook_base_url")
-    for key_name in ("reply_to_message_refs", "thread_refs", "direct_messages_topic_refs"):
-        merged[key_name] = dict(facet.get(key_name) or {})
     return merged

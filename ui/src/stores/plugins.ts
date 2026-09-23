@@ -3,7 +3,10 @@ import { defineStore } from 'pinia'
 
 import type {
   SchemaActionOut,
+  SchemaAccountAuthStatusOut,
   SchemaAccountOut,
+  SchemaAccountSessionOut,
+  SchemaAuthAuthorizationSubmitRequest,
   SchemaAuthCredentialEditOut,
   SchemaAuthCredentialSetRequest,
   SchemaAuthCredentialUpdateRequest,
@@ -20,9 +23,14 @@ import type {
   SchemaWriteResponseAuthRevokeOut,
   SchemaWriteResponseAuthStartOut,
   SchemaWriteResponseAuthTestOut,
+  SchemaWriteResponseAccountAuthStatusOut,
+  SchemaWriteResponseAccountSessionOut,
 } from '@/api'
 import { apiFetch, formatApiError } from '@/lib/client'
 import { createProjectRequestGate } from '@/lib/stackos/projectRequestGate'
+
+/** Safe projection of one project-authorized Telegram Account session. */
+export type TelegramAccountSessionStatus = SchemaAccountSessionOut
 
 export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
   const plugins = ref<SchemaPluginOut[]>([])
@@ -241,9 +249,46 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     return response
   }
 
-  async function testCredential(
+  async function getAccountAuthorization(
     credentialRef: string,
-  ): Promise<SchemaWriteResponseAuthTestOut> {
+  ): Promise<SchemaAccountAuthStatusOut> {
+    error.value = null
+    return apiFetch<SchemaAccountAuthStatusOut>(
+      `/api/v1/auth/accounts/${encodeURIComponent(credentialRef)}/authorization`,
+    )
+  }
+
+  async function submitAccountAuthorization(
+    credentialRef: string,
+    body: SchemaAuthAuthorizationSubmitRequest,
+  ): Promise<SchemaWriteResponseAccountAuthStatusOut> {
+    error.value = null
+    const response = await apiFetch<SchemaWriteResponseAccountAuthStatusOut>(
+      `/api/v1/auth/accounts/${encodeURIComponent(credentialRef)}/authorization`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    )
+    await refreshAccounts({ silent: true })
+    return response
+  }
+
+  async function cancelAccountAuthorization(
+    credentialRef: string,
+    generation: number,
+  ): Promise<SchemaWriteResponseAccountAuthStatusOut> {
+    error.value = null
+    const response = await apiFetch<SchemaWriteResponseAccountAuthStatusOut>(
+      `/api/v1/auth/accounts/${encodeURIComponent(credentialRef)}/authorization?generation=${generation}`,
+      { method: 'DELETE' },
+    )
+    await refreshAccounts({ silent: true })
+    return response
+  }
+
+  async function testCredential(credentialRef: string): Promise<SchemaWriteResponseAuthTestOut> {
     error.value = null
     const response = await apiFetch<SchemaWriteResponseAuthTestOut>(
       `/api/v1/auth/accounts/${encodeURIComponent(credentialRef)}/test`,
@@ -269,10 +314,49 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     return response
   }
 
-  async function attachAccount(projectId: number, credentialRef: string): Promise<SchemaAccountOut> {
+  async function attachAccount(
+    projectId: number,
+    credentialRef: string,
+  ): Promise<SchemaAccountOut> {
     error.value = null
     const response = await apiFetch<{ data: SchemaAccountOut }>(
       `/api/v1/projects/${projectId}/connections/accounts/${encodeURIComponent(credentialRef)}`,
+      { method: 'POST' },
+    )
+    await Promise.all([refreshAccounts({ silent: true }), refreshAuth(projectId, { silent: true })])
+    return response.data
+  }
+
+  async function detachAccount(
+    projectId: number,
+    credentialRef: string,
+  ): Promise<SchemaAccountOut> {
+    error.value = null
+    const response = await apiFetch<{ data: SchemaAccountOut }>(
+      `/api/v1/projects/${projectId}/connections/accounts/${encodeURIComponent(credentialRef)}`,
+      { method: 'DELETE' },
+    )
+    await Promise.all([refreshAccounts({ silent: true }), refreshAuth(projectId, { silent: true })])
+    return response.data
+  }
+
+  async function getTelegramAccountSession(
+    projectId: number,
+    credentialRef: string,
+  ): Promise<TelegramAccountSessionStatus> {
+    error.value = null
+    return apiFetch<TelegramAccountSessionStatus>(
+      `/api/v1/projects/${projectId}/connections/accounts/${encodeURIComponent(credentialRef)}/session`,
+    )
+  }
+
+  async function connectTelegramAccountSession(
+    projectId: number,
+    credentialRef: string,
+  ): Promise<TelegramAccountSessionStatus> {
+    error.value = null
+    const response = await apiFetch<SchemaWriteResponseAccountSessionOut>(
+      `/api/v1/projects/${projectId}/connections/accounts/${encodeURIComponent(credentialRef)}/session/connect`,
       { method: 'POST' },
     )
     await Promise.all([
@@ -282,11 +366,14 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     return response.data
   }
 
-  async function detachAccount(projectId: number, credentialRef: string): Promise<SchemaAccountOut> {
+  async function disconnectTelegramAccountSession(
+    projectId: number,
+    credentialRef: string,
+  ): Promise<TelegramAccountSessionStatus> {
     error.value = null
-    const response = await apiFetch<{ data: SchemaAccountOut }>(
-      `/api/v1/projects/${projectId}/connections/accounts/${encodeURIComponent(credentialRef)}`,
-      { method: 'DELETE' },
+    const response = await apiFetch<SchemaWriteResponseAccountSessionOut>(
+      `/api/v1/projects/${projectId}/connections/accounts/${encodeURIComponent(credentialRef)}/session/disconnect`,
+      { method: 'POST' },
     )
     await Promise.all([
       refreshAccounts({ silent: true }),
@@ -334,10 +421,16 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     getCredential,
     updateCredential,
     startCredential,
+    getAccountAuthorization,
+    submitAccountAuthorization,
+    cancelAccountAuthorization,
     testCredential,
     revokeCredential,
     attachAccount,
     detachAccount,
+    getTelegramAccountSession,
+    connectTelegramAccountSession,
+    disconnectTelegramAccountSession,
     actionsFor,
     capabilitiesFor,
     providersFor,

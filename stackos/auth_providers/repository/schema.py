@@ -129,6 +129,42 @@ class AuthStatusOut(BaseModel):
     accounts: list[AccountOut]
 
 
+class AccountAuthChallengeOut(BaseModel):
+    """Safe projection of one current local-admin authorization challenge."""
+
+    generation: int
+    kind: str
+    expires_at: datetime | None = None
+    fields: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    qr_link: str | None = Field(default=None, repr=False)
+
+
+class AccountAuthStatusOut(BaseModel):
+    """Sanitized native or OAuth-independent Account authorization state."""
+
+    credential_ref: str
+    provider_key: str
+    status: str
+    generation: int | None = None
+    challenge: AccountAuthChallengeOut | None = None
+    updated_at: datetime | None = None
+    repair_hint: str | None = None
+
+
+class AccountSessionOut(BaseModel):
+    """Agent-safe state of one project-attached Telegram Account session."""
+
+    credential_ref: str
+    provider_key: str = "telegram"
+    desired_connected: bool
+    connected: bool
+    status: str
+    project_ids: list[int] = Field(default_factory=list)
+    affects_other_projects: bool = False
+    next_action: str | None = None
+
+
 class AuthStartOut(BaseModel):
     attach_project_id: int | None = None
     return_surface: str = "accounts"
@@ -141,6 +177,7 @@ class AuthStartOut(BaseModel):
     redirect_uri: str | None = None
     credential_ref: str | None = None
     expires_at: datetime | None = None
+    challenge: AccountAuthChallengeOut | None = None
 
 
 class OAuthCallbackOut(BaseModel):
@@ -158,6 +195,8 @@ class AuthRevokeOut(BaseModel):
     provider_key: str
     revoked_at: datetime
     status: str = "revoked"
+    remote_logout_status: Literal["requested", "unconfirmed"] | None = None
+    local_data_removed: bool | None = None
 
 
 class AuthCredentialSetOut(AccountOut):

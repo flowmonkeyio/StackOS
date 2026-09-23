@@ -278,6 +278,18 @@ class IntegrationCredential(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
 
 
+class TelegramApplication(SQLModel, table=True):
+    """One daemon-held TDLib application identity shared by Telegram Accounts."""
+
+    __tablename__ = "telegram_application"
+
+    id: int = Field(default=1, primary_key=True)
+    encrypted_payload: bytes = Field(sa_column=Column(LargeBinary, nullable=False))
+    nonce: bytes = Field(sa_column=Column(LargeBinary(12), nullable=False))
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
 class IntegrationBudget(SQLModel, table=True):
     """Pre-emptive cost cap + rate limit (PLAN.md L368)."""
 
@@ -319,4 +331,5 @@ __all__ = [
     "IntegrationCredential",
     "OAuthState",
     "ProjectCredential",
+    "TelegramApplication",
 ]

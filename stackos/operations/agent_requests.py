@@ -59,7 +59,7 @@ class AgentRequestCreateInput(MCPInput):
                 "request_key": "telegram:update:123",
                 "title": "Inbound Telegram message",
                 "body_preview": "Please run the launch check",
-                "source_provider": "telegram-bot",
+                "source_provider": "telegram",
                 "source_kind": "telegram-message",
             }
         },
@@ -482,7 +482,7 @@ def operation_specs() -> list[OperationSpec]:
                         "project_id": 1,
                         "request_key": "telegram:update:123",
                         "title": "Telegram message needs agent action",
-                        "source_provider": "telegram-bot",
+                        "source_provider": "telegram",
                         "source_kind": "telegram-message",
                         "source_resource_key": "communication-message",
                         "source_resource_record_id": 77,

@@ -675,6 +675,45 @@ def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
     assert statuses["missing"]["reason_code"] == "unknown_tool"
 
 
+def test_bridge_toolbox_exposes_telegram_session_controls_as_agent_setup() -> None:
+    catalog = {
+        "account.start": _tool(
+            "account.start",
+            operation_name="account.start",
+            grant_policy="local-admin-auth-write",
+        ),
+        "account.session.status": _tool(
+            "account.session.status",
+            operation_name="account.session.status",
+            grant_policy="direct-read",
+        ),
+        "account.session.connect": _tool(
+            "account.session.connect",
+            operation_name="account.session.connect",
+            grant_policy="direct-setup-write",
+        ),
+        "account.session.disconnect": _tool(
+            "account.session.disconnect",
+            operation_name="account.session.disconnect",
+            grant_policy="direct-setup-write",
+        ),
+    }
+    requested = list(catalog)
+    response = _bridge_toolbox_describe(
+        43,
+        catalog=catalog,
+        arguments={"tool_names": requested},
+        run_id=None,
+        allowed_by_run={},
+    )
+    payload = _structured(response)
+    statuses = {item["name"]: item for item in payload["tool_statuses"]}
+    for name in requested[1:]:
+        assert statuses[name]["reason_code"] == "available"
+        assert statuses[name]["call_via"] == "toolbox.call"
+    assert statuses["account.start"]["reason_code"] == "local_admin_required"
+
+
 def test_bridge_toolbox_describe_without_names_returns_discovery_recipe() -> None:
     catalog = {
         "operation.list": _tool("operation.list", operation_name="operation.list"),
@@ -1340,10 +1379,9 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
             "enabled": True,
             "identity": {"display_name": "Support", "purpose": "Help", "voice": "Calm"},
             "provider_facets": {
-                "telegram-bot": {
+                "telegram": {
                     "credential_ref": "cred_telegram_support",
-                    "bot_username": "support_bot",
-                    "ingress_mode": "webhook",
+                    "ingress_enabled": True,
                 },
                 "slack-bot": {
                     "credential_ref": "cred_slack_support",
@@ -1365,7 +1403,7 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
     )
 
     assert compact["profile_ref"] == "communication-profile:support"
-    assert compact["provider_facets"]["telegram-bot"]["credential_ref"] == "cred_telegram_support"
+    assert compact["provider_facets"]["telegram"]["credential_ref"] == "cred_telegram_support"
     assert compact["provider_facets"]["slack-bot"]["credential_ref"] == "cred_slack_support"
     assert compact["send_policy"] == {"mode": "explicit-targets"}
     assert "credential_ref" not in compact
@@ -1426,6 +1464,7 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
         "browser.session.stop",
         "communication.reply",
         "communication.send",
+        "communication.sendBatch",
         "context.query",
         "context.snapshot",
         "decision.record",
@@ -1492,6 +1531,7 @@ def test_bridge_system_grant_matches_agent_operation_surface() -> None:
         "executionContext.artifact.read",
         "communication.reply",
         "communication.send",
+        "communication.sendBatch",
         *[name for name in _AGENT_RUN_PLAN_GATED_TOOL_NAMES if name.startswith("browser.")],
     }
     assert (_AGENT_RUN_PLAN_GATED_TOOL_NAMES - direct_safe_tools).isdisjoint(system_tools)

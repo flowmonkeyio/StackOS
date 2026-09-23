@@ -156,10 +156,10 @@ def test_slack_and_telegram_accounts_are_global_but_connections_are_project_boun
     repo = AuthRepository(session)
 
     telegram = repo.store_credential(
-        provider_key="telegram-bot",
+        provider_key="telegram",
         display_name="Telegram - Default",
-        auth_method_key="bot-token",
-        fields={"bot_token": "123456:test-token"},
+        auth_method_key="tdlib-bot-token",
+        fields={"bot_token": "123456:test-token", "api_id": 12345, "api_hash": "test-app-hash"},
     ).data
     slack = repo.store_credential(
         provider_key="slack-bot",
@@ -231,10 +231,10 @@ def test_detach_is_blocked_by_an_active_project_communication_profile(
 ) -> None:
     repo = AuthRepository(session)
     telegram = repo.store_credential(
-        provider_key="telegram-bot",
+        provider_key="telegram",
         display_name="Support Bot",
-        auth_method_key="bot-token",
-        fields={"bot_token": "998877:test-token"},
+        auth_method_key="tdlib-bot-token",
+        fields={"bot_token": "998877:test-token", "api_id": 12345, "api_hash": "test-app-hash"},
         attach_project_id=project_id,
     ).data
     ResourceRepository(session).upsert_record(
@@ -246,7 +246,7 @@ def test_detach_is_blocked_by_an_active_project_communication_profile(
         data_json={
             "key": "support",
             "enabled": True,
-            "provider_facets": {"telegram-bot": {"credential_ref": telegram.credential_ref}},
+            "provider_facets": {"telegram": {"credential_ref": telegram.credential_ref}},
         },
         provenance_json={"source": "test"},
     )
@@ -262,7 +262,7 @@ def test_detach_is_blocked_by_an_active_project_communication_profile(
     )
     assert (
         profiles
-        and profiles[0].data_json["provider_facets"]["telegram-bot"]["credential_ref"]
+        and profiles[0].data_json["provider_facets"]["telegram"]["credential_ref"]
         == telegram.credential_ref
     )
 

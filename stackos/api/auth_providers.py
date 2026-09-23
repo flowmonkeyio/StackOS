@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Body, Depends, Query, status
@@ -14,7 +14,9 @@ from sqlmodel import Session
 from stackos.api.deps import get_session, get_settings
 from stackos.api.envelopes import WriteResponse
 from stackos.auth_providers import (
+    AccountAuthStatusOut,
     AccountOut,
+    AccountSessionOut,
     AuthCredentialEditOut,
     AuthCredentialSetOut,
     AuthProviderOut,
@@ -25,11 +27,21 @@ from stackos.auth_providers import (
     AuthTestOut,
 )
 from stackos.config import Settings
+from stackos.operations.auth_handlers import TelegramApplicationStatusOut
 from stackos.operations.dispatcher import OperationDispatcher
 from stackos.operations.registry import build_operation_registry
 from stackos.repositories.base import RepositoryError
 
 router = APIRouter(prefix="/api/v1", tags=["auth-providers"])
+
+
+@router.get("/auth/telegram/application", response_model=TelegramApplicationStatusOut)
+async def auth_telegram_application_status(
+    session: Session = Depends(get_session),
+) -> TelegramApplicationStatusOut:
+    """Expose only whether the daemon has a shared TDLib application."""
+    payload = await _dispatch_auth_operation("account.application.status", {}, session=session)
+    return TelegramApplicationStatusOut.model_validate(payload)
 
 
 async def _dispatch_auth_operation(
@@ -66,6 +78,19 @@ class AuthStartRequest(BaseModel):
     return_surface: str = Field(
         default="accounts",
         pattern="^(accounts|project-connections)$",
+    )
+    authorization_mode: Literal["phone", "qr"] = "phone"
+
+
+class AuthAuthorizationSubmitRequest(BaseModel):
+    """A write-only local-admin answer for a native Account challenge."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    generation: int = Field(gt=0)
+    answer: dict[str, Any] = Field(
+        default_factory=dict,
+        json_schema_extra={"writeOnly": True},
     )
 
 
@@ -140,6 +165,60 @@ async def list_project_connections(
     return AuthStatusOut.model_validate(payload)
 
 
+@router.get(
+    "/projects/{project_id}/connections/accounts/{credential_ref}/session",
+    response_model=AccountSessionOut,
+)
+async def auth_account_session_status(
+    project_id: int,
+    credential_ref: str,
+    session: Session = Depends(get_session),
+) -> AccountSessionOut:
+    """Inspect one attached Account's requested and live TDLib session state."""
+    payload = await _dispatch_auth_operation(
+        "account.session.status",
+        {"project_id": project_id, "credential_ref": credential_ref},
+        session=session,
+    )
+    return AccountSessionOut.model_validate(payload)
+
+
+@router.post(
+    "/projects/{project_id}/connections/accounts/{credential_ref}/session/connect",
+    response_model=WriteResponse[AccountSessionOut],
+)
+async def auth_account_session_connect(
+    project_id: int,
+    credential_ref: str,
+    session: Session = Depends(get_session),
+) -> WriteResponse[AccountSessionOut]:
+    """Apply one explicit connect command to a project-attached shared Account."""
+    payload = await _dispatch_auth_operation(
+        "account.session.connect",
+        {"project_id": project_id, "credential_ref": credential_ref},
+        session=session,
+    )
+    return WriteResponse[AccountSessionOut].model_validate(payload)
+
+
+@router.post(
+    "/projects/{project_id}/connections/accounts/{credential_ref}/session/disconnect",
+    response_model=WriteResponse[AccountSessionOut],
+)
+async def auth_account_session_disconnect(
+    project_id: int,
+    credential_ref: str,
+    session: Session = Depends(get_session),
+) -> WriteResponse[AccountSessionOut]:
+    """Apply one explicit disconnect command to every project using this Account."""
+    payload = await _dispatch_auth_operation(
+        "account.session.disconnect",
+        {"project_id": project_id, "credential_ref": credential_ref},
+        session=session,
+    )
+    return WriteResponse[AccountSessionOut].model_validate(payload)
+
+
 @router.post(
     "/auth/accounts/{provider_key}/start",
     response_model=WriteResponse[AuthStartOut],
@@ -160,11 +239,69 @@ async def auth_start(
             "credential_ref": body.credential_ref if body is not None else None,
             "attach_project_id": body.attach_project_id if body is not None else None,
             "return_surface": body.return_surface if body is not None else "accounts",
+            "authorization_mode": body.authorization_mode if body is not None else "phone",
         },
         session=session,
         settings=settings,
     )
     return WriteResponse[AuthStartOut].model_validate(payload)
+
+
+@router.get(
+    "/auth/accounts/{credential_ref}/authorization",
+    response_model=AccountAuthStatusOut,
+)
+async def auth_authorization_status(
+    credential_ref: str,
+    session: Session = Depends(get_session),
+) -> AccountAuthStatusOut:
+    """Read the safe generation-fenced native authorization state."""
+    payload = await _dispatch_auth_operation(
+        "account.authorization.status",
+        {"credential_ref": credential_ref},
+        session=session,
+    )
+    return AccountAuthStatusOut.model_validate(payload)
+
+
+@router.post(
+    "/auth/accounts/{credential_ref}/authorization",
+    response_model=WriteResponse[AccountAuthStatusOut],
+)
+async def auth_authorization_submit(
+    credential_ref: str,
+    body: AuthAuthorizationSubmitRequest,
+    session: Session = Depends(get_session),
+) -> WriteResponse[AccountAuthStatusOut]:
+    """Submit one write-only native authorization answer."""
+    payload = await _dispatch_auth_operation(
+        "account.authorization.submit",
+        {
+            "credential_ref": credential_ref,
+            "generation": body.generation,
+            "answer": body.answer,
+        },
+        session=session,
+    )
+    return WriteResponse[AccountAuthStatusOut].model_validate(payload)
+
+
+@router.delete(
+    "/auth/accounts/{credential_ref}/authorization",
+    response_model=WriteResponse[AccountAuthStatusOut],
+)
+async def auth_authorization_cancel(
+    credential_ref: str,
+    generation: int = Query(gt=0),
+    session: Session = Depends(get_session),
+) -> WriteResponse[AccountAuthStatusOut]:
+    """Fence and cancel one native authorization generation."""
+    payload = await _dispatch_auth_operation(
+        "account.authorization.cancel",
+        {"credential_ref": credential_ref, "generation": generation},
+        session=session,
+    )
+    return WriteResponse[AccountAuthStatusOut].model_validate(payload)
 
 
 @router.get(

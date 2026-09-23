@@ -292,7 +292,7 @@ stackos actions execute utils.sitemap.fetch \
   --run-token "$RUN_TOKEN" \
   --context-ref ctx_reporting \
   --input action-input.json
-stackos actions run communications.telegram-bot.message.send \
+stackos actions run communications.telegram.message.send \
   --project 1 \
   --credential-ref cred_123 \
   --confirm-direct \
@@ -580,13 +580,17 @@ Agent flow:
    and merges typed `provider_context_json`, records output/request-budget
    metadata, and keeps endpoint `input_json` separate.
 4. External provider actions are file-backed by default for MCP/REST calls and
-   raw inline by default for CLI calls. Use `output_policy_json.mode` only for
-   deliberate overrides such as `inline`, `file_if_large`, a custom
-   `semantic_name`, or an absolute directory `path`. StackOS generates the
-   response filename inside that directory. For file-backed responses,
-   inspect the returned file path before rerunning paid/provider calls. If the
-   response envelope contract is needed, call `schema.get` with the returned
-   `schema_ref`. Use `artifact.read` only for intentional StackOS artifacts.
+   raw inline by default for CLI calls. Use `output_policy_json.mode` for a
+   deliberate override: `inline`, `file_if_large`, `always_file`, or
+   `transient`. File-backed output can take a `semantic_name` and absolute
+   directory `path`; StackOS generates the filename there. For a foreground
+   provider read that should not retain its result, use `transient` with
+   `response_mode=raw` and no replay key. The immediate response contains a
+   bounded result; the audit retains a content-free receipt and `actionCall.get`
+   cannot replay the result. For file-backed responses, inspect the returned
+   file path before rerunning paid/provider calls. If the response envelope
+   contract is needed, call `schema.get` with the returned `schema_ref`. Use
+   `artifact.read` only for intentional StackOS artifacts.
 5. Treat `request_budget_json` as the coordination contract for agents using
    the context. Supported fields are `max_parallel`, `max_calls`,
    `max_calls_per_run`, `window_seconds`, and `notes`. Current action-call rows
@@ -767,7 +771,36 @@ Simple one-off sends can run directly. Workflow sends can also run with a
 `run_token`; in that case the active step must grant `communication.send` with
 explicit `targets` such as `communication-target:ops-alerts`. Workflow replies
 must grant `communication.reply` with explicit origin `sources` such as
-`telegram-bot`, `slack-bot`, or a source surface ref.
+`telegram`, `slack-bot`, or a source surface ref.
+
+`communication.sendBatch` accepts an explicit list of up to 1,000
+`telegram-user:` or `telegram-chat:` refs plus the same actor, target and content
+intent as a normal send. Its target must declare
+`send_policy.destination_mode=recipient-list`, explicitly allow the sending
+profile, and authorize the broadcast action. Fixed channel targets cannot
+authorize arbitrary DMs. A bare numeric ID is not a recipient ref. StackOS
+validates ref syntax and target policy, deduplicates the list, and seals it with
+the content into a durable ActionCall. It does not make per-recipient Telegram
+reachability calls before accepting the job. Each leased item resolves its peer
+and records Telegram's send result, including an inaccessible-peer failure.
+Poll `actionCall.get`, inspect `actionCall.items`, and use
+`actionCall.pause/resume/cancel/retry` for lifecycle controls. Workflow calls require
+a `communication.sendBatch` grant naming the exact target.
+
+For durable sends, replies, and batches, `delivery.due_at` sets the earliest UTC
+dispatch time and `delivery.expires_at` sets a deadline for new attempts.
+`delivery.account_interval_seconds` and `delivery.destination_interval_seconds`
+may slow the provider's minimum pacing. These values are sealed at acceptance;
+reusing an `intent_id` with changed content, recipients, or timing rejects
+instead of creating another delivery. Providers without durable support reject
+these options before sending.
+
+Resume and selected-item retry require explicit direct confirmation and an
+intent summary, or the original active workflow step with its matching grant.
+Retry accepts only items with a proven safe, no-effect outcome. Completed,
+in-flight, partial, and unknown effects cannot be replayed. Cancellation and
+expiry stop remaining pending or safely deferred work and preserve existing
+receipts and in-flight effects.
 
 `communicationTarget.resolve` remains a read-only planning/debug helper. It
 returns an explicit provider action ref and safe defaults; it does not send.
@@ -784,6 +817,12 @@ work, not the default agent path.
 provider payload and write a dry-run `action_calls` audit row, but do not call
 the provider connector. The response `effects` field states whether the provider
 connector was called or only validation/audit happened.
+If the resolved action runs in the background, the response reports
+`status=running` with `poll_operation=actionCall.get`, exact `poll_arguments`,
+and `next_poll_after_ms`. Acceptance is not a delivery receipt. Workflow sends
+and replies link their action call to the active plan and step; that step cannot
+complete while its delivery is still running. A replay reports `replayed=true`
+and returns the existing action result without starting another send.
 `communicationContext.query` returns bounded stored communication-message
 history only. It can return outbound messages StackOS sent, inbound messages or
 interactions delivered through ingress, and state changes StackOS recorded.
@@ -798,8 +837,8 @@ Invalid `fields` requests return both the rejected `fields` and the
 provider ingress. Configure stores the generic endpoint, refresh updates it
 from explicit input or driver discovery, routes derives provider webhook URLs,
 sync writes safe route metadata into communication profiles where applicable,
-and status reports readiness. Telegram webhook registration can be applied by
-sync; Slack and HubSpot app-level URLs remain explicit manual provider updates.
+and status reports readiness. Slack and HubSpot app-level URLs remain explicit
+manual provider updates. Telegram receives native TDLib updates and has no webhook route.
 HubSpot routes are derived only for credentials with signed ingress explicitly
 enabled. `ngrok` is only a local tunnel provider configured under
 `driver_config`; production uses `driver=public-url` with a deployed HTTPS base
@@ -812,8 +851,36 @@ Connection authorization:
 
 - `account.list` inventories reusable Accounts globally; `connection.list`
   returns only Accounts attached to one project.
-- `account.test` is the normal daemon-side Account health probe. These
-  operations return opaque refs and sanitized results only.
+- `account.test` is the normal daemon-side Account health probe. For a Telegram
+  Account with saved sign-in, it reopens the encrypted TDLib database, checks
+  authorization with `getMe`, and closes the temporary session; an already
+  active session is reused. Agent calls require the Account to be attached to
+  the current project; the global Accounts Test button is local-admin setup.
+  It does not set durable desired-connected state.
+  These operations return opaque refs and sanitized results only.
+- `account.session.status` is an agent-readable Telegram TDLib session
+  projection for one explicitly attached Account. `account.session.connect` and
+  `account.session.disconnect` are agent-controlled writes with the same
+  project attachment check. They set or clear one durable desired-connected
+  state; they never attach an Account, start a user authorization challenge, or
+  expose native secrets. Their safe response includes connection state, attached
+  project ids, whether another project shares the impact, and the next action.
+  Connect is the only path that records restart restoration; disconnect is the
+  only path that clears it. Local user authorization may open TDLib to complete
+  a challenge, but it saves the sign-in and leaves the session disconnected; it
+  does not choose the durable connection state. A later attached-project
+  connect normally restores that saved user authorization without a phone,
+  code, or password unless Telegram invalidated it. Disconnect preserves saved
+  authorization. While desired-connected is set, `account.update` permits a
+  display-name change only; Telegram, API, token, and proxy changes require
+  explicit disconnect, save, then connect, with no automatic reconnect.
+  An application identity or bot-token edit invalidates the saved authorization
+  and requires local setup again. A proxy-only edit preserves authorization;
+  `account.test` checks the new proxy while leaving the session disconnected.
+  An unauthorized user connect returns `authorization_required` while retaining
+  the explicit connection request; local authorization status exposes the
+  current phone, code, password, or QR challenge so an operator continues it
+  directly without another `account.start`.
 - `connection.attach` and `connection.detach` change only project
   authorization. They are local-admin setup mutations, never copy, rotate, or
   delete Account secrets, and are not callable by normal agent sessions.
@@ -822,6 +889,14 @@ Connection authorization:
   optional project to attach after success, and trusted return surface. It
   returns the provider authorization URL created from the provider contract and
   never accepts authorization codes or caller-selected redirect URIs.
+- For Telegram, `account.start` is the local-admin native authorization action
+  after an operator begins or retries sign-in. User Accounts continue through
+  Telegram's phone, code, and optional password challenge. Bot Account creation
+  checks the saved token once and closes TDLib; a failed first check leaves the
+  Account pending so local setup can retry. A normal agent that connects an
+  unauthorized user Account receives repair guidance instead of challenge
+  material. An explicit bot session connect can use its daemon-held token
+  without returning it.
 - `account.create`, `account.get`, and `account.update` are registered
   REST-only local-admin contracts because their write-only credential fields
   and edit state must not cross MCP or CLI. The exact REST routes and the other

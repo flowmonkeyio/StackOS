@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: communications.outbound-notification
 name: Communications Outbound Notification
-version: 0.1.0
+version: 0.2.0
 description: Reusable setup for sending explicit email, Telegram, or Slack notifications after a run or decision.
 domain: communications
 owner:
@@ -108,9 +108,9 @@ auth_requirements:
     provider: smtp
     auth_type: smtp-password
     optional: true
-  - key: telegram_bot
-    provider: telegram-bot
-    auth_type: bot-token
+  - key: telegram_account
+    provider: telegram
+    auth_type: tdlib
     optional: true
   - key: slack_bot
     provider: slack-bot
@@ -127,11 +127,11 @@ action_contracts:
     route_key: email
     approval_ref: outbound_review
   - key: send_telegram_message
-    action: telegram-bot.message.send
+    action: telegram.message.send
     capability: messaging
-    provider: telegram-bot
+    provider: telegram
     risk_level: write
-    auth_ref: telegram_bot
+    auth_ref: telegram_account
     route_group: delivery_channel
     route_key: telegram
     approval_ref: outbound_review

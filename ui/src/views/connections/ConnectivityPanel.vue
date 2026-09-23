@@ -78,7 +78,7 @@ async function copyRouteUrl(route: IngressEndpointRoute): Promise<void> {
   <section class="space-y-3" aria-label="Connectivity">
     <UiSectionHeader
       title="Connectivity"
-      description="The public address Slack and Telegram use to reach your bots. Each bot gets its own inbound route."
+      description="The public address webhook providers use to reach their configured routes. Telegram bot and user updates stay inside the Account's TDLib session."
       as="h3"
     >
       <template #actions>
@@ -99,12 +99,12 @@ async function copyRouteUrl(route: IngressEndpointRoute): Promise<void> {
           :disabled="localTunnelIsStale()"
           :title="
             localTunnelIsStale()
-              ? 'Refresh the local tunnel before syncing provider webhooks.'
+              ? 'Refresh the local tunnel before refreshing provider routes.'
               : undefined
           "
           @click="$emit('sync')"
         >
-          Sync to providers
+          Refresh routes
         </UiButton>
         <UiButton
           size="sm"
@@ -123,19 +123,19 @@ async function copyRouteUrl(route: IngressEndpointRoute): Promise<void> {
     </UiCallout>
 
     <UiCallout v-else-if="localTunnelIsStale()" tone="warning">
-      This local tunnel is stale. Choose <strong>Set up</strong> to refresh it before syncing or
+      This local tunnel is stale. Choose <strong>Set up</strong> to refresh it before refreshing or
       confirming provider webhooks.
     </UiCallout>
 
     <UiCallout v-else-if="ingressStatus?.blocked_uses?.length" tone="warning">
-      <strong>Repair or disable the affected bot profile before syncing webhooks.</strong>
+      <strong>Repair or disable the affected bot profile before refreshing provider routes.</strong>
       {{ ingressStatus.blocked_uses[0]?.repair_message }}
     </UiCallout>
 
     <UiCallout v-else-if="!ingressStatus?.ready" tone="info">
       Inbound messaging isn’t reachable yet. Bots can still send replies, but they won’t receive new
       messages until a public address is set. Choose <strong>Set up</strong> to add one, then
-      <strong>Sync to providers</strong> to register each bot’s webhook.
+      <strong>Refresh routes</strong> to get the required provider URLs.
     </UiCallout>
 
     <UiCard v-if="loading" aria-label="Loading connectivity">

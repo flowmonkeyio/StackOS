@@ -49,7 +49,7 @@
   "communications.smtp": { "src": "/images/integrations/smtp.svg", "kind": "wordmark-dark" },
   "finance.stripe": { "src": "/images/integrations/stripe-icon.jpeg", "kind": "icon" },
   "media-buying.taboola": { "src": "/images/integrations/taboola-logo.svg", "kind": "icon" },
-  "communications.telegram-bot": { "src": "/images/integrations/telegram.png", "kind": "icon" },
+  "communications.telegram": { "src": "/images/integrations/telegram.png", "kind": "icon" },
   "trackbooth.trackbooth": { "src": "/images/integrations/trackbooth.png", "kind": "wordmark" },
   "utils.video-generation": { "src": "/images/integrations/video-generation.svg", "kind": "icon" },
   "publishing.wordpress": { "src": "/images/integrations/wordpress-icon.png", "kind": "icon" },

@@ -20,8 +20,8 @@ import { formatAbsoluteDateTime, formatRelativeDateTime } from '@/lib/stackos/ti
 
 import {
   accountLabel,
+  accountRowNeedsAttention,
   connectionActionKey,
-  connectionNeedsAttention,
   connectionStatusKey,
   connectionTitle,
   formatAuthType,
@@ -29,6 +29,7 @@ import {
   pluginLabel,
   providerGroupLabel,
   serviceName,
+  telegramAuthorizationSaved,
 } from './formatters'
 import ConnectionCapabilityReadiness from './ConnectionCapabilityReadiness.vue'
 import { credentialVerificationMessage } from './credentialPresentation'
@@ -86,7 +87,7 @@ const visibleGroups = computed(() => {
 })
 
 function isAttention(connection: ConnectionRow): boolean {
-  return connectionNeedsAttention(connection)
+  return accountRowNeedsAttention(connection)
 }
 
 function authLabel(group: ServiceGroup, connection: ConnectionRow): string {
@@ -288,7 +289,7 @@ function statusLabel(connection: ConnectionRow): string {
                     {{ connectionTitle(connection) }}
                   </span>
                   <StatusBadge
-                    v-if="isAttention(connection)"
+                    v-if="isAttention(connection) || telegramAuthorizationSaved(connection)"
                     domain="connection"
                     :status="connectionStatusKey(connection)"
                   />

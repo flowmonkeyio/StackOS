@@ -49,7 +49,6 @@ from stackos.integrations.shopify import ShopifyIntegration
 from stackos.integrations.slack_bot import SlackBotIntegration
 from stackos.integrations.smtp import SmtpIntegration
 from stackos.integrations.stripe import StripeIntegration
-from stackos.integrations.telegram_bot import TelegramBotIntegration
 from stackos.integrations.trackbooth import TrackboothIntegration
 from stackos.integrations.wordpress import WordPressIntegration
 from stackos.integrations.xai_imagine import XAIImagineIntegration
@@ -90,7 +89,6 @@ REGISTRY: dict[str, type[BaseIntegration]] = {
     "salesloft": SalesloftIntegration,
     "wordpress": WordPressIntegration,
     "ghost": GhostIntegration,
-    "telegram-bot": TelegramBotIntegration,
     "trackbooth": TrackboothIntegration,
     "slack-bot": SlackBotIntegration,
     "smtp": SmtpIntegration,
@@ -147,7 +145,6 @@ __all__ = [
     "SlackBotIntegration",
     "SmtpIntegration",
     "StripeIntegration",
-    "TelegramBotIntegration",
     "TrackboothIntegration",
     "WordPressIntegration",
     "XAIImagineIntegration",

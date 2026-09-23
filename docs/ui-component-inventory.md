@@ -119,8 +119,13 @@ Connections is the reference implementation:
 - `useConnectionCredentials` and `AttachAccountPanel` own only project
   attachment selection and attach/detach state.
 - `useCommunicationTopology` owns profile/target/surface/route loading.
-- `useIngressEndpointEditor`, `useTelegramProfileEditor`, and
-  `useSlackProfileEditor` each own one mutation lifecycle.
+- `useIngressEndpointEditor` and `useSlackProfileEditor` each own one mutation
+  lifecycle. Telegram bot and user setup is Account-bound and uses the generic
+  Account editor.
+- `AccountSetupFlow` renders declarative progress for staged Account drawers;
+  Account state and provider challenges remain in their existing owners.
+  `TelegramProxySetupSection` groups the manifest-backed Telegram proxy fields
+  by enabled state and proxy type inside that same drawer.
 - `ConnectionServiceSelect`, `AccountNameField`,
   `ConnectionCredentialFields`, and `ConnectionCredentialField` own Account
   form regions and schema rendering.
@@ -154,12 +159,14 @@ test for cross-feature wiring, loading, and error-state truthfulness.
 | `components/ProjectSwitcher.vue` | Presentational project dropdown with local open/close interaction and one `select` intent. | Keep router, store, catalog, and project lifecycle access in `useProjectNavigation`. |
 | `views/AccountsView.vue` | Global Account inventory, filtering, edit/test/revoke dispatch, and reusable creation-panel composition. | Keep project attachment concerns out; those belong to Connections. |
 | `views/accounts/useAccountCredentials.ts` | Global Account create/edit/test/revoke lifecycle with schema-driven fields and field-level validation. | Keep routing out and preserve the reusable panel contract. |
-| `views/accounts/AddAccountPanel.vue` | Reusable Account creation shell used by Accounts and project Connections; service selection, Account naming, auth method, and schema-driven credential fields stay cohesive. | Promote field rendering only if another feature adopts the same auth schema contract. |
+| `views/accounts/AddAccountPanel.vue` | Reusable Account creation shell used by Accounts and project Connections; service selection, Account naming, auth method, and schema-driven credential fields stay cohesive. | Keep provider challenge state in the existing Account controller and native authorization panel. |
+| `views/accounts/AccountSetupFlow.vue` | Declarative drawer-local progress and stage content slot for multi-step Account setup. | Presentation only; no provider calls, auth state machine, or persistence. |
+| `views/accounts/TelegramProxySetupSection.vue` | Conditional disclosure of Telegram's manifest-backed proxy fields. | Keep proxy validation and normalization in the daemon's Account proxy contract. |
 | `views/ConnectionsView.vue` | Route/query synchronization, Account attachment, section composition, and project-bound communication/ingress dispatch remain. | Keep Account secret lifecycle in the reusable Accounts panel; do not fold it back into the project page. |
 | `views/connections/useConnectionCredentials.ts` | Lists attached Accounts, filters reusable unattached Accounts, and owns attach/detach confirmation state. | Keep global Account mutation and project communication topology out. |
 | `views/TaskTrackerView.vue` | Route/query synchronization, page-level snapshot loading, and cross-feature dispatch remain. `useTrackerExecutionContexts` owns context/artifact pagination; `useTrackerGraphSession` composes focused graph loading and selection with dedicated viewport and live-update lifecycles. Pure projections and filters remain in `task-tracker/viewModel.ts`. | Keep new graph interaction state inside the graph session. Extract command/filter orchestration only if it gains an independent async lifecycle; do not move route/query access into a feature composable. |
 | `views/connections/credentialPresentation.ts` | Provider/auth grouping, labels, connection status, and account presentation. | Keep provider catalog knowledge here; do not mix in communication topology facets. |
-| `views/connections/formatters.ts` | Communication profile, route, surface, Telegram, Slack, ingress, and shared Account presentation exports. | Split another provider-specific facet only when it gains a distinct contract or test lifecycle. |
+| `views/connections/formatters.ts` | Communication profile, route, surface, Slack, ingress, and shared Account presentation exports. | Split another provider-specific facet only when it gains a distinct contract or test lifecycle. |
 | `views/AgentRequestsView.vue` | One cohesive queue/master-detail flow. | Extract the request detail region only if it gains independent mutation/loading state. |
 
 Large generated catalogs, API types, and declarative plugin manifests are not

@@ -20,7 +20,7 @@ Three middlewares form the request gauntlet, applied in this order
 
 1. **`HostHeaderMiddleware`** rejects any non-ingress `Host:` header that is not
    `localhost`, `127.0.0.1`, or `[::1]` with HTTP 421. Provider webhook ingress
-   paths accept tunnel/deployed hosts because Telegram and Slack must call them
+   paths accept tunnel/deployed hosts because Slack and HubSpot must call them
    from outside the machine; those paths still verify provider secrets or
    signatures before any write. The only other host exception is an exact GET
    to `/api/v1/auth/oauth/callback` whose host must equal the operator-configured
@@ -41,7 +41,6 @@ exact-path exception so no sibling route inherits it. Currently:
 | `/api/v1/health` | `doctor` probes liveness before it has resolved the token (when diagnosing token-related failures). | None worth caring about; the response carries only liveness booleans + version. |
 | `/api/v1/auth/ui-token` | The Vue SPA cannot read the on-disk daemon token file from the browser, so it fetches a derived console bearer token at app boot via this endpoint. | **See below.** |
 | `GET /api/v1/auth/oauth/callback` (exact route) | OAuth providers cannot carry the daemon bearer token when redirecting the browser. The short-lived, one-time state transaction authorizes only this callback. | The request host must equal the configured callback host; state is digested, bound, expiring, and atomically consumed. The response is an immediate sanitized 303 redirect. |
-| `/api/v1/ingress/telegram/*` | Telegram webhooks cannot carry the daemon bearer token. The route verifies `X-Telegram-Bot-Api-Secret-Token` against the encrypted Telegram credential before writing communication resources or agent requests. | A caller with the webhook secret can submit Telegram-shaped events for that profile. This path also bypasses loopback-only Host checks so deployed/tunnel hosts work; all non-ingress API paths remain loopback-host guarded. |
 | `/api/v1/ingress/slack/*` | Slack Events API and Interactivity requests cannot carry the daemon bearer token. The route verifies `X-Slack-Signature` against the encrypted Slack signing secret using the raw body and timestamp before writing communication resources or agent requests. | A caller with the Slack signing secret can submit Slack-shaped events for that profile. This path also bypasses loopback-only Host checks so deployed/tunnel hosts work; all non-ingress API paths remain loopback-host guarded. |
 | `/api/v1/ingress/hubspot/*` | HubSpot webhook and custom workflow-action requests cannot carry the daemon bearer token. The route verifies the provider-documented v3 timestamped HMAC for webhook batches or v2 digest for workflow actions against the daemon-held app client secret and configured public HTTPS URI before parsing or writing. | A caller with the app client secret can submit HubSpot-shaped events for the one configured app/account profile. Exact portal/app checks and event/definition allowlists gate agent-request creation. This path bypasses loopback-only Host checks; the signed URI is derived from the configured ingress endpoint, never the incoming `Host` header. |
 
@@ -88,6 +87,10 @@ credential fields remain write-only and unavailable on MCP/CLI. When a tool
 needs a credential, the agent passes an opaque `credential_ref`; the daemon
 verifies that the Account is attached to the project, then resolves and
 decrypts the backing secret inside the vendor wrapper process.
+For Telegram, an agent's `account.test` probe also requires that project
+attachment; it reads only safe identity/authorization status through TDLib and
+does not start a durable session or expose a sign-in challenge. The local
+Accounts Test button can probe a global Account before attachment.
 
 Provider manifests declare typed `auth_methods`. The UI renders those methods
 directly, so an API-key system, SMTP system, OAuth2 system, and custom webhook
@@ -104,6 +107,16 @@ Every auth usage/refresh audit payload is passed through the shared redactor
 before persistence. Secret-like keys such as `api_key`, `access_token`,
 `refresh_token`, `authorization`, and nested equivalents are stored as
 `[redacted]`.
+
+Telegram's shared application hash is encrypted as daemon-held configuration.
+Native Accounts keep their own bot tokens, TDLib database keys, and proxy
+authentication in encrypted Account backing.
+Account-owned database/file directories use private filesystem permissions.
+Authorization answers and device-confirmation links are local-admin-only and
+must not appear in MCP, action audit, logs, or profile resources. The native
+receiver fences stale generations and applies project policy through the shared
+communications processor. Proxy failure keeps networking paused; no direct
+fallback is permitted. Telegram has no public HTTP ingress exception.
 
 ## OAuth callback and renewal threat model
 

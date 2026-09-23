@@ -11,8 +11,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DESKTOP_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${DESKTOP_DIR}/.." && pwd)"
-BUILD_DIR="${DESKTOP_DIR}/payload-build"
-PAYLOAD_DIR="${DESKTOP_DIR}/payload/stackos"
+BUILD_DIR="${STACKOS_DESKTOP_BUILD_DIR:-${DESKTOP_DIR}/payload-build}"
+PAYLOAD_DIR="${STACKOS_DESKTOP_PAYLOAD_DIR:-${DESKTOP_DIR}/payload/stackos}"
 UV_BIN="${UV:-uv}"
 PYTHON_VERSION="${STACKOS_DESKTOP_PYTHON:-3.12}"
 PYTHON_VERSION_MAJOR_MINOR=""
@@ -189,6 +189,13 @@ if not ok:
     raise SystemExit(message)
 print(message)
 ' "${PAYLOAD_DIR}"
+
+PYTHONHOME="${PAYLOAD_DIR}/.venv" \
+PYTHONNOUSERSITE=1 \
+PYTHONDONTWRITEBYTECODE=1 \
+TDLIB_PYTHON="${PAYLOAD_DIR}/.venv/bin/python" \
+STACKOS_DESKTOP_PAYLOAD_DIR="${PAYLOAD_DIR}" \
+  bash "${DESKTOP_DIR}/scripts/build-tdlib-runtime-mac.sh"
 
 normalize_payload_metadata_paths
 thin_payload_to_arm64

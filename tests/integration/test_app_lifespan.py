@@ -10,6 +10,7 @@ from __future__ import annotations
 import stat
 from unittest.mock import Mock
 
+import pytest
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
 from sqlmodel import Session
@@ -118,3 +119,64 @@ def test_startup_reconciles_running_action_calls(settings: Settings) -> None:
     assert reconciled.response_json is not None
     assert reconciled.response_json["outcome_unknown"] is True
     assert reconciled.response_json["retry_safe"] is False
+
+
+def test_restore_failure_still_closes_native_runtime_scheduler_and_engine(
+    settings: Settings,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    class Runtime:
+        closed = False
+
+        async def close_all(self) -> None:
+            self.closed = True
+
+    runtime = Runtime()
+
+    async def restore_failure(*_args, **_kwargs) -> None:
+        raise RuntimeError("native restore failed")
+
+    monkeypatch.setattr(server_module, "build_telegram_runtime", lambda *_args: runtime)
+    monkeypatch.setattr(server_module, "restore_telegram_accounts", restore_failure)
+    app = create_app(settings)
+
+    with (
+        pytest.raises(RuntimeError, match="native restore failed"),
+        TestClient(app, base_url="http://127.0.0.1:5180"),
+    ):
+        pass
+
+    assert runtime.closed is True
+    assert app.state.scheduler_running is False
+    assert app.state.scheduler.running is False
+
+
+def test_native_close_failure_still_stops_scheduler_and_disposes_runtime_state(
+    settings: Settings,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    class Runtime:
+        closed = False
+
+        async def close_all(self) -> None:
+            self.closed = True
+            raise RuntimeError("native close failed")
+
+    runtime = Runtime()
+
+    async def no_restore(*_args, **_kwargs) -> None:
+        return None
+
+    monkeypatch.setattr(server_module, "build_telegram_runtime", lambda *_args: runtime)
+    monkeypatch.setattr(server_module, "restore_telegram_accounts", no_restore)
+    app = create_app(settings)
+
+    with (
+        pytest.raises(RuntimeError, match="native close failed"),
+        TestClient(app, base_url="http://127.0.0.1:5180"),
+    ):
+        pass
+
+    assert runtime.closed is True
+    assert app.state.scheduler_running is False
+    assert app.state.scheduler.running is False

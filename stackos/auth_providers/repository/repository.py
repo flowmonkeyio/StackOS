@@ -10,10 +10,12 @@ from .oauth import OAuthLifecycleMixin
 from .providers import ProviderMetadataMixin
 from .resolution import CredentialResolutionMixin
 from .status import CredentialStatusMixin
+from .telegram import TelegramAuthorizationMixin
 from .testing import CredentialTestingMixin
 
 
 class AuthRepository(
+    TelegramAuthorizationMixin,
     OAuthLifecycleMixin,
     ProviderMetadataMixin,
     CredentialStatusMixin,

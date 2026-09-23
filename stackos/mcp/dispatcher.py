@@ -67,11 +67,13 @@ class MCPDispatcher:
         engine_resolver: Callable[[], Any],
         settings_resolver: Callable[[], Any] | None = None,
         operation_registry: Any | None = None,
+        services_resolver: Callable[[], dict[str, Any]] | None = None,
     ) -> None:
         self._registry = registry
         self._engine_resolver = engine_resolver
         self._settings_resolver = settings_resolver
         self._operation_registry = operation_registry
+        self._services_resolver = services_resolver
 
     async def dispatch(
         self,
@@ -97,6 +99,8 @@ class MCPDispatcher:
 
         engine = self._engine_resolver()
         with Session(engine) as session:
+            if self._services_resolver is not None:
+                session.info["operation_services"] = self._services_resolver()
             if spec.operation_name is not None:
                 return await self._dispatch_operation(spec, arguments, session)
             ctx = build_context(arguments, session)

@@ -27,7 +27,9 @@ from starlette.responses import Response
 from starlette.types import Scope
 
 from stackos import __milestone__, __version__
-from stackos.actions import ActionRepository
+from stackos.actions import DEFAULT_ACTION_CONNECTORS, ActionConnectorRegistry, ActionRepository
+from stackos.actions.durable_dispatcher import DurableActionDispatcher
+from stackos.actions.telegram import TelegramActionConnector
 from stackos.api import register_routers
 from stackos.auth import BearerTokenMiddleware, derive_ui_token, ensure_token
 from stackos.config import Settings, get_settings
@@ -35,6 +37,10 @@ from stackos.crypto import cleanup_old_backup
 from stackos.crypto.aes_gcm import configure_seed_path
 from stackos.db.connection import make_engine
 from stackos.db.migrate import upgrade_to_head
+from stackos.integrations.telegram_tdlib.daemon import (
+    build_telegram_runtime,
+    restore_telegram_accounts,
+)
 from stackos.jobs.runs_reaper import (
     DEFAULT_STALE_AFTER_SECONDS,
     reap_orphaned_runs,
@@ -60,7 +66,6 @@ _REQUIRED_MODE = 0o600
 # before comparison.
 _ALLOWED_HOSTS: frozenset[str] = frozenset({"localhost", "127.0.0.1", "[::1]", "::1"})
 _PUBLIC_INGRESS_PREFIXES: tuple[str, ...] = (
-    "/api/v1/ingress/telegram",
     "/api/v1/ingress/slack",
     "/api/v1/ingress/hubspot",
 )
@@ -264,6 +269,23 @@ def _build_lifespan(
         app.state.engine = engine
         app.state.started_at = time.monotonic()
 
+        telegram_runtime = build_telegram_runtime(engine, settings)
+        connectors = ActionConnectorRegistry()
+        for key in DEFAULT_ACTION_CONNECTORS.list_keys():
+            connectors.register(DEFAULT_ACTION_CONNECTORS.get(key))
+        connectors.register(TelegramActionConnector(telegram_runtime))
+        delivery = DurableActionDispatcher(
+            session_factory=lambda: Session(engine),
+            connectors=connectors,
+            asset_dir=settings.generated_assets_dir,
+        )
+        app.state.operation_services = {
+            "settings": settings,
+            "telegram_runtime": telegram_runtime,
+            "action_connectors": connectors,
+            "durable_dispatcher": delivery,
+        }
+
         with Session(engine) as session:
             reconciled_actions = ActionRepository(session).reconcile_running_calls()
             if reconciled_actions:
@@ -308,30 +330,39 @@ def _build_lifespan(
             misfire_grace_time=REAPER_MISFIRE_GRACE_SECONDS,
         )
 
-        scheduler.start()
-        app.state.scheduler_running = True
-
-        log.info(
-            "daemon.started",
-            host=settings.host,
-            port=settings.port,
-            version=__version__,
-            milestone=__milestone__,
-            data_dir=str(settings.data_dir),
-            state_dir=str(settings.state_dir),
-        )
         try:
+            scheduler.start()
+            app.state.scheduler_running = True
+
+            await restore_telegram_accounts(engine, settings, telegram_runtime)
+            await delivery.start()
+
+            log.info(
+                "daemon.started",
+                host=settings.host,
+                port=settings.port,
+                version=__version__,
+                milestone=__milestone__,
+                data_dir=str(settings.data_dir),
+                state_dir=str(settings.state_dir),
+            )
             yield
         finally:
             log.info("daemon.shutdown.clean")
-            # Drain the scheduler before disposing the engine so any
-            # in-flight short job finishes its DB writes cleanly.
-            import contextlib as _ctx_lib
+            try:
+                await delivery.stop()
+            finally:
+                try:
+                    await telegram_runtime.close_all()
+                finally:
+                    # Drain the scheduler before disposing the engine so any
+                    # in-flight short job finishes its DB writes cleanly.
+                    import contextlib as _ctx_lib
 
-            with _ctx_lib.suppress(Exception):  # pragma: no cover — defensive
-                scheduler.shutdown(wait=True)
-            app.state.scheduler_running = False
-            engine.dispose()
+                    with _ctx_lib.suppress(Exception):  # pragma: no cover — defensive
+                        scheduler.shutdown(wait=True)
+                    app.state.scheduler_running = False
+                    engine.dispose()
 
     return lifespan
 

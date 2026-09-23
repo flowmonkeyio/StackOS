@@ -19,12 +19,10 @@ import ConnectivitySetupPanel from './connections/ConnectivitySetupPanel.vue'
 import DestinationsPanel from './connections/DestinationsPanel.vue'
 import HandoffRulesPanel from './connections/HandoffRulesPanel.vue'
 import SlackBotSidePanel from './connections/SlackBotSidePanel.vue'
-import TelegramProfileSidePanel from './connections/TelegramProfileSidePanel.vue'
 import { useCommunicationTopology } from './connections/useCommunicationTopology'
 import { useConnectionCredentials } from './connections/useConnectionCredentials'
 import { useIngressEndpointEditor } from './connections/useIngressEndpointEditor'
 import { useSlackProfileEditor } from './connections/useSlackProfileEditor'
-import { useTelegramProfileEditor } from './connections/useTelegramProfileEditor'
 import type {
   CommunicationProfile,
   ConnectionSection,
@@ -87,6 +85,19 @@ const {
   fieldErrors,
   editing,
   editingSecretPresent,
+  nativeAuthorization,
+  nativeAuthorizationActive,
+  nativeAuthorizationMode,
+  nativeAuthorizationAllowsQr,
+  nativeAuthorizationBusy,
+  nativeSession,
+  nativeSessionActive,
+  nativeSessionBusy,
+  nativeAccountDraftDirty,
+  telegramApplicationConfigured,
+  telegramApplicationBusy,
+  telegramApplicationError,
+  refreshTelegramApplicationStatus,
   authMethods,
   selectedMethodKey,
   selectedMethod,
@@ -106,8 +117,19 @@ const {
   providerOptions,
   selectedProvider,
   openAddAccount,
+  openEditAccount,
+  resetNativeAccountDraft,
   saveAccount: saveAccountAction,
+  saveAndContinueNativeAuthorization: saveAndContinueNativeAuthorizationAction,
   startProvider: startProviderAction,
+  restartNativeAuthorization,
+  setNativeAuthorizationMode,
+  refreshNativeAuthorization,
+  refreshNativeSession,
+  connectNativeSession,
+  disconnectNativeSession,
+  submitNativeAuthorization,
+  cancelNativeAuthorization,
   applyOAuthReturn,
 } = useAccountCredentials(accountAttachProjectId)
 const activeSection = ref<ConnectionSection>('services')
@@ -142,25 +164,6 @@ const communicationSetupLoading = computed(
 const communicationSetupMessage = computed(
   () => communicationTopologyMessage.value ?? ingressLoadMessage.value,
 )
-const {
-  panelOpen: telegramProfilePanelOpen,
-  message: telegramProfileMessage,
-  form: telegramProfileForm,
-  connections: telegramConnections,
-  connectionOptions: telegramConnectionOptions,
-  openAdd: openAddTelegramProfile,
-  edit: editTelegramProfile,
-  addCommand: addCommandDraft,
-  removeCommand: removeCommandDraft,
-  save: saveTelegramProfile,
-} = useTelegramProfileEditor({
-  projectId,
-  profiles: communicationProfiles,
-  connectedConnections,
-  busyAction,
-  reload: loadCommunicationSetup,
-})
-
 const {
   panelOpen: slackProfilePanelOpen,
   message: slackProfileMessage,
@@ -263,18 +266,15 @@ async function loadCommunicationSetup(): Promise<void> {
   await Promise.all([loadCommunicationTopology(), loadIngressStatus()])
 }
 
-/** Route the Bots "Configure" action to the right provider editor. */
+/** Slack is the remaining profile-managed HTTP ingress editor. */
 function editBot(profile: CommunicationProfile): void {
-  if (profile.provider_facets?.['telegram-bot']) {
-    editTelegramProfile(profile)
-  } else if (profile.provider_facets?.['slack-bot']) {
+  if (profile.provider_facets?.['slack-bot']) {
     editSlackProfile(profile)
   }
 }
 
 function openAddBot(provider: string): void {
   if (provider === 'slack-bot') openAddSlackProfile()
-  else openAddTelegramProfile()
 }
 
 function clearProviderQuery(): void {
@@ -308,7 +308,10 @@ function clearOAuthReturnQuery(): void {
 
 function setAccountPanelOpen(open: boolean): void {
   accountPanelOpen.value = open
-  if (!open) clearProviderQuery()
+  if (!open) {
+    resetNativeAccountDraft()
+    clearProviderQuery()
+  }
 }
 
 function openCreateAccount(): void {
@@ -317,18 +320,28 @@ function openCreateAccount(): void {
 
 async function saveProjectAccount(...args: Parameters<typeof saveAccountAction>): Promise<void> {
   const credentialRef = await saveAccountAction(...args)
-  if (credentialRef) {
-    const accountMessage = accountMessages.value[credentialRef]
-    if (accountMessage) {
-      connectionMessages.value = {
-        ...connectionMessages.value,
-        [credentialRef]: accountMessage,
-      }
-    }
-    closeAttachPanel()
-    await loadCredentials()
-  }
+  if (credentialRef) await refreshSavedProjectAccount(credentialRef)
   if (!accountPanelOpen.value) clearProviderQuery()
+}
+
+async function saveProjectAccountAndContinue(
+  ...args: Parameters<typeof saveAndContinueNativeAuthorizationAction>
+): Promise<void> {
+  const credentialRef = await saveAndContinueNativeAuthorizationAction(...args)
+  if (credentialRef) await refreshSavedProjectAccount(credentialRef)
+  if (!accountPanelOpen.value) clearProviderQuery()
+}
+
+async function refreshSavedProjectAccount(credentialRef: string): Promise<void> {
+  const accountMessage = accountMessages.value[credentialRef]
+  if (accountMessage) {
+    connectionMessages.value = {
+      ...connectionMessages.value,
+      [credentialRef]: accountMessage,
+    }
+  }
+  closeAttachPanel()
+  await loadCredentials()
 }
 
 async function startProvider(...args: Parameters<typeof startProviderAction>): Promise<void> {
@@ -363,7 +376,7 @@ onBeforeRouteUpdate((to) => {
     <ProjectPageHeader
       :project-id="projectId"
       title="Connections"
-      description="Choose which reusable Accounts this project can use. Messaging profiles and webhooks stay project-bound."
+      description="Choose which reusable Accounts this project can use. Messaging profiles reference explicit Account bindings, while Telegram bot and user sessions run through TDLib."
       :breadcrumbs="[{ label: 'Connections' }]"
     >
       <template #actions>
@@ -502,9 +515,7 @@ onBeforeRouteUpdate((to) => {
             :connection-messages="connectionMessages"
             :busy-action="busyAction"
             @add-connection="openAddConnection"
-            @manage-account="
-              (connection) => router.push(`/accounts?account=${connection.credential_ref}`)
-            "
+            @manage-account="openEditAccount"
             @detach-connection="requestDetach"
             @refresh="loadCredentials"
           />
@@ -513,10 +524,9 @@ onBeforeRouteUpdate((to) => {
         <div role="tabpanel" aria-labelledby="cs-subnav-bots" :hidden="activeSection !== 'bots'">
           <BotsPanel
             :bots="communicationProfiles"
-            :telegram-connections="telegramConnections"
             :slack-connections="slackConnections"
             :loading="communicationSetupLoading"
-            :message="telegramProfileMessage ?? slackProfileMessage"
+            :message="slackProfileMessage"
             @add-connection="openAddConnection"
             @add-bot="openAddBot"
             @edit-bot="editBot"
@@ -611,6 +621,18 @@ onBeforeRouteUpdate((to) => {
       :busy-action="accountBusyAction"
       :editing="editing"
       :secret-present="editingSecretPresent"
+      :native-authorization-active="nativeAuthorizationActive"
+      :native-authorization-state="nativeAuthorization"
+      :native-authorization-mode="nativeAuthorizationMode"
+      :native-authorization-allows-qr="nativeAuthorizationAllowsQr"
+      :native-authorization-busy="nativeAuthorizationBusy"
+      :native-session-active="nativeSessionActive"
+      :native-session-state="nativeSession"
+      :native-session-busy="nativeSessionBusy"
+      :native-account-draft-dirty="nativeAccountDraftDirty"
+      :telegram-application-configured="telegramApplicationConfigured"
+      :telegram-application-busy="telegramApplicationBusy"
+      :telegram-application-error="telegramApplicationError"
       :auth-methods="authMethods"
       :selected-method-key="selectedMethodKey"
       :selected-method="selectedMethod"
@@ -629,19 +651,17 @@ onBeforeRouteUpdate((to) => {
       @select-method="setSelectedMethod"
       @start-provider="startProvider"
       @save-account="saveProjectAccount"
+      @save-and-continue="saveProjectAccountAndContinue"
+      @update:native-authorization-mode="setNativeAuthorizationMode"
+      @start-native-authorization="restartNativeAuthorization"
+      @submit-native-authorization="submitNativeAuthorization"
+      @cancel-native-authorization="cancelNativeAuthorization"
+      @refresh-native-authorization="refreshNativeAuthorization"
+      @connect-native-session="connectNativeSession"
+      @disconnect-native-session="disconnectNativeSession"
+      @refresh-native-session="refreshNativeSession"
+      @refresh-telegram-application="refreshTelegramApplicationStatus"
       @go-plugins="router.push(`/projects/${projectId}/plugins`)"
-    />
-
-    <TelegramProfileSidePanel
-      v-model="telegramProfilePanelOpen"
-      v-model:form="telegramProfileForm"
-      :telegram-connection-options="telegramConnectionOptions"
-      :telegram-connections="telegramConnections"
-      :message="telegramProfileMessage"
-      :busy-action="busyAction"
-      @save="saveTelegramProfile"
-      @add-command="addCommandDraft"
-      @remove-command="removeCommandDraft"
     />
 
     <SlackBotSidePanel

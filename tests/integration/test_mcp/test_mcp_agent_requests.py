@@ -83,7 +83,7 @@ def test_agent_request_mcp_lifecycle_uses_operation_registry(
             "request_key": "mcp:agent-request:1",
             "title": "Authorization: Bearer secret",
             "body_preview": "api_key=hidden",
-            "source_provider": "telegram-bot",
+            "source_provider": "telegram",
             "source_kind": "telegram-message",
         },
     )

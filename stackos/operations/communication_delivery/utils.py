@@ -101,6 +101,18 @@ def _derive_idempotency_key(
     intent_id: str | None,
     request_id: str,
 ) -> str:
+    stable_intent = (intent_id or "").strip()
+    if stable_intent:
+        # An explicit intent identifies one effect. The action repository checks
+        # its sealed payload and schedule on replay; changed content must not
+        # silently turn the same intent into a second broadcast.
+        intent = {
+            "scope": "communication",
+            "project_id": project_id,
+            "operation": operation,
+            "intent_id": stable_intent,
+        }
+        return f"communication:{_stable_digest(intent)}"
     source = {
         "scope": "communication",
         "project_id": project_id,
@@ -110,8 +122,8 @@ def _derive_idempotency_key(
         "destination_ref": destination_ref,
         "content": content.model_dump(mode="json"),
         "source_request_id": source_request_id,
-        "intent_id": (intent_id or "").strip() or None,
-        "request_id": None if intent_id else request_id,
+        "intent_id": None,
+        "request_id": request_id,
     }
     return f"communication:{_stable_digest(source)}"
 

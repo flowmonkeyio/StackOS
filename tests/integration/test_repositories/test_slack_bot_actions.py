@@ -15,6 +15,7 @@ from stackos.actions.connectors import ActionConnectorRequest
 from stackos.actions.slack_bot import SlackBotActionConnector
 from stackos.actions.slack_bot.results import _safe_history_message
 from stackos.auth_providers import AuthRepository
+from stackos.communications import communication_surface_binding_external_id
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.resources import ResourceRepository
@@ -426,9 +427,21 @@ def test_slack_actions_execute_store_resources_and_redact_secrets(
         resource_key="communication-channel",
     )
     assert {item.external_id for item in channels.items} >= {
-        "slack-channel:support-agent:C123",
-        "slack-channel:support-agent:D123",
-        "slack-channel:support-agent:G123",
+        communication_surface_binding_external_id(
+            provider_key="slack-bot",
+            profile_ref="communication-profile:support-agent",
+            surface_ref="slack-channel:C123",
+        ),
+        communication_surface_binding_external_id(
+            provider_key="slack-bot",
+            profile_ref="communication-profile:support-agent",
+            surface_ref="slack-channel:D123",
+        ),
+        communication_surface_binding_external_id(
+            provider_key="slack-bot",
+            profile_ref="communication-profile:support-agent",
+            surface_ref="slack-channel:G123",
+        ),
     }
     assert not any(
         item.external_id and item.external_id.startswith("slack-channel:support-auth:")

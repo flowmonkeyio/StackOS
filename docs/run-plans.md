@@ -227,7 +227,7 @@ notifications and handoffs explicit while still allowing simple non-workflow
 messages through the direct `communication.send` path.
 
 For `communication.reply`, the matching `mcp_tool_grants` entry must include
-`sources` such as `telegram-bot`, `slack-bot`, or a specific stored source
+`sources` such as `telegram`, `slack-bot`, or a specific stored source
 surface. The daemon checks the request origin before allowing the reply.
 
 The run plan is not used for StackOS bootstrap itself. Creating a project,

@@ -32,7 +32,7 @@ class ToolProfileResolveInput(MCPInput):
         json_schema_extra={
             "example": {
                 "project_id": 1,
-                "provider_key": "telegram-bot",
+                "provider_key": "telegram",
                 "tool_profile_key": "support-bot",
             }
         },
@@ -135,7 +135,7 @@ async def tool_profile_resolve(
     profile: ToolProfileOut | None = None
     credential_ref = _clean(inp.credential_ref)
 
-    if inp.provider_key == "telegram-bot":
+    if inp.provider_key == "telegram":
         profile, profile_missing, profile_warnings = _resolve_telegram_profile(
             ResourceRepository(ctx.session).query_records(
                 project_id=inp.project_id,
@@ -248,7 +248,7 @@ def _resolve_telegram_profile(
         return (
             None,
             ["tool_profile"],
-            ["telegram-bot requires a communication profile with a telegram-bot facet"],
+            ["telegram requires a communication profile with a telegram facet"],
         )
     return (
         None,
@@ -258,8 +258,8 @@ def _resolve_telegram_profile(
 
 
 def _telegram_profile_out(record: ResourceRecordOut) -> ToolProfileOut | None:
-    data = merged_provider_profile(record.data_json or {}, "telegram-bot")
-    if not data.get("provider_facets", {}).get("telegram-bot"):
+    data = merged_provider_profile(record.data_json or {}, "telegram")
+    if not data.get("provider_facets", {}).get("telegram"):
         return None
     key = str(data.get("key") or record.title or "").strip()
     return ToolProfileOut(
@@ -460,7 +460,7 @@ def operation_specs() -> list[OperationSpec]:
                     title="Resolve Telegram bot target",
                     arguments={
                         "project_id": 1,
-                        "provider_key": "telegram-bot",
+                        "provider_key": "telegram",
                         "tool_profile_key": "support-bot",
                     },
                 ),

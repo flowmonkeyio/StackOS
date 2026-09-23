@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from stackos.communications import communication_surface_binding_external_id
+from stackos.communications.target_policy import target_policy_allowed
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import WriteEnvelope
 from stackos.mcp.streaming import ProgressEmitter
@@ -41,9 +43,8 @@ from .utils import (
     _record_by_resource_external_id,
     _require_project,
     _string_list,
-    _surface_external_id,
+    _surface_profile_ref,
     _target_action_defaults,
-    _target_policy_allowed,
     _target_policy_profile_ref,
     _validate_no_setup_secrets,
     _validate_profile_key,
@@ -66,10 +67,20 @@ async def communication_surface_upsert(
             "metadata_json": inp.metadata_json,
         },
     )
+    provider_key = inp.provider_key.strip()
+    surface_ref = inp.surface_ref.strip()
+    profile_ref = _surface_profile_ref(
+        ctx.session,
+        project_id=inp.project_id,
+        provider_key=provider_key,
+        profile_ref=inp.profile_ref,
+        credential_ref=inp.credential_ref,
+    )
     data_json = {
-        "surface_ref": inp.surface_ref.strip(),
-        "channel_ref": inp.surface_ref.strip(),
-        "provider_key": inp.provider_key.strip(),
+        "surface_ref": surface_ref,
+        "channel_ref": surface_ref,
+        "provider_key": provider_key,
+        "profile_ref": profile_ref,
         "kind": inp.kind.strip(),
         "display_name": inp.display_name,
         "credential_ref": inp.credential_ref,
@@ -88,7 +99,11 @@ async def communication_surface_upsert(
         project_id=inp.project_id,
         plugin_slug="communications",
         resource_key="communication-channel",
-        external_id=_surface_external_id(inp.surface_ref),
+        external_id=communication_surface_binding_external_id(
+            provider_key=provider_key,
+            profile_ref=profile_ref,
+            surface_ref=surface_ref,
+        ),
         title=inp.display_name or inp.surface_ref.strip(),
         data_json=data_json,
         provenance_json={"source": "communicationSurface.upsert"},
@@ -116,6 +131,8 @@ async def communication_surface_list(
     items = []
     for record in records.items:
         data = record.data_json or {}
+        if data.get("surface_binding_state") == "superseded":
+            continue
         if inp.provider_key is not None and data.get("provider_key") != inp.provider_key:
             continue
         if inp.kind is not None and data.get("kind") != inp.kind:
@@ -333,7 +350,7 @@ async def communication_target_resolve(
         raise ValidationError("communication target was not found")
     target = _communication_target_out(row.id, row.project_id, row.data_json or {})
     policy_profile_ref = _target_policy_profile_ref(target, inp.profile_ref)
-    allowed, reason = _target_policy_allowed(
+    allowed, reason = target_policy_allowed(
         target.send_policy,
         target_ref=target.target_ref,
         profile_ref=policy_profile_ref,

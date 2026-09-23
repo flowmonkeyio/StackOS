@@ -7,28 +7,26 @@ import {
 } from './ingressResults'
 
 describe('ingressResults', () => {
-  it('summarizes mixed applied and manual provider results', () => {
+  it('summarizes manual provider updates', () => {
     expect(
       summarizeProviderResults([
-        { provider_key: 'telegram-bot', status: 'remote_webhook_updated' },
         { provider_key: 'slack-bot', status: 'manual_provider_update_required' },
       ]),
     ).toEqual({
       tone: 'info',
-      text: 'Synced 1 provider webhook. Slack needs manual webhook update.',
+      text: 'Slack needs manual webhook update.',
     })
   })
 
-  it('surfaces failed, skipped, and dry-run states without claiming success', () => {
+  it('surfaces failed and skipped states without claiming success', () => {
     expect(
       summarizeProviderResults([
-        { provider_key: 'telegram-bot', status: 'failed', error: '[redacted]' },
+        { provider_key: 'slack-bot', status: 'failed', error: '[redacted]' },
         { provider_key: 'other', status: 'skipped' },
-        { provider_key: 'telegram-bot', status: 'remote_webhook_dry_run' },
       ]),
     ).toEqual({
       tone: 'danger',
-      text: '1 provider webhook checked in dry-run mode. 1 provider skipped. 1 provider sync failed. [redacted]',
+      text: '1 provider skipped. 1 provider sync failed. [redacted]',
     })
   })
 
@@ -51,12 +49,6 @@ describe('ingressResults', () => {
         ready: true,
         routes: [
           {
-            provider_key: 'telegram-bot',
-            profile_key: 'flowmonkey',
-            ingress_url: 'https://example.com/api/v1/ingress/telegram/1/flowmonkey',
-            remote_status: 'provider_webhook_not_checked',
-          },
-          {
             provider_key: 'slack-bot',
             profile_key: 'revtrix-slack',
             ingress_url: 'https://example.com/api/v1/ingress/slack/1/revtrix-slack',
@@ -66,21 +58,14 @@ describe('ingressResults', () => {
       },
       [
         {
-          provider_key: 'telegram-bot',
-          profile_key: 'flowmonkey',
-          status: 'remote_webhook_updated',
-          webhook_url: 'https://example.com/api/v1/ingress/telegram/1/flowmonkey',
-        },
-        {
           provider_key: 'slack-bot',
           profile_key: 'revtrix-slack',
-          status: 'remote_webhook_updated',
+          status: 'manual_provider_update_required',
           request_url: 'https://other.example.com/api/v1/ingress/slack/1/revtrix-slack',
         },
       ],
     )
 
-    expect(status?.routes?.[0]?.remote_status).toBe('remote_webhook_updated')
-    expect(status?.routes?.[1]?.remote_status).toBe('manual_provider_update_required')
+    expect(status?.routes?.[0]?.remote_status).toBe('manual_provider_update_required')
   })
 })

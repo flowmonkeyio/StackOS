@@ -739,6 +739,7 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
     if not isinstance(data, dict):
         return {"value": data}
     if operation_name in {
+        "account.application.status",
         "tracker.ticketCounts",
         "tracker.ticketCountsAll",
         "project.portfolio",
@@ -781,6 +782,14 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
         return _compact_resource_query(data)
     if operation_name in {"account.list", "connection.list"}:
         return _compact_account_inventory(data)
+    if operation_name in {
+        "account.session.status",
+        "account.session.connect",
+        "account.session.disconnect",
+    }:
+        # The small Account control result is itself the repair and shared-impact
+        # packet. Keep desired/live state and every affected project id intact.
+        return copy.deepcopy(data)
     if operation_name == "account.test":
         # This normalized AuthTestOut is the repair packet, not provider output.
         return copy.deepcopy(data)

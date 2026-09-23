@@ -21,6 +21,9 @@ const props = defineProps<{
   fieldErrors: Record<string, string>
   editing: boolean
   secretPresent: Record<string, boolean>
+  methodDescription?: (method: AuthMethod) => string
+  showSelectedMethodDescription?: boolean
+  showEditingMethodHint?: boolean
 }>()
 
 defineEmits<{
@@ -40,6 +43,7 @@ const authMethodOptions = computed(() =>
 )
 
 function methodChoiceDescription(method: AuthMethod): string {
+  if (props.methodDescription) return props.methodDescription(method)
   return [
     `Description: ${method.description || 'No additional provider description is available.'}`,
     `Audience: ${methodAudience(method)}`,
@@ -49,12 +53,21 @@ function methodChoiceDescription(method: AuthMethod): string {
 }
 
 function methodAudience(method: AuthMethod): string {
+  if (method.config?.native_authorization && method.config?.account_kind === 'user') {
+    return 'The Telegram account owner who can complete its sign-in challenge.'
+  }
   return method.interactive
     ? 'Operators who can authorize a provider account in this browser.'
     : 'Operators who hold a credential for the account they want to connect.'
 }
 
 function methodLifecycle(method: AuthMethod): string {
+  if (method.config?.native_authorization && method.config?.account_kind === 'user') {
+    return 'StackOS saves this Account. Its owner can explicitly start local Telegram sign-in; a project agent controls the session separately.'
+  }
+  if (method.config?.native_authorization) {
+    return 'StackOS saves this Account. A project-attached agent explicitly connects its Telegram session when needed.'
+  }
   return method.interactive
     ? 'StackOS saves this Account, then starts the provider authorization flow.'
     : 'StackOS saves this Account locally, then tests the credential.'
@@ -98,11 +111,13 @@ function permissionVerificationGuidance(method: AuthMethod): string {
   </UiCallout>
 
   <template v-if="selectedMethod">
-    <UiCallout v-if="editing" tone="info" density="compact">
+    <UiCallout v-if="editing && showEditingMethodHint !== false" tone="info" density="compact">
       Authentication method is locked to {{ selectedMethod.label }}. To change methods, create a
       separate named Account, test it, explicitly reassign exact consumers to its credential
       reference, then revoke the old Account when it is no longer used.
     </UiCallout>
+
+    <slot name="before-account-fields" />
 
     <AccountNameField
       :model-value="displayNameValue"
@@ -125,7 +140,11 @@ function permissionVerificationGuidance(method: AuthMethod): string {
       @update:model-value="$emit('update:field', { fieldKey: field.key, value: $event })"
     />
 
-    <UiCallout v-if="selectedMethod.description" tone="info" density="compact">
+    <UiCallout
+      v-if="selectedMethod.description && showSelectedMethodDescription !== false"
+      tone="info"
+      density="compact"
+    >
       {{ selectedMethod.description }}
     </UiCallout>
   </template>

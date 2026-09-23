@@ -77,7 +77,6 @@ from .utils import (
     _default_action_ref,
     _string_list,
     _target_action_defaults,
-    _target_policy_allowed,
 )
 
 __all__ = [
@@ -123,7 +122,6 @@ __all__ = [
     "_default_action_ref",
     "_string_list",
     "_target_action_defaults",
-    "_target_policy_allowed",
     "communication_contact_list",
     "communication_contact_upsert",
     "communication_context_query",

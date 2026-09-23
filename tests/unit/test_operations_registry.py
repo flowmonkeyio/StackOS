@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import pytest
+
 from stackos.operations.registry import build_operation_registry
+from stackos.repositories.base import NotFoundError
 from stackos.workflows import validate_workflow_template_obj
 
 
@@ -8,14 +11,19 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 198
+    assert len(names) == 211
     assert not names.intersection(
         {"actionCall.aggregate", "actionCall.aggregateAll", "actionCall.queryAll"}
     )
     assert {
         "action.execute",
+        "actionCall.cancel",
         "actionCall.get",
+        "actionCall.items",
+        "actionCall.pause",
         "actionCall.query",
+        "actionCall.resume",
+        "actionCall.retry",
         "tracker.ticketCounts",
         "tracker.ticketCountsAll",
         "hostMcp.status",
@@ -23,6 +31,10 @@ def test_operation_registry_documents_core_operations() -> None:
         "secret.set",
         "schema.get",
         "account.list",
+        "account.application.status",
+        "account.session.status",
+        "account.session.connect",
+        "account.session.disconnect",
         "account.create",
         "account.get",
         "account.update",
@@ -292,6 +304,15 @@ def test_operation_registry_documents_core_operations() -> None:
     assert account_get.read_only is True
     assert account_get.secret_policy == "no-secret-output"
 
+    application_status = registry.get("account.application.status").describe_out()
+    assert application_status.surfaces["rest"].enabled is True
+    assert application_status.surfaces["rest"].browser_safe is True
+    assert application_status.surfaces["mcp"].enabled is False
+    assert application_status.surfaces["cli"].enabled is False
+    assert application_status.secret_policy == "no-secret-output"
+    with pytest.raises(NotFoundError):
+        registry.get("account.application.status", surface="mcp")
+
     account_update = registry.get("account.update").describe_out()
     assert account_update.surfaces["rest"].path == "/api/v1/auth/accounts/{credential_ref}"
     assert account_update.surfaces["mcp"].enabled is False
@@ -315,6 +336,22 @@ def test_operation_registry_documents_core_operations() -> None:
 
     account_start = registry.get("account.start").describe_out()
     assert account_start.surfaces["rest"].path == ("/api/v1/auth/accounts/{provider_key}/start")
+
+    for name, verb in (
+        ("account.session.status", "status"),
+        ("account.session.connect", "connect"),
+        ("account.session.disconnect", "disconnect"),
+    ):
+        control = registry.get(name).describe_out()
+        assert control.surfaces["mcp"].enabled is True
+        assert control.surfaces["cli"].command == f"ops call {name}"
+        suffix = "" if verb == "status" else f"/{verb}"
+        assert control.surfaces["rest"].path == (
+            "/api/v1/projects/{project_id}/connections/accounts/{credential_ref}/session" + suffix
+        )
+        assert control.grant_policy == ("direct-read" if verb == "status" else "direct-setup-write")
+        assert control.response_policy.allowed_modes == ["compact", "raw"]
+        assert "project_id" in control.input_schema["properties"]
 
     auth_callback = registry.get("auth.callback").describe_out()
     assert auth_callback.surfaces["rest"].enabled is True
@@ -489,9 +526,13 @@ def test_operation_registry_surface_filter() -> None:
 
     cli_names = {item.name for item in registry.by_surface("cli")}
     assert cli_names == {item.name for item in registry.all()} - {
+        "account.application.status",
         "account.create",
         "account.get",
         "account.update",
+        "account.authorization.status",
+        "account.authorization.submit",
+        "account.authorization.cancel",
         "auth.callback",
         "secret.set",
     }

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from stackos.communications.target_policy import target_policy_allowed
 from stackos.operations.communication_platform import (
     CommunicationTargetOut,
     _string_list,
-    _target_policy_allowed,
 )
 
 from .errors import _reject
@@ -22,7 +22,7 @@ def _ensure_target_policy(
     invoker_ref: str | None,
     resolved: dict[str, Any],
 ) -> None:
-    allowed, reason = _target_policy_allowed(
+    allowed, reason = target_policy_allowed(
         policy,
         target_ref=target.target_ref,
         profile_ref=actor_ref,

@@ -128,7 +128,9 @@ The archive contains:
 The archive is written with mode `0600` because it contains the daemon auth
 token and the seed required to decrypt local credentials. Automated restore is
 not implemented yet; keep the archive private and treat restore as an
-operator-guided recovery step.
+operator-guided recovery step. The archive does not contain TDLib's native
+Account database, so a Telegram user Account requires a new sign-in after an
+archive-only restore on another machine. In-place upgrades preserve it.
 
 ## Schema migrations
 
@@ -149,6 +151,11 @@ Migration of an install across machines requires copying:
 - `~/.local/share/stackos/stackos.db` (the canonical DB)
 - `~/.local/state/stackos/seed.bin` (encryption seed)
 - `~/.local/state/stackos/auth.token` (bearer token)
+
+These files restore StackOS credential metadata and encrypted secrets, but not
+Telegram's native TDLib authorization database. User Accounts need a new
+Telegram sign-in after a move that copies only these files; bots can connect
+with their saved token.
 
 Without `seed.bin`, the daemon refuses to start and `doctor` reports a
 credential decrypt/seed problem. Restore the matching seed from backup, or

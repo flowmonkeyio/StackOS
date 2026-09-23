@@ -137,6 +137,7 @@ for (const relativePath of [
   "src/updates.js",
   "scripts/build-icons.mjs",
   "scripts/build-stackos-payload.sh",
+  "scripts/build-tdlib-runtime-mac.sh",
   "scripts/build-mac.mjs",
   "scripts/verify-stackos-cli.cjs",
   "scripts/verify-stackos-browser-cli.cjs",
@@ -148,6 +149,7 @@ for (const relativePath of [
   "scripts/test-updates.cjs",
   "scripts/test-build-mac-config.cjs",
   "scripts/test-browser-runtime.cjs",
+  "scripts/test-tdlib-runtime.cjs",
   "update-config.example.json"
 ]) {
   mustExist(relativePath);
@@ -180,6 +182,11 @@ mustContain("scripts/build-stackos-payload.sh", "build-info.json");
 mustContain("scripts/build-stackos-payload.sh", "rsync -a");
 mustContain("scripts/build-stackos-payload.sh", "PYTHONHOME");
 mustContain("scripts/build-stackos-payload.sh", "ensure_gstack_runtime");
+mustContain("scripts/build-stackos-payload.sh", "build-tdlib-runtime-mac.sh");
+mustContain("scripts/build-tdlib-runtime-mac.sh", "TDLIB_LIBRARY_PATH");
+mustContain("scripts/build-tdlib-runtime-mac.sh", "TDLIB_SOURCE_ARCHIVE_SHA256");
+mustContain("scripts/build-tdlib-runtime-mac.sh", "TDLIB_EXPECTED_LIBRARY_SHA256");
+mustContain("scripts/build-tdlib-runtime-mac.sh", "system-only");
 mustContain("scripts/build-stackos-payload.sh", "direct_url.json");
 mustContain("scripts/build-stackos-payload.sh", "thin_payload_to_arm64");
 mustContain("scripts/build-stackos-payload.sh", "PYTHONDONTWRITEBYTECODE");
@@ -216,6 +223,7 @@ mustContain("scripts/verify-stackos-browser-cli.cjs", "PYTHONPATH");
 mustContain("scripts/verify-stackos-browser-cli.cjs", "--help");
 mustContain("scripts/release-preflight.mjs", "Release preflight");
 mustContain("package.json", "dist:mac:release");
+mustContain("package.json", "test-tdlib-runtime.cjs");
 mustContain("package.json", "STACKOS_REQUIRE_UPDATE_URL=1");
 mustContain("package.json", "STACKOS_ALLOW_SIGNING_AUTO_DISCOVERY=1");
 mustContain("package.json", "CSC_IDENTITY_AUTO_DISCOVERY=false");

@@ -44,7 +44,7 @@ def test_agent_request_create_list_and_redaction(session: Session, project_id: i
         request_key="telegram:update:1",
         title="Message with api_key=secret",
         body_preview="Authorization: Bearer nope",
-        source_provider="telegram-bot",
+        source_provider="telegram",
         source_kind="telegram-message",
         source_resource_key="communication-message",
         source_resource_record_id=source.id,

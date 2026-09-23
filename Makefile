@@ -130,7 +130,10 @@ signoff: lint typecheck test-transfer-connectors ## Before commit/release: setup
 		tests/integration/test_repositories/test_imap_actions.py \
 		tests/integration/test_repositories/test_slack_bot_actions.py \
 		tests/integration/test_repositories/test_imap_custom_ca.py \
-		tests/integration/test_repositories/test_telegram_bot_actions.py \
+		tests/integration/test_repositories/test_telegram_actions.py \
+		tests/integration/test_repositories/test_telegram_account_lifecycle.py \
+		tests/integration/test_repositories/test_telegram_delivery_payloads.py \
+		tests/integration/test_repositories/test_telegram_receipt_recovery.py \
 		tests/integration/test_repositories/test_workflow_templates.py \
 		tests/integration/test_schema.py \
 		tests/integration/test_integrations \

@@ -90,6 +90,41 @@ describe('StackOS catalog store auth controls', () => {
     expect(JSON.stringify(postedBodies)).not.toContain('secret')
   })
 
+  it('controls an attached Telegram session with an explicit project-scoped request', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    const disconnected = telegramSession({ connected: false, desired_connected: false })
+    const connected = telegramSession({ connected: true, desired_connected: true })
+    globalThis.fetch = vi.fn(async (input, init) => {
+      const url = String(input)
+      calls.push({ url, init })
+      if (url.endsWith('/session')) return json(disconnected)
+      if (url.endsWith('/session/connect')) return json({ data: connected })
+      if (url.endsWith('/session/disconnect')) return json({ data: disconnected })
+      if (url === '/api/v1/auth/accounts') return json(authStatus(null))
+      if (url === '/api/v1/projects/7/connections/accounts') return json(authStatus(7))
+      return json({})
+    }) as typeof fetch
+
+    const store = useStackOsCatalogStore()
+    expect(await store.getTelegramAccountSession(7, 'cred_telegram')).toEqual(disconnected)
+    expect(await store.connectTelegramAccountSession(7, 'cred_telegram')).toEqual(connected)
+    expect(await store.disconnectTelegramAccountSession(7, 'cred_telegram')).toEqual(disconnected)
+
+    expect(calls.map((call) => [call.url, call.init?.method ?? 'GET'])).toContainEqual([
+      '/api/v1/projects/7/connections/accounts/cred_telegram/session',
+      'GET',
+    ])
+    expect(calls.map((call) => [call.url, call.init?.method ?? 'GET'])).toContainEqual([
+      '/api/v1/projects/7/connections/accounts/cred_telegram/session/connect',
+      'POST',
+    ])
+    expect(calls.map((call) => [call.url, call.init?.method ?? 'GET'])).toContainEqual([
+      '/api/v1/projects/7/connections/accounts/cred_telegram/session/disconnect',
+      'POST',
+    ])
+    expect(JSON.stringify(calls)).not.toContain('bot_token')
+  })
+
   it('keeps connector auth state scoped to the newest project request', async () => {
     const projectOne = deferred<void>()
     globalThis.fetch = vi.fn(async (input) => {
@@ -278,6 +313,26 @@ function authConnection() {
     account: null,
     project_ids: [1],
     setup_required: false,
+  }
+}
+
+function telegramSession(
+  state: Pick<
+    {
+      desired_connected: boolean
+      connected: boolean
+    },
+    'desired_connected' | 'connected'
+  >,
+) {
+  return {
+    credential_ref: 'cred_telegram',
+    provider_key: 'telegram',
+    ...state,
+    status: state.connected ? 'connected' : 'disconnected',
+    project_ids: [7, 8],
+    affects_other_projects: true,
+    next_action: state.connected ? null : 'Connect this Telegram Account when it is needed.',
   }
 }
 

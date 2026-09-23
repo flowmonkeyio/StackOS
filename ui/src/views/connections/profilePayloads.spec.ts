@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildSlackProfilePayload,
-  buildTelegramProfilePayload,
   slackProfileNeedsTestedConnection,
 } from './profilePayloads'
 import type { CommunicationProfile, ConnectionRow } from './types'
@@ -43,60 +42,6 @@ const slackConnection = (credentialRef: string, teamId: string): ConnectionRow =
   }) as unknown as ConnectionRow
 
 describe('connection profile payloads', () => {
-  it('preserves non-Telegram facets and policies while building a Telegram profile payload', () => {
-    const existing = baseProfile({
-      provider_facets: {
-        'telegram-bot': { credential_ref: 'cred_old', ingress_mode: 'polling' },
-        'slack-bot': { credential_ref: 'cred_slack', bot_user_id: 'U1' },
-      },
-      access_policy: { denied_user_refs: ['telegram-user:denied'] },
-      context_policy: { include_last_messages: 10 },
-      send_policy: { mode: 'explicit-targets' },
-    })
-
-    const payload = buildTelegramProfilePayload({
-      projectId: 1,
-      existing,
-      key: 'ops',
-      credentialRef: 'cred_telegram_primary',
-      botUsername: 'ops_bot',
-      identityDisplayName: 'Ops Bot',
-      identityPurpose: 'Route operational requests.',
-      identityVoice: 'Brief.',
-      agentDefaultInstructions: 'Triage first.',
-      agentBoundaries: 'No billing.',
-      agentEscalation: 'Escalate incidents.',
-      allowedChatRefs: ['telegram-chat:1'],
-      allowedUserRefs: ['telegram-user:1'],
-      commands: [{ command: '/ops', guidance: 'Triage.' }],
-      mentionPatterns: ['ops'],
-      ingressEnabled: false,
-      storeNonTriggerMessages: true,
-      originRequired: true,
-      replyToSourceMessage: true,
-      sameThread: true,
-    })
-
-    expect(payload).toMatchObject({
-      provider_facets: {
-        'telegram-bot': {
-          credential_ref: 'cred_telegram_primary',
-          bot_username: 'ops_bot',
-          ingress_enabled: false,
-          ingress_mode: 'polling',
-        },
-        'slack-bot': { credential_ref: 'cred_slack', bot_user_id: 'U1' },
-      },
-      access_policy: {
-        denied_user_refs: ['telegram-user:denied'],
-        allowed_chat_refs: ['telegram-chat:1'],
-        allowed_user_refs: ['telegram-user:1'],
-      },
-      context_policy: { include_last_messages: 10 },
-      send_policy: { mode: 'explicit-targets' },
-    })
-  })
-
   it('uses the selected tested Slack connection when an existing bot changes connections', () => {
     const existing = baseProfile({
       provider_facets: {

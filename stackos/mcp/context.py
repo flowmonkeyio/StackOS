@@ -122,6 +122,7 @@ def build_context(
         idempotency_key=idempotency_key,
         skill_name=skill_name,
         expected_etag=expected_etag,
+        extras=dict(session.info.get("operation_services", {})),
     )
 
 

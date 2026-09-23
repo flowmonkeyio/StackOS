@@ -36,6 +36,7 @@ RUN_PLAN_GRANTABLE_TOOL_NAMES: frozenset[str] = frozenset(
         "browser.session.stop",
         "communication.reply",
         "communication.send",
+        "communication.sendBatch",
         "context.query",
         "context.snapshot",
         "decision.record",
@@ -136,10 +137,10 @@ def _require_communication_send_targets(
     targets: tuple[str, ...],
     label: str,
 ) -> None:
-    if tool_name != "communication.send":
+    if tool_name not in {"communication.send", "communication.sendBatch"}:
         return
     if not targets:
-        raise ValueError(f"{label} grants for 'communication.send' must include targets")
+        raise ValueError(f"{label} grants for {tool_name!r} must include targets")
 
 
 def _require_communication_reply_sources(

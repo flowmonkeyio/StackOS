@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-09-21T20:19:31.225Z",
+  "generatedAt": "2026-09-23T21:22:23.627Z",
   "source": "StackOS catalog.list after provider catalog synchronization",
   "counts": {
     "providers": 58,
     "plugins": 12,
-    "actions": 721,
+    "actions": 733,
     "trackboothActions": 337
   },
   "plugins": [
@@ -37,21 +37,21 @@
       "description": "Connect conversations, inboxes, files, and notifications across chat and email tools.",
       "color": "#7ee2ad",
       "providerCount": 5,
-      "actionCount": 30,
+      "actionCount": 35,
       "capabilityCount": 4,
       "providerSlugs": [
         "imap",
         "local-agent-chat",
         "slack-bot",
         "smtp",
-        "telegram-bot"
+        "telegram"
       ],
       "providerNames": [
         "IMAP",
         "Local Agent Chat",
         "Slack Bot",
         "SMTP",
-        "Telegram Bot"
+        "Telegram"
       ]
     },
     {
@@ -60,7 +60,7 @@
       "description": "Handle invoicing and payment evidence through Stripe, with financial records kept in your chosen system.",
       "color": "#635bff",
       "providerCount": 1,
-      "actionCount": 30,
+      "actionCount": 37,
       "capabilityCount": 2,
       "providerSlugs": [
         "stripe"
@@ -5438,7 +5438,7 @@
         "src": "/images/integrations/stripe-icon.jpeg",
         "kind": "icon"
       },
-      "actionCount": 30,
+      "actionCount": 37,
       "capabilities": [
         "Stripe invoicing",
         "Stripe payment lifecycle evidence"
@@ -5451,6 +5451,15 @@
           "keywords": "Attach exactly one previously verified PaymentIntent or PaymentRecord to one invoice. Allocation and matching decisions remain in the workflow.",
           "capability": "stripe-reconciliation",
           "capabilityName": "Stripe payment lifecycle evidence",
+          "risk": "write"
+        },
+        {
+          "key": "finance.stripe.invoices.pdf.cleanup",
+          "name": "Clean Up Stripe Invoice PDF Transfer",
+          "description": "Delete one private invoice PDF staging transfer by opaque reference, within the current project and Stripe account. Call only after external evidence custody and SHA-256 verification; never deletes external finance evidence or contacts Stripe.",
+          "keywords": "Delete one private invoice PDF staging transfer by opaque reference, within the current project and Stripe account. Call only after external evidence custody and SHA-256 verification; never deletes external finance evidence or contacts Stripe.",
+          "capability": "stripe-invoicing",
+          "capabilityName": "Stripe invoicing",
           "risk": "write"
         },
         {
@@ -5472,6 +5481,15 @@
           "risk": "write"
         },
         {
+          "key": "finance.stripe.customers.tax-ids.create",
+          "name": "Create Stripe Customer Tax ID",
+          "description": "Create exactly one explicitly approved tax ID after an independently completed duplicate check. The connector performs no lookup, normalization, tax decision or retry. Reuse the exact idempotency key on an authorized retry and independently retrieve the result; creation does not establish verification or update issued invoice snapshots.",
+          "keywords": "Create exactly one explicitly approved tax ID after an independently completed duplicate check. The connector performs no lookup, normalization, tax decision or retry. Reuse the exact idempotency key on an authorized retry and independently retrieve the result; creation does not establish verification or update issued invoice snapshots.",
+          "capability": "stripe-invoicing",
+          "capabilityName": "Stripe invoicing",
+          "risk": "write"
+        },
+        {
           "key": "finance.stripe.invoice-items.create",
           "name": "Create Stripe Invoice Item",
           "description": "Add one explicit draft line using either a positive manual amount or an existing account-bound Stripe price and explicit quantity.",
@@ -5479,6 +5497,15 @@
           "capability": "stripe-invoicing",
           "capabilityName": "Stripe invoicing",
           "risk": "write"
+        },
+        {
+          "key": "finance.stripe.invoices.pdf.download",
+          "name": "Download Finalized Stripe Invoice PDF",
+          "description": "Retrieve the exact account-bound invoice and download its finalized PDF into private temporary local staging. Refuses drafts; never finalizes or sends. Copy the returned local file to external finance evidence storage, verify its SHA-256, then clean up the transfer. The staged file is not a public media artifact or delivery evidence.",
+          "keywords": "Retrieve the exact account-bound invoice and download its finalized PDF into private temporary local staging. Refuses drafts; never finalizes or sends. Copy the returned local file to external finance evidence storage, verify its SHA-256, then clean up the transfer. The staged file is not a public media artifact or delivery evidence.",
+          "capability": "stripe-invoicing",
+          "capabilityName": "Stripe invoicing",
+          "risk": "read"
         },
         {
           "key": "finance.stripe.invoices.finalize",
@@ -5505,6 +5532,15 @@
           "keywords": "Return one bounded Stripe charge page and a safe continuation reference, optionally filtered by customer or payment intent.",
           "capability": "stripe-reconciliation",
           "capabilityName": "Stripe payment lifecycle evidence",
+          "risk": "read"
+        },
+        {
+          "key": "finance.stripe.customers.tax-ids.list",
+          "name": "List Stripe Customer Tax IDs",
+          "description": "Read one bounded page of one customer's tax IDs, with safe refs, exact value hashes and observed verification status. Exhaust all pages and compare type plus exact value hash before deciding whether an approved identifier is absent; there is no atomic uniqueness guarantee.",
+          "keywords": "Read one bounded page of one customer's tax IDs, with safe refs, exact value hashes and observed verification status. Exhaust all pages and compare type plus exact value hash before deciding whether an approved identifier is absent; there is no atomic uniqueness guarantee.",
+          "capability": "stripe-invoicing",
+          "capabilityName": "Stripe invoicing",
           "risk": "read"
         },
         {
@@ -5636,8 +5672,17 @@
         {
           "key": "finance.stripe.customers.retrieve",
           "name": "Retrieve Stripe Customer",
-          "description": "Retrieve one previously discovered Stripe customer by an account-bound reference; optionally return reviewed name, email and description as sensitive business details.",
-          "keywords": "Retrieve one previously discovered Stripe customer by an account-bound reference; optionally return reviewed name, email and description as sensitive business details.",
+          "description": "Retrieve one previously discovered Stripe customer by an account-bound reference; return exact billing-detail and ordered invoice custom-field digests for independent readback, with optional sensitive business details. Customer defaults do not rewrite finalized invoice snapshots.",
+          "keywords": "Retrieve one previously discovered Stripe customer by an account-bound reference; return exact billing-detail and ordered invoice custom-field digests for independent readback, with optional sensitive business details. Customer defaults do not rewrite finalized invoice snapshots.",
+          "capability": "stripe-invoicing",
+          "capabilityName": "Stripe invoicing",
+          "risk": "read"
+        },
+        {
+          "key": "finance.stripe.customers.tax-ids.retrieve",
+          "name": "Retrieve Stripe Customer Tax ID",
+          "description": "Independently read one account- and customer-bound tax ID. Report actual provider verification status, including pending, unavailable, unverified or null; do not infer verified from successful creation.",
+          "keywords": "Independently read one account- and customer-bound tax ID. Report actual provider verification status, including pending, unavailable, unverified or null; do not infer verified from successful creation.",
           "capability": "stripe-invoicing",
           "capabilityName": "Stripe invoicing",
           "risk": "read"
@@ -5654,8 +5699,8 @@
         {
           "key": "finance.stripe.invoices.retrieve",
           "name": "Retrieve Stripe Invoice",
-          "description": "Retrieve one invoice with its current customer expanded, primary email digests and observed due date. Optional business details include invoice number, memo, customer snapshot name/email and hosted invoice/PDF links; additional billing recipients remain outside API visibility.",
-          "keywords": "Retrieve one invoice with its current customer expanded, primary email digests and observed due date. Optional business details include invoice number, memo, customer snapshot name/email and hosted invoice/PDF links; additional billing recipients remain outside API visibility.",
+          "description": "Retrieve one invoice with its current customer expanded, customer snapshot digests, observed due date, footer digest, PaymentIntent method list, and hosted/PDF link availability states. recipient_pay_online_button_state=unverified never proves the button absent; draft_dashboard_link_state=not_exposed_by_stripe_api means no stable saved-draft review link is returned. For a draft PDF, inspect the selected invoice manually in Stripe Dashboard and verify whether its Download PDF action is available. Optional business details include invoice number, memo, customer snapshot name/email and available hosted invoice/PDF URLs; additional billing recipients remain outside API visibility.",
+          "keywords": "Retrieve one invoice with its current customer expanded, customer snapshot digests, observed due date, footer digest, PaymentIntent method list, and hosted/PDF link availability states. recipient_pay_online_button_state=unverified never proves the button absent; draft_dashboard_link_state=not_exposed_by_stripe_api means no stable saved-draft review link is returned. For a draft PDF, inspect the selected invoice manually in Stripe Dashboard and verify whether its Download PDF action is available. Optional business details include invoice number, memo, customer snapshot name/email and available hosted invoice/PDF URLs; additional billing recipients remain outside API visibility.",
           "capability": "stripe-invoicing",
           "capabilityName": "Stripe invoicing",
           "risk": "read"
@@ -5708,8 +5753,26 @@
         {
           "key": "finance.stripe.invoices.send",
           "name": "Send Stripe Invoice",
-          "description": "Request a send for one already finalized Stripe invoice. Sandbox/test mode sends no email; an accepted test request is not sent/delivered. Live acceptance is not inbox-delivery proof. Workflow approval and exception policy remain outside the connector.",
-          "keywords": "Request a send for one already finalized Stripe invoice. Sandbox/test mode sends no email; an accepted test request is not sent/delivered. Live acceptance is not inbox-delivery proof. Workflow approval and exception policy remain outside the connector.",
+          "description": "Request Stripe customer delivery for one finalized invoice; the API has no operator-review recipient override and does not document inheriting Dashboard Email invoice without link. Never use this action to send a review copy or assume a Dashboard-only choice makes this API route no-link. Sandbox/test mode sends no email; an accepted test request is not sent/delivered. Live acceptance is not inbox-delivery proof. Workflow approval and exception policy remain outside the connector.",
+          "keywords": "Request Stripe customer delivery for one finalized invoice; the API has no operator-review recipient override and does not document inheriting Dashboard Email invoice without link. Never use this action to send a review copy or assume a Dashboard-only choice makes this API route no-link. Sandbox/test mode sends no email; an accepted test request is not sent/delivered. Live acceptance is not inbox-delivery proof. Workflow approval and exception policy remain outside the connector.",
+          "capability": "stripe-invoicing",
+          "capabilityName": "Stripe invoicing",
+          "risk": "write"
+        },
+        {
+          "key": "finance.stripe.customers.update",
+          "name": "Update Stripe Customer Billing Details",
+          "description": "Update only selected fields of one existing customer. Custom fields replace the entire list; independently retrieve current defaults, preserve every unrelated field in the approved replacement, then retrieve again to verify exact values. Customer defaults do not rewrite existing finalized invoices; independently inspect each invoice snapshot.",
+          "keywords": "Update only selected fields of one existing customer. Custom fields replace the entire list; independently retrieve current defaults, preserve every unrelated field in the approved replacement, then retrieve again to verify exact values. Customer defaults do not rewrite existing finalized invoices; independently inspect each invoice snapshot.",
+          "capability": "stripe-invoicing",
+          "capabilityName": "Stripe invoicing",
+          "risk": "write"
+        },
+        {
+          "key": "finance.stripe.invoices.update",
+          "name": "Update Stripe Invoice Presentation",
+          "description": "Update an explicit invoice memo (description), footer, complete custom-field list and/or nonempty PaymentIntent method types, subject to Stripe's editability rules. Independently retrieve exact fields afterward. Custom fields are frozen at finalization; most finalized invoices also freeze description. A rejection never authorizes recreation, voiding or resending. None of these settings proves absence of the recipient's Pay online button. This action does not finalize or send.",
+          "keywords": "Update an explicit invoice memo (description), footer, complete custom-field list and/or nonempty PaymentIntent method types, subject to Stripe's editability rules. Independently retrieve exact fields afterward. Custom fields are frozen at finalization; most finalized invoices also freeze description. A rejection never authorizes recreation, voiding or resending. None of these settings proves absence of the recipient's Pay online button. This action does not finalize or send.",
           "capability": "stripe-invoicing",
           "capabilityName": "Stripe invoicing",
           "risk": "write"
@@ -5883,12 +5946,12 @@
       "setupNote": "Register/sign in to Taboola Realize/Backstage, create client credentials for the account, then store client id, client secret, and safe account ref in StackOS."
     },
     {
-      "key": "communications.telegram-bot",
-      "slug": "telegram-bot",
-      "providerKey": "telegram-bot",
-      "name": "Telegram Bot",
-      "description": "Telegram Bot API provider for bot identity, project-scoped communication profile messaging, webhook ingress, and diagnostics.",
-      "authType": "bot-token",
+      "key": "communications.telegram",
+      "slug": "telegram",
+      "providerKey": "telegram",
+      "name": "Telegram",
+      "description": "Telegram bot and user Accounts with one managed TDLib session per Account.",
+      "authType": "tdlib",
       "pluginSlug": "communications",
       "pluginName": "Communications",
       "pluginDescription": "Connect conversations, inboxes, files, and notifications across chat and email tools.",
@@ -5897,116 +5960,160 @@
         "src": "/images/integrations/telegram.png",
         "kind": "icon"
       },
-      "actionCount": 12,
+      "actionCount": 17,
       "capabilities": [
-        "Agent Triggering",
         "Messaging"
       ],
       "actions": [
         {
-          "key": "communications.telegram-bot.callback.answer",
-          "name": "Answer Telegram Callback",
-          "description": "Acknowledge a Telegram inline button callback query with optional notification text.",
-          "keywords": "Acknowledge a Telegram inline button callback query with optional notification text.",
-          "capability": "agent-triggering",
-          "capabilityName": "Agent Triggering",
-          "risk": "write"
-        },
-        {
-          "key": "communications.telegram-bot.message.delete",
-          "name": "Delete Telegram Message",
-          "description": "Delete an explicit Telegram message reference when Telegram permits the bot to delete it.",
-          "keywords": "Delete an explicit Telegram message reference when Telegram permits the bot to delete it.",
+          "key": "communications.telegram.album.send",
+          "name": "Telegram Album Send",
+          "description": "Explicit TDLib album send for a bot or user Account through its project communication profile.",
+          "keywords": "Explicit TDLib album send for a bot or user Account through its project communication profile.",
           "capability": "messaging",
           "capabilityName": "Messaging",
-          "risk": "destructive"
-        },
-        {
-          "key": "communications.telegram-bot.webhook.delete",
-          "name": "Delete Telegram Webhook",
-          "description": "Remove a Telegram webhook for a project-scoped communication profile.",
-          "keywords": "Remove a Telegram webhook for a project-scoped communication profile.",
-          "capability": "agent-triggering",
-          "capabilityName": "Agent Triggering",
           "risk": "write"
         },
         {
-          "key": "communications.telegram-bot.file.download",
-          "name": "Download Telegram File",
-          "description": "Download a Telegram bot file_id into a generated StackOS artifact for inspected or forwarded media.",
-          "keywords": "Download a Telegram bot file_id into a generated StackOS artifact for inspected or forwarded media.",
+          "key": "communications.telegram.callback.answer",
+          "name": "Telegram Callback Answer",
+          "description": "Explicit TDLib callback answer for a bot Account through its project communication profile.",
+          "keywords": "Explicit TDLib callback answer for a bot Account through its project communication profile.",
+          "capability": "messaging",
+          "capabilityName": "Messaging",
+          "risk": "write"
+        },
+        {
+          "key": "communications.telegram.chat.inspect",
+          "name": "Telegram Chat Inspect",
+          "description": "Explicit TDLib chat inspect for a bot or user Account through its project communication profile. Returns bounded chat and membership facts. Use action.run with response_mode=raw and no idempotency key for this transient read.",
+          "keywords": "Explicit TDLib chat inspect for a bot or user Account through its project communication profile. Returns bounded chat and membership facts. Use action.run with response_mode=raw and no idempotency key for this transient read.",
           "capability": "messaging",
           "capabilityName": "Messaging",
           "risk": "read"
         },
         {
-          "key": "communications.telegram-bot.identity.get",
-          "name": "Get Telegram Bot Identity",
-          "description": "Verify a Telegram bot token and return safe bot identity metadata.",
-          "keywords": "Verify a Telegram bot token and return safe bot identity metadata.",
+          "key": "communications.telegram.chat.list",
+          "name": "Telegram Chat List",
+          "description": "Read one bounded page of a connected user Account's Main or Archive chats from TDLib. The cursor slices TDLib's current ordered list; chat reordering can shift pages. No chat messages are stored by this action. Use action.run with response_mode=raw and no idempotency key to receive this transient page.",
+          "keywords": "Read one bounded page of a connected user Account's Main or Archive chats from TDLib. The cursor slices TDLib's current ordered list; chat reordering can shift pages. No chat messages are stored by this action. Use action.run with response_mode=raw and no idempotency key to receive this transient page.",
           "capability": "messaging",
           "capabilityName": "Messaging",
           "risk": "read"
         },
         {
-          "key": "communications.telegram-bot.webhook.info",
-          "name": "Get Telegram Webhook Info",
-          "description": "Read safe Telegram webhook status for a communication profile.",
-          "keywords": "Read safe Telegram webhook status for a communication profile.",
-          "capability": "agent-triggering",
-          "capabilityName": "Agent Triggering",
+          "key": "communications.telegram.chat.resolve",
+          "name": "Telegram Chat Resolve",
+          "description": "Explicit TDLib chat resolve for a bot or user Account through its project communication profile. Returns a bounded chat summary. Use action.run with response_mode=raw and no idempotency key for this transient read.",
+          "keywords": "Explicit TDLib chat resolve for a bot or user Account through its project communication profile. Returns a bounded chat summary. Use action.run with response_mode=raw and no idempotency key for this transient read.",
+          "capability": "messaging",
+          "capabilityName": "Messaging",
           "risk": "read"
         },
         {
-          "key": "communications.telegram-bot.updates.poll",
-          "name": "Inspect Telegram Updates",
-          "description": "Bounded diagnostic getUpdates call for setup/debugging only; it does not normalize updates, store resources, or create agent requests.",
-          "keywords": "Bounded diagnostic getUpdates call for setup/debugging only; it does not normalize updates, store resources, or create agent requests.",
-          "capability": "agent-triggering",
-          "capabilityName": "Agent Triggering",
+          "key": "communications.telegram.chat.sender.list",
+          "name": "Telegram Chat Sender List",
+          "description": "Read the selected and available TDLib sender identities for one chat through a connected bot or user Account. Use a returned sender_ref on a later explicit send when choosing to post as a channel. Use action.run with response_mode=raw and no idempotency key for this transient read.",
+          "keywords": "Read the selected and available TDLib sender identities for one chat through a connected bot or user Account. Use a returned sender_ref on a later explicit send when choosing to post as a channel. Use action.run with response_mode=raw and no idempotency key for this transient read.",
+          "capability": "messaging",
+          "capabilityName": "Messaging",
           "risk": "read"
         },
         {
-          "key": "communications.telegram-bot.message.send",
-          "name": "Send Telegram Message",
-          "description": "Send a Telegram bot text message to an explicit allowed chat reference, with optional reply markup.",
-          "keywords": "Send a Telegram bot text message to an explicit allowed chat reference, with optional reply markup.",
+          "key": "communications.telegram.file.download",
+          "name": "Telegram File Download",
+          "description": "Explicit TDLib file download for a bot or user Account through its project communication profile.",
+          "keywords": "Explicit TDLib file download for a bot or user Account through its project communication profile.",
+          "capability": "messaging",
+          "capabilityName": "Messaging",
+          "risk": "read"
+        },
+        {
+          "key": "communications.telegram.identity.get",
+          "name": "Telegram Identity Get",
+          "description": "Explicit TDLib identity get for a bot or user Account through its project communication profile.",
+          "keywords": "Explicit TDLib identity get for a bot or user Account through its project communication profile.",
+          "capability": "messaging",
+          "capabilityName": "Messaging",
+          "risk": "read"
+        },
+        {
+          "key": "communications.telegram.message.broadcast",
+          "name": "Telegram Message Broadcast",
+          "description": "Explicit TDLib message broadcast for a bot or user Account through its project communication profile.",
+          "keywords": "Explicit TDLib message broadcast for a bot or user Account through its project communication profile.",
           "capability": "messaging",
           "capabilityName": "Messaging",
           "risk": "write"
         },
         {
-          "key": "communications.telegram-bot.photo.send",
-          "name": "Send Telegram Photo",
-          "description": "Send a Telegram bot photo/image message from a file id, public URL, or StackOS artifact ref.",
-          "keywords": "Send a Telegram bot photo/image message from a file id, public URL, or StackOS artifact ref.",
+          "key": "communications.telegram.message.delete",
+          "name": "Telegram Message Delete",
+          "description": "Explicit TDLib message delete for a bot or user Account through its project communication profile.",
+          "keywords": "Explicit TDLib message delete for a bot or user Account through its project communication profile.",
           "capability": "messaging",
           "capabilityName": "Messaging",
           "risk": "write"
         },
         {
-          "key": "communications.telegram-bot.message.reaction.set",
-          "name": "Set Telegram Message Reaction",
-          "description": "Set a native Telegram emoji reaction on an explicit Telegram message reference.",
-          "keywords": "Set a native Telegram emoji reaction on an explicit Telegram message reference.",
+          "key": "communications.telegram.message.edit",
+          "name": "Telegram Message Edit",
+          "description": "Explicit TDLib message edit for a bot or user Account through its project communication profile.",
+          "keywords": "Explicit TDLib message edit for a bot or user Account through its project communication profile.",
           "capability": "messaging",
           "capabilityName": "Messaging",
           "risk": "write"
         },
         {
-          "key": "communications.telegram-bot.webhook.set",
-          "name": "Set Telegram Webhook",
-          "description": "Set the Telegram webhook URL for a communication profile after deployment and secret-token verification are configured.",
-          "keywords": "Set the Telegram webhook URL for a communication profile after deployment and secret-token verification are configured.",
-          "capability": "agent-triggering",
-          "capabilityName": "Agent Triggering",
+          "key": "communications.telegram.message.forward",
+          "name": "Telegram Message Forward",
+          "description": "Explicit TDLib message forward for a bot or user Account through its project communication profile.",
+          "keywords": "Explicit TDLib message forward for a bot or user Account through its project communication profile.",
+          "capability": "messaging",
+          "capabilityName": "Messaging",
           "risk": "write"
         },
         {
-          "key": "communications.telegram-bot.file.upload",
-          "name": "Upload Telegram File",
-          "description": "Send one Telegram file/photo with caption as one message, or send 2-10 files as a Telegram media group.",
-          "keywords": "Send one Telegram file/photo with caption as one message, or send 2-10 files as a Telegram media group.",
+          "key": "communications.telegram.message.get",
+          "name": "Telegram Message Get",
+          "description": "Explicit TDLib message get for a bot or user Account through its project communication profile. Returns selected text and account-qualified file refs without the full native message object. Use action.run with response_mode=raw and no idempotency key for this transient read.",
+          "keywords": "Explicit TDLib message get for a bot or user Account through its project communication profile. Returns selected text and account-qualified file refs without the full native message object. Use action.run with response_mode=raw and no idempotency key for this transient read.",
+          "capability": "messaging",
+          "capabilityName": "Messaging",
+          "risk": "read"
+        },
+        {
+          "key": "communications.telegram.message.history",
+          "name": "Telegram Message History",
+          "description": "Read one bounded, newest-first TDLib history page from a known user Account chat. Pass next_before_message_id as before_message_id for the next page; a short page is not proof of the end. Full text requires include_content. No fetched messages are stored as communication resources by this action. Use action.run with response_mode=raw and no idempotency key to receive this transient page.",
+          "keywords": "Read one bounded, newest-first TDLib history page from a known user Account chat. Pass next_before_message_id as before_message_id for the next page; a short page is not proof of the end. Full text requires include_content. No fetched messages are stored as communication resources by this action. Use action.run with response_mode=raw and no idempotency key to receive this transient page.",
+          "capability": "messaging",
+          "capabilityName": "Messaging",
+          "risk": "read"
+        },
+        {
+          "key": "communications.telegram.message.react",
+          "name": "Telegram Message React",
+          "description": "Explicit TDLib message react for a bot or user Account through its project communication profile.",
+          "keywords": "Explicit TDLib message react for a bot or user Account through its project communication profile.",
+          "capability": "messaging",
+          "capabilityName": "Messaging",
+          "risk": "write"
+        },
+        {
+          "key": "communications.telegram.message.send",
+          "name": "Telegram Message Send",
+          "description": "Explicit TDLib message send for a bot or user Account through its project communication profile.",
+          "keywords": "Explicit TDLib message send for a bot or user Account through its project communication profile.",
+          "capability": "messaging",
+          "capabilityName": "Messaging",
+          "risk": "write"
+        },
+        {
+          "key": "communications.telegram.poll.stop",
+          "name": "Telegram Poll Stop",
+          "description": "Explicit TDLib poll stop for a bot or user Account through its project communication profile.",
+          "keywords": "Explicit TDLib poll stop for a bot or user Account through its project communication profile.",
           "capability": "messaging",
           "capabilityName": "Messaging",
           "risk": "write"
@@ -6022,7 +6129,7 @@
         {
           "key": "docs_url",
           "label": "Documentation",
-          "url": "https://core.telegram.org/bots/api",
+          "url": "https://core.telegram.org/tdlib",
           "confidence": "verified"
         },
         {
@@ -6034,13 +6141,13 @@
         {
           "key": "console_url",
           "label": "Open console",
-          "url": "https://t.me/BotFather",
+          "url": "https://my.telegram.org/",
           "confidence": "verified"
         }
       ],
       "primaryUrl": "https://telegram.org/",
-      "docsUrl": "https://core.telegram.org/bots/api",
-      "setupNote": "Create or manage the bot in BotFather, then paste only the bot token and optional webhook secret into StackOS."
+      "docsUrl": "https://core.telegram.org/tdlib",
+      "setupNote": "Register a Telegram application at my.telegram.org/apps for a shared API ID and hash once. Each bot also needs its own token from BotFather. For a user, complete Telegram's authorization challenge in Account setup. Configure an optional SOCKS5, HTTP, or MTProto proxy on the same Account. To correct the shared application pair, detach and revoke every Telegram Account; revoking the final Account resets the application setting for the next setup."
     },
     {
       "key": "trackbooth.trackbooth",

@@ -1,5 +1,6 @@
 """Provider-neutral communication processing primitives."""
 
+from stackos.communication_surface_bindings import communication_surface_binding_external_id
 from stackos.communications.contracts import (
     CommunicationDecision,
     CommunicationProcessingResult,
@@ -50,6 +51,7 @@ __all__ = [
     "communication_profile_record_by_key",
     "communication_profile_ref",
     "communication_record_by_external_id",
+    "communication_surface_binding_external_id",
     "config_nested",
     "config_policy",
     "config_refs",

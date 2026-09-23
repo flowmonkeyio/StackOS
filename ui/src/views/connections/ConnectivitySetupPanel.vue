@@ -24,7 +24,7 @@ const driverOptions = [
   {
     value: 'public-url',
     label: 'Public URL',
-    description: 'A deployed HTTPS address that Slack and Telegram can reach directly.',
+    description: 'A deployed HTTPS address that configured webhook providers can reach directly.',
   },
   {
     value: 'local-tunnel',
@@ -38,7 +38,7 @@ const driverOptions = [
   <UiSidePanel
     :model-value="modelValue"
     title="Set up connectivity"
-    description="Tell StackOS the public address Slack and Telegram should use to deliver messages to your bots."
+    description="Tell StackOS the public address webhook providers should use to deliver messages to your bots. Telegram bot and user updates run through each Account's TDLib session."
     size="md"
     @update:model-value="emit('update:modelValue', $event)"
   >
@@ -104,8 +104,8 @@ const driverOptions = [
         tone="info"
         density="compact"
       >
-        After saving, use <strong>Sync to providers</strong> to register each bot’s webhook with
-        Slack and Telegram. Secrets used to sign those webhooks stay daemon-side.
+        After saving, use <strong>Refresh routes</strong> to get each required provider URL. Copy
+        any manual setup URL into that provider’s console. Signing secrets stay daemon-side.
       </UiCallout>
     </div>
 

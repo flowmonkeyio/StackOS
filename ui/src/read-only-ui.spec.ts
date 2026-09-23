@@ -45,24 +45,32 @@ describe('restricted UI write contract', () => {
       .map((match) => match[0])
       .filter((block) => /method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/.test(block))
 
-    expect(methodBlocks.length).toBe(7)
+    expect(methodBlocks.length).toBe(11)
     expect(methodBlocks.map((block) => block.match(/method:\s*'([^']+)'/)?.[1])).toEqual([
       'POST',
       'PATCH',
       'POST',
       'POST',
+      'DELETE',
+      'POST',
       'POST',
       'POST',
       'DELETE',
+      'POST',
+      'POST',
     ])
     expect(methodBlocks.map((block) => block.match(/`([^`]+)`/)?.[1])).toEqual([
       '/api/v1/auth/accounts/${providerKey}',
       '/api/v1/auth/accounts/${encodeURIComponent(credentialRef)}',
       '/api/v1/auth/accounts/${providerKey}/start',
+      '/api/v1/auth/accounts/${encodeURIComponent(credentialRef)}/authorization',
+      '/api/v1/auth/accounts/${encodeURIComponent(credentialRef)}/authorization?generation=${generation}',
       '/api/v1/auth/accounts/${encodeURIComponent(credentialRef)}/test',
       '/api/v1/auth/accounts/${encodeURIComponent(credentialRef)}/revoke',
       '/api/v1/projects/${projectId}/connections/accounts/${encodeURIComponent(credentialRef)}',
       '/api/v1/projects/${projectId}/connections/accounts/${encodeURIComponent(credentialRef)}',
+      '/api/v1/projects/${projectId}/connections/accounts/${encodeURIComponent(credentialRef)}/session/connect',
+      '/api/v1/projects/${projectId}/connections/accounts/${encodeURIComponent(credentialRef)}/session/disconnect',
     ])
   })
 

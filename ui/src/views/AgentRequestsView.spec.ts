@@ -32,7 +32,7 @@ describe('AgentRequestsView', () => {
             request_key: 'telegram:update:7',
             title: 'Telegram message needs launch review',
             body_preview: 'Please check today',
-            source_provider: 'telegram-bot',
+            source_provider: 'telegram',
             source_kind: 'telegram-message',
           }),
         ],
@@ -61,7 +61,7 @@ describe('AgentRequestsView', () => {
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('Telegram message needs launch review'))
     expect(wrapper.text()).toContain('Agent requests')
-    expect(wrapper.text()).toContain('telegram-bot')
+    expect(wrapper.text()).toContain('telegram')
     await clickRow(wrapper, 'Telegram message needs launch review')
     expect(wrapper.text()).toContain('telegram:update:7')
     const operationCall = calls.find((call) =>

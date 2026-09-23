@@ -12,7 +12,7 @@
   "whyAi": "An agent can prepare a bounded Stripe invoice from the selected external record while enforcing idempotency, separating draft work from customer delivery, and preserving owner decisions.",
   "operatorPath": [
     "Request an invoice from the external billing record; the agent resolves workspace defaults and prepares the draft.",
-    "Review the exact draft once and approve its finalization and initial send together if desired; the agent records that decision against both technical gates.",
+    "Review the independently retrieved customer and invoice facts. For visual review, locate the saved draft in Stripe Dashboard and check whether its overflow Download PDF action works for this invoice/account; StackOS has no draft PDF API URL or stable Dashboard deep link. Approve finalization and customer send as separate decisions, or one exact-version decision recorded under both technical gates.",
     "Inspect a safe provider result, exception, or recovery recommendation; never provide customer data or payment instructions in chat."
   ],
   "agentPath": [
@@ -31,7 +31,8 @@
   ],
   "recovery": [
     "For an unknown write outcome, retrieve/reconcile the same safe provider refs with the same deterministic key; never create a new key or duplicate customer/invoice/item.",
-    "If approval is absent, stop at the review-ready draft and do not finalize or send."
+    "If approval is absent, stop at the review-ready draft and do not finalize or send.",
+    "If direct-deposit-only Pay online absence or a required visual draft review cannot be verified, hold the draft and report the specific Dashboard/manual-review gap. Stripe documents a Dashboard Email invoice without link option and a general Download PDF action; verify both for the selected account and invoice before relying on them. Never finalize merely to obtain a review PDF or link."
   ],
   "safeStoppingPoints": [
     "Stop with a draft/reconciliation recommendation before finalization when approval is not recorded.",
@@ -53,7 +54,7 @@
   "prerequisites": [
     "A restricted Stripe connection with the invoice route selected",
     "A selected workspace and one billing-request reference resolving an immutable external version with customer, lines, currency and terms",
-    "Owner approval of the concrete draft before finalization and send; these approvals are produced during the run"
+    "Explicit owner approval of the concrete draft before finalization and send; existing exact-scope decisions are verified and recorded without requesting approval again"
   ],
   "proof": [
     "Safe external payment-request and Stripe invoice/customer refs",
@@ -92,7 +93,7 @@
     {
       "id": "send-invoice",
       "title": "Send Approved Invoice",
-      "summary": "Run only the owner-approved Stripe customer send action and reconcile unknown outcomes with reads."
+      "summary": "Execute the approved API send or reconcile independently verified prior manual delivery without another send."
     },
     {
       "id": "record-and-handoff",

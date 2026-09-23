@@ -13,10 +13,12 @@ from pathlib import Path
 import pytest
 
 from stackos.browser.runtime import BROWSER_PROFILE_DIRNAME, browser_profile_dir
+from stackos.communication_surface_bindings import communication_surface_binding_external_id
 
 EXPECTED_TABLES: frozenset[str] = frozenset(
     {
         "action_calls",
+        "action_delivery_admissions",
         "action_versions",
         "actions",
         "agent_requests",
@@ -36,6 +38,10 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
         "credential_usage_events",
         "credentials",
         "decisions",
+        "durable_action_artifacts",
+        "durable_action_attempts",
+        "durable_action_items",
+        "durable_action_jobs",
         "execution_context_artifacts",
         "execution_context_links",
         "execution_contexts",
@@ -68,6 +74,7 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
         "task_tracker_lanes",
         "task_tracker_priorities",
         "task_trackers",
+        "telegram_application",
         "tracker_revisions",
         "tracker_tasks",
         "tracker_ticket_dependencies",
@@ -580,10 +587,167 @@ def test_global_account_backing_repair_is_a_healthy_noop(
             == before
         )
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0028_cleanup_communication_account_bindings",
+            "0032_shared_telegram_application",
         )
     finally:
         conn.close()
+
+
+def test_telegram_application_migration_preserves_matching_sessions_and_flags_conflicts(
+    isolated_alembic: Path,
+) -> None:
+    from stackos.crypto.aes_gcm import decrypt, decrypt_account, encrypt_account
+    from stackos.crypto.seed import ensure_seed_file
+
+    _run_alembic(["upgrade", "0031_retire_telegram_bot_api"])
+    seed = ensure_seed_file(isolated_alembic.parent.parent / "state" / "seed.bin")
+    native_database = isolated_alembic.parent / "telegram-tdlib" / "cred_telegram_2" / "database"
+    native_database.mkdir(parents=True)
+    (native_database / "tdlib-state").write_bytes(b"saved-native-session")
+    now = "2026-09-22 00:00:00"
+    conn = sqlite3.connect(isolated_alembic)
+    try:
+        for account_id, app_id, app_hash in (
+            (1, 12345, "shared-app-hash"),
+            (2, 12345, "shared-app-hash"),
+            (3, 67890, "different-app-hash"),
+        ):
+            ref = f"cred_telegram_{account_id}"
+            payload = json.dumps(
+                {
+                    "api_hash": app_hash,
+                    "bot_token": f"{account_id}:test-token",
+                    "_tdlib_database_encryption_key": f"saved-key-{account_id}",
+                }
+            ).encode()
+            ciphertext, nonce = encrypt_account(
+                payload, credential_ref=ref, provider_key="telegram", seed=seed
+            )
+            conn.execute(
+                """
+                INSERT INTO integration_credentials
+                (id, encrypted_payload, nonce, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (account_id, ciphertext, nonce, now, now),
+            )
+            config = {
+                "auth_method_key": "tdlib-bot-token",
+                "api_id": app_id,
+                "telegram_desired_connected": account_id >= 2,
+                "telegram_auth": {
+                    "generation": 1,
+                    "state": "disconnected",
+                    "updated_at": "2026-09-22T00:00:00",
+                },
+            }
+            conn.execute(
+                """
+                INSERT INTO credentials
+                (id, integration_credential_id, credential_ref, provider_key,
+                 display_name, display_name_key, auth_type, auth_method_key,
+                 status, config_json, created_at, updated_at)
+                VALUES (?, ?, ?, 'telegram', ?, ?, 'tdlib-bot-token',
+                        'tdlib-bot-token', 'disconnected', ?, ?, ?)
+                """,
+                (
+                    account_id,
+                    account_id,
+                    ref,
+                    ref,
+                    ref,
+                    json.dumps(config),
+                    now,
+                    now,
+                ),
+            )
+            if account_id == 2:
+                conn.execute(
+                    "UPDATE credentials SET auth_type = 'tdlib-user-session', "
+                    "auth_method_key = 'tdlib-user-session' WHERE id = 2"
+                )
+        conn.commit()
+    finally:
+        conn.close()
+
+    _run_alembic(["upgrade", "head"])
+    conn = sqlite3.connect(isolated_alembic)
+    try:
+        app_ciphertext, app_nonce = conn.execute(
+            "SELECT encrypted_payload, nonce FROM telegram_application WHERE id = 1"
+        ).fetchone()
+        application = json.loads(
+            decrypt(
+                app_ciphertext,
+                nonce=app_nonce,
+                project_id=None,
+                kind="telegram-application",
+                seed=seed,
+            )
+        )
+        assert application == {"api_id": 12345, "api_hash": "shared-app-hash"}
+        for account_id in (1, 2):
+            ref = f"cred_telegram_{account_id}"
+            config_raw, ciphertext, nonce = conn.execute(
+                """
+                SELECT c.config_json, i.encrypted_payload, i.nonce
+                FROM credentials c JOIN integration_credentials i
+                ON i.id = c.integration_credential_id WHERE c.id = ?
+                """,
+                (account_id,),
+            ).fetchone()
+            config = json.loads(config_raw)
+            payload = json.loads(
+                decrypt_account(
+                    ciphertext,
+                    nonce=nonce,
+                    credential_ref=ref,
+                    provider_key="telegram",
+                    seed=seed,
+                )
+            )
+            assert "api_id" not in config
+            assert "api_hash" not in payload
+            assert payload["_tdlib_database_encryption_key"] == f"saved-key-{account_id}"
+            if account_id == 2:
+                assert config["telegram_desired_connected"] is True
+        assert (native_database / "tdlib-state").read_bytes() == b"saved-native-session"
+        config_raw, ciphertext, nonce = conn.execute(
+            """
+            SELECT c.config_json, i.encrypted_payload, i.nonce
+            FROM credentials c JOIN integration_credentials i
+            ON i.id = c.integration_credential_id WHERE c.id = 3
+            """
+        ).fetchone()
+        config = json.loads(config_raw)
+        payload = json.loads(
+            decrypt_account(
+                ciphertext,
+                nonce=nonce,
+                credential_ref="cred_telegram_3",
+                provider_key="telegram",
+                seed=seed,
+            )
+        )
+        assert config["telegram_application_conflict"] is True
+        assert config["telegram_desired_connected"] is False
+        assert config["telegram_auth"]["state"] == "repair-required"
+        assert payload["api_hash"] == "different-app-hash"
+    finally:
+        conn.close()
+    from sqlmodel import Session
+
+    from stackos.auth_providers import AuthRepository
+    from stackos.db.connection import make_engine
+
+    engine = make_engine(isolated_alembic)
+    try:
+        with Session(engine) as session:
+            account = AuthRepository(session).get_account(credential_ref="cred_telegram_3")
+            assert account.status == "repair-required"
+            assert account.setup_required is True
+    finally:
+        engine.dispose()
 
 
 def test_global_account_backing_repair_restores_only_the_missing_backing_link(
@@ -767,6 +931,229 @@ def test_communication_binding_cleanup_removes_aliases_without_inventing_an_acco
         assert "manual_ingress_confirmation" not in facet
         assert facet["team_id"] == "T123"
         assert cleaned["access_policy"] == {"allowed_user_refs": ["slack-user:U123"]}
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("canonical_last", [False, True])
+def test_communication_surface_binding_migration_scopes_legacy_surfaces_to_one_profile(
+    isolated_alembic: Path,
+    canonical_last: bool,
+) -> None:
+    _run_alembic(["upgrade", "0028_cleanup_communication_account_bindings"])
+    now = "2026-09-22 00:00:00"
+    support_profile = {
+        "key": "support",
+        "profile_ref": "communication-profile:support",
+        "provider_facets": {"slack-bot": {"credential_ref": "cred_support"}},
+    }
+    sales_profile = {
+        "key": "sales",
+        "profile_ref": "communication-profile:sales",
+        "provider_facets": {"slack-bot": {"credential_ref": "cred_sales"}},
+    }
+    generic_surface = {
+        "provider_key": "slack-bot",
+        "credential_ref": "cred_support",
+        "surface_ref": "slack-channel:C123",
+        "channel_ref": "slack-channel:C123",
+        "kind": "slack-channel",
+    }
+    slack_surface = {
+        "provider_key": "slack-bot",
+        "profile_key": "support",
+        "credential_ref": "cred_support",
+        "surface_ref": "slack-channel:C456",
+        "channel_ref": "slack-channel:C456",
+        "kind": "slack-channel",
+    }
+    ambiguous_surface = {
+        "provider_key": "slack-bot",
+        "surface_ref": "slack-channel:C999",
+        "channel_ref": "slack-channel:C999",
+        "kind": "slack-channel",
+    }
+    direct_conflict_surface = {
+        "provider_key": "slack-bot",
+        "profile_key": "support",
+        "credential_ref": "cred_support",
+        "surface_ref": "slack-channel:C777",
+        "channel_ref": "slack-channel:C777",
+        "kind": "slack-channel",
+        "audience": "internal",
+    }
+    generic_conflict_surface = {
+        "provider_key": "slack-bot",
+        "credential_ref": "cred_support",
+        "surface_ref": "slack-channel:C777",
+        "channel_ref": "slack-channel:C777",
+        "kind": "slack-channel",
+        "audience": "customer",
+    }
+    conn = sqlite3.connect(isolated_alembic)
+    try:
+        _insert_legacy_project(conn, project_id=1, now=now)
+        conn.execute(
+            """
+            INSERT INTO plugins
+            (id, slug, name, version, description, source, manifest_json, created_at, updated_at)
+            VALUES (1, 'communications', 'Communications', '1.0.0', '', 'builtin', '{}', ?, ?)
+            """,
+            (now, now),
+        )
+        conn.executemany(
+            """
+            INSERT INTO resources
+            (id, plugin_id, key, name, description, schema_json, created_at, updated_at)
+            VALUES (?, 1, ?, ?, '', '{}', ?, ?)
+            """,
+            [
+                (1, "communication-profile", "Profile", now, now),
+                (2, "communication-channel", "Channel", now, now),
+            ],
+        )
+        conn.executemany(
+            """
+            INSERT INTO resource_records
+            (id, project_id, resource_id, external_id, title, data_json,
+             provenance_json, created_at, updated_at)
+            VALUES (?, 1, ?, ?, ?, ?, '{}', ?, ?)
+            """,
+            [
+                (
+                    1,
+                    1,
+                    "communication-profile:support",
+                    "Support",
+                    json.dumps(support_profile),
+                    now,
+                    now,
+                ),
+                (
+                    2,
+                    1,
+                    "communication-profile:sales",
+                    "Sales",
+                    json.dumps(sales_profile),
+                    now,
+                    now,
+                ),
+                (
+                    3,
+                    2,
+                    "communication-surface:slack-channel:C123",
+                    "Support",
+                    json.dumps(generic_surface),
+                    now,
+                    now,
+                ),
+                (
+                    4,
+                    2,
+                    "slack-channel:support:C456",
+                    "Support",
+                    json.dumps(slack_surface),
+                    now,
+                    now,
+                ),
+                (
+                    5,
+                    2,
+                    "communication-surface:slack-channel:C999",
+                    "Ambiguous",
+                    json.dumps(ambiguous_surface),
+                    now,
+                    now,
+                ),
+                (
+                    6,
+                    2,
+                    "slack-channel:support:C777",
+                    "Conflicting direct",
+                    json.dumps(direct_conflict_surface),
+                    now,
+                    now,
+                ),
+                (
+                    7,
+                    2,
+                    "communication-surface:slack-channel:C777",
+                    "Conflicting generic",
+                    json.dumps(generic_conflict_surface),
+                    now,
+                    now,
+                ),
+            ],
+        )
+        if canonical_last:
+            # A pre-existing canonical record can follow a legacy conflicting
+            # record in id order; its later visit must not erase the repair flag.
+            conn.execute(
+                "UPDATE resource_records SET external_id = ? WHERE id = 7",
+                (
+                    communication_surface_binding_external_id(
+                        provider_key="slack-bot",
+                        profile_ref="communication-profile:support",
+                        surface_ref="slack-channel:C777",
+                    ),
+                ),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+    _run_alembic(["upgrade", "head"])
+
+    conn = sqlite3.connect(isolated_alembic)
+    try:
+        migrated = conn.execute(
+            "SELECT external_id, data_json FROM resource_records WHERE id IN (3, 4) ORDER BY id"
+        ).fetchall()
+        assert [row[0] for row in migrated] == [
+            communication_surface_binding_external_id(
+                provider_key="slack-bot",
+                profile_ref="communication-profile:support",
+                surface_ref="slack-channel:C123",
+            ),
+            communication_surface_binding_external_id(
+                provider_key="slack-bot",
+                profile_ref="communication-profile:support",
+                surface_ref="slack-channel:C456",
+            ),
+        ]
+        assert all(
+            json.loads(row[1])["profile_ref"] == "communication-profile:support" for row in migrated
+        )
+
+        external_id, data_json = conn.execute(
+            "SELECT external_id, data_json FROM resource_records WHERE id = 5"
+        ).fetchone()
+        assert external_id == "communication-surface:slack-channel:C999"
+        assert json.loads(data_json)["surface_binding_state"] == "repair-required"
+        assert json.loads(data_json)["surface_binding_issue"] == "ambiguous_profile_binding"
+
+        conflict_rows = conn.execute(
+            "SELECT external_id, data_json FROM resource_records WHERE id IN (6, 7) ORDER BY id"
+        ).fetchall()
+        canonical_index = 1 if canonical_last else 0
+        assert conflict_rows[canonical_index][0] == communication_surface_binding_external_id(
+            provider_key="slack-bot",
+            profile_ref="communication-profile:support",
+            surface_ref="slack-channel:C777",
+        )
+        assert conflict_rows[1 - canonical_index][0] == (
+            "slack-channel:support:C777"
+            if canonical_last
+            else "communication-surface:slack-channel:C777"
+        )
+        assert all(
+            json.loads(row[1])["surface_binding_state"] == "repair-required"
+            for row in conflict_rows
+        )
+        assert all(
+            json.loads(row[1])["surface_binding_issue"] == "conflicting_duplicate_binding_metadata"
+            for row in conflict_rows
+        )
     finally:
         conn.close()
 
@@ -1072,6 +1459,157 @@ def test_global_account_migration_refuses_data_collapsing_downgrade(
         ).fetchall() == [(1, 1)]
     finally:
         conn.close()
+
+
+def test_telegram_cutover_retires_active_bindings_preserves_history(isolated_alembic: Path) -> None:
+    from sqlmodel import Session
+
+    from stackos.db.connection import make_engine
+    from stackos.db.models import (
+        Action,
+        ActionCall,
+        Credential,
+        Plugin,
+        Project,
+        ProjectCredential,
+        Provider,
+        Resource,
+        ResourceRecord,
+    )
+
+    _run_alembic(["upgrade", "0030_durable_action_runtime"])
+    engine = make_engine(isolated_alembic)
+    with Session(engine) as session:
+        session.add(
+            Project(id=1, slug="cutover", name="Cutover", domain="example.test", locale="en-US")
+        )
+        session.add(Plugin(id=1, slug="communications", name="Communications", source="builtin"))
+        session.commit()
+        session.add(Provider(id=1, plugin_id=1, key="telegram-bot", name="Old Telegram"))
+        session.add(Provider(id=2, plugin_id=1, key="slack-bot", name="Slack"))
+        session.add(
+            Credential(
+                id=1,
+                provider_key="telegram-bot",
+                credential_ref="cred_old_bot",
+                display_name="Old bot",
+                display_name_key="old bot",
+            )
+        )
+        session.commit()
+        session.add(ProjectCredential(project_id=1, credential_id=1))
+        session.add(
+            Action(
+                id=1, plugin_id=1, provider_id=1, key="telegram-bot.message.send", name="Old send"
+            )
+        )
+        session.commit()
+        session.add(
+            ActionCall(
+                id=1,
+                project_id=1,
+                action_id=1,
+                plugin_slug="communications",
+                action_key="telegram-bot.message.send",
+                provider_key="telegram-bot",
+                connector_key="telegram-bot",
+                operation="message.send",
+                status="success",
+                request_json={"text": "historic"},
+                response_json={"message_ref": "telegram-message:1:2"},
+            )
+        )
+        for index, key in enumerate(
+            [
+                "communication-profile",
+                "communication-target",
+                "communication-message",
+                "communication-channel",
+            ],
+            1,
+        ):
+            session.add(Resource(id=index, plugin_id=1, key=key, name=key))
+        session.commit()
+        records = [
+            (
+                1,
+                "mixed",
+                {
+                    "enabled": True,
+                    "provider_facets": {
+                        "telegram-bot": {
+                            "credential_ref": "cred_old_bot",
+                            "webhook_base_url": "https://old.test",
+                        },
+                        "slack-bot": {"credential_ref": "cred_slack"},
+                    },
+                },
+            ),
+            (
+                1,
+                "old-only",
+                {
+                    "enabled": True,
+                    "provider_facets": {"telegram-bot": {"credential_ref": "cred_old_bot"}},
+                },
+            ),
+            (
+                2,
+                "destination",
+                {
+                    "enabled": True,
+                    "provider_key": "telegram-bot",
+                    "send_policy": {"mode": "explicit-target"},
+                },
+            ),
+            (
+                4,
+                "old-channel",
+                {
+                    "provider_key": "telegram-bot",
+                    "surface_ref": "telegram-chat:-100123",
+                    "profile_ref": "communication-profile:old-only",
+                    "kind": "channel",
+                    "ingest_enabled": True,
+                    "send_enabled": True,
+                },
+            ),
+            (3, "historic", {"provider_key": "telegram-bot", "text_preview": "Historic receipt"}),
+        ]
+        for resource_id, external_id, data in records:
+            session.add(
+                ResourceRecord(
+                    project_id=1, resource_id=resource_id, external_id=external_id, data_json=data
+                )
+            )
+        session.commit()
+    engine.dispose()
+    _run_alembic(["upgrade", "head"])
+    _run_alembic(["upgrade", "head"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        assert conn.execute("SELECT status FROM credentials WHERE id=1").fetchone() == ("revoked",)
+        assert conn.execute("SELECT COUNT(*) FROM project_credentials").fetchone() == (0,)
+        assert conn.execute("SELECT key FROM providers").fetchall() == [("slack-bot",)]
+        assert conn.execute("SELECT COUNT(*) FROM actions").fetchone() == (0,)
+        assert conn.execute(
+            "SELECT action_key, status FROM action_calls WHERE id=1"
+        ).fetchone() == ("telegram-bot.message.send", "success")
+        data = {
+            key: json.loads(raw)
+            for key, raw in conn.execute("SELECT external_id, data_json FROM resource_records")
+        }
+        assert data["mixed"]["enabled"] is True
+        assert data["mixed"]["provider_facets"] == {"slack-bot": {"credential_ref": "cred_slack"}}
+        assert data["old-only"]["enabled"] is False
+        assert data["destination"]["send_policy"]["mode"] == "deny"
+        from stackos.operations.communication_platform.utils import _communication_surface_out
+
+        surface = _communication_surface_out(None, 1, data["old-channel"])
+        assert surface.binding_state == "repair-required"
+        assert surface.binding_issues == [{"code": "telegram_bot_api_retired"}]
+        assert surface.send_enabled is False
+        assert surface.ingest_enabled is False
+        assert data["historic"] == records[-1][2]
 
 
 def test_alembic_upgrade_creates_expected_stackos_tables(isolated_alembic: Path) -> None:

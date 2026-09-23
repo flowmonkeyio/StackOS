@@ -28,6 +28,8 @@ class CommunicationPolicyProfile:
     ingress_disabled_status: str = "ingress_disabled"
     allowed_update_types: tuple[str, ...] = ()
     update_blocked_status: str = "update_blocked"
+    visibility_default_mode: str = "all"
+    require_selected_update_types: bool = False
 
 
 @dataclass(frozen=True)
@@ -105,17 +107,36 @@ def evaluate_inbound_policy(
             create_request=False,
             status=profile.update_blocked_status,
         )
-    if event.is_self:
+    visibility = config_policy(data, "visibility_policy")
+    selected_update_types = visibility.get("allowed_update_types")
+    if selected_update_types is None:
+        if profile.require_selected_update_types:
+            return CommunicationDecision(
+                store=False,
+                create_request=False,
+                status=profile.update_blocked_status,
+            )
+    elif (
+        not isinstance(selected_update_types, list)
+        or not all(isinstance(value, str) for value in selected_update_types)
+        or event.update_type not in selected_update_types
+    ):
         return CommunicationDecision(
-            store=True,
+            store=False,
             create_request=False,
-            status="self_message_ignored",
+            status=profile.update_blocked_status,
         )
     if not _visibility_allowed(profile, event):
         return CommunicationDecision(
             store=False,
             create_request=False,
             status=profile.visibility_blocked_status,
+        )
+    if event.is_self:
+        return CommunicationDecision(
+            store=True,
+            create_request=False,
+            status="self_message_ignored",
         )
 
     trigger_match = _trigger_match(profile, event)
@@ -266,7 +287,7 @@ def _visibility_allowed(
     mode = _first_policy_value(
         visibility,
         event.visibility_mode_keys,
-        default=visibility.get("surface_mode", "all"),
+        default=visibility.get("surface_mode", profile.visibility_default_mode),
     )
     if mode == "disabled":
         return False

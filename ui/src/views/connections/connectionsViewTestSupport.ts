@@ -126,49 +126,6 @@ export function interactiveMethod() {
   ]
 }
 
-export function telegramBotMethod() {
-  return [
-    {
-      key: 'bot-token',
-      label: 'Bot token',
-      auth_type: 'bot-token',
-      description: '',
-      interactive: false,
-      payload_format: 'json',
-      payload_field: null,
-      fields: [
-        {
-          key: 'bot_token',
-          label: 'Bot Token',
-          type: 'secret',
-          secret: true,
-          required: true,
-          placeholder: '123456:ABC...',
-        },
-        {
-          key: 'webhook_secret_token',
-          label: 'Webhook Secret Token',
-          type: 'secret',
-          secret: true,
-          required: false,
-          placeholder: '',
-        },
-        {
-          key: 'api_base_url',
-          label: 'Local Bot API URL',
-          type: 'text',
-          secret: false,
-          required: false,
-          placeholder: 'http://127.0.0.1:8081',
-          description:
-            "Leave blank for Telegram's hosted Bot API. Use only with the official self-hosted Telegram Bot API server.",
-        },
-      ],
-      config: null,
-    },
-  ]
-}
-
 export function slackBotMethod() {
   return [
     {

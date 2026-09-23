@@ -25,6 +25,9 @@
     "Return blocking findings, evidence gaps, and repair conditions to the main orchestrator; it never replaces the owner, CPA/EA, or one-writer role."
   ],
   "must_do": [
+    "Verify direct-deposit-only send/resend uses current typed external presentation proof for the exact invoice/account/snapshot/version and selected API route, with retained originals and complete recipients. Independently reject Dashboard-only, footer/method-only, stale, unresolved or mismatched proof; preserve unknown drafts.",
+    "For manual-sent completion inspect prior exact owner send approval and independent retained delivery evidence through the external read-only reconciliation helper. Require distinct manual delivery refs and no invented API-send audit or duplicate send; unresolved manual outcomes suppress follow-ups.",
+    "Check finalized-PDF download and cleanup preserve verified external custody. A PDF is not email-presentation or send evidence; the API supplies no draft PDF, no-link send control, review-recipient override or complete additional To/CC readback.",
     "Check standalone finance has no agency prerequisite and agency-root work uses one business financial master. Optional external_project_ref must match sourced nonfinancial identity and the billing digest where applicable; no copied receipt/settlement attribution, duplicated amounts, or implied cross-project access.",
     "Compare claimed action outcome with actual provider action-call/audit evidence and the selected external record/current version, not a specialist narrative.",
     "Where approval is required, confirm material changes have fresh approval and separate finalize/send gates bind the same immutable facts when one human decision covers both.",

@@ -39,6 +39,7 @@ const authLabels: Record<string, string> = {
   api_token: 'API token',
   basic: 'Username and password',
   local: 'Local StackOS service',
+  tdlib: 'Telegram application credentials and bot token or user sign-in',
 }
 const authLabel = authLabels[provider.authType] || provider.authType.replaceAll('_', ' ')
 const actionRiskCounts = computed(() => provider.actions.reduce((counts, action) => {

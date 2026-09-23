@@ -145,6 +145,84 @@ def test_communication_processor_dedupes_request_retry_after_policy_changes(
     assert messages.items[0].data_json["policy_status"] == "request_created"
 
 
+def test_communication_processor_stores_related_resources_only_when_policy_allows(
+    session: Session,
+    project_id: int,
+) -> None:
+    blocked = process_inbound_event(
+        session,
+        project_id=project_id,
+        event=_event_with_related_resource(),
+        decision=CommunicationDecision(
+            store=False,
+            create_request=False,
+            status="surface_blocked",
+        ),
+    )
+
+    assert blocked.event_record_id is None
+    assert (
+        not ResourceRepository(session)
+        .query_records(
+            project_id=project_id,
+            plugin_slug="communications",
+            resource_key="communication-contact",
+        )
+        .items
+    )
+
+    stored = process_inbound_event(
+        session,
+        project_id=project_id,
+        event=_event_with_related_resource(),
+        decision=CommunicationDecision(
+            store=True,
+            create_request=False,
+            status="observed",
+        ),
+    )
+
+    contacts = ResourceRepository(session).query_records(
+        project_id=project_id,
+        plugin_slug="communications",
+        resource_key="communication-contact",
+    )
+    assert stored.event_record_id is not None
+    assert len(contacts.items) == 1
+    assert contacts.items[0].data_json["contact_ref"] == "mock-user:U111"
+
+
+def _event_with_related_resource() -> NormalizedInboundEvent:
+    event = _event(event_key="evt-related", request_key="provider-message:related")
+    return NormalizedInboundEvent(
+        provider_key=event.provider_key,
+        profile_key=event.profile_key,
+        event_key=event.event_key,
+        update_type=event.update_type,
+        source_kind=event.source_kind,
+        request_title=event.request_title,
+        body_preview=event.body_preview,
+        event=event.event,
+        request_key=event.request_key,
+        source_message_ref=event.source_message_ref,
+        surface=event.surface,
+        message=event.message,
+        interaction=event.interaction,
+        related_resources=(
+            NormalizedResourceWrite(
+                resource_key="communication-contact",
+                external_id="mock-contact:U111",
+                title="Mock user",
+                data_json={"contact_ref": "mock-user:U111", "display_name": "Mock user"},
+                provenance_json={"source": "test"},
+            ),
+        ),
+        state_patches=event.state_patches,
+        request_metadata_json=event.request_metadata_json,
+        response_json=event.response_json,
+    )
+
+
 def _event(
     *,
     event_key: str,

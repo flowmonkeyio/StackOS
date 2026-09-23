@@ -16,6 +16,7 @@ import {
   UiBadge,
   UiButton,
   UiCallout,
+  UiConfirmDialog,
   UiCountBadge,
   UiFormField,
   UiInput,
@@ -34,6 +35,10 @@ import { formatDateTime } from '@/lib/stackos/json'
 import { useStackOsCatalogStore } from '@/stores/plugins'
 
 import ActionCallDetailDrawer from './action-calls/ActionCallDetailDrawer.vue'
+import {
+  useDurableActionCall,
+  type DurableActionControlRequest,
+} from './action-calls/useDurableActionCall'
 
 type StatusFilter = 'all' | 'running' | `${ActionCallStatus}`
 
@@ -45,6 +50,45 @@ const { projectId, changesProjectScope } = useProjectRouteScope(route)
 const rows = ref<SchemaActionCallAuditOut[]>([])
 const selectedCall = ref<SchemaActionCallAuditOut | null>(null)
 const detailPanelOpen = ref(false)
+const pendingDurableControl = ref<DurableActionControlRequest | null>(null)
+const durableActionCall = useDurableActionCall()
+const {
+  durable: durableDelivery,
+  loading: durableDeliveryLoading,
+  error: durableDeliveryError,
+  controlling: durableDeliveryControl,
+} = durableActionCall
+const durableControlConfirmOpen = computed(() => pendingDurableControl.value !== null)
+const durableControlConfirmation = computed(() => {
+  if (pendingDurableControl.value?.action === 'resume') {
+    return {
+      title: 'Resume delivery?',
+      description:
+        'This resumes remaining work using its saved schedule and pacing.',
+      confirmLabel: 'Resume delivery',
+      cancelLabel: 'Keep paused',
+      tone: 'primary' as const,
+    }
+  }
+  if (pendingDurableControl.value?.action === 'retry') {
+    const selectedCount = pendingDurableControl.value.itemIds?.length ?? 0
+    return {
+      title: 'Retry selected delivery?',
+      description: `This retries ${selectedCount} selected known-failed item${selectedCount === 1 ? '' : 's'} with no provider acceptance evidence.`,
+      confirmLabel: 'Retry selected',
+      cancelLabel: 'Keep receipts',
+      tone: 'primary' as const,
+    }
+  }
+  return {
+    title: 'Cancel remaining delivery?',
+    description:
+      'This cancels only pending and safely deferred items. Delivered, in-flight, and unknown receipts remain preserved for recovery.',
+    confirmLabel: 'Cancel remaining delivery',
+    cancelLabel: 'Keep delivery',
+    tone: 'danger' as const,
+  }
+})
 const loading = ref(false)
 const error = ref<string | null>(null)
 const nextCursor = ref<number | null>(null)
@@ -221,6 +265,9 @@ async function fetchCalls({
     ) {
       selectedCall.value = null
       detailPanelOpen.value = false
+      durableActionCall.clear()
+    } else if (!append && selectedCall.value) {
+      selectedCall.value = nextRows.find((row) => row.id === selectedCall.value?.id) ?? null
     }
   } catch (err) {
     if (request === requestGeneration)
@@ -231,8 +278,14 @@ async function fetchCalls({
 }
 
 async function load(scopedProjectId: number): Promise<void> {
+  durableActionCall.clear()
   await catalogStore.refresh(scopedProjectId)
   await fetchCalls({ scopedProjectId })
+}
+
+async function refreshCalls(): Promise<void> {
+  await fetchCalls()
+  await durableActionCall.refresh()
 }
 
 function setStatus(value: string | number): void {
@@ -274,6 +327,8 @@ function resetFilters(): void {
   exactCallId.value = ''
   selectedCall.value = null
   detailPanelOpen.value = false
+  pendingDurableControl.value = null
+  durableActionCall.clear()
   void fetchCalls()
 }
 
@@ -300,6 +355,47 @@ function runLabel(call: SchemaActionCallAuditOut): string {
 function openCall(call: SchemaActionCallAuditOut): void {
   selectedCall.value = call
   detailPanelOpen.value = true
+  void durableActionCall.load(projectId.value, call.id)
+}
+
+function setDetailPanelOpen(value: boolean): void {
+  detailPanelOpen.value = value
+  if (!value) {
+    selectedCall.value = null
+    pendingDurableControl.value = null
+    durableActionCall.clear()
+  }
+}
+
+function requestDurableControl(request: DurableActionControlRequest): void {
+  if (request.action === 'resume' || request.action === 'cancel' || request.action === 'retry') {
+    pendingDurableControl.value = request
+    return
+  }
+  void applyDurableControl(request)
+}
+
+async function applyDurableControl(
+  request: DurableActionControlRequest,
+  intentSummary?: string,
+): Promise<void> {
+  const changed = await durableActionCall.control(request, intentSummary)
+  if (changed) await fetchCalls()
+}
+
+async function confirmDurableControl(): Promise<void> {
+  const request = pendingDurableControl.value
+  pendingDurableControl.value = null
+  if (request) {
+    const actionCallId = selectedCall.value?.id
+    const intentSummary =
+      request.action === 'resume' && actionCallId
+        ? `Operator confirmed resuming durable Action Call #${actionCallId} from the Action Calls view.`
+        : request.action === 'retry' && actionCallId
+          ? `Operator confirmed retrying selected delivery item receipts for Action Call #${actionCallId} from the Action Calls view.`
+          : undefined
+    await applyDurableControl(request, intentSummary)
+  }
 }
 
 useProjectScopedLoader({
@@ -312,6 +408,8 @@ onBeforeRouteUpdate((to) => {
   rows.value = []
   selectedCall.value = null
   detailPanelOpen.value = false
+  pendingDurableControl.value = null
+  durableActionCall.clear()
   nextCursor.value = null
   void fetchCalls()
 })
@@ -331,7 +429,7 @@ onBeforeRouteUpdate((to) => {
           size="sm"
           icon-left="refresh"
           :loading="loading"
-          @click="fetchCalls()"
+          @click="refreshCalls"
         >
           Refresh
         </UiButton>
@@ -544,8 +642,31 @@ onBeforeRouteUpdate((to) => {
     </section>
 
     <ActionCallDetailDrawer
-      v-model="detailPanelOpen"
+      :model-value="detailPanelOpen"
       :call="selectedCall"
+      :durable="durableDelivery"
+      :durable-loading="durableDeliveryLoading"
+      :durable-error="durableDeliveryError"
+      :control-loading="durableDeliveryControl"
+      @update:model-value="setDetailPanelOpen"
+      @durable-control="requestDurableControl"
     />
+
+    <Teleport to="body">
+      <div class="relative z-modal">
+        <UiConfirmDialog
+          :model-value="durableControlConfirmOpen"
+          :title="durableControlConfirmation.title"
+          :description="durableControlConfirmation.description"
+          :confirm-label="durableControlConfirmation.confirmLabel"
+          :cancel-label="durableControlConfirmation.cancelLabel"
+          :tone="durableControlConfirmation.tone"
+          :loading="durableDeliveryControl === pendingDurableControl?.action"
+          @update:model-value="(open) => { if (!open) pendingDurableControl = null }"
+          @confirm="confirmDurableControl"
+          @cancel="pendingDurableControl = null"
+        />
+      </div>
+    </Teleport>
   </UiPageShell>
 </template>

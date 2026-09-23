@@ -36,13 +36,14 @@ import stackos.host_mcp.adapters.claude_code as claude_code_adapter
 from stackos import claude_mcp
 from stackos import install as installer
 from stackos.auth_providers import AuthRepository
+from stackos.auth_providers.repository.telegram_application import TelegramApplicationRepository
 from stackos.cli import app
 from stackos.config import Settings
 from stackos.crypto.aes_gcm import configure_seed_path
 from stackos.crypto.seed import ensure_seed_file
 from stackos.db.connection import make_engine
 from stackos.db.migrate import current_alembic_version, upgrade_to_head
-from stackos.db.models import PayloadSecret, Project
+from stackos.db.models import PayloadSecret, Project, TelegramApplication
 from stackos.host_mcp.bridge import resolve_bridge_command
 from stackos.host_mcp.result import HostMcpResult
 from stackos.host_mcp.service import HostMcpAggregate
@@ -50,7 +51,7 @@ from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.secrets import PayloadSecretRepository
 
-HEAD_REVISION = "0028_cleanup_communication_account_bindings"
+HEAD_REVISION = "0032_shared_telegram_application"
 
 
 @pytest.fixture
@@ -1994,6 +1995,16 @@ def test_cli_rotate_seed_reencrypts_payload_secrets(
                 .secret_ref
             )
             before = session.exec(select(PayloadSecret)).one().encrypted_payload
+            application_repo = TelegramApplicationRepository(session)
+            _, application = application_repo.prepare_first_setup(
+                {"api_id": 12345, "api_hash": "rotation-telegram-application-hash"}
+            )
+            assert application is not None
+            application_repo.create(application)
+            session.commit()
+            before_application = session.get(TelegramApplication, 1)
+            assert before_application is not None
+            before_application_ciphertext = before_application.encrypted_payload
     finally:
         engine.dispose()
 
@@ -2001,13 +2012,21 @@ def test_cli_rotate_seed_reencrypts_payload_secrets(
     result = CliRunner().invoke(app, ["rotate-seed", "--reencrypt"])
 
     assert result.exit_code == 0
-    assert "rotated 1 row(s)" in result.output
+    assert "rotated 2 row(s)" in result.output
     configure_seed_path(settings.seed_path)
     engine = make_engine(settings.db_path)
     try:
         with Session(engine) as session:
             row = session.exec(select(PayloadSecret)).one()
             assert row.encrypted_payload != before
+            application = session.get(TelegramApplication, 1)
+            assert application is not None
+            assert application.encrypted_payload != before_application_ciphertext
+            assert TelegramApplicationRepository(session).get().api_id == 12345
+            assert (
+                TelegramApplicationRepository(session).get().api_hash
+                == "rotation-telegram-application-hash"
+            )
             assert (
                 PayloadSecretRepository(session).resolve(
                     project_id=row.project_id,

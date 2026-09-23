@@ -10,8 +10,13 @@ from stackos.operations.spec import (
     OperationSurfaces,
 )
 
-from .handlers import communication_reply, communication_send
-from .schemas import CommunicationReplyInput, CommunicationSendInput, CommunicationSendOut
+from .handlers import communication_reply, communication_send, communication_send_batch
+from .schemas import (
+    CommunicationReplyInput,
+    CommunicationSendBatchInput,
+    CommunicationSendInput,
+    CommunicationSendOut,
+)
 
 
 def _surfaces(name: str, command: str) -> OperationSurfaces:
@@ -24,6 +29,47 @@ def _surfaces(name: str, command: str) -> OperationSurfaces:
 
 def operation_specs() -> list[OperationSpec]:
     return [
+        OperationSpec(
+            name="communication.sendBatch",
+            summary="Queue paced messages for an explicit recipient list on an authorized target.",
+            input_model=CommunicationSendBatchInput,
+            output_model=WriteEnvelope[CommunicationSendOut],
+            handler=communication_send_batch,
+            surfaces=_surfaces("communication.sendBatch", "ops call communication.sendBatch"),
+            purpose=(
+                "Seal supplied recipients and content into the shared durable ActionCall "
+                "delivery lifecycle."
+            ),
+            when_to_use=(
+                "An agent must deliver the same Telegram message to a bounded, explicitly "
+                "provided recipient list.",
+                "The configured target is an authorized recipient-list destination.",
+            ),
+            prerequisites=(
+                "Target send_policy.destination_mode must be recipient-list with an explicit "
+                "actor allowlist.",
+                "Telegram recipient refs must identify Account-known users or chats; a user ID "
+                "alone does not grant contact rights.",
+                "Workflow calls require a communication.sendBatch grant with explicit target refs.",
+            ),
+            returns=(
+                "Raw accepted receipt with actionCall.get polling, per-item results, partial "
+                "failures and retry guidance.",
+            ),
+            examples=(
+                OperationExample(
+                    title="Notify supplied bot subscribers",
+                    arguments={
+                        "project_id": 1,
+                        "to": "subscribers",
+                        "text": "An update is available.",
+                        "recipients": ["telegram-user:123", "telegram-user:456"],
+                        "intent_id": "update-42",
+                    },
+                ),
+            ),
+            grant_policy="direct-communication-send",
+        ),
         OperationSpec(
             name="communication.send",
             summary="Send a provider-neutral message to a named communication target.",
@@ -54,8 +100,11 @@ def operation_specs() -> list[OperationSpec]:
                 "the configured target owns provider-specific eligibility policy.",
             ),
             returns=(
-                "A raw redacted sent/validated result with message refs, file refs, "
+                "A raw redacted sent/validated/running result with message refs, file refs, "
                 "action_call_id, provider output, and retry-safe audit context.",
+                "Background acceptance includes poll_operation=actionCall.get, exact "
+                "poll_arguments, and next_poll_after_ms; poll until terminal before "
+                "claiming delivery.",
                 "effects states whether the provider connector was called or "
                 "only a dry-run audit row was written.",
             ),
@@ -99,8 +148,11 @@ def operation_specs() -> list[OperationSpec]:
                 "action_call audit row without calling the provider connector.",
             ),
             returns=(
-                "A raw redacted sent/validated result with origin/thread refs, "
+                "A raw redacted sent/validated/running result with origin/thread refs, "
                 "message refs, action_call_id, provider output, and retry-safe audit context.",
+                "Background acceptance includes poll_operation=actionCall.get, exact "
+                "poll_arguments, and next_poll_after_ms; poll until terminal before "
+                "claiming delivery.",
                 "effects states whether the provider connector was called or "
                 "only a dry-run audit row was written.",
             ),

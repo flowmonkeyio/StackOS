@@ -150,7 +150,7 @@ def test_cli_ops_call_forwards_communication_profile_setup(
         json.dumps(
             {
                 "key": "support-bot",
-                "provider_facets": {"telegram-bot": {"credential_ref": "cred_telegram_support"}},
+                "provider_facets": {"telegram": {"credential_ref": "cred_telegram_support"}},
                 "identity": {
                     "display_name": "Support Bot",
                     "purpose": "Handle support requests from approved Telegram users.",
@@ -191,9 +191,7 @@ def test_cli_ops_call_forwards_communication_profile_setup(
             {
                 "arguments": {
                     "key": "support-bot",
-                    "provider_facets": {
-                        "telegram-bot": {"credential_ref": "cred_telegram_support"}
-                    },
+                    "provider_facets": {"telegram": {"credential_ref": "cred_telegram_support"}},
                     "identity": {
                         "display_name": "Support Bot",
                         "purpose": "Handle support requests from approved Telegram users.",
@@ -393,7 +391,7 @@ def test_cli_actions_run_alias_calls_direct_operation(
         [
             "actions",
             "run",
-            "communications.telegram-bot.message.send",
+            "communications.telegram.message.send",
             "--project",
             "7",
             "--input",
@@ -420,7 +418,7 @@ def test_cli_actions_run_alias_calls_direct_operation(
             "/api/v1/operations/action.run/call",
             {
                 "arguments": {
-                    "action_ref": "communications.telegram-bot.message.send",
+                    "action_ref": "communications.telegram.message.send",
                     "credential_ref": "cred_123",
                     "input_json": {"chat_ref": "telegram-chat:123", "text": "Done."},
                     "context_ref": "ctx_provider_messaging",

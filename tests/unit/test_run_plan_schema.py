@@ -398,7 +398,7 @@ def test_run_plan_schema_accepts_communication_reply_with_sources() -> None:
             {
                 "step_id": "create-campaign",
                 "tool": "communication.reply",
-                "sources": ["telegram-bot", "slack-bot"],
+                "sources": ["telegram", "slack-bot"],
             }
         ],
     }

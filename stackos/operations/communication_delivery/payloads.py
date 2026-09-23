@@ -42,7 +42,14 @@ def _build_provider_payload(
     surface: dict[str, Any],
     operation: str,
     idempotency_key: str | None = None,
+    recipients: list[str] | None = None,
 ) -> dict[str, Any]:
+    if recipients is not None and provider_key != "telegram":
+        _reject(
+            code="COMM_BATCH_PROVIDER_UNSUPPORTED",
+            category="capability",
+            message="This provider does not support durable recipient-list delivery.",
+        )
     if action_ref is None:
         _reject(
             code="COMM_PROVIDER_ACTION_MISSING",
@@ -52,7 +59,18 @@ def _build_provider_payload(
             failed_paths=[{"path": "/to", "requested": target.target_ref}],
         )
     assert action_ref is not None
-    capabilities = _effective_capabilities(provider_key, surface)
+    telegram_account_kind = None
+    if provider_key == "telegram":
+        account = AuthRepository(session).require_attached_account(
+            project_id=project_id,
+            credential_ref=actor["credential_ref"],
+            provider_key="telegram",
+            require_connected=False,
+        )
+        telegram_account_kind = account.auth_method_key
+    capabilities = _effective_capabilities(
+        provider_key, surface, telegram_account_kind=telegram_account_kind
+    )
     _validate_delivery_options(
         operation=operation,
         provider_key=provider_key,
@@ -158,20 +176,30 @@ def _build_provider_payload(
             input_json["control_metadata"] = control_metadata
         return {"action_ref": action_ref, "input_json": input_json}
 
-    if provider_key == "telegram-bot":
+    if provider_key == "telegram":
+        if recipients is not None and len(content.attachments) > 1:
+            _reject(
+                code="COMM_BATCH_CONTENT_UNSUPPORTED",
+                category="capability",
+                message=(
+                    "Batch delivery accepts text or one media attachment with optional buttons."
+                ),
+            )
         resolved_action_ref = (
-            "communications.telegram-bot.file.upload"
-            if content.attachments
-            else "communications.telegram-bot.message.send"
+            "communications.telegram.message.broadcast"
+            if recipients is not None
+            else "communications.telegram.album.send"
+            if len(content.attachments) > 1
+            else "communications.telegram.message.send"
         )
         _ensure_provider_action_ref(
             operation=operation,
             provider_key=provider_key,
             action_ref=action_ref,
             allowed={
-                "communications.telegram-bot.message.send",
-                "communications.telegram-bot.photo.send",
-                "communications.telegram-bot.file.upload",
+                "communications.telegram.message.send",
+                "communications.telegram.album.send",
+                "communications.telegram.message.broadcast",
             },
             target=target,
         )
@@ -184,41 +212,53 @@ def _build_provider_payload(
         )
         input_json = {
             **defaults,
-            "profile_key": actor["profile_key"],
-            "chat_ref": target.surface_ref,
+            "profile_ref": actor["profile_ref"],
+            "surface_ref": target.surface_ref,
         }
+        if recipients is not None:
+            input_json.pop("surface_ref", None)
+            input_json["target_ref"] = target.target_ref
+            input_json["recipients"] = recipients
         if delivery.disable_notification is not None:
-            input_json["disable_notification"] = delivery.disable_notification
+            input_json["options"] = {
+                **input_json.get("options", {}),
+                "disable_notification": delivery.disable_notification,
+            }
         if source_request_id is not None:
             input_json["source_agent_request_id"] = source_request_id
         thread_ref = _delivery_thread_ref(delivery, context, target=target, source=source)
         if thread_ref:
-            input_json["thread_ref"] = thread_ref
-        if delivery.reply_mode == "message_reply" and (
-            context.reply_to or source.get("message_ref")
-        ):
-            input_json["reply_to_message_ref"] = context.reply_to or source.get("message_ref")
-        reply_markup = _telegram_reply_markup(content)
-        if reply_markup:
-            input_json["reply_markup"] = reply_markup
-        parse_mode = _telegram_parse_mode(content.format)
-        if parse_mode:
-            input_json["parse_mode"] = parse_mode
-        control_metadata = _control_metadata(content, max_token_bytes=64)
-        if control_metadata:
-            input_json["control_metadata"] = control_metadata
-        if content.attachments:
-            items = _file_items(content)
-            if len(items) == 1:
-                input_json["file"] = items[0]
-            else:
-                input_json["files"] = items
-            caption = content.text or content.attachments[0].caption
-            if caption:
-                input_json["caption"] = caption
-            input_json["delete_after_upload"] = True
-            return {"action_ref": resolved_action_ref, "input_json": input_json}
-        input_json["text"] = content.text or ""
+            input_json["topic"] = {
+                "kind": "thread",
+                "id": _telegram_context_id(thread_ref, target.surface_ref, "thread"),
+            }
+        if delivery.reply_mode == "message_reply":
+            message_ref = context.reply_to or source.get("message_ref")
+            if not isinstance(message_ref, str):
+                _reject(
+                    code="COMM_DELIVERY_CONTEXT_INVALID",
+                    category="input",
+                    message=(
+                        "Telegram message replies require a message context from the target chat."
+                    ),
+                    failed_paths=[{"path": "/context/reply_to", "requested": message_ref}],
+                )
+            assert isinstance(message_ref, str)
+            input_json["reply_to_message_id"] = _telegram_context_id(
+                message_ref,
+                target.surface_ref,
+                "message",
+            )
+        if content.controls:
+            input_json["buttons"] = _telegram_buttons(content)
+            metadata = _control_metadata(content, max_token_bytes=64)
+            if metadata:
+                input_json["control_metadata"] = metadata
+        contents = _telegram_contents(content)
+        if len(contents) > 1:
+            input_json["contents"] = contents
+        else:
+            input_json["content"] = contents[0]
         return {"action_ref": resolved_action_ref, "input_json": input_json}
 
     if provider_key == "smtp":
@@ -337,7 +377,12 @@ def _build_provider_payload(
     raise AssertionError("unreachable")
 
 
-def _effective_capabilities(provider_key: str, surface: dict[str, Any]) -> set[str]:
+def _effective_capabilities(
+    provider_key: str,
+    surface: dict[str, Any],
+    *,
+    telegram_account_kind: str | None = None,
+) -> set[str]:
     caps = set(_provider_capabilities(provider_key))
     raw = dict(surface.get("capabilities") or {})
     mapping = {
@@ -363,6 +408,8 @@ def _effective_capabilities(provider_key: str, surface: dict[str, Any]) -> set[s
     unsupported = raw.get("unsupported")
     if isinstance(unsupported, list):
         caps.difference_update(str(item) for item in unsupported if str(item).strip())
+    if provider_key == "telegram" and telegram_account_kind != "tdlib-bot-token":
+        caps.difference_update({"control.button.callback", "control.button.url"})
     return caps
 
 
@@ -401,13 +448,13 @@ def _validate_delivery_options(
                 "target_supports": ["default", "same_thread", "message_reply", "none"],
             }
         )
-    if delivery.disable_notification is not None and provider_key != "telegram-bot":
+    if delivery.disable_notification is not None and provider_key != "telegram":
         failed.append(
             {
                 "path": "/delivery/disable_notification",
                 "requested": "disable_notification",
                 "required_capability": "notification.silent",
-                "target_supports": ["telegram-bot"],
+                "target_supports": ["telegram"],
             }
         )
     if delivery.reply_broadcast is not None and provider_key != "slack-bot":
@@ -665,7 +712,70 @@ def _validate_content_shape(
                 ],
             )
         return
-    if provider_key == "telegram-bot":
+    if provider_key == "telegram":
+        lost_fields: list[dict[str, str]] = []
+        if content.format == "mrkdwn":
+            lost_fields.append(
+                {
+                    "path": "/content/format",
+                    "requested": "mrkdwn",
+                    "required_capability": "telegram.format.markdown_or_html",
+                }
+            )
+        if _has_text(content.subject):
+            lost_fields.append(
+                {
+                    "path": "/content/subject",
+                    "requested": "subject",
+                    "required_capability": "telegram.message.subject",
+                }
+            )
+        if _has_text(content.html):
+            lost_fields.append(
+                {
+                    "path": "/content/html",
+                    "requested": "html",
+                    "required_capability": "telegram.message.html_field",
+                }
+            )
+        if (
+            _has_text(content.text)
+            and content.attachments
+            and content.attachments[0].caption is not None
+        ):
+            lost_fields.append(
+                {
+                    "path": "/content/attachments/0/caption",
+                    "requested": "text_and_attachment_caption",
+                    "required_capability": "telegram.media.single_caption",
+                }
+            )
+        if lost_fields:
+            _reject(
+                code="COMM_UNSUPPORTED_CONTENT_SHAPE",
+                category="capability",
+                message=(
+                    "Telegram cannot preserve all requested content fields in one message. "
+                    "Choose the intended Telegram text, caption, and format explicitly."
+                ),
+                resolved={
+                    "operation": operation,
+                    "provider": provider_key,
+                    "target_ref": target.target_ref,
+                },
+                failed_paths=lost_fields,
+                repair_options=[
+                    {
+                        "id": "choose_telegram_content",
+                        "description": (
+                            "Use content.text with format=plain, markdown, or html; Telegram "
+                            "has no separate subject or HTML field. For the first media item, "
+                            "choose either content.text or its attachment.caption."
+                        ),
+                        "requires_agent_decision": True,
+                    }
+                ],
+            )
         if content.controls and not _has_text(content.text) and not content.attachments:
             _reject(
                 code="COMM_TEXT_OR_ATTACHMENT_REQUIRED",
@@ -782,7 +892,7 @@ def _provider_capabilities(provider_key: str) -> set[str]:
             "control.button.url",
             "thread",
         }
-    if provider_key == "telegram-bot":
+    if provider_key == "telegram":
         return {
             "text",
             "markdown",
@@ -956,18 +1066,18 @@ def _slack_blocks(content: CommunicationContentInput) -> list[dict[str, Any]]:
     return [{"type": "actions", "block_id": "stackos-controls", "elements": elements}]
 
 
-def _telegram_reply_markup(content: CommunicationContentInput) -> dict[str, Any] | None:
+def _telegram_buttons(content: CommunicationContentInput) -> list[list[dict[str, Any]]]:
     if not content.controls:
-        return None
+        return []
     row = []
     for control in content.controls:
-        item: dict[str, Any] = {"text": control.label}
+        item: dict[str, Any] = {"text": control.label, "style": control.style}
         if control.url:
             item["url"] = control.url
         else:
             item["callback_data"] = _control_token(control, max_bytes=64)
         row.append(item)
-    return {"inline_keyboard": [row]}
+    return [row]
 
 
 def _control_token(control: CommunicationControlInput, *, max_bytes: int | None = None) -> str:
@@ -1032,12 +1142,63 @@ def _file_items(content: CommunicationContentInput) -> list[dict[str, Any]]:
     return items
 
 
-def _telegram_parse_mode(format_value: str) -> str | None:
-    if format_value == "html":
-        return "HTML"
-    if format_value == "markdown":
-        return "Markdown"
-    return None
+def _telegram_context_id(ref: str, surface_ref: str, kind: str) -> int:
+    prefix = f"telegram-{kind}:{surface_ref.removeprefix('telegram-chat:')}:"
+    if not isinstance(ref, str) or not ref.startswith(prefix) or not ref[len(prefix) :].isdigit():
+        _reject(
+            code="COMM_DELIVERY_CONTEXT_INVALID",
+            category="input",
+            message=f"Telegram {kind} context must belong to the target chat.",
+            failed_paths=[{"path": "/context", "requested": ref}],
+        )
+    value = int(ref[len(prefix) :])
+    if value <= 0:
+        _reject(
+            code="COMM_DELIVERY_CONTEXT_INVALID",
+            category="input",
+            message="Telegram context requires a positive native ID.",
+        )
+    return value
+
+
+def _telegram_contents(content: CommunicationContentInput) -> list[dict[str, Any]]:
+    format_value = content.format if content.format in {"html", "markdown"} else "plain"
+    if not content.attachments:
+        return [{"kind": "text", "text": content.text or "", "format": format_value}]
+    items: list[dict[str, Any]] = []
+    for index, attachment in enumerate(content.attachments):
+        file: dict[str, Any] = {
+            key: value
+            for key, value in {
+                "artifact_ref": attachment.artifact_ref,
+                "url": attachment.url,
+            }.items()
+            if value is not None
+        }
+        if attachment.file_id is not None:
+            file["file_ref"] = attachment.file_id
+        if attachment.filename or attachment.mime_type:
+            _reject(
+                code="COMM_UNSUPPORTED_CONTENT_SHAPE",
+                category="capability",
+                message=(
+                    "Telegram preserves the source file name and media type; use a prepared "
+                    "artifact."
+                ),
+                failed_paths=[
+                    {"path": f"/content/attachments/{index}", "requested": "file_metadata_override"}
+                ],
+            )
+        items.append(
+            {
+                "kind": "photo" if attachment.type == "image" else "document",
+                "file": file,
+                "caption": (content.text if index == 0 and content.text else attachment.caption)
+                or "",
+                "format": format_value,
+            }
+        )
+    return items
 
 
 def _delivery_thread_ref(

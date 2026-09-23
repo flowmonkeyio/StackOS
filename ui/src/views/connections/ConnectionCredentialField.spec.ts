@@ -4,6 +4,29 @@ import { mount } from '@vue/test-utils'
 import ConnectionCredentialField from './ConnectionCredentialField.vue'
 
 describe('ConnectionCredentialField', () => {
+  it('renders optional boolean setup as a checkbox and emits explicit false when disabled', async () => {
+    const wrapper = mount(ConnectionCredentialField, {
+      props: {
+        field: {
+          key: 'proxy_enabled',
+          label: 'Use a proxy',
+          type: 'boolean',
+          secret: false,
+          required: false,
+        },
+        modelValue: 'true',
+        inputType: 'text',
+        secret: false,
+        select: false,
+        options: [],
+      },
+    })
+    const checkbox = wrapper.get<HTMLInputElement>('input[type="checkbox"]')
+    expect(checkbox.element.checked).toBe(true)
+    await checkbox.setValue(false)
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['false'])
+  })
+
   it('preserves multiline public certificate text and emits an explicit clear', async () => {
     const certificate = '-----BEGIN CERTIFICATE-----\npublic-certificate\n-----END CERTIFICATE-----'
     const wrapper = mount(ConnectionCredentialField, {

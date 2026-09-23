@@ -446,7 +446,7 @@ def test_readiness_check_reports_customer_support_workflow_slack_setup(
     }
     assert required_providers == {"slack-bot"}
     telegram_action = next(
-        item for item in readiness["actions"] if item["provider_key"] == "telegram-bot"
+        item for item in readiness["actions"] if item["provider_key"] == "telegram"
     )
     assert {item["required_for"] for item in telegram_action["missing"]} == {
         "optional_action_execution"

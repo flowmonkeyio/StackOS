@@ -213,36 +213,6 @@ class CredentialTestingMixin:
             return
         if provider_key == "slack-bot":
             self._sync_slack_account_from_test_result(credential=credential, metadata=metadata)
-            return
-        if provider_key != "telegram-bot":
-            return
-        bot_id = metadata.get("bot_id")
-        bot_account_id = str(bot_id) if bot_id is not None else ""
-        username = str(metadata.get("username") or "").strip()
-        first_name = str(metadata.get("first_name") or "").strip()
-        if bot_id is None and not username and not first_name:
-            return
-        if bot_account_id:
-            self._assert_telegram_bot_account_available(
-                bot_id=bot_account_id,
-                current_credential_id=credential.id,
-            )
-        account = self._s.exec(
-            select(CredentialAccount).where(CredentialAccount.credential_id == credential.id)
-        ).first()
-        now = utcnow()
-        if account is None:
-            account = CredentialAccount(credential_id=credential.id)
-        account.provider_account_id = bot_account_id or username or None
-        account.display_name = f"@{username}" if username else first_name or None
-        account.metadata_json = {
-            "bot_id": bot_id,
-            "username": username or None,
-            "first_name": first_name or None,
-            "is_bot": metadata.get("is_bot"),
-        }
-        account.updated_at = now
-        self._s.add(account)
 
     def _sync_slack_account_from_test_result(
         self,
@@ -322,11 +292,7 @@ class CredentialTestingMixin:
             # The provider wrapper owns strict normalization and the
             # ``.pipedrive.com`` host allowlist before it performs HTTP.
             extra["api_domain"] = api_domain.strip()
-        elif credential.provider_key in {
-            "telegram-bot",
-            "slack-bot",
-            "trackbooth",
-        } and config.get("api_base_url"):
+        elif credential.provider_key in {"slack-bot", "trackbooth"} and config.get("api_base_url"):
             extra["api_base_url"] = str(config["api_base_url"])
         elif credential.provider_key == "shopify":
             store_domain = (

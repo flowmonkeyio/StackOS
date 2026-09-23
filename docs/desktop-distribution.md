@@ -35,7 +35,9 @@ or a verified universal2 payload.
 ## Packaging Dependencies
 
 Runtime users should not need Python, uv, Node, pnpm, Homebrew, Xcode, or a
-source checkout. The DMG must contain the standalone StackOS Python payload.
+source checkout. The DMG must contain the standalone StackOS Python payload
+and its managed TDLib runtime; the daemon never locates `libtdjson` through a
+system, Homebrew, `DYLD_*`, or user-library search path.
 
 Build machines need:
 
@@ -45,6 +47,7 @@ Build machines need:
 | `uv` | Build the StackOS wheel and Python payload | all desktop builds |
 | `bash` + `rsync` | Build/copy the standalone Python runtime | all desktop builds |
 | `file`, `lipo`, `otool`, `codesign`, `security` | Inspect/thin/sign bundled Mach-O runtime files | all desktop builds |
+| Pinned TDLib proof artifact, or `git` + CMake + static OpenSSL | Stage the exact ARM64 `libtdjson` asset and prove its source/build identity | all desktop payload builds |
 | `xcrun notarytool` + `xcrun stapler` | Submit, staple, and validate notarization | public release |
 | Developer ID Application certificate | Sign the app and DMG | signed/release builds |
 | Apple notarization credentials | Apple malware/trust ticket for non-App-Store distribution | public release |
@@ -86,8 +89,30 @@ make desktop-dev
 Build the Python payload for the app resources:
 
 ```bash
-make desktop-payload
+TDLIB_LIBRARY_PATH=/absolute/path/to/libtdjson.1.8.67.dylib make desktop-payload
 ```
+
+`desktop/scripts/build-tdlib-runtime-mac.sh` stages only the pinned proof
+artifact with its expected SHA-256, ARM64-only slice, system-library-only
+dependencies, TDLib JSON ABI smoke, and source archive digest. It writes the
+payload-local `telegram-tdlib-runtime/manifest.json` beside the verified
+library. A source build is available only when the build machine provides an
+explicit CMake executable and static OpenSSL root; it must produce the same
+pinned library digest. The native asset remains outside the pure-Python wheel.
+
+For a source-checkout daemon, stage the same explicit artifact in the managed
+development runtime root instead of relying on an ambient dylib:
+
+```bash
+TDLIB_LIBRARY_PATH=/absolute/path/to/libtdjson.1.8.67.dylib \
+TDLIB_RUNTIME_ROOT="${STACKOS_DATA_DIR:-$HOME/.local/share/stackos}/telegram-tdlib-runtime" \
+bash desktop/scripts/build-tdlib-runtime-mac.sh
+```
+
+`stackos doctor` reports this as `telegram_tdlib_runtime_ready` and returns a
+repair message without native paths or secrets. It remains advisory until a
+Telegram Account is used; the Account-owned TDLib service verifies the same
+manifest before it loads the library.
 
 Build unsigned local development artifacts:
 
@@ -333,6 +358,11 @@ The payload also ships `bin/stackos.browser` with the same Python isolation as
 Prepared desktop startup reconciles this launcher as well as host MCP wiring;
 app moves refresh its target. Native browser arguments pass directly through
 the session selector to gstack. See [browser sessions](browser-automation.md).
+The existing `afterPack` signing hook recursively signs every Mach-O file under
+the packaged `Resources/stackos` root, including `telegram-tdlib-runtime/lib/libtdjson.dylib`,
+before Electron signs the outer app bundle. After signing the native library,
+the hook refreshes its manifest digest inside the payload so integrity checks
+validate the signed bytes.
 The wrapper sets the
 packaged `PYTHONHOME`, disables bytecode writes,
 ignores user site packages, and clears ambient Python environment variables so

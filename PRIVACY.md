@@ -7,12 +7,16 @@ telemetry or phone-home behavior.
 ## Local Data
 
 The daemon stores project configuration, task/ticket state, resource records,
-artifacts, communication history that providers deliver to configured ingress
+artifacts, communication history received through configured providers or ingress
 routes, run logs, provider metadata, encrypted credentials, and write-only
 encrypted action payload transit values in
 `~/.local/share/stackos/stackos.db` by default. The
 per-machine encryption seed and bearer token live under
 `~/.local/state/stackos/` with mode `0600`.
+
+Telegram TDLib stores encrypted Account authorization and local session data
+under `~/.local/share/stackos/telegram-tdlib/` by default. Disconnect keeps
+that authorization for a later explicit Connect.
 
 Backups and restores copy local files only. Moving an install to another
 machine requires the database and matching `seed.bin`; without that seed,
@@ -26,7 +30,7 @@ corresponding provider connection, action, communication route, job, or run
 plan. Depending on enabled plugins and configured credentials, those calls may
 include:
 
-- Communications providers such as Telegram Bot API, Slack Web API, SMTP
+- Communications providers such as Telegram through TDLib, Slack Web API, SMTP
   servers, and IMAP servers.
 - Publishing providers such as WordPress and Ghost.
 - GTM and RevOps providers such as CRM, enrichment, outbound, workspace, and

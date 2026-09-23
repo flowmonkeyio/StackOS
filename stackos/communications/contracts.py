@@ -56,6 +56,7 @@ class NormalizedInboundEvent:
     surface: NormalizedResourceWrite | None = None
     message: NormalizedResourceWrite | None = None
     interaction: NormalizedResourceWrite | None = None
+    related_resources: tuple[NormalizedResourceWrite, ...] = ()
     state_patches: list[NormalizedResourcePatch] = field(default_factory=list)
     request_metadata_json: dict[str, Any] = field(default_factory=dict)
     response_json: dict[str, Any] = field(default_factory=dict)

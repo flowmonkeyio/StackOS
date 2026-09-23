@@ -24,11 +24,14 @@ _RAW_ONLY_RESPONSE_OPERATIONS = frozenset(
     {
         "communication.reply",
         "communication.send",
+        "communication.sendBatch",
     }
 )
 
 _ACK_UNSAFE_RESPONSE_OPERATIONS = _RAW_ONLY_RESPONSE_OPERATIONS | frozenset(
     {
+        "account.authorization.cancel",
+        "account.authorization.submit",
         "agentRequest.claim",
         "agentRequest.prepareRunPlan",
         "action.execute",

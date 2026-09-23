@@ -6,6 +6,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from stackos.integrations.telegram_tdlib.update_types import (
+    RETAINABLE_TELEGRAM_UPDATE_TYPES,
+    TELEGRAM_ACCOUNT_UPDATE_TYPES,
+    TELEGRAM_CHAT_SURFACE_REF_PATTERN,
+    TELEGRAM_CHAT_UPDATE_TYPES,
+)
 from stackos.mcp.contract import MCPInput
 
 from .constants import _DEFAULT_INGRESS_KEY, _DEFAULT_LOCAL_BASE_URL
@@ -24,9 +30,8 @@ class CommunicationProfileUpsertInput(MCPInput):
                     "voice": "Calm, explicit, and concise.",
                 },
                 "provider_facets": {
-                    "telegram-bot": {
+                    "telegram": {
                         "credential_ref": "cred_...",
-                        "ingress_enabled": True,
                     },
                     "slack-bot": {
                         "credential_ref": "cred_...",
@@ -49,7 +54,72 @@ class CommunicationProfileUpsertInput(MCPInput):
     agent_guidance: dict[str, Any] = Field(default_factory=dict)
     provider_facets: dict[str, dict[str, Any]] = Field(default_factory=dict)
     access_policy: dict[str, Any] = Field(default_factory=dict)
-    visibility_policy: dict[str, Any] = Field(default_factory=dict)
+    visibility_policy: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Provider-neutral inbound retention selector. Telegram bot and user Accounts "
+            "retain nothing until allowed_update_types selects exact native TDLib names. "
+            "For chat-scoped updates, use surface_mode=allowlist and "
+            "allowed_surface_refs copied from telegram.chat.list or telegram.chat.resolve. "
+            "A ref is telegram-chat:<signed numeric TDLib chat id>, not a phone number "
+            "or caller-invented user id. Account-scoped updateUser and updateFile have no "
+            "chat ref; retaining them requires explicit surface_mode=all plus their "
+            "update types. surface_mode=all also admits selected types from every chat "
+            "unless dm_mode, group_mode, or channel_mode narrows those surfaces. "
+            "Telegram allowed_update_types enum: "
+            + ", ".join(RETAINABLE_TELEGRAM_UPDATE_TYPES)
+            + "."
+        ),
+        json_schema_extra={
+            "properties": {
+                "surface_mode": {
+                    "type": "string",
+                    "enum": ["allowlist", "all", "denylist", "disabled"],
+                    "description": (
+                        "Telegram defaults to allowlist. Use all explicitly for selected "
+                        "account-scoped updates; it also covers every chat for selected types "
+                        "unless per-kind modes narrow chat visibility."
+                    ),
+                },
+                "allowed_surface_refs": {
+                    "type": "array",
+                    "items": {
+                        "anyOf": [
+                            {"type": "string", "pattern": TELEGRAM_CHAT_SURFACE_REF_PATTERN},
+                            {
+                                "type": "string",
+                                "pattern": r"^(?!telegram-chat:)[a-z][a-z0-9-]*:.+$",
+                            },
+                        ]
+                    },
+                    "description": (
+                        "For Telegram, copy telegram-chat:<signed TDLib chat id> from "
+                        "chat.list or chat.resolve; other provider refs are allowed in "
+                        "a shared profile."
+                    ),
+                },
+                "allowed_update_types": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": list(RETAINABLE_TELEGRAM_UPDATE_TYPES)},
+                    "description": (
+                        "Exact native TDLib update names supported for Telegram retention."
+                    ),
+                },
+                "store_non_trigger_messages": {"type": "boolean"},
+            },
+            "x-telegram-retention": {
+                "allowed_update_types": list(RETAINABLE_TELEGRAM_UPDATE_TYPES),
+                "chat_scoped_update_types": list(TELEGRAM_CHAT_UPDATE_TYPES),
+                "account_scoped_update_types": list(TELEGRAM_ACCOUNT_UPDATE_TYPES),
+                "account_scoped_surface_mode": "all",
+                "surface_ref_pattern": TELEGRAM_CHAT_SURFACE_REF_PATTERN,
+                "surface_ref_source_actions": [
+                    "communications.telegram.chat.list",
+                    "communications.telegram.chat.resolve",
+                ],
+            },
+        },
+    )
     trigger_policy: dict[str, Any] = Field(default_factory=dict)
     context_policy: dict[str, Any] = Field(default_factory=dict)
     response_policy: dict[str, Any] = Field(default_factory=dict)
@@ -144,8 +214,6 @@ class IngressEndpointRefreshInput(MCPInput):
     public_base_url: str | None = None
     driver_config: dict[str, Any] = Field(default_factory=dict)
     sync_profiles: bool = True
-    apply_provider_webhooks: bool = False
-    dry_run_provider_webhooks: bool = True
 
 
 class IngressEndpointRoutesInput(MCPInput):
@@ -160,8 +228,6 @@ class IngressEndpointSyncInput(MCPInput):
 
     project_id: int
     key: str = _DEFAULT_INGRESS_KEY
-    apply_provider_webhooks: bool = False
-    dry_run_provider_webhooks: bool = True
 
 
 class IngressEndpointConfirmManualUpdateInput(MCPInput):
@@ -286,6 +352,7 @@ class CommunicationSurfaceUpsertInput(MCPInput):
                 "project_id": 1,
                 "surface_ref": "slack-channel:C123",
                 "provider_key": "slack-bot",
+                "profile_ref": "communication-profile:support",
                 "kind": "slack-channel",
                 "display_name": "customer-issue-war-room",
                 "capabilities": {"can_read": True, "can_write": True, "can_thread": True},
@@ -320,6 +387,7 @@ class CommunicationSurfaceUpsertInput(MCPInput):
     project_id: int
     surface_ref: str
     provider_key: str
+    profile_ref: str | None = None
     kind: str
     display_name: str | None = None
     credential_ref: str | None = None
@@ -355,6 +423,7 @@ class CommunicationSurfaceOut(BaseModel):
     surface_ref: str
     channel_ref: str
     provider_key: str
+    profile_ref: str
     kind: str
     display_name: str | None = None
     credential_ref: str | None = None
@@ -368,6 +437,8 @@ class CommunicationSurfaceOut(BaseModel):
     data_scope: dict[str, Any]
     external_context: dict[str, Any]
     metadata_json: dict[str, Any]
+    binding_state: Literal["ready", "repair-required"] = "ready"
+    binding_issues: list[dict[str, str]] = Field(default_factory=list)
 
 
 class CommunicationContactUpsertInput(MCPInput):

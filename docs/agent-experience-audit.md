@@ -168,7 +168,7 @@ dry-run unless the operation itself is designed to update safe project metadata.
 | 25 | Communication dry-run latency | `communication.send(to=slack-roadmap, dry_run=true)` | Validated and created dry-run audit row, but took about 35 seconds | Too slow for local agent loops. Avoid unnecessary provider calls. |
 | 26 | Stored communication history | `communicationContext.query(provider_key=slack-bot)` and field-error probe | Stored messages returned; live provider history boundary is explicit | Good boundary. Unsupported fields error should list allowed fields. |
 | 27 | Surface safety metadata | `communicationSurface.list(provider_key=slack-bot)` | Many surfaces have `audience=unknown`, empty intent/guidance/data scope | Risky for agent decisions in mixed/customer spaces. |
-| 28 | Ingress setup and sync | `ingressEndpoint.status/routes/sync(dry_run_provider_webhooks=true)` | Slack manual update required; Telegram profile sync updated | Useful, but dry-run wording should state metadata writes. |
+| 28 | Ingress setup and sync | `ingressEndpoint.status/routes/sync(dry_run_provider_webhooks=true)` | Slack manual update required; Telegram is excluded because its Account-owned TDLib session receives native updates | Useful, but dry-run wording should state metadata writes. |
 | 29 | CLI/REST operation docs | `stackos ops describe communication.send`, sandbox probe | Rich purpose/prerequisites/examples; sandbox needed escalation | CLI/REST docs are stronger than MCP; MCP should mirror this guidance. |
 | 30 | Queue, chat, and signoff flows | Subagent audit of `agentRequest.*`, local chat, and release docs | Claim-token lifecycle and signoff exist; local chat reply path unclear | Require idempotency in schema, document outbound local-chat reply, add flow-to-test matrix. |
 
@@ -230,7 +230,7 @@ Recommendations:
   or artifact writes but no executable grants.
 - Return suggested grant skeletons from template validation.
 - Distinguish template action contract refs such as `send_telegram_message`
-  from executable action refs such as `communications.telegram-bot.message.send`.
+  from executable action refs such as `communications.telegram.message.send`.
 - Align `runPlan.validate` and `runPlan.create` input handling. If `create`
   accepts `inputs_json`, validate should accept it too or explain why not.
 

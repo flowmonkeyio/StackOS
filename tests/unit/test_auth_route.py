@@ -8,8 +8,10 @@ only) and CORSMiddleware (same-origin) are the upstream defences.
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+from sqlmodel import Session, select
 
 from stackos.auth import derive_ui_token
+from stackos.db.models import Credential
 
 
 def test_ui_token_returns_token_without_authorization(
@@ -32,6 +34,24 @@ def test_ui_token_is_in_auth_whitelist() -> None:
     assert requires_auth("/api/v1/auth/ui-token") is False
 
 
+def test_ui_auth_setup_allows_exact_native_session_and_challenge_routes() -> None:
+    from stackos.auth import _allows_ui_auth_setup
+
+    session_root = "/api/v1/projects/7/connections/accounts/cred_abc/session"
+    assert _allows_ui_auth_setup(f"{session_root}/connect", "POST")
+    assert _allows_ui_auth_setup(f"{session_root}/disconnect", "POST")
+    assert not _allows_ui_auth_setup(f"{session_root}/connect", "DELETE")
+    assert not _allows_ui_auth_setup(f"{session_root}/unknown", "POST")
+    assert not _allows_ui_auth_setup(
+        "/api/v1/projects/other/connections/accounts/cred_abc/session/connect",
+        "POST",
+    )
+    challenge = "/api/v1/auth/accounts/cred_abc/authorization"
+    assert _allows_ui_auth_setup(challenge, "POST")
+    assert _allows_ui_auth_setup(challenge, "DELETE")
+    assert not _allows_ui_auth_setup(challenge, "PATCH")
+
+
 def test_ui_token_rejects_non_loopback_host(client: TestClient) -> None:
     """HostHeaderMiddleware still runs for whitelisted paths — non-loopback → 421."""
     resp = client.get(
@@ -45,10 +65,7 @@ def test_public_ingress_paths_allow_tunnel_host_but_still_verify_provider(
     client: TestClient,
 ) -> None:
     """Tunnel/deployed Hosts reach only provider-verified ingress paths."""
-    for path, payload in (
-        ("/api/v1/ingress/telegram/1/support-bot", {"update_id": 1}),
-        ("/api/v1/ingress/hubspot/1/primary", []),
-    ):
+    for path, payload in (("/api/v1/ingress/hubspot/1/primary", []),):
         resp = client.post(
             path,
             headers={"host": "stackos-local.ngrok-free.app"},
@@ -112,6 +129,38 @@ def test_ui_token_can_call_read_only_operations(client: TestClient, auth_token: 
     assert body["total_estimate"] == 0
 
 
+def test_ui_token_can_reach_durable_action_lifecycle_controls(
+    client: TestClient,
+    auth_token: str,
+) -> None:
+    project_id = _create_project(client, auth_token)
+    ui_token = derive_ui_token(auth_token)
+    controls = {
+        "actionCall.pause": {"project_id": project_id, "action_call_id": 1},
+        "actionCall.resume": {
+            "project_id": project_id,
+            "action_call_id": 1,
+            "confirm_direct": True,
+            "intent_summary": "Operator approved retrying the reviewed durable delivery.",
+        },
+        "actionCall.retry": {
+            "project_id": project_id,
+            "action_call_id": 1,
+            "item_ids": [1],
+            "confirm_direct": True,
+            "intent_summary": "Operator approved retrying the reviewed no-effect item.",
+        },
+        "actionCall.cancel": {"project_id": project_id, "action_call_id": 1},
+    }
+    for operation, arguments in controls.items():
+        response = client.post(
+            f"/api/v1/operations/{operation}/call",
+            headers={"authorization": f"Bearer {ui_token}"},
+            json={"arguments": arguments},
+        )
+        assert response.status_code != 403, response.text
+
+
 def test_ui_token_can_call_telegram_profile_setup_operation(
     client: TestClient,
     auth_token: str,
@@ -121,20 +170,28 @@ def test_ui_token_can_call_telegram_profile_setup_operation(
     ui_token = derive_ui_token(auth_token)
 
     stored = client.post(
-        "/api/v1/auth/accounts/telegram-bot",
+        "/api/v1/auth/accounts/telegram",
         headers={"authorization": f"Bearer {ui_token}"},
         json={
-            "auth_method_key": "bot-token",
+            "auth_method_key": "tdlib-bot-token",
             "display_name": "Telegram - Support",
             "attach_project_id": project_id,
             "fields": {
                 "bot_token": "123456:ABC",
-                "webhook_secret_token": "telegram-secret",
+                "api_id": 12345,
+                "api_hash": "telegram-secret",
             },
         },
     )
     assert stored.status_code == 201, stored.text
     credential_ref = stored.json()["data"]["credential_ref"]
+    with Session(client.app.state.engine) as session:
+        credential = session.exec(
+            select(Credential).where(Credential.credential_ref == credential_ref)
+        ).one()
+        credential.status = "connected"
+        session.add(credential)
+        session.commit()
 
     resp = client.post(
         "/api/v1/operations/communicationProfile.upsert/call",
@@ -148,7 +205,7 @@ def test_ui_token_can_call_telegram_profile_setup_operation(
                     "purpose": "Handle support requests from approved Telegram users.",
                     "voice": "Concise and calm.",
                 },
-                "provider_facets": {"telegram-bot": {"credential_ref": credential_ref}},
+                "provider_facets": {"telegram": {"credential_ref": credential_ref}},
                 "access_policy": {
                     "dm_mode": "allowlist",
                     "group_mode": "allowlist",
@@ -162,9 +219,7 @@ def test_ui_token_can_call_telegram_profile_setup_operation(
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["data"]["key"] == "support-bot"
-    assert (
-        resp.json()["data"]["provider_facets"]["telegram-bot"]["credential_ref"] == credential_ref
-    )
+    assert resp.json()["data"]["provider_facets"]["telegram"]["credential_ref"] == credential_ref
     assert "123456:ABC" not in resp.text
     assert "telegram-secret" not in resp.text
 
@@ -254,7 +309,6 @@ def test_ui_token_can_confirm_one_exact_current_slack_route(
         json={
             "arguments": {
                 "project_id": project_id,
-                "apply_provider_webhooks": False,
                 "response_mode": "raw",
             }
         },

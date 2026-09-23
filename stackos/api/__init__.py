@@ -37,7 +37,6 @@ from stackos.api.runs import (
     run_router as runs_run_router,
 )
 from stackos.api.slack_ingress import router as slack_ingress_router
-from stackos.api.telegram_ingress import router as telegram_ingress_router
 from stackos.api.workflow_templates import router as workflow_templates_router
 
 
@@ -67,8 +66,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(actions_router)
     # Generic StackOS resources/artifacts.
     app.include_router(resources_router)
-    # Provider ingress that validates provider-signed/static secrets before writes.
-    app.include_router(telegram_ingress_router)
+    # Provider ingress that validates provider-signed secrets before writes.
     app.include_router(slack_ingress_router)
     app.include_router(hubspot_ingress_router)
     # Project memory/context primitives.

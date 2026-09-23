@@ -12,6 +12,9 @@ def register(registry: ToolRegistry) -> None:
         registry,
         (
             "account.list",
+            "account.session.status",
+            "account.session.connect",
+            "account.session.disconnect",
             "account.start",
             "account.test",
             "account.revoke",

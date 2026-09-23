@@ -103,6 +103,14 @@ class CredentialStatusMixin:
         status = (
             "revoked" if credential.revoked_at is not None or not has_backing else credential.status
         )
+        account = self._provider_account_for_credential(credential)
+        saved_telegram_sign_in = bool(
+            credential.provider_key == "telegram"
+            and status == "disconnected"
+            and account is not None
+            and account.get("provider_account_id")
+        )
+        last_test = self._last_test_for_credential(credential)
         return AccountOut(
             credential_id=credential.id,
             credential_ref=credential.credential_ref,
@@ -112,13 +120,15 @@ class CredentialStatusMixin:
             auth_method_key=credential.auth_method_key,
             status=status,
             expires_at=credential.expires_at,
-            last_tested_at=credential.last_tested_at,
-            last_test=self._last_test_for_credential(credential),
+            last_tested_at=credential.last_tested_at if last_test is not None else None,
+            last_test=last_test,
             revoked_at=credential.revoked_at,
             scopes=self._scopes_for_credential(credential),
-            account=self._provider_account_for_credential(credential),
+            account=account,
             project_ids=self._project_ids_for_credential(credential.id),
-            setup_required=not has_backing or status != "connected",
+            setup_required=(
+                not has_backing or (status != "connected" and not saved_telegram_sign_in)
+            ),
         )
 
     def _last_test_for_credential(self, credential: Credential) -> AuthTestOut | None:
@@ -134,6 +144,25 @@ class CredentialStatusMixin:
         ).first()
         if event is None:
             return None
+        if credential.provider_key == "telegram":
+            newer_authorization = self._s.exec(
+                select(CredentialUsageEvent)
+                .where(
+                    CredentialUsageEvent.credential_id == credential.id,
+                    col(CredentialUsageEvent.operation).in_(
+                        ("account.authorization.ready", "account.authorization.changed")
+                    ),
+                )
+                .order_by(col(CredentialUsageEvent.id).desc())
+                .limit(1)
+            ).first()
+            if (
+                newer_authorization is not None
+                and newer_authorization.id is not None
+                and event.id is not None
+                and newer_authorization.id > event.id
+            ):
+                return None
         data = redact_secrets(event.metadata_json or {})
         result = data.get("result")
         if isinstance(result, dict):

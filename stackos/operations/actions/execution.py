@@ -15,7 +15,7 @@ from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import WriteEnvelope
 from stackos.mcp.permissions import active_run_plan_step
 from stackos.mcp.streaming import ProgressEmitter
-from stackos.repositories.base import ConflictError
+from stackos.repositories.base import ConflictError, ValidationError
 
 from .schemas import (
     ActionCallGetInput,
@@ -46,6 +46,8 @@ async def action_call_get(
     running = call.status == ActionCallStatus.RUNNING
     output_json = call.response_json
     progress = BACKGROUND_ACTION_TASKS.progress(call.id) if running else None
+    if progress is None and running:
+        progress = ActionRepository(ctx.session).durable_action_progress(action_call_id=call.id)
     return ActionCallGetOut(
         action_call_id=call.id,
         status=call.status,
@@ -73,10 +75,19 @@ def _public_action_progress(progress: dict[str, Any] | None) -> dict[str, Any] |
         for key in (
             "phase",
             "operation",
+            "total_count",
+            "pending_count",
+            "leased_count",
             "bytes_transferred",
             "completed_count",
             "skipped_count",
             "failed_count",
+            "unknown_count",
+            "cancelled_count",
+            "next_eligible_at",
+            "pause_reason",
+            "pause_item_id",
+            "next_action",
         )
         if key in progress
     }
@@ -137,6 +148,7 @@ async def action_execute(
         provider_context_json=inp.provider_context_json,
         output_policy_json=inp.output_policy_json,
         default_external_file_output=_default_external_file_output(ctx),
+        allow_transient_response=_raw_action_response_requested(inp.response_mode, ctx),
         derived_workflow_idempotency=inp.idempotency_key is None,
         credential_ref=inp.credential_ref,
         run_id=ctx.run_id,
@@ -144,6 +156,10 @@ async def action_execute(
         run_plan_step_id=step.id,
         idempotency_key=idempotency_key,
         dry_run=inp.dry_run,
+        durable_due_at=inp.due_at,
+        durable_expires_at=inp.expires_at,
+        durable_account_interval_seconds=inp.account_interval_seconds,
+        durable_destination_interval_seconds=inp.destination_interval_seconds,
         metadata_json={
             **(inp.metadata_json or {}),
             "dedupe_source": "caller" if inp.idempotency_key else "workflow-step",
@@ -232,8 +248,6 @@ async def action_run(
 ) -> WriteEnvelope[ActionRunOut]:
     project_id = inp.project_id if inp.project_id is not None else ctx.project_id
     if project_id is None:
-        from stackos.repositories.base import ValidationError
-
         raise ValidationError(
             "project_id is required unless the agent bridge resolved the workspace project"
         )
@@ -245,6 +259,21 @@ async def action_run(
         plugin_slug=inp.plugin_slug,
         action_key=inp.action_key,
     )
+    transient_requested = (
+        isinstance(inp.output_policy_json, dict)
+        and inp.output_policy_json.get("mode") == "transient"
+    )
+    if transient_requested and (inp.idempotency_key is not None or inp.intent_id is not None):
+        raise ValidationError(
+            "transient reads cannot use idempotency_key or intent_id",
+            data={"action_ref": described.manifest.action_ref, "side_effect": "not_started"},
+        )
+    allow_transient_response = _raw_action_response_requested(inp.response_mode, ctx)
+    if transient_requested and not allow_transient_response:
+        raise ValidationError(
+            "transient reads require response_mode=raw",
+            data={"action_ref": described.manifest.action_ref, "side_effect": "not_started"},
+        )
     _check_direct_action_policy(
         risk_level=described.manifest.risk_level,
         config_json=described.manifest.config_json,
@@ -285,10 +314,16 @@ async def action_run(
         provider_context_json=inp.provider_context_json,
         output_policy_json=inp.output_policy_json,
         default_external_file_output=_default_external_file_output(ctx),
+        allow_transient_response=allow_transient_response,
+        transient_replay_requested=inp.intent_id is not None,
         credential_ref=inp.credential_ref,
         run_id=ctx.run_id,
         idempotency_key=idempotency_key,
         dry_run=inp.dry_run,
+        durable_due_at=inp.due_at,
+        durable_expires_at=inp.expires_at,
+        durable_account_interval_seconds=inp.account_interval_seconds,
+        durable_destination_interval_seconds=inp.destination_interval_seconds,
         metadata_json=metadata,
     )
     out = _action_run_out(env.data, verbose=True)
@@ -323,6 +358,12 @@ def _check_direct_action_policy(
 
 def _default_external_file_output(ctx: MCPContext) -> bool:
     return ctx.extras.get("client_surface") in {"mcp", "rest"}
+
+
+def _raw_action_response_requested(response_mode: str | None, ctx: MCPContext) -> bool:
+    return response_mode in {"raw", "standard", "verbose"} or (
+        response_mode is None and ctx.extras.get("client_surface") == "cli"
+    )
 
 
 def _derive_direct_idempotency_key(
@@ -436,8 +477,6 @@ def _compact_action_output(
             "sha256": file.get("sha256"),
         }
         return {key: value for key, value in compact_file.items() if value is not None}
-    if provider_key == "telegram-bot":
-        return _compact_telegram_output(operation, output_json)
     compact: dict[str, Any] = {}
     for key, value in output_json.items():
         if isinstance(value, str | int | float | bool) or value is None:
@@ -451,117 +490,6 @@ def _compact_scalar(value: str | int | float | bool | None) -> str | int | float
     if isinstance(value, str) and len(value) > 500:
         return f"{value[:500]}..."
     return value
-
-
-def _compact_telegram_output(operation: str, output_json: dict[str, Any]) -> dict[str, Any]:
-    compact: dict[str, Any] = {"operation": operation}
-    for key in (
-        "artifact_ref",
-        "artifact_id",
-        "filename",
-        "mime_type",
-        "size_bytes",
-        "source_file_id",
-        "source_message_ref",
-    ):
-        value = output_json.get(key)
-        if isinstance(value, str | int | float | bool) or value is None:
-            compact[key] = _compact_scalar(value)
-    status_code = output_json.get("status_code")
-    if isinstance(status_code, int):
-        compact["status_code"] = status_code
-    body = output_json.get("body")
-    if not isinstance(body, dict):
-        return compact
-    if isinstance(body.get("ok"), bool):
-        compact["provider_ok"] = body["ok"]
-    result = body.get("result")
-    if operation == "updates.poll" and isinstance(result, list):
-        updates = [
-            _compact_telegram_update(update) for update in result if isinstance(update, dict)
-        ]
-        compact["updates_count"] = len(updates)
-        compact["updates"] = updates
-        update_ids = [
-            item["update_id"] for item in updates if isinstance(item.get("update_id"), int)
-        ]
-        if update_ids:
-            compact["next_offset"] = max(update_ids) + 1
-        return compact
-    if isinstance(result, dict):
-        message_id = result.get("message_id")
-        if isinstance(message_id, int):
-            compact["message_id"] = message_id
-        chat = result.get("chat")
-        if isinstance(chat, dict):
-            chat_id = chat.get("id")
-            if isinstance(chat_id, int):
-                compact["chat_ref"] = f"telegram-chat:{chat_id}"
-            if isinstance(chat.get("type"), str):
-                compact["chat_type"] = chat["type"]
-        if isinstance(result.get("text"), str):
-            compact["text_preview"] = result["text"][:200]
-    return compact
-
-
-def _compact_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
-    item: dict[str, Any] = {}
-    update_id = update.get("update_id")
-    if isinstance(update_id, int):
-        item["update_id"] = update_id
-    if isinstance(update.get("callback_query"), dict):
-        callback = update["callback_query"]
-        item["kind"] = "callback_query"
-        if isinstance(callback.get("id"), str):
-            item["callback_query_id"] = callback["id"]
-        if isinstance(callback.get("data"), str):
-            item["callback_data"] = callback["data"]
-        _add_telegram_user_ref(item, callback.get("from"))
-        message = callback.get("message")
-        if isinstance(message, dict):
-            _add_telegram_chat_ref(item, message.get("chat"))
-            if isinstance(message.get("message_id"), int):
-                item["source_message_id"] = message["message_id"]
-        return item
-    for key, kind in (
-        ("message", "message"),
-        ("edited_message", "edited_message"),
-        ("channel_post", "channel_post"),
-        ("edited_channel_post", "edited_channel_post"),
-    ):
-        message = update.get(key)
-        if not isinstance(message, dict):
-            continue
-        item["kind"] = kind
-        if isinstance(message.get("message_id"), int):
-            item["message_id"] = message["message_id"]
-        _add_telegram_user_ref(item, message.get("from"))
-        _add_telegram_chat_ref(item, message.get("chat"))
-        if isinstance(message.get("text"), str):
-            item["text_preview"] = message["text"][:200]
-        return item
-    item["kind"] = "unknown"
-    return item
-
-
-def _add_telegram_user_ref(out: dict[str, Any], raw: Any) -> None:
-    if not isinstance(raw, dict):
-        return
-    user_id = raw.get("id")
-    if isinstance(user_id, int):
-        out["user_ref"] = f"telegram-user:{user_id}"
-    if isinstance(raw.get("username"), str):
-        out["username"] = raw["username"]
-
-
-def _add_telegram_chat_ref(out: dict[str, Any], raw: Any) -> None:
-    if not isinstance(raw, dict):
-        return
-    chat_id = raw.get("id")
-    if isinstance(chat_id, int):
-        out["chat_ref"] = f"telegram-chat:{chat_id}"
-    if isinstance(raw.get("type"), str):
-        out["chat_type"] = raw["type"]
 
 
 __all__ = [

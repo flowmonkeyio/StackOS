@@ -16,7 +16,7 @@ test.describe('Connections — reusable Account lifecycle', () => {
     await resetAccounts()
   })
 
-  test('attaches an existing Account and edits it through the global Accounts surface', async ({
+  test('attaches an existing Account and edits it from the project Connections surface', async ({
     page,
   }) => {
     const errors = trackConsoleErrors(page)
@@ -47,8 +47,8 @@ test.describe('Connections — reusable Account lifecycle', () => {
 
     const connection = page.getByRole('listitem').filter({ hasText: 'Production FTP' })
     await connection.getByRole('button', { name: 'Manage Account' }).click()
-    await expect(page.getByRole('heading', { level: 1, name: 'Accounts' })).toBeVisible()
     await expect(page.getByRole('dialog', { name: 'Edit Account' })).toBeVisible()
+    await expect(page).toHaveURL(`/projects/${project.id}/connections`)
 
     await page.getByLabel('Account name').fill('Updated FTP')
     await page.getByRole('button', { name: 'Save changes' }).click()
@@ -190,7 +190,7 @@ test.describe('Connections — reusable Account lifecycle', () => {
     await page.getByRole('button', { name: 'Add connection' }).first().click()
 
     const attachPanel = page.getByRole('dialog', { name: 'Add connection' })
-    await attachPanel.getByRole('button', { name: 'Create new Account' }).click()
+    await attachPanel.getByRole('button', { name: 'Create another Account' }).click()
     const panel = page.getByRole('dialog', { name: 'Add Account' })
     await expect(panel).toBeVisible()
     await panel.getByRole('combobox', { name: 'Service' }).click()

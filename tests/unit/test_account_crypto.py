@@ -51,6 +51,6 @@ def test_account_ciphertext_is_bound_to_provider_identity() -> None:
             ciphertext,
             nonce=nonce,
             credential_ref="cred_first",
-            provider_key="telegram-bot",
+            provider_key="telegram",
             seed=seed,
         )

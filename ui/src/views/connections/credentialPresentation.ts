@@ -58,7 +58,7 @@ export function methodLabel(provider: SchemaAuthProviderOut, methodKey: string):
 
 export function compareConnections(left: ConnectionRow, right: ConnectionRow): number {
   const attentionDiff =
-    Number(!connectionNeedsAttention(left)) - Number(!connectionNeedsAttention(right))
+    Number(!accountRowNeedsAttention(left)) - Number(!accountRowNeedsAttention(right))
   if (attentionDiff !== 0) return attentionDiff
   const statusDiff =
     (STATUS_ORDER[connectionStatusKey(left)] ?? 99) -
@@ -78,6 +78,26 @@ export function connectionStatusKey(connection: ConnectionStatusLike): string {
 
 export function connectionNeedsAttention(connection: ConnectionStatusLike): boolean {
   return connectionStatusKey(connection) !== 'connected' || connection.last_test?.ok === false
+}
+
+/** A saved Telegram authorization can be deliberately offline without needing setup repair. */
+export function telegramAuthorizationSaved(
+  account: Pick<SchemaAccountOut, 'provider_key' | 'status' | 'setup_required'>,
+): boolean {
+  return (
+    account.provider_key === 'telegram' &&
+    account.status === 'disconnected' &&
+    account.setup_required === false
+  )
+}
+
+export function accountRowNeedsAttention(
+  account: Pick<SchemaAccountOut, 'provider_key' | 'status' | 'setup_required'> & ConnectionStatusLike,
+): boolean {
+  return (
+    !(telegramAuthorizationSaved(account) && account.last_test?.ok !== false) &&
+    connectionNeedsAttention(account)
+  )
 }
 
 export function connectionAttentionTone(connection: ConnectionStatusLike): 'danger' | 'warning' {

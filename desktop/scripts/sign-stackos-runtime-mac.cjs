@@ -1,6 +1,7 @@
 "use strict";
 
 const { spawnSync } = require("node:child_process");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -169,6 +170,33 @@ function signTarget(identity, target, entitlementsPath = null) {
   run("codesign", args);
 }
 
+function refreshTdlibLibraryDigest(stackosRoot) {
+  const runtimeRoot = path.join(stackosRoot, "telegram-tdlib-runtime");
+  const manifestPath = path.join(runtimeRoot, "manifest.json");
+  if (!fs.existsSync(runtimeRoot)) {
+    throw new Error(`packaged TDLib runtime is missing at ${runtimeRoot}`);
+  }
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(`packaged TDLib runtime manifest is missing at ${manifestPath}`);
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  } catch (error) {
+    throw new Error(`packaged TDLib runtime manifest is invalid: ${error.message}`);
+  }
+  const relativeLibraryPath = manifest?.library?.path;
+  if (relativeLibraryPath !== "lib/libtdjson.dylib") {
+    throw new Error("packaged TDLib runtime manifest has an unexpected library path");
+  }
+  const libraryPath = path.resolve(runtimeRoot, relativeLibraryPath);
+  if (!libraryPath.startsWith(`${runtimeRoot}${path.sep}`) || !fs.statSync(libraryPath).isFile()) {
+    throw new Error(`packaged TDLib library is missing at ${libraryPath}`);
+  }
+  manifest.library.sha256 = crypto.createHash("sha256").update(fs.readFileSync(libraryPath)).digest("hex");
+  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+}
+
 module.exports = async function signStackosRuntime(context) {
   if (context.electronPlatformName !== "darwin") {
     return;
@@ -234,4 +262,10 @@ module.exports = async function signStackosRuntime(context) {
   } finally {
     fs.rmSync(temporaryDir, { recursive: true, force: true });
   }
+
+  // codesign changes libtdjson's bytes. Refresh the payload's integrity
+  // manifest before electron-builder signs the enclosing app bundle.
+  refreshTdlibLibraryDigest(stackosRoot);
 };
+
+module.exports.refreshTdlibLibraryDigest = refreshTdlibLibraryDigest;

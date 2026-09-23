@@ -2,10 +2,22 @@
 
 from __future__ import annotations
 
-import pytest
-from sqlmodel import Session
+from pathlib import Path
 
-from stackos.repositories.base import ValidationError
+import pytest
+from sqlmodel import Session, select
+
+from stackos.actions import ActionRepository
+from stackos.actions.repository.durable_artifacts import validate_durable_action_artifact_pins
+from stackos.db.models import (
+    ActionCall,
+    ActionCallStatus,
+    Credential,
+    DurableActionItem,
+    DurableActionItemStatus,
+    ProjectCredential,
+)
+from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.resources import ArtifactRepository, ResourceRepository
 
 
@@ -336,3 +348,108 @@ def test_artifact_lifecycle_update_supersede_and_archive(
     assert [item.id for item in repo.query(project_id=project_id, status="archived").items] == [
         replacement.id
     ]
+
+
+def test_artifact_retention_waits_for_definite_durable_receipt(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+) -> None:
+    assets = tmp_path / "generated-assets"
+    source = assets / "durable" / "retained.pdf"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"sealed media")
+    artifact = (
+        ArtifactRepository(session)
+        .create(
+            project_id=project_id,
+            plugin_slug="utils",
+            kind="file",
+            uri="/generated-assets/durable/retained.pdf",
+            status="approved",
+        )
+        .data
+    )
+    credential = Credential(
+        credential_ref="cred_durable_artifact",
+        provider_key="test",
+        display_name="Durable artifact Account",
+        display_name_key="durable artifact account",
+    )
+    call = ActionCall(
+        project_id=project_id,
+        action_key="message.send",
+        plugin_slug="communications",
+        operation="message.send",
+        status=ActionCallStatus.RUNNING,
+    )
+    session.add_all([credential, call])
+    session.flush()
+    assert credential.id is not None and call.id is not None and artifact.id is not None
+    session.add(ProjectCredential(project_id=project_id, credential_id=credential.id))
+    session.commit()
+
+    job = ActionRepository(session, asset_dir=assets).create_durable_action_job(
+        project_id=project_id,
+        action_call_id=call.id,
+        credential_ref=credential.credential_ref,
+        action_ref="communications.telegram.message.send",
+        items=[
+            {
+                "destination_ref": "telegram-chat:1",
+                "correlation_ref": "retained-source",
+                "input_json": {"content": {"file": {"artifact_ref": artifact.uri}}},
+            }
+        ],
+    )
+    assert job.id is not None
+    item = session.exec(select(DurableActionItem).where(DurableActionItem.job_id == job.id)).one()
+    item.state = DurableActionItemStatus.UNKNOWN_HOLD
+    session.add(item)
+    session.commit()
+
+    repo = ArtifactRepository(session)
+    with pytest.raises(ConflictError, match="awaiting final receipts"):
+        repo.archive(artifact.id, project_id=project_id)
+    with pytest.raises(ConflictError, match="awaiting final receipts"):
+        repo.update(
+            artifact.id,
+            project_id=project_id,
+            fields={"uri"},
+            uri="/generated-assets/durable/moved.pdf",
+        )
+
+    item.state = DurableActionItemStatus.FAILED
+    session.add(item)
+    session.commit()
+    source.write_bytes(b"replacement at the same URI")
+    with pytest.raises(ValidationError, match="artifact bytes changed"):
+        ActionRepository(session, asset_dir=assets).retry_durable_action_items(
+            project_id=project_id,
+            job_id=job.id,
+            item_ids=[item.id],
+        )
+    session.refresh(item)
+    assert item.state == DurableActionItemStatus.FAILED
+    with pytest.raises(ValidationError, match="artifact bytes changed"):
+        validate_durable_action_artifact_pins(
+            session,
+            project_id=project_id,
+            job_id=job.id,
+            asset_dir=assets,
+        )
+    source.write_bytes(b"sealed media")
+    repo.update(
+        artifact.id,
+        project_id=project_id,
+        fields={"uri"},
+        uri="/generated-assets/durable/replaced.pdf",
+    )
+    with pytest.raises(ValidationError, match="artifact changed"):
+        validate_durable_action_artifact_pins(
+            session,
+            project_id=project_id,
+            job_id=job.id,
+            asset_dir=assets,
+        )
+    assert repo.archive(artifact.id, project_id=project_id).data.status == "archived"

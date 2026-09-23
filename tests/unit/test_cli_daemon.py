@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import plistlib
 import sys
 import types
 from pathlib import Path
@@ -27,6 +28,27 @@ def sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("STACKOS_DATA_DIR", str(data))
     monkeypatch.setenv("STACKOS_STATE_DIR", str(state))
     return home
+
+
+def _write_launchd_plist(
+    home: Path,
+    settings: Settings,
+    *,
+    host: str = "127.0.0.1",
+    port: int = 5180,
+) -> Path:
+    plist = home / "Library" / "LaunchAgents" / "com.stackos.daemon.plist"
+    plist.parent.mkdir(parents=True, exist_ok=True)
+    plist.write_bytes(
+        launchd_cli._launchd_plist_content(
+            settings,
+            home=home,
+            host=host,
+            port=port,
+            log_level="INFO",
+        )
+    )
+    return plist
 
 
 def test_serve_writes_and_removes_pid_file(
@@ -337,7 +359,7 @@ def test_cli_stop_boots_out_loaded_launchd_before_stopping(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    plist = sandbox / "Library" / "LaunchAgents" / "com.stackos.daemon.plist"
+    plist = _write_launchd_plist(sandbox, Settings())
     events: list[tuple[str, object]] = []
 
     def fake_bootout(path: Path, *, wait_timeout: float) -> tuple[bool, str]:
@@ -361,6 +383,41 @@ def test_cli_stop_boots_out_loaded_launchd_before_stopping(
     assert events == [("bootout", plist)]
 
 
+@pytest.mark.parametrize(
+    ("variable", "directory"),
+    [
+        ("STACKOS_DATA_DIR", "isolated-data"),
+        ("STACKOS_STATE_DIR", "isolated-state"),
+    ],
+)
+def test_cli_stop_rejects_same_port_mismatched_launchd_context(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    variable: str,
+    directory: str,
+) -> None:
+    _write_launchd_plist(sandbox, Settings())
+    monkeypatch.setenv(variable, str(sandbox / directory))
+
+    def fail_bootout(*_args: object, **_kwargs: object) -> tuple[bool, str]:
+        raise AssertionError("mismatched launchd context must not be booted out")
+
+    def fail_discover(*_args: object, **_kwargs: object) -> tuple[list[int], list[int]]:
+        raise AssertionError("same-port mismatch must reject before process discovery")
+
+    monkeypatch.setattr(launchd_cli, "_launchd_bootout", fail_bootout)
+    monkeypatch.setattr(daemon_processes, "_discover_daemon_processes", fail_discover)
+
+    result = CliRunner().invoke(
+        app,
+        ["stop", "--host", "127.0.0.1", "--port", "5180"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 1
+    assert "does not match the requested daemon context" in result.stderr
+
+
 def test_cli_stop_no_running_daemon_is_ok(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -375,11 +432,130 @@ def test_cli_stop_no_running_daemon_is_ok(
     assert "stop: no running daemon found" in result.stdout
 
 
+def test_cli_restart_uses_detached_daemon_for_different_port_launchd_context(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_launchd_plist(sandbox, Settings())
+    isolated_data = sandbox / "isolated-data"
+    isolated_state = sandbox / "isolated-state"
+    monkeypatch.setenv("STACKOS_DATA_DIR", str(isolated_data))
+    monkeypatch.setenv("STACKOS_STATE_DIR", str(isolated_state))
+    events: list[tuple[str, object]] = []
+
+    def fail_launchd(*_args: object, **_kwargs: object) -> tuple[bool, str]:
+        raise AssertionError("different-port context must not control launchd")
+
+    def fake_spawn(
+        settings: Settings,
+        host: str,
+        port: int,
+        *,
+        log_level: str,
+        log_path: Path,
+        cwd: Path,
+        ready_timeout: float,
+    ) -> tuple[bool, str]:
+        events.append(("spawn", (settings.data_dir, settings.state_dir, host, port)))
+        return True, "started daemon pid=222; url=http://127.0.0.1:5199; log=/tmp/daemon.log"
+
+    monkeypatch.setattr(launchd_cli, "_launchd_loaded", fail_launchd)
+    monkeypatch.setattr(launchd_cli, "_launchd_bootout", fail_launchd)
+    monkeypatch.setattr(launchd_cli, "_launchd_bootstrap", fail_launchd)
+    monkeypatch.setattr(daemon_processes, "_discover_daemon_processes", lambda *_args: ([], []))
+    monkeypatch.setattr(daemon_processes, "_spawn_detached_daemon", fake_spawn)
+
+    result = CliRunner().invoke(
+        app,
+        ["restart", "--host", "127.0.0.1", "--port", "5199", "--timeout", "0.5"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert events == [("spawn", (isolated_data, isolated_state, "127.0.0.1", 5199))]
+
+
+def test_cli_restart_rejects_malformed_launchd_context_before_process_discovery(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plist = _write_launchd_plist(sandbox, Settings())
+    payload = plistlib.loads(plist.read_bytes())
+    payload["ProgramArguments"][7] = "not-a-port"
+    plist.write_bytes(plistlib.dumps(payload))
+
+    def fail_launchd(*_args: object, **_kwargs: object) -> tuple[bool, str]:
+        raise AssertionError("malformed launchd context must not control launchd")
+
+    def fail_discover(*_args: object, **_kwargs: object) -> tuple[list[int], list[int]]:
+        raise AssertionError("malformed launchd context must reject before process discovery")
+
+    monkeypatch.setattr(launchd_cli, "_launchd_loaded", fail_launchd)
+    monkeypatch.setattr(launchd_cli, "_launchd_bootout", fail_launchd)
+    monkeypatch.setattr(launchd_cli, "_launchd_bootstrap", fail_launchd)
+    monkeypatch.setattr(daemon_processes, "_discover_daemon_processes", fail_discover)
+
+    result = CliRunner().invoke(app, ["restart"], catch_exceptions=False)
+
+    assert result.exit_code == 1
+    assert "malformed or incomplete" in result.stderr
+
+
+def test_cli_restart_rejects_invalid_xml_launchd_context_before_process_discovery(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plist = _write_launchd_plist(sandbox, Settings())
+    plist.write_bytes(b'<?xml version="1.0"?><plist><dict>')
+
+    def fail_launchd(*_args: object, **_kwargs: object) -> tuple[bool, str]:
+        raise AssertionError("invalid launchd XML must not control launchd")
+
+    def fail_discover(*_args: object, **_kwargs: object) -> tuple[list[int], list[int]]:
+        raise AssertionError("invalid launchd XML must reject before process discovery")
+
+    monkeypatch.setattr(launchd_cli, "_launchd_loaded", fail_launchd)
+    monkeypatch.setattr(launchd_cli, "_launchd_bootout", fail_launchd)
+    monkeypatch.setattr(launchd_cli, "_launchd_bootstrap", fail_launchd)
+    monkeypatch.setattr(daemon_processes, "_discover_daemon_processes", fail_discover)
+
+    result = CliRunner().invoke(app, ["restart"], catch_exceptions=False)
+
+    assert result.exit_code == 1
+    assert "malformed or incomplete" in result.stderr
+
+
+def test_cli_restart_rejects_conflicting_launchd_arguments_and_environment(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plist = _write_launchd_plist(sandbox, Settings())
+    payload = plistlib.loads(plist.read_bytes())
+    payload["EnvironmentVariables"]["STACKOS_PORT"] = "5199"
+    plist.write_bytes(plistlib.dumps(payload))
+
+    def fail_launchd(*_args: object, **_kwargs: object) -> tuple[bool, str]:
+        raise AssertionError("contradictory launchd context must not control launchd")
+
+    def fail_discover(*_args: object, **_kwargs: object) -> tuple[list[int], list[int]]:
+        raise AssertionError("contradictory context must reject before process discovery")
+
+    monkeypatch.setattr(launchd_cli, "_launchd_loaded", fail_launchd)
+    monkeypatch.setattr(launchd_cli, "_launchd_bootout", fail_launchd)
+    monkeypatch.setattr(launchd_cli, "_launchd_bootstrap", fail_launchd)
+    monkeypatch.setattr(daemon_processes, "_discover_daemon_processes", fail_discover)
+
+    result = CliRunner().invoke(app, ["restart"], catch_exceptions=False)
+
+    assert result.exit_code == 1
+    assert "malformed or incomplete" in result.stderr
+
+
 def test_cli_restart_uses_loaded_launchd_job(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    plist = sandbox / "Library" / "LaunchAgents" / "com.stackos.daemon.plist"
+    plist = _write_launchd_plist(sandbox, Settings())
     events: list[tuple[str, object]] = []
 
     def fake_bootout(path: Path, *, wait_timeout: float) -> tuple[bool, str]:
@@ -403,7 +579,6 @@ def test_cli_restart_uses_loaded_launchd_job(
     def fail_spawn(*_args: object, **_kwargs: object) -> tuple[bool, str]:
         raise AssertionError("launchd-owned restart should not spawn detached daemon")
 
-    monkeypatch.setattr(launchd_cli, "_installed_launchd_plist", lambda _home: plist)
     monkeypatch.setattr(launchd_cli, "_launchd_loaded", lambda: (True, "launchd job loaded"))
     monkeypatch.setattr(launchd_cli, "_launchd_bootout", fake_bootout)
     monkeypatch.setattr(daemon_processes, "_discover_daemon_processes", lambda *_args: ([111], []))
@@ -433,7 +608,7 @@ def test_cli_restart_ignores_stale_zombie_pid_before_launchd_bootstrap(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    plist = sandbox / "Library" / "LaunchAgents" / "com.stackos.daemon.plist"
+    plist = _write_launchd_plist(sandbox, Settings())
     pid_path = sandbox / ".local" / "state" / "stackos" / "daemon.pid"
     pid_path.write_text("123\n", encoding="utf-8")
     events: list[tuple[str, object]] = []
@@ -453,7 +628,6 @@ def test_cli_restart_ignores_stale_zombie_pid_before_launchd_bootstrap(
     def fail_spawn(*_args: object, **_kwargs: object) -> tuple[bool, str]:
         raise AssertionError("launchd-owned restart should not spawn detached daemon")
 
-    monkeypatch.setattr(launchd_cli, "_installed_launchd_plist", lambda _home: plist)
     monkeypatch.setattr(launchd_cli, "_launchd_loaded", lambda: (True, "launchd job loaded"))
     monkeypatch.setattr(launchd_cli, "_launchd_bootout", fake_bootout)
     monkeypatch.setattr(launchd_cli, "_launchd_bootstrap", fake_bootstrap)
@@ -482,7 +656,7 @@ def test_cli_restart_hands_off_detached_daemon_to_installed_launchd(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    plist = sandbox / "Library" / "LaunchAgents" / "com.stackos.daemon.plist"
+    plist = _write_launchd_plist(sandbox, Settings())
     events: list[tuple[str, object]] = []
     discover_calls = 0
 
@@ -510,7 +684,6 @@ def test_cli_restart_hands_off_detached_daemon_to_installed_launchd(
     def fail_spawn(*_args: object, **_kwargs: object) -> tuple[bool, str]:
         raise AssertionError("packaged launchd lifecycle must not spawn detached daemon")
 
-    monkeypatch.setattr(launchd_cli, "_installed_launchd_plist", lambda _home: plist)
     monkeypatch.setattr(launchd_cli, "_launchd_loaded", lambda: (False, "not loaded"))
     monkeypatch.setattr(launchd_cli, "_launchd_bootout", fake_bootout)
     monkeypatch.setattr(daemon_processes, "_discover_daemon_processes", fake_discover)
@@ -539,12 +712,11 @@ def test_cli_restart_refuses_launchd_blocker_before_bootout(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    plist = sandbox / "Library" / "LaunchAgents" / "com.stackos.daemon.plist"
+    _write_launchd_plist(sandbox, Settings())
 
     def fail_bootout(_path: Path, **_kwargs: object) -> tuple[bool, str]:
         raise AssertionError("restart must not unload launchd when a blocker is already known")
 
-    monkeypatch.setattr(launchd_cli, "_installed_launchd_plist", lambda _home: plist)
     monkeypatch.setattr(launchd_cli, "_launchd_loaded", lambda: (True, "launchd job loaded"))
     monkeypatch.setattr(launchd_cli, "_launchd_bootout", fail_bootout)
     monkeypatch.setattr(daemon_processes, "_discover_daemon_processes", lambda *_args: ([], [999]))
@@ -559,7 +731,7 @@ def test_cli_restart_restores_launchd_when_termination_fails(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    plist = sandbox / "Library" / "LaunchAgents" / "com.stackos.daemon.plist"
+    plist = _write_launchd_plist(sandbox, Settings())
     events: list[tuple[str, object]] = []
 
     def fake_bootout(path: Path, **_kwargs: object) -> tuple[bool, str]:
@@ -579,7 +751,6 @@ def test_cli_restart_restores_launchd_when_termination_fails(
         events.append(("terminate", {"pids": pids, "timeout": timeout, "force": force}))
         return False, "daemon did not stop before timeout"
 
-    monkeypatch.setattr(launchd_cli, "_installed_launchd_plist", lambda _home: plist)
     monkeypatch.setattr(launchd_cli, "_launchd_loaded", lambda: (True, "launchd job loaded"))
     monkeypatch.setattr(launchd_cli, "_launchd_bootout", fake_bootout)
     monkeypatch.setattr(launchd_cli, "_launchd_bootstrap", fake_bootstrap)

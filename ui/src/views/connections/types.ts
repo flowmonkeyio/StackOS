@@ -23,24 +23,6 @@ export interface ServiceGroup {
   connections: ConnectionRow[]
 }
 
-export interface TelegramCommandSpec {
-  command: string
-  description?: string
-  guidance?: string
-  enabled?: boolean
-  aliases?: string[]
-  arguments_schema?: Record<string, unknown>
-  required_context?: string[]
-  expected_outputs?: string[]
-}
-
-export interface TelegramCommandDraft {
-  command: string
-  description: string
-  guidance: string
-  enabled: boolean
-}
-
 export type BotPolicyFieldKey =
   | 'identity_display_name'
   | 'identity_purpose'
@@ -50,27 +32,6 @@ export type BotPolicyFieldKey =
   | 'agent_escalation'
 
 export type BotPolicyFormFields = Record<BotPolicyFieldKey, string>
-
-export interface TelegramProfileForm {
-  key: string
-  credential_ref: string
-  bot_username: string
-  identity_display_name: string
-  identity_purpose: string
-  identity_voice: string
-  agent_default_instructions: string
-  agent_boundaries: string
-  agent_escalation: string
-  allowed_chat_refs: string
-  allowed_user_refs: string
-  commands: TelegramCommandDraft[]
-  mention_patterns: string
-  ingress_enabled: boolean
-  store_non_trigger_messages: boolean
-  origin_required: boolean
-  reply_to_source_message: boolean
-  same_thread: boolean
-}
 
 export interface SlackProfileForm {
   key: string
@@ -257,7 +218,6 @@ export interface IngressProviderResult {
   reason?: string
   error?: string
   request_url?: string
-  webhook_url?: string
   notes?: string[]
   next_action?: IngressEndpointRoute['next_action']
 }

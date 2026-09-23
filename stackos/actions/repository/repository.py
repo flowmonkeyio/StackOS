@@ -10,6 +10,7 @@ from stackos.actions.connectors import DEFAULT_ACTION_CONNECTORS, ActionConnecto
 
 from .audit import ActionAuditMixin
 from .catalog import ActionCatalogMixin
+from .durable import DurableActionMixin
 from .execution import ActionExecutionMixin
 from .run_scope import ActionRunScopeMixin
 from .validation import ActionValidationMixin
@@ -21,6 +22,7 @@ class ActionRepository(
     ActionExecutionMixin,
     ActionAuditMixin,
     ActionRunScopeMixin,
+    DurableActionMixin,
 ):
     """Internal action manifest/executor service.
 
@@ -37,5 +39,9 @@ class ActionRepository(
         asset_dir: Path | None = None,
     ) -> None:
         self._s = session
-        self._connectors = connectors or DEFAULT_ACTION_CONNECTORS
+        self._connectors = (
+            connectors
+            or session.info.get("operation_services", {}).get("action_connectors")
+            or DEFAULT_ACTION_CONNECTORS
+        )
         self._asset_dir = asset_dir

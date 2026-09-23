@@ -216,10 +216,16 @@ function summarizeErrorData(data: unknown): string | null {
       })
       .filter((item): item is string => item !== null)
       .slice(0, 2)
-    if (messages.length > 0) return messages.join(' ')
+    if (messages.length > 0) return appendNextAction(messages.join(' '), data)
   }
 
-  return null
+  return appendNextAction(null, data)
+}
+
+function appendNextAction(summary: string | null, data: JsonObject): string | null {
+  const nextAction = data.next_action
+  if (typeof nextAction !== 'string' || nextAction.trim() === '') return summary
+  return [summary, nextAction.trim()].filter((part): part is string => Boolean(part)).join(' ')
 }
 
 function summarizeBudgetData(data: JsonObject): string | null {

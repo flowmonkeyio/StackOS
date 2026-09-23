@@ -73,6 +73,40 @@ class ActionCallStatus(enum.StrEnum):
     FAILED = "failed"
 
 
+class DurableActionJobStatus(enum.StrEnum):
+    """Lifecycle for one persisted, ActionCall-linked fan-out dispatch."""
+
+    SCHEDULED = "scheduled"
+    RUNNING = "running"
+    PAUSED = "paused"
+    CANCELLED = "cancelled"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    UNKNOWN_HOLD = "unknown-hold"
+
+
+class DurableActionItemStatus(enum.StrEnum):
+    """Lifecycle for one immutable dispatch target snapshot."""
+
+    PENDING = "pending"
+    LEASED = "leased"
+    DEFERRED = "deferred"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    UNKNOWN_HOLD = "unknown-hold"
+
+
+class DurableActionAttemptStatus(enum.StrEnum):
+    """Receipt state for one native/provider dispatch attempt."""
+
+    LEASED = "leased"
+    DEFERRED = "deferred"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    UNKNOWN_HOLD = "unknown-hold"
+
+
 class AgentRequestStatus(enum.StrEnum):
     """Persists to ``agent_requests.status`` for the generic agent inbox."""
 

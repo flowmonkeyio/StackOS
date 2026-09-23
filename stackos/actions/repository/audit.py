@@ -16,7 +16,7 @@ from sqlmodel import col, select
 from stackos.actions.manifest import ExecutableActionManifest
 from stackos.artifacts import redact_secret_text
 from stackos.auth_providers import ResolvedCredential
-from stackos.db.models import ActionCall, ActionCallStatus, IdempotencyKey
+from stackos.db.models import ActionCall, ActionCallStatus, DurableActionJob, IdempotencyKey
 from stackos.generated_inventory import (
     generated_action_audit_key,
     generated_action_public_audit_metadata,
@@ -200,15 +200,21 @@ class ActionAuditMixin:
         provider_context_json: dict[str, Any] | None,
         metadata_json: dict[str, Any] | None,
         estimated_cost_cents: int,
+        durable_schedule_json: dict[str, Any] | None = None,
     ) -> tuple[ActionCall, bool]:
         fingerprint = _background_request_fingerprint(
             action_ref=manifest.action_ref,
             request_json=request_json,
             provider_context_json=provider_context_json,
             credential_ref=credential_ref,
+            durable_schedule_json=durable_schedule_json,
+        )
+        scope = _background_idempotency_scope(
+            action_ref=manifest.action_ref,
+            metadata_json=metadata_json,
         )
         internal_key = (
-            _background_idempotency_key(manifest.action_ref, idempotency_key)
+            _background_idempotency_key(scope, idempotency_key)
             if idempotency_key is not None
             else None
         )
@@ -251,33 +257,75 @@ class ActionAuditMixin:
             return row, False
         except IntegrityError:
             self._s.rollback()
-            if internal_key is None:
+            replay = self._background_replay(
+                project_id=project_id,
+                manifest=manifest,
+                credential_ref=credential_ref,
+                idempotency_key=idempotency_key,
+                request_json=request_json,
+                provider_context_json=provider_context_json,
+                metadata_json=metadata_json,
+                durable_schedule_json=durable_schedule_json,
+            )
+            if replay is None:
                 raise
-            reservation = self._s.exec(
-                select(IdempotencyKey).where(
-                    IdempotencyKey.project_id == project_id,
-                    IdempotencyKey.tool_name == "action.background",
-                    IdempotencyKey.idempotency_key == internal_key,
-                )
-            ).first()
-            response = reservation.response_json if reservation is not None else None
-            if response is None or response.get("request_fingerprint") != fingerprint:
-                raise ConflictError(
-                    "idempotency key replayed with different action request",
-                    data={
-                        "project_id": project_id,
-                        "action_ref": manifest.action_ref,
-                        "idempotency_key": idempotency_key,
-                    },
-                ) from None
-            action_call_id = response.get("action_call_id")
-            row = self._s.get(ActionCall, action_call_id)
-            if row is None or row.project_id != project_id:
-                raise ConflictError(
-                    "background action reservation is missing its action call",
-                    data={"project_id": project_id, "action_ref": manifest.action_ref},
-                ) from None
-            return row, True
+            return replay, True
+
+    def _background_replay(
+        self,
+        *,
+        project_id: int,
+        manifest: ExecutableActionManifest,
+        credential_ref: str | None,
+        idempotency_key: str | None,
+        request_json: dict[str, Any],
+        provider_context_json: dict[str, Any] | None,
+        metadata_json: dict[str, Any] | None,
+        durable_schedule_json: dict[str, Any] | None,
+    ) -> ActionCall | None:
+        """Return one exact background reservation without creating an audit row."""
+
+        if idempotency_key is None:
+            return None
+        scope = _background_idempotency_scope(
+            action_ref=manifest.action_ref,
+            metadata_json=metadata_json,
+        )
+        reservation = self._s.exec(
+            select(IdempotencyKey).where(
+                IdempotencyKey.project_id == project_id,
+                IdempotencyKey.tool_name == "action.background",
+                IdempotencyKey.idempotency_key
+                == _background_idempotency_key(scope, idempotency_key),
+            )
+        ).first()
+        if reservation is None:
+            return None
+        response = reservation.response_json
+        fingerprint = _background_request_fingerprint(
+            action_ref=manifest.action_ref,
+            request_json=request_json,
+            provider_context_json=provider_context_json,
+            credential_ref=credential_ref,
+            durable_schedule_json=durable_schedule_json,
+        )
+        if response is None or response.get("request_fingerprint") != fingerprint:
+            raise ConflictError(
+                "idempotency key replayed with different action request",
+                data={
+                    "project_id": project_id,
+                    "action_ref": manifest.action_ref,
+                    "idempotency_key": idempotency_key,
+                },
+            )
+        action_call_id = response.get("action_call_id")
+        row = self._s.get(ActionCall, action_call_id)
+        if row is None or row.project_id != project_id:
+            raise ConflictError(
+                "background action reservation is missing its action call",
+                data={"project_id": project_id, "action_ref": manifest.action_ref},
+            )
+        return row
 
     def _finalize_running_call(
         self,
@@ -333,10 +381,20 @@ class ActionAuditMixin:
         return row
 
     def reconcile_running_calls(self) -> int:
-        """Mark background calls orphaned by daemon restart as outcome-unknown."""
+        """Recover durable calls, then hold other orphaned background calls unknown.
+
+        A durable item's persisted lease is the only proof that an effect may
+        already have started.  Its own recovery marks that item unknown-hold;
+        the generic background reconciler must not finalize the parent first.
+        """
+        self.reconcile_durable_action_jobs()
+        durable_action_call_ids = select(DurableActionJob.action_call_id)
         result = self._s.execute(
             update(ActionCall)
-            .where(ActionCall.status == ActionCallStatus.RUNNING)  # type: ignore[arg-type]
+            .where(
+                ActionCall.status == ActionCallStatus.RUNNING,  # type: ignore[arg-type]
+                ActionCall.id.not_in(durable_action_call_ids),  # type: ignore[union-attr]
+            )
             .values(
                 status=ActionCallStatus.FAILED,
                 response_json={"outcome_unknown": True, "retry_safe": False},
@@ -456,8 +514,25 @@ class ActionAuditMixin:
         )
 
 
-def _background_idempotency_key(action_ref: str, idempotency_key: str) -> str:
-    return hashlib.sha256(f"{action_ref}\0{idempotency_key}".encode()).hexdigest()
+def _background_idempotency_key(scope: str, idempotency_key: str) -> str:
+    return hashlib.sha256(f"{scope}\0{idempotency_key}".encode()).hexdigest()
+
+
+def _background_idempotency_scope(
+    *,
+    action_ref: str,
+    metadata_json: dict[str, Any] | None,
+) -> str:
+    """Keep one communication intent exclusive across payload-selected action refs."""
+
+    operation = metadata_json.get("operation") if isinstance(metadata_json, dict) else None
+    if isinstance(operation, str) and operation in {
+        "communication.send",
+        "communication.sendBatch",
+        "communication.reply",
+    }:
+        return operation
+    return action_ref
 
 
 def _background_request_fingerprint(
@@ -466,6 +541,7 @@ def _background_request_fingerprint(
     request_json: dict[str, Any],
     provider_context_json: dict[str, Any] | None,
     credential_ref: str | None,
+    durable_schedule_json: dict[str, Any] | None,
 ) -> str:
     canonical = json.dumps(
         {
@@ -473,6 +549,7 @@ def _background_request_fingerprint(
             "request_json": request_json,
             "provider_context_json": provider_context_json,
             "credential_ref": credential_ref,
+            "durable_schedule_json": durable_schedule_json,
             "dry_run": False,
         },
         sort_keys=True,

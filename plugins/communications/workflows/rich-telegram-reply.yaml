@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: communications.rich-telegram-reply
 name: Rich Telegram Reply
-version: 0.1.0
+version: 0.2.0
 description: Reusable setup for replying to a Telegram-originated agent request with text, images, and optional inline buttons.
 domain: communications
 owner:
@@ -110,23 +110,23 @@ capability_requirements:
   - key: messaging
     required: true
 auth_requirements:
-  - key: telegram_bot
-    provider: telegram-bot
-    auth_type: bot-token
+  - key: telegram_account
+    provider: telegram
+    auth_type: tdlib
     optional: false
 action_contracts:
   - key: send_message
-    action: telegram-bot.message.send
+    action: telegram.message.send
     capability: messaging
-    provider: telegram-bot
+    provider: telegram
     risk_level: write
-    auth_ref: telegram_bot
-  - key: send_photo
-    action: telegram-bot.photo.send
+    auth_ref: telegram_account
+  - key: send_album
+    action: telegram.album.send
     capability: messaging
-    provider: telegram-bot
+    provider: telegram
     risk_level: write
-    auth_ref: telegram_bot
+    auth_ref: telegram_account
     optional: true
 policies:
   - key: origin_bound_response
@@ -158,7 +158,7 @@ steps:
     purpose: Execute the explicit Telegram send action granted by the run plan.
     action_refs:
       - send_message
-      - send_photo
+      - send_album
     depends_on:
       - compose
 outputs:
@@ -177,7 +177,7 @@ outputs:
         thread_ref: {type: string}
         feature_requirements: {type: array}
         media_refs: {type: array, items: {type: string}}
-        delivery_mode: {type: string, enum: [text, photo, text_and_photo]}
+        delivery_mode: {type: string, enum: [message, album]}
   - key: response_payload
     name: Response Payload
     type: object

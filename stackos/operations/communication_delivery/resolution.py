@@ -10,6 +10,7 @@ from stackos.auth_providers.repository import AuthRepository
 from stackos.communications import (
     communication_profile_ref,
     communication_record_by_external_id,
+    communication_surface_binding_external_id,
     merged_provider_profile,
 )
 from stackos.db.models import ResourceRecord
@@ -20,6 +21,7 @@ from stackos.operations.communication_platform import (
     _string_list,
 )
 from stackos.repositories.agent_requests import AgentRequestOut, AgentRequestRepository
+from stackos.repositories.base import ValidationError
 
 from .errors import _reject
 from .schemas import CommunicationContextInput
@@ -320,13 +322,36 @@ def _attached_credential_ref(
     return None
 
 
-def _surface_data(session: Session, *, project_id: int, surface_ref: str) -> dict[str, Any]:
-    if not surface_ref:
+def _surface_data(
+    session: Session,
+    *,
+    project_id: int,
+    provider_key: str,
+    profile_ref: str,
+    surface_ref: str,
+) -> dict[str, Any]:
+    if not provider_key or not profile_ref or not surface_ref:
         return {}
     record = communication_record_by_external_id(
         session,
         project_id=project_id,
         resource_key="communication-channel",
-        external_id=f"communication-surface:{surface_ref}",
+        external_id=communication_surface_binding_external_id(
+            provider_key=provider_key,
+            profile_ref=profile_ref,
+            surface_ref=surface_ref,
+        ),
     )
-    return dict(record.data_json or {}) if record is not None else {}
+    data = dict(record.data_json or {}) if record is not None else {}
+    if data.get("surface_binding_state") not in {None, "ready"}:
+        raise ValidationError(
+            "communication surface binding requires repair before delivery",
+            data={
+                "provider_key": provider_key,
+                "profile_ref": profile_ref,
+                "surface_ref": surface_ref,
+                "binding_issue": data.get("surface_binding_issue"),
+                "next_action": "Repair the communication surface binding for this profile.",
+            },
+        )
+    return data

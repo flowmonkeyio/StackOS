@@ -14,7 +14,7 @@ from sqlmodel import Session, select
 from stackos.actions.repository.background import BACKGROUND_ACTION_TASKS
 from stackos.config import Settings
 from stackos.db.connection import make_engine
-from stackos.db.models import ActionCall, ActionCallStatus, IdempotencyKey, PayloadSecret
+from stackos.db.models import Action, ActionCall, ActionCallStatus, IdempotencyKey, PayloadSecret
 
 from .conftest import MCPClient
 
@@ -1273,6 +1273,77 @@ def test_action_execute_mock_provider_vertical_slice_through_mcp(
     assert "mock-mcp-secret" not in json.dumps(audit)
 
 
+def test_action_execute_manifest_default_transient_read_keeps_step_audit_without_replay(
+    mcp_client: MCPClient,
+    mcp_settings: Settings,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    credential_ref = _create_mock_credential(mcp_client, project_id)
+    engine = make_engine(mcp_settings.db_path)
+    try:
+        with Session(engine) as session:
+            action = session.exec(select(Action).where(Action.key == "mock.echo")).one()
+            action.config_json = {
+                **action.config_json,
+                "default_output_policy_json": {"mode": "transient"},
+            }
+            session.add(action)
+            session.commit()
+    finally:
+        engine.dispose()
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _mock_action_plan_json()},
+    )
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": created["data"]["id"]},
+    )
+    run_token = started["data"]["run_token"]
+    claimed = mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "run_plan_id": created["data"]["id"],
+            "step_id": "execute-mock",
+            "run_token": run_token,
+        },
+    )
+    arguments = {
+        "project_id": project_id,
+        "action_ref": "utils.mock.echo",
+        "credential_ref": credential_ref,
+        "run_token": run_token,
+        "input_json": {"message": "private workflow read"},
+    }
+    compact_error = mcp_client.call_tool_error("action.execute", arguments)
+    assert compact_error["code"] == -32602
+    key_error = mcp_client.call_tool_error(
+        "action.execute",
+        {**arguments, "response_mode": "raw", "idempotency_key": "explicit-replay-key"},
+    )
+    assert key_error["code"] == -32602
+
+    out = _call_tool_raw(mcp_client, "action.execute", arguments)
+    data = out["data"]
+    assert data["output_json"]["message"] == "private workflow read"
+    assert data["action_call"]["run_id"] == started["data"]["run_id"]
+    assert data["action_call"]["run_plan_id"] == created["data"]["id"]
+    assert data["action_call"]["run_plan_step_id"] == claimed["data"]["id"]
+    assert data["action_call"]["response_json"]["result_available"] is False
+    engine = make_engine(mcp_settings.db_path)
+    try:
+        with Session(engine) as session:
+            calls = session.exec(
+                select(ActionCall).where(ActionCall.project_id == project_id)
+            ).all()
+            assert len(calls) == 1
+            assert calls[0].idempotency_key is None
+            assert calls[0].response_json == data["action_call"]["response_json"]
+    finally:
+        engine.dispose()
+
+
 def test_action_run_direct_mock_provider_returns_file_pointer_by_default(
     mcp_client: MCPClient,
     seeded_project: dict,
@@ -1307,6 +1378,91 @@ def test_action_run_direct_mock_provider_returns_file_pointer_by_default(
     saved = json.loads(Path(data["output"]["path"]).read_text(encoding="utf-8"))
     assert saved["response"]["output_json"]["message"].startswith("hello direct action")
     assert "direct-secret" not in rendered
+
+
+def test_action_run_transient_read_is_immediate_only_with_audit_receipt(
+    mcp_client: MCPClient,
+    mcp_settings: Settings,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    credential_ref = _create_mock_credential(mcp_client, project_id, secret="transient-secret")
+    asset_dir = mcp_settings.generated_assets_dir
+    files_before = {str(path) for path in asset_dir.rglob("*") if path.is_file()}
+
+    out = mcp_client.call_tool_structured(
+        "action.run",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.mock.echo",
+            "credential_ref": credential_ref,
+            "input_json": {"message": "private inbound sample"},
+            "output_policy_json": {"mode": "transient"},
+            "response_mode": "raw",
+        },
+    )
+
+    data = out["data"]
+    assert data["status"] == "success"
+    assert data["output_json"]["message"] == "private inbound sample"
+    assert data["action_call"]["response_json"]["output_mode"] == "transient"
+    assert data["action_call"]["response_json"]["result_available"] is False
+    assert {str(path) for path in asset_dir.rglob("*") if path.is_file()} == files_before
+    polled = _call_tool_raw(
+        mcp_client,
+        "actionCall.get",
+        {"project_id": project_id, "action_call_id": data["action_call_id"]},
+    )
+    assert polled["output_json"] == data["action_call"]["response_json"]
+    assert "private inbound sample" not in json.dumps(polled)
+    engine = make_engine(mcp_settings.db_path)
+    try:
+        with Session(engine) as session:
+            row = session.get(ActionCall, data["action_call_id"])
+            assert row is not None
+            assert row.idempotency_key is None
+            assert row.response_json == polled["output_json"]
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"response_mode": "compact"},
+        {"response_mode": "raw", "idempotency_key": "cannot-replay"},
+        {"response_mode": "raw", "intent_id": "cannot-replay"},
+    ],
+)
+def test_action_run_transient_rejects_non_raw_or_replay_before_dispatch(
+    mcp_client: MCPClient,
+    mcp_settings: Settings,
+    seeded_project: dict,
+    extra: dict[str, str],
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    credential_ref = _create_mock_credential(mcp_client, project_id)
+    err = mcp_client.call_tool_error(
+        "action.run",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.mock.echo",
+            "credential_ref": credential_ref,
+            "input_json": {"message": "never dispatched"},
+            "output_policy_json": {"mode": "transient"},
+            **extra,
+        },
+    )
+    assert err["code"] == -32602, err
+    engine = make_engine(mcp_settings.db_path)
+    try:
+        with Session(engine) as session:
+            calls = session.exec(
+                select(ActionCall).where(ActionCall.project_id == project_id)
+            ).all()
+            assert not calls
+    finally:
+        engine.dispose()
 
 
 def test_action_run_verbose_includes_redacted_full_payload(

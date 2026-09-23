@@ -23,6 +23,7 @@ from .resolution import (
 from .schemas import (
     CommunicationContextInput,
     CommunicationReplyInput,
+    CommunicationSendBatchInput,
     CommunicationSendInput,
     CommunicationSendOut,
 )
@@ -31,14 +32,30 @@ from .utils import (
     _normalize_content,
     _require_project,
     _resolve_project_id,
+    _stable_digest,
 )
 
 
 async def communication_send(
-    inp: CommunicationSendInput,
+    inp: CommunicationSendInput, ctx: MCPContext, emitter: ProgressEmitter
+) -> WriteEnvelope[CommunicationSendOut]:
+    return await _send(inp, ctx, emitter)
+
+
+async def communication_send_batch(
+    inp: CommunicationSendBatchInput, ctx: MCPContext, emitter: ProgressEmitter
+) -> WriteEnvelope[CommunicationSendOut]:
+    return await _send(inp, ctx, emitter)
+
+
+async def _send(
+    inp: CommunicationSendInput | CommunicationSendBatchInput,
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> WriteEnvelope[CommunicationSendOut]:
+    batch = isinstance(inp, CommunicationSendBatchInput)
+    recipients = inp.recipients if isinstance(inp, CommunicationSendBatchInput) else None
+    operation = "communication.sendBatch" if batch else "communication.send"
     project_id = _resolve_project_id(inp.project_id, ctx)
     _require_project(ctx.session, project_id)
     content = _normalize_content(
@@ -49,6 +66,29 @@ async def communication_send(
     )
     source = _source_context(ctx.session, project_id=project_id, context=inp.context)
     target = _require_target(ctx.session, project_id=project_id, to=inp.to)
+    if (target.send_policy.get("destination_mode") == "recipient-list") != batch:
+        _reject(
+            code="COMM_TARGET_DESTINATION_MODE",
+            category="policy",
+            message=(
+                "Recipient-list targets require communication.sendBatch; fixed targets "
+                "require communication.send."
+            ),
+        )
+    if batch and (
+        inp.context.reply_to
+        or inp.context.thread_ref
+        or inp.context.thread
+        or inp.delivery.reply_mode not in {"default", "none"}
+    ):
+        _reject(
+            code="COMM_BATCH_CONTEXT_INVALID",
+            category="input",
+            message=(
+                "Batch delivery cannot apply one message/thread reply context to multiple "
+                "destinations."
+            ),
+        )
     actor = _resolve_actor(
         ctx.session,
         project_id=project_id,
@@ -64,23 +104,30 @@ async def communication_send(
         source_surface_ref=source.get("source_surface_ref"),
         invoker_ref=source.get("invoker_ref"),
         resolved={
-            "operation": "communication.send",
+            "operation": operation,
             "to": inp.to,
             "from": actor["profile_ref"],
             "provider": target.provider_key,
             "surface_ref": target.surface_ref,
         },
     )
-    surface = _surface_data(ctx.session, project_id=project_id, surface_ref=target.surface_ref)
+    surface = _surface_data(
+        ctx.session,
+        project_id=project_id,
+        provider_key=target.provider_key,
+        profile_ref=actor["profile_ref"],
+        surface_ref=target.surface_ref,
+    )
     action_ref = target.action_ref or _default_action_ref(target.provider_key)
     if action_ref is None:
         action_ref = ""
     idempotency_key = inp.idempotency_key or _derive_idempotency_key(
         project_id=project_id,
-        operation="communication.send",
+        operation=operation,
         action_ref=action_ref,
         actor_ref=actor["profile_ref"],
-        destination_ref=target.target_ref,
+        destination_ref=target.target_ref
+        + (":" + _stable_digest({"recipients": recipients}) if recipients is not None else ""),
         content=content,
         source_request_id=source.get("source_request_id"),
         intent_id=inp.intent_id,
@@ -98,27 +145,28 @@ async def communication_send(
         context=inp.context,
         source=source,
         surface=surface,
-        operation="communication.send",
+        operation=operation,
         idempotency_key=idempotency_key,
+        recipients=recipients,
     )
     return await _execute_delivery(
         ctx,
         project_id=project_id,
-        operation="communication.send",
+        operation=operation,
         action_ref=payload["action_ref"],
         input_json=payload["input_json"],
         credential_ref=actor["credential_ref"],
         idempotency_key=idempotency_key,
         dry_run=inp.dry_run,
         metadata_json={
-            "operation": "communication.send",
+            "operation": operation,
             "target_ref": target.target_ref,
             "actor_ref": actor["profile_ref"],
             "source_request_id": source.get("source_request_id"),
             "intent_summary": inp.intent_summary,
         },
         resolved={
-            "operation": "communication.send",
+            "operation": operation,
             "to": inp.to,
             "from": actor["profile_ref"],
             "target_ref": target.target_ref,
@@ -129,6 +177,7 @@ async def communication_send(
         actor_ref=actor["profile_ref"],
         surface_ref=target.surface_ref,
         fallback=inp.fallback,
+        delivery=inp.delivery,
     )
 
 
@@ -151,7 +200,7 @@ async def communication_reply(
         controls=inp.controls,
     )
     provider_key = str(source.get("provider_key") or request.source_provider or "")
-    if provider_key not in {"slack-bot", "telegram-bot"}:
+    if provider_key not in {"slack-bot", "telegram"}:
         _reject(
             code="COMM_UNSUPPORTED_PROVIDER",
             category="provider",
@@ -165,7 +214,7 @@ async def communication_reply(
                 {
                     "path": "/request_id",
                     "requested": "reply.origin",
-                    "target_supports": ["slack-bot", "telegram-bot"],
+                    "target_supports": ["slack-bot", "telegram"],
                     "target_does_not_support": [provider_key or "missing_provider"],
                 }
             ],
@@ -212,6 +261,8 @@ async def communication_reply(
         surface=_surface_data(
             ctx.session,
             project_id=project_id,
+            provider_key=provider_key,
+            profile_ref=actor["profile_ref"],
             surface_ref=str(source.get("source_surface_ref") or ""),
         ),
         operation="communication.reply",
@@ -253,4 +304,5 @@ async def communication_reply(
         actor_ref=actor["profile_ref"],
         surface_ref=source.get("source_surface_ref"),
         fallback=inp.fallback,
+        delivery=inp.delivery,
     )

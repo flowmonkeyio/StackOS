@@ -55,42 +55,35 @@ does not run an assistant, classify intent, or decide workflows.
   must not invoke a model or select a workflow. For a local agent response,
   call it with `direction=outbound`, the same `thread_key`, a new
   `message_key`, and `create_request=false`.
-- Telegram Accounts are global and reusable. Telegram behavior, ingress routes,
-  and webhook ownership remain project-scoped through `communication-profile`
-  records. Accounts store token material and safe transport configuration only.
+- Telegram Accounts are global and reusable. Telegram behavior is project-scoped
+  through `communication-profile` records. Accounts store daemon-held
+  application/auth material, optional proxy configuration, and native session
+  state only.
 - Generic communication profiles store identity, default agent guidance, and
   optional structured command intents. Commands are not plain strings; each
   command may carry guidance/configuration for the operating agent. Telegram
   profile facets store only safe Telegram-specific refs/settings such as
-  `credential_ref`, bot username, explicit `ingress_enabled` intent, allowed
-  updates, and provider id maps. Public ingress URLs, webhook host policy, and
-  ingress refs are daemon-owned fields derived by `ingressEndpoint`; normal
-  profile setup must not supply them.
+  `credential_ref`, account kind, and provider id maps. Telegram Accounts own
+  one managed TDLib session; the session's native updates enter the shared
+  processor. Normal profile setup must not supply transport paths or native
+  runtime state.
 - Each Telegram communication profile binds to one global Account through
   `credential_ref`. The Account must be explicitly attached to the profile's
   project; never fall back to another Account or a provider-wide token.
-- One inbound-enabled Slack or Telegram communication profile may own provider
-  ingress for an Account because each upstream app/bot has one inbound endpoint.
-  Profiles default to inbound enabled. Set the provider facet's
-  `ingress_enabled` to `false` for outbound-only reuse in another attached
-  project; such profiles must not appear in ingress routes or webhook sync.
+- Slack HTTP ingress has one inbound-enabled profile owner per Account. A
+  Telegram Account's TDLib session routes each native update only to its
+  enabled project profiles; profile binding remains explicit and never falls
+  back to another Account.
 - Create and update communication profiles through `communicationProfile.upsert`.
   Inspect them through `communicationProfile.get` and
   `communicationProfile.list`. These are setup operations shared by REST,
   CLI, MCP, and UI; do not bypass them with raw resource writes in product code.
-- `webhook` is the normal Telegram listener path. Local StackOS uses a public
-  ingress endpoint, usually discovered from `driver=local-tunnel`; production
-  uses a deployed HTTPS URL. `updates.poll` is bounded diagnostic/bootstrap
-  access only, never a background listener.
 - Use `ingressEndpoint.configure`, `ingressEndpoint.refresh`,
   `ingressEndpoint.routes`, `ingressEndpoint.sync`, and
-  `ingressEndpoint.status` for project-level public ingress setup. The endpoint
+  `ingressEndpoint.status` for project-level HTTP ingress setup. The endpoint
   is generic; local tunnel provider settings belong only under `driver_config`.
-- Telegram webhook set/delete/info actions are executable through
-  `action.execute`; they must resolve the communication profile and daemon-held
-  credential server-side. Set/delete require the exact attached,
-  inbound-enabled singleton owner; outbound-only Account reuse cannot mutate
-  the upstream bot's webhook.
+  Telegram does not register an ingress route because TDLib owns its native
+  connection and update stream.
 - Visibility is not activation. A communication profile may observe/store messages from
   any reachable chat/channel as context, but StackOS creates an `agent_request`
   or sends a reply only when trigger policy matches and invoker access policy
@@ -109,9 +102,10 @@ does not run an assistant, classify intent, or decide workflows.
   communication profile, chat, thread, and message.
 - Proactive sends to explicit `communication-target` records are governed by
   target/send policy. Do not force those sends through reply-origin policy.
-- `telegram-bot.callback.answer` may clear Telegram's client-side loading state
-  with static acknowledgement text. It must not claim a workflow was completed
-  unless the responsible agent or granted run actually completed it.
+- `telegram.callback.answer` may clear Telegram's client-side loading state for
+  an eligible bot Account. It rejects user-Account calls and must not claim a
+  workflow was completed unless the responsible agent or granted run actually
+  completed it.
 - Telegram `read` and `unread` are StackOS-local attention states only.
 - Slack Web API identity, message send/delete, conversation discovery,
   membership sync, native message reactions, and signed HTTP Events

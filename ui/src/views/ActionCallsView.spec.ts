@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
+
+import UiConfirmDialog from '@/components/ui/UiConfirmDialog.vue'
 
 import ActionCallsView from './ActionCallsView.vue'
 
@@ -143,6 +145,147 @@ describe('ActionCallsView', () => {
       expect(document.body.textContent ?? '').toContain('provider rejected request'),
     )
   })
+
+  it('renders and controls a durable action call through the registered lifecycle operations', async () => {
+    const requested: Array<{ url: string; body: Record<string, unknown> | null }> = []
+    let durableState = 'running'
+    globalThis.fetch = vi.fn(async (input, init) => {
+      const url = String(input)
+      const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null
+      requested.push({ url, body })
+      const catalog = catalogJson(url)
+      if (catalog) return catalog
+      if (url.includes('/api/v1/projects/1/action-calls'))
+        return json(page([actionCall({ id: 42, status: 'running' })]))
+      if (url.endsWith('/api/v1/operations/actionCall.items/call'))
+        return json(durableItems(durableState))
+      if (url.endsWith('/api/v1/operations/actionCall.pause/call')) {
+        durableState = 'paused'
+        return json({ data: durableJob(durableState), project_id: 1, run_id: null })
+      }
+      if (url.endsWith('/api/v1/operations/actionCall.resume/call')) {
+        durableState = 'running'
+        return json({ data: durableJob(durableState), project_id: 1, run_id: null })
+      }
+      if (url.endsWith('/api/v1/operations/actionCall.retry/call')) {
+        return json({ data: durableJob(durableState), project_id: 1, run_id: null })
+      }
+      if (url.endsWith('/api/v1/operations/actionCall.cancel/call')) {
+        durableState = 'cancelled'
+        return json({ data: durableJob(durableState), project_id: 1, run_id: null })
+      }
+      return json({})
+    }) as typeof fetch
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/action-calls', component: ActionCallsView }],
+    })
+    await router.push('/projects/1/action-calls')
+    await router.isReady()
+    const wrapper = mount(ActionCallsView, { global: { plugins: [router] } })
+    await vi.waitFor(() => expect(wrapper.text()).toContain('#42'))
+
+    await emitRowClick(wrapper, actionCall({ id: 42, status: 'running' }))
+    await vi.waitFor(() => expect(document.body.textContent ?? '').toContain('1 / 4 settled'))
+    const detailText = document.body.textContent ?? ''
+    expect(detailText).toContain('Durable delivery')
+    expect(detailText).toContain('1 / 4 settled')
+    expect(detailText).toContain('Account pace')
+    expect(detailText).toContain('2s')
+    expect(detailText).toContain('Expires at')
+    expect(detailText).toContain('Partial outcome')
+    expect(detailText).toContain('Unknown receipt')
+    expect(detailText).toContain('telegram-chat:100')
+    expect(detailText).toContain('message:500')
+    expect(detailText).not.toContain('token-secret')
+
+    const pauseButton = documentButton('Pause')
+    expect(pauseButton).toBeDefined()
+    // A second click can arrive before Vue applies the disabled state. Only
+    // the first control request may reach the registered operation.
+    pauseButton?.click()
+    pauseButton?.click()
+    await nextTick()
+    await vi.waitFor(() =>
+      expect(requested.some((request) => request.url.endsWith('/actionCall.pause/call'))).toBe(true),
+    )
+    expect(requested.filter((request) => request.url.endsWith('/actionCall.pause/call'))).toHaveLength(1)
+    const pause = requested.find((request) => request.url.endsWith('/actionCall.pause/call'))
+    expect(pause?.body).toEqual({
+      arguments: { response_mode: 'raw', project_id: 1, action_call_id: 42 },
+    })
+    await vi.waitFor(() => expect(document.body.textContent ?? '').toContain('Resume'))
+    await vi.waitFor(() =>
+      expect(requested.filter((request) => request.url.endsWith('/actionCall.items/call'))).toHaveLength(2),
+    )
+    expect(documentButton('Resume')?.disabled).toBe(false)
+
+    await clickDocumentButton('Resume')
+    const resumeConfirmation = wrapper.findComponent(UiConfirmDialog)
+    expect(resumeConfirmation.props('modelValue')).toBe(true)
+    expect(resumeConfirmation.text()).toContain('Resume delivery?')
+    expect(documentButton('Resume delivery')).toBeDefined()
+    await clickDocumentButton('Resume delivery')
+    await vi.waitFor(() =>
+      expect(requested.some((request) => request.url.endsWith('/actionCall.resume/call'))).toBe(true),
+    )
+    const resume = requested.find((request) => request.url.endsWith('/actionCall.resume/call'))
+    expect(resume?.body).toEqual({
+      arguments: {
+        response_mode: 'raw',
+        project_id: 1,
+        action_call_id: 42,
+        confirm_direct: true,
+        intent_summary: 'Operator confirmed resuming durable Action Call #42 from the Action Calls view.',
+      },
+    })
+    await vi.waitFor(() =>
+      expect(requested.filter((request) => request.url.endsWith('/actionCall.items/call'))).toHaveLength(3),
+    )
+    await vi.waitFor(() => expect(document.body.textContent ?? '').toContain('Pause'))
+    expect(documentButton('Pause')?.disabled).toBe(false)
+
+    const retryCheckbox = document.querySelector<HTMLInputElement>('input[aria-label="Select row 3"]')
+    expect(retryCheckbox).toBeTruthy()
+    retryCheckbox?.click()
+    await nextTick()
+    expect(documentButton('Retry selected')?.disabled).toBe(false)
+    await clickDocumentButton('Retry selected')
+    const retryConfirmation = wrapper.findComponent(UiConfirmDialog)
+    expect(retryConfirmation.props('modelValue')).toBe(true)
+    expect(retryConfirmation.text()).toContain('Retry selected delivery?')
+    await clickContainedButton(retryConfirmation, 'Retry selected')
+    await vi.waitFor(() =>
+      expect(requested.some((request) => request.url.endsWith('/actionCall.retry/call'))).toBe(true),
+    )
+    const retry = requested.find((request) => request.url.endsWith('/actionCall.retry/call'))
+    expect(retry?.body).toEqual({
+      arguments: {
+        response_mode: 'raw',
+        project_id: 1,
+        action_call_id: 42,
+        item_ids: [103],
+        confirm_direct: true,
+        intent_summary:
+          'Operator confirmed retrying selected delivery item receipts for Action Call #42 from the Action Calls view.',
+      },
+    })
+
+    await vi.waitFor(() =>
+      expect(requested.filter((request) => request.url.endsWith('/actionCall.items/call'))).toHaveLength(4),
+    )
+    await vi.waitFor(() => expect(documentButton('Cancel delivery')?.disabled).toBe(false))
+    await clickDocumentButton('Cancel delivery')
+    const cancelConfirmation = wrapper.findComponent(UiConfirmDialog)
+    expect(cancelConfirmation.props('modelValue')).toBe(true)
+    expect(cancelConfirmation.text()).toContain('Cancel remaining delivery?')
+    await clickContainedButton(cancelConfirmation, 'Cancel remaining delivery')
+    await vi.waitFor(() =>
+      expect(requested.some((request) => request.url.endsWith('/actionCall.cancel/call'))).toBe(true),
+    )
+    await vi.waitFor(() => expect(document.body.textContent ?? '').toContain('cancelled'))
+  })
 })
 
 function catalogJson(url: string): Response | null {
@@ -264,10 +407,149 @@ function page(items: unknown[] = []) {
   return { items, next_cursor: null, total_estimate: items.length }
 }
 
+function durableJob(state: string) {
+  return {
+    id: 8,
+    project_id: 1,
+    action_call_id: 42,
+    credential_ref: 'cred_safe',
+    action_ref: 'communications.telegram.message.broadcast',
+    input_digest: 'digest-safe',
+    state,
+    due_at: '2026-01-02T00:00:00Z',
+    expires_at: '2026-01-03T00:00:00Z',
+    can_cancel: state !== 'cancelled',
+    pacing_json: { account_interval_seconds: 2, destination_interval_seconds: 1 },
+    item_count: 4,
+    pending_count: state === 'cancelled' ? 0 : 1,
+    leased_count: 0,
+    completed_count: 1,
+    failed_count: 0,
+    cancelled_count: state === 'cancelled' ? 2 : 0,
+    unknown_count: 1,
+    next_eligible_at: state === 'running' ? '2026-01-02T00:00:02Z' : null,
+  }
+}
+
+function durableItems(state: string) {
+  return {
+    action_call_id: 42,
+    job: durableJob(state),
+    count: 4,
+    items: [
+      {
+        id: 101,
+        project_id: 1,
+        job_id: 8,
+        ordinal: 0,
+        destination_ref: 'telegram-chat:100',
+        correlation_ref: 'delivery:101',
+        input_json: { message: { text: 'Hello' }, token: 'token-secret' },
+        state: 'succeeded',
+        next_eligible_at: '2026-01-02T00:00:00Z',
+        attempt_ref: 'attempt-1',
+        lease_ref: null,
+        lease_expires_at: null,
+        attempt_count: 1,
+        result_json: { message_ref: 'message:500' },
+        error: null,
+        progress_json: { provider_receipts: { '500': { status: 'sent' } } },
+        temporary_message_ref: 'message:temporary:500',
+        final_message_ref: 'message:500',
+        provider_sending_id: '101',
+        can_retry: false,
+      },
+      {
+        id: 102,
+        project_id: 1,
+        job_id: 8,
+        ordinal: 1,
+        destination_ref: 'telegram-chat:101',
+        correlation_ref: 'delivery:102',
+        input_json: { message: { text: 'Hello' } },
+        state: 'unknown-hold',
+        next_eligible_at: '2026-01-02T00:00:00Z',
+        attempt_ref: 'attempt-2',
+        lease_ref: null,
+        lease_expires_at: null,
+        attempt_count: 1,
+        result_json: null,
+        error: 'Timed out after native acceptance',
+        progress_json: { temporary_message_ids: [501] },
+        temporary_message_ref: 'message:temporary:501',
+        final_message_ref: null,
+        provider_sending_id: '102',
+        can_retry: false,
+      },
+      {
+        id: 103,
+        project_id: 1,
+        job_id: 8,
+        ordinal: 2,
+        destination_ref: 'telegram-chat:102',
+        correlation_ref: 'delivery:103',
+        input_json: { message: { text: 'Hello' } },
+        state: 'failed',
+        next_eligible_at: '2026-01-02T00:00:00Z',
+        attempt_ref: 'attempt-3',
+        lease_ref: null,
+        lease_expires_at: null,
+        attempt_count: 1,
+        result_json: { retry_safe: true },
+        error: 'Peer rejected before provider acceptance',
+        progress_json: null,
+        temporary_message_ref: null,
+        final_message_ref: null,
+        provider_sending_id: null,
+        can_retry: true,
+      },
+      {
+        id: 104,
+        project_id: 1,
+        job_id: 8,
+        ordinal: 3,
+        destination_ref: 'telegram-chat:103',
+        correlation_ref: 'delivery:104',
+        input_json: { message: { text: 'Hello' } },
+        state: 'pending',
+        next_eligible_at: '2026-01-02T00:00:00Z',
+        attempt_ref: null,
+        lease_ref: null,
+        lease_expires_at: null,
+        attempt_count: 0,
+        result_json: null,
+        error: null,
+        progress_json: null,
+        temporary_message_ref: null,
+        final_message_ref: null,
+        provider_sending_id: null,
+        can_retry: false,
+      },
+    ],
+  }
+}
+
 async function clickButton(wrapper: ReturnType<typeof mount>, label: string): Promise<void> {
+  await clickContainedButton(wrapper, label)
+}
+
+async function clickContainedButton(wrapper: VueWrapper, label: string): Promise<void> {
   const button = wrapper.findAll('button').find((candidate) => candidate.text().trim() === label)
   expect(button, `${label} button`).toBeDefined()
   await button?.trigger('click')
+}
+
+async function clickDocumentButton(label: string): Promise<void> {
+  const button = documentButton(label)
+  expect(button, `${label} button`).toBeDefined()
+  button?.click()
+  await nextTick()
+}
+
+function documentButton(label: string): HTMLButtonElement | undefined {
+  return [...document.querySelectorAll('button')].find(
+    (candidate) => candidate.textContent?.trim() === label,
+  ) as HTMLButtonElement | undefined
 }
 
 async function emitRowClick(

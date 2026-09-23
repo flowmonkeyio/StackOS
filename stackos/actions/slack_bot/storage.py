@@ -8,7 +8,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 from stackos.actions.connectors import ActionConnectorRequest
-from stackos.communications import communication_record_by_external_id
+from stackos.communications import (
+    communication_record_by_external_id,
+    communication_surface_binding_external_id,
+)
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.resources import ResourceRepository
 
@@ -482,11 +485,16 @@ def _upsert_channel(
         project_id=project_id,
         plugin_slug="communications",
         resource_key="communication-channel",
-        external_id=f"slack-channel:{profile_key}:{channel_id}",
+        external_id=communication_surface_binding_external_id(
+            provider_key="slack-bot",
+            profile_ref=f"communication-profile:{profile_key}",
+            surface_ref=_surface_ref(channel_id),
+        ),
         title=display,
         data_json={
             "provider_key": "slack-bot",
             "profile_key": profile_key,
+            "profile_ref": f"communication-profile:{profile_key}",
             "credential_ref": credential_ref,
             "team_id": team_id,
             "surface_ref": _surface_ref(channel_id),

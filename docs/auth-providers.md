@@ -48,6 +48,11 @@ Normal agents may use:
   Account repair action. Pass
   `include_unavailable=true` only for deliberate provider setup/catalog work.
 - `account.test`: run a daemon-side health probe and return a sanitized result.
+- `account.session.status`, `account.session.connect`, and
+  `account.session.disconnect`: inspect or explicitly control the managed TDLib
+  session for a Telegram Account attached to the current project. The Account
+  remains global, so these controls report when other attached projects share
+  the affected session.
 - `toolProfile.resolve`: resolve one attached provider/Account tuple for
   execution without dumping the broader Account catalog into context.
 
@@ -301,6 +306,116 @@ together:
   the old Account and remotely invalidate its provider credential when
   required.
 
+## Telegram Native Accounts
+
+Telegram uses provider `telegram` with `tdlib-bot-token` or
+`tdlib-user-session`. TDLib requires one application `api_id` and `api_hash`
+pair for both kinds of session. The first Telegram Account setup stores that
+pair once as encrypted daemon-held application configuration; later Account
+setups reuse it without asking for it again. Bot Accounts require their own
+BotFather token. Creating a bot Account
+authenticates the token once, saves its native authorization and identity, then
+closes TDLib. If this first check fails, the Account remains pending and its
+local setup can be retried. Creating a user Account continues through Telegram
+sign-in in the Accounts drawer. Neither
+setup path requests an ongoing session. Session control and project attachment
+are separate decisions.
+
+If the shared application ID or hash was entered incorrectly, detach and
+explicitly revoke every Telegram Account. Revoking the final Account clears the
+shared application setting; the next Telegram Account setup asks for a new pair.
+Revoking one of several Accounts leaves the shared application and other saved
+sessions intact.
+
+An agent for any project explicitly attached to the Account calls
+`account.session.connect` or `account.session.disconnect`. Connect sets the
+Account's durable desired-connected state and starts its one managed TDLib
+session. The daemon restores only Accounts whose desired-connected state remains
+set after restart. Disconnect clears that state, stops the native receiver, and
+holds future delivery until an agent explicitly connects again. StackOS never
+chooses either action, and there is no implicit ad-hoc or time-limited mode.
+
+A bot's later explicit session connection reuses its saved authorization. If
+Telegram invalidated it, TDLib can authenticate again from the daemon-held
+token. For a new user Account, the Accounts drawer shows Account details first.
+**Save and continue** persists the Account and starts local
+Telegram sign-in, then shows the phone, code, and optional two-step password or
+device-confirmation challenge returned by TDLib. Closing the drawer does not
+cancel sign-in; reopening the Account resumes the current safe challenge. The
+optional proxy is disclosed only when selected, with controls relevant to its
+type. Native Ready followed by a successful identity check saves authorization
+and closes TDLib with the session disconnected. The Account shows that sign-in
+is saved while its operational session remains disconnected. **Test** temporarily
+opens the saved TDLib database, waits for Telegram authorization, fetches the
+current identity, records the result, and closes again without changing the
+agent's connect/disconnect choice. An active session is reused for the same
+check. An agent can invoke `account.test` for an Account attached to its
+project; the global Accounts button remains a local setup control. If Telegram
+invalidated the saved authorization, Test reports the need to sign in again
+instead of treating an offline session as an incomplete setup.
+From global Accounts, attach the Account to a project before connecting it;
+from that project's Connections page, an agent explicitly connects it.
+Disconnecting later preserves the saved sign-in, so a normal reconnect does
+not ask for a phone, code, or password unless Telegram has invalidated the
+authorization. A stale challenge generation cannot authorize or cancel a
+replacement session.
+
+If an agent connected an unsigned user Account first, its status is
+`authorization_required` with the connection request still set. The local
+authorization status exposes the current phone, code, password, or QR challenge
+so the operator completes it directly; StackOS preserves the agent's explicit
+connection decision. Disconnect only when the agent intends to cancel it.
+
+Each global Account owns one TDLib session and encrypted database, shared by
+its explicit project attachments. Project profiles own communication policy;
+they do not own tokens, transport connections, or proxy settings. Account
+identity is obtained from Telegram, and a second active Account for the same
+native identity is rejected.
+
+TDLib persists authorization in the Account-owned encrypted native database
+under the StackOS data directory, not in a portable session string. StackOS
+stores the database encryption key with daemon-held Account secrets and keeps
+only safe connection state in its relational database; it does not retain
+sign-in codes or passwords. An in-place
+upgrade preserves the native database. The current minimal `stackos backup`
+archive excludes it, so restoring that archive on another machine requires a
+user Account to sign in to Telegram again; a bot can authenticate from its
+saved token.
+
+Optional SOCKS5, HTTP or MTProto proxy settings belong to that Account. Set
+`proxy_enabled`, `proxy_type`, `proxy_host`, and `proxy_port`; SOCKS5/HTTP
+can also use encrypted `proxy_username` and `proxy_password`. HTTP supports
+`proxy_http_only`; MTProto requires encrypted `proxy_secret`. Omitted saved
+secrets are preserved during edits, while explicitly disabling the proxy
+removes its configuration. The daemon applies and verifies the saved proxy
+while TDLib networking is paused, then resumes networking. Failure leaves it
+paused; it never silently connects directly.
+
+While a Telegram Account is connected or marked for restart restoration, only a
+display-name edit is allowed. To change its TDLib, API, bot-token, or proxy
+settings, explicitly disconnect it, save the change, and explicitly connect it
+again. Changing the application identity or bot token invalidates the former
+saved authorization and identity, so complete local sign-in or bot verification
+before reconnecting. Changing only the proxy preserves saved authorization;
+**Test** probes it over the new proxy while the Account stays disconnected.
+StackOS never reconnects it automatically after a settings edit.
+
+Configuration changes quiesce future delivery and drain active attempts before
+the next explicit connection. They record reconnect-needed state but never
+start a session themselves. Disconnect, reconnect, cancellation, and local
+revocation fence old authorization generations. Native challenge answers and
+device links stay on the local admin surface:
+`account.authorization.status/submit/cancel` are not MCP or CLI operations.
+Agents receive only safe Account and session status, refs, affected-project
+facts, and next actions.
+
+The TDLib runtime must be staged by the desktop payload or the documented
+source setup. Missing or invalid runtime assets return repair guidance.
+See the [communications contract](integration-contracts/communications.md) for
+messaging, permissions, pacing, and receipt recovery. The former Bot API
+provider and Telegram webhook flow are retired; upgrade disables their old
+bindings without translating them into native Accounts.
+
 ## OAuth Providers
 
 OAuth uses one daemon-owned lifecycle plus a small trusted contract for each
@@ -507,15 +622,20 @@ The dedicated `/accounts` page owns Account lifecycle:
 The project `/projects/{project_id}/connections` page only lists attached
 Accounts, attaches an existing Account, detaches an unused Account, and opens
 the same Add Account panel when a new one is needed. A newly created Account is
-attached and selected automatically. Slack and Telegram communication profiles,
-webhook routes, and ingress endpoints remain on this project surface.
-Because each Slack app and Telegram bot has one provider-owned inbound endpoint,
-one Account may have only one inbound-enabled communication profile. New and
-legacy profiles default to inbound enabled. Set the Slack or Telegram facet's
-`ingress_enabled` to `false` when reusing the Account in another project for
-outbound messages only; outbound-only profiles are omitted from ingress routes
-and provider webhook sync. A second inbound profile must use a different Account
-or explicitly release the first profile's inbound ownership.
+attached and selected automatically. This is also where an operator can inspect
+and explicitly connect or disconnect an attached Telegram Account; global
+Accounts inventory links to an attached project's Connections page for that
+control. Slack communication profiles, webhook routes, and ingress endpoints
+remain on this project surface. Telegram receives inbound updates only through
+its attached Account's managed TDLib session; it has no webhook endpoint,
+provider webhook sync, or legacy inbound-enabled profile setting.
+Because each Slack app has one provider-owned inbound endpoint, one Slack
+Account may have only one inbound-enabled communication profile. New and legacy
+Slack profiles default to inbound enabled. Set a Slack facet's `ingress_enabled`
+to `false` when reusing the Account in another project for outbound messages
+only; outbound-only profiles are omitted from ingress routes and provider
+webhook sync. A second inbound Slack profile must use a different Account or
+explicitly release the first profile's inbound ownership.
 
 `GET /api/v1/auth/accounts` is the global Accounts read model.
 `GET /api/v1/projects/{project_id}/connections/accounts` is the project

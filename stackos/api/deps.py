@@ -48,7 +48,7 @@ def get_engine(request: Request) -> Engine:
     return engine
 
 
-def get_session(engine: Engine = Depends(get_engine)) -> Iterator[Session]:
+def get_session(request: Request, engine: Engine = Depends(get_engine)) -> Iterator[Session]:
     """Yield a per-request SQLModel ``Session``.
 
     Each request opens its own session bound to the shared engine. The
@@ -58,6 +58,7 @@ def get_session(engine: Engine = Depends(get_engine)) -> Iterator[Session]:
     semantics).
     """
     with Session(engine) as session:
+        session.info["operation_services"] = getattr(request.app.state, "operation_services", {})
         yield session
 
 

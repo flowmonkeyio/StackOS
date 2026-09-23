@@ -83,6 +83,6 @@
     }
   ],
   "integrations": [
-    "Telegram Bot"
+    "Telegram"
   ]
 }

@@ -6,7 +6,6 @@ import ConnectionsView from './ConnectionsView.vue'
 import {
   authProvider,
   authConnection,
-  telegramBotMethod,
   slackBotMethod,
   catalogJson,
   clickButton,
@@ -220,9 +219,7 @@ describe('ConnectionsView ingress and topology', () => {
         return json({
           project_id: null,
           provider_key: null,
-          providers: [
-            authProvider('telegram-bot', 'Telegram Bot', 'bot-token', telegramBotMethod()),
-          ],
+          providers: [authProvider('slack-bot', 'Slack Bot', 'bot-token', slackBotMethod())],
           accounts: [],
         })
       }
@@ -280,9 +277,7 @@ describe('ConnectionsView ingress and topology', () => {
         return json({
           project_id: null,
           provider_key: null,
-          providers: [
-            authProvider('telegram-bot', 'Telegram Bot', 'bot-token', telegramBotMethod()),
-          ],
+          providers: [authProvider('slack-bot', 'Slack Bot', 'bot-token', slackBotMethod())],
           accounts: [],
         })
       }
@@ -331,7 +326,7 @@ describe('ConnectionsView ingress and topology', () => {
     expect(wrapper.text()).not.toContain('Connectivity configured.')
   })
 
-  it('applies provider webhook syncs and reports mixed provider results truthfully', async () => {
+  it('refreshes manual provider routes without attempting a provider webhook write', async () => {
     const posted: Array<{ url: string; body: Record<string, unknown> }> = []
     globalThis.fetch = vi.fn(async (input, init) => {
       const url = String(input)
@@ -343,9 +338,7 @@ describe('ConnectionsView ingress and topology', () => {
         return json({
           project_id: null,
           provider_key: null,
-          providers: [
-            authProvider('telegram-bot', 'Telegram Bot', 'bot-token', telegramBotMethod()),
-          ],
+          providers: [authProvider('slack-bot', 'Slack Bot', 'bot-token', slackBotMethod())],
           accounts: [],
         })
       }
@@ -375,12 +368,6 @@ describe('ConnectionsView ingress and topology', () => {
           },
           routes: [
             {
-              provider_key: 'telegram-bot',
-              profile_key: 'telegram-bot',
-              ingress_url: 'https://stackos.example.com/api/v1/ingress/telegram/1/telegram-bot',
-              remote_status: 'provider_webhook_not_checked',
-            },
-            {
               provider_key: 'slack-bot',
               profile_key: 'slack-bot',
               ingress_url: 'https://stackos.example.com/api/v1/ingress/slack/1/slack-bot',
@@ -402,18 +389,13 @@ describe('ConnectionsView ingress and topology', () => {
             routes: [],
             provider_results: [
               {
-                provider_key: 'telegram-bot',
-                profile_key: 'telegram-bot',
-                status: 'remote_webhook_updated',
-                webhook_url: 'https://stackos.example.com/api/v1/ingress/telegram/1/telegram-bot',
-              },
-              {
                 provider_key: 'slack-bot',
                 profile_key: 'slack-bot',
                 status: 'manual_provider_update_required',
+                request_url: 'https://stackos.example.com/api/v1/ingress/slack/1/slack-bot',
               },
             ],
-            updated_profile_refs: ['communication-profile:telegram-bot'],
+            updated_profile_refs: ['communication-profile:slack-bot'],
           },
           run_id: null,
           project_id: 1,
@@ -437,21 +419,20 @@ describe('ConnectionsView ingress and topology', () => {
     )
     await vi.waitFor(() =>
       expect(
-        wrapper.findAll('button').some((button) => button.text().trim() === 'Sync to providers'),
+        wrapper.findAll('button').some((button) => button.text().trim() === 'Refresh routes'),
       ).toBe(true),
     )
-    await clickButton(wrapper, 'Sync to providers')
+    await clickButton(wrapper, 'Refresh routes')
 
-    await vi.waitFor(() => expect(wrapper.text()).toContain('Synced 1 provider webhook.'))
-    expect(wrapper.text()).toContain('Slack (slack-bot) needs manual webhook update.')
-    expect(wrapper.text()).toContain('Webhook ready')
+    await vi.waitFor(() =>
+      expect(wrapper.text()).toContain('Slack (slack-bot) needs manual webhook update.'),
+    )
     expect(wrapper.text()).toContain('Slack requires manual webhook update.')
     expect(wrapper.text()).toContain('Copy webhook URL')
     const sync = posted.find((call) => call.url.endsWith('/operations/ingressEndpoint.sync/call'))
     expect(sync?.body).toMatchObject({
       arguments: {
-        apply_provider_webhooks: true,
-        dry_run_provider_webhooks: false,
+        project_id: 1,
       },
     })
     await clickButton(wrapper, 'I’ve updated Slack')

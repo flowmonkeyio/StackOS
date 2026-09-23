@@ -19,6 +19,11 @@ from stackos.browser.runtime import (
 from stackos.config import Settings, get_settings
 from stackos.install import _codex_mcp_line_is_bridge as _install_codex_mcp_line_is_bridge
 from stackos.install import verify_gstack_runtime
+from stackos.integrations.telegram_tdlib.runtime import (
+    TelegramTdlibRuntimeError,
+    tdlib_runtime_root,
+    verify_tdlib_runtime,
+)
 
 from . import daemon_processes, launchd
 from .app import _exit, app
@@ -38,7 +43,8 @@ def _check_credentials_decrypt(
 ) -> tuple[bool, list[dict[str, object]]]:
     """Return ``(all_ok, [issues])`` for every daemon-encrypted row.
 
-    Issues identify either a provider credential or payload-secret row plus its
+    Issues identify a provider credential, payload-secret, or shared Telegram
+    application row plus its
     kind, project, and safe error. Returns ``(True, [])`` when there are zero
     rows or when the DB does not exist yet.
     """
@@ -47,12 +53,21 @@ def _check_credentials_decrypt(
     try:
         from sqlmodel import Session, select
 
+        from stackos.auth_providers.repository.telegram_application import (
+            TelegramApplicationRepository,
+        )
         from stackos.crypto.aes_gcm import (
             CryptoError,
             configure_seed_path,
         )
         from stackos.db.connection import make_engine
-        from stackos.db.models import Credential, IntegrationCredential, PayloadSecret
+        from stackos.db.models import (
+            Credential,
+            IntegrationCredential,
+            PayloadSecret,
+            TelegramApplication,
+        )
+        from stackos.repositories.base import ConflictError
         from stackos.repositories.projects import IntegrationCredentialRepository
         from stackos.repositories.secrets import PayloadSecretRepository
 
@@ -102,6 +117,16 @@ def _check_credentials_decrypt(
                                 "payload_secret_id": payload_row.id,
                                 "kind": f"payload-secret:{payload_row.value_type}",
                                 "project_id": payload_row.project_id,
+                                "error": str(exc.detail),
+                            }
+                        )
+                if session.get(TelegramApplication, 1) is not None:
+                    try:
+                        TelegramApplicationRepository(session).get()
+                    except (CryptoError, ConflictError) as exc:
+                        issues.append(
+                            {
+                                "kind": "telegram-application",
                                 "error": str(exc.detail),
                             }
                         )
@@ -160,6 +185,29 @@ def _check_browser_runtime() -> tuple[bool, dict[str, object]]:
             if ok
             else f"{runtime_reason} Run `stackos install` or repair the packaged StackOS app."
         ),
+    }
+
+
+def _check_telegram_tdlib_runtime(settings: Settings) -> tuple[bool, dict[str, object]]:
+    """Return optional managed TDLib readiness without native paths or secrets."""
+    try:
+        runtime = verify_tdlib_runtime(runtime_root=tdlib_runtime_root(settings.data_dir))
+    except TelegramTdlibRuntimeError as exc:
+        return False, {
+            "provider": "telegram",
+            "runtime": "tdlib",
+            "library_verified": False,
+            "tdlib_version": None,
+            "library_sha256": None,
+            "repair": str(exc),
+        }
+    return True, {
+        "provider": "telegram",
+        "runtime": "tdlib",
+        "library_verified": True,
+        "tdlib_version": runtime.tdlib_version,
+        "library_sha256": runtime.library_sha256,
+        "repair": None,
     }
 
 
@@ -334,8 +382,8 @@ def _check_stackos_plugin_skill_sync(home: Path) -> tuple[bool, dict[str, object
         expected_hash,
     )
 
-    cache_root = home / ".codex" / "plugins" / "cache" / "local-stackos" / "stackos"
     caches: list[dict[str, object]] = []
+    cache_root = home / ".codex" / "plugins" / "cache" / "local-stackos" / "stackos"
     if cache_root.is_dir():
         for version_dir in sorted(cache_root.iterdir()):
             if not (version_dir / ".codex-plugin" / "plugin.json").is_file():
@@ -623,6 +671,7 @@ def doctor(
     alembic_ok, alembic_version = _check_alembic_at_head(settings, db_present)
     scheduler_ok, scheduler_job_count = _check_scheduler_jobs(settings)
     browser_ok, browser_info = _check_browser_runtime()
+    telegram_tdlib_ok, telegram_tdlib_info = _check_telegram_tdlib_runtime(settings)
     home = _doctor_home()
     browser_launcher_ok, browser_launcher_info = _check_browser_launcher(home, settings)
     install_checks, install_info = _check_installed_assets(home)
@@ -645,6 +694,7 @@ def doctor(
         "alembic_at_head": alembic_ok,
         "scheduler_jobs_healthy": scheduler_ok,
         "browser_runtime_ready": browser_ok,
+        "telegram_tdlib_runtime_ready": telegram_tdlib_ok,
         "browser_launcher_ready": browser_launcher_ok,
         "codex_mcp_registered": codex_mcp_ok,
         "claude_mcp_registered": claude_mcp_ok,
@@ -672,6 +722,7 @@ def doctor(
         "alembic_version": alembic_version,
         "scheduler_job_count": scheduler_job_count,
         "browser_runtime": browser_info,
+        "telegram_tdlib_runtime": telegram_tdlib_info,
         "browser_launcher": browser_launcher_info,
         "home_dir": str(home),
         "install_checks": install_info,
@@ -732,6 +783,10 @@ def doctor(
         if not browser_ok:
             repair = browser_info.get("repair")
             typer.echo(f"  note: browser runtime is not ready — {repair}.")
+        if not telegram_tdlib_ok:
+            typer.echo(
+                f"  note: Telegram TDLib runtime is not ready — {telegram_tdlib_info.get('repair')}"
+            )
         if not browser_launcher_ok:
             typer.echo(
                 "  note: global browser launcher is not ready — "

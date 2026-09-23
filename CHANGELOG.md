@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.1.29 - 2026-09-23
+
+- Added scoped Stripe customer and invoice corrections, customer tax IDs and
+  invoice custom fields, with independent current-state verification.
+- Added workflow contract drift diagnostics and MCP recording of existing
+  owner approvals. Finance workflows validate external presentation and manual
+  delivery evidence while preserving run history and existing invoice identities.
+- Added finalized invoice PDF downloads with redirect support, private staging,
+  hash verification and explicit cleanup after external evidence custody.
+- Replaced Telegram Bot API transport with TDLib bot and user sessions, shared
+  application credentials and explicit account connection controls. The cutover
+  preserves history and requires explicit setup for replacement bindings.
+- Added durable action jobs, delivery pacing and receipt-based recovery, plus
+  communication surfaces bound to their exact profiles and accounts.
+
 ## 2.1.28 - 2026-09-21
 
 - Replaced browser command wrappers with native gstack sessions and a packaged

@@ -16,21 +16,15 @@ import {
 import StatusBadge from '@/components/StatusBadge.vue'
 
 import {
-  commandSummary,
   communicationProfileTitle,
   profileAudienceMeta,
   profilePrimaryProvider,
   providerLabel,
-  telegramCommands,
-  telegramProfileCredentialRef,
-  telegramProfileIngressMode,
-  telegramProfileUsername,
 } from './formatters'
 import type { CommunicationProfile, ConnectionRow, MessageTone } from './types'
 
 const props = defineProps<{
   bots: CommunicationProfile[]
-  telegramConnections: ConnectionRow[]
   slackConnections: ConnectionRow[]
   loading: boolean
   message: { tone: MessageTone; text: string } | null
@@ -44,12 +38,6 @@ defineEmits<{
 
 const addBotItems = computed(() => [
   {
-    key: 'telegram-bot',
-    label: 'Telegram bot',
-    icon: 'chat',
-    disabled: props.telegramConnections.length === 0,
-  },
-  {
     key: 'slack-bot',
     label: 'Slack bot',
     icon: 'chat',
@@ -58,30 +46,16 @@ const addBotItems = computed(() => [
 ])
 
 const hasMessagingConnection = computed(
-  () => props.telegramConnections.length > 0 || props.slackConnections.length > 0,
+  () => props.slackConnections.length > 0,
 )
 
-function isTelegram(bot: CommunicationProfile): boolean {
-  return Boolean(bot.provider_facets?.['telegram-bot'])
-}
-
-/** Bots the browser UI can edit: Telegram or Slack profiles. */
+/** The dedicated editor is retained only for Slack's signed HTTP ingress profile. */
 function isEditable(bot: CommunicationProfile): boolean {
-  return isTelegram(bot) || Boolean(bot.provider_facets?.['slack-bot'])
-}
-
-function telegramAccountName(bot: CommunicationProfile): string {
-  const credentialRef = telegramProfileCredentialRef(bot)
-  return (
-    props.telegramConnections.find((account) => account.credential_ref === credentialRef)
-      ?.display_name ?? 'Account unavailable'
-  )
+  return Boolean(bot.provider_facets?.['slack-bot'])
 }
 
 function botProviderLabel(bot: CommunicationProfile): string {
-  // A bot can carry several provider facets (e.g. Telegram + Slack). The
-  // editable surface today is Telegram, so prefer it for the headline label.
-  return providerLabel(isTelegram(bot) ? 'telegram-bot' : profilePrimaryProvider(bot))
+  return providerLabel(profilePrimaryProvider(bot))
 }
 
 function userCount(bot: CommunicationProfile): number {
@@ -93,7 +67,7 @@ function userCount(bot: CommunicationProfile): number {
   <section class="space-y-3" aria-label="Bots">
     <UiSectionHeader
       title="Bots"
-      description="A bot is a messaging identity for your agents — who can trigger it, what it can do, and how it replies. Secrets stay in the linked connection."
+      description="A messaging identity carries agent guidance, access rules, and reply policy. Telegram bot and user sessions are Account-bound TDLib connections managed under Services."
       as="h3"
     >
       <template #actions>
@@ -123,7 +97,8 @@ function userCount(bot: CommunicationProfile): number {
     </UiSectionHeader>
 
     <UiCallout v-if="!hasMessagingConnection && bots.length === 0" tone="info">
-      Connect a Slack or Telegram bot first, then give it an identity and access rules here.
+      Connect a Slack bot first, then give it an identity and access rules here. Telegram bot and
+      user sessions are configured as Accounts under Services.
       <template #actions>
         <UiButton
           size="sm"
@@ -132,14 +107,6 @@ function userCount(bot: CommunicationProfile): number {
           @click="$emit('add-connection', 'slack-bot')"
         >
           Connect Slack
-        </UiButton>
-        <UiButton
-          size="sm"
-          variant="secondary"
-          icon-left="plus"
-          @click="$emit('add-connection', 'telegram-bot')"
-        >
-          Connect Telegram
         </UiButton>
       </template>
     </UiCallout>
@@ -178,18 +145,9 @@ function userCount(bot: CommunicationProfile): number {
                     {{ botProviderLabel(bot) }}
                   </UiBadge>
                   <StatusBadge domain="step" :status="bot.enabled ? 'enabled' : 'disabled'" />
-                  <UiBadge v-if="isTelegram(bot)" variant="outline">
-                    {{ telegramProfileIngressMode(bot) }}
-                  </UiBadge>
                 </div>
                 <p class="mt-0.5 truncate font-mono text-2xs text-fg-subtle">
                   {{ bot.key }}
-                  <template v-if="isTelegram(bot)">
-                    · {{ telegramAccountName(bot) }}
-                    <template v-if="telegramProfileUsername(bot)">
-                      · @{{ telegramProfileUsername(bot) }}
-                    </template>
-                  </template>
                 </p>
               </div>
             </div>
@@ -207,12 +165,6 @@ function userCount(bot: CommunicationProfile): number {
                 <dt class="text-fg-subtle">Users</dt>
                 <dd class="mt-0.5 font-medium tabular-nums text-fg-default">
                   {{ userCount(bot) }}
-                </dd>
-              </div>
-              <div v-if="isTelegram(bot)" class="min-w-0 lg:max-w-48">
-                <dt class="text-fg-subtle">Commands</dt>
-                <dd class="mt-0.5 truncate font-mono text-2xs text-fg-default">
-                  {{ commandSummary(telegramCommands(bot)) }}
                 </dd>
               </div>
             </dl>

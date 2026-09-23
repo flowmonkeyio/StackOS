@@ -15,12 +15,177 @@ import {
 
 const ORIG_FETCH = globalThis.fetch
 
+const telegramUserMethod = [
+  {
+    key: 'tdlib-user-session',
+    label: 'User account',
+    auth_type: 'tdlib-user-session',
+    description: '',
+    interactive: false,
+    payload_format: 'json',
+    payload_field: null,
+    fields: [],
+    config: { native_authorization: true, account_kind: 'user' },
+  },
+]
+
 describe('ConnectionsView reusable Accounts', () => {
   beforeEach(() => setActivePinia(createPinia()))
 
   afterEach(() => {
     globalThis.fetch = ORIG_FETCH
     vi.restoreAllMocks()
+  })
+
+  it('shows a saved Telegram authorization as disconnected without a setup-warning row', async () => {
+    const provider = authProvider('telegram', 'Telegram', 'tdlib', telegramUserMethod)
+    const account = authConnection({
+      revokedAt: null,
+      status: 'disconnected',
+      setupRequired: false,
+      providerKey: 'telegram',
+      credentialRef: 'cred_project_telegram',
+      authType: 'tdlib-user-session',
+      authMethodKey: 'tdlib-user-session',
+      label: 'Telegram - Default',
+      account: { provider_account_id: '123456', display_name: '@operator' },
+    })
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      const catalogResponse = catalogJson(url)
+      if (catalogResponse) return catalogResponse
+      if (url === '/api/v1/auth/accounts' || url === '/api/v1/projects/1/connections/accounts') {
+        return json({ project_id: 1, provider_key: null, providers: [provider], accounts: [account] })
+      }
+      return json({})
+    }) as typeof fetch
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/connections', component: ConnectionsView }],
+    })
+    await router.push('/projects/1/connections?section=services')
+    await router.isReady()
+    const wrapper = mountConnections(router)
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Telegram - Default'))
+    const row = wrapper.get('ul[aria-label="Telegram connections"] > li')
+    expect(row.classes()).not.toContain('bg-warning-subtle')
+    expect(row.text()).toContain('Disconnected')
+    expect(row.text()).not.toContain('Verification failed')
+  })
+
+  it('uses the same Telegram setup drawer from a project and resumes its challenge without connecting the session', async () => {
+    const provider = authProvider('telegram', 'Telegram', 'tdlib', telegramUserMethod)
+    const account = authConnection({
+      revokedAt: null,
+      status: 'pending',
+      providerKey: 'telegram',
+      credentialRef: 'cred_project_telegram',
+      authType: 'tdlib-user-session',
+      authMethodKey: 'tdlib-user-session',
+      label: 'Telegram - Default',
+    })
+    const writes: Array<{ url: string; body: Record<string, unknown> | null }> = []
+    let created = false
+    const authorization = {
+      credential_ref: 'cred_project_telegram',
+      provider_key: 'telegram',
+      status: 'challenge',
+      generation: 4,
+      challenge: {
+        generation: 4,
+        kind: 'phone_number',
+        fields: ['phone_number'],
+        metadata: {},
+      },
+    }
+
+    globalThis.fetch = vi.fn(async (input, init) => {
+      const url = String(input)
+      const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : null
+      if (init?.method === 'POST') writes.push({ url, body })
+      const catalogResponse = catalogJson(url)
+      if (catalogResponse) return catalogResponse
+      if (url === '/api/v1/operations/account.application.status/call') {
+        return json({ configured: true })
+      }
+      if (url === '/api/v1/auth/accounts' || url === '/api/v1/projects/1/connections/accounts') {
+        return json({
+          project_id: url.includes('/projects/1/') ? 1 : null,
+          provider_key: null,
+          providers: [provider],
+          accounts: created ? [account] : [],
+        })
+      }
+      if (url === '/api/v1/auth/accounts/telegram') {
+        created = true
+        return json({ data: account }, 201)
+      }
+      if (url === '/api/v1/auth/accounts/telegram/start') return json({ data: authorization })
+      if (url === '/api/v1/auth/accounts/cred_project_telegram/authorization') {
+        return json(authorization)
+      }
+      if (url === '/api/v1/auth/accounts/cred_project_telegram') {
+        return json({ account, values: {}, secret_present: {} })
+      }
+      if (url === '/api/v1/projects/1/connections/accounts/cred_project_telegram/session') {
+        return json({
+          credential_ref: 'cred_project_telegram',
+          provider_key: 'telegram',
+          status: 'disconnected',
+          connected: false,
+          desired_connected: false,
+          affects_other_projects: false,
+          next_action: null,
+        })
+      }
+      return json({})
+    }) as typeof fetch
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/connections', component: ConnectionsView }],
+    })
+    await router.push('/projects/1/connections')
+    await router.isReady()
+    const wrapper = mountConnections(router)
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected'))
+    await clickButton(wrapper, 'Add connection')
+    await clickButton(wrapper, 'Create another Account')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Account details'))
+    await vi.waitFor(() => expect(wrapper.find('button[form="account-credential-form"]').attributes('disabled')).toBeUndefined())
+    expect(wrapper.find('#connection-field-api_id').exists()).toBe(false)
+    expect(wrapper.find('#connection-field-api_hash').exists()).toBe(false)
+    await clickButton(wrapper, 'Save and continue')
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Enter your phone number'))
+    expect(writes.filter(({ url }) => url === '/api/v1/auth/accounts/telegram')).toEqual([
+      {
+        url: '/api/v1/auth/accounts/telegram',
+        body: {
+          auth_method_key: 'tdlib-user-session',
+          display_name: 'Telegram - Default',
+          fields: {},
+          attach_project_id: 1,
+        },
+      },
+    ])
+    expect(writes.find(({ url }) => url === '/api/v1/auth/accounts/telegram/start')?.body)
+      .toMatchObject({
+        credential_ref: 'cred_project_telegram',
+        authorization_mode: 'phone',
+        attach_project_id: 1,
+        return_surface: 'project-connections',
+      })
+    expect(writes.some(({ url }) => url.endsWith('/session/connect'))).toBe(false)
+
+    await clickButton(wrapper, 'Close')
+    await clickButton(wrapper, 'Manage Account')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Enter your phone number'))
+    expect(writes.filter(({ url }) => url === '/api/v1/auth/accounts/telegram')).toHaveLength(1)
+    expect(writes.filter(({ url }) => url === '/api/v1/auth/accounts/telegram/start')).toHaveLength(1)
+    expect(writes.some(({ url }) => url.endsWith('/session/connect'))).toBe(false)
   })
 
   it('attaches a second Account from the same provider without duplicating the first', async () => {

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import time
 from contextlib import suppress
@@ -27,7 +28,7 @@ from stackos.actions.manifest import ExecutableActionManifest
 from stackos.artifacts import redact_secret_text
 from stackos.auth_providers import AuthRepository, ResolvedCredential
 from stackos.config import Settings
-from stackos.db.models import ActionCallStatus
+from stackos.db.models import ActionCall, ActionCallStatus
 from stackos.repositories.base import ConflictError, Envelope, ValidationError
 from stackos.repositories.projects import IntegrationBudgetRepository
 from stackos.repositories.secrets import PayloadSecretRepository
@@ -38,11 +39,13 @@ from stackos.secret_refs import (
 )
 
 from .background import BACKGROUND_ACTION_TASKS
+from .durable import durable_action_schedule_snapshot
 from .schema import ActionExecutionOut
-from .utils import _redact_for_audit
+from .utils import _redact_for_audit, utcnow
 from .validation import RuntimeActionContext
 
 ACTION_OUTPUT_SCHEMA_VERSION = ACTION_OUTPUT_SCHEMA_REF
+MAX_TRANSIENT_OUTPUT_BYTES = 262_144
 
 
 @dataclass(frozen=True)
@@ -79,6 +82,8 @@ class ActionExecutionMixin:
         credential_ref: str | None = None,
         output_policy_json: dict[str, Any] | None = None,
         default_external_file_output: bool = False,
+        allow_transient_response: bool = False,
+        transient_replay_requested: bool = False,
         derived_workflow_idempotency: bool = False,
         run_id: int | None = None,
         run_plan_id: int | None = None,
@@ -86,6 +91,11 @@ class ActionExecutionMixin:
         idempotency_key: str | None = None,
         dry_run: bool = False,
         metadata_json: dict[str, Any] | None = None,
+        durable_items: list[dict[str, Any]] | None = None,
+        durable_due_at: datetime | None = None,
+        durable_expires_at: datetime | None = None,
+        durable_account_interval_seconds: float | None = None,
+        durable_destination_interval_seconds: float | None = None,
     ) -> Envelope[ActionExecutionOut]:
         self._require_project(project_id)
         payload, resolved_ref = self._normalize_payload_and_ref(
@@ -145,6 +155,20 @@ class ActionExecutionMixin:
         )
         validation_issues = _dedupe_validation_issues([*runtime_context.issues, *validation.issues])
         if validation_issues:
+            credential_repair_operation = manifest.config_json.get("credential_repair_operation")
+            repair = (
+                {
+                    "status": "not_connected",
+                    "credential_ref": resolved_ref,
+                    "next_action": credential_repair_operation,
+                    "provider_executed": False,
+                    "retry_safe": True,
+                }
+                if isinstance(credential_repair_operation, str)
+                and credential_repair_operation
+                and any(issue.code == "credential_not_connected" for issue in validation_issues)
+                else {}
+            )
             raise ValidationError(
                 "action payload is invalid",
                 data={
@@ -153,6 +177,7 @@ class ActionExecutionMixin:
                     "reasons": availability.reasons,
                     "exposure": exposure.model_dump(mode="json"),
                     "issues": [issue.model_dump(mode="json") for issue in validation_issues],
+                    **repair,
                 },
             )
         effective_output_policy = _effective_output_policy(
@@ -160,7 +185,9 @@ class ActionExecutionMixin:
             runtime_context=runtime_context,
             default_external_file_output=default_external_file_output,
         )
-        if derived_workflow_idempotency and manifest.risk_level == "read":
+        if derived_workflow_idempotency and (
+            manifest.risk_level == "read" or effective_output_policy["mode"] == "transient"
+        ):
             if run_plan_id is None or run_plan_step_id is None:
                 raise ValidationError(
                     "derived workflow idempotency requires an active run-plan step",
@@ -206,6 +233,116 @@ class ActionExecutionMixin:
             run_plan_step_id=run_plan_step_id,
         )
         background_execution = manifest.execution_mode == "background" and not dry_run
+        durable_capable = durable_items is not None or bool(
+            manifest.config_json.get("durable_delivery")
+        )
+        durable_execution = durable_capable and not dry_run
+        if effective_output_policy["mode"] == "transient":
+            if not allow_transient_response:
+                raise ValidationError(
+                    "transient output requires a raw foreground action response",
+                    data={"action_ref": manifest.action_ref, "side_effect": "not_started"},
+                )
+            if (
+                dry_run
+                or manifest.risk_level != "read"
+                or manifest.provider_key is None
+                or background_execution
+                or durable_capable
+                or idempotency_key is not None
+                or transient_replay_requested
+            ):
+                raise ValidationError(
+                    "transient output supports only non-replayable foreground provider reads",
+                    data={"action_ref": manifest.action_ref, "side_effect": "not_started"},
+                )
+        durable_options_requested = any(
+            value is not None
+            for value in (
+                durable_due_at,
+                durable_expires_at,
+                durable_account_interval_seconds,
+                durable_destination_interval_seconds,
+            )
+        )
+        if durable_options_requested and not durable_capable:
+            raise ValidationError(
+                "due_at, expires_at, and pacing are only available for durable background actions",
+                data={"action_ref": manifest.action_ref},
+            )
+        if durable_execution and not background_execution:
+            raise ValidationError(
+                "durable action dispatch requires a background action manifest",
+                data={"action_ref": manifest.action_ref},
+            )
+        durable_pacing = (
+            _effective_durable_pacing(
+                manifest=manifest,
+                auth_method_key=(
+                    self._credential_for_project(
+                        project_id=project_id,
+                        credential_ref=resolved_ref,
+                    ).auth_method_key
+                    if durable_execution
+                    and "durable_pacing_by_auth_method_json" in manifest.config_json
+                    and resolved_ref is not None
+                    else None
+                ),
+                account_interval_seconds=durable_account_interval_seconds,
+                destination_interval_seconds=durable_destination_interval_seconds,
+            )
+            if durable_capable
+            else None
+        )
+        durable_schedule = (
+            durable_action_schedule_snapshot(
+                due_at=durable_due_at,
+                expires_at=durable_expires_at,
+                pacing_json=durable_pacing,
+            )
+            if durable_pacing is not None
+            else None
+        )
+        if durable_execution:
+            replay = self._background_replay(
+                project_id=project_id,
+                manifest=manifest,
+                credential_ref=resolved_ref,
+                idempotency_key=idempotency_key,
+                request_json=payload,
+                provider_context_json=provider_context_for_audit,
+                metadata_json=metadata_json,
+                durable_schedule_json=durable_schedule,
+            )
+            if replay is not None:
+                return Envelope(
+                    data=ActionExecutionOut(
+                        action_call=self._call_audit_out(replay),
+                        output_json=replay.response_json or {},
+                        metadata_json=replay.metadata_json,
+                        cost_cents=replay.cost_cents,
+                        replayed=True,
+                        credential_ref=replay.credential_ref,
+                        poll_operation=(
+                            "actionCall.get" if replay.status == ActionCallStatus.RUNNING else None
+                        ),
+                        poll_arguments=(
+                            {"action_call_id": replay.id}
+                            if replay.status == ActionCallStatus.RUNNING
+                            else None
+                        ),
+                        next_poll_after_ms=(
+                            500 if replay.status == ActionCallStatus.RUNNING else None
+                        ),
+                    ),
+                    project_id=project_id,
+                    run_id=run_id,
+                )
+        if durable_capable:
+            self.validate_durable_action_schedule(
+                due_at=durable_due_at,
+                expires_at=durable_expires_at,
+            )
         if idempotency_key is not None and not background_execution:
             replay = self._idempotency_replay(
                 project_id=project_id,
@@ -283,7 +420,6 @@ class ActionExecutionMixin:
             idempotency_key=idempotency_key,
         )
         if background_execution:
-            bind = self._s.get_bind()
             row, replayed = self._reserve_background_call(
                 project_id=project_id,
                 manifest=manifest,
@@ -296,9 +432,106 @@ class ActionExecutionMixin:
                 provider_context_json=provider_context_for_audit,
                 metadata_json=metadata_json,
                 estimated_cost_cents=estimated_cost_cents,
+                durable_schedule_json=durable_schedule,
             )
             assert row.id is not None
+            if durable_execution:
+                existing_job = self.get_durable_action_job_for_action_call(
+                    project_id=project_id, action_call_id=row.id
+                )
+                if existing_job is None:
+                    if row.status != ActionCallStatus.RUNNING:
+                        raise ConflictError(
+                            "durable action reservation is terminal without a durable job",
+                            data={"action_call_id": row.id, "status": row.status.value},
+                        )
+                    if resolved_ref is None:
+                        raise ValidationError(
+                            "durable action dispatch requires an attached Account",
+                            data={"action_ref": manifest.action_ref},
+                        )
+                    try:
+                        credential = await self._resolve_credential(
+                            project_id=project_id,
+                            manifest=manifest,
+                            credential_ref=resolved_ref,
+                        )
+                        if durable_items is not None:
+                            normalized_durable_items = self.validate_durable_action_items(
+                                durable_items
+                            )
+                        else:
+                            prepare_delivery = getattr(connector, "prepare_delivery", None)
+                            if not callable(prepare_delivery):
+                                raise ValidationError(
+                                    "durable action manifest requires connector "
+                                    "delivery preparation",
+                                    data={
+                                        "action_ref": manifest.action_ref,
+                                        "connector": manifest.connector_key,
+                                    },
+                                )
+                            prepared_items = await prepare_delivery(
+                                self._connector_request(
+                                    project_id=project_id,
+                                    manifest=manifest,
+                                    input_json=payload,
+                                    provider_context_json=provider_context,
+                                    credential=credential,
+                                    dry_run=False,
+                                    idempotency_key=idempotency_key,
+                                )
+                            )
+                            normalized_durable_items = self.validate_durable_action_items(
+                                prepared_items
+                            )
+                        self.create_durable_action_job(
+                            project_id=project_id,
+                            action_call_id=row.id,
+                            credential_ref=resolved_ref,
+                            action_ref=manifest.action_ref,
+                            items=normalized_durable_items,
+                            due_at=durable_due_at,
+                            expires_at=durable_expires_at,
+                            pacing_json=durable_pacing,
+                            pacing_units_input_field=manifest.config_json.get(
+                                "durable_pacing_units_input_field"
+                            ),
+                            destination_interval_multipliers=manifest.config_json.get(
+                                "durable_destination_interval_multipliers_json"
+                            ),
+                            idempotency_key=idempotency_key,
+                            metadata_json=metadata_json,
+                        )
+                    except Exception as exc:
+                        self._record_durable_preparation_failure(
+                            action_call_id=row.id,
+                            error=redact_secret_text(str(exc)),
+                        )
+                        raise
+                return Envelope(
+                    data=ActionExecutionOut(
+                        action_call=self._call_audit_out(row),
+                        output_json=row.response_json or {},
+                        metadata_json=row.metadata_json,
+                        cost_cents=row.cost_cents,
+                        replayed=replayed,
+                        credential_ref=row.credential_ref,
+                        poll_operation=(
+                            "actionCall.get" if row.status == ActionCallStatus.RUNNING else None
+                        ),
+                        poll_arguments=(
+                            {"action_call_id": row.id}
+                            if row.status == ActionCallStatus.RUNNING
+                            else None
+                        ),
+                        next_poll_after_ms=500 if row.status == ActionCallStatus.RUNNING else None,
+                    ),
+                    project_id=project_id,
+                    run_id=run_id,
+                )
             if not replayed:
+                bind = self._s.get_bind()
                 repository_type = type(self)
                 connectors = self._connectors
                 asset_dir = self._asset_dir
@@ -337,11 +570,13 @@ class ActionExecutionMixin:
                 run_id=run_id,
             )
 
-        row = await self._execute_prepared(prepared)
+        row, transient_output = await self._execute_prepared(prepared)
         return Envelope(
             data=ActionExecutionOut(
                 action_call=self._call_audit_out(row),
-                output_json=row.response_json or {},
+                output_json=(
+                    transient_output if transient_output is not None else row.response_json or {}
+                ),
                 metadata_json=row.metadata_json,
                 cost_cents=row.cost_cents,
                 dry_run=False,
@@ -400,6 +635,7 @@ class ActionExecutionMixin:
             dry_run=False,
             idempotency_key=idempotency_key,
             progress_callback=progress_callback,
+            action_call_id=action_call_id,
         )
         started = time.perf_counter()
         try:
@@ -411,10 +647,49 @@ class ActionExecutionMixin:
         except ActionConnectorError as exc:
             duration_ms = int((time.perf_counter() - started) * 1000)
             self._s.rollback()
-            output_json = _redact_for_audit(redact_secret_values(exc.output_json, sensitive_values))
+            transient = effective_output_policy["mode"] == "transient"
+            credential_repair_operation = manifest.config_json.get("credential_repair_operation")
+            transient_repair = (
+                {
+                    "status": "not_connected",
+                    "credential_ref": resolved_ref,
+                    "next_action": credential_repair_operation,
+                    "provider_executed": False,
+                    "retry_safe": True,
+                }
+                if transient
+                and exc.output_json.get("status") == "not_connected"
+                and isinstance(credential_repair_operation, str)
+                and credential_repair_operation
+                else {
+                    "status": "retryable_timeout",
+                    "next_action": manifest.action_ref,
+                    "retry_safe": True,
+                }
+                if transient
+                and exc.output_json.get("status") == "retryable_timeout"
+                and exc.output_json.get("retry_safe") is True
+                else {}
+            )
+            output_json = (
+                {
+                    "output_mode": "transient",
+                    "retained": False,
+                    "replayable": False,
+                    "result_available": False,
+                    "retry_safe": True,
+                    **(
+                        {"provider_status_code": exc.provider_status_code}
+                        if isinstance(exc.provider_status_code, int)
+                        else {}
+                    ),
+                }
+                if transient
+                else _redact_for_audit(redact_secret_values(exc.output_json, sensitive_values))
+            )
             connector_metadata = (
                 _redact_for_audit(redact_secret_values(exc.metadata_json, sensitive_values))
-                if exc.metadata_json
+                if exc.metadata_json and not transient
                 else {}
             )
             failed_metadata = {
@@ -425,7 +700,11 @@ class ActionExecutionMixin:
                 ),
                 **connector_metadata,
             } or None
-            safe_error = redact_secret_text(redact_secret_values(exc.detail, sensitive_values))
+            safe_error = (
+                "transient provider read failed"
+                if transient
+                else redact_secret_text(redact_secret_values(exc.detail, sensitive_values))
+            )
             row = self._record_call(
                 project_id=project_id,
                 manifest=manifest,
@@ -448,18 +727,26 @@ class ActionExecutionMixin:
             )
             raise ConflictError(
                 "action connector failed",
-                data=_connector_failure_data(
-                    manifest=manifest,
-                    row_id=int(row.id),
-                    connector_key=manifest.connector_key,
-                    error=safe_error,
-                    output_json=output_json,
-                ),
+                data={
+                    **_connector_failure_data(
+                        manifest=manifest,
+                        row_id=int(row.id),
+                        connector_key=manifest.connector_key,
+                        error=safe_error,
+                        output_json=output_json,
+                    ),
+                    **transient_repair,
+                },
             ) from exc
         except Exception as exc:
             duration_ms = int((time.perf_counter() - started) * 1000)
             self._s.rollback()
-            safe_error = redact_secret_text(redact_secret_values(str(exc), sensitive_values))
+            transient = effective_output_policy["mode"] == "transient"
+            safe_error = (
+                "transient provider read failed"
+                if transient
+                else redact_secret_text(redact_secret_values(str(exc), sensitive_values))
+            )
             row = self._record_call(
                 project_id=project_id,
                 manifest=manifest,
@@ -471,7 +758,15 @@ class ActionExecutionMixin:
                 idempotency_key=idempotency_key,
                 request_json=payload,
                 provider_context_json=provider_context_for_audit,
-                response_json=None,
+                response_json={
+                    "output_mode": "transient",
+                    "retained": False,
+                    "replayable": False,
+                    "result_available": False,
+                    "retry_safe": True,
+                }
+                if transient
+                else None,
                 metadata_json=(
                     redact_secret_values(metadata_json, sensitive_values) if metadata_json else None
                 ),
@@ -519,6 +814,49 @@ class ActionExecutionMixin:
             ),
             **(result_metadata or {}),
         } or None
+        if effective_output_policy["mode"] == "transient":
+            output_bytes = len(_json_bytes(output_json))
+            receipt = _transient_output_receipt(output_json, output_bytes=output_bytes)
+            transient_metadata = (
+                _redact_for_audit(redact_secret_values(metadata_json, sensitive_values))
+                if metadata_json
+                else None
+            )
+            within_limit = output_bytes <= effective_output_policy["max_inline_bytes"]
+            if not within_limit:
+                receipt = {**receipt, "output_limit_exceeded": True, "retry_safe": True}
+            row = self._record_call(
+                project_id=project_id,
+                manifest=manifest,
+                credential=credential,
+                credential_ref=resolved_ref,
+                run_id=run_id,
+                run_plan_id=run_plan_id,
+                run_plan_step_id=run_plan_step_id,
+                idempotency_key=None,
+                request_json=payload,
+                provider_context_json=provider_context_for_audit,
+                response_json=receipt,
+                metadata_json=transient_metadata,
+                status=ActionCallStatus.SUCCESS if within_limit else ActionCallStatus.FAILED,
+                dry_run=False,
+                cost_cents=actual_cost_cents,
+                duration_ms=duration_ms,
+                error=None if within_limit else "transient provider result exceeds response limit",
+            )
+            if not within_limit:
+                raise ConflictError(
+                    "transient provider result exceeds response limit",
+                    data={
+                        "action_ref": manifest.action_ref,
+                        "action_call_id": row.id,
+                        "output_bytes": output_bytes,
+                        "max_inline_bytes": effective_output_policy["max_inline_bytes"],
+                        "provider_executed": True,
+                        "retry_safe": True,
+                    },
+                )
+            return row, output_json
         try:
             if effective_output_policy["mode"] == "inline":
                 row = self._record_call(
@@ -620,7 +958,7 @@ class ActionExecutionMixin:
                     "error": safe_error,
                 },
             ) from exc
-        return row
+        return row, None
 
     async def _resolve_credential(
         self,
@@ -636,13 +974,27 @@ class ActionExecutionMixin:
             )
         if not manifest.requires_credential and credential_ref is None:
             return None
-        return await AuthRepository(self._s).resolve_for_execution(
-            project_id=project_id,
-            provider_key=manifest.provider_key,
-            credential_ref=credential_ref,
-            operation=f"action.{manifest.action_ref}",
-            required_scopes=manifest.required_scopes,
-        )
+        try:
+            return await AuthRepository(self._s).resolve_for_execution(
+                project_id=project_id,
+                provider_key=manifest.provider_key,
+                credential_ref=credential_ref,
+                operation=f"action.{manifest.action_ref}",
+                required_scopes=manifest.required_scopes,
+            )
+        except ConflictError as exc:
+            credential_repair_operation = manifest.config_json.get("credential_repair_operation")
+            if exc.data.get("status") and isinstance(credential_repair_operation, str):
+                raise ConflictError(
+                    exc.detail,
+                    data={
+                        **exc.data,
+                        "next_action": credential_repair_operation,
+                        "provider_executed": False,
+                        "retry_safe": True,
+                    },
+                ) from exc
+            raise
 
     def _connector_request(
         self,
@@ -653,8 +1005,13 @@ class ActionExecutionMixin:
         provider_context_json: dict[str, Any],
         credential: ResolvedCredential | None,
         dry_run: bool,
+        credential_ref: str | None = None,
         idempotency_key: str | None = None,
         progress_callback: ActionProgressCallback | None = None,
+        action_call_id: int | None = None,
+        attempt_ref: str | None = None,
+        correlation_ref: str | None = None,
+        delivery_item_id: int | None = None,
     ) -> ActionConnectorRequest:
         return ActionConnectorRequest(
             project_id=project_id,
@@ -666,13 +1023,37 @@ class ActionExecutionMixin:
             input_json=input_json,
             config_json=manifest.config_json,
             provider_context_json=provider_context_json,
+            credential_ref=credential.credential_ref if credential is not None else credential_ref,
             credential=credential,
             asset_dir=self._asset_dir,
             session=self._s,
             dry_run=dry_run,
             idempotency_key=idempotency_key,
+            action_call_id=action_call_id,
+            attempt_ref=attempt_ref,
+            correlation_ref=correlation_ref,
+            delivery_item_id=delivery_item_id,
             progress_callback=progress_callback,
         )
+
+    def _record_durable_preparation_failure(self, *, action_call_id: int, error: str) -> None:
+        """Finalize a pre-effect durable reservation as a known local failure."""
+
+        self._s.rollback()
+        row = self._s.get(ActionCall, action_call_id)
+        if row is None or row.status != ActionCallStatus.RUNNING:
+            return
+        row.status = ActionCallStatus.FAILED
+        row.response_json = {
+            "status": "failed",
+            "phase": "delivery-preparation",
+            "provider_executed": False,
+            "retry_safe": True,
+        }
+        row.error = error
+        row.completed_at = utcnow()
+        self._s.add(row)
+        self._s.commit()
 
     def _apply_output_policy(
         self,
@@ -807,6 +1188,112 @@ async def _execute_background_action(
                 )
 
 
+def _effective_durable_pacing(
+    *,
+    manifest: ExecutableActionManifest,
+    auth_method_key: str | None = None,
+    account_interval_seconds: float | None,
+    destination_interval_seconds: float | None,
+) -> dict[str, float]:
+    """Apply caller pacing only as a slower bound over the manifest floor."""
+
+    fields = {"account_interval_seconds", "destination_interval_seconds"}
+
+    def config_object(raw: Any, *, field: str) -> dict[str, Any]:
+        if not isinstance(raw, dict):
+            raise ValidationError(
+                "durable action pacing configuration must be an object",
+                data={"action_ref": manifest.action_ref, "field": field},
+            )
+        for key in raw:
+            if key not in fields:
+                raise ValidationError(
+                    "durable action pacing configuration has an unknown field",
+                    data={"action_ref": manifest.action_ref, "field": str(key)},
+                )
+        return raw
+
+    def positive_finite(value: Any, *, field: str, source: str) -> float:
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            valid = False
+            number = 0.0
+        else:
+            try:
+                number = float(value)
+                valid = math.isfinite(number) and number > 0
+            except (OverflowError, ValueError):
+                valid = False
+                number = 0.0
+        if not valid:
+            raise ValidationError(
+                f"durable action pacing {source} must be a positive finite number",
+                data={"action_ref": manifest.action_ref, "field": field},
+            )
+        return number
+
+    configured = config_object(
+        manifest.config_json.get("durable_pacing_json", {}),
+        field="durable_pacing_json",
+    )
+    by_method = manifest.config_json.get("durable_pacing_by_auth_method_json", [])
+    if not isinstance(by_method, list):
+        raise ValidationError(
+            "durable action pacing auth-method overrides must be a list",
+            data={
+                "action_ref": manifest.action_ref,
+                "field": "durable_pacing_by_auth_method_json",
+            },
+        )
+    overrides: dict[str, dict[str, float]] = {}
+    for entry in by_method:
+        if not isinstance(entry, dict):
+            raise ValidationError(
+                "durable action pacing auth-method entry must be an object",
+                data={
+                    "action_ref": manifest.action_ref,
+                    "field": "durable_pacing_by_auth_method_json",
+                },
+            )
+        for key in entry:
+            if key not in {"auth_method_key", "pacing_json"}:
+                raise ValidationError(
+                    "durable action pacing auth-method entry has an unknown field",
+                    data={"action_ref": manifest.action_ref, "field": str(key)},
+                )
+        method_key = entry.get("auth_method_key")
+        if not isinstance(method_key, str) or not method_key or method_key.strip() != method_key:
+            raise ValidationError(
+                "durable action pacing auth-method key must be a non-empty string",
+                data={"action_ref": manifest.action_ref, "field": "auth_method_key"},
+            )
+        if method_key in overrides:
+            raise ValidationError(
+                "durable action pacing auth-method key is duplicated",
+                data={"action_ref": manifest.action_ref, "field": "auth_method_key"},
+            )
+        method_config = config_object(entry.get("pacing_json"), field="pacing_json")
+        overrides[method_key] = {
+            key: positive_finite(value, field=key, source="floor")
+            for key, value in method_config.items()
+        }
+    base = {
+        key: positive_finite(value, field=key, source="floor") for key, value in configured.items()
+    }
+    selected = overrides.get(auth_method_key or "", {})
+    requested = {
+        "account_interval_seconds": account_interval_seconds,
+        "destination_interval_seconds": destination_interval_seconds,
+    }
+    effective: dict[str, float] = {}
+    for key, value in requested.items():
+        floor = selected.get(key, base.get(key, 1.0))
+        requested_interval = (
+            positive_finite(value, field=key, source="request") if value is not None else floor
+        )
+        effective[key] = max(floor, requested_interval)
+    return effective
+
+
 def _metadata_with_execution_context(
     metadata_json: dict[str, Any] | None,
     runtime_context: RuntimeActionContext,
@@ -879,20 +1366,28 @@ def _effective_output_policy(
 
 def _normalise_output_policy(policy: dict[str, Any]) -> dict[str, Any]:
     mode = str(policy.get("mode") or "inline") if isinstance(policy, dict) else "inline"
-    if mode not in {"inline", "file_if_large", "always_file"}:
+    if mode not in {"inline", "file_if_large", "always_file", "transient"}:
         raise ValidationError(
             "invalid output policy mode",
-            data={"mode": mode, "accepted": ["always_file", "file_if_large", "inline"]},
+            data={
+                "mode": mode,
+                "accepted": ["always_file", "file_if_large", "inline", "transient"],
+            },
         )
     max_inline_bytes = policy.get("max_inline_bytes") if isinstance(policy, dict) else None
     if max_inline_bytes is None:
-        max_inline_bytes = 16000
+        max_inline_bytes = 65_536 if mode == "transient" else 16000
     if (
         not isinstance(max_inline_bytes, int)
         or isinstance(max_inline_bytes, bool)
         or max_inline_bytes < 1
     ):
         raise ValidationError("output_policy_json.max_inline_bytes must be a positive integer")
+    if mode == "transient" and max_inline_bytes > MAX_TRANSIENT_OUTPUT_BYTES:
+        raise ValidationError(
+            "output_policy_json.max_inline_bytes exceeds the transient response limit",
+            data={"max_allowed_bytes": MAX_TRANSIENT_OUTPUT_BYTES},
+        )
     content_type = policy.get("content_type") if isinstance(policy, dict) else None
     if not isinstance(content_type, str) or not content_type:
         content_type = "application/json"
@@ -918,6 +1413,8 @@ def _normalise_output_policy(policy: dict[str, Any]) -> dict[str, Any]:
             "path must be a directory and StackOS generates the filename"
         )
     directory_path = policy.get("path") if isinstance(policy, dict) else None
+    if mode == "transient" and (directory_path is not None or semantic_name is not None):
+        raise ValidationError("transient output cannot declare a file path or semantic name")
     if isinstance(directory_path, str) and directory_path.strip():
         output_dir = Path(directory_path.strip()).expanduser()
         if not output_dir.is_absolute():
@@ -995,6 +1492,23 @@ def _json_summary(value: Any) -> dict[str, Any]:
     elif isinstance(value, list):
         summary["length"] = len(value)
     return summary
+
+
+def _transient_output_receipt(output_json: dict[str, Any], *, output_bytes: int) -> dict[str, Any]:
+    """Keep useful audit counts without retaining provider-returned field values."""
+
+    lists = [value for value in output_json.values() if isinstance(value, list)]
+    return {
+        "output_mode": "transient",
+        "retained": False,
+        "replayable": False,
+        "result_available": False,
+        "output_bytes": output_bytes,
+        "top_level_type": "object",
+        "field_count": len(output_json),
+        "list_field_count": len(lists),
+        "list_item_count": sum(len(value) for value in lists),
+    }
 
 
 def _semantic_output_name(

@@ -148,11 +148,52 @@ reconciliation marks an orphaned `RUNNING` call `FAILED` with
 `outcome_unknown=true` and `retry_safe=false` rather than reporting success or
 silently retrying it.
 
+Actions with `config_json.durable_delivery` use the shared durable ActionRepository
+instead of process-live background execution. Acceptance seals immutable item
+payloads and destinations before any provider side effect. A daemon dispatcher
+claims bounded leases, enforces shared Account and destination admission, and
+submits independent items asynchronously within a bounded in-flight window.
+It persists attempts, progress and receipts. Unattempted items survive restart;
+an expired dispatched attempt is held as an unknown outcome until a provider
+receipt reconciles it. It is never automatically resent.
+
+Inspect a sealed job with `actionCall.items`; `actionCall.pause` and
+`actionCall.resume` control future claims, while `actionCall.cancel` cancels
+remaining pending or safely deferred items. An in-flight provider effect cannot be recalled by those
+controls. Item results preserve partial success, final provider IDs, deferral
+times and retry guidance. `due_at`, optional `expires_at`, and pacing are sealed
+with the job; changed timing on an idempotent replay rejects. Expiry stops new
+attempts without discarding in-flight or unknown receipts.
+
+`actionCall.retry` takes explicit item IDs and accepts only proven safe,
+no-effect outcomes. It never replays successful, in-flight, partial, or unknown
+effects. Direct resume/retry requires `confirm_direct=true` and `intent_summary`;
+workflow controls recheck the original active step, grant, and approval.
+
+Telegram mutations use this path, including one-recipient sends. The admitted
+submission time is paced across jobs sharing an Account and destination; a
+pending TDLib receipt does not serialize later eligible destinations. Callers
+can choose slower pacing. Telegram bot Accounts have a 0.047619-second
+Account floor (about 21 submissions per second); user Accounts have a
+one-second Account floor. Private chats use 1.43 seconds per destination;
+negative group/channel refs use 4.29 seconds across send-like actions. Albums and forwards
+reserve one pacing unit per media item or message ID. These are conservative
+submission intervals, not published universal TDLib quotas. Provider FloodWait
+extends the shared Account or destination admission even when TDLib reports a
+terminal failed send; it does not automatically resend that message. A
+`PEER_FLOOD` response records the affected item and visibly pauses that job,
+so the agent can inspect the response and decide whether to resume or cancel.
+Pacing does not guarantee Telegram will accept a message or prevent
+restrictions.
+
 A run-plan step cannot be recorded as successful or skipped while linked
 background action calls remain running. The validation response identifies the
 pending calls and supplies `actionCall.get` polling context. Wait for terminal
 action evidence before claiming successful completion; failed/blocked recovery
 and explicit abort behavior remain available.
+This also applies to actions resolved through `communication.send` and
+`communication.reply`: they retain the workflow plan/step linkage and return
+the same polling fields while delivery is running.
 
 If provider execution succeeds but local response-file persistence fails, the
 failed call and immediate error both retain `output_persistence_failed=true`
@@ -363,10 +404,15 @@ safe, but idempotency alone never makes a mutating action read-safe.
 
 `output_policy_json` may be passed on `action.run` or `action.execute` for a
 deliberate one-call override. Supported modes are `inline`, `file_if_large`,
-and `always_file`; callers may supply `semantic_name` and an absolute
-directory `path`. StackOS generates the filename inside that directory. When no
-path is supplied, the daemon writes under the configured generated-assets
-directory.
+`always_file`, and `transient`. File-backed modes accept `semantic_name` and an
+absolute directory `path`; StackOS generates the filename there or under the
+configured generated-assets directory. `transient` is for foreground provider
+reads with `response_mode=raw` and no replay key. It returns one bounded result
+in the current response while the action-call audit retains only a content-free
+receipt, not the provider result or an output file. A later `actionCall.get`
+cannot recover that result; rerun the read when needed. Transient execution
+rejects mutations, background or durable work, compact responses, and explicit
+idempotency/intent keys before dispatch.
 
 `action.describe` includes an `execution_context` block for agent consumers.
 It names when to use a context, the payload boundary between `input_json` and
@@ -430,8 +476,9 @@ cover the migrated clean path for:
 - `branding`: `branding.evidence.capture`,
   `branding.evidence.sanitize-mark`
 - `http`: static custom HTTP/Webhook actions declared by installed plugins
-- `telegram-bot`: project-scoped Telegram bot identity, message/photo sends,
-  callback answers, diagnostic update inspection, and webhook set/delete/info
+- `telegram`: TDLib bot/user identity, chat resolution and permission inspection,
+  typed rich messages/albums, explicit recipient batches, message lifecycle,
+  bot callback answers and bounded file downloads
 - `slack-bot`: project-scoped Slack bot identity, message sends, conversation
   open/info/list/member discovery, and signed HTTP ingress resource flow
 - `smtp`: `communications.smtp.email.send` with daemon-side password auth and
@@ -532,13 +579,13 @@ formats remain deferred until separately modeled.
 
 Communication setup is not an action connector. Telegram communication profile
 setup uses the shared `communicationProfile.upsert/get/list` operations across
-REST, CLI, and MCP after a reusable `telegram-bot` Account is explicitly
+REST, CLI, and MCP after a connected reusable `telegram` Account is explicitly
 attached to the project. Slack uses project-scoped `communication-profile`
 records with a `provider_facets.slack-bot.credential_ref` binding to an
 explicitly attached reusable `slack-bot` Account. Normal agent messaging goes through
 `communication.send` or `communication.reply`; `action.run` and
 `action.execute` remain lower-level escape hatches for explicit provider
-diagnostics, webhook setup, or provider-specific work. SMTP and IMAP credentials
+diagnostics or provider-specific work. SMTP and IMAP credentials
 are also reusable Accounts with explicit project attachments; agents receive
 only opaque credential refs and safe status, while the connector resolves
 host/user/password/TLS config inside the daemon process.

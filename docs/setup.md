@@ -109,6 +109,13 @@ starting it again. This is useful when testing a packaged desktop app launch and
 you want the app to prove it can start its bundled daemon path from a cold
 state.
 
+`start`, `stop`, and `restart` only control launchd when the installed plist
+matches the requested daemon's data directory, state directory, host, and port.
+A custom port leaves an unrelated launchd job alone. A malformed plist, or one
+that uses the requested port with a different data or state directory, is
+rejected before process control; repair the intended service with
+`stackos autostart install --force`.
+
 ## macOS Desktop App
 
 The macOS desktop app is named `StackOS`. It is an Electron shell around the
@@ -292,7 +299,9 @@ stackos backup --output ~/Desktop/stackos-backup.zip
 
 The backup contains `stackos.db`, `seed.bin`, `auth.token`, and
 `manifest.json`, and is written with mode `0600`. Automated restore is not
-implemented yet.
+implemented yet. It does not include TDLib's Account-owned native database;
+Telegram user Accounts need a new sign-in after restoring only this archive on
+another machine. An in-place upgrade preserves the native database.
 
 ## First Run In The UI
 
@@ -384,8 +393,9 @@ human clicking through a bespoke workflow UI.
 
 ## Local Communication Ingress
 
-Telegram, Slack, and future webhook-based communication providers use one
-project-level public ingress endpoint. The daemon still binds to
+Slack, HubSpot, and future webhook-based communication providers use one
+project-level public ingress endpoint. Telegram bot and user updates use each
+Account's daemon-managed TDLib session instead. The daemon still binds to
 `127.0.0.1:5180`; only provider-verified `/api/v1/ingress/*` paths are allowed
 to receive tunnel or deployed Host headers.
 
@@ -413,7 +423,7 @@ Agents should prefer the same operations through MCP when available:
 `ingressEndpoint.configure`, `ingressEndpoint.refresh`,
 `ingressEndpoint.routes`, `ingressEndpoint.sync`, and
 `ingressEndpoint.status`. Local tunnel provider settings, including ngrok, belong
-only in `driver_config`; provider routes stay Telegram/Slack-agnostic and are
+only in `driver_config`; provider routes stay provider-agnostic and are
 regenerated from the stored project endpoint.
 
 Slack needs the generated Slack ingress URL in two Slack app screens:

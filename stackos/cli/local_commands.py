@@ -371,7 +371,12 @@ def rotate_seed(
         stage_seed_rotation,
     )
     from stackos.db.connection import make_engine
-    from stackos.db.models import Credential, IntegrationCredential, PayloadSecret
+    from stackos.db.models import (
+        Credential,
+        IntegrationCredential,
+        PayloadSecret,
+        TelegramApplication,
+    )
 
     settings = get_settings()
     settings.ensure_dirs()
@@ -389,6 +394,7 @@ def rotate_seed(
                 if account.integration_credential_id is not None
             }
             payload_secret_rows = list(session.exec(select(PayloadSecret)).all())
+            telegram_application_rows = list(session.exec(select(TelegramApplication)).all())
             credential_row_dicts: list[dict[str, object]] = []
             for row in credential_rows:
                 account = account_by_backing.get(row.id) if row.id is not None else None
@@ -406,20 +412,36 @@ def rotate_seed(
                         "nonce": row.nonce,
                     }
                 )
-            row_dicts = credential_row_dicts + [
-                {
-                    "id": r.id,
-                    "storage_kind": "payload_secret",
-                    "project_id": r.project_id,
-                    "kind": f"payload-secret:{r.value_type}:{r.secret_ref}",
-                    "encrypted_payload": r.encrypted_payload,
-                    "nonce": r.nonce,
-                }
-                for r in payload_secret_rows
-            ]
+            row_dicts = (
+                credential_row_dicts
+                + [
+                    {
+                        "id": r.id,
+                        "storage_kind": "payload_secret",
+                        "project_id": r.project_id,
+                        "kind": f"payload-secret:{r.value_type}:{r.secret_ref}",
+                        "encrypted_payload": r.encrypted_payload,
+                        "nonce": r.nonce,
+                    }
+                    for r in payload_secret_rows
+                ]
+                + [
+                    {
+                        "id": r.id,
+                        "storage_kind": "telegram_application",
+                        "project_id": None,
+                        "kind": "telegram-application",
+                        "encrypted_payload": r.encrypted_payload,
+                        "nonce": r.nonce,
+                    }
+                    for r in telegram_application_rows
+                ]
+            )
             new_seed, rotated = reencrypt_rows_for_seed_rotation(settings.seed_path, rows=row_dicts)
             stage_seed_rotation(settings.seed_path, new_seed)
-            id_to_row: dict[tuple[str, int], IntegrationCredential | PayloadSecret] = {}
+            id_to_row: dict[
+                tuple[str, int], IntegrationCredential | PayloadSecret | TelegramApplication
+            ] = {}
             for credential_row in credential_rows:
                 if credential_row.id is None:
                     raise RuntimeError("seed rotation found an unsaved credential row")
@@ -428,6 +450,10 @@ def rotate_seed(
                 if payload_secret_row.id is None:
                     raise RuntimeError("seed rotation found an unsaved payload secret row")
                 id_to_row[("payload_secret", payload_secret_row.id)] = payload_secret_row
+            for telegram_application_row in telegram_application_rows:
+                id_to_row[("telegram_application", telegram_application_row.id)] = (
+                    telegram_application_row
+                )
             for rotated_row in rotated:
                 target_row = id_to_row[(rotated_row["storage_kind"], rotated_row["id"])]
                 target_row.encrypted_payload = rotated_row["encrypted_payload"]

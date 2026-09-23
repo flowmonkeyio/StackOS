@@ -408,11 +408,20 @@ class AgentBridgeProxy:
         request_id: object,
         arguments: dict[str, Any],
     ) -> str:
-        self._ensure_tool_catalog(client)
         requested_raw = arguments.get("tool_names")
-        if isinstance(requested_raw, list) and any(
-            isinstance(name, str) and name and name not in self.tool_catalog
-            for name in requested_raw
+        exact_schema_request = (
+            arguments.get("include_schemas") is True
+            and isinstance(requested_raw, list)
+            and bool(requested_raw)
+        )
+        self._ensure_tool_catalog(client, refresh=exact_schema_request)
+        if (
+            not exact_schema_request
+            and isinstance(requested_raw, list)
+            and any(
+                isinstance(name, str) and name and name not in self.tool_catalog
+                for name in requested_raw
+            )
         ):
             self._ensure_tool_catalog(client, refresh=True)
         run_id = _bridge_as_int(arguments.get("run_id"))

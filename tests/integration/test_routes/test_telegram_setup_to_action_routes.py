@@ -1,17 +1,23 @@
-"""End-to-end Telegram setup, ingress, run-plan, and action route slice."""
+"""Telegram native ingress through one shared reply and durable receipt lifecycle."""
 
 from __future__ import annotations
 
-import json
+import asyncio
+import time
 
 from fastapi.testclient import TestClient
-from pytest_httpx import HTTPXMock
-from sqlmodel import Session
+from sqlmodel import Session, select
 
+from stackos.actions.telegram import TelegramActionConnector
+from stackos.auth_providers import AuthRepository
+from stackos.db.models import ActionCall, Credential
+from stackos.integrations.telegram_tdlib.updates import process_telegram_update
+from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.resources import ResourceRepository
+from tests.integration.test_repositories.test_telegram_actions import FakeTelegram
 
 
-def _telegram_reply_plan_json() -> dict:
+def _reply_plan_json() -> dict:
     return {
         "schema_version": "stackos.run-plan.v1",
         "key": "communications.telegram.reply.run",
@@ -20,59 +26,51 @@ def _telegram_reply_plan_json() -> dict:
             "mcp_tool_grants": [
                 {
                     "step_id": "reply",
-                    "tool": "action.execute",
-                    "action_refs": ["communications.telegram-bot.message.send"],
+                    "tool": "communication.reply",
+                    "sources": ["telegram"],
                 }
             ]
         },
-        "steps": [
-            {
-                "id": "reply",
-                "title": "Send Telegram reply",
-                "action_refs": ["communications.telegram-bot.message.send"],
-            }
-        ],
+        "steps": [{"id": "reply", "title": "Send Telegram reply"}],
     }
 
 
-def _store_credential(api: TestClient, project_id: int) -> str:
-    response = api.post(
-        "/api/v1/auth/accounts/telegram-bot",
-        json={
-            "auth_method_key": "bot-token",
-            "display_name": "Telegram - Support Bot",
-            "attach_project_id": project_id,
-            "fields": {
-                "bot_token": "123456:ABC",
-                "webhook_secret_token": "telegram-secret",
-            },
-        },
-    )
-    assert response.status_code == 201, response.text
-    return str(response.json()["data"]["credential_ref"])
+def _store_connected_telegram_account(api: TestClient, project_id: int) -> tuple[str, FakeTelegram]:
+    """Seed a verified Account and replace only the typed native action adapter."""
+    runtime = FakeTelegram()
+    services = api.app.state.operation_services  # type: ignore[attr-defined]
+    services["action_connectors"].register(TelegramActionConnector(runtime))
+    with Session(api.app.state.engine) as session:  # type: ignore[attr-defined]
+        credential_ref = (
+            AuthRepository(session)
+            .store_credential(
+                provider_key="telegram",
+                auth_method_key="tdlib-bot-token",
+                display_name="Telegram support bot",
+                fields={
+                    "api_id": 12345,
+                    "api_hash": "test-telegram-application-hash",
+                    "bot_token": "123456:bot-token",
+                    "proxy_enabled": False,
+                },
+                attach_project_id=project_id,
+            )
+            .data.credential_ref
+        )
+        credential = session.exec(
+            select(Credential).where(Credential.credential_ref == credential_ref)
+        ).one()
+        credential.status = "connected"
+        session.add(credential)
+        session.commit()
+    return credential_ref, runtime
 
 
-def _post_without_daemon_auth(
-    api: TestClient,
-    url: str,
-    *,
-    headers: dict[str, str],
-    json_body: dict,
-) -> object:
-    original_auth = api.headers.pop("Authorization", None)
-    try:
-        return api.post(url, headers=headers, json=json_body)
-    finally:
-        if original_auth is not None:
-            api.headers["Authorization"] = original_auth
-
-
-def test_telegram_setup_ingress_claim_link_and_reply_action(
+def test_telegram_native_ingress_claim_link_and_durable_reply(
     api: TestClient,
     project_id: int,
-    httpx_mock: HTTPXMock,
 ) -> None:
-    credential_ref = _store_credential(api, project_id)
+    credential_ref, native = _store_connected_telegram_account(api, project_id)
 
     profile = api.post(
         "/api/v1/operations/communicationProfile.upsert/call",
@@ -83,7 +81,6 @@ def test_telegram_setup_ingress_claim_link_and_reply_action(
                 "identity": {
                     "display_name": "Support Bot",
                     "purpose": "Handle support requests from approved Telegram users.",
-                    "voice": "Concise and calm.",
                 },
                 "agent_guidance": {
                     "default_instructions": (
@@ -105,70 +102,69 @@ def test_telegram_setup_ingress_claim_link_and_reply_action(
                         {
                             "command": "/support",
                             "description": "Handle a support request.",
-                            "guidance": "Triage the request and reply with the next safe action.",
+                            "guidance": "Triage the request and return the next safe action.",
                         }
                     ],
-                    "mention_patterns": ["@support_bot"],
-                    "reply_to_bot_triggers": True,
                 },
-                "visibility_policy": {"store_non_trigger_messages": True},
+                "visibility_policy": {
+                    "surface_mode": "allowlist",
+                    "allowed_surface_refs": ["telegram-chat:999"],
+                    "allowed_update_types": ["updateNewMessage"],
+                    "store_non_trigger_messages": True,
+                },
                 "response_policy": {
                     "reply_in_same_chat": True,
                     "origin_required": True,
                     "reply_to_source_message": True,
                     "same_thread": True,
                 },
-                "provider_facets": {
-                    "telegram-bot": {
-                        "credential_ref": credential_ref,
-                        "bot_username": "support_bot",
-                        "ingress_mode": "webhook",
-                        "allowed_updates": ["message", "callback_query"],
-                        "reply_to_message_refs": {"telegram-message:999:88": 88},
-                        "thread_refs": {"telegram-thread:999:default": 1},
-                    }
-                },
+                "provider_facets": {"telegram": {"credential_ref": credential_ref}},
             }
         },
     )
     assert profile.status_code == 200, profile.text
 
-    ingress = _post_without_daemon_auth(
-        api,
-        f"/api/v1/ingress/telegram/{project_id}/support-bot",
-        headers={"X-Telegram-Bot-Api-Secret-Token": "telegram-secret"},
-        json_body={
-            "update_id": 901,
-            "message": {
-                "message_id": 88,
-                "date": 1_779_526_000,
-                "from": {"id": 555, "username": "ada"},
-                "chat": {"id": 999, "type": "private", "username": "ada"},
-                "text": "/support check media buying results",
+    engine = api.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        ingress = process_telegram_update(
+            session,
+            credential_ref=credential_ref,
+            update={
+                "@type": "updateNewMessage",
+                "message": {
+                    "@type": "message",
+                    "id": 88,
+                    "chat_id": 999,
+                    "date": 1_779_526_000,
+                    "sender_id": {"@type": "messageSenderUser", "user_id": 555},
+                    "content": {
+                        "@type": "messageText",
+                        "text": {"text": "/support check media buying results"},
+                    },
+                },
             },
-        },
-    )
-    assert ingress.status_code == 202, ingress.text
-    agent_request_id = int(ingress.json()["agent_request_id"])
+        )
+        assert ingress[0].policy_status == "request_created"
+        assert ingress[0].agent_request_id is not None
+        request = AgentRequestRepository(session).get(
+            project_id=project_id, request_id=ingress[0].agent_request_id
+        )
 
     prepared = api.post(
         "/api/v1/operations/agentRequest.prepareRunPlan/call",
         json={
             "arguments": {
                 "project_id": project_id,
-                "request_id": agent_request_id,
+                "request_id": request.id,
                 "claimed_by": "codex",
-                "idempotency_key": "prepare-telegram-setup-to-action",
-                "run_plan_json": _telegram_reply_plan_json(),
+                "idempotency_key": "prepare-native-telegram-reply",
+                "run_plan_json": _reply_plan_json(),
                 "response_mode": "raw",
             }
         },
     )
     assert prepared.status_code == 200, prepared.text
-    claim_token = prepared.json()["data"]["claim_token"]
-    assert claim_token
     run_plan_id = int(prepared.json()["data"]["run_plan"]["id"])
-    assert prepared.json()["data"]["request"]["run_plan_id"] == run_plan_id
 
     started = api.post(
         "/api/v1/operations/runPlan.start/call",
@@ -177,68 +173,56 @@ def test_telegram_setup_ingress_claim_link_and_reply_action(
     assert started.status_code == 200, started.text
     run_token = started.json()["data"]["run_token"]
     run_id = int(started.json()["data"]["run_id"])
-
-    claimed_step = api.post(
+    claimed = api.post(
         "/api/v1/operations/runPlan.claimStep/call",
         json={
-            "arguments": {
-                "run_plan_id": run_plan_id,
-                "step_id": "reply",
-                "run_token": run_token,
-            }
+            "arguments": {"run_plan_id": run_plan_id, "step_id": "reply", "run_token": run_token}
         },
     )
-    assert claimed_step.status_code == 200, claimed_step.text
-    step_id = int(claimed_step.json()["data"]["id"])
+    assert claimed.status_code == 200, claimed.text
 
-    httpx_mock.add_response(
-        method="POST",
-        url="https://api.telegram.org/bot123456:ABC/sendMessage",
-        json={"ok": True, "result": {"message_id": 89, "chat": {"id": 999}}},
-    )
-    executed = api.post(
-        "/api/v1/operations/action.execute/call",
+    accepted = api.post(
+        "/api/v1/operations/communication.reply/call",
         json={
             "arguments": {
                 "project_id": project_id,
+                "request_id": request.id,
+                "text": "Queued the campaign review.",
+                "controls": [{"type": "button", "label": "Mark done", "value": "done_89"}],
                 "run_token": run_token,
-                "credential_ref": credential_ref,
-                "action_ref": "communications.telegram-bot.message.send",
-                "input_json": {
-                    "profile_key": "support-bot",
-                    "chat_ref": "telegram-chat:999",
-                    "source_agent_request_id": agent_request_id,
-                    "reply_to_message_ref": "telegram-message:999:88",
-                    "thread_ref": "telegram-thread:999:default",
-                    "text": "Queued the campaign review.",
-                    "reply_markup": {
-                        "inline_keyboard": [[{"text": "Mark done", "callback_data": "done_89"}]]
-                    },
-                },
-                "output_policy_json": {"mode": "inline"},
-                "response_mode": "raw",
             }
         },
     )
-    assert executed.status_code == 200, executed.text
-    body = executed.json()["data"]
-    provider_body = json.loads(httpx_mock.get_requests()[0].content.decode("utf-8"))
-    rendered = json.dumps(executed.json())
+    assert accepted.status_code == 200, accepted.text
+    receipt = accepted.json()["data"]
+    action_call_id = int(receipt["action_call_id"])
+    assert receipt["status"] == "running"
+    assert receipt["poll_operation"] == "actionCall.get"
+    assert receipt["action_call"]["run_id"] == run_id
+    assert receipt["action_call"]["run_plan_id"] == run_plan_id
+    assert receipt["action_call"]["run_plan_step_id"] == claimed.json()["data"]["id"]
 
-    assert provider_body["chat_id"] == 999
-    assert provider_body["reply_to_message_id"] == 88
-    assert provider_body["message_thread_id"] == 1
-    assert provider_body["text"] == "Queued the campaign review."
-    assert body["action_call"]["run_id"] == run_id
-    assert body["action_call"]["run_plan_id"] == run_plan_id
-    assert body["action_call"]["run_plan_step_id"] == step_id
-    assert body["action_call"]["provider_key"] == "telegram-bot"
-    assert body["output_json"]["body"]["result"]["message_id"] == 89
-    assert "123456:ABC" not in rendered
-    assert "telegram-secret" not in rendered
+    # The daemon loop owns normal execution. A direct test dispatch makes the
+    # final receipt deterministic without bypassing the ActionCall lease.
+    asyncio.run(api.app.state.operation_services["durable_dispatcher"].run_once())  # type: ignore[attr-defined]
+    deadline = time.monotonic() + 2
+    while True:
+        polled = api.post(
+            "/api/v1/operations/actionCall.get/call",
+            json={"arguments": {"project_id": project_id, "action_call_id": action_call_id}},
+        )
+        assert polled.status_code == 200, polled.text
+        if polled.json()["status"] != "running":
+            break
+        assert time.monotonic() < deadline, polled.text
+        time.sleep(0.02)
 
-    engine = api.app.state.engine  # type: ignore[attr-defined]
+    assert polled.json()["status"] == "success"
+    assert any(call["@type"] == "sendMessage" for call in native.calls)
     with Session(engine) as session:
+        action_call = session.get(ActionCall, action_call_id)
+        assert action_call is not None
+        assert action_call.run_id == run_id
         messages = ResourceRepository(session).query_records(
             project_id=project_id,
             plugin_slug="communications",
@@ -254,12 +238,8 @@ def test_telegram_setup_ingress_claim_link_and_reply_action(
         item
         for item in messages.items
         if item.data_json.get("direction") == "outbound"
-        and item.data_json.get("source_agent_request_id") == agent_request_id
-    ]
-    buttons = [
-        item for item in interactions.items if item.data_json.get("callback_data") == "done_89"
+        and item.data_json.get("source_agent_request_id") == request.id
     ]
     assert len(outbound) == 1
-    assert outbound[0].data_json["message_ref"] == "telegram-message:999:89"
-    assert len(buttons) == 1
-    assert buttons[0].data_json["allowed_user_refs"] == ["telegram-user:555"]
+    assert outbound[0].data_json["message_ref"] == "telegram-message:999:1048576"
+    assert any(item.data_json.get("callback_data") == "done_89" for item in interactions.items)

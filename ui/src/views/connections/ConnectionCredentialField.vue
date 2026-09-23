@@ -61,8 +61,16 @@ function updateMultiSelect(value: string, selected: boolean): void {
     :error="error"
   >
     <template #default="{ id, describedBy, invalid }">
+      <UiCheckbox
+        v-if="field.type === 'boolean'"
+        :id="id"
+        :model-value="modelValue === 'true'"
+        :aria-describedby="describedBy"
+        :aria-invalid="invalid || undefined"
+        @update:model-value="emit('update:modelValue', $event ? 'true' : 'false')"
+      />
       <div
-        v-if="field.type === 'multi-select' || field.type === 'multiselect'"
+        v-else-if="field.type === 'multi-select' || field.type === 'multiselect'"
         :id="id"
         class="grid gap-2 rounded-sm border border-default bg-bg-surface p-3"
         role="group"

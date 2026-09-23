@@ -8,6 +8,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from stackos.action_availability import ActionExposureOut
+from stackos.actions.repository.durable import DurableActionItemOut, DurableActionJobOut
 from stackos.db.models import ActionCallStatus
 from stackos.mcp.contract import MCPInput
 from stackos.operations.spec import OperationResponsePolicy
@@ -22,6 +23,8 @@ ACTION_FILE_OUTPUT_RESPONSE_POLICY = OperationResponsePolicy(
         "MCP and REST calls store external provider output in plain response files by "
         "default. CLI calls default to raw inline responses unless an explicit output "
         "policy says otherwise.",
+        "Foreground provider reads may request transient output with raw response; "
+        "only a content-free audit receipt remains available through actionCall.get.",
     ),
 )
 
@@ -43,6 +46,19 @@ ACTION_CALL_HISTORY_RESPONSE_POLICY = OperationResponsePolicy(
         "Keep every returned row's exact id, project identity, action/provider, status, "
         "run references and timestamps, plus next_cursor and total_estimate. "
         "Raw additionally includes canonical redacted audit detail.",
+    ),
+)
+
+ACTION_CALL_LIFECYCLE_RESPONSE_POLICY = OperationResponsePolicy(
+    default_mode="compact",
+    allowed_modes=("compact", "raw"),
+    ack_safe=False,
+    compact_notes=(
+        "Compact durable action lifecycle responses keep action_call_id, job state, due and "
+        "expiry times, pacing, counts, cancellation eligibility, and next eligible time.",
+        "Item lists retain sealed destination references, correlation refs, state, and receipt "
+        "diagnostics plus backend-derived retry eligibility needed to repair a held or failed "
+        "delivery.",
     ),
 )
 
@@ -214,7 +230,10 @@ class ActionExecuteInput(MCPInput):
         default=None,
         description=(
             "Optional output storage policy for this one call. Supported mode values are "
-            "inline, file_if_large, and always_file. MCP and REST external provider calls "
+            "inline, file_if_large, always_file, and transient. Transient is limited to "
+            "foreground provider reads with response_mode=raw and no caller replay key; "
+            "the run-plan step remains audited, but the result is not retained. "
+            "MCP and REST external provider calls "
             "default to plain file-backed output when omitted; CLI calls default inline. "
             "Pass path as an absolute output directory; StackOS generates the response "
             "filename."
@@ -222,6 +241,30 @@ class ActionExecuteInput(MCPInput):
     )
     credential_ref: str | None = None
     idempotency_key: str | None = None
+    due_at: datetime | None = Field(
+        default=None,
+        description="Optional earliest UTC dispatch time for a durable background action.",
+    )
+    expires_at: datetime | None = Field(
+        default=None,
+        description="Optional UTC deadline after which a durable action cannot start another item.",
+    )
+    account_interval_seconds: float | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "Optional durable Account pacing request in seconds. It may only slow the "
+            "manifest's provider-safe minimum."
+        ),
+    )
+    destination_interval_seconds: float | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "Optional durable destination pacing request in seconds. It may only slow the "
+            "manifest's provider-safe minimum."
+        ),
+    )
     dry_run: bool = False
     metadata_json: dict[str, Any] | None = None
 
@@ -232,14 +275,14 @@ class ActionRunInput(MCPInput):
         json_schema_extra={
             "example": {
                 "project_id": 1,
-                "action_ref": "communications.telegram-bot.message.send",
+                "action_ref": "communications.telegram.message.send",
                 "intent_summary": "User asked to send one Telegram test message.",
                 "confirm_direct": True,
                 "idempotency_key": "telegram-send-1",
                 "input_json": {
-                    "profile_key": "support",
-                    "chat_ref": "telegram-chat:123",
-                    "text": "Done.",
+                    "profile_ref": "communication-profile:support",
+                    "surface_ref": "telegram-chat:123",
+                    "content": {"kind": "text", "text": "Done."},
                 },
                 "context_ref": "ctx_provider_messaging",
             }
@@ -266,7 +309,10 @@ class ActionRunInput(MCPInput):
         default=None,
         description=(
             "Optional output storage policy for this one call. Supported mode values are "
-            "inline, file_if_large, and always_file. MCP and REST external provider calls "
+            "inline, file_if_large, always_file, and transient. Transient is limited to "
+            "foreground provider reads with response_mode=raw and no replay key; it returns "
+            "at most 256 KiB to this caller and stores only a content-free audit receipt. "
+            "MCP and REST external provider calls "
             "default to plain file-backed output when omitted; CLI calls default inline. "
             "Pass path as an absolute output directory; StackOS generates the response "
             "filename."
@@ -274,6 +320,30 @@ class ActionRunInput(MCPInput):
     )
     credential_ref: str | None = None
     idempotency_key: str | None = None
+    due_at: datetime | None = Field(
+        default=None,
+        description="Optional earliest UTC dispatch time for a durable background action.",
+    )
+    expires_at: datetime | None = Field(
+        default=None,
+        description="Optional UTC deadline after which a durable action cannot start another item.",
+    )
+    account_interval_seconds: float | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "Optional durable Account pacing request in seconds. It may only slow the "
+            "manifest's provider-safe minimum."
+        ),
+    )
+    destination_interval_seconds: float | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "Optional durable destination pacing request in seconds. It may only slow the "
+            "manifest's provider-safe minimum."
+        ),
+    )
     intent_id: str | None = None
     dry_run: bool = False
     metadata_json: dict[str, Any] | None = None
@@ -318,6 +388,69 @@ class ActionCallGetOut(BaseModel):
     next_poll_after_ms: int | None = None
 
 
+class ActionCallItemsInput(MCPInput):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"example": {"project_id": 1, "action_call_id": 42}},
+    )
+
+    project_id: int | None = None
+    action_call_id: int = Field(ge=1)
+
+
+class ActionCallControlInput(ActionCallItemsInput):
+    """Reference a durable ActionCall rather than an internal job identifier."""
+
+
+class ActionCallResumeInput(ActionCallControlInput):
+    """Resume control includes the authorization required to restart delivery."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "project_id": 1,
+                "action_call_id": 42,
+                "confirm_direct": True,
+                "intent_summary": "Operator reviewed the paused delivery and approved resuming it.",
+            }
+        },
+    )
+
+    confirm_direct: StrictBool = False
+    intent_summary: str | None = None
+
+
+class ActionCallRetryInput(ActionCallResumeInput):
+    """Retry only selected durable items whose receipts prove no provider effect."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "project_id": 1,
+                "action_call_id": 42,
+                "item_ids": [7, 9],
+                "confirm_direct": True,
+                "intent_summary": (
+                    "Operator reviewed the no-effect receipts and approved retrying these items."
+                ),
+            }
+        },
+    )
+
+    item_ids: list[int] = Field(min_length=1, max_length=1000)
+
+
+class ActionCallDurableItemsOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action_call_id: int
+    job: DurableActionJobOut
+    items: list[DurableActionItemOut]
+    count: int
+
+
 class ActionRunOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -339,10 +472,16 @@ class ActionRunOut(BaseModel):
 
 
 __all__ = [
+    "ACTION_CALL_LIFECYCLE_RESPONSE_POLICY",
     "ACTION_CALL_POLL_RESPONSE_POLICY",
     "ACTION_FILE_OUTPUT_RESPONSE_POLICY",
+    "ActionCallControlInput",
+    "ActionCallDurableItemsOut",
     "ActionCallGetInput",
     "ActionCallGetOut",
+    "ActionCallItemsInput",
+    "ActionCallResumeInput",
+    "ActionCallRetryInput",
     "ActionDescribeInput",
     "ActionExecuteInput",
     "ActionListInput",

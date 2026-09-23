@@ -528,6 +528,64 @@ def test_bridge_discovers_hidden_operations_with_compact_grouped_list(
     assert "inputSchema" not in json.dumps(data)
 
 
+def test_bridge_describes_typed_telegram_retention_selection(mcp_client: MCPClient) -> None:
+    proxy, client = _bridge(mcp_client)
+    _initialize(proxy, client)
+    described = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.describe",
+            {
+                "tool_names": ["communicationProfile.upsert"],
+                "include_schemas": True,
+            },
+            request_id="telegram-retention-schema",
+        )
+    )
+    tool = described["described_tools"][0]
+    assert tool["name"] == "communicationProfile.upsert"
+    selector = tool["inputSchema"]["properties"]["visibility_policy"]
+    assert "updateNewMessage" in selector["properties"]["allowed_update_types"]["items"]["enum"]
+    assert (
+        selector["properties"]["allowed_surface_refs"]["items"]["anyOf"][0]["pattern"]
+        == r"^telegram-chat:-?[1-9][0-9]*$"
+    )
+    assert selector["x-telegram-retention"]["account_scoped_surface_mode"] == "all"
+
+
+def test_bridge_refreshes_existing_tool_schema_for_exact_describe(
+    mcp_client: MCPClient,
+) -> None:
+    proxy, client = _bridge(mcp_client)
+    _initialize(proxy, client)
+    _send(proxy, client, method="tools/list", request_id="initial-catalog")
+
+    # Model an app replacement in a long-lived bridge: the daemon has the new
+    # schema, but the bridge still holds the old schema under the same tool name.
+    stale_schema = proxy.tool_catalog["communicationProfile.upsert"]["inputSchema"]
+    stale_schema["properties"]["visibility_policy"] = {
+        "additionalProperties": True,
+        "type": "object",
+    }
+
+    described = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.describe",
+            {
+                "tool_names": ["communicationProfile.upsert"],
+                "include_schemas": True,
+            },
+            request_id="refreshed-telegram-retention-schema",
+        )
+    )
+    selector = described["described_tools"][0]["inputSchema"]["properties"]["visibility_policy"]
+    assert "updateNewMessage" in selector["properties"]["allowed_update_types"]["items"]["enum"]
+    assert selector["x-telegram-retention"]["account_scoped_surface_mode"] == "all"
+
+
 def test_bridge_compacts_noisy_agent_responses_by_default(mcp_client: MCPClient) -> None:
     project_id = _create_project(mcp_client, "bridge-compact-project")
     mcp_client.call_tool_structured(

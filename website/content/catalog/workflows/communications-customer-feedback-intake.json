@@ -92,6 +92,6 @@
   ],
   "integrations": [
     "Slack Bot",
-    "Telegram Bot"
+    "Telegram"
   ]
 }

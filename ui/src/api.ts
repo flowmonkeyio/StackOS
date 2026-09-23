@@ -108,6 +108,34 @@ export interface paths {
         patch: operations["auth_update_credential_api_v1_auth_accounts__credential_ref__patch"];
         trace?: never;
     };
+    "/api/v1/auth/accounts/{credential_ref}/authorization": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Auth Authorization Status
+         * @description Read the safe generation-fenced native authorization state.
+         */
+        get: operations["auth_authorization_status_api_v1_auth_accounts__credential_ref__authorization_get"];
+        put?: never;
+        /**
+         * Auth Authorization Submit
+         * @description Submit one write-only native authorization answer.
+         */
+        post: operations["auth_authorization_submit_api_v1_auth_accounts__credential_ref__authorization_post"];
+        /**
+         * Auth Authorization Cancel
+         * @description Fence and cancel one native authorization generation.
+         */
+        delete: operations["auth_authorization_cancel_api_v1_auth_accounts__credential_ref__authorization_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/accounts/{credential_ref}/revoke": {
         parameters: {
             query?: never;
@@ -220,6 +248,26 @@ export interface paths {
          * @description List provider auth metadata synced from StackOS plugin manifests.
          */
         get: operations["list_auth_providers_api_v1_auth_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/telegram/application": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Auth Telegram Application Status
+         * @description Expose only whether the daemon has a shared TDLib application.
+         */
+        get: operations["auth_telegram_application_status_api_v1_auth_telegram_application_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -396,31 +444,6 @@ export interface paths {
          *     model, and never decides the business workflow.
          */
         post: operations["ingest_slack_payload_api_v1_ingress_slack__project_id___profile_key__post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/ingress/telegram/{project_id}/{profile_key}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Ingest Telegram Update
-         * @description Store a Telegram update and maybe create one claimable agent request.
-         *
-         *     This endpoint is intentionally static plumbing: it validates Telegram's
-         *     secret-token header, normalizes the event, applies shared communication
-         *     policy, persists Communications resources, and stops. It does not call a
-         *     model, infer intent, approve work, or choose follow-up tools.
-         */
-        post: operations["ingest_telegram_update_api_v1_ingress_telegram__project_id___profile_key__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -700,6 +723,66 @@ export interface paths {
          * @description Detach an Account without revoking or deleting it.
          */
         delete: operations["detach_account_api_v1_projects__project_id__connections_accounts__credential_ref__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/connections/accounts/{credential_ref}/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Auth Account Session Status
+         * @description Inspect one attached Account's requested and live TDLib session state.
+         */
+        get: operations["auth_account_session_status_api_v1_projects__project_id__connections_accounts__credential_ref__session_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/connections/accounts/{credential_ref}/session/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Account Session Connect
+         * @description Apply one explicit connect command to a project-attached shared Account.
+         */
+        post: operations["auth_account_session_connect_api_v1_projects__project_id__connections_accounts__credential_ref__session_connect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/connections/accounts/{credential_ref}/session/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Account Session Disconnect
+         * @description Apply one explicit disconnect command to every project using this Account.
+         */
+        post: operations["auth_account_session_disconnect_api_v1_projects__project_id__connections_accounts__credential_ref__session_disconnect_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1438,6 +1521,45 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AccountAuthChallengeOut
+         * @description Safe projection of one current local-admin authorization challenge.
+         */
+        AccountAuthChallengeOut: {
+            /** Expires At */
+            expires_at?: string | null;
+            /** Fields */
+            fields?: string[];
+            /** Generation */
+            generation: number;
+            /** Kind */
+            kind: string;
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /** Qr Link */
+            qr_link?: string | null;
+        };
+        /**
+         * AccountAuthStatusOut
+         * @description Sanitized native or OAuth-independent Account authorization state.
+         */
+        AccountAuthStatusOut: {
+            challenge?: components["schemas"]["AccountAuthChallengeOut"] | null;
+            /** Credential Ref */
+            credential_ref: string;
+            /** Generation */
+            generation?: number | null;
+            /** Provider Key */
+            provider_key: string;
+            /** Repair Hint */
+            repair_hint?: string | null;
+            /** Status */
+            status: string;
+            /** Updated At */
+            updated_at?: string | null;
+        };
         /** AccountOut */
         AccountOut: {
             /** Account */
@@ -1472,6 +1594,34 @@ export interface components {
              * @default false
              */
             setup_required: boolean;
+            /** Status */
+            status: string;
+        };
+        /**
+         * AccountSessionOut
+         * @description Agent-safe state of one project-attached Telegram Account session.
+         */
+        AccountSessionOut: {
+            /**
+             * Affects Other Projects
+             * @default false
+             */
+            affects_other_projects: boolean;
+            /** Connected */
+            connected: boolean;
+            /** Credential Ref */
+            credential_ref: string;
+            /** Desired Connected */
+            desired_connected: boolean;
+            /** Next Action */
+            next_action?: string | null;
+            /** Project Ids */
+            project_ids?: number[];
+            /**
+             * Provider Key
+             * @default telegram
+             */
+            provider_key: string;
             /** Status */
             status: string;
         };
@@ -1574,6 +1724,400 @@ export interface components {
             /** Run Plan Step Id */
             run_plan_step_id: number | null;
             status: components["schemas"]["ActionCallStatus"];
+        };
+        /**
+         * ActionCallControlInput
+         * @description Reference a durable ActionCall rather than an internal job identifier.
+         * @example {
+         *       "action_call_id": 42,
+         *       "project_id": 1
+         *     }
+         */
+        ActionCallControlInput: {
+            /** Action Call Id */
+            action_call_id: number;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: ActionCallControlInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** ActionCallDurableItemsOut */
+        ActionCallDurableItemsOut: {
+            /** Action Call Id */
+            action_call_id: number;
+            /** Count */
+            count: number;
+            /** Items */
+            items: components["schemas"]["DurableActionItemOut"][];
+            job: components["schemas"]["DurableActionJobOut"];
+        };
+        /**
+         * ActionCallGetInput
+         * @example {
+         *       "action_call_id": 42,
+         *       "project_id": 1
+         *     }
+         */
+        ActionCallGetInput: {
+            /** Action Call Id */
+            action_call_id: number;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: ActionCallGetInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** ActionCallGetOut */
+        ActionCallGetOut: {
+            /** Action Call Id */
+            action_call_id: number;
+            /** Action Ref */
+            action_ref: string;
+            /**
+             * Completed At
+             * @default null
+             */
+            completed_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Error
+             * @default null
+             */
+            error: string | null;
+            /**
+             * Next Poll After Ms
+             * @default null
+             */
+            next_poll_after_ms: number | null;
+            /** Operation */
+            operation: string;
+            /**
+             * Outcome Unknown
+             * @default null
+             */
+            outcome_unknown: boolean | null;
+            /**
+             * Output Json
+             * @default null
+             */
+            output_json: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Poll Arguments
+             * @default null
+             */
+            poll_arguments: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Poll Operation
+             * @default null
+             */
+            poll_operation: string | null;
+            /**
+             * Progress
+             * @default null
+             */
+            progress: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Provider Key
+             * @default null
+             */
+            provider_key: string | null;
+            /**
+             * Retry Safe
+             * @default null
+             */
+            retry_safe: boolean | null;
+            status: components["schemas"]["ActionCallStatus"];
+        };
+        /**
+         * ActionCallItemsInput
+         * @example {
+         *       "action_call_id": 42,
+         *       "project_id": 1
+         *     }
+         */
+        ActionCallItemsInput: {
+            /** Action Call Id */
+            action_call_id: number;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: ActionCallItemsInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** ActionCallQueryInput */
+        ActionCallQueryInput: {
+            /**
+             * Action Call Id
+             * @default null
+             */
+            action_call_id: number | null;
+            /**
+             * Action Key
+             * @default null
+             */
+            action_key: string | null;
+            /**
+             * After Id
+             * @default null
+             */
+            after_id: number | null;
+            /**
+             * Created Before
+             * @default null
+             */
+            created_before: string | null;
+            /**
+             * Created From
+             * @default null
+             */
+            created_from: string | null;
+            /**
+             * Dry Run
+             * @default false
+             */
+            dry_run: boolean | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Limit
+             * @default 50
+             */
+            limit: number;
+            /**
+             * Plugin Slug
+             * @default null
+             */
+            plugin_slug: string | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Provider Key
+             * @default null
+             */
+            provider_key: string | null;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: ActionCallQueryInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+            /**
+             * Run Plan Id
+             * @default null
+             */
+            run_plan_id: number | null;
+            /**
+             * Run Plan Step Id
+             * @default null
+             */
+            run_plan_step_id: number | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /**
+             * Sort
+             * @description Descending ID by default. created_at orders newest recorded timestamp first, then ID descending; repeat the same filters and sort with after_id.
+             * @default id
+             * @enum {string}
+             */
+            sort: ActionCallQueryInputSort;
+            /** @default null */
+            status: components["schemas"]["ActionCallStatus"] | null;
+        };
+        /**
+         * ActionCallResumeInput
+         * @description Resume control includes the authorization required to restart delivery.
+         * @example {
+         *       "action_call_id": 42,
+         *       "confirm_direct": true,
+         *       "intent_summary": "Operator reviewed the paused delivery and approved resuming it.",
+         *       "project_id": 1
+         *     }
+         */
+        ActionCallResumeInput: {
+            /** Action Call Id */
+            action_call_id: number;
+            /**
+             * Confirm Direct
+             * @default false
+             */
+            confirm_direct: boolean;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Intent Summary
+             * @default null
+             */
+            intent_summary: string | null;
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: ActionCallResumeInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /**
+         * ActionCallRetryInput
+         * @description Retry only selected durable items whose receipts prove no provider effect.
+         * @example {
+         *       "action_call_id": 42,
+         *       "confirm_direct": true,
+         *       "intent_summary": "Operator reviewed the no-effect receipts and approved retrying these items.",
+         *       "item_ids": [
+         *         7,
+         *         9
+         *       ],
+         *       "project_id": 1
+         *     }
+         */
+        ActionCallRetryInput: {
+            /** Action Call Id */
+            action_call_id: number;
+            /**
+             * Confirm Direct
+             * @default false
+             */
+            confirm_direct: boolean;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Intent Summary
+             * @default null
+             */
+            intent_summary: string | null;
+            /** Item Ids */
+            item_ids: number[];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: ActionCallRetryInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
         };
         /**
          * ActionCallStatus
@@ -1903,6 +2447,18 @@ export interface components {
             uri: string;
         };
         /**
+         * AuthAuthorizationSubmitRequest
+         * @description A write-only local-admin answer for a native Account challenge.
+         */
+        AuthAuthorizationSubmitRequest: {
+            /** Answer */
+            answer?: {
+                [key: string]: unknown;
+            };
+            /** Generation */
+            generation: number;
+        };
+        /**
          * AuthCredentialEditOut
          * @description Safe stored values for the existing provider-declared credential schema.
          */
@@ -2113,8 +2669,12 @@ export interface components {
         AuthRevokeOut: {
             /** Credential Ref */
             credential_ref: string;
+            /** Local Data Removed */
+            local_data_removed?: boolean | null;
             /** Provider Key */
             provider_key: string;
+            /** Remote Logout Status */
+            remote_logout_status?: AuthRevokeOutRemote_logout_statusAnyOf0 | null;
             /**
              * Revoked At
              * Format: date-time
@@ -2136,6 +2696,7 @@ export interface components {
             auth_type: string;
             /** Authorization Url */
             authorization_url?: string | null;
+            challenge?: components["schemas"]["AccountAuthChallengeOut"] | null;
             /** Credential Ref */
             credential_ref?: string | null;
             /** Expires At */
@@ -2167,6 +2728,12 @@ export interface components {
             attach_project_id?: number | null;
             /** Auth Method Key */
             auth_method_key?: string | null;
+            /**
+             * Authorization Mode
+             * @default phone
+             * @enum {string}
+             */
+            authorization_mode: AuthStartRequestAuthorization_mode;
             /** Credential Ref */
             credential_ref?: string | null;
             /**
@@ -2516,6 +3083,177 @@ export interface components {
             /** Title */
             title?: string | null;
         };
+        /** DurableActionItemOut */
+        DurableActionItemOut: {
+            /** Attempt Count */
+            attempt_count: number;
+            /**
+             * Attempt Ref
+             * @default null
+             */
+            attempt_ref: string | null;
+            /**
+             * Can Retry
+             * @default false
+             */
+            can_retry: boolean;
+            /** Correlation Ref */
+            correlation_ref: string;
+            /** Destination Ref */
+            destination_ref: string;
+            /**
+             * Error
+             * @default null
+             */
+            error: string | null;
+            /**
+             * Final Message Ref
+             * @default null
+             */
+            final_message_ref: string | null;
+            /** Id */
+            id: number;
+            /** Input Json */
+            input_json: {
+                [key: string]: unknown;
+            };
+            /** Job Id */
+            job_id: number;
+            /**
+             * Lease Expires At
+             * @default null
+             */
+            lease_expires_at: string | null;
+            /**
+             * Lease Ref
+             * @default null
+             */
+            lease_ref: string | null;
+            /**
+             * Next Eligible At
+             * Format: date-time
+             */
+            next_eligible_at: string;
+            /** Ordinal */
+            ordinal: number;
+            /**
+             * Progress Json
+             * @default null
+             */
+            progress_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Provider Sending Id
+             * @default null
+             */
+            provider_sending_id: string | null;
+            /**
+             * Result Json
+             * @default null
+             */
+            result_json: {
+                [key: string]: unknown;
+            } | null;
+            state: components["schemas"]["DurableActionItemStatus"];
+            /**
+             * Temporary Message Ref
+             * @default null
+             */
+            temporary_message_ref: string | null;
+        };
+        /**
+         * DurableActionItemStatus
+         * @description Lifecycle for one immutable dispatch target snapshot.
+         * @enum {string}
+         */
+        DurableActionItemStatus: DurableActionItemStatus;
+        /** DurableActionJobOut */
+        DurableActionJobOut: {
+            /** Action Call Id */
+            action_call_id: number;
+            /** Action Ref */
+            action_ref: string;
+            /**
+             * Can Cancel
+             * @default false
+             */
+            can_cancel: boolean;
+            /** Cancelled Count */
+            cancelled_count: number;
+            /** Completed Count */
+            completed_count: number;
+            /** Credential Ref */
+            credential_ref: string;
+            /** Destination Interval Multipliers */
+            destination_interval_multipliers?: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Due At
+             * Format: date-time
+             */
+            due_at: string;
+            /**
+             * Expires At
+             * @default null
+             */
+            expires_at: string | null;
+            /** Failed Count */
+            failed_count: number;
+            /** Id */
+            id: number;
+            /** Input Digest */
+            input_digest: string;
+            /** Item Count */
+            item_count: number;
+            /** Leased Count */
+            leased_count: number;
+            /**
+             * Next Eligible At
+             * @default null
+             */
+            next_eligible_at: string | null;
+            /** Pacing Json */
+            pacing_json: {
+                [key: string]: number;
+            };
+            /**
+             * Pacing Units Input Field
+             * @default null
+             */
+            pacing_units_input_field: string | null;
+            /**
+             * Pause Item Id
+             * @default null
+             */
+            pause_item_id: number | null;
+            /**
+             * Pause Reason
+             * @default null
+             */
+            pause_reason: string | null;
+            /**
+             * Paused At
+             * @default null
+             */
+            paused_at: string | null;
+            /** Pending Count */
+            pending_count: number;
+            /** Project Id */
+            project_id: number;
+            state: components["schemas"]["DurableActionJobStatus"];
+            /** Unknown Count */
+            unknown_count: number;
+        };
+        /**
+         * DurableActionJobStatus
+         * @description Lifecycle for one persisted, ActionCall-linked fan-out dispatch.
+         * @enum {string}
+         */
+        DurableActionJobStatus: DurableActionJobStatus;
         /**
          * EnumLookupResponse
          * @description Core enum values and lifecycle transition maps.
@@ -3383,6 +4121,21 @@ export interface components {
              */
             total_estimate: number;
         };
+        /** Page[ActionCallAuditOut] */
+        Page_ActionCallAuditOut_: {
+            /** Items */
+            items: components["schemas"]["ActionCallAuditOut"][];
+            /**
+             * Next Cursor
+             * @default null
+             */
+            next_cursor: number | null;
+            /**
+             * Total Estimate
+             * @default 0
+             */
+            total_estimate: number;
+        };
         /**
          * PermissionVerificationOut
          * @description Safe, manifest-owned grant evidence posture exposed to callers.
@@ -4244,29 +4997,10 @@ export interface components {
             /** Url */
             url: string;
         };
-        /**
-         * TelegramIngressOut
-         * @description Result of storing one Telegram update.
-         */
-        TelegramIngressOut: {
-            /** Agent Request Id */
-            agent_request_id?: number | null;
-            /** Event Record Id */
-            event_record_id?: number | null;
-            /** Interaction Record Id */
-            interaction_record_id?: number | null;
-            /** Message Record Id */
-            message_record_id?: number | null;
-            /** Ok */
-            ok: boolean;
-            /** Policy Status */
-            policy_status: string;
-            /** Profile Key */
-            profile_key: string;
-            /** Profile Ref */
-            profile_ref: string;
-            /** Update Id */
-            update_id: number;
+        /** TelegramApplicationStatusOut */
+        TelegramApplicationStatusOut: {
+            /** Configured */
+            configured: boolean;
         };
         /** TemplateBaseSpec */
         TemplateBaseSpec: {
@@ -4829,6 +5563,20 @@ export interface components {
             /** Version Id */
             version_id?: number | null;
         };
+        /** WriteEnvelope[DurableActionJobOut] */
+        WriteEnvelope_DurableActionJobOut_: {
+            data: components["schemas"]["DurableActionJobOut"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
         /** WriteEnvelope[WorkflowTemplateExtensionDeleteOut] */
         WriteEnvelope_WorkflowTemplateExtensionDeleteOut_: {
             data: components["schemas"]["WorkflowTemplateExtensionDeleteOut"];
@@ -4846,6 +5594,19 @@ export interface components {
             run_id?: number | null;
         };
         /**
+         * WriteResponse[AccountAuthStatusOut]
+         * @example {
+         *       "project_id": 1
+         *     }
+         */
+        WriteResponse_AccountAuthStatusOut_: {
+            data: components["schemas"]["AccountAuthStatusOut"];
+            /** Project Id */
+            project_id?: number | null;
+            /** Run Id */
+            run_id?: number | null;
+        };
+        /**
          * WriteResponse[AccountOut]
          * @example {
          *       "project_id": 1
@@ -4853,6 +5614,19 @@ export interface components {
          */
         WriteResponse_AccountOut_: {
             data: components["schemas"]["AccountOut"];
+            /** Project Id */
+            project_id?: number | null;
+            /** Run Id */
+            run_id?: number | null;
+        };
+        /**
+         * WriteResponse[AccountSessionOut]
+         * @example {
+         *       "project_id": 1
+         *     }
+         */
+        WriteResponse_AccountSessionOut_: {
+            data: components["schemas"]["AccountSessionOut"];
             /** Project Id */
             project_id?: number | null;
             /** Run Id */
@@ -5073,9 +5847,20 @@ export interface components {
     headers: never;
     pathItems: never;
 }
+export type SchemaAccountAuthChallengeOut = components['schemas']['AccountAuthChallengeOut'];
+export type SchemaAccountAuthStatusOut = components['schemas']['AccountAuthStatusOut'];
 export type SchemaAccountOut = components['schemas']['AccountOut'];
+export type SchemaAccountSessionOut = components['schemas']['AccountSessionOut'];
 export type SchemaActionAvailabilityOut = components['schemas']['ActionAvailabilityOut'];
 export type SchemaActionCallAuditOut = components['schemas']['ActionCallAuditOut'];
+export type SchemaActionCallControlInput = components['schemas']['ActionCallControlInput'];
+export type SchemaActionCallDurableItemsOut = components['schemas']['ActionCallDurableItemsOut'];
+export type SchemaActionCallGetInput = components['schemas']['ActionCallGetInput'];
+export type SchemaActionCallGetOut = components['schemas']['ActionCallGetOut'];
+export type SchemaActionCallItemsInput = components['schemas']['ActionCallItemsInput'];
+export type SchemaActionCallQueryInput = components['schemas']['ActionCallQueryInput'];
+export type SchemaActionCallResumeInput = components['schemas']['ActionCallResumeInput'];
+export type SchemaActionCallRetryInput = components['schemas']['ActionCallRetryInput'];
 export type SchemaActionContractSpec = components['schemas']['ActionContractSpec'];
 export type SchemaActionExposureNextActionOut = components['schemas']['ActionExposureNextActionOut'];
 export type SchemaActionExposureOut = components['schemas']['ActionExposureOut'];
@@ -5084,6 +5869,7 @@ export type SchemaApprovalGateSpec = components['schemas']['ApprovalGateSpec'];
 export type SchemaApprovalRequestOut = components['schemas']['ApprovalRequestOut'];
 export type SchemaArtifactCreateRequest = components['schemas']['ArtifactCreateRequest'];
 export type SchemaArtifactOut = components['schemas']['ArtifactOut'];
+export type SchemaAuthAuthorizationSubmitRequest = components['schemas']['AuthAuthorizationSubmitRequest'];
 export type SchemaAuthCredentialEditOut = components['schemas']['AuthCredentialEditOut'];
 export type SchemaAuthCredentialSetOut = components['schemas']['AuthCredentialSetOut'];
 export type SchemaAuthCredentialSetRequest = components['schemas']['AuthCredentialSetRequest'];
@@ -5110,6 +5896,8 @@ export type SchemaContextSnapshotOut = components['schemas']['ContextSnapshotOut
 export type SchemaCostResponse = components['schemas']['CostResponse'];
 export type SchemaDecisionOut = components['schemas']['DecisionOut'];
 export type SchemaDecisionRecordRequest = components['schemas']['DecisionRecordRequest'];
+export type SchemaDurableActionItemOut = components['schemas']['DurableActionItemOut'];
+export type SchemaDurableActionJobOut = components['schemas']['DurableActionJobOut'];
 export type SchemaEnumLookupResponse = components['schemas']['EnumLookupResponse'];
 export type SchemaExperimentCreateRequest = components['schemas']['ExperimentCreateRequest'];
 export type SchemaExperimentDecisionRequest = components['schemas']['ExperimentDecisionRequest'];
@@ -5149,6 +5937,7 @@ export type SchemaPageResponseProjectOut = components['schemas']['PageResponse_P
 export type SchemaPageResponseResourceRecordOut = components['schemas']['PageResponse_ResourceRecordOut_'];
 export type SchemaPageResponseRunOut = components['schemas']['PageResponse_RunOut_'];
 export type SchemaPageResponseRunPlanSummaryOut = components['schemas']['PageResponse_RunPlanSummaryOut_'];
+export type SchemaPageActionCallAuditOut = components['schemas']['Page_ActionCallAuditOut_'];
 export type SchemaPermissionVerificationOut = components['schemas']['PermissionVerificationOut'];
 export type SchemaPluginCatalogOut = components['schemas']['PluginCatalogOut'];
 export type SchemaPluginEnableRequest = components['schemas']['PluginEnableRequest'];
@@ -5177,7 +5966,7 @@ export type SchemaScheduleUpsertRequest = components['schemas']['ScheduleUpsertR
 export type SchemaScheduledJobOut = components['schemas']['ScheduledJobOut'];
 export type SchemaSitemapFetchRequest = components['schemas']['SitemapFetchRequest'];
 export type SchemaSitemapFetchResponse = components['schemas']['SitemapFetchResponse'];
-export type SchemaTelegramIngressOut = components['schemas']['TelegramIngressOut'];
+export type SchemaTelegramApplicationStatusOut = components['schemas']['TelegramApplicationStatusOut'];
 export type SchemaTemplateBaseSpec = components['schemas']['TemplateBaseSpec'];
 export type SchemaTemplateIoSpec = components['schemas']['TemplateIOSpec'];
 export type SchemaTemplateOwnerSpec = components['schemas']['TemplateOwnerSpec'];
@@ -5200,9 +5989,12 @@ export type SchemaWorkflowTemplateIssue = components['schemas']['WorkflowTemplat
 export type SchemaWorkflowTemplateListOut = components['schemas']['WorkflowTemplateListOut'];
 export type SchemaWorkflowTemplateSpec = components['schemas']['WorkflowTemplateSpec'];
 export type SchemaWorkflowTemplateSummaryOut = components['schemas']['WorkflowTemplateSummaryOut'];
+export type SchemaWriteEnvelopeDurableActionJobOut = components['schemas']['WriteEnvelope_DurableActionJobOut_'];
 export type SchemaWriteEnvelopeWorkflowTemplateExtensionDeleteOut = components['schemas']['WriteEnvelope_WorkflowTemplateExtensionDeleteOut_'];
 export type SchemaWriteEnvelopeWorkflowTemplateExtensionUpsertOut = components['schemas']['WriteEnvelope_WorkflowTemplateExtensionUpsertOut_'];
+export type SchemaWriteResponseAccountAuthStatusOut = components['schemas']['WriteResponse_AccountAuthStatusOut_'];
 export type SchemaWriteResponseAccountOut = components['schemas']['WriteResponse_AccountOut_'];
+export type SchemaWriteResponseAccountSessionOut = components['schemas']['WriteResponse_AccountSessionOut_'];
 export type SchemaWriteResponseArtifactOut = components['schemas']['WriteResponse_ArtifactOut_'];
 export type SchemaWriteResponseAuthCredentialSetOut = components['schemas']['WriteResponse_AuthCredentialSetOut_'];
 export type SchemaWriteResponseAuthRevokeOut = components['schemas']['WriteResponse_AuthRevokeOut_'];
@@ -5415,6 +6207,105 @@ export interface operations {
             };
         };
     };
+    auth_authorization_status_api_v1_auth_accounts__credential_ref__authorization_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountAuthStatusOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_authorization_submit_api_v1_auth_accounts__credential_ref__authorization_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthAuthorizationSubmitRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse_AccountAuthStatusOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_authorization_cancel_api_v1_auth_accounts__credential_ref__authorization_delete: {
+        parameters: {
+            query: {
+                generation: number;
+            };
+            header?: never;
+            path: {
+                credential_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse_AccountAuthStatusOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     auth_revoke_api_v1_auth_accounts__credential_ref__revoke_post: {
         parameters: {
             query?: never;
@@ -5606,6 +6497,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_telegram_application_status_api_v1_auth_telegram_application_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelegramApplicationStatusOut"];
                 };
             };
         };
@@ -5845,46 +6756,6 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    ingest_telegram_update_api_v1_ingress_telegram__project_id___profile_key__post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-Telegram-Bot-Api-Secret-Token"?: string | null;
-            };
-            path: {
-                project_id: number;
-                profile_key: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TelegramIngressOut"];
                 };
             };
             /** @description Validation Error */
@@ -6585,6 +7456,102 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WriteResponse_AccountOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_account_session_status_api_v1_projects__project_id__connections_accounts__credential_ref__session_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+                credential_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountSessionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_account_session_connect_api_v1_projects__project_id__connections_accounts__credential_ref__session_connect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+                credential_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse_AccountSessionOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_account_session_disconnect_api_v1_projects__project_id__connections_accounts__credential_ref__session_disconnect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+                credential_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse_AccountSessionOut_"];
                 };
             };
             /** @description Validation Error */
@@ -8155,6 +9122,52 @@ export enum PathsApiV1ProjectsProject_idArtifactsGetParametersQueryStatusAnyOf0 
     superseded = "superseded",
     archived = "archived"
 }
+export enum ActionCallControlInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ActionCallGetInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ActionCallItemsInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ActionCallQueryInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ActionCallQueryInputSort {
+    id = "id",
+    created_at = "created_at"
+}
+export enum ActionCallResumeInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ActionCallRetryInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
 export enum ActionCallStatus {
     dry_run = "dry-run",
     running = "running",
@@ -8172,6 +9185,32 @@ export enum ArtifactCreateRequestStatus {
     approved = "approved",
     superseded = "superseded",
     archived = "archived"
+}
+export enum AuthRevokeOutRemote_logout_statusAnyOf0 {
+    requested = "requested",
+    unconfirmed = "unconfirmed"
+}
+export enum AuthStartRequestAuthorization_mode {
+    phone = "phone",
+    qr = "qr"
+}
+export enum DurableActionItemStatus {
+    pending = "pending",
+    leased = "leased",
+    deferred = "deferred",
+    succeeded = "succeeded",
+    failed = "failed",
+    cancelled = "cancelled",
+    unknown_hold = "unknown-hold"
+}
+export enum DurableActionJobStatus {
+    scheduled = "scheduled",
+    running = "running",
+    paused = "paused",
+    cancelled = "cancelled",
+    completed = "completed",
+    failed = "failed",
+    unknown_hold = "unknown-hold"
 }
 export enum HealthResponseDb_status {
     ok = "ok",

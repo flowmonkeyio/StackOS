@@ -109,6 +109,36 @@ class _FakeConnector:
         )
 
 
+class _TransientReadConnector:
+    key = "fake.echo"
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self.calls = 0
+        self.fail = fail
+
+    def validate(self, _request: ActionConnectorRequest) -> list[ActionValidationIssue]:
+        return []
+
+    def estimate_cost_cents(self, _request: ActionConnectorRequest) -> int:
+        return 0
+
+    async def execute(self, _request: ActionConnectorRequest) -> ActionConnectorResult:
+        self.calls += 1
+        if self.fail:
+            raise ActionConnectorError(
+                "provider private message must not be audited",
+                provider_status_code=429,
+                provider_error={"message": "provider private message must not be audited"},
+            )
+        return ActionConnectorResult(
+            output_json={
+                "messages": [{"text": "private inbound body only returned to this caller"}],
+                "next_cursor": "private-pagination-cursor",
+            },
+            metadata_json={"private_metadata": "private provider metadata"},
+        )
+
+
 class _MutatingFailureConnector:
     key = "fake.echo"
 
@@ -654,6 +684,150 @@ def test_action_execute_file_backs_context_output_as_plain_file(
     assert context_artifacts.total_estimate == 0
     assert out.action_call.response_json == out.output_json
     assert out.action_call.metadata_json["file_backed_output"]["path"] == pointer["path"]
+
+
+def test_transient_read_returns_result_once_and_retains_only_audit_counts(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+) -> None:
+    _seed_action(session)
+    action = session.exec(select(Action).where(Action.key == "echo.run")).one()
+    action.risk_level = "read"
+    action.config_json = {
+        **action.config_json,
+        "default_output_policy_json": {"mode": "transient"},
+    }
+    session.add(action)
+    session.commit()
+    credential_ref = _credential_ref(session, project_id)
+    connector = _TransientReadConnector()
+    registry = ActionConnectorRegistry()
+    registry.register(connector)
+    repo = ActionRepository(session, connectors=registry, asset_dir=tmp_path)
+
+    out = asyncio.run(
+        repo.execute(
+            project_id=project_id,
+            action_ref="test-actions.echo.run",
+            input_json={"name": "Ada"},
+            credential_ref=credential_ref,
+            allow_transient_response=True,
+        )
+    ).data
+
+    assert connector.calls == 1
+    assert out.output_json["messages"][0]["text"] == (
+        "private inbound body only returned to this caller"
+    )
+    assert out.output_json["next_cursor"] == "private-pagination-cursor"
+    assert out.action_call.response_json == {
+        "output_mode": "transient",
+        "retained": False,
+        "replayable": False,
+        "result_available": False,
+        "output_bytes": out.action_call.response_json["output_bytes"],
+        "top_level_type": "object",
+        "field_count": 2,
+        "list_field_count": 1,
+        "list_item_count": 1,
+    }
+    call = repo.get_call(project_id=project_id, action_call_id=out.action_call.id)
+    stored = json.dumps(call.model_dump(mode="json"))
+    assert "private inbound body" not in stored
+    assert "private-pagination-cursor" not in stored
+    assert "private provider metadata" not in stored
+    assert list(tmp_path.rglob("*")) == []
+
+
+@pytest.mark.parametrize("reason", ["not-direct", "mutation", "idempotency", "background"])
+def test_transient_read_rejects_disallowed_execution_before_provider_call(
+    session: Session,
+    project_id: int,
+    reason: str,
+) -> None:
+    _seed_action(session)
+    action = session.exec(select(Action).where(Action.key == "echo.run")).one()
+    if reason != "mutation":
+        action.risk_level = "read"
+    if reason == "background":
+        action.config_json = {**action.config_json, "execution_mode": "background"}
+    session.add(action)
+    session.commit()
+    credential_ref = _credential_ref(session, project_id)
+    connector = _TransientReadConnector()
+    registry = ActionConnectorRegistry()
+    registry.register(connector)
+    repo = ActionRepository(session, connectors=registry)
+
+    with pytest.raises(ValidationError, match="transient output"):
+        asyncio.run(
+            repo.execute(
+                project_id=project_id,
+                action_ref="test-actions.echo.run",
+                input_json={"name": "Ada"},
+                credential_ref=credential_ref,
+                output_policy_json={"mode": "transient"},
+                allow_transient_response=reason != "not-direct",
+                idempotency_key="read-replay" if reason == "idempotency" else None,
+            )
+        )
+    assert connector.calls == 0
+
+
+def test_transient_read_limit_and_provider_error_never_persist_body(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+) -> None:
+    _seed_action(session)
+    action = session.exec(select(Action).where(Action.key == "echo.run")).one()
+    action.risk_level = "read"
+    session.add(action)
+    session.commit()
+    credential_ref = _credential_ref(session, project_id)
+    connector = _TransientReadConnector()
+    registry = ActionConnectorRegistry()
+    registry.register(connector)
+    repo = ActionRepository(session, connectors=registry, asset_dir=tmp_path)
+
+    with pytest.raises(ConflictError, match="exceeds response limit"):
+        asyncio.run(
+            repo.execute(
+                project_id=project_id,
+                action_ref="test-actions.echo.run",
+                input_json={"name": "Ada"},
+                credential_ref=credential_ref,
+                output_policy_json={"mode": "transient", "max_inline_bytes": 16},
+                allow_transient_response=True,
+            )
+        )
+    connector.fail = True
+    with pytest.raises(ConflictError, match="action connector failed"):
+        asyncio.run(
+            repo.execute(
+                project_id=project_id,
+                action_ref="test-actions.echo.run",
+                input_json={"name": "Ada"},
+                credential_ref=credential_ref,
+                output_policy_json={"mode": "transient"},
+                allow_transient_response=True,
+            )
+        )
+
+    calls = session.exec(select(ActionCall).where(ActionCall.project_id == project_id)).all()
+    assert len(calls) == 2
+    assert calls[0].response_json["result_available"] is False
+    assert calls[1].response_json == {
+        "output_mode": "transient",
+        "retained": False,
+        "replayable": False,
+        "result_available": False,
+        "retry_safe": True,
+        "provider_status_code": 429,
+    }
+    assert all("private" not in json.dumps(call.model_dump(mode="json")) for call in calls)
+    assert list(tmp_path.rglob("*")) == []
 
 
 @pytest.mark.parametrize("risk_level", ["read", "write"])

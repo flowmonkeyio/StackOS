@@ -15,6 +15,9 @@ from sqlmodel import Session, col, select
 from stackos.artifacts import redact_secrets
 from stackos.db.models import (
     Artifact,
+    DurableActionArtifact,
+    DurableActionItem,
+    DurableActionItemStatus,
     Plugin,
     Project,
     ProjectPlugin,
@@ -596,6 +599,7 @@ class ArtifactRepository:
         self._sync_catalog()
         row = self._artifact_row(artifact_id, project_id=project_id)
         requested = fields or set()
+        self._assert_durable_artifact_mutable(row, requested=requested, status=status)
         plugin = self._s.get(Plugin, row.plugin_id) if row.plugin_id is not None else None
         if "plugin_slug" in requested:
             plugin = self._plugin_row(plugin_slug) if plugin_slug is not None else None
@@ -761,6 +765,47 @@ class ArtifactRepository:
             next_cursor=next_cursor,
             total_estimate=total,
         )
+
+    def _assert_durable_artifact_mutable(
+        self,
+        row: Artifact,
+        *,
+        requested: set[str],
+        status: str | None,
+    ) -> None:
+        """Keep a sealed delivery's local source available through final receipt."""
+
+        blocks_source = "uri" in requested or (
+            "status" in requested and status is not None and status not in ARTIFACT_ACTIVE_STATUSES
+        )
+        if not blocks_source or row.id is None:
+            return
+        definite_terminal = [
+            DurableActionItemStatus.SUCCEEDED,
+            DurableActionItemStatus.FAILED,
+            DurableActionItemStatus.CANCELLED,
+        ]
+        active_pin = self._s.exec(
+            select(DurableActionArtifact.id)
+            .join(
+                DurableActionItem,
+                col(DurableActionItem.job_id) == col(DurableActionArtifact.job_id),
+            )
+            .where(
+                col(DurableActionArtifact.artifact_id) == row.id,
+                ~col(DurableActionItem.state).in_(definite_terminal),
+            )
+            .limit(1)
+        ).first()
+        if active_pin is not None:
+            raise ConflictError(
+                "artifact is retained by a durable delivery awaiting final receipts",
+                data={
+                    "artifact_id": row.id,
+                    "blocked_fields": sorted(requested & {"uri", "status"}),
+                    "reason": "durable_delivery_active",
+                },
+            )
 
     def _artifact_out(self, row: Artifact, plugin: Plugin | None) -> ArtifactOut:
         assert row.id is not None

@@ -28,6 +28,7 @@ from stackos.db.model_auth import (
     IntegrationCredential,
     OAuthState,
     ProjectCredential,
+    TelegramApplication,
 )
 from stackos.db.model_browser import BrowserActionReceipt, BrowserProfile, BrowserSession
 from stackos.db.model_context import (
@@ -50,6 +51,13 @@ from stackos.db.model_core import (
     ProjectPlugin,
     Provider,
 )
+from stackos.db.model_durable_actions import (
+    ActionDeliveryAdmission,
+    DurableActionArtifact,
+    DurableActionAttempt,
+    DurableActionItem,
+    DurableActionJob,
+)
 from stackos.db.model_enums import (
     ACTION_CALL_STATUS_TRANSITIONS,
     AGENT_REQUEST_STATUS_TRANSITIONS,
@@ -62,6 +70,9 @@ from stackos.db.model_enums import (
     AgentRequestAttentionStatus,
     AgentRequestStatus,
     ApprovalRequestStatus,
+    DurableActionAttemptStatus,
+    DurableActionItemStatus,
+    DurableActionJobStatus,
     PluginSource,
     RunKind,
     RunPlanStatus,
@@ -129,6 +140,7 @@ __all__ = [
     "Action",
     "ActionCall",
     "ActionCallStatus",
+    "ActionDeliveryAdmission",
     "ActionVersion",
     "AgentRequest",
     "AgentRequestAttentionStatus",
@@ -150,6 +162,13 @@ __all__ = [
     "CredentialScope",
     "CredentialUsageEvent",
     "Decision",
+    "DurableActionArtifact",
+    "DurableActionAttempt",
+    "DurableActionAttemptStatus",
+    "DurableActionItem",
+    "DurableActionItemStatus",
+    "DurableActionJob",
+    "DurableActionJobStatus",
     "ExecutionContext",
     "ExecutionContextArtifact",
     "ExecutionContextLink",
@@ -188,6 +207,7 @@ __all__ = [
     "TaskTracker",
     "TaskTrackerLane",
     "TaskTrackerPriority",
+    "TelegramApplication",
     "TrackerItemStatus",
     "TrackerLinkKind",
     "TrackerRevision",

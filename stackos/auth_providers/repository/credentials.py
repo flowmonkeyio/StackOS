@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import json
-import secrets
 from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
@@ -21,6 +20,7 @@ from stackos.db.models import (
     ExecutionContext,
     IntegrationCredential,
     ProjectCredential,
+    TelegramApplication,
 )
 from stackos.repositories.base import ConflictError, Envelope, NotFoundError, ValidationError
 from stackos.repositories.projects import IntegrationCredentialRepository
@@ -37,7 +37,6 @@ from .utils import (
     credential_ref as new_credential_ref,
 )
 from .utils import (
-    telegram_bot_id_from_token,
     utcnow,
 )
 
@@ -83,8 +82,20 @@ class CredentialStorageMixin:
                     "next_action": "Use the existing Account or choose a different name.",
                 },
             )
-        fields = self._with_provider_field_defaults(provider=provider, method=method, fields=fields)
+        telegram_application = None
+        if provider.key == "telegram":
+            from .telegram_application import TelegramApplicationRepository
+
+            fields, telegram_application = TelegramApplicationRepository(
+                self._s
+            ).prepare_first_setup(fields)
         secret_values, safe_config = self._split_credential_fields(method=method, fields=fields)
+        if provider.key == "telegram":
+            from stackos.integrations.telegram_tdlib.account_config import normalize_account_config
+
+            normalize_account_config(
+                config=safe_config, secrets=secret_values, supplied_fields=fields
+            )
         if provider.key == "ftp":
             from stackos.integrations.ftp import validate_ftp_credential_config
 
@@ -114,21 +125,10 @@ class CredentialStorageMixin:
                     data={"provider_key": "aws-s3"},
                 ) from exc
         safe_config["auth_method_key"] = method.key
-        if provider.key == "telegram-bot" and method.key == "bot-token":
-            bot_id = telegram_bot_id_from_token(secret_values.get("bot_token"))
-            if bot_id is None:
-                raise ValidationError(
-                    "Telegram bot token must start with the numeric bot id",
-                    data={"provider_key": provider.key, "auth_method_key": method.key},
-                )
-            self._assert_telegram_bot_account_available(
-                bot_id=bot_id,
-            )
-            safe_config["provider_account_id"] = bot_id
         secret_payload = self._serialize_secret_payload(method=method, values=secret_values)
         if not method.interactive and self._method_requires_local_scope_gate(method):
             safe_config["scope_status"] = "unknown"
-        resolved_status = "connected"
+        resolved_status = "pending" if provider.key == "telegram" else "connected"
         if method.interactive:
             application_values = json.loads(secret_payload.decode("utf-8"))
             if not isinstance(application_values, dict):
@@ -195,7 +195,26 @@ class CredentialStorageMixin:
             },
             project_id=attach_project_id,
         )
-        self._s.commit()
+        if provider.key == "telegram":
+            application_repo = TelegramApplicationRepository(self._s)
+            try:
+                if telegram_application is not None:
+                    application_repo.create(telegram_application)
+                elif not application_repo.configured():
+                    raise ConflictError("Telegram application was removed during Account creation")
+                self._s.commit()
+            except (ConflictError, IntegrityError) as exc:
+                self._s.rollback()
+                raise ConflictError(
+                    "Telegram application setup changed during Account creation",
+                    data={
+                        "provider_key": "telegram",
+                        "retryable": True,
+                        "next_action": "Refresh local Accounts and retry Telegram Account setup.",
+                    },
+                ) from exc
+        else:
+            self._s.commit()
         out = self._account_out(credential)
         return Envelope(
             data=AuthCredentialSetOut(**out.model_dump()),
@@ -256,15 +275,16 @@ class CredentialStorageMixin:
         }
         merged.update(existing_secret_values)
         merged.update(fields)
-        merged = self._with_provider_field_defaults(
-            provider=provider,
-            method=method,
-            fields=merged,
-        )
         secret_values, safe_config = self._split_credential_fields(
             method=method,
             fields=merged,
         )
+        if provider.key == "telegram":
+            from stackos.integrations.telegram_tdlib.account_config import normalize_account_config
+
+            normalize_account_config(
+                config=safe_config, secrets=secret_values, supplied_fields=fields
+            )
         if provider.key == "ftp":
             from stackos.integrations.ftp import validate_ftp_credential_config
 
@@ -294,24 +314,17 @@ class CredentialStorageMixin:
                     data={"provider_key": "aws-s3"},
                 ) from exc
         existing_config = dict(credential.config_json or {})
+        if provider.key == "telegram":
+            from stackos.integrations.telegram_tdlib.account_config import PROXY_CONFIG_FIELDS
+
+            for key in PROXY_CONFIG_FIELDS:
+                existing_config.pop(key, None)
         if provider.key == "imap" and "tls_ca_pem" in fields and "tls_ca_pem" not in safe_config:
             # Explicit clearing removes this Account's extra trust; omission preserves it.
             existing_config.pop("tls_ca_pem", None)
         existing_config.update(safe_config)
         safe_config = existing_config
         safe_config["auth_method_key"] = method.key
-        if provider.key == "telegram-bot" and method.key == "bot-token":
-            bot_id = telegram_bot_id_from_token(secret_values.get("bot_token"))
-            if bot_id is None:
-                raise ValidationError(
-                    "Telegram bot token must start with the numeric bot id",
-                    data={"provider_key": provider.key, "auth_method_key": method.key},
-                )
-            self._assert_telegram_bot_account_available(
-                bot_id=bot_id,
-                current_credential_id=credential.id,
-            )
-            safe_config["provider_account_id"] = bot_id
         if display_name is not None:
             name, name_key = self._account_name(display_name)
             duplicate = self._s.exec(
@@ -344,7 +357,32 @@ class CredentialStorageMixin:
         )
         resolved_status = credential.status
         secret_payload = declared_secret_payload
-        if method.payload_format == "json" and not changed_secret_fields:
+        telegram_connection_fields_changed = False
+        telegram_auth_identity_changed = False
+        if provider.key == "telegram":
+            from .telegram import _DATABASE_KEY
+
+            # Keep daemon-owned session material while replacing the complete declared
+            # credential set. A proxy edit keeps saved authorization; changing
+            # the bot identity invalidates the native database and key.
+            decoded = json.loads(existing_secret_payload.decode("utf-8"))
+            previous_payload = dict(decoded)
+            for field in method.fields:
+                if field.secret:
+                    decoded.pop(field.key, None)
+            decoded.update(secret_values)
+            telegram_auth_identity_changed = decoded.get("bot_token") != previous_payload.get(
+                "bot_token"
+            )
+            if telegram_auth_identity_changed:
+                decoded.pop(_DATABASE_KEY, None)
+            secret_payload = json.dumps(decoded, separators=(",", ":")).encode()
+            telegram_connection_fields_changed = (
+                safe_config != credential.config_json or decoded != previous_payload
+            )
+            if telegram_auth_identity_changed:
+                resolved_status = "pending"
+        elif method.payload_format == "json" and not changed_secret_fields:
             # Safe-field and display-name edits must not discard acquired OAuth
             # tokens, pending application state, refresh material, or other
             # daemon-owned fields that are not part of the setup form.
@@ -387,6 +425,8 @@ class CredentialStorageMixin:
         credential.revoked_at = None
         credential.updated_at = utcnow()
         self._s.add(credential)
+        if telegram_auth_identity_changed:
+            self._invalidate_telegram_saved_authorization(credential)
         if scope_state_reset and credential.id is not None:
             self._s.exec(
                 delete(CredentialScope).where(col(CredentialScope.credential_id) == credential.id)
@@ -398,72 +438,21 @@ class CredentialStorageMixin:
             status=resolved_status,
             metadata_json={"source": "local-admin"},
         )
-        self._s.commit()
-        return Envelope(data=AuthCredentialSetOut(**self._account_out(credential).model_dump()))
-
-    def _with_provider_field_defaults(
-        self,
-        *,
-        provider: Any,
-        method: AuthMethodOut,
-        fields: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Fill daemon-owned credential defaults that should not burden setup UI."""
-
-        if (
-            provider.key == "telegram-bot"
-            and method.key == "bot-token"
-            and not str(fields.get("webhook_secret_token") or "").strip()
-        ):
-            fields = dict(fields)
-            fields["webhook_secret_token"] = secrets.token_urlsafe(32)
-        return fields
-
-    def _telegram_bot_id_for_credential(self, credential: Credential) -> str | None:
-        config = credential.config_json or {}
-        configured = config.get("provider_account_id") or config.get("telegram_bot_id")
-        if configured is not None and str(configured).strip():
-            return str(configured).strip()
-        if credential.integration_credential_id is None:
-            return None
-        try:
-            raw = IntegrationCredentialRepository(self._s).get_decrypted(
-                credential.integration_credential_id
-            )
-            payload = json.loads(raw.decode("utf-8"))
-        except Exception:
-            return None
-        if not isinstance(payload, dict):
-            return None
-        token = payload.get("bot_token")
-        return telegram_bot_id_from_token(str(token)) if token is not None else None
-
-    def _assert_telegram_bot_account_available(
-        self,
-        *,
-        bot_id: str,
-        current_credential_id: int | None = None,
-    ) -> None:
-        rows = self._s.exec(
-            select(Credential).where(
-                col(Credential.provider_key) == "telegram-bot",
-                col(Credential.revoked_at).is_(None),
-                col(Credential.integration_credential_id).is_not(None),
-            )
-        ).all()
-        for credential in rows:
-            if credential.id == current_credential_id:
-                continue
-            if self._telegram_bot_id_for_credential(credential) != bot_id:
-                continue
-            raise ConflictError(
-                "Telegram bot token is already claimed by another active Account",
-                data={
-                    "provider_key": "telegram-bot",
-                    "provider_account_id": bot_id,
-                    "existing_credential_ref": credential.credential_ref,
+        if telegram_connection_fields_changed:
+            self.record_usage_event(
+                credential=credential,
+                provider_key="telegram",
+                operation="account.authorization.changed",
+                status=resolved_status,
+                metadata_json={
+                    "source": "local-admin",
+                    "change_kind": (
+                        "auth-identity" if telegram_auth_identity_changed else "transport"
+                    ),
                 },
             )
+        self._s.commit()
+        return Envelope(data=AuthCredentialSetOut(**self._account_out(credential).model_dump()))
 
     def attach_account(
         self,
@@ -614,6 +603,18 @@ class CredentialStorageMixin:
             }
         )
         self._s.flush()
+        if provider_key == "telegram":
+            remaining = self._s.exec(
+                select(Credential.id).where(
+                    col(Credential.provider_key) == "telegram",
+                    col(Credential.status) != "revoked",
+                    col(Credential.revoked_at).is_(None),
+                )
+            ).first()
+            if remaining is None:
+                application = self._s.get(TelegramApplication, 1)
+                if application is not None:
+                    self._s.delete(application)
         if row.id is not None:
             IntegrationCredentialRepository(self._s).remove(int(row.id), commit=False)
         try:

@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: communications.customer-feedback-intake
 name: Customer Feedback Intake
-version: 0.1.0
+version: 0.2.0
 description: Normalize customer feedback from Slack, Telegram, email, local chat, or another communication surface into one route-approved canonical Slack thread with media preserved and investigation-ready refs captured.
 domain: communications
 owner:
@@ -157,16 +157,16 @@ capability_requirements:
     required: true
     preferred_providers:
       - slack-bot
-      - telegram-bot
+      - telegram
 auth_requirements:
   - key: slack_bot
     provider: slack-bot
     auth_type: bot
     optional: false
     description: Project-scoped Slack bot auth for canonical message, media upload, and reaction.
-  - key: telegram_bot
-    provider: telegram-bot
-    auth_type: bot
+  - key: telegram_account
+    provider: telegram
+    auth_type: tdlib
     optional: true
     description: Required only when Telegram source media must be downloaded before cross-surface handoff.
 action_contracts:
@@ -184,11 +184,11 @@ action_contracts:
     auth_ref: slack_bot
     optional: true
   - key: download_source_media
-    action: telegram-bot.file.download
+    action: telegram.file.download
     capability: messaging
-    provider: telegram-bot
+    provider: telegram
     risk_level: read
-    auth_ref: telegram_bot
+    auth_ref: telegram_account
     optional: true
   - key: add_intake_reaction
     action: slack-bot.reaction.add

@@ -117,6 +117,7 @@ def register_mcp(app: FastAPI) -> None:
         _engine_resolver,
         _settings_resolver,
         operation_registry=operation_registry,
+        services_resolver=lambda: getattr(app.state, "operation_services", {}),
     )
     server = build_server(registry, dispatcher)
 

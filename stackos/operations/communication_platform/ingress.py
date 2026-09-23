@@ -9,13 +9,9 @@ from urllib.parse import quote, urlparse
 import httpx
 from sqlmodel import Session, col, select
 
-from stackos.actions import ActionRepository
-from stackos.artifacts import redact_secret_text
 from stackos.auth_providers import AuthRepository
 from stackos.communications import (
     communication_profile_account_uses,
-    communication_profile_record_by_key,
-    merged_provider_profile,
     validate_communication_profile_account_bindings,
     validate_communication_profile_ingress_ownership,
 )
@@ -149,12 +145,7 @@ async def ingress_endpoint_refresh(
     )
     endpoint_out = _ingress_endpoint_out(env.data.id, env.data.project_id, env.data.data_json or {})
     if inp.sync_profiles:
-        sync_out = await _sync_ingress_endpoint(
-            ctx,
-            endpoint_out,
-            apply_provider_webhooks=inp.apply_provider_webhooks,
-            dry_run_provider_webhooks=inp.dry_run_provider_webhooks,
-        )
+        sync_out = await _sync_ingress_endpoint(ctx, endpoint_out)
     else:
         sync_out = IngressEndpointSyncOut(
             endpoint=endpoint_out,
@@ -187,12 +178,7 @@ async def ingress_endpoint_sync(
     _require_project(ctx.session, inp.project_id)
     endpoint = _require_ingress_endpoint(ctx.session, project_id=inp.project_id, key=inp.key)
     endpoint_out = _ingress_endpoint_out(endpoint.id, endpoint.project_id, endpoint.data_json or {})
-    sync_out = await _sync_ingress_endpoint(
-        ctx,
-        endpoint_out,
-        apply_provider_webhooks=inp.apply_provider_webhooks,
-        dry_run_provider_webhooks=inp.dry_run_provider_webhooks,
-    )
+    sync_out = await _sync_ingress_endpoint(ctx, endpoint_out)
     return WriteEnvelope(data=sync_out, run_id=ctx.run_id, project_id=inp.project_id)
 
 
@@ -279,7 +265,7 @@ async def ingress_endpoint_status(
     )
     notes = []
     if not endpoint_out.public_base_url:
-        notes.append("Set or refresh public_base_url before syncing provider webhooks.")
+        notes.append("Set or refresh public_base_url before deriving provider ingress URLs.")
     if not routes:
         notes.append("No enabled provider profiles currently expose ingress routes.")
     if endpoint_out.driver == "local-tunnel" and not endpoint_fresh:
@@ -512,7 +498,9 @@ def _require_fresh_ingress_endpoint(endpoint: IngressEndpointOut) -> None:
         data={
             "endpoint_ref": endpoint.endpoint_ref,
             "last_refreshed_at": endpoint.last_refreshed_at,
-            "next_action": "Refresh the local tunnel before syncing or confirming provider URLs.",
+            "next_action": (
+                "Refresh the local tunnel before refreshing or confirming provider URLs."
+            ),
         },
     )
 
@@ -521,7 +509,7 @@ def _ingress_routes(session: Session, *, endpoint: IngressEndpointOut) -> list[I
     routes: list[IngressRouteOut] = []
     for use in communication_profile_account_uses(session, project_id=endpoint.project_id):
         provider_key = str(use["provider_key"])
-        if provider_key not in {"slack-bot", "telegram-bot"}:
+        if provider_key != "slack-bot":
             continue
         if not use["owns_provider_ingress"] or use["binding_state"] != "ready":
             continue
@@ -545,13 +533,7 @@ def _ingress_routes(session: Session, *, endpoint: IngressEndpointOut) -> list[I
                 profile_ref=str(use["profile_ref"]),
                 profile_resource_key="communication-profile",
                 remote_status=(
-                    "manual_provider_confirmed"
-                    if confirmed
-                    else (
-                        "manual_provider_update_required"
-                        if provider_key == "slack-bot"
-                        else "provider_webhook_not_checked"
-                    )
+                    "manual_provider_confirmed" if confirmed else "manual_provider_update_required"
                 ),
             )
         )
@@ -630,8 +612,6 @@ def _route_notes(*, endpoint: IngressEndpointOut, provider_key: str) -> list[str
         notes.append("public_base_url is not configured")
     if provider_key == "slack-bot":
         notes.append("Slack Events API and Interactivity URLs must be set in the Slack app.")
-    if provider_key == "telegram-bot":
-        notes.append("Telegram setWebhook can be applied by ingressEndpoint.sync.")
     if provider_key == "hubspot":
         notes.append(
             "HubSpot webhook Target URL and any custom workflow action URL must be set "
@@ -695,8 +675,6 @@ def _provider_ingress_path(*, project_id: int, provider_key: str, profile_key: s
     encoded = quote(profile_key, safe="")
     if provider_key == "slack-bot":
         return f"/api/v1/ingress/slack/{project_id}/{encoded}"
-    if provider_key == "telegram-bot":
-        return f"/api/v1/ingress/telegram/{project_id}/{encoded}"
     if provider_key == "hubspot":
         return f"/api/v1/ingress/hubspot/{project_id}/{encoded}"
     raise ValidationError(f"provider {provider_key!r} does not support webhook ingress")
@@ -711,9 +689,6 @@ def _join_base_path(base_url: str | None, path: str) -> str | None:
 async def _sync_ingress_endpoint(
     ctx: MCPContext,
     endpoint: IngressEndpointOut,
-    *,
-    apply_provider_webhooks: bool,
-    dry_run_provider_webhooks: bool,
 ) -> IngressEndpointSyncOut:
     _require_fresh_ingress_endpoint(endpoint)
     blocked_uses = [
@@ -791,17 +766,7 @@ async def _sync_ingress_endpoint(
             )
             if updated:
                 updated_profile_refs.append(route.profile_ref)
-        if route.provider_key == "telegram-bot":
-            provider_results.append(
-                await _maybe_apply_telegram_webhook(
-                    ctx,
-                    project_id=endpoint.project_id,
-                    route=route,
-                    apply_provider_webhooks=apply_provider_webhooks,
-                    dry_run_provider_webhooks=dry_run_provider_webhooks,
-                )
-            )
-        elif route.provider_key in {"slack-bot", "hubspot"}:
+        if route.provider_key in {"slack-bot", "hubspot"}:
             next_action = (
                 route.next_action.model_dump(mode="json") if route.next_action is not None else {}
             )
@@ -870,26 +835,6 @@ def _sync_communication_profile_route(
             "confirmed_at": _utcnow_iso(),
             "source": "operator",
         }
-    if route.provider_key == "telegram-bot":
-        host = urlparse(route.ingress_url or "").hostname
-        allowed_hosts = [host.lower()] if host else []
-        refs = dict(facet.get("refs") or {})
-        refs["ingress_url"] = str(route.ingress_url)
-        refs["ingress_endpoint_ref"] = endpoint.endpoint_ref
-        facet.update(
-            {
-                "ingress_mode": "webhook",
-                "webhook_base_url": endpoint.public_base_url,
-                "allowed_webhook_hosts": allowed_hosts,
-                "refs": refs,
-                "webhook_policy": {
-                    **dict(facet.get("webhook_policy") or {}),
-                    "driver": endpoint.driver,
-                    "endpoint_ref": endpoint.endpoint_ref,
-                    "allowed_hosts": allowed_hosts,
-                },
-            }
-        )
     facets[route.provider_key] = facet
     data["provider_facets"] = facets
     data["metadata_json"] = {
@@ -910,95 +855,6 @@ def _sync_communication_profile_route(
         provenance_json={"source": "ingressEndpoint.sync"},
     )
     return True
-
-
-async def _maybe_apply_telegram_webhook(
-    ctx: MCPContext,
-    *,
-    project_id: int,
-    route: IngressRouteOut,
-    apply_provider_webhooks: bool,
-    dry_run_provider_webhooks: bool,
-) -> dict[str, Any]:
-    if not apply_provider_webhooks:
-        return {
-            "provider_key": "telegram-bot",
-            "profile_key": route.profile_key,
-            "status": "profile_updated",
-            "remote_status": "not_applied",
-            "webhook_url": route.ingress_url,
-        }
-    credential_ref = _telegram_credential_ref(
-        ctx.session,
-        project_id=project_id,
-        profile_key=route.profile_key,
-    )
-    if credential_ref is None:
-        return {
-            "provider_key": "telegram-bot",
-            "profile_key": route.profile_key,
-            "status": "missing_credential",
-            "webhook_url": route.ingress_url,
-        }
-    try:
-        env = await ActionRepository(ctx.session).execute(
-            project_id=project_id,
-            action_ref="communications.telegram-bot.webhook.set",
-            input_json={
-                "profile_key": route.profile_key,
-                "webhook_url": route.ingress_url,
-            },
-            credential_ref=credential_ref,
-            dry_run=dry_run_provider_webhooks,
-            metadata_json={"source": "ingressEndpoint.sync"},
-        )
-    except Exception as exc:
-        return {
-            "provider_key": "telegram-bot",
-            "profile_key": route.profile_key,
-            "status": "failed",
-            "webhook_url": route.ingress_url,
-            "error": redact_secret_text(str(exc)),
-        }
-    return {
-        "provider_key": "telegram-bot",
-        "profile_key": route.profile_key,
-        "status": (
-            "remote_webhook_dry_run" if dry_run_provider_webhooks else "remote_webhook_updated"
-        ),
-        "webhook_url": route.ingress_url,
-        "action_call_id": env.data.action_call.id,
-    }
-
-
-def _telegram_credential_ref(
-    session: Session,
-    *,
-    project_id: int,
-    profile_key: str,
-) -> str | None:
-    record = communication_profile_record_by_key(
-        session,
-        project_id=project_id,
-        key=profile_key,
-    )
-    data = (
-        merged_provider_profile(dict(record.data_json or {}), "telegram-bot")
-        if record is not None
-        else {}
-    )
-    credential_ref = str(data.get("credential_ref") or "").strip()
-    if not credential_ref:
-        return None
-    attached = AuthRepository(session).status(
-        project_id=project_id,
-        provider_key="telegram-bot",
-    )
-    return (
-        credential_ref
-        if any(account.credential_ref == credential_ref for account in attached.accounts)
-        else None
-    )
 
 
 def _mark_ingress_endpoint_synced(

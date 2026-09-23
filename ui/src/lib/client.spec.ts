@@ -40,4 +40,17 @@ describe('client error formatting', () => {
 
     expect(formatApiError(err)).toContain('$49.25 spent + $1.50 attempted of $50.00 cap')
   })
+
+  it('includes a structured next action for a blocked Account edit', () => {
+    const err = new ApiError('fallback', 409, {
+      detail: 'Telegram settings cannot change while the session is connected',
+      data: {
+        next_action: 'Disconnect the Account, save settings, then connect it again.',
+      },
+    })
+
+    expect(formatApiError(err)).toContain(
+      'Disconnect the Account, save settings, then connect it again.',
+    )
+  })
 })

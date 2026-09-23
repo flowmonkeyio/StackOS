@@ -84,22 +84,35 @@ All three checks assert the same invariants:
 
 ## Telegram Local Slice
 
-Telegram communication setup has its own mocked provider E2E because it spans
-credential setup, communication-profile setup, webhook ingress, agent requests,
-run plans, and provider actions:
+Telegram communication setup has an account-owned TDLib slice because it spans
+credential setup, explicit agent session control, local user authorization,
+communication-profile setup, native update ingress, agent requests, run plans,
+and provider actions:
 
 ```bash
 uv run pytest \
-  tests/integration/test_routes/test_telegram_setup_to_action_routes.py \
+  tests/unit/test_telegram_tdlib_sessions.py \
+  tests/unit/test_telegram_tdlib_service.py \
+  tests/integration/test_repositories/test_telegram_account_lifecycle.py \
+  tests/integration/test_repositories/test_telegram_account_session_operations.py \
+  tests/integration/test_repositories/test_telegram_native_authorization.py \
+  tests/integration/test_routes/test_auth_provider_routes.py \
+  tests/integration/test_mcp/test_mcp_auth.py \
   tests/integration/test_mcp/test_mcp_communications.py \
-  tests/integration/test_repositories/test_telegram_bot_actions.py \
+  tests/integration/test_repositories/test_telegram_actions.py \
   -q
 ```
 
-This does not require a live Telegram account. It uses a fake bot token and
-mocked Bot API responses, while still exercising the real StackOS credential
-boundary, project-scoped communication profile, webhook ingress route, message
-reaction/delete actions, run-plan grant, and redacted action-call/resource audit.
+This does not require a live Telegram account. It uses fake Account material and
+a fake TDLib runtime at the provider edge while preserving the real StackOS
+credential boundary, project attachment check, one-session lifecycle, durable
+desired-connected state, authorization generation fence, native update
+normalization, action grants, and redacted action/resource audit. It proves that
+only an explicit connect restores a session after daemon boot and that explicit
+disconnect stops ingress, preserves saved user authorization, and holds later
+delivery. It does not prove a real
+Telegram login, proxy, destination rights, or provider send; those require the
+operator-owned live verification gate.
 
 ## Slack Local Slice
 
