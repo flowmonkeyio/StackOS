@@ -263,8 +263,14 @@ module.exports = async function signStackosRuntime(context) {
     fs.rmSync(temporaryDir, { recursive: true, force: true });
   }
 
-  // codesign changes libtdjson's bytes. Refresh the payload's integrity
-  // manifest before electron-builder signs the enclosing app bundle.
+  // This hook owns libtdjson's final signature; mac.signIgnore excludes only
+  // this leaf from electron-builder's later force-sign pass. The enclosing
+  // app still seals this manifest and receives the normal deep verification.
+  run("codesign", [
+    "--verify",
+    "--strict",
+    path.join(stackosRoot, "telegram-tdlib-runtime", "lib", "libtdjson.dylib")
+  ]);
   refreshTdlibLibraryDigest(stackosRoot);
 };
 

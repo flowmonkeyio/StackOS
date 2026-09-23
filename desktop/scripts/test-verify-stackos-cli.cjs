@@ -7,13 +7,25 @@ const path = require("node:path");
 const { verifyStackosCli } = require("./verify-stackos-cli.cjs");
 
 const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "stackos-cli-verifier-test-"));
-const cliPath = path.join(fixtureRoot, "stackos");
+const cliPath = path.join(fixtureRoot, "bin", "stackos");
+fs.mkdirSync(path.dirname(cliPath));
 fs.writeFileSync(cliPath, "#!/bin/sh\nexit 0\n", { encoding: "utf8", mode: 0o755 });
 
 try {
   let observedCwd;
+  let verifiedTdlib = false;
   const output = verifyStackosCli(cliPath, "9.9.9", {
     spawnSync(command, args, options) {
+      if (args[0] === "-I") {
+        assert.equal(command, path.join(fixtureRoot, ".venv", "bin", "python"));
+        assert.deepEqual(args.slice(0, 3), ["-I", "-B", "-c"]);
+        assert.match(args[3], /verify_tdlib_runtime/);
+        assert.equal(args[4], path.join(fixtureRoot, "telegram-tdlib-runtime"));
+        assert.equal(options.cwd, observedCwd);
+        assert.equal(options.shell, false);
+        verifiedTdlib = true;
+        return { status: 0, stdout: "", stderr: "" };
+      }
       assert.equal(command, cliPath);
       assert.deepEqual(args, ["--version"]);
       assert.notEqual(options.cwd, fixtureRoot);
@@ -26,6 +38,7 @@ try {
     }
   });
   assert.equal(output, "stackos 9.9.9 (test)");
+  assert.equal(verifiedTdlib, true);
   assert.equal(fs.existsSync(observedCwd), false);
 
   assert.throws(
@@ -46,6 +59,17 @@ try {
         }
       }),
     /unexpected version/
+  );
+  assert.throws(
+    () =>
+      verifyStackosCli(cliPath, "9.9.9", {
+        spawnSync(_command, args) {
+          return args[0] === "--version"
+            ? { status: 0, stdout: "stackos 9.9.9 (test)\n", stderr: "" }
+            : { status: 1, stdout: "", stderr: "Telegram runtime library failed integrity verification." };
+        }
+      }),
+    /packaged TDLib runtime integrity verification failed: .*failed integrity verification/
   );
 } finally {
   fs.rmSync(fixtureRoot, { recursive: true, force: true });

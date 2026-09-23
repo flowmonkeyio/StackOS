@@ -100,6 +100,13 @@ library. A source build is available only when the build machine provides an
 explicit CMake executable and static OpenSSL root; it must produce the same
 pinned library digest. The native asset remains outside the pure-Python wheel.
 
+The after-pack hook owns the final TDLib library signature and refreshes its
+manifest digest afterward. Electron-builder excludes only that exact library
+from its later force-sign pass; it still signs the enclosing app and performs
+deep signature verification. The packaged CLI smoke runs the packaged Python
+runtime's TDLib integrity validator after app signing, before DMG notarization
+and stable download alias creation. No runtime files are changed after app signing.
+
 For a source-checkout daemon, stage the same explicit artifact in the managed
 development runtime root instead of relying on an ambient dylib:
 

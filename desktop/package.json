@@ -69,6 +69,9 @@
       },
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
+      "signIgnore": [
+        "\\.app/Contents/Resources/stackos/telegram-tdlib-runtime/lib/libtdjson\\.dylib$"
+      ],
       "target": [
         {
           "target": "dmg",

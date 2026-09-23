@@ -59,6 +59,26 @@ function verifyStackosCli(cliPath, expectedVersion, options = {}) {
           `${JSON.stringify(expectedPrefix)}, received ${JSON.stringify(output)}`
       );
     }
+    const payloadRoot = path.dirname(path.dirname(resolvedCliPath));
+    const runtimeResult = spawn(path.join(payloadRoot, ".venv", "bin", "python"), [
+      "-I",
+      "-B",
+      "-c",
+      "from pathlib import Path; import sys; " +
+        "from stackos.integrations.telegram_tdlib.runtime import verify_tdlib_runtime; " +
+        "verify_tdlib_runtime(runtime_root=Path(sys.argv[1]))",
+      path.join(payloadRoot, "telegram-tdlib-runtime")
+    ], {
+      cwd: smokeCwd,
+      env: { ...process.env },
+      encoding: "utf8",
+      shell: false
+    });
+    if (runtimeResult.error || runtimeResult.status !== 0) {
+      const detail = runtimeResult.error?.message ||
+        String(runtimeResult.stderr || runtimeResult.stdout || "").trim() || "no output";
+      throw new Error(`packaged TDLib runtime integrity verification failed: ${detail}`);
+    }
     return output;
   } finally {
     fs.rmSync(smokeCwd, { recursive: true, force: true });
