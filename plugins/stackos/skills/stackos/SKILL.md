@@ -293,6 +293,16 @@ primitive.
   delivering scoped work outside a concrete workflow run and the operator did
   not invoke a workflow. Create dependencies, blockers, definition of done, and
   completion evidence there.
+- Record an operator decision already made: call `runPlan.update` through the
+  workspace-bound toolbox with the exact run plan, approval key and status.
+  Use `decided_by` and `decision_json` for the operator identity, available safe
+  evidence refs and original decision time. Explicit verbal approval in the
+  current task is sufficient authority to record that decision; do not request
+  it again merely because the stored gate is pending. Agents record the
+  operator's decision and do not invent one or broaden its scope. Missing or
+  unclear decisions remain unresolved. The controller token or bound project
+  scopes the write; no active step grant, replacement run or REST handoff is
+  needed. Pending/rejected gates, grants and provider auth remain enforced.
 - Tracker lifecycle rules: use `tracker.updateTask(status=...)` only for
   independent tasks. If an independent task has tickets, prefer updating the
   tickets and let StackOS aggregate the parent task. Terminal tracker statuses

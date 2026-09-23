@@ -240,6 +240,14 @@ def validate(document: dict[str, Any], *, schema_path: Path | None = None) -> No
             != billing["subtotal"]["amount_minor"]
         ):
             raise ValueError("billing subtotal mismatch")
+    # The optional host delivery module owns finance-specific external proof.
+    # Historical evidence may expire without invalidating the historical file;
+    # its read-only delivery checks enforce freshness at the selected operation.
+    if __package__:
+        from .finance_delivery import validate_delivery_records
+    else:
+        from finance_delivery import validate_delivery_records
+    validate_delivery_records(document)
     for forecast in document["cashflow_forecasts"]:
         for rows in forecast["scenarios"].values():
             for ordinal, row in enumerate(rows):
@@ -284,7 +292,7 @@ def material_billing_digest(billing: dict[str, Any]) -> str:
         "source_refs",
     )
     payload = {key: billing[key] for key in keys}
-    for key in ("subtotal", "total"):
+    for key in ("subtotal", "total", "customer_billing_details", "payment_presentation"):
         if key in billing:
             payload[key] = billing[key]
     if "effective_at" in billing:
@@ -591,6 +599,18 @@ def _validate_history(prior: dict[str, Any], document: dict[str, Any]) -> None:
             and material_billing_digest(current) != material_billing_digest(previous)
         ):
             raise ValueError("approved billing material is immutable")
+        proof_fields = (
+            "payment_presentation_evidence",
+            "invoice_delivery_evidence",
+            "delivery_authorization",
+            "manual_invoice_delivery",
+        )
+        if any(field in previous for field in proof_fields) and (
+            snapshot_digest(current) != snapshot_digest(previous)
+        ):
+            raise ValueError(
+                "delivery evidence and authorization are immutable; append a correction"
+            )
 
 
 class WriteSession:

@@ -341,6 +341,39 @@ def test_invoice_issue_date_and_catalog_selection_are_billing_approval_material(
     assert material_billing_digest(billing) != selected_digest
 
 
+def test_invoice_payment_presentation_is_billing_approval_material(tmp_path: Path) -> None:
+    document = read_document(initialize(tmp_path / "finance"))
+    billing = add_billing_fixture(document)
+    original_digest = material_billing_digest(billing)
+    billing["payment_presentation"] = {
+        "footer_sha256": "a" * 64,
+        "payment_method_types": ["customer_balance"],
+        "online_payment_link_state": "unknown",
+    }
+    unknown_digest = material_billing_digest(billing)
+    assert unknown_digest != original_digest
+    billing["payment_presentation"]["online_payment_link_state"] = "absent"
+    billing["payment_presentation"]["review_evidence_ref"] = "external-preview:fixture"
+    reviewed_digest = material_billing_digest(billing)
+    assert reviewed_digest != unknown_digest
+    billing["payment_presentation"]["footer_sha256"] = "b" * 64
+    assert material_billing_digest(billing) != reviewed_digest
+
+
+def test_customer_billing_detail_correction_changes_approval_digest(tmp_path: Path) -> None:
+    document = read_document(initialize(tmp_path / "finance"))
+    billing = add_billing_fixture(document)
+    original_digest = material_billing_digest(billing)
+    billing["customer_billing_details"] = {
+        "name_sha256": "a" * 64,
+        "address_field_sha256": {"line1": "b" * 64},
+    }
+    corrected_digest = material_billing_digest(billing)
+    assert corrected_digest != original_digest
+    billing["customer_billing_details"]["address_field_sha256"]["line1"] = "c" * 64
+    assert material_billing_digest(billing) != corrected_digest
+
+
 def test_catalog_proposal_preserves_unknown_then_observed_amounts(tmp_path: Path) -> None:
     document = read_document(initialize(tmp_path / "finance"))
     billing = add_billing_fixture(document)

@@ -67,6 +67,12 @@ client-credentials providers, it acquires an access token when one is absent or
 expired. This lifecycle belongs to core auth code, not to the provider
 connector.
 
+Read actions without a caller-supplied replay key fetch current state on every
+direct or workflow execution. Automatically derived workflow keys do not replay
+reads. An explicit read `idempotency_key` still replays the selected observation;
+omit it when independently verifying a later provider write. Write-action retry
+keys and deduplication are unchanged.
+
 Refresh/acquisition is serialized per credential in the daemon and committed
 with an `updated_at` compare-and-swap. Concurrent actions therefore reuse the
 winning token instead of racing token writes. A token or scope failure stops

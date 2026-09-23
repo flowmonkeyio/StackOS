@@ -66,7 +66,7 @@ _PUBLIC_INGRESS_PREFIXES: tuple[str, ...] = (
 )
 _OAUTH_CALLBACK_PATH = "/api/v1/auth/oauth/callback"
 _SLOW_REQUEST_MS = 100
-_IMAP_TRANSFER_STAGING_ROOT = "imap-transfers"
+_PRIVATE_TRANSFER_STAGING_ROOTS = ("imap-transfers", "stripe-invoice-transfers")
 
 
 class GeneratedAssetsStaticFiles(StaticFiles):
@@ -86,12 +86,13 @@ class GeneratedAssetsStaticFiles(StaticFiles):
         for directory in self.all_directories:
             try:
                 candidate = Path(os.path.realpath(os.path.join(directory, path)))
-                staging_root = Path(
-                    os.path.realpath(os.path.join(directory, _IMAP_TRANSFER_STAGING_ROOT))
-                )
+                staging_roots = [
+                    Path(os.path.realpath(os.path.join(directory, name)))
+                    for name in _PRIVATE_TRANSFER_STAGING_ROOTS
+                ]
             except (OSError, ValueError):
                 return "", None
-            if self._is_within(candidate, staging_root):
+            if any(self._is_within(candidate, root) for root in staging_roots):
                 return "", None
         return super().lookup_path(path)
 
@@ -101,7 +102,7 @@ class GeneratedAssetsStaticFiles(StaticFiles):
         # normalized before we enforce the reserved top-level boundary. Keep
         # this check before super().get_response(), which performs file lookup.
         parts = Path(path).parts
-        if parts and parts[0].casefold() == _IMAP_TRANSFER_STAGING_ROOT:
+        if parts and parts[0].casefold() in _PRIVATE_TRANSFER_STAGING_ROOTS:
             raise HTTPException(status_code=404)
         return await super().get_response(path, scope)
 

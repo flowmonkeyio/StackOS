@@ -683,9 +683,12 @@ Use `action.execute` when the action belongs to a workflow:
    do not by themselves reject a valid step result.
 7. `runPlan.recordStep(success|failed|skipped)` persists a terminal step result
    and closes the plan/run when the last step finishes or a step fails.
-8. `runPlan.update` records safe metadata or approval-gate decisions through
-   the local REST/CLI admin surface. Direct MCP agents are not base-granted to
-   approve their own gates.
+8. `runPlan.update` records safe metadata or an explicit operator approval
+   decision through the project-scoped MCP, REST, or CLI operation. The operator
+   decides; an agent can record a decision already given verbally or in
+   authoritative evidence using `decided_by` and `decision_json`. It does not
+   need another approval ceremony. Pending/rejected gates still block their
+   steps and actions, and project scope is checked before mutation.
 9. `runPlan.recover` is a narrow lifecycle repair for system-recoverable
    terminal states, such as an old daemon rejecting a recoverable blocked step
    or a daemon-restart orphan aborting the canonical workflow. It restores the

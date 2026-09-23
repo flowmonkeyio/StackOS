@@ -24,6 +24,7 @@ Official references:
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -56,6 +57,8 @@ STRIPE_MAX_LIMIT = 100
 STRIPE_BUSINESS_DETAIL_ACTIONS = frozenset(
     {
         "stripe.customers.retrieve",
+        "stripe.customers.tax-ids.list",
+        "stripe.customers.tax-ids.retrieve",
         "stripe.invoices.retrieve",
         "stripe.invoice-items.list",
         "stripe.charges.retrieve",
@@ -67,6 +70,7 @@ STRIPE_BUSINESS_DETAIL_ACTIONS = frozenset(
 )
 _BUSINESS_DETAIL_FIELDS = {
     "stripe.customer": ("name", "email", "description"),
+    "stripe.tax-id": ("value",),
     "stripe.invoice": (
         "number",
         "description",
@@ -81,6 +85,8 @@ _BUSINESS_DETAIL_FIELDS = {
     "stripe.price": ("nickname", "lookup_key"),
 }
 _BUSINESS_LINK_FIELDS = frozenset({"hosted_invoice_url", "invoice_pdf", "receipt_url"})
+_CUSTOMER_ADDRESS_FIELDS = ("line1", "line2", "city", "state", "postal_code", "country")
+_INVOICE_UPDATE_PAYMENT_METHOD_TYPES = frozenset({"card", "us_bank_account", "customer_balance"})
 
 
 @dataclass(frozen=True)
@@ -96,6 +102,8 @@ class StripeActionSpec:
 
 
 STRIPE_ACTION_SPECS: dict[str, StripeActionSpec] = {
+    "stripe.invoices.pdf.download": StripeActionSpec("GET", "/invoices/{invoice_ref}"),
+    "stripe.invoices.pdf.cleanup": StripeActionSpec("LOCAL", "private-invoice-pdf-transfer"),
     "stripe.products.list": StripeActionSpec("GET", "/products", list_item_type="stripe.product"),
     "stripe.products.retrieve": StripeActionSpec(
         "GET", "/products/{product_ref}", "stripe.product"
@@ -103,13 +111,26 @@ STRIPE_ACTION_SPECS: dict[str, StripeActionSpec] = {
     "stripe.prices.list": StripeActionSpec("GET", "/prices", list_item_type="stripe.price"),
     "stripe.prices.retrieve": StripeActionSpec("GET", "/prices/{price_ref}", "stripe.price"),
     "stripe.customers.create": StripeActionSpec("POST", "/customers", "stripe.customer"),
+    "stripe.customers.update": StripeActionSpec(
+        "POST", "/customers/{customer_ref}", "stripe.customer"
+    ),
     "stripe.customers.retrieve": StripeActionSpec(
         "GET", "/customers/{customer_ref}", "stripe.customer"
     ),
     "stripe.customers.list": StripeActionSpec(
         "GET", "/customers", list_item_type="stripe.customer"
     ),
+    "stripe.customers.tax-ids.list": StripeActionSpec(
+        "GET", "/customers/{customer_ref}/tax_ids", list_item_type="stripe.tax-id"
+    ),
+    "stripe.customers.tax-ids.create": StripeActionSpec(
+        "POST", "/customers/{customer_ref}/tax_ids", "stripe.tax-id"
+    ),
+    "stripe.customers.tax-ids.retrieve": StripeActionSpec(
+        "GET", "/customers/{customer_ref}/tax_ids/{tax_id_ref}", "stripe.tax-id"
+    ),
     "stripe.invoices.create": StripeActionSpec("POST", "/invoices", "stripe.invoice"),
+    "stripe.invoices.update": StripeActionSpec("POST", "/invoices/{invoice_ref}", "stripe.invoice"),
     "stripe.invoice-items.create": StripeActionSpec("POST", "/invoiceitems", "stripe.invoice-item"),
     "stripe.invoice-items.list": StripeActionSpec(
         "GET", "/invoiceitems", list_item_type="stripe.invoice-item"
@@ -242,11 +263,24 @@ class StripeActionConnector:
         spec = STRIPE_ACTION_SPECS.get(request.action_key)
         if spec is None:
             raise ValidationError(f"unsupported Stripe action {request.action_key!r}")
+        from stackos.actions.stripe_pdf import PDF_ACTIONS, execute_pdf
+
         # Output selection is connector-owned, not a Stripe query parameter.
         # Recheck before dispatch even when the caller bypasses the manifest.
         detail_issues = _business_detail_option_issues(request)
         if detail_issues:
             raise ValidationError(detail_issues[0].message)
+        if request.action_key in PDF_ACTIONS:
+            return await execute_pdf(request)
+        if request.action_key in {
+            "stripe.customers.update",
+            "stripe.invoices.update",
+            "stripe.customers.tax-ids.create",
+        }:
+            semantic_issues: list[ActionValidationIssue] = []
+            self._validate_semantics(request, semantic_issues)
+            if semantic_issues:
+                raise ValidationError(semantic_issues[0].message)
         if request.credential is None:
             raise ValidationError("Stripe action requires a resolved credential")
         if request.session is None:
@@ -290,6 +324,20 @@ class StripeActionConnector:
                     parse_stripe_api_key_payload(request.credential.secret_payload),
                 ),
             )
+            if request.action_key.startswith("stripe.customers.tax-ids."):
+                observed = safe["items"] if spec.list_item_type else [safe]
+                if any(
+                    item.get("customer_ref") != request.input_json["customer_ref"]
+                    for item in observed
+                ):
+                    raise ValidationError("Stripe tax ID does not belong to the selected customer")
+                if (
+                    "tax_id_ref" in request.input_json
+                    and safe.get("tax_id_ref") != request.input_json["tax_id_ref"]
+                ):
+                    raise ValidationError(
+                        "Stripe tax ID response does not match the requested reference"
+                    )
         except ValidationError as exc:
             raise _malformed_response_error(
                 write=spec.write, action_key=request.action_key
@@ -322,12 +370,23 @@ class StripeActionConnector:
             return
         fields_by_action = {
             "stripe.customers.create": {"email", "name", "description"},
+            "stripe.customers.update": {"email", "name", "phone"},
             "stripe.customers.list": {"email"},
             "stripe.invoices.create": {"description"},
+            "stripe.invoices.update": {"footer", "description"},
+            "stripe.customers.tax-ids.create": {"value"},
             "stripe.invoice-items.create": {"description"},
             "stripe.payment-records.report": {"payment_reference"},
         }
         for key in fields_by_action.get(request.action_key, set()) & set(request.input_json):
+            if (
+                request.action_key == "stripe.invoices.update"
+                and key == "description"
+                and request.input_json[key] == ""
+            ):
+                # An explicit empty clear contains no private business text;
+                # payload secret storage intentionally rejects empty values.
+                continue
             if request.input_json.get(key) != SECRET_REF_SENTINEL:
                 issues.append(
                     issue(
@@ -336,6 +395,39 @@ class StripeActionConnector:
                         "payload_secret_ref_required",
                     )
                 )
+        if request.action_key == "stripe.customers.update":
+            address = request.input_json.get("address")
+            if isinstance(address, Mapping):
+                for key in _CUSTOMER_ADDRESS_FIELDS:
+                    if key in address and address[key] != SECRET_REF_SENTINEL:
+                        issues.append(
+                            issue(
+                                f"$.address.{key}",
+                                "sensitive Stripe text must use an exact $secret_ref marker",
+                                "payload_secret_ref_required",
+                            )
+                        )
+        fields = request.input_json.get("custom_fields")
+        prefix = "$.custom_fields"
+        if request.action_key == "stripe.customers.update":
+            settings = request.input_json.get("invoice_settings")
+            fields = settings.get("custom_fields") if isinstance(settings, Mapping) else None
+            prefix = "$.invoice_settings.custom_fields"
+        if request.action_key in {
+            "stripe.customers.update",
+            "stripe.invoices.update",
+        } and isinstance(fields, list):
+            for index, entry in enumerate(fields):
+                if isinstance(entry, Mapping):
+                    for key in ("name", "value"):
+                        if entry.get(key) != SECRET_REF_SENTINEL:
+                            issues.append(
+                                issue(
+                                    f"{prefix}[{index}].{key}",
+                                    "sensitive Stripe text must use an exact $secret_ref marker",
+                                    "payload_secret_ref_required",
+                                )
+                            )
 
     @staticmethod
     def _validate_safe_refs(
@@ -346,6 +438,7 @@ class StripeActionConnector:
             "product_ref",
             "price_ref",
             "customer_ref",
+            "tax_id_ref",
             "invoice_ref",
             "charge_ref",
             "payment_intent_ref",
@@ -459,6 +552,133 @@ class StripeActionConnector:
                         "range",
                     )
                 )
+        if request.action_key == "stripe.customers.update":
+            address = payload.get("address")
+            if not any(
+                key in payload for key in ("name", "email", "phone", "address", "invoice_settings")
+            ):
+                issues.append(issue("$", "at least one customer change is required", "required"))
+            for key in ("name", "email", "phone"):
+                if key in payload and (
+                    not isinstance(payload[key], str)
+                    or (not request.dry_run and payload[key] == SECRET_REF_SENTINEL)
+                ):
+                    issues.append(issue(f"$.{key}", f"{key} must be text", "type"))
+            if "address" in payload:
+                if not isinstance(address, Mapping) or not address:
+                    issues.append(
+                        issue("$.address", "address must contain a changed field", "required")
+                    )
+                else:
+                    for key, value in address.items():
+                        if key not in _CUSTOMER_ADDRESS_FIELDS:
+                            issues.append(
+                                issue(f"$.address.{key}", "unsupported address field", "forbidden")
+                            )
+                        elif not isinstance(value, str) or (
+                            not request.dry_run and value == SECRET_REF_SENTINEL
+                        ):
+                            issues.append(
+                                issue(f"$.address.{key}", "address field must be text", "type")
+                            )
+                        elif (
+                            key == "country"
+                            and not request.dry_run
+                            and re.fullmatch(r"[A-Z]{2}", value) is None
+                        ):
+                            issues.append(
+                                issue(
+                                    "$.address.country",
+                                    "country must be an uppercase ISO 3166-1 alpha-2 code",
+                                    "format",
+                                )
+                            )
+            if "invoice_settings" in payload:
+                settings = payload["invoice_settings"]
+                if not isinstance(settings, Mapping) or set(settings) != {"custom_fields"}:
+                    issues.append(
+                        issue(
+                            "$.invoice_settings",
+                            "only an explicit custom_fields replacement is supported",
+                            "required",
+                        )
+                    )
+                else:
+                    _validate_custom_fields(
+                        settings["custom_fields"],
+                        "$.invoice_settings.custom_fields",
+                        request.dry_run,
+                        issues,
+                    )
+        if request.action_key == "stripe.invoices.update":
+            if not any(
+                key in payload
+                for key in ("footer", "payment_method_types", "description", "custom_fields")
+            ):
+                issues.append(issue("$", "at least one invoice change is required", "required"))
+            if "footer" in payload and (
+                not isinstance(payload["footer"], str)
+                or (not request.dry_run and payload["footer"] == SECRET_REF_SENTINEL)
+            ):
+                issues.append(issue("$.footer", "footer must be text", "type"))
+            if "description" in payload:
+                value = payload["description"]
+                if not isinstance(value, str) or (
+                    not request.dry_run and value == SECRET_REF_SENTINEL
+                ):
+                    issues.append(issue("$.description", "description must be text", "type"))
+                elif len(value) > 1500:
+                    issues.append(
+                        issue(
+                            "$.description",
+                            "description must be at most 1500 characters",
+                            "max_length",
+                        )
+                    )
+            if "custom_fields" in payload:
+                _validate_custom_fields(
+                    payload["custom_fields"], "$.custom_fields", request.dry_run, issues
+                )
+            if "payment_method_types" in payload:
+                types = payload["payment_method_types"]
+                if not isinstance(types, list) or not types:
+                    issues.append(
+                        issue(
+                            "$.payment_method_types",
+                            "payment_method_types must be a nonempty list",
+                            "required",
+                        )
+                    )
+                elif any(
+                    not isinstance(item, str) or item not in _INVOICE_UPDATE_PAYMENT_METHOD_TYPES
+                    for item in types
+                ) or len(types) != len(set(types)):
+                    issues.append(
+                        issue(
+                            "$.payment_method_types",
+                            "payment_method_types must contain distinct reviewed Stripe types",
+                            "enum_mismatch",
+                        )
+                    )
+        if request.action_key == "stripe.customers.tax-ids.create":
+            tax_type, value = payload.get("type"), payload.get("value")
+            if (
+                not isinstance(tax_type, str)
+                or re.fullmatch(r"[a-z][a-z0-9_]{1,39}", tax_type) is None
+            ):
+                issues.append(
+                    issue(
+                        "$.type",
+                        "type must be a Stripe tax ID type key; Stripe validates supported types",
+                        "format",
+                    )
+                )
+            if (
+                not isinstance(value, str)
+                or not value
+                or (not request.dry_run and value == SECRET_REF_SENTINEL)
+            ):
+                issues.append(issue("$.value", "tax ID value must be nonempty text", "required"))
         if request.action_key == "stripe.invoice-items.create":
             if "currency" in payload and (
                 not isinstance(payload["currency"], str)
@@ -583,6 +803,42 @@ class StripeActionConnector:
                 )
 
 
+def _validate_custom_fields(
+    value: Any, path: str, dry_run: bool, issues: list[ActionValidationIssue]
+) -> None:
+    if not isinstance(value, list) or len(value) > 4:
+        issues.append(
+            issue(path, "custom_fields must be a complete list of at most four fields", "range")
+        )
+        return
+    for index, entry in enumerate(value):
+        if not isinstance(entry, Mapping) or set(entry) != {"name", "value"}:
+            issues.append(
+                issue(
+                    f"{path}[{index}]", "each custom field requires only name and value", "required"
+                )
+            )
+            continue
+        for key, limit in (("name", 40), ("value", 140)):
+            text = entry[key]
+            if (
+                not isinstance(text, str)
+                or not text
+                or (not dry_run and text == SECRET_REF_SENTINEL)
+            ):
+                issues.append(
+                    issue(f"{path}[{index}].{key}", "custom field must be nonempty text", "type")
+                )
+            elif len(text) > limit:
+                issues.append(
+                    issue(
+                        f"{path}[{index}].{key}",
+                        f"custom field must be at most {limit} characters",
+                        "max_length",
+                    )
+                )
+
+
 def _path_for(
     request: ActionConnectorRequest,
     spec: StripeActionSpec,
@@ -593,6 +849,7 @@ def _path_for(
         "{product_ref}": ("product_ref", "stripe.product"),
         "{price_ref}": ("price_ref", "stripe.price"),
         "{customer_ref}": ("customer_ref", "stripe.customer"),
+        "{tax_id_ref}": ("tax_id_ref", "stripe.tax-id"),
         "{invoice_ref}": ("invoice_ref", "stripe.invoice"),
         "{charge_ref}": ("charge_ref", "stripe.charge"),
         "{payment_intent_ref}": ("payment_intent_ref", "stripe.payment-intent"),
@@ -689,6 +946,26 @@ def _form_for(
     payload = request.input_json
     if request.action_key == "stripe.customers.create":
         return _copy_fields(payload, "email", "name", "description")
+    if request.action_key == "stripe.customers.update":
+        form = _copy_fields(payload, "name", "email", "phone")
+        address = payload.get("address")
+        if isinstance(address, Mapping):
+            form.update(
+                {
+                    f"address[{key}]": address[key]
+                    for key in _CUSTOMER_ADDRESS_FIELDS
+                    if key in address
+                }
+            )
+        if "invoice_settings" in payload:
+            form.update(
+                _custom_fields_form(
+                    payload["invoice_settings"]["custom_fields"], "invoice_settings[custom_fields]"
+                )
+            )
+        return form
+    if request.action_key == "stripe.customers.tax-ids.create":
+        return _copy_fields(payload, "type", "value")
     if request.action_key == "stripe.invoices.create":
         return {
             "customer": _resolve_ref(request, refs, "customer_ref", "stripe.customer"),
@@ -706,6 +983,13 @@ def _form_for(
             ),
             **_copy_fields(payload, "description"),
         }
+    if request.action_key == "stripe.invoices.update":
+        form = _copy_fields(payload, "footer", "description")
+        if "custom_fields" in payload:
+            form.update(_custom_fields_form(payload["custom_fields"], "custom_fields"))
+        if "payment_method_types" in payload:
+            form["payment_settings[payment_method_types][]"] = payload["payment_method_types"]
+        return form
     if request.action_key == "stripe.invoices.finalize":
         # https://docs.stripe.com/api/invoices/finalize: retain explicit-only
         # advancement even when a draft was changed outside this connector.
@@ -765,6 +1049,18 @@ def _copy_fields(payload: Mapping[str, Any], *keys: str) -> dict[str, Any]:
     return {key: value for key in keys if (value := payload.get(key)) is not None}
 
 
+def _custom_fields_form(fields: list[Mapping[str, str]], prefix: str) -> dict[str, Any]:
+    # Stripe replaces this entire list. The caller supplies all retained fields;
+    # the transport never reads/merges business facts or invents a partial patch.
+    if not fields:
+        return {prefix: ""}
+    return {
+        f"{prefix}[{index}][{key}]": entry[key]
+        for index, entry in enumerate(fields)
+        for key in ("name", "value")
+    }
+
+
 def _resolve_ref(
     request: ActionConnectorRequest,
     refs: ProviderObjectReferenceRepository,
@@ -775,11 +1071,16 @@ def _resolve_ref(
     value = request.input_json.get(key)
     if not isinstance(value, str):
         raise ValidationError(f"{key} is required")
-    return refs.resolve(
+    resolved = refs.resolve(
         credential=request.credential.credential,
         safe_ref=value,
         expected_object_type=object_type,
-    ).provider_object_id
+    )
+    if object_type == "stripe.tax-id" and (resolved.metadata_json or {}).get(
+        "customer_ref"
+    ) != request.input_json.get("customer_ref"):
+        raise ValidationError("tax ID reference or cursor must belong to the selected customer")
+    return resolved.provider_object_id
 
 
 def _business_detail_option_issues(request: ActionConnectorRequest) -> list[ActionValidationIssue]:
@@ -940,6 +1241,7 @@ def _safe_object(
         "stripe.product": "product",
         "stripe.price": "price",
         "stripe.customer": "customer",
+        "stripe.tax-id": "tax_id",
         "stripe.invoice": "invoice",
         "stripe.invoice-item": "invoiceitem",
         "stripe.invoice-payment": "invoice_payment",
@@ -964,10 +1266,22 @@ def _safe_object(
         result = _safe_price(value, safe_ref, refs=refs, credential=credential)
     elif object_type == "stripe.customer":
         result = _safe_customer(value, safe_ref)
+    elif object_type == "stripe.tax-id":
+        result = _safe_tax_id(value, safe_ref, refs=refs, credential=credential)
+        refs.upsert(
+            credential=credential,
+            object_type=object_type,
+            provider_object_id=identifier,
+            metadata_json={"customer_ref": result["customer_ref"]},
+        )
     elif object_type == "stripe.invoice":
         result = _safe_invoice(
             value, safe_ref, refs=refs, credential=credential, correlation_key=correlation_key
         )
+        for link_field in ("invoice_pdf", "hosted_invoice_url"):
+            result[f"{link_field}_state"] = _invoice_link_state(
+                value, link_field, secret_values=business_secret_values
+            )
     elif object_type == "stripe.invoice-item":
         result = _safe_invoice_item(value, safe_ref, refs=refs, credential=credential)
     elif object_type == "stripe.invoice-payment":
@@ -1025,6 +1339,26 @@ def _safe_business_details(
             raise ValidationError(f"Stripe {object_type}.{key} must be text or null")
         else:
             result[key] = redact_secret_text(redact_secret_values(item, secret_values))
+    if object_type in {"stripe.customer", "stripe.invoice"}:
+        source = value.get("invoice_settings") if object_type == "stripe.customer" else value
+        if isinstance(source, Mapping) and "custom_fields" in source:
+            fields = source["custom_fields"]
+            _safe_custom_fields(fields, field="custom_fields")
+            projected = (
+                None
+                if fields is None
+                else [
+                    {
+                        key: redact_secret_text(redact_secret_values(entry[key], secret_values))
+                        for key in ("name", "value")
+                    }
+                    for entry in fields
+                ]
+            )
+            if object_type == "stripe.customer":
+                result["invoice_settings"] = {"custom_fields": projected}
+            else:
+                result["custom_fields"] = projected
     return result
 
 
@@ -1050,6 +1384,21 @@ def _valid_business_link(value: Any) -> bool:
         )
     except ValueError:
         return False
+
+
+def _invoice_link_state(
+    invoice: Mapping[str, Any], field: str, *, secret_values: tuple[str, ...]
+) -> str:
+    if field not in invoice:
+        return "not_returned"
+    value = invoice[field]
+    if value is None:
+        return "draft_unavailable" if invoice.get("status") == "draft" else "unavailable"
+    if not _valid_business_link(value):
+        return "invalid"
+    if redact_secret_text(redact_secret_values(value, secret_values)) != value:
+        return "redacted"
+    return "available"
 
 
 def _safe_product(
@@ -1238,6 +1587,41 @@ def _safe_customer(value: Mapping[str, Any], safe_ref: str) -> dict[str, Any]:
     result["email_sha256"] = (
         None if value.get("deleted") is True else _email_sha256(value.get("email"))
     )
+    if value.get("deleted") is not True:
+        for field in ("name", "phone"):
+            if field in value:
+                result[f"{field}_sha256"] = _text_sha256(value[field], field=f"customer.{field}")
+        if "address" in value:
+            address = value["address"]
+            if address is None:
+                result["address_sha256"] = None
+                result["address_field_sha256"] = None
+            elif isinstance(address, Mapping):
+                selected = {key: address[key] for key in _CUSTOMER_ADDRESS_FIELDS if key in address}
+                result["address_field_sha256"] = {
+                    key: _text_sha256(item, field=f"customer.address.{key}")
+                    for key, item in selected.items()
+                }
+                # Fixed keys and JSON separators make this whole-address digest
+                # repeatable without returning the underlying billing address.
+                canonical = json.dumps(
+                    selected, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                )
+                result["address_sha256"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+            else:
+                raise ValidationError("Stripe customer address must be an object or null")
+        if "invoice_settings" in value:
+            settings = value["invoice_settings"]
+            if settings is None:
+                result["invoice_settings"] = None
+            elif isinstance(settings, Mapping):
+                result["invoice_settings"] = {}
+                if "custom_fields" in settings:
+                    result["invoice_settings"]["custom_fields"] = _safe_custom_fields(
+                        settings["custom_fields"], field="customer.invoice_settings.custom_fields"
+                    )
+            else:
+                raise ValidationError("Stripe customer invoice settings must be an object or null")
     return result
 
 
@@ -1248,6 +1632,93 @@ def _email_sha256(value: Any) -> str | None:
         raise ValidationError("Stripe customer email must be text or null")
     # Preserve exact provider bytes: no lowercase/trim/email canonicalization.
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _text_sha256(value: Any, *, field: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValidationError(f"Stripe {field} must be text or null")
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _safe_custom_fields(value: Any, *, field: str) -> list[dict[str, str | None]] | None:
+    if value is None:
+        return None
+    if not isinstance(value, list) or len(value) > 4:
+        raise ValidationError(f"Stripe {field} must be a list of at most four fields or null")
+    result = []
+    for entry in value:
+        if not isinstance(entry, Mapping) or not all(
+            isinstance(entry.get(key), str) for key in ("name", "value")
+        ):
+            raise ValidationError(f"Stripe {field} must contain name/value text")
+        result.append(
+            {
+                f"{key}_sha256": _text_sha256(entry[key], field=f"{field}.{key}")
+                for key in ("name", "value")
+            }
+        )
+    return result
+
+
+def _safe_tax_id(
+    value: Mapping[str, Any],
+    safe_ref: str,
+    *,
+    refs: ProviderObjectReferenceRepository,
+    credential: Any,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "tax_id_ref": safe_ref,
+        "created": _safe_nonnegative_integer(value.get("created"), field="tax_id.created"),
+        "livemode": _safe_boolean(value.get("livemode"), field="tax_id.livemode"),
+        "type": _safe_tax_type(value.get("type")),
+    }
+    _add_nested_ref(result, value, "customer", "customer_ref", "stripe.customer", refs, credential)
+    if "customer_ref" not in result:
+        raise ValidationError("Stripe customer tax ID must identify its customer")
+    if "country" in value:
+        country = value["country"]
+        if country is not None and (
+            not isinstance(country, str) or re.fullmatch(r"[A-Z]{2}", country) is None
+        ):
+            raise ValidationError("Stripe tax ID country must be an ISO country code or null")
+        result["country"] = country
+    if not isinstance(value.get("value"), str):
+        raise ValidationError("Stripe tax ID value must be text")
+    result["value_sha256"] = _text_sha256(value["value"], field="tax_id.value")
+    if "verification" in value:
+        verification = value["verification"]
+        if verification is None:
+            result["verification"] = None
+        elif isinstance(verification, Mapping):
+            result["verification"] = {}
+            if "status" in verification:
+                status = verification["status"]
+                result["verification"]["status"] = (
+                    None
+                    if status is None
+                    else _safe_enum(
+                        status,
+                        {"pending", "unavailable", "unverified", "verified"},
+                        field="tax_id.verification.status",
+                    )
+                )
+            for key in ("verified_name", "verified_address"):
+                if key in verification:
+                    result["verification"][f"{key}_sha256"] = _text_sha256(
+                        verification[key], field=f"tax_id.verification.{key}"
+                    )
+        else:
+            raise ValidationError("Stripe tax ID verification must be an object or null")
+    return result
+
+
+def _safe_tax_type(value: Any) -> str:
+    if not isinstance(value, str) or re.fullmatch(r"[a-z][a-z0-9_]{1,39}", value) is None:
+        raise ValidationError("Stripe tax ID type must be a type key")
+    return value
 
 
 def _safe_invoice(
@@ -1291,6 +1762,11 @@ def _safe_invoice(
         field="invoice.collection_method",
     )
     result["auto_advance"] = _safe_boolean(value.get("auto_advance"), field="invoice.auto_advance")
+    # Invoice settings are API observations, not a rendering of the customer
+    # email, hosted page, or PDF. Stripe supplies no saved-draft Dashboard URL.
+    result["recipient_pay_online_button_state"] = "unverified"
+    if result.get("status") == "draft":
+        result["draft_dashboard_link_state"] = "not_exposed_by_stripe_api"
     if "due_date" in value:
         due_date = value["due_date"]
         result["due_date"] = (
@@ -1307,7 +1783,79 @@ def _safe_invoice(
     result["created"] = _safe_nonnegative_integer(value.get("created"), field="invoice.created")
     result["livemode"] = _safe_boolean(value.get("livemode"), field="invoice.livemode")
     result["invoice_customer_email_sha256"] = _email_sha256(value.get("customer_email"))
+    for field in ("customer_name", "customer_phone"):
+        if field in value:
+            result[f"invoice_{field}_sha256"] = _text_sha256(value[field], field=f"invoice.{field}")
+    if "customer_address" in value:
+        address = value["customer_address"]
+        if address is None:
+            result["invoice_customer_address_sha256"] = None
+            result["invoice_customer_address_field_sha256"] = None
+        elif isinstance(address, Mapping):
+            selected = {key: address[key] for key in _CUSTOMER_ADDRESS_FIELDS if key in address}
+            result["invoice_customer_address_field_sha256"] = {
+                key: _text_sha256(item, field=f"invoice.customer_address.{key}")
+                for key, item in selected.items()
+            }
+            canonical = json.dumps(
+                selected, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            )
+            result["invoice_customer_address_sha256"] = hashlib.sha256(
+                canonical.encode("utf-8")
+            ).hexdigest()
+        else:
+            raise ValidationError("Stripe invoice customer address must be an object or null")
     result["current_customer_email_sha256"] = None
+    if "footer" in value:
+        result["footer_sha256"] = _text_sha256(value["footer"], field="invoice.footer")
+    if "description" in value:
+        result["description_sha256"] = _text_sha256(
+            value["description"], field="invoice.description"
+        )
+    if "custom_fields" in value:
+        result["custom_fields"] = _safe_custom_fields(
+            value["custom_fields"], field="invoice.custom_fields"
+        )
+    if "customer_tax_ids" in value:
+        tax_ids = value["customer_tax_ids"]
+        if tax_ids is None:
+            result["customer_tax_ids"] = None
+        elif isinstance(tax_ids, list):
+            result["customer_tax_ids"] = []
+            for item in tax_ids:
+                if not isinstance(item, Mapping):
+                    raise ValidationError("Stripe invoice customer tax IDs must contain objects")
+                snapshot: dict[str, str | None] = {"type": _safe_tax_type(item.get("type"))}
+                if "value" in item:
+                    snapshot["value_sha256"] = _text_sha256(
+                        item["value"], field="invoice.customer_tax_ids.value"
+                    )
+                result["customer_tax_ids"].append(snapshot)
+        else:
+            raise ValidationError("Stripe invoice customer tax IDs must be a list or null")
+    if "payment_settings" in value:
+        payment_settings = value["payment_settings"]
+        if payment_settings is None:
+            result["payment_settings"] = None
+        elif isinstance(payment_settings, Mapping):
+            safe_settings: dict[str, Any] = {}
+            if "payment_method_types" in payment_settings:
+                method_types = payment_settings["payment_method_types"]
+                if method_types is None:
+                    safe_settings["payment_method_types"] = None
+                elif isinstance(method_types, list) and all(
+                    isinstance(item, str)
+                    and re.fullmatch(r"[a-z][a-z0-9_]{0,40}", item) is not None
+                    for item in method_types
+                ):
+                    safe_settings["payment_method_types"] = method_types
+                else:
+                    raise ValidationError(
+                        "Stripe invoice payment method types must be a list or null"
+                    )
+            result["payment_settings"] = safe_settings
+        else:
+            raise ValidationError("Stripe invoice payment settings must be an object or null")
     # Additional billing To/CC settings are not exposed by Stripe's API. These
     # observations must never be presented as complete recipient enumeration.
     result["recipient_scope"] = "primary-email-fields-only"
@@ -2019,6 +2567,7 @@ def _object_ref_for_type(value: Mapping[str, Any], object_type: str) -> str:
         "stripe.product": "product_ref",
         "stripe.price": "price_ref",
         "stripe.customer": "customer_ref",
+        "stripe.tax-id": "tax_id_ref",
         "stripe.invoice": "invoice_ref",
         "stripe.invoice-item": "invoice_item_ref",
         "stripe.invoice-payment": "invoice_payment_ref",

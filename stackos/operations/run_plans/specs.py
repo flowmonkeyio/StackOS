@@ -163,6 +163,9 @@ def operation_specs() -> list[OperationSpec]:
             ),
             returns=(
                 "The started plan.",
+                "workflow_contract compares frozen guidance with the installed effective "
+                "workflow, including same-version changes. Review mismatch/unavailable before "
+                "side effects; starting does not upgrade the snapshot.",
                 "The linked run audit row.",
                 "A run_token scoped to the run-plan controller.",
             ),
@@ -190,7 +193,12 @@ def operation_specs() -> list[OperationSpec]:
                 "A human or script wants to inspect a saved plan.",
             ),
             prerequisites=("Pass run_plan_id.",),
-            returns=("The full run plan object, including steps and approval requests.",),
+            returns=(
+                "The full run plan object, including steps and approval requests.",
+                "workflow_contract reports current, mismatch, or unavailable with versions, "
+                "SHA-256 contract digests, bounded changed paths, and safe continuation guidance. "
+                "Compact and raw retain this diagnostic. Inspection never upgrades a snapshot.",
+            ),
             examples=(OperationExample(title="Fetch a run plan", arguments={"run_plan_id": 42}),),
             mutating=False,
             grant_policy="direct-read",
@@ -218,6 +226,8 @@ def operation_specs() -> list[OperationSpec]:
                 "Larger results return result_truncated=true and a bounded result_json with "
                 "available keys, optional summary, and an exact raw getStep recovery call.",
                 "Pass response_mode=raw to retrieve the complete persisted result unchanged.",
+                "workflow_contract compares frozen and installed effective guidance before "
+                "resuming a step; mismatch/unavailable requires review before side effects.",
             ),
             examples=(
                 OperationExample(
@@ -383,30 +393,34 @@ def operation_specs() -> list[OperationSpec]:
         ),
         OperationSpec(
             name="runPlan.update",
-            summary="Update run-plan metadata or explicit approval-gate state.",
+            summary="Record an operator approval decision or update safe run-plan metadata.",
             input_model=RunPlanUpdateInput,
             output_model=WriteEnvelope[RunPlanOut],
             handler=run_plan_update,
             surfaces=_surfaces("runPlan.update", "run-plans approve"),
             purpose=(
-                "Use this for controlled plan administration such as recording an approval "
-                "decision or safe metadata. Direct MCP agents are not granted this operation; "
-                "local REST and CLI calls are the admin approval surface."
+                "Record an explicit operator decision already made in the current conversation "
+                "or authoritative evidence, or update safe plan metadata. The operator decides; "
+                "the agent records that decision through the existing project-scoped MCP "
+                "operation without another approval handoff."
             ),
             when_to_use=(
-                "A trusted controller has an approval decision to persist.",
+                "The operator has approved or rejected an exact gate and the agent must record it.",
                 "A local admin path needs to attach non-secret metadata to a plan.",
             ),
             prerequisites=(
-                "Pass run_plan_id.",
+                "Pass the exact run_plan_id in the bound project. Direct daemon MCP callers "
+                "must supply project_id or a project-scoped run_token.",
                 "Pass approval_key and approval_status together when updating approvals.",
-                "Use the local REST or CLI admin path for human approval decisions.",
+                "Use decided_by and decision_json to retain the operator identity, safe evidence "
+                "refs, and original decision time when available. Do not invent an owner decision "
+                "or ask for the same approval again merely to satisfy storage.",
                 "Never include secrets in metadata_json or decision_json.",
             ),
             returns=("A WriteEnvelope containing the updated run plan.",),
             examples=(
                 OperationExample(
-                    title="Approve a gate",
+                    title="Record an operator's existing approval",
                     arguments={
                         "run_plan_id": 42,
                         "approval_key": "launch-review",
@@ -415,7 +429,7 @@ def operation_specs() -> list[OperationSpec]:
                     },
                 ),
             ),
-            grant_policy="admin-only",
+            grant_policy="direct-run-audit-write",
         ),
         OperationSpec(
             name="runPlan.abort",
@@ -479,6 +493,9 @@ def operation_specs() -> list[OperationSpec]:
             returns=(
                 "A WriteEnvelope containing the claimed running step.",
                 "The step's allowed_tools list, derived from the run-plan grant snapshot.",
+                "workflow_contract retains installed/frozen contract diagnostics on resume. "
+                "Review mismatch/unavailable before side effects; claiming preserves the "
+                "frozen instructions and grants.",
             ),
             examples=(
                 OperationExample(

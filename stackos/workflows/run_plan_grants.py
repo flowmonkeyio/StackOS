@@ -57,7 +57,6 @@ RUN_PLAN_ADMIN_ONLY_TOOL_NAMES: frozenset[str] = frozenset(
         "connection.detach",
         "plugin.disable",
         "plugin.enable",
-        "runPlan.update",
     }
 )
 

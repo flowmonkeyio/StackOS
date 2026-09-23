@@ -3981,6 +3981,7 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            workflow_contract?: components["schemas"]["RunPlanWorkflowContractOut"] | null;
         };
         /**
          * RunPlanStatus
@@ -4102,6 +4103,7 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            workflow_contract?: components["schemas"]["RunPlanWorkflowContractOut"] | null;
         };
         /**
          * RunPlanStepStatus
@@ -4152,6 +4154,35 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** RunPlanWorkflowContractOut */
+        RunPlanWorkflowContractOut: {
+            /**
+             * Changed Path Count
+             * @default 0
+             */
+            changed_path_count: number;
+            /** Changed Paths */
+            changed_paths?: string[];
+            /** Frozen Digest */
+            frozen_digest?: string | null;
+            /** Frozen Version */
+            frozen_version?: string | null;
+            /** Installed Digest */
+            installed_digest?: string | null;
+            /** Installed Version */
+            installed_version?: string | null;
+            /** Message */
+            message: string;
+            /** Next Action */
+            next_action?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: RunPlanWorkflowContractOutStatus;
+            /** Workflow Key */
+            workflow_key: string;
         };
         /**
          * RunStatus
@@ -5141,6 +5172,7 @@ export type SchemaRunPlanOut = components['schemas']['RunPlanOut'];
 export type SchemaRunPlanStepHandoffOut = components['schemas']['RunPlanStepHandoffOut'];
 export type SchemaRunPlanStepOut = components['schemas']['RunPlanStepOut'];
 export type SchemaRunPlanSummaryOut = components['schemas']['RunPlanSummaryOut'];
+export type SchemaRunPlanWorkflowContractOut = components['schemas']['RunPlanWorkflowContractOut'];
 export type SchemaScheduleUpsertRequest = components['schemas']['ScheduleUpsertRequest'];
 export type SchemaScheduledJobOut = components['schemas']['ScheduledJobOut'];
 export type SchemaSitemapFetchRequest = components['schemas']['SitemapFetchRequest'];
@@ -8195,6 +8227,11 @@ export enum RunPlanStepStatus {
     failed = "failed",
     skipped = "skipped",
     blocked = "blocked"
+}
+export enum RunPlanWorkflowContractOutStatus {
+    current = "current",
+    mismatch = "mismatch",
+    unavailable = "unavailable"
 }
 export enum RunStatus {
     running = "running",

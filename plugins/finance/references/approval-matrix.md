@@ -31,11 +31,37 @@ export. See the [digest protocol](local-workspace-contract.md#versions-and-diges
 Keep `owner-invoice-finalization` on `finance.stripe.invoices.finalize` and
 `owner-invoice-send` on `finance.stripe.invoices.send`.
 The owner may approve both once. Record that same external decision under both
-gates through the existing authorized approval path; agents never self-approve.
+gates when it explicitly covers both finalization and initial send. The agent may
+record an existing explicit owner decision through `runPlan.update`, including
+a verbal or conversation approval already retained in the external finance
+record. Recording the owner's decision is not making an approval decision.
+Do not ask the owner again when the exact approved scope remains unchanged.
 
-The immutable proposal covers account/customer/invoice, currency, every line,
+Use the existing `run_plan_id`, `approval_key`, `approval_status`, `decided_by`
+and `decision_json` arguments; identify the owner in `decided_by` and keep
+`decision_json` limited to safe existing external decision/evidence refs and
+the original decision time when needed. Preserve the actual actor, original
+decision time, scope and evidence in the external record. The technical gate's
+recording time must not replace that source history. Reuse the same decision
+refs for both covered gates; no new approval handoff, record format or owner
+conversation is required. Independently verify existing evidence as the
+workflow requires, then read back the recorded gate before execution.
+
+Agents never self-approve: they record the owner's explicit decision, not their
+own judgment. An agent must not invent an owner decision, infer approval from a
+standing policy or broaden its scope.
+Recording approval does not execute an action or satisfy missing recipient,
+payment-presentation, provider-state or delivery evidence. Those checks remain
+separate, and a material scope change still requires a fresh owner decision.
+
+The immutable proposal covers account/customer/invoice, expected customer
+billing-detail digests when material, currency, every line,
 description hashes or selected Price refs/quantities, terms, optional printed
-issue date, subtotal and total when known. A catalog request may be prepared
+issue date, payment presentation when applicable, subtotal and total when known.
+For direct-deposit-only delivery, bind the exact footer hash, Stripe payment
+method list or null, and externally reviewed Pay online link state/evidence to
+the immutable version. Stripe's payment-method readback does not establish link
+visibility; an unknown or visible link blocks send. A catalog request may be prepared
 before a quote with named amount/total gaps, but approval/finalization requires
 the independently reread current Price terms/currency and draft line amounts,
 subtotal and total captured into a new digest-bound version. `effective_at`
@@ -67,6 +93,13 @@ materially changed recipient scope. Do not claim permanent API visibility or
 cache an external observation forever. Settlement-only does not send and needs
 no recipient-setting approval.
 
+The [external delivery evidence contract](local-workspace-contract.md#payment-presentation-proof-and-delivery-reconciliation)
+defines deterministic presentation checks and reconciliation of a prior manual
+Dashboard no-link send. Manual completion requires an exact-version owner send
+decision recorded before delivery, every recipient, and independently verified
+retained delivery evidence. Reconciliation performs no send and records no
+API-send action call. A manual choice or uncertain result remains unresolved.
+
 ## Follow-up approvals
 
 Sending instructions do not replace checking current state: not due, paid/zero,
@@ -89,6 +122,13 @@ route/account and actual action `input_json` in `collection_decision.outreach`
 in the same `finance.json`; use the connector's current input contract rather
 than inventing finance-specific email restrictions. Existing review/digest and
 attempt records apply to either route.
+
+Record an existing explicit owner decision for the particular resend or
+settlement action through the same `runPlan.update` path without another
+approval conversation when its exact scope is unchanged. An initial-send
+approval does not authorize a resend. A decision must explicitly cover each
+requested action and occurrence; unchanged invoice content alone is not
+permission for repeated customer contact or a different settlement action.
 
 Check invoice state and recent contacts/replies together so the two channels do
 not duplicate a follow-up. When IMAP evidence is needed, use the existing

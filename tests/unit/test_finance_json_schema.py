@@ -388,11 +388,53 @@ def test_billing_version_preserves_optional_issue_date_and_catalog_selection() -
     assert _errors(_document("billing_versions", invalid_timestamp))
 
 
+def test_billing_version_binds_direct_deposit_presentation_review() -> None:
+    billing = _billing_version()
+    billing["payment_presentation"] = {
+        "footer_sha256": "a" * 64,
+        "payment_method_types": ["customer_balance"],
+        "online_payment_link_state": "absent",
+        "review_evidence_ref": "external-preview:fixture",
+    }
+    assert not _errors(_document("billing_versions", billing))
+
+    missing_review = copy.deepcopy(billing)
+    del missing_review["payment_presentation"]["review_evidence_ref"]
+    assert _errors(_document("billing_versions", missing_review))
+
+    for methods in ([], ["card", "card"], ["unsupported"], "card"):
+        invalid = copy.deepcopy(billing)
+        invalid["payment_presentation"]["payment_method_types"] = methods
+        assert _errors(_document("billing_versions", invalid)), methods
+
+    for state in ("visible", "unknown"):
+        observed = copy.deepcopy(billing)
+        observed["payment_presentation"]["online_payment_link_state"] = state
+        del observed["payment_presentation"]["review_evidence_ref"]
+        assert not _errors(_document("billing_versions", observed))
+
+
+def test_billing_version_can_bind_exact_customer_detail_digests() -> None:
+    billing = _billing_version()
+    billing["customer_billing_details"] = {
+        "name_sha256": "a" * 64,
+        "address_field_sha256": {"line1": "b" * 64, "line2": None},
+    }
+    assert not _errors(_document("billing_versions", billing))
+
+    for invalid_details in ({}, {"name_sha256": "wrong"}, {"address_field_sha256": {}}):
+        invalid = copy.deepcopy(billing)
+        invalid["customer_billing_details"] = invalid_details
+        assert _errors(_document("billing_versions", invalid)), invalid_details
+
+
 def test_billing_digest_description_defines_exact_material_and_canonical_serialization() -> None:
     description = _schema()["$defs"]["billing_version"]["description"]
     assert (
         "exactly version, customer_mapping_ref, recipient_settings_ref, "
-        "external_project_ref when present, effective_at when present, currency, terms, lines, "
+        "customer_billing_details when present, "
+        "external_project_ref when present, effective_at when present, "
+        "payment_presentation when present, currency, terms, lines, "
         "subtotal when present, total when present, "
         "source_refs, and supersedes_ref only when present"
     ) in description

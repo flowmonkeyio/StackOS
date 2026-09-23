@@ -563,7 +563,7 @@ def test_followup_authored_email_uses_selected_route_and_step_grant() -> None:
     auth = _by_key(followups["auth_requirements"])
     capabilities = _by_key(followups["capability_requirements"])
     steps = {item["id"]: item for item in followups["steps"]}
-    assert followups["version"] == "0.7.1"
+    assert followups["version"] == "0.7.4"
     assert "default" not in inputs["followup_route"]
     assert inputs["followup_route"]["schema"]["enum"] == ["stripe-resend", "smtp-email"]
     assert inputs["followup_route"]["required"] is False
@@ -907,6 +907,279 @@ def test_stripe_invoice_creation_requires_explicit_approved_currency() -> None:
         {**request, "currency": "EUR"},
     ):
         assert list(validator.iter_errors(invalid))
+
+
+def test_stripe_billing_updates_are_bounded_and_recoverable_in_payment_request() -> None:
+    plugin = yaml.safe_load((ROOT / "plugins/finance/plugin.yaml").read_text())
+    manifest_actions = _by_key(plugin["actions"])
+    customer = manifest_actions["stripe.customers.update"]
+    invoice = manifest_actions["stripe.invoices.update"]
+
+    assert customer["config"]["stripe"] == {
+        "method": "POST",
+        "path": "/customers/{customer_ref}",
+        "api_version": "2026-08-26.dahlia",
+    }
+    assert invoice["config"]["stripe"] == {
+        "method": "POST",
+        "path": "/invoices/{invoice_ref}",
+        "api_version": "2026-08-26.dahlia",
+    }
+    assert customer["risk_level"] == invoice["risk_level"] == "write"
+    assert invoice["name"] == "Update Stripe Invoice Presentation"
+    assert (
+        "generic action does not enforce draft status"
+        in " ".join(
+            next(
+                step
+                for step in _workflows()["finance.payment-request"]["steps"]
+                if step["id"] == "create-draft"
+            )["instructions"]
+        ).lower()
+    )
+    customer_schema = customer["input_schema"]
+    invoice_schema = invoice["input_schema"]
+    customer_validator = Draft202012Validator(customer_schema)
+    invoice_validator = Draft202012Validator(invoice_schema)
+    customer_ref = "provider-object:customer-fixture"
+    invoice_ref = "provider-object:invoice-fixture"
+
+    assert not list(customer_validator.iter_errors({"customer_ref": customer_ref, "name": "Acme"}))
+    assert not list(
+        customer_validator.iter_errors(
+            {"customer_ref": customer_ref, "address": {"line1": "Main Street", "country": "US"}}
+        )
+    )
+    for invalid in (
+        {"customer_ref": customer_ref},
+        {"customer_ref": customer_ref, "address": {}},
+        {"customer_ref": customer_ref, "balance": 100},
+    ):
+        assert list(customer_validator.iter_errors(invalid))
+    assert set(customer_schema["properties"]) == {
+        "customer_ref",
+        "name",
+        "email",
+        "phone",
+        "address",
+        "invoice_settings",
+    }
+    assert set(customer_schema["properties"]["address"]["properties"]) == {
+        "line1",
+        "line2",
+        "city",
+        "state",
+        "postal_code",
+        "country",
+    }
+
+    assert not list(
+        invoice_validator.iter_errors({"invoice_ref": invoice_ref, "footer": "Pay by wire"})
+    )
+    assert not list(
+        invoice_validator.iter_errors(
+            {"invoice_ref": invoice_ref, "payment_method_types": ["card", "us_bank_account"]}
+        )
+    )
+    for invalid in (
+        {"invoice_ref": invoice_ref},
+        {"invoice_ref": invoice_ref, "payment_method_types": []},
+        {"invoice_ref": invoice_ref, "payment_method_types": ["card", "card"]},
+        {"invoice_ref": invoice_ref, "payment_method_types": ["crypto"]},
+        {"invoice_ref": invoice_ref, "pay_online": False},
+    ):
+        assert list(invoice_validator.iter_errors(invalid))
+
+    payment = _workflows()["finance.payment-request"]
+    actions = _by_key(payment["action_contracts"])
+    steps = {step["id"]: step for step in payment["steps"]}
+    assert actions["stripe_customers_update"]["action"] == "finance.stripe.customers.update"
+    assert actions["stripe_invoices_update"]["action"] == "finance.stripe.invoices.update"
+    assert "approval_ref" not in actions["stripe_customers_update"]
+    assert "approval_ref" not in actions["stripe_invoices_update"]
+    assert "stripe_customers_update" in steps["resolve-customer"]["action_refs"]
+    assert "stripe_invoices_update" in steps["create-draft"]["action_refs"]
+    assert all(
+        "stripe_customers_retrieve" in steps[step_id]["action_refs"]
+        for step_id in ("review-draft", "finalize-invoice", "send-invoice")
+    )
+    assert all(
+        "stripe_invoices_update" not in steps[step_id]["action_refs"]
+        for step_id in ("review-draft", "finalize-invoice", "send-invoice")
+    )
+    review = " ".join(steps["review-draft"]["instructions"]).lower()
+    send = " ".join(steps["send-invoice"]["instructions"]).lower()
+    for required in (
+        "footer_sha256",
+        "payment_settings.payment_method_types",
+        "online_payment_link_state=absent",
+        "independently call stripe_customers_retrieve and stripe_invoices_retrieve",
+        "recipient_pay_online_button_state=unverified",
+        "draft_dashboard_link_state=not_exposed_by_stripe_api",
+        "do not finalize merely to obtain a pdf or review link",
+        "read actions without an explicit stackos idempotency_key fetch current provider state",
+        "email invoice without link",
+        "download pdf",
+    ):
+        assert required in review
+    assert (
+        "recipient_pay_online_button_state=unverified and a dashboard-only preview "
+        "never satisfy the gate" in send
+    )
+    assert "the api does not document that it inherits dashboard email invoice without link" in send
+    assert "stripe_invoices_send has no recipient override" in send
+    assert "do not modify the customer's billing email" in send
+    assert "keep status=exception, recovery_state=blocked" in send
+    assert "make no stripe_invoices_send call" in send
+    assert (
+        "until there is independent delivery proof and prior exact-version owner send authorization"
+        in send
+    )
+    assert "reconcile-manual-delivery" in send
+    assert "invent no send action_call_ref" in send
+    assert "fresh owner-invoice-send approval" in send
+    assert (
+        "invoice's own customer_name/customer_email/customer_phone/customer_address snapshot"
+        in review
+    )
+    assert "finalized invoice's frozen customer name/email/phone/address snapshot" in send
+    finalize = " ".join(steps["finalize-invoice"]["instructions"]).lower()
+    assert "never merely to obtain a pdf or review link" in finalize
+    assert "independently" in finalize
+    assert "an explicit issuance decision" in finalize
+    assert (
+        "an empty list is unsupported"
+        in invoice["input_schema"]["properties"]["payment_method_types"]["description"].lower()
+    )
+    assert (
+        "operator-review recipient override"
+        in manifest_actions["stripe.invoices.send"]["description"]
+    )
+    assert (
+        "does not document inheriting dashboard email invoice without link"
+        in manifest_actions["stripe.invoices.send"]["description"].lower()
+    )
+    send_validator = Draft202012Validator(manifest_actions["stripe.invoices.send"]["input_schema"])
+    assert list(
+        send_validator.iter_errors(
+            {"invoice_ref": invoice_ref, "recipient_email": "operator@example.test"}
+        )
+    )
+    handoff = {
+        "status": "exception",
+        "billing_request_ref": "billing-request:manual-handoff",
+        "recovery_state": "blocked",
+        "exception_refs": ["exception:manual-dashboard-send"],
+    }
+    assert not list(Draft202012Validator(_summary_schema(payment)).iter_errors(handoff))
+
+
+def test_finance_manual_delivery_output_requires_external_proof_and_preserves_route() -> None:
+    workflow = _workflows()["finance.payment-request"]
+    summary = dict(_terminal_summaries()["finance.payment-request"][0])
+    summary.update(
+        status="manual-sent",
+        delivery_state="manual-sent",
+        delivery_route="stripe-dashboard-email-without-link",
+        manual_delivery_reconciliation_ref="reconciliation:manual-fixture",
+        delivery_evidence_ref="evidence:delivery-fixture",
+        owner_send_approval_ref="approval:manual-fixture",
+    )
+    validator = Draft202012Validator(_summary_schema(workflow))
+    assert not list(validator.iter_errors(summary))
+    assert not list(validator.iter_errors({**summary, "status": "recorded"}))
+    for field in (
+        "manual_delivery_reconciliation_ref",
+        "delivery_evidence_ref",
+        "owner_send_approval_ref",
+    ):
+        missing = dict(summary)
+        missing.pop(field)
+        assert list(validator.iter_errors(missing))
+    assert list(validator.iter_errors({**summary, "delivery_route": "stripe-api-send"}))
+    assert list(validator.iter_errors({**summary, "delivery_state": "unknown"}))
+
+
+def test_followups_revalidate_api_presentation_and_preserve_manual_contact_history() -> None:
+    workflow = _workflows()["finance.payment-request-followups"]
+    actions = _by_key(workflow["action_contracts"])
+    steps = {step["id"]: step for step in workflow["steps"]}
+    resend = " ".join(steps["resend-approved"]["instructions"])
+    assert "delivery_route=stripe-api-send" in resend
+    assert "invoice_snapshot_digest" in resend
+    assert "Dashboard-only evidence do not prove" in resend
+    for action in ("stripe_customers_retrieve", "stripe_invoice_items_list"):
+        assert actions[action]["risk_level"] == "read"
+        assert action in steps["resend-approved"]["action_refs"]
+    lifecycle = " ".join(steps["read-invoice-lifecycle"]["instructions"])
+    assert "delivery_state=manual-sent" in lifecycle
+    assert "actual contact time" in lifecycle
+    assert "never a pending initial API send" in lifecycle
+    assert "Unknown manual outcomes remain reconcile-required" in lifecycle
+    for action in ("stripe_invoice_pdf_download", "stripe_invoice_pdf_cleanup"):
+        assert actions[action]["optional"] is True
+        assert action in steps["read-invoice-lifecycle"]["action_refs"]
+        assert action not in steps["resend-approved"]["action_refs"]
+
+
+def test_finalized_pdf_is_available_before_customer_send_without_draft_issuance() -> None:
+    workflow = _workflows()["finance.payment-request"]
+    actions = _by_key(workflow["action_contracts"])
+    steps = {step["id"]: step for step in workflow["steps"]}
+    for key in ("stripe_invoice_pdf_download", "stripe_invoice_pdf_cleanup"):
+        assert actions[key]["optional"] is True
+        assert "approval_ref" not in actions[key]
+        assert key in steps["finalize-invoice"]["action_refs"]
+        assert key in steps["send-invoice"]["action_refs"]
+        assert key not in steps["review-draft"]["action_refs"]
+    assert actions["stripe_invoices_finalize"]["approval_ref"] == "owner-invoice-finalization"
+    assert actions["stripe_invoices_send"]["approval_ref"] == "owner-invoice-send"
+    assert "stripe_invoices_finalize" not in steps["send-invoice"]["action_refs"]
+    finalize = " ".join(steps["finalize-invoice"]["instructions"])
+    send = " ".join(steps["send-invoice"]["instructions"])
+    assert "never finalize merely to obtain an artifact" in finalize
+    assert "before customer delivery" in finalize
+    assert "no customer send approval or send attempt is needed" in send
+    assert "PDF action rejects drafts" in send
+    assert (
+        "Verify custody in the external finance workspace before stripe_invoice_pdf_cleanup" in send
+    )
+    assert "do not authorize a review-email route" in send
+
+
+def test_finance_records_existing_owner_approval_without_new_decision_ceremony() -> None:
+    workflows = _workflows()
+    payment = workflows["finance.payment-request"]
+    followups = workflows["finance.payment-request-followups"]
+    assert payment["version"] == "0.5.5"
+    assert followups["version"] == "0.7.4"
+    for workflow in (payment, followups):
+        guidance = " ".join(
+            instruction
+            for step in workflow["steps"]
+            for instruction in step.get("instructions", [])
+        )
+        assert "runPlan.update" in guidance
+        assert "decision_json" in guidance
+        assert "without asking the owner again" in guidance
+        assert "original decision time" in guidance
+    payment_actions = _by_key(payment["action_contracts"])
+    assert (
+        payment_actions["stripe_invoices_finalize"]["approval_ref"] == "owner-invoice-finalization"
+    )
+    assert payment_actions["stripe_invoices_send"]["approval_ref"] == "owner-invoice-send"
+    assert set(_by_key(payment["approval_gates"])) == {
+        "owner-invoice-finalization",
+        "owner-invoice-send",
+    }
+    assert all(gate["approver"] == "owner" for gate in payment["approval_gates"])
+    followup_actions = _by_key(followups["action_contracts"])
+    assert followup_actions["stripe_invoices_send"]["approval_ref"] == "owner-followup-resend"
+    assert "approval_ref" not in followup_actions["smtp_email_send"]
+    guidance = " ".join(
+        instruction for step in followups["steps"] for instruction in step.get("instructions", [])
+    )
+    assert "initial-send approval does not authorize a resend" in guidance
 
 
 def test_finance_test_send_acceptance_is_not_customer_delivery() -> None:

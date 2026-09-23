@@ -1246,6 +1246,7 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "runPlan.create" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "runPlan.validate" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "runPlan.start" in _AGENT_SETUP_TOOLBOX_NAMES
+    assert "runPlan.update" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "runPlan.abort" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "runPlan.checkConsistency" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "runPlan.get" in _AGENT_SETUP_TOOLBOX_NAMES
@@ -1407,7 +1408,6 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
         "connection.detach",
         "plugin.enable",
         "plugin.disable",
-        "runPlan.update",
     } == _AGENT_ADMIN_GATED_TOOL_NAMES
     assert {
         "action.execute",
@@ -1641,6 +1641,46 @@ def test_bridge_proxy_forwards_step_tool_with_cached_run_token() -> None:
     assert structured["tool"] == "resource.upsert"
     assert structured["arguments"]["run_token"] == "tok"
     assert [call["method"] for call in client.calls] == ["tools/list", "tools/call"]
+
+
+def test_bridge_records_existing_operator_approval_with_bound_project_before_step() -> None:
+    proxy = AgentBridgeProxy(url="http://daemon/mcp", headers={})
+    proxy.workspace_scope_checked = True
+    proxy.scoped_project_id = 7
+    tool = _tool("runPlan.update", grant_policy="direct-run-audit-write")
+    tool["inputSchema"] = {
+        "type": "object",
+        "properties": {"project_id": {"type": "integer"}},
+    }
+    proxy.tool_catalog = {"runPlan.update": tool}
+    client = _FakeClient()
+    arguments = {
+        "run_plan_id": 42,
+        "approval_key": "owner-release",
+        "approval_status": "approved",
+        "decided_by": "operator:fixture",
+        "decision_json": {"evidence_ref": "operator-decision:fixture"},
+    }
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 104,
+        "method": "tools/call",
+        "params": {
+            "name": "toolbox.call",
+            "arguments": {"tool_name": "runPlan.update", "arguments": arguments},
+        },
+    }
+
+    response = proxy.handle(client, payload=payload, line=json.dumps(payload), request_id=104)
+
+    assert _structured(response) == {
+        "tool": "runPlan.update",
+        "arguments": {**arguments, "project_id": 7},
+    }
+    forwarded = [call["params"]["name"] for call in client.calls if call["method"] == "tools/call"]
+    assert forwarded.count("runPlan.update") == 1
+    assert forwarded[-1] == "runPlan.update"
+    assert set(forwarded[:-1]) <= {"run.get", "runPlan.get", "runPlan.list"}
 
 
 def test_bridge_proxy_denied_active_step_tool_reports_not_granted_to_step() -> None:

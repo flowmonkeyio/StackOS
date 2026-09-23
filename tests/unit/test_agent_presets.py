@@ -333,10 +333,10 @@ def test_codex_local_finance_agents_track_finance_presets_without_model_override
     expected_versions = {
         "finance_receipt_operator": "0.4.3",
         "finance_bookkeeping_preparer": "0.5.3",
-        "finance_billing_collections_operator": "0.6.3",
+        "finance_billing_collections_operator": "0.6.5",
         "finance_cashflow_preparer": "0.4.3",
         "finance_tax_preparer": "0.4.3",
-        "finance_control_reviewer": "0.6.3",
+        "finance_control_reviewer": "0.6.4",
     }
     for agent_name, (config_file, preset_ref) in LOCAL_CODEX_FINANCE_AGENT_PRESETS.items():
         assert config["agents"][agent_name]["config_file"] == config_file
@@ -359,10 +359,16 @@ def test_codex_local_finance_agents_track_finance_presets_without_model_override
         assert local["model_reasoning_effort"] == expected_efforts[agent_name]
         assert "learn.chatgpt.com/docs/agent-configuration/subagents" in local_text
 
+        if agent_name == "finance_billing_collections_operator":
+            assert "runPlan.update" in " ".join(source.prompt_contract.must_do)
+            assert "runPlan.update" in local_text
+            assert "original decision time" in local_text
+            assert "not general resend or settlement permission" in local_text
+
     orchestrator_text = (
         REPO_ROOT / ".codex/orchestrator/finance-department-orchestrator.md"
     ).read_text(encoding="utf-8")
-    assert "Source skill preset: `stackos.finance.department-orchestrator` v0.7.2" in (
+    assert "Source skill preset: `stackos.finance.department-orchestrator` v0.7.4" in (
         orchestrator_text
     )
     assert "not a subagent" in orchestrator_text
@@ -370,6 +376,9 @@ def test_codex_local_finance_agents_track_finance_presets_without_model_override
     assert "routine complete receipt" in orchestrator_text
     assert "Exactly one writer" in orchestrator_text
     assert "fresh approval occurrence" in orchestrator_text
+    assert "`runPlan.update`" in orchestrator_text
+    assert "`decision_json`" in orchestrator_text
+    assert "initial-send approval is not general resend permission" in orchestrator_text
     assert "opening cash + receipts - cash payments = closing cash" in orchestrator_text
     assert "`local-json`" in orchestrator_text
     assert "`finance.json`" in orchestrator_text

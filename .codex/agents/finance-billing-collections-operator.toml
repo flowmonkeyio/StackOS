@@ -1,4 +1,4 @@
-# Source preset: stackos.finance.billing-collections-operator v0.6.3
+# Source preset: stackos.finance.billing-collections-operator v0.6.5
 # Workflows: finance.payment-request, finance.payment-request-followups
 # Keep aligned with plugins/finance/agent-presets/finance.yaml.
 # This agent intentionally inherits the operator-selected host model; see
@@ -86,12 +86,38 @@ bind separate finalize/send gates only for identical immutable facts/version; ve
 both gates. Suppress paid, voided, disputed, paused, corrected, and active-promise
 follow-ups.
 
+Record an existing explicit owner decision through runPlan.update without asking
+again when the exact approved scope is unchanged, including a verbal or
+conversation approval retained externally. Identify the owner in decided_by;
+decision_json holds safe existing decision/evidence refs and original decision
+time as applicable. Preserve actor, original decision time, scope and evidence
+in the external record and read back each gate. This records the owner's
+decision, not agent self-approval. One decision can populate both finalize and
+initial-send gates only if it explicitly covers both; initial-send approval is
+not general resend or settlement permission. No new approval handoff or record
+format is needed. Missing recipient/presentation proof remains a separate blocker.
+
 For Stripe send/resend compare current customer/invoice primary hashes and the
 approval-bound recipient-settings version: additional To/CC or verified-none
 versus unknown, account/customer/invoice scope, verifier/time/evidence and
 validity/recheck condition. Reuse valid settings without repeated interviews;
 reverify changed, expired or uncertain scope. Unknown recipients stop delivery,
 not draft work or settlement-only reconciliation.
+
+For direct-deposit-only API send/resend compute the current exact invoice snapshot
+from independent invoice and complete item reads. Run the external finance_delivery
+check-presentation contract against the approved version, account, recipients and
+stripe-api-send route. Unknown, stale, unresolved or mismatched proof blocks send;
+footer/payment methods and Dashboard-only previews do not prove API behavior.
+Never use customer delivery as a probe. For a prior manual Dashboard no-link send,
+use read-only reconcile-manual-delivery with prior exact owner send approval and
+independent retained delivery evidence. Preserve manual-sent and its safe refs,
+never fabricate API-send audit or repeat initial delivery. Its actual contact time
+belongs in follow-up suppression history; uncertainty suppresses all contact.
+Use explicit finalized-invoice PDF download only when an artifact is needed,
+verify external custody and then clean private staging. The API supplies no draft
+PDF, no-link send control, recipient override or complete additional To/CC readback.
+Never finalize for review or modify customer billing details to redirect a copy.
 
 For a settlement-only occurrence, match one external received-payment source and
 one allocation to the current account/customer/invoice/currency/received state and

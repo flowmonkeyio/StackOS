@@ -153,23 +153,22 @@ class BillingOccurrence:
         return result["output_json"]["data"]
 
     def approve(self, gate: str) -> None:
-        # Explicitly simulated owner decision through the existing admin surface
-        # of the isolated app, never the installed localhost service.
-        response = self.mcp.test_client.post(
-            "/api/v1/operations/runPlan.update/call",
-            json={
-                "arguments": {
-                    "run_plan_id": self.plan,
-                    "approval_key": gate,
-                    "approval_status": "approved",
-                    "decided_by": "synthetic-owner",
-                    "decision_json": {"approval_ref": "external-approval:proposal-v1"},
-                    "response_mode": "raw",
-                }
-            },
-            headers=self.mcp._headers(),
+        # The agent records an explicit simulated owner decision through MCP.
+        # This isolated fixture never calls the installed localhost service.
+        recorded = self.call(
+            "runPlan.update",
+            run_plan_id=self.plan,
+            run_token=self.token,
+            approval_key=gate,
+            approval_status="approved",
+            decided_by="synthetic-owner",
+            decision_json={"approval_ref": "external-approval:proposal-v1"},
         )
-        assert response.status_code == 200, response.text
+        assert "approval_requests" in recorded, recorded
+        approval = next(row for row in recorded["approval_requests"] if row["approval_key"] == gate)
+        assert approval["status"] == "approved"
+        assert approval["decided_by"] == "synthetic-owner"
+        assert approval["decision_json"]["approval_ref"] == "external-approval:proposal-v1"
 
     def secret(self, text: str) -> dict[str, str]:
         result = self.call("secret.set", value=text)
@@ -517,6 +516,158 @@ def test_actual_billing_template_two_lines_and_send_recovery(
         assert summary["approval_refs"] == ["approval:finalize-v1"]
     for private in (EMAIL, *(line[1] for line in LINES)):
         assert private not in json.dumps(final)
+
+
+def test_payment_request_reads_customer_and_invoice_snapshot_after_billing_edit(
+    mcp_client: MCPClient,
+    seeded_project: dict[str, Any],
+    httpx_mock: HTTPXMock,
+) -> None:
+    approved_name = "Café Atlas LLC"
+    approved_address = {"line1": "17 Harbor Way", "city": "Portland", "country": "US"}
+    prior_name = "Previous Customer"
+    prior_address = {"line1": "Old Road", "city": "Portland", "country": "US"}
+    state: dict[str, Any] = {
+        "name": prior_name,
+        "address": prior_address,
+        "snapshot_fresh": False,
+    }
+
+    def customer() -> dict[str, Any]:
+        return stripe_customer(
+            id="cus_billing_snapshot_fixture",
+            email=EMAIL,
+            name=state["name"],
+            address=state["address"],
+        )
+
+    def invoice() -> dict[str, Any]:
+        snapshot_name = state["name"] if state["snapshot_fresh"] else prior_name
+        snapshot_address = state["address"] if state["snapshot_fresh"] else prior_address
+        return stripe_invoice(
+            id="in_billing_snapshot_fixture",
+            customer=customer(),
+            customer_email=EMAIL,
+            customer_name=snapshot_name,
+            customer_address=snapshot_address,
+        )
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        path, method = request.url.path, request.method
+        if method == "GET":
+            assert "Idempotency-Key" not in request.headers
+        if path == "/v1/customers" and method == "GET":
+            assert request.url.params["email"] == EMAIL
+            return httpx.Response(
+                200, json={"object": "list", "has_more": False, "data": [customer()]}
+            )
+        if path == "/v1/customers/cus_billing_snapshot_fixture" and method == "POST":
+            form = parse_qs(request.content.decode())
+            assert form["name"] == [approved_name]
+            for field, value in approved_address.items():
+                assert form[f"address[{field}]"] == [value]
+            state.update(name=approved_name, address=approved_address)
+            return httpx.Response(200, json=customer())
+        if path == "/v1/customers/cus_billing_snapshot_fixture" and method == "GET":
+            return httpx.Response(200, json=customer())
+        if path == "/v1/invoices" and method == "POST":
+            return httpx.Response(200, json=invoice())
+        if path == "/v1/invoices/in_billing_snapshot_fixture" and method == "GET":
+            return httpx.Response(200, json=invoice())
+        raise AssertionError(f"Unexpected fixture HTTP: {method} {path}")
+
+    httpx_mock.add_callback(respond, is_reusable=True)
+    project = seeded_project["data"]["id"]
+    run = BillingOccurrence(mcp_client, project, _seed_stripe_credential(mcp_client, project))
+    run.claim("preflight")
+    run.record("scoped")
+    run.claim("resolve-customer")
+    listed = run.execute("customers.list", {"email": run.secret(EMAIL)})
+    customer_ref = listed["items"][0]["customer_ref"]
+    run.execute(
+        "customers.update",
+        {
+            "customer_ref": customer_ref,
+            "name": run.secret(approved_name),
+            "address": {field: run.secret(value) for field, value in approved_address.items()},
+        },
+        key="billing-snapshot-customer-edit-v1",
+    )
+    expected_name = hashlib.sha256(approved_name.encode()).hexdigest()
+    expected_address = {
+        field: hashlib.sha256(value.encode()).hexdigest()
+        for field, value in approved_address.items()
+    }
+    saved_customer = run.execute("customers.retrieve", {"customer_ref": customer_ref})
+    assert saved_customer["name_sha256"] == expected_name
+    assert saved_customer["address_field_sha256"] == expected_address
+    run.summary["customer_ref"] = customer_ref
+    run.record("customer-resolved")
+
+    run.claim("create-draft")
+    draft = run.execute(
+        "invoices.create",
+        {
+            "customer_ref": customer_ref,
+            "collection_method": "send_invoice",
+            "days_until_due": 30,
+            "currency": "usd",
+            "correlation_key": "b" * 32,
+        },
+        key="billing-snapshot-draft-v1",
+    )
+    invoice_ref = draft["invoice_ref"]
+    run.summary["invoice_ref"] = invoice_ref
+    run.record("draft-prepared")
+
+    run.claim("review-draft")
+    # The update echo and expanded customer on the draft are insufficient:
+    # independently retrieve both records and compare the invoice's own copy.
+    customer_read = run.execute("customers.retrieve", {"customer_ref": customer_ref})
+    invoice_read = run.execute("invoices.retrieve", {"invoice_ref": invoice_ref})
+    assert customer_read["name_sha256"] == expected_name
+    assert customer_read["address_field_sha256"] == expected_address
+    assert invoice_read["invoice_customer_name_sha256"] != expected_name
+    assert invoice_read["invoice_customer_address_field_sha256"] != expected_address
+    assert invoice_read["recipient_pay_online_button_state"] == "unverified"
+    assert invoice_read["draft_dashboard_link_state"] == "not_exposed_by_stripe_api"
+    assert run.summary["status"] == "draft-prepared"
+
+    state["snapshot_fresh"] = True
+    customer_read = run.execute(
+        "customers.retrieve", {"customer_ref": customer_ref}, key="billing-snapshot-customer-read-2"
+    )
+    invoice_read = run.execute(
+        "invoices.retrieve", {"invoice_ref": invoice_ref}, key="billing-snapshot-invoice-read-2"
+    )
+    assert customer_read["name_sha256"] == expected_name
+    assert customer_read["address_field_sha256"] == expected_address
+    assert (
+        len(
+            [
+                request
+                for request in httpx_mock.get_requests()
+                if request.url.path == "/v1/invoices/in_billing_snapshot_fixture"
+            ]
+        )
+        == 2
+    )
+    assert invoice_read["invoice_customer_name_sha256"] == expected_name
+    assert invoice_read["invoice_customer_address_field_sha256"] == expected_address
+    assert [(request.method, request.url.path) for request in httpx_mock.get_requests()] == [
+        ("GET", "/v1/customers"),
+        ("POST", "/v1/customers/cus_billing_snapshot_fixture"),
+        ("GET", "/v1/customers/cus_billing_snapshot_fixture"),
+        ("POST", "/v1/invoices"),
+        ("GET", "/v1/customers/cus_billing_snapshot_fixture"),
+        ("GET", "/v1/invoices/in_billing_snapshot_fixture"),
+        ("GET", "/v1/customers/cus_billing_snapshot_fixture"),
+        ("GET", "/v1/invoices/in_billing_snapshot_fixture"),
+    ]
+    assert (
+        run.call("runPlan.getStep", run_plan_id=run.plan, step_id="review-draft")["status"]
+        == "running"
+    )
 
 
 @pytest.mark.parametrize(

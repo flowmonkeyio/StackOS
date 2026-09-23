@@ -148,12 +148,13 @@ def test_run_plan_create_start_and_step_with_run_token(
         "runPlan.claimStep",
         {"run_plan_id": run_plan_id, "step_id": "review"},
     )
-    update_denied = mcp_client.call_tool_error(
+    updated = mcp_client.call_tool_structured(
         "runPlan.update",
         {
             "run_plan_id": run_plan_id,
-            "metadata_json": {"attempt": "self-approval should be denied"},
+            "metadata_json": {"attempt": "safe scoped metadata"},
             "run_token": run_token,
+            "response_mode": "raw",
         },
     )
     claimed = mcp_client.call_tool_structured(
@@ -183,7 +184,7 @@ def test_run_plan_create_start_and_step_with_run_token(
     assert validation["valid"] is True
     assert started["data"]["run_id"] > 0
     assert denied["code"] == -32007
-    assert update_denied["code"] == -32007
+    assert updated["data"]["metadata_json"]["attempt"] == "safe scoped metadata"
     assert claimed["data"]["status"] == "running"
     assert completed["data"]["status"] == "completed"
     assert tracker["tasks"][0]["status"] == "complete"

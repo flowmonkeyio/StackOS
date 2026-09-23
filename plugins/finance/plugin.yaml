@@ -1,6 +1,6 @@
 slug: finance
 name: Finance Operations
-version: 0.8.2
+version: 0.8.4
 description: Backend-neutral finance workflows and provider transport for a solo US business. StackOS never becomes the finance system of record.
 display_order: 18
 source: builtin
@@ -93,7 +93,7 @@ actions:
         - https://docs.stripe.com/api/customers/create
   - key: stripe.customers.retrieve
     name: Retrieve Stripe Customer
-    description: Retrieve one previously discovered Stripe customer by an account-bound reference; optionally return reviewed name, email and description as sensitive business details.
+    description: Retrieve one previously discovered Stripe customer by an account-bound reference; return exact billing-detail and ordered invoice custom-field digests for independent readback, with optional sensitive business details. Customer defaults do not rewrite finalized invoice snapshots.
     provider: stripe
     capability: stripe-invoicing
     risk_level: read
@@ -113,6 +113,133 @@ actions:
       enforce_budget: false
       stripe: {method: GET, path: '/customers/{customer_ref}', api_version: 2026-08-26.dahlia}
       docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/customers/retrieve]
+  - key: stripe.customers.update
+    name: Update Stripe Customer Billing Details
+    description: Update only selected fields of one existing customer. Custom fields replace the entire list; independently retrieve current defaults, preserve every unrelated field in the approved replacement, then retrieve again to verify exact values. Customer defaults do not rewrite existing finalized invoices; independently inspect each invoice snapshot.
+    provider: stripe
+    capability: stripe-invoicing
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [customer_ref]
+      anyOf:
+        - required: [name]
+        - required: [email]
+        - required: [phone]
+        - required: [address]
+        - required: [invoice_settings]
+      properties:
+        customer_ref: *opaque_ref
+        name: {type: string, minLength: 1, maxLength: 256, description: Use an exact opaque payload-secret marker; never pass customer text in plaintext action input.}
+        email: {type: string, format: email, maxLength: 512, description: Use an exact opaque payload-secret marker; never pass the customer address in plaintext action input.}
+        phone: {type: string, minLength: 1, maxLength: 64, description: Use an exact opaque payload-secret marker; never pass the customer number in plaintext action input.}
+        address:
+          type: object
+          additionalProperties: false
+          minProperties: 1
+          properties:
+            line1: {type: string, minLength: 1, maxLength: 500, description: Use an exact opaque payload-secret marker.}
+            line2: {type: string, minLength: 1, maxLength: 500, description: Use an exact opaque payload-secret marker.}
+            city: {type: string, minLength: 1, maxLength: 500, description: Use an exact opaque payload-secret marker.}
+            state: {type: string, minLength: 1, maxLength: 500, description: Use an exact opaque payload-secret marker.}
+            postal_code: {type: string, minLength: 1, maxLength: 500, description: Use an exact opaque payload-secret marker.}
+            country: {type: string, description: Use an exact opaque payload-secret marker for the ISO 3166-1 alpha-2 country code; the connector checks the resolved code.}
+        invoice_settings:
+          type: object
+          additionalProperties: false
+          required: [custom_fields]
+          properties:
+            custom_fields: &stripe_custom_fields
+              type: array
+              maxItems: 4
+              description: Complete ordered replacement of all custom fields, preserving approved unrelated entries. Omit to leave unchanged; an explicit empty list clears all fields. Each name and value must use an exact payload-secret marker.
+              items:
+                type: object
+                additionalProperties: false
+                required: [name, value]
+                properties:
+                  name: {type: string, minLength: 1, maxLength: 40}
+                  value: {type: string, minLength: 1, maxLength: 140}
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: POST, path: '/customers/{customer_ref}', api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/customers/update]
+  - key: stripe.customers.tax-ids.list
+    name: List Stripe Customer Tax IDs
+    description: Read one bounded page of one customer's tax IDs, with safe refs, exact value hashes and observed verification status. Exhaust all pages and compare type plus exact value hash before deciding whether an approved identifier is absent; there is no atomic uniqueness guarantee.
+    provider: stripe
+    capability: stripe-invoicing
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [customer_ref]
+      properties:
+        customer_ref: *opaque_ref
+        limit: {type: integer, minimum: 1, maximum: 100, default: 25}
+        page_cursor: *opaque_ref
+        include_business_details: *include_business_details
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: '/customers/{customer_ref}/tax_ids', api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/customer_tax_ids/list]
+  - key: stripe.customers.tax-ids.create
+    name: Create Stripe Customer Tax ID
+    description: Create exactly one explicitly approved tax ID after an independently completed duplicate check. The connector performs no lookup, normalization, tax decision or retry. Reuse the exact idempotency key on an authorized retry and independently retrieve the result; creation does not establish verification or update issued invoice snapshots.
+    provider: stripe
+    capability: stripe-invoicing
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [customer_ref, type, value]
+      properties:
+        customer_ref: *opaque_ref
+        type: {type: string, pattern: '^[a-z][a-z0-9_]{1,39}$', description: Explicit Stripe tax ID type key. Stripe authoritatively validates supported types; never infer the type from a business registration number.}
+        value: {type: string, minLength: 1, description: Use an exact opaque payload-secret marker for the approved identifier.}
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: POST, path: '/customers/{customer_ref}/tax_ids', api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/customer_tax_ids/create]
+  - key: stripe.customers.tax-ids.retrieve
+    name: Retrieve Stripe Customer Tax ID
+    description: Independently read one account- and customer-bound tax ID. Report actual provider verification status, including pending, unavailable, unverified or null; do not infer verified from successful creation.
+    provider: stripe
+    capability: stripe-invoicing
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [customer_ref, tax_id_ref]
+      properties:
+        customer_ref: *opaque_ref
+        tax_id_ref: *opaque_ref
+        include_business_details: *include_business_details
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: '/customers/{customer_ref}/tax_ids/{tax_id_ref}', api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/customer_tax_ids/retrieve]
   - key: stripe.customers.list
     name: List Stripe Customers by Exact Email
     description: Return one bounded page of Stripe customers matching one exact email, so an existing customer can be used without a raw provider ID.
@@ -256,6 +383,41 @@ actions:
       enforce_budget: false
       stripe: {method: POST, path: /invoices, api_version: 2026-08-26.dahlia}
       docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/invoices/create]
+  - key: stripe.invoices.update
+    name: Update Stripe Invoice Presentation
+    description: Update an explicit invoice memo (description), footer, complete custom-field list and/or nonempty PaymentIntent method types, subject to Stripe's editability rules. Independently retrieve exact fields afterward. Custom fields are frozen at finalization; most finalized invoices also freeze description. A rejection never authorizes recreation, voiding or resending. None of these settings proves absence of the recipient's Pay online button. This action does not finalize or send.
+    provider: stripe
+    capability: stripe-invoicing
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [invoice_ref]
+      anyOf:
+        - required: [footer]
+        - required: [payment_method_types]
+        - required: [description]
+        - required: [custom_fields]
+      properties:
+        invoice_ref: *opaque_ref
+        description: {type: string, maxLength: 1500, description: Invoice memo; nonempty text requires an exact opaque payload-secret marker. The literal empty string explicitly clears the memo and contains no private text. Omission leaves it unchanged. Stripe enforces editability.}
+        custom_fields: *stripe_custom_fields
+        footer: {type: string, minLength: 1, maxLength: 500, description: Invoice footer, for example direct-deposit instructions; use an exact opaque payload-secret marker, never plaintext action input.}
+        payment_method_types:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          description: Stripe PaymentIntent methods only. An empty list is unsupported. us_bank_account is ACH debit and customer_balance is Stripe-managed bank transfer, neither direct deposit to the operator's business bank. Selecting either does not hide or prove absence of the Pay online button.
+          items: {type: string, enum: [card, us_bank_account, customer_balance]}
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: POST, path: '/invoices/{invoice_ref}', api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/invoices/update]
   - key: stripe.invoice-items.create
     name: Create Stripe Invoice Item
     description: Add one explicit draft line using either a positive manual amount or an existing account-bound Stripe price and explicit quantity.
@@ -341,7 +503,7 @@ actions:
       docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/invoices/finalize]
   - key: stripe.invoices.send
     name: Send Stripe Invoice
-    description: Request a send for one already finalized Stripe invoice. Sandbox/test mode sends no email; an accepted test request is not sent/delivered. Live acceptance is not inbox-delivery proof. Workflow approval and exception policy remain outside the connector.
+    description: Request Stripe customer delivery for one finalized invoice; the API has no operator-review recipient override and does not document inheriting Dashboard Email invoice without link. Never use this action to send a review copy or assume a Dashboard-only choice makes this API route no-link. Sandbox/test mode sends no email; an accepted test request is not sent/delivered. Live acceptance is not inbox-delivery proof. Workflow approval and exception policy remain outside the connector.
     provider: stripe
     capability: stripe-invoicing
     risk_level: write
@@ -493,7 +655,7 @@ actions:
       docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/payment-record, https://github.com/stripe/openapi/blob/9ac29c7795ab21c7711b4bc25bb2dd739552a5fa/latest/openapi.spec3.json]
   - key: stripe.invoices.retrieve
     name: Retrieve Stripe Invoice
-    description: Retrieve one invoice with its current customer expanded, primary email digests and observed due date. Optional business details include invoice number, memo, customer snapshot name/email and hosted invoice/PDF links; additional billing recipients remain outside API visibility.
+    description: Retrieve one invoice with its current customer expanded, customer snapshot digests, observed due date, footer digest, PaymentIntent method list, and hosted/PDF link availability states. recipient_pay_online_button_state=unverified never proves the button absent; draft_dashboard_link_state=not_exposed_by_stripe_api means no stable saved-draft review link is returned. For a draft PDF, inspect the selected invoice manually in Stripe Dashboard and verify whether its Download PDF action is available. Optional business details include invoice number, memo, customer snapshot name/email and available hosted invoice/PDF URLs; additional billing recipients remain outside API visibility.
     provider: stripe
     capability: stripe-invoicing
     risk_level: read
@@ -514,6 +676,49 @@ actions:
       enforce_budget: false
       stripe: {method: GET, path: '/invoices/{invoice_ref}', api_version: 2026-08-26.dahlia}
       docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/invoices/retrieve, https://docs.stripe.com/api/invoices/object, https://docs.stripe.com/expand]
+  - key: stripe.invoices.pdf.download
+    name: Download Finalized Stripe Invoice PDF
+    description: Retrieve the exact account-bound invoice and download its finalized PDF into private temporary local staging. Refuses drafts; never finalizes or sends. Copy the returned local file to external finance evidence storage, verify its SHA-256, then clean up the transfer. The staged file is not a public media artifact or delivery evidence.
+    provider: stripe
+    capability: stripe-invoicing
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [invoice_ref]
+      properties:
+        invoice_ref: *opaque_ref
+        max_bytes: {type: integer, minimum: 1, maximum: 20971520, default: 20971520}
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: GET, path: '/invoices/{invoice_ref}', api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/invoices/retrieve, https://docs.stripe.com/api/invoices/object]
+  - key: stripe.invoices.pdf.cleanup
+    name: Clean Up Stripe Invoice PDF Transfer
+    description: Delete one private invoice PDF staging transfer by opaque reference, within the current project and Stripe account. Call only after external evidence custody and SHA-256 verification; never deletes external finance evidence or contacts Stripe.
+    provider: stripe
+    capability: stripe-invoicing
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [transfer_ref]
+      properties:
+        transfer_ref: {type: string, pattern: '^stripe-pdf-transfer:[a-f0-9]{32}$'}
+    output_schema: *stripe_output
+    config:
+      schema_version: stackos.action.v1
+      connector: stripe
+      operation: rest.v1
+      requires_credential: true
+      enforce_budget: false
+      stripe: {method: LOCAL, path: private-invoice-pdf-transfer, api_version: 2026-08-26.dahlia}
+      docs: [docs/integration-contracts/stripe.md]
   - key: stripe.invoices.list
     name: List Stripe Invoices
     description: Return one bounded Stripe invoice page and a safe continuation reference when more results exist.

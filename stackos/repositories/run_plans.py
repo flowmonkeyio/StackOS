@@ -36,6 +36,10 @@ from stackos.repositories.base import (
     cursor_paginate_desc,
     validate_transition,
 )
+from stackos.repositories.run_plan_contracts import (
+    RunPlanWorkflowContractOut,
+    inspect_workflow_contract,
+)
 from stackos.repositories.run_plan_dependencies import (
     completed_dependency_step_ids,
     incomplete_step_dependencies,
@@ -1219,11 +1223,13 @@ class RunPlanRepository:
         plan: RunPlan | None = None,
         *,
         all_steps: builtins.list[RunPlanStep] | None = None,
+        workflow_contract: RunPlanWorkflowContractOut | None = None,
     ) -> RunPlanStepOut:
         data = RunPlanStepOut.model_validate(step)
         if plan is None:
             plan = self._s.get(RunPlan, step.run_plan_id)
         if plan is not None:
+            data.workflow_contract = workflow_contract or inspect_workflow_contract(self._s, plan)
             data.allowed_tools = sorted(
                 allowed_tools_for_run_plan_step(
                     plan.grant_snapshot_json,
@@ -1261,8 +1267,12 @@ class RunPlanRepository:
 
     def _plan_out(self, row: RunPlan) -> RunPlanOut:
         data = RunPlanOut.model_validate(row)
+        data.workflow_contract = inspect_workflow_contract(self._s, row)
         step_rows = self._step_rows(row.id)
-        data.steps = [self._step_out(step, row, all_steps=step_rows) for step in step_rows]
+        data.steps = [
+            self._step_out(step, row, all_steps=step_rows, workflow_contract=data.workflow_contract)
+            for step in step_rows
+        ]
         data.approval_requests = [
             ApprovalRequestOut.model_validate(item) for item in self._approval_rows(row.id)
         ]

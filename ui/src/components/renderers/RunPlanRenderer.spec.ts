@@ -7,6 +7,7 @@ import {
   RunPlanConsistencyIssueOutSeverity,
   RunPlanStatus,
   RunPlanStepStatus,
+  RunPlanWorkflowContractOutStatus,
   type SchemaActionCallAuditOut,
   type SchemaRunPlanOut,
 } from '@/api'
@@ -178,7 +179,7 @@ describe('RunPlanRenderer', () => {
     expect(w.text()).toContain('operator-review')
   })
 
-  it('renders consistency warnings from the backend', () => {
+  it('renders consistency and workflow contract warnings from the backend', () => {
     const plan: SchemaRunPlanOut = {
       id: 1,
       project_id: 1,
@@ -222,6 +223,15 @@ describe('RunPlanRenderer', () => {
           data: { run_status: 'aborted' },
         },
       ],
+      workflow_contract: {
+        status: RunPlanWorkflowContractOutStatus.mismatch,
+        workflow_key: 'demo.template',
+        frozen_version: '0.5.2',
+        installed_version: '0.5.2',
+        changed_path_count: 1,
+        message: 'Frozen workflow differs despite the same version label.',
+        next_action: 'Reconcile existing external effects before continuing.',
+      },
     }
 
     const w = mount(RunPlanRenderer, { props: { plan } })
@@ -229,5 +239,9 @@ describe('RunPlanRenderer', () => {
     expect(w.text()).toContain('Linked audit run is terminal while run plan is still live.')
     expect(w.text()).toContain('terminal-run-live-plan')
     expect(w.text()).toContain('Run #22')
+    expect(w.text()).toContain('Frozen workflow differs despite the same version label.')
+    expect(w.text()).toContain('Frozen version: 0.5.2.')
+    expect(w.text()).toContain('Installed version: 0.5.2.')
+    expect(w.text()).toContain('Reconcile existing external effects before continuing.')
   })
 })

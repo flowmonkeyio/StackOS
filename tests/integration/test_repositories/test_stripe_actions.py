@@ -52,6 +52,43 @@ _CATALOG_ACTIONS = {
 }
 
 
+@pytest.mark.parametrize(
+    "unsupported",
+    [
+        "email",
+        "to",
+        "cc",
+        "recipient_override",
+        "without_link",
+        "include_payment_link",
+        "attachments",
+    ],
+)
+def test_stripe_send_rejects_unsupported_delivery_controls_before_http(
+    session: Session, project_id: int, httpx_mock: HTTPXMock, unsupported: str
+) -> None:
+    """The published send API has no recipient, attachment or no-link control."""
+    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    invoice_ref = _safe_ref(
+        session,
+        project_id=project_id,
+        credential_ref=credential_ref,
+        object_type="stripe.invoice",
+        provider_id="in_delivery_contract_fixture",
+    )
+    before = len(httpx_mock.get_requests())
+    with pytest.raises(ValidationError):
+        _execute(
+            session,
+            project_id=project_id,
+            credential_ref=credential_ref,
+            action_ref="finance.stripe.invoices.send",
+            input_json={"invoice_ref": invoice_ref, unsupported: True},
+            idempotency_key=f"unsupported-send-{unsupported}",
+        )
+    assert len(httpx_mock.get_requests()) == before
+
+
 @pytest.mark.parametrize("kind", ["products", "prices"])
 @pytest.mark.parametrize("verb", ["list", "retrieve"])
 def test_stripe_catalog_action_contract_is_executable(kind: str, verb: str) -> None:
@@ -764,7 +801,11 @@ _BUSINESS_DETAIL_READS = [
 
 def test_stripe_business_details_manifest_is_limited_to_selected_reads() -> None:
     manifest = load_plugin_manifest_file(Path(__file__).parents[3] / "plugins/finance/plugin.yaml")
-    selected = {f"stripe.{row[0]}" for row in _BUSINESS_DETAIL_READS} | _CATALOG_ACTIONS
+    selected = (
+        {f"stripe.{row[0]}" for row in _BUSINESS_DETAIL_READS}
+        | _CATALOG_ACTIONS
+        | {"stripe.customers.tax-ids.list", "stripe.customers.tax-ids.retrieve"}
+    )
     for action in manifest.actions:
         properties = action.input_schema.get("properties", {})
         if action.key in selected:
@@ -1053,6 +1094,7 @@ def test_stripe_business_details_flag_is_strict_even_without_manifest(flag: obje
         set(STRIPE_ACTION_SPECS)
         - {f"stripe.{row[0]}" for row in _BUSINESS_DETAIL_READS}
         - _CATALOG_ACTIONS
+        - {"stripe.customers.tax-ids.list", "stripe.customers.tax-ids.retrieve"}
     ),
 )
 @pytest.mark.parametrize("flag", [True, False])
@@ -5193,3 +5235,585 @@ def test_stripe_settlement_post_normalization_failure_is_outcome_unknown(
         assert "listing is temporarily unavailable in StackOS" in recovery
         assert "A missing ref or uncertain evidence requires owner/provider recovery" in recovery
         assert "never create a replacement report" in recovery
+
+
+def test_stripe_customer_update_maps_only_reviewed_fields_and_independent_readback(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    customer_ref = _safe_ref(
+        session,
+        project_id=project_id,
+        credential_ref=credential_ref,
+        object_type="stripe.customer",
+        provider_id="cus_update_fixture",
+    )
+    name = "FormX Studio"
+    email = "billing@formx.example"
+    phone = "+14155550123"
+    address = {
+        "line1": "123 Market Street",
+        "line2": "Suite 4",
+        "city": "San Francisco",
+        "state": "CA",
+        "postal_code": "94105",
+        "country": "US",
+    }
+    input_json = {
+        "customer_ref": customer_ref,
+        "name": _payload_secret_marker(session, project_id, name),
+        "email": _payload_secret_marker(session, project_id, email),
+        "phone": _payload_secret_marker(session, project_id, phone),
+        "address": {
+            key: _payload_secret_marker(session, project_id, value)
+            for key, value in address.items()
+        },
+    }
+    response = stripe_customer(
+        id="cus_update_fixture", name=name, email=email, phone=phone, address=address
+    )
+    httpx_mock.add_response(
+        method="POST", url=f"{STRIPE_ROOT}/customers/cus_update_fixture", json=response
+    )
+    updated = _execute(
+        session,
+        project_id=project_id,
+        action_ref="finance.stripe.customers.update",
+        credential_ref=credential_ref,
+        input_json=input_json,
+        idempotency_key="finance-customer-update-fixture-1",
+    )
+    request = httpx_mock.get_requests()[-1]
+    assert request.headers["Idempotency-Key"] == "finance-customer-update-fixture-1"
+    assert parse_qs(request.content.decode()) == {
+        "name": [name],
+        "email": [email],
+        "phone": [phone],
+        **{f"address[{key}]": [value] for key, value in address.items()},
+    }
+    assert (
+        updated.output_json["data"]["name_sha256"]
+        == hashlib.sha256(name.encode("utf-8")).hexdigest()
+    )
+    assert updated.output_json["data"]["address_field_sha256"] == {
+        key: hashlib.sha256(value.encode("utf-8")).hexdigest() for key, value in address.items()
+    }
+    assert (
+        updated.output_json["data"]["address_sha256"]
+        == hashlib.sha256(
+            json.dumps(address, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        ).hexdigest()
+    )
+    assert updated.action_call.request_json == input_json
+
+    httpx_mock.add_response(
+        method="GET", url=f"{STRIPE_ROOT}/customers/cus_update_fixture", json=response
+    )
+    observed = _execute(
+        session,
+        project_id=project_id,
+        action_ref="finance.stripe.customers.retrieve",
+        credential_ref=credential_ref,
+        input_json={"customer_ref": customer_ref},
+    )
+    for key in (
+        "name_sha256",
+        "email_sha256",
+        "phone_sha256",
+        "address_sha256",
+        "address_field_sha256",
+    ):
+        assert observed.output_json["data"][key] == updated.output_json["data"][key]
+    invoice_ref = _safe_ref(
+        session,
+        project_id=project_id,
+        credential_ref=credential_ref,
+        object_type="stripe.invoice",
+        provider_id="in_customer_update_review",
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{STRIPE_ROOT}/invoices/in_customer_update_review?expand%5B%5D=customer",
+        json=stripe_invoice(
+            id="in_customer_update_review",
+            customer="cus_update_fixture",
+            customer_name=name,
+            customer_email=email,
+            customer_phone=phone,
+            customer_address=address,
+        ),
+    )
+    invoice = _execute(
+        session,
+        project_id=project_id,
+        action_ref="finance.stripe.invoices.retrieve",
+        credential_ref=credential_ref,
+        input_json={"invoice_ref": invoice_ref},
+    ).output_json["data"]
+    customer = observed.output_json["data"]
+    assert invoice["customer_ref"] == customer_ref
+    for field in ("name", "email", "phone", "address"):
+        assert invoice[f"invoice_customer_{field}_sha256"] == customer[f"{field}_sha256"]
+    assert invoice["invoice_customer_address_field_sha256"] == customer["address_field_sha256"]
+    assert [request.method for request in httpx_mock.get_requests()][-2:] == ["GET", "GET"]
+    rendered = json.dumps(
+        {
+            "updated": updated.model_dump(mode="json"),
+            "observed": observed.model_dump(mode="json"),
+            "invoice": invoice,
+        }
+    )
+    for private in (name, email, phone, *address.values()):
+        # Short values such as "US" may occur inside an unrelated opaque ref.
+        # Reject a serialized literal value, not a coincidental substring.
+        assert json.dumps(private) not in rendered
+    assert all("/send" not in str(item.url) for item in httpx_mock.get_requests())
+
+
+def test_invoice_customer_snapshot_digests_expose_stale_finalized_details(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    invoice_ref = _safe_ref(
+        session,
+        project_id=project_id,
+        credential_ref=credential_ref,
+        object_type="stripe.invoice",
+        provider_id="in_snapshot_fixture",
+    )
+    address = {"line1": "123 Market Street", "city": "San Francisco", "country": "US"}
+    current_name = "FormX Studio"
+    prior_name = "FormX Old Name"
+    for status, name in (("draft", current_name), ("open", prior_name)):
+        httpx_mock.add_response(
+            method="GET",
+            url=f"{STRIPE_ROOT}/invoices/in_snapshot_fixture?expand%5B%5D=customer",
+            json=stripe_invoice(
+                id="in_snapshot_fixture",
+                status=status,
+                customer_name=name,
+                customer_phone="+14155550123",
+                customer_address=address,
+            ),
+        )
+        observed = _execute(
+            session,
+            project_id=project_id,
+            action_ref="finance.stripe.invoices.retrieve",
+            credential_ref=credential_ref,
+            input_json={"invoice_ref": invoice_ref},
+        )
+        data = observed.output_json["data"]
+        assert (
+            data["invoice_customer_name_sha256"] == hashlib.sha256(name.encode("utf-8")).hexdigest()
+        )
+        assert data["invoice_customer_phone_sha256"] == hashlib.sha256(b"+14155550123").hexdigest()
+        assert data["invoice_customer_address_field_sha256"] == {
+            key: hashlib.sha256(value.encode("utf-8")).hexdigest() for key, value in address.items()
+        }
+        assert (
+            data["invoice_customer_address_sha256"]
+            == hashlib.sha256(
+                json.dumps(
+                    address, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                ).encode("utf-8")
+            ).hexdigest()
+        )
+        assert json.dumps(name) not in json.dumps(observed.model_dump(mode="json"))
+        if status == "draft":
+            draft_name_digest = data["invoice_customer_name_sha256"]
+        else:
+            assert data["invoice_customer_name_sha256"] != draft_name_digest
+
+
+def test_stripe_invoice_update_maps_footer_and_payment_types_without_sending(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    invoice_ref = _safe_ref(
+        session,
+        project_id=project_id,
+        credential_ref=credential_ref,
+        object_type="stripe.invoice",
+        provider_id="in_update_fixture",
+    )
+    footer = "Pay by direct deposit to the reviewed bank account."
+    input_json = {
+        "invoice_ref": invoice_ref,
+        "footer": _payload_secret_marker(session, project_id, footer),
+        "payment_method_types": ["customer_balance", "us_bank_account"],
+    }
+    response = stripe_invoice(
+        id="in_update_fixture",
+        footer=footer,
+        payment_settings={"payment_method_types": ["customer_balance", "us_bank_account"]},
+    )
+    httpx_mock.add_response(
+        method="POST", url=f"{STRIPE_ROOT}/invoices/in_update_fixture", json=response
+    )
+    updated = _execute(
+        session,
+        project_id=project_id,
+        action_ref="finance.stripe.invoices.update",
+        credential_ref=credential_ref,
+        input_json=input_json,
+        idempotency_key="finance-invoice-update-fixture-1",
+    )
+    request = httpx_mock.get_requests()[-1]
+    assert request.headers["Idempotency-Key"] == "finance-invoice-update-fixture-1"
+    assert parse_qs(request.content.decode()) == {
+        "footer": [footer],
+        "payment_settings[payment_method_types][]": ["customer_balance", "us_bank_account"],
+    }
+    assert (
+        updated.output_json["data"]["footer_sha256"]
+        == hashlib.sha256(footer.encode("utf-8")).hexdigest()
+    )
+    assert updated.output_json["data"]["payment_settings"] == {
+        "payment_method_types": ["customer_balance", "us_bank_account"]
+    }
+    assert updated.output_json["data"]["recipient_pay_online_button_state"] == "unverified"
+    replay = _execute(
+        session,
+        project_id=project_id,
+        action_ref="finance.stripe.invoices.update",
+        credential_ref=credential_ref,
+        input_json=input_json,
+        idempotency_key="finance-invoice-update-fixture-1",
+    )
+    assert replay.output_json == updated.output_json
+    assert len([item for item in httpx_mock.get_requests() if item.method == "POST"]) == 1
+
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{STRIPE_ROOT}/invoices/in_update_fixture?expand%5B%5D=customer",
+        json=response,
+    )
+    observed = _execute(
+        session,
+        project_id=project_id,
+        action_ref="finance.stripe.invoices.retrieve",
+        credential_ref=credential_ref,
+        input_json={"invoice_ref": invoice_ref},
+    )
+    assert (
+        observed.output_json["data"]["footer_sha256"]
+        == updated.output_json["data"]["footer_sha256"]
+    )
+    assert (
+        observed.output_json["data"]["payment_settings"]
+        == updated.output_json["data"]["payment_settings"]
+    )
+    assert observed.output_json["data"]["recipient_pay_online_button_state"] == "unverified"
+    rendered = json.dumps(
+        {"updated": updated.model_dump(mode="json"), "observed": observed.model_dump(mode="json")}
+    )
+    assert footer not in rendered
+    assert all(
+        "/send" not in str(item.url) and "/finalize" not in str(item.url)
+        for item in httpx_mock.get_requests()
+    )
+
+
+@pytest.mark.parametrize(
+    ("invoice_fields", "expected_pdf_state", "expected_hosted_state", "expected_settings"),
+    [
+        (
+            {"status": "draft", "invoice_pdf": None, "hosted_invoice_url": None},
+            "draft_unavailable",
+            "draft_unavailable",
+            {},
+        ),
+        (
+            {
+                "status": "open",
+                "invoice_pdf": None,
+                "hosted_invoice_url": None,
+                "payment_settings": {"payment_method_types": None},
+            },
+            "unavailable",
+            "unavailable",
+            {"payment_method_types": None},
+        ),
+        (
+            {
+                "status": "open",
+                "invoice_pdf": "https://invoice.stripe.com/pdf/fixture",
+                "hosted_invoice_url": "https://invoice.stripe.com/i/fixture",
+                "payment_settings": {"payment_method_types": ["card"]},
+            },
+            "available",
+            "available",
+            {"payment_method_types": ["card"]},
+        ),
+    ],
+)
+def test_stripe_invoice_readback_reports_document_link_state_and_payment_settings(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+    invoice_fields: dict[str, object],
+    expected_pdf_state: str,
+    expected_hosted_state: str,
+    expected_settings: dict[str, object],
+) -> None:
+    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    invoice_ref = _safe_ref(
+        session,
+        project_id=project_id,
+        credential_ref=credential_ref,
+        object_type="stripe.invoice",
+        provider_id="in_document_state",
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{STRIPE_ROOT}/invoices/in_document_state?expand%5B%5D=customer",
+        json=stripe_invoice(id="in_document_state", **invoice_fields),
+    )
+    result = _execute(
+        session,
+        project_id=project_id,
+        action_ref="finance.stripe.invoices.retrieve",
+        credential_ref=credential_ref,
+        input_json={"invoice_ref": invoice_ref},
+    )
+    data = result.output_json["data"]
+    assert data["invoice_pdf_state"] == expected_pdf_state
+    assert data["hosted_invoice_url_state"] == expected_hosted_state
+    assert data["payment_settings"] == expected_settings
+    assert data["recipient_pay_online_button_state"] == "unverified"
+    if invoice_fields["status"] == "draft":
+        assert data["draft_dashboard_link_state"] == "not_exposed_by_stripe_api"
+    else:
+        assert "draft_dashboard_link_state" not in data
+    assert "invoice.stripe.com" not in json.dumps(result.model_dump(mode="json"))
+
+
+def test_stripe_update_readback_distinguishes_missing_and_null_fields(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    customer_ref = _safe_ref(
+        session,
+        project_id=project_id,
+        credential_ref=credential_ref,
+        object_type="stripe.customer",
+        provider_id="cus_sparse_update_read",
+    )
+    invoice_ref = _safe_ref(
+        session,
+        project_id=project_id,
+        credential_ref=credential_ref,
+        object_type="stripe.invoice",
+        provider_id="in_sparse_update_read",
+    )
+    customer_url = f"{STRIPE_ROOT}/customers/cus_sparse_update_read"
+    invoice_url = f"{STRIPE_ROOT}/invoices/in_sparse_update_read?expand%5B%5D=customer"
+    httpx_mock.add_response(
+        method="GET", url=customer_url, json=stripe_customer(id="cus_sparse_update_read")
+    )
+    missing_customer = _execute(
+        session,
+        project_id=project_id,
+        action_ref="finance.stripe.customers.retrieve",
+        credential_ref=credential_ref,
+        input_json={"customer_ref": customer_ref},
+    ).output_json["data"]
+    assert "name_sha256" not in missing_customer
+    assert "phone_sha256" not in missing_customer
+    assert "address_sha256" not in missing_customer
+    httpx_mock.add_response(
+        method="GET",
+        url=customer_url,
+        json=stripe_customer(id="cus_sparse_update_read", name=None, phone=None, address=None),
+    )
+    null_customer = _execute(
+        session,
+        project_id=project_id,
+        action_ref="finance.stripe.customers.retrieve",
+        credential_ref=credential_ref,
+        input_json={"customer_ref": customer_ref},
+    ).output_json["data"]
+    assert null_customer["name_sha256"] is None
+    assert null_customer["phone_sha256"] is None
+    assert null_customer["address_sha256"] is None
+    assert null_customer["address_field_sha256"] is None
+
+    invoice_without_settings = stripe_invoice(id="in_sparse_update_read")
+    del invoice_without_settings["payment_settings"]
+    httpx_mock.add_response(method="GET", url=invoice_url, json=invoice_without_settings)
+    missing_invoice = _execute(
+        session,
+        project_id=project_id,
+        action_ref="finance.stripe.invoices.retrieve",
+        credential_ref=credential_ref,
+        input_json={"invoice_ref": invoice_ref},
+    ).output_json["data"]
+    assert "footer_sha256" not in missing_invoice
+    assert "payment_settings" not in missing_invoice
+    assert missing_invoice["invoice_pdf_state"] == "not_returned"
+
+    httpx_mock.add_response(
+        method="GET",
+        url=invoice_url,
+        json=stripe_invoice(
+            id="in_sparse_update_read", footer=None, payment_settings={"payment_method_types": None}
+        ),
+    )
+    null_invoice = _execute(
+        session,
+        project_id=project_id,
+        action_ref="finance.stripe.invoices.retrieve",
+        credential_ref=credential_ref,
+        input_json={"invoice_ref": invoice_ref},
+    ).output_json["data"]
+    assert null_invoice["footer_sha256"] is None
+    assert null_invoice["payment_settings"] == {"payment_method_types": None}
+
+
+@pytest.mark.parametrize(
+    ("action_key", "input_json", "expected_code"),
+    [
+        ("stripe.customers.update", {"customer_ref": "provider-object:fixture"}, "required"),
+        (
+            "stripe.customers.update",
+            {"customer_ref": "provider-object:fixture", "address": {}},
+            "required",
+        ),
+        (
+            "stripe.customers.update",
+            {"customer_ref": "provider-object:fixture", "address": {"line1": "raw address"}},
+            "payload_secret_ref_required",
+        ),
+        ("stripe.invoices.update", {"invoice_ref": "provider-object:fixture"}, "required"),
+        (
+            "stripe.invoices.update",
+            {"invoice_ref": "provider-object:fixture", "payment_method_types": []},
+            "required",
+        ),
+        (
+            "stripe.invoices.update",
+            {"invoice_ref": "provider-object:fixture", "payment_method_types": ["crypto"]},
+            "enum_mismatch",
+        ),
+        (
+            "stripe.invoices.update",
+            {"invoice_ref": "provider-object:fixture", "footer": "raw instructions"},
+            "payload_secret_ref_required",
+        ),
+    ],
+)
+def test_stripe_update_inputs_reject_empty_or_unreviewed_changes(
+    action_key: str, input_json: dict[str, object], expected_code: str
+) -> None:
+    spec = STRIPE_ACTION_SPECS[action_key]
+    issues = StripeActionConnector().validate(
+        ActionConnectorRequest(
+            project_id=1,
+            plugin_slug="finance",
+            action_key=action_key,
+            action_ref=f"finance.{action_key}",
+            provider_key="stripe",
+            operation=STRIPE_OPERATION,
+            input_json=input_json,
+            config_json={
+                "stripe": {
+                    "method": spec.method,
+                    "path": spec.path,
+                    "api_version": "2026-08-26.dahlia",
+                }
+            },
+            dry_run=True,
+            idempotency_key="finance-update-invalid-fixture",
+        )
+    )
+    assert expected_code in {item.code for item in issues}
+
+
+@pytest.mark.parametrize(
+    ("object_type", "action_ref", "input_field"),
+    [
+        ("stripe.customer", "finance.stripe.customers.update", "customer_ref"),
+        ("stripe.invoice", "finance.stripe.invoices.update", "invoice_ref"),
+    ],
+)
+def test_stripe_updates_reject_other_account_refs_before_http(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+    object_type: str,
+    action_ref: str,
+    input_field: str,
+) -> None:
+    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    target_ref = _safe_ref(
+        session,
+        project_id=project_id,
+        credential_ref=credential_ref,
+        object_type=object_type,
+        provider_id="in_wrong_binding" if object_type == "stripe.invoice" else "cus_wrong_binding",
+    )
+    row = session.exec(
+        select(ProviderObjectReference).where(ProviderObjectReference.safe_ref == target_ref)
+    ).one()
+    row.provider_account_id = "acct_other"
+    session.add(row)
+    session.commit()
+    payload = (
+        {input_field: target_ref, "payment_method_types": ["card"]}
+        if object_type == "stripe.invoice"
+        else {
+            input_field: target_ref,
+            "name": _payload_secret_marker(session, project_id, "New Name"),
+        }
+    )
+    with pytest.raises((ValidationError, ConflictError)):
+        _execute(
+            session,
+            project_id=project_id,
+            action_ref=action_ref,
+            credential_ref=credential_ref,
+            input_json=payload,
+            idempotency_key=f"finance-wrong-binding-{object_type}",
+        )
+    assert not [request for request in httpx_mock.get_requests() if request.method == "POST"]
+
+
+def test_stripe_customer_update_checks_materialized_country_before_http(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    customer_ref = _safe_ref(
+        session,
+        project_id=project_id,
+        credential_ref=credential_ref,
+        object_type="stripe.customer",
+        provider_id="cus_bad_country",
+    )
+    with pytest.raises(ConflictError) as failure:
+        _execute(
+            session,
+            project_id=project_id,
+            action_ref="finance.stripe.customers.update",
+            credential_ref=credential_ref,
+            input_json={
+                "customer_ref": customer_ref,
+                "address": {"country": _payload_secret_marker(session, project_id, "USA")},
+            },
+            idempotency_key="finance-customer-bad-country",
+        )
+    assert isinstance(failure.value.__cause__, ValidationError)
+    assert "country must be an uppercase" in str(failure.value.__cause__)
+    assert not [request for request in httpx_mock.get_requests() if request.method == "POST"]

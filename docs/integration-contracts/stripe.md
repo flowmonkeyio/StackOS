@@ -1,6 +1,6 @@
 # Stripe Finance Transport Contract
 
-Last reviewed: 2026-09-07 (restricted-key permissions; temporary list deferral unchanged)
+Last reviewed: 2026-09-23 (public API presentation/recipient limits and external delivery evidence; temporary list deferral unchanged)
 
 Pinned Stripe API version: `2026-08-26.dahlia`
 
@@ -21,13 +21,15 @@ attachment tree retains immutable original evidence.
 | Temporary CLI sandbox | [CLI sandbox](https://docs.stripe.com/cli/sandbox), [restricted keys](https://docs.stripe.com/keys/restricted-api-keys) | An unclaimed CLI sandbox can have endpoint-restricted credentials. Claiming and selecting the correct test-key permissions are owner setup, not a connector permission upgrade. |
 | API version | [Versioning](https://docs.stripe.com/api/versioning) | Every request pins `Stripe-Version: 2026-08-26.dahlia`; changing it requires a contract and fixture review. |
 | Exact response schemas | [Stripe OpenAPI, pinned-version snapshot](https://github.com/stripe/openapi/blob/9ac29c7795ab21c7711b4bc25bb2dd739552a5fa/latest/openapi.spec3.json) | Selected required observations are checked against the generated schema, not inferred from abbreviated examples. PaymentRecord requires seven amount-state objects; PaymentIntent money observations can be absent. InvoicePayment requires its payment discriminator, but the selected reference is optional. Missing linkage cannot establish a match. |
-| Customers | [Create](https://docs.stripe.com/api/customers/create), [retrieve](https://docs.stripe.com/api/customers/retrieve), [list](https://docs.stripe.com/api/customers/list) | Explicit creation, safe retrieval, and a bounded exact-email list so a workflow can reuse an existing customer without receiving a raw id. |
+| Customers | [Create](https://docs.stripe.com/api/customers/create), [update](https://docs.stripe.com/api/customers/update), [retrieve](https://docs.stripe.com/api/customers/retrieve), [list](https://docs.stripe.com/api/customers/list) | Explicit creation, scoped existing-customer billing edits, safe retrieval, and a bounded exact-email list so a workflow can reuse an existing customer without receiving a raw id. |
 | Catalog discovery | [List products](https://docs.stripe.com/api/products/list), [retrieve product](https://docs.stripe.com/api/products/retrieve), [list prices](https://docs.stripe.com/api/prices/list), [retrieve price](https://docs.stripe.com/api/prices/retrieve) | Four bounded, read-only actions select an existing account-bound Product/Price. A Price retrieve fixes the reviewed tier and currency-option expansions. Safe refs prove identity, not a durable quote or a snapshot of mutable terms. |
-| Invoice lifecycle | [Create](https://docs.stripe.com/api/invoices/create), [finalize](https://docs.stripe.com/api/invoices/finalize), [send](https://docs.stripe.com/api/invoices/send), [retrieve](https://docs.stripe.com/api/invoices/retrieve), [list](https://docs.stripe.com/api/invoices/list) | Invoice creation requires explicit approved currency and remains draft (`auto_advance=false`). Optional `effective_at` controls the displayed Date of issue, not creation, due, or payment time. Finalization and email sending are separate writes. `send_invoice` plus positive `days_until_due` is the only collection method exposed. Test-mode sends produce no email. |
+| Invoice lifecycle | [Create](https://docs.stripe.com/api/invoices/create), [update](https://docs.stripe.com/api/invoices/update), [finalize](https://docs.stripe.com/api/invoices/finalize), [send](https://docs.stripe.com/api/invoices/send), [retrieve](https://docs.stripe.com/api/invoices/retrieve), [list](https://docs.stripe.com/api/invoices/list) | Invoice creation requires explicit approved currency and remains draft (`auto_advance=false`). Optional `effective_at` controls the displayed Date of issue, not creation, due, or payment time. A separate draft update can set a footer and selected PaymentIntent methods. Finalization and customer email sending remain separate writes. `send_invoice` plus positive `days_until_due` is the only collection method exposed. The send endpoint has no recipient override, so it cannot send an operator-only review copy. Test-mode sends produce no email. |
+| Payment presentation and handoff | [Invoice update parameters](https://docs.stripe.com/api/invoices/update), [Dashboard delivery choices](https://docs.stripe.com/invoicing/dashboard), [manage invoice payment methods](https://support.stripe.com/questions/manage-invoice-payment-methods?locale=en-GB), [ACH Direct Debit](https://docs.stripe.com/payments/ach-direct-debit), [bank transfers](https://docs.stripe.com/payments/bank-transfers) | `payment_settings.payment_method_types` selects PaymentIntent methods; the API documents no control that hides the recipient's Pay online button. `us_bank_account` is ACH debit, and `customer_balance` is Stripe-managed virtual bank transfer; neither means deposit directly into the operator's bank account. An empty method list is not a supported disable-all setting. Dashboard documents a manual **Email invoice without link** customer-delivery choice that sends a PDF only. Verify that choice and the recipient-visible result for the selected account/invoice. The API send endpoint does not document inheriting it. |
+| Saved-draft review | [Invoice object](https://docs.stripe.com/api/invoices/object), [create preview invoice](https://docs.stripe.com/api/invoices/create_preview), [Dashboard invoice actions](https://docs.stripe.com/invoicing/dashboard/manage-invoices), [send](https://docs.stripe.com/api/invoices/send) | The Invoice schema explicitly defines `hosted_invoice_url` and `invoice_pdf` as null before finalization. The preview endpoint models an upcoming invoice and accepts no saved invoice ID. The Dashboard documents an overflow **Download PDF** action for non-paid invoice statuses and opens non-subscription drafts in the editor. Verify whether Download PDF is available for the specific draft/account only when Dashboard access is authorized; public API documentation does not establish that operational result. The public API has no saved-draft PDF download or recipient override for a review email. Never finalize solely to obtain a review link or PDF. |
 | Invoice lines | [Create invoice item](https://docs.stripe.com/api/invoiceitems/create), [list invoice items](https://docs.stripe.com/api/invoiceitems/list) | A line targets an explicit draft invoice and is either the existing positive manual amount/currency/description form or an existing Price plus explicit nonnegative quantity. Stripe computes a Price line total. The connector rejects unassigned pending writes, mixed manual amount/Price input, subscriptions, negative adjustments, tax behavior, and arbitrary metadata. |
 | Disputes | [List](https://docs.stripe.com/api/disputes/list), [retrieve](https://docs.stripe.com/api/disputes/retrieve) | Read-only status evidence for an explicitly selected charge/payment intent or known dispute; evidence documents and customer content are excluded. |
 | Correlation and advancement | [Metadata](https://docs.stripe.com/metadata), [finalize parameters](https://docs.stripe.com/api/invoices/finalize), [automatic advancement](https://docs.stripe.com/invoicing/integration/automatic-advancement-collection) | One fixed metadata key carries a random opaque correlation value. Create and finalize both explicitly set `auto_advance=false`; reads expose the observed setting. |
-| Recipient and due-term observations | [Invoice object](https://docs.stripe.com/api/invoices/object), [expansion](https://docs.stripe.com/expand), [additional billing recipients](https://support.stripe.com/questions/can-i-specify-additional-recipients-or-add-cc-email-addresses-to-billing-emails), [email settings](https://docs.stripe.com/invoicing/send-email) | Invoice email is a frozen snapshot after finalization. Independent retrieval expands the current customer, hashes both primary email fields, and preserves the actual due timestamp. Additional billing To/CC recipients are not API-observable. |
+| Recipient and due-term observations | [Invoice object](https://docs.stripe.com/api/invoices/object), [expansion](https://docs.stripe.com/expand), [additional billing recipients](https://support.stripe.com/questions/can-i-specify-additional-recipients-or-add-cc-email-addresses-to-billing-emails), [email settings](https://docs.stripe.com/invoicing/send-email) | Invoice customer name, email, phone and address freeze at finalization. Independent retrieval expands the current customer, hashes the selected current and invoice snapshot fields, and preserves the actual due timestamp. Additional billing To/CC recipients are not API-observable. |
 | Invoice payments | [Invoice Payment](https://docs.stripe.com/api/invoice-payment), [list](https://docs.stripe.com/api/invoice-payment/list) | Read-only, invoice-scoped allocation evidence. The current object maps an invoice to a nested payment object such as a Payment Intent or charge. |
 | Received-payment recording | [Report PaymentRecord](https://docs.stripe.com/api/payment-record/report), [retrieve](https://docs.stripe.com/api/payment-record/retrieve), [object](https://docs.stripe.com/api/payment-record/object), [GA release](https://docs.stripe.com/changelog/clover/2025-10-29/payment-records) | Report one verified bank payment with a fixed guaranteed outcome and custom Bank transfer method. This records an existing receipt; it does not initiate a payment. |
 | PaymentRecord recovery listing — unavailable | [Pinned OpenAPI paths and parameters](https://github.com/stripe/openapi/blob/9ac29c7795ab21c7711b4bc25bb2dd739552a5fa/latest/openapi.spec3.json), [generated SDK resource](https://github.com/stripe/stripe-node/blob/master/src/resources/PaymentRecords.ts), [announcement](https://docs.stripe.com/changelog/dahlia/2026-07-29/list-payment-records) | Published sources declare `GET /v1/payment_records`, but the tested sandbox returned 404. StackOS explicitly defers this action pending a verified availability fix; its retained schema is not executable support. No retries, key broadening or guessed routes. |
@@ -149,10 +151,10 @@ restricted-key Dashboard, select the resource and Read/Write setting.
 
 | Stripe resource | Access | Reference identifier | Current connector use |
 | --- | --- | --- | --- |
-| Customers | Write | `customer_write` | Create, find by email, retrieve, and expand the invoice customer. |
+| Customers | Write | `customer_write` | Create, update approved billing details, find by email, retrieve, and expand the invoice customer. |
 | Products | Read | `product_read` | Bounded existing-product discovery and retrieval. |
 | Prices | Read | `plan_read` | Bounded existing-Price discovery/retrieval, including its fixed pricing expansions. |
-| Invoices | Write | `invoice_write` | Create invoice/items, read invoice/items/payments, finalize, send, attach an existing payment, and mark paid out of band. |
+| Invoices | Write | `invoice_write` | Create/update invoice and items, read invoice/items/payments, finalize, send, attach an existing payment, and mark paid out of band. |
 | Payment Records | Write | `payment_records_write` | Report a payment already received and retrieve a known record. |
 | Accounts | Read | `connected_account_read` | The connection test's `GET /v1/account` identity probe. |
 | Balance | Read | `balance_read` | Read available/pending balances and balance transactions. |
@@ -174,23 +176,30 @@ only the account probe; any permission denial must be checked against the
 selected action's safe provider error. PaymentRecord listing remains explicitly
 unavailable in StackOS; granting Payment Records access does not enable it.
 
-## Action matrix — 29 executable actions, one deferred
+## Action matrix — 36 executable actions, one deferred
 
 | Action ref | Stripe endpoint | Risk | Input boundary |
 | --- | --- | --- | --- |
 | `finance.stripe.customers.create` | `POST /v1/customers` | write | Explicit customer email and optional name/description; deterministic idempotency key. |
+| `finance.stripe.customers.update` | `POST /v1/customers/:id` | write | Account-bound `customer_ref` and approved name, email, phone, billing-address fields or `invoice_settings.custom_fields`; deterministic idempotency key. Custom fields replace the whole list; preserve existing entries explicitly. No payment-source edits. |
 | `finance.stripe.customers.retrieve` | `GET /v1/customers/:id` | read | Account-bound `customer_ref`. |
 | `finance.stripe.customers.list` | `GET /v1/customers` | read | One bounded page matching one exact `email`; continuation uses the final customer reference. |
+| `finance.stripe.customers.tax-ids.list` | `GET /v1/customers/:id/tax_ids` | read | One bounded page for the exact account-bound customer; exhaust pagination before duplicate comparison. |
+| `finance.stripe.customers.tax-ids.create` | `POST /v1/customers/:id/tax_ids` | write | Exact customer, provider tax-ID type, secret-marked value and stable idempotency key. The agent checks duplicates first; creation does not establish verification. |
+| `finance.stripe.customers.tax-ids.retrieve` | `GET /v1/customers/:id/tax_ids/:id` | read | Account- and customer-bound tax-ID reference; returns actual nullable verification status. |
 | `finance.stripe.products.list` | `GET /v1/products` | read | One bounded catalog page, optionally limited by `active`; returns safe Product/default-Price refs. |
 | `finance.stripe.products.retrieve` | `GET /v1/products/:id` | read | Account-bound `product_ref`. |
 | `finance.stripe.prices.list` | `GET /v1/prices` | read | One bounded catalog page, optionally scoped by Product, active state, currency, or Price type. |
 | `finance.stripe.prices.retrieve` | `GET /v1/prices/:id` | read | Account-bound `price_ref`; fixed `tiers` and `currency_options` expansions expose current price structure without computing a quote. |
 | `finance.stripe.invoices.create` | `POST /v1/invoices` | write | `customer_ref`, explicit lowercase approved `currency`, `collection_method=send_invoice`, positive `days_until_due`, optional `effective_at`, memo description and opaque `correlation_key`; always draft. `effective_at` is the printed issue date only. |
+| `finance.stripe.invoices.update` | `POST /v1/invoices/:id` | write | Account-bound `invoice_ref` and memo `description`, complete `custom_fields`, footer or nonempty `payment_method_types`. Memo-only updates and literal empty memo clearing are supported; omission leaves a field unchanged. Stripe enforces finalized editability. Independently retrieve the same invoice after correction. No finalization or send. |
 | `finance.stripe.invoice-items.create` | `POST /v1/invoiceitems` | write | `customer_ref`, explicit `invoice_ref`, and either positive smallest-unit manual `amount` + lowercase ISO `currency` + description, or existing `price_ref` + explicit nonnegative `quantity` with only the supported optional currency/description. |
 | `finance.stripe.invoice-items.list` | `GET /v1/invoiceitems` | read | Exactly one of `invoice_ref` or `customer_ref`, bounded pagination; customer-scoped results can include attached and pending items. |
 | `finance.stripe.invoices.finalize` | `POST /v1/invoices/:id/finalize` | write | Explicit `invoice_ref`; forced `auto_advance=false`; no send implied. |
-| `finance.stripe.invoices.send` | `POST /v1/invoices/:id/send` | write | Explicit finalized `invoice_ref`; approval belongs to the workflow. |
+| `finance.stripe.invoices.send` | `POST /v1/invoices/:id/send` | write | Explicit finalized `invoice_ref`; approval belongs to the workflow. This is customer delivery with no alternate recipient parameter, never an operator-only review action. |
 | `finance.stripe.invoices.retrieve/list` | `GET /v1/invoices/:id`, `GET /v1/invoices` | read | Safe invoice ref or one bounded page with optional status, `customer_ref`, and inclusive `created_gte`/`created_lte` Unix timestamps. Optional `correlation_key` returns per-invoice match evidence. |
+| `finance.stripe.invoices.pdf.download` | Fresh `GET /v1/invoices/:id`, then unauthenticated GET of its returned PDF URL | read | Account-bound `invoice_ref`, optional `max_bytes` up to 20 MiB. Requires a finalized invoice and stages verified PDF bytes privately; never finalizes or sends. |
+| `finance.stripe.invoices.pdf.cleanup` | Local private transfer cleanup; no provider mutation | write | Exact opaque `transfer_ref`, scoped to project and Stripe account. Use only after host-owned external custody/readback; no arbitrary path input. |
 | `finance.stripe.invoice-payments.list` | `GET /v1/invoice_payments` | read | `invoice_ref` and one bounded page. |
 | `finance.stripe.payment-intents.retrieve` | `GET /v1/payment_intents/:id` | read | Account-bound `payment_intent_ref`; no creation, confirmation, capture, or charge. |
 | `finance.stripe.payment-records.retrieve` | `GET /v1/payment_records/:id` | read | Account-bound `payment_record_ref`; safe amount-state observations and reference digest, not bank evidence. |
@@ -211,10 +220,52 @@ necessary business content from credentials without returning arbitrary provider
 payloads. Metadata bags, payment method details, bank/card data and client
 secrets remain excluded. Provider-reference display names remain empty even
 when a detailed read returns a customer name or invoice number.
-Customer-identifying textual inputs such as email, name, and invoice
-description must use the existing exact `{"$secret_ref":"secret_..."}` payload
+Customer-identifying textual inputs such as email, name, phone, every billing
+address field including country, invoice description, and footer text must use
+the existing exact `{"$secret_ref":"secret_..."}` payload
 marker so their values are materialized only inside provider dispatch and are
 redacted if echoed by Stripe. Idempotency keys must never contain those values.
+
+The sole memo-input exception is literal `description: ""`, which clears the
+memo without carrying business content. Nonempty memo text uses a secret marker
+and is limited to 1,500 characters. Customer `invoice_settings.custom_fields`
+and invoice `custom_fields` accept a complete ordered list of up to four
+name/value pairs (40/140 characters respectively), each string secret-marked.
+An omitted list is unchanged; `[]` clears it. The connector performs one explicit
+provider request and does not silently read, merge, deduplicate or retry writes.
+
+### Customer identifiers and issued-invoice corrections
+
+Use the existing account/customer mapping. Exhaust all
+[`tax_ids` pages](https://docs.stripe.com/api/tax_ids/customer_list) and compare
+the approved type and exact UTF-8 value SHA-256 before
+[creating](https://docs.stripe.com/api/tax_ids/customer_create) an identifier.
+A match is reused with no POST; a new identifier requires a stable idempotency
+key and independent retrieval. Preserve the actual nullable `verification`
+object and its status; [Stripe verification is asynchronous](https://docs.stripe.com/billing/customer/tax-ids).
+Never convert successful creation into `verified`. Unknown creation outcomes
+require reconciliation before any retry.
+
+Before replacing custom fields, retrieve the existing ordered list with business
+details, merge the approved change externally, preserve every unrelated entry,
+then submit the full list and independently read it back. Customer defaults and
+the invoice itself are separate objects: verify the invoice's own `custom_fields`
+and `customer_tax_ids`, not just the customer's current settings. Default safe
+reads expose ordered name/value hashes and tax-ID type/value hashes; tax-ID
+reads also expose customer-bound refs and actual verification observations.
+Invoice reads expose `description_sha256`. Compare these exact independent
+readbacks and include them in `finance_delivery.invoice_snapshot_digest`.
+Historical snapshots/digests/approvals remain unchanged; corrected material
+requires new evidence, not rewriting history.
+
+[Finalization freezes custom fields](https://docs.stripe.com/invoicing/customize)
+and [customer tax-ID snapshots; memo edits are restricted for most finalized
+invoices](https://docs.stripe.com/invoicing/integration/workflow-transitions).
+For an authorized issued-invoice correction, use its existing ref with the
+explicit update action and report Stripe's actual result. A provider refusal
+does not authorize a replacement invoice, void, refinalization or resend.
+Updating customer defaults affects future invoices and does not establish an
+issued-invoice correction.
 
 Invoice-item descriptions are omitted from default reads; the detailed list
 read can return their text for line inspection. The default list output
@@ -236,12 +287,13 @@ Stripe query parameter, an auth override, or a new action grant.
 
 | Action | Additional `business_details` fields |
 | --- | --- |
-| `finance.stripe.customers.retrieve` | `name`, `email`, `description` for a selected customer. |
+| `finance.stripe.customers.retrieve` | `name`, `email`, `description`, and invoice custom-field defaults for a selected customer. |
+| `finance.stripe.customers.tax-ids.list` / `.retrieve` | Tax-ID value; verification name/address remain hashes in the safe projection. |
 | `finance.stripe.products.list` | `name`, `description`, `unit_label` on each returned product. |
 | `finance.stripe.products.retrieve` | `name`, `description`, `unit_label` for the selected product. |
 | `finance.stripe.prices.list` | `nickname`, `lookup_key` on each returned Price. |
 | `finance.stripe.prices.retrieve` | `nickname`, `lookup_key` for the selected Price. |
-| `finance.stripe.invoices.retrieve` | `number`, `description`, `customer_name`, `customer_email`, `hosted_invoice_url`, `invoice_pdf`. |
+| `finance.stripe.invoices.retrieve` | `number`, `description`, `customer_name`, `customer_email`, `custom_fields`, `hosted_invoice_url`, `invoice_pdf`; customer tax IDs remain type/value hashes. |
 | `finance.stripe.invoice-items.list` | `description` on each returned item; existing page limits/cursors still apply. |
 | `finance.stripe.charges.retrieve` | `description`, `receipt_url` for a selected charge. |
 
@@ -268,21 +320,113 @@ workflow results, resources, artifacts or tracker notes. The external backend
 remains the financial master. `response_mode=raw` changes the envelope, not
 the selection: callers must explicitly request business details.
 
-Links are provider observations, not constructed from an invoice ref. Draft
-invoices can have null links; missing or unavailable links are not evidence of
-failed payment. Keep hosted-page and PDF links distinct. Validation accepts
+An invoice's `hosted_invoice_url` is a customer-facing page where payment may
+be possible, while `invoice_pdf` is a document URL. Both are provider
+observations, not constructed from an invoice ref. Stripe's Invoice schema
+explicitly documents both fields as null before finalization. Missing or
+unavailable links are not evidence of failed payment. The
+`create_preview` endpoint models an upcoming invoice that has not been saved;
+it does not produce a preview/download of this saved draft. A Dashboard review
+link for a saved draft is a different, authenticated surface: this connector
+does not return one, and no official stable detail URL pattern has been verified
+for construction. The operator can locate and inspect the saved draft manually
+in Stripe Dashboard. Its invoice-management documentation describes an overflow
+**Download PDF** action for non-paid statuses and says non-subscription drafts
+open the editor. Check the selected draft/account to establish whether that
+manual download works; the docs do not guarantee it for every draft. StackOS
+cannot hand over an API-backed draft PDF or direct Dashboard link. If a required
+review artifact cannot be obtained through the verified Dashboard path, report
+the gap and hold the draft. Never finalize an invoice merely to obtain a review
+link or PDF. “Copy invoice link” can currently return an
+available Stripe-hosted customer URL or PDF URL, not a draft Dashboard link.
+Validation accepts
 provider-returned HTTPS hosts without inventing a Stripe-only hostname rule;
 this does not claim that Stripe offers custom domains for every invoice surface.
-No automatic browsing or download occurs. Generic
+Invoice retrieve/list returns URL metadata only; it neither downloads invoice PDF
+bytes nor proves that a host/browser fetch succeeded. The explicit PDF download
+action below performs the byte transfer. Generic
 credential/signed-URL redaction still applies: never share a redacted or invalid
-URL as a working link. Missing fields remain absent, provider null remains null,
-and invalid/redaction-changing URLs return null with the corresponding
-`<field>_state` of `invalid` or `redacted`. Valid URLs retain their exact value.
+URL as a working link. Default invoice reads expose top-level
+`hosted_invoice_url_state` and `invoice_pdf_state`: `not_returned`,
+`draft_unavailable`, `unavailable`, `available`, `invalid`, or `redacted`.
+Invoice reads also return `recipient_pay_online_button_state=unverified` on
+every status and `draft_dashboard_link_state=not_exposed_by_stripe_api` for a
+draft. Neither field is proof that the Pay online button is absent or that a
+usable draft link exists.
+The actual URL remains opt-in under `business_details`, preserving a provider
+null as null; invalid or redaction-changing URLs return null with `invalid` or
+`redacted` state. Valid URLs retain their exact value.
 Links can expire or be revoked; reread Stripe when a fresh
 link is needed and do not claim an HTTP fetch succeeded unless actually checked.
 An invoice link can reveal customer/invoice data to its recipient. Return it in
 the owner's requested private handoff, not a public channel or unrelated client
-project. A receipt URL is not an invoice URL.
+project. A receipt URL is not an invoice URL. Stripe's invoice send endpoint has
+no recipient override. An operator-only review copy can use a real PDF manually
+downloaded from the selected draft in Dashboard, if verified available, and a
+separately approved independent channel. Never change the
+customer's billing email to route a review copy or call
+`finance.stripe.invoices.send` for that purpose. If no actual artifact/channel
+is available, report the limitation without claiming a review copy was sent.
+
+### Public API capability boundary
+
+The 2026-09-23 review compared the [pinned OpenAPI snapshot](https://github.com/stripe/openapi/blob/9ac29c7795ab21c7711b4bc25bb2dd739552a5fa/latest/openapi.spec3.json)
+with the then-current public `master` snapshot. Both declare
+`2026-08-26.dahlia` and have SHA-256
+`2c31317cdff103e4495b5b3501004d9ddc0af61f43b0ab819e2db392eef008f6`.
+These are public API limits, independent of which subset StackOS exposes:
+
+| Requested capability | Exact public contract | Consequence |
+| --- | --- | --- |
+| Email a review copy to another address | `POST /v1/invoices/{invoice}/send` has only the transport `expand` property and rejects additional properties. | No `to`, `cc`, `bcc`, recipient override, or attachment-selection parameter. Changing the customer's billing email is not a review-copy operation. |
+| Send without a payment link | The same send schema has no delivery-mode or hide-link field. Invoice `rendering` update properties are `amount_tax_display`, `pdf.page_size`, `template`, and `template_version`. | Footer, payment methods, and a rendering-template identity do not establish email button suppression. Dashboard delivery evidence cannot prove API-send presentation. |
+| Retrieve the actual saved draft PDF | `Invoice.invoice_pdf` is null until finalized. The public paths have no invoice PDF/download/render endpoint; `create_preview` takes no saved invoice ID. | A preview calculation, synthetic PDF, quote PDF, or invented URL cannot be described as the actual draft artifact. |
+| Enumerate every billing recipient | Customer and Invoice expose a primary email, without additional billing To/CC fields. | Primary-email readback cannot prove additional recipients are absent. |
+
+This review does not test private Dashboard endpoints or imply access to an
+undocumented feature. An API-only run preserves these unresolved operational
+checks. It never opens a browser, guesses hidden parameters, finalizes for an
+artifact, sends a probe, or replaces an exact saved-draft artifact with a
+different document. Owner-only artifact delivery also needs an independently
+verified attachment-capable transport; the current SMTP action has no
+attachment input and cannot be presented as an established PDF route.
+
+### Download a finalized invoice PDF
+
+Call `finance.stripe.invoices.pdf.download` with the existing account-bound
+`invoice_ref`. It freshly retrieves the same invoice, checks finalized status
+and finalization evidence, and uses only Stripe's returned `invoice_pdf`.
+Drafts, null/missing links and identity mismatches fail without a finalize or
+send. Retry by retrieving a fresh URL through this action; never construct a
+PDF URL from an invoice ref or reuse an expired link as evidence of success.
+
+The PDF fetch uses a separate client with no Stripe authorization header,
+cookies or environment proxy credentials. It follows Stripe's returned HTTP(S)
+URL and redirects without a hostname, IP or port allowlist. URL userinfo and
+fragments are stripped before requests so a URL cannot introduce credentials.
+Normal HTTP transport/TLS validation, bounded redirects, response type/content
+checks and a 20 MiB maximum remain. Both `application/pdf` and
+`application/octet-stream` are supported; either must contain the PDF header
+and end marker. Unavailable/expired URLs, timeouts,
+oversized responses and non-PDF bodies return safe errors. Diagnostics identify
+`pdf_phase`, `pdf_hostname` and `pdf_redirect_hop`, never the signed URL, query
+or redirect Location. Finalized status alone does not guarantee network success.
+
+Successful output gives `transfer_ref`, `invoice_ref`, `local_path`, fixed
+`filename=invoice.pdf`, `mime_type`, `bytes`, `sha256`, `staged_at` and
+`custody=temporary-private-staging`. The private project-scoped staging tree is
+excluded from public media serving and media-artifact inputs. It creates no
+StackOS finance resource or artifact and does not put PDF bytes or the signed URL
+in action output. File-backed action envelopes retain safe transport metadata.
+
+The host copies that exact file into the external finance workspace under its
+existing writer/custody rules, verifies hash and byte count, and records invoice
+provenance there. Only then call `finance.stripe.invoices.pdf.cleanup` with the
+same opaque transfer ref. Cleanup never accepts a filesystem path and cannot
+remove another project's or account's transfer. A staged PDF is not proof of
+customer email delivery, recipient completeness, payment, or no-link email
+presentation. Owner-only sharing still requires a separately verified
+attachment-capable route and the exact intended recipient scope.
 
 For “find this customer's existing payment, create its invoice, and give me the
 link,” compose the current paths:
@@ -364,12 +508,98 @@ link remains a reconciliation exception, not proof of complete coverage.
 `invoices.retrieve` always requests `expand[]=customer` in its single read.
 The safe response contains `invoice_customer_email_sha256` from the invoice's
 `customer_email` and `current_customer_email_sha256` from the expanded current
-Customer's `email`. Customer reads also expose `email_sha256`. These are exact
-UTF-8 hashes without case folding, trimming or normalization; no raw email,
-customer name, metadata or address is retained in output/audit. Missing, empty,
-deleted or unexpanded email data yields null, never a claimed match.
+Customer's `email`. Customer reads also expose `email_sha256`, `name_sha256`,
+`phone_sha256`, and `address_field_sha256` for the exact address fields that
+Stripe returns. These digests use exact UTF-8 bytes without case folding,
+trimming or normalization. The default projection retains no raw customer
+email, name, phone, metadata or address; explicitly requested business details
+remain subject to the disclosure boundary above. Missing, empty, deleted or
+unexpanded values never become a claimed match.
 
-Stripe documents that `invoice.customer_email` follows the customer until
+An existing customer update changes only supplied approved fields; omitted
+fields are not cleared. The agent independently retrieves the same customer
+after the write and compares every requested field's digest with the immutable
+external source. The update response echo is insufficient proof because
+payload-secret redaction can alter it. Address field digests distinguish
+provider missing/null states from an approved value; unknown or mismatched
+readback stops further invoice work. After preparing the draft, independently
+retrieve the invoice as a second API call and compare its own
+`invoice_customer_name_sha256` and `invoice_customer_address_field_sha256`
+snapshot against the same approved name/address. A correct current customer
+does not prove the invoice presents those details. Repeated `action.execute`
+reads fetch current provider state when no explicit replay key is supplied.
+An explicit StackOS `idempotency_key` requests replay of that observation;
+omit it for an independent verification read. The connector sends no Stripe
+`Idempotency-Key` header on GET. Approved name, email, phone, billing-address
+and invoice custom-field defaults are supported customer edits. Customer tax
+IDs use their separate actions. Payment sources, customer balance, other tax
+settings and delivery preferences are outside these actions.
+
+Invoice reads separately return `invoice_customer_name_sha256`,
+`invoice_customer_phone_sha256`, `invoice_customer_address_sha256`, and
+`invoice_customer_address_field_sha256` when Stripe supplies those snapshot
+fields. Compare each approved field with the invoice snapshot as well as the
+current customer before finalization and send. Stripe documents that draft
+invoice customer details follow the customer until finalization, when they
+freeze. A successful customer update does not prove an already-finalized
+invoice displays the corrected details. Missing/null observations remain
+unproven; the connector never returns the raw fields by default.
+
+For a draft presentation update, `invoices.retrieve` returns
+`footer_sha256` and `payment_settings.payment_method_types`. A requested
+footer is verified by hashing the external exact UTF-8 text; a requested method
+list is compared as the provider returned it. Missing or null is not a match
+to a requested value. The selected `card`, `us_bank_account` and
+`customer_balance` values are Stripe payment methods for its invoice
+PaymentIntent, not the operator's direct deposit instructions. `us_bank_account`
+is ACH debit and `customer_balance` is a Stripe-managed virtual bank transfer,
+not direct deposit to the operator's business bank account. An empty method list
+cannot be used as a disable-all control. The footer is only supplied text and
+may be displayed on the customer invoice. Neither setting proves that Stripe's
+invoice email or Hosted Invoice Page omits a Pay online button; the API exposes
+no documented hide-button control. The readback field
+`recipient_pay_online_button_state=unverified` makes this limit explicit.
+Stripe Dashboard supports per-invoice payment-method management, but the
+operator must verify the actual recipient-visible presentation for the selected
+account/invoice and send route. Stripe separately documents the Dashboard
+**Email invoice without link** choice as a manual customer send with a PDF only.
+Check that option for this saved invoice/account and the actual recipient-visible
+result before using it. The option by itself is not rendering proof or an
+operator-only review copy. The API `invoices.send` endpoint has no choice
+parameter and does not document inheriting the Dashboard selection; Dashboard
+evidence alone does not verify an API send. A direct-deposit-only proposal must
+bind separate evidence that the button is absent for the exact chosen route.
+`payment_presentation.review_evidence_ref` resolves to a typed external
+provider observation under the [local workspace contract](../../plugins/finance/references/local-workspace-contract.md),
+including the exact invoice/account, billing version/digest, recipient version,
+invoice snapshot, retained original, verifier, verification time and validity.
+The host's `validate_payment_presentation` checks current identity, route,
+freshness and original bytes before delivery. A nonempty opaque ref or an
+agent's assertion does not satisfy it. A visible or unknown button state holds
+the send while drafts can retain unknown presentation.
+
+Until the exact API route has verified no-link presentation, hold
+`finance.stripe.invoices.send` for direct-deposit-only delivery. Manual Dashboard
+delivery remains a separate route that the agent cannot execute in an API-only
+session. A pending choice or uncertain delivery records an exception/recovery
+hold, with no API send. Workflow 0.5.3 supports read-only reconciliation of an
+already completed manual send through `reconcile_manual_invoice_delivery`:
+exact invoice/version and recipients, prior matching owner send authorization,
+and independent retained delivery evidence are required. Its safe result uses
+`status=manual-sent`, `delivery_state=manual-sent`, and
+`delivery_route=stripe-dashboard-email-without-link`, with
+`manual_delivery_reconciliation_ref`, `delivery_evidence_ref`, and
+`owner_send_approval_ref`. The final recorded result retains that
+provenance. It issues no send and invents no API action-call record. Missing,
+mismatched or uncertain proof remains unresolved. Frozen older runs retain
+their original output contract; follow the documented contract-drift recovery
+before continuing, without recreating invoices or replaying creation steps.
+Separate finalization approval is an issuance decision, never permission to
+finalize merely to generate a review PDF. If absence is verified after an
+independently approved finalization, that new evidence changes the immutable
+version and requires fresh owner send approval for the exact version.
+
+Stripe documents that `invoice.customer_email` also follows the customer until
 finalization and then freezes. A current customer email may therefore differ
 from the finalized invoice snapshot. Compare both observed hashes with the
 approved external primary recipient before finalization, initial send or
@@ -661,7 +891,7 @@ checks do not establish real bank custody or account-specific Stripe readiness.
 
 PaymentRecord-list deferral fixtures cover discovery/description, validation,
 direct execution and valid step grants: the unavailable reason survives, no
-HTTP request or ActionCall is created, and the other 29 actions keep their
+HTTP request or ActionCall is created, and executable actions keep their
 connector bindings. Optional deferral must not block ordinary follow-up
 readiness. Known-ref PaymentRecord reads retain reference-hash/privacy and
 projection coverage. Actual follow-up MCP fixtures cover retained-ref recovery
@@ -678,8 +908,14 @@ missing request ids and repeated normalization retain the no-secret boundary.
 The full action audit uses OpenAPI commit
 `9ac29c7795ab21c7711b4bc25bb2dd739552a5fa`, snapshot SHA-256
 `2c31317cdff103e4495b5b3501004d9ddc0af61f43b0ab819e2db392eef008f6`.
-All 30 declared method/path pairs match that snapshot; 29 remain executable and
-PaymentRecord listing is explicitly deferred. Red-first repairs cover
+The earlier transport audit checked 30 declared method/path pairs against that
+snapshot. Customer/invoice updates and the private PDF download/cleanup actions
+plus customer tax-ID list/create/retrieve bring the current inventory to 37
+declared actions, 36 executable; PaymentRecord
+listing remains explicitly deferred. PDF download composes the existing invoice
+GET with its provider-returned document URL; cleanup is local, not a new Stripe
+endpoint. The new paths have focused mocked transport, manifest and MCP tests.
+Red-first repairs cover
 retry veto/idempotency conflicts, explicit nondefault invoice currency,
 catalog selection/Price expansions, effective issue-date readback, required
 observations, missing allocation linkage, and typed reconciliation refs. Public

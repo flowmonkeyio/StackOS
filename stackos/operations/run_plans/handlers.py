@@ -185,6 +185,16 @@ async def run_plan_update(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> WriteEnvelope[RunPlanOut]:
+    # Enforce token/bound project before the canonical writer commits. A response-side
+    # dispatcher scope check is too late to protect a foreign plan's approval.
+    project_id = ctx.run.project_id if ctx.run is not None else inp.project_id
+    if project_id is None:
+        project_id = ctx.project_id
+    if ctx.extras.get("surface") == "mcp" and project_id is None:
+        raise ValidationError(
+            "runPlan.update requires project scope; use the workspace-bound bridge "
+            "or pass project_id or a project-scoped run_token"
+        )
     env = RunPlanRepository(ctx.session).update(
         run_plan_id=inp.run_plan_id,
         metadata_json=inp.metadata_json,
@@ -192,7 +202,7 @@ async def run_plan_update(
         approval_status=inp.approval_status,
         decided_by=inp.decided_by,
         decision_json=inp.decision_json,
-        project_id=inp.project_id,
+        project_id=project_id,
     )
     return WriteEnvelope[RunPlanOut](data=env.data, run_id=env.run_id, project_id=env.project_id)
 

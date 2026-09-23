@@ -952,9 +952,16 @@ def test_finance_stripe_manifest_is_transport_only_and_complete() -> None:
         "stripe.prices.list",
         "stripe.prices.retrieve",
         "stripe.customers.create",
+        "stripe.customers.update",
         "stripe.customers.retrieve",
         "stripe.customers.list",
+        "stripe.customers.tax-ids.list",
+        "stripe.customers.tax-ids.create",
+        "stripe.customers.tax-ids.retrieve",
         "stripe.invoices.create",
+        "stripe.invoices.update",
+        "stripe.invoices.pdf.download",
+        "stripe.invoices.pdf.cleanup",
         "stripe.invoice-items.create",
         "stripe.invoice-items.list",
         "stripe.invoices.finalize",
@@ -988,7 +995,7 @@ def test_finance_stripe_manifest_is_transport_only_and_complete() -> None:
         assert "docs/integration-contracts/stripe.md" in action.config["docs"]
 
     record_list = actions["stripe.payment-records.list"]
-    assert sum(action.config.get("connector") == "stripe" for action in actions.values()) == 29
+    assert sum(action.config.get("connector") == "stripe" for action in actions.values()) == 36
     assert "connector" not in record_list.config
     assert record_list.config["execution_mode"] == "deferred-stripe-payment-record-list"
     assert "temporarily unavailable in StackOS" in record_list.config["deferred_reason"]

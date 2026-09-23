@@ -137,6 +137,7 @@ async def action_execute(
         provider_context_json=inp.provider_context_json,
         output_policy_json=inp.output_policy_json,
         default_external_file_output=_default_external_file_output(ctx),
+        derived_workflow_idempotency=inp.idempotency_key is None,
         credential_ref=inp.credential_ref,
         run_id=ctx.run_id,
         run_plan_id=plan.id,

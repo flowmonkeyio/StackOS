@@ -15,6 +15,7 @@ from stackos.db.models import (
     RunPlanStep,
     RunPlanStepStatus,
 )
+from stackos.repositories.run_plan_contracts import RunPlanWorkflowContractOut
 from stackos.repositories.run_plan_lifecycle import RunPlanConsistencyIssueOut
 from stackos.repositories.runs import RunOut
 
@@ -66,6 +67,7 @@ class RunPlanStepOut(BaseModel):
     direct_dependency_handoffs: list[RunPlanStepHandoffOut] = Field(default_factory=list)
     allowed_tools: list[str] = Field(default_factory=list)
     action_execution_guidance: dict[str, Any] = Field(default_factory=dict)
+    workflow_contract: RunPlanWorkflowContractOut | None = None
     error: str | None
     claimed_by: str | None
     claimed_at: datetime | None
@@ -135,6 +137,7 @@ class RunPlanOut(RunPlanSummaryOut):
     steps: list[RunPlanStepOut] = Field(default_factory=list)
     approval_requests: list[ApprovalRequestOut] = Field(default_factory=list)
     consistency_issues: list[RunPlanConsistencyIssueOut] = Field(default_factory=list)
+    workflow_contract: RunPlanWorkflowContractOut | None = None
 
 
 class RunPlanStartOut(BaseModel):

@@ -18,6 +18,15 @@ may retain bounded sanitized provider lifecycle or monetary fields and explicitl
 requested business-detail read snapshots under the generic executor contract,
 but it is never the finance record.
 
+The [external delivery evidence contract](references/local-workspace-contract.md#payment-presentation-proof-and-delivery-reconciliation)
+defines route-specific invoice presentation proof, exact recipient verification
+and reconciliation of an independently verified prior manual send. The optional
+`scripts/finance_delivery.py` host checks are read-only; they never send an
+invoice or fabricate an API-send record. Explicit Stripe PDF download supports
+already finalized invoices, with private staging followed by verified external
+custody and cleanup. The API does not provide a draft PDF, no-link send option,
+review-recipient override or complete additional To/CC recipient readback.
+
 ## Initial external backend
 
 The initial `local-json` backend is an external, host-owned workspace:

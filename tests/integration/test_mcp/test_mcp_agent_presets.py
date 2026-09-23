@@ -492,7 +492,7 @@ def test_finance_operational_guidance_survives_compact_workflow_resolution(
         compact = compact.get("data", compact)
         raw_skill = raw["required_skill_presets"][0]
         compact_skill = compact["required_skill_presets"][0]
-        assert compact_skill["preset"]["version"] == "0.7.2"
+        assert compact_skill["preset"]["version"] == "0.7.4"
         assert compact_skill["project_adaptation"] == raw_skill["project_adaptation"]
         assert any("capability preflight" in item for item in compact_skill["preset"]["must_do"])
         conditional = {

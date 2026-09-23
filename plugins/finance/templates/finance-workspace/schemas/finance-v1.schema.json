@@ -1442,6 +1442,30 @@
             "customer_mapping_ref": {
               "$ref": "#/$defs/ref"
             },
+            "customer_billing_details": {
+              "type": "object",
+              "properties": {
+                "name_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+                "email_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+                "phone_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+                "address_field_sha256": {
+                  "type": "object",
+                  "properties": {
+                    "line1": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+                    "line2": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+                    "city": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+                    "state": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+                    "postal_code": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+                    "country": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"}
+                  },
+                  "minProperties": 1,
+                  "additionalProperties": false
+                }
+              },
+              "minProperties": 1,
+              "additionalProperties": false,
+              "description": "Exact UTF-8 SHA-256 expectations for only the customer fields material to this billing version. Compare both the current Stripe customer and the invoice's customer-detail snapshot before finalization and send; invoice fields freeze at finalization."
+            },
             "external_project_ref": {
               "$ref": "#/$defs/ref"
             },
@@ -1451,6 +1475,46 @@
             },
             "recipient_settings_ref": {
               "$ref": "#/$defs/ref"
+            },
+            "payment_presentation": {
+              "type": "object",
+              "properties": {
+                "footer_sha256": {
+                  "oneOf": [
+                    {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+                    {"type": "null"}
+                  ]
+                },
+                "payment_method_types": {
+                  "oneOf": [
+                    {
+                      "type": "array",
+                      "items": {"enum": ["card", "us_bank_account", "customer_balance"]},
+                      "minItems": 1,
+                      "uniqueItems": true
+                    },
+                    {"type": "null"}
+                  ]
+                },
+                "online_payment_link_state": {
+                  "enum": ["visible", "absent", "unknown"]
+                },
+                "review_evidence_ref": {
+                  "$ref": "#/$defs/ref"
+                }
+              },
+              "required": [
+                "footer_sha256",
+                "payment_method_types",
+                "online_payment_link_state"
+              ],
+              "if": {
+                "properties": {"online_payment_link_state": {"const": "absent"}},
+                "required": ["online_payment_link_state"]
+              },
+              "then": {"required": ["review_evidence_ref"]},
+              "additionalProperties": false,
+              "description": "Approval-bound invoice footer digest, observed Stripe PaymentIntent method selection, and separately reviewed customer-visible Pay online link state. Stripe's invoice API does not establish link visibility. An absent link requires review_evidence_ref to resolve to a provider_observations record with payment_presentation_evidence binding this exact billing version/digest, invoice/account/snapshot, recipients and route. Host delivery validation checks retained originals, independent verification and expiry; API readback or Dashboard preview alone is insufficient."
             },
             "currency": {
               "type": "string",
@@ -1517,7 +1581,306 @@
         }
       ],
       "unevaluatedProperties": false,
-      "description": "Immutable proposal material. Compute digest_sha256 as SHA-256 of the UTF-8 JSON object containing exactly version, customer_mapping_ref, recipient_settings_ref, external_project_ref when present, effective_at when present, currency, terms, lines, subtotal when present, total when present, source_refs, and supersedes_ref only when present. Preserve complete nested values and array order. A manual line preserves its approved amount/currency/description. A catalog line identifies the requested existing Price with price_ref and quantity; amount, when present, is the independently observed draft line amount retained for approval, but is not sent with the catalog invoice-item request. Stripe computes the catalog line total. Serialize with sorted object keys, no insignificant whitespace, unescaped Unicode, and no NaN/Infinity (Python: json.dumps(material, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8')). Do not normalize strings. Exclude record_id, digest_sha256, metadata, status/history, provenance/gaps, reviews, provider observations, mutation attempts and finance.json revision/hash. Approval separately binds record_id, version and this digest. Mapping and recipient refs identify immutable versions. Immutability, reference integrity and digest correctness require host comparison."
+      "description": "Immutable proposal material. Compute digest_sha256 as SHA-256 of the UTF-8 JSON object containing exactly version, customer_mapping_ref, recipient_settings_ref, customer_billing_details when present, external_project_ref when present, effective_at when present, payment_presentation when present, currency, terms, lines, subtotal when present, total when present, source_refs, and supersedes_ref only when present. Preserve complete nested values and array order. A manual line preserves its approved amount/currency/description. A catalog line identifies the requested existing Price with price_ref and quantity; amount, when present, is the independently observed draft line amount retained for approval, but is not sent with the catalog invoice-item request. Stripe computes the catalog line total. Serialize with sorted object keys, no insignificant whitespace, unescaped Unicode, and no NaN/Infinity (Python: json.dumps(material, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8')). Do not normalize strings. Exclude record_id, digest_sha256, metadata, status/history, provenance/gaps, reviews, provider observations, mutation attempts and finance.json revision/hash. Approval separately binds record_id, version and this digest. Mapping and recipient refs identify immutable versions. Immutability, reference integrity and digest correctness require host comparison."
+    },
+    "payment_presentation_evidence": {
+      "type": "object",
+      "properties": {
+        "billing_version_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "billing_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "billing_digest_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "recipient_settings_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "recipient_digest_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "invoice_snapshot_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "delivery_route": {
+          "enum": [
+            "stripe-api-send",
+            "stripe-dashboard-email-without-link"
+          ]
+        },
+        "verifier_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "verified_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
+        },
+        "attachment_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
+        },
+        "online_payment_link_state": {
+          "enum": [
+            "visible",
+            "absent",
+            "unknown"
+          ]
+        },
+        "verification_method": {
+          "enum": [
+            "recipient-visible-route",
+            "dashboard-preview",
+            "api-readback",
+            "unknown"
+          ]
+        }
+      },
+      "required": [
+        "billing_version_ref",
+        "billing_version",
+        "billing_digest_sha256",
+        "recipient_settings_ref",
+        "recipient_digest_sha256",
+        "invoice_snapshot_sha256",
+        "delivery_route",
+        "verifier_ref",
+        "verified_at",
+        "attachment_refs",
+        "expires_at",
+        "online_payment_link_state",
+        "verification_method"
+      ],
+      "additionalProperties": false
+    },
+    "invoice_delivery_evidence": {
+      "type": "object",
+      "properties": {
+        "billing_version_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "billing_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "billing_digest_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "recipient_settings_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "recipient_digest_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "invoice_snapshot_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "delivery_route": {
+          "const": "stripe-dashboard-email-without-link"
+        },
+        "verifier_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "verified_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
+        },
+        "attachment_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
+        },
+        "sent_by_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "outcome": {
+          "enum": [
+            "sent",
+            "unknown"
+          ]
+        },
+        "evidence_kind": {
+          "enum": [
+            "provider-delivery-log",
+            "recipient-received-message"
+          ]
+        }
+      },
+      "required": [
+        "billing_version_ref",
+        "billing_version",
+        "billing_digest_sha256",
+        "recipient_settings_ref",
+        "recipient_digest_sha256",
+        "invoice_snapshot_sha256",
+        "delivery_route",
+        "verifier_ref",
+        "verified_at",
+        "attachment_refs",
+        "sent_at",
+        "sent_by_ref",
+        "outcome",
+        "evidence_kind"
+      ],
+      "additionalProperties": false
+    },
+    "delivery_authorization": {
+      "type": "object",
+      "properties": {
+        "billing_version_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "billing_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "billing_digest_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "recipient_settings_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "recipient_digest_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "invoice_snapshot_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "invoice_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "account_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "delivery_route": {
+          "enum": [
+            "stripe-api-send",
+            "stripe-dashboard-email-without-link"
+          ]
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
+        }
+      },
+      "required": [
+        "billing_version_ref",
+        "billing_version",
+        "billing_digest_sha256",
+        "recipient_settings_ref",
+        "recipient_digest_sha256",
+        "invoice_snapshot_sha256",
+        "invoice_ref",
+        "account_ref",
+        "delivery_route",
+        "expires_at"
+      ],
+      "additionalProperties": false
+    },
+    "manual_invoice_delivery": {
+      "type": "object",
+      "properties": {
+        "billing_version_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "billing_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "billing_digest_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "recipient_settings_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "recipient_digest_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "invoice_snapshot_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "invoice_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "account_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "outcome": {
+          "enum": [
+            "unknown",
+            "verified-sent"
+          ]
+        },
+        "owner_authorization_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "delivery_evidence_ref": {
+          "$ref": "#/$defs/ref"
+        }
+      },
+      "required": [
+        "billing_version_ref",
+        "billing_version",
+        "billing_digest_sha256",
+        "recipient_settings_ref",
+        "recipient_digest_sha256",
+        "invoice_snapshot_sha256",
+        "invoice_ref",
+        "account_ref",
+        "outcome"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "verified-sent"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "owner_authorization_ref",
+              "delivery_evidence_ref"
+            ]
+          }
+        }
+      ]
     },
     "provider_observation": {
       "allOf": [
@@ -1527,6 +1890,8 @@
         {
           "type": "object",
           "properties": {
+            "payment_presentation_evidence": {"$ref": "#/$defs/payment_presentation_evidence"},
+            "invoice_delivery_evidence": {"$ref": "#/$defs/invoice_delivery_evidence"},
             "provider_ref": {
               "$ref": "#/$defs/ref"
             },
@@ -2112,6 +2477,7 @@
         {
           "type": "object",
           "properties": {
+            "manual_invoice_delivery": {"$ref": "#/$defs/manual_invoice_delivery"},
             "period": {
               "$ref": "#/$defs/window"
             },
@@ -2182,6 +2548,7 @@
         {
           "type": "object",
           "properties": {
+            "delivery_authorization": {"$ref": "#/$defs/delivery_authorization"},
             "target_ref": {
               "$ref": "#/$defs/ref"
             },

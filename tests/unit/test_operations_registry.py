@@ -505,6 +505,8 @@ def test_operation_registry_surface_filter() -> None:
     } <= cli_names
     assert registry.get("runPlan.update").surfaces.cli.enabled is True
     assert registry.get("runPlan.update").surfaces.cli.command == "run-plans approve"
+    assert registry.get("runPlan.update").surfaces.mcp.enabled is True
+    assert registry.get("runPlan.update").grant_policy == "direct-run-audit-write"
     assert registry.list_out(surface="rest").items[0].surfaces["rest"].enabled is True
 
 

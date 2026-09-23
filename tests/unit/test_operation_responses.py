@@ -47,6 +47,28 @@ def test_provider_side_effect_operations_are_raw_only() -> None:
     assert exc.value.data["allowed_modes"] == ["raw"]
 
 
+@pytest.mark.parametrize("operation", ["runPlan.get", "runPlan.getStep", "runPlan.claimStep"])
+def test_run_plan_compact_retains_workflow_contract_drift(operation: str) -> None:
+    diagnostic = {
+        "status": "mismatch",
+        "workflow_key": "example.review",
+        "frozen_version": "0.5.2",
+        "installed_version": "0.5.2",
+        "frozen_digest": "sha256:old",
+        "installed_digest": "sha256:new",
+        "changed_paths": ["$.steps[0].instructions[0]"],
+        "changed_path_count": 1,
+        "message": "Same version, different contract.",
+        "next_action": "Reconcile existing effects before continuing.",
+    }
+    shaped = shape_operation_response(
+        _spec(operation, mutating=operation == "runPlan.claimStep"),
+        {"id": 42, "run_plan_id": 1, "step_id": "review", "workflow_contract": diagnostic},
+        response_mode="compact",
+    )
+    assert shaped["data"]["workflow_contract"] == diagnostic
+
+
 def test_browser_runtime_compact_keeps_readiness_and_repair() -> None:
     payload = {
         "provider": "gstack",

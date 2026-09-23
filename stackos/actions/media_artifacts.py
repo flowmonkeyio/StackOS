@@ -26,14 +26,15 @@ def artifact_path(asset_dir: Path, artifact_ref: str, *, label: str = "media ref
         raise ValidationError(f"{label} must stay inside generated assets")
     # The same private staging boundary applies to provider inputs and HTTP
     # media serving. Resolve aliases as well as the lexical name; a registered
-    # artifact must not turn an IMAP evidence transfer into public media.
+    # artifact must not turn a private evidence transfer into public media.
     relative_parts = Path(relative).parts
-    staging_parts = tuple(part.casefold() for part in (base / "imap-transfers").resolve().parts)
     candidate_parts = tuple(part.casefold() for part in candidate.parts)
-    if (relative_parts and relative_parts[0].casefold() == "imap-transfers") or candidate_parts[
-        : len(staging_parts)
-    ] == staging_parts:
-        raise ValidationError(f"{label} cannot reference private staging")
+    for staging_name in ("imap-transfers", "stripe-invoice-transfers"):
+        staging_parts = tuple(part.casefold() for part in (base / staging_name).resolve().parts)
+        if (relative_parts and relative_parts[0].casefold() == staging_name) or candidate_parts[
+            : len(staging_parts)
+        ] == staging_parts:
+            raise ValidationError(f"{label} cannot reference private staging")
     if not candidate.is_file():
         raise ValidationError(f"{label} {artifact_ref!r} does not point to a file")
     return candidate

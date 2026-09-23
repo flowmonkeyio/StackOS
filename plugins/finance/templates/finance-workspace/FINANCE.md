@@ -44,6 +44,10 @@ the same plugin root contains these canonical references:
 
 The same plugin's optional `scripts/finance_workspace.py` and
 `scripts/finance_views.py` supply host-side integrity and derived-view helpers.
+`scripts/finance_delivery.py` supplies read-only exact-invoice presentation proof
+checks and reconciliation of independently verified prior manual delivery.
+Follow its external evidence contract before delivery; it never sends email,
+finalizes an invoice or replaces the financial record with workflow output.
 Read their `--help` and the local contract before using them; they need host file
 access and Python/dependency support, not a StackOS filesystem grant. They never
 choose accounting treatment or prove full reconciliation.

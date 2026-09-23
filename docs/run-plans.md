@@ -39,6 +39,24 @@ to run-plan execution: inspect `runPlan.get`, start the plan if no run exists,
 claim the matching step, inspect granted tools, then record the step result.
 The tracker packet does not grant execution by itself.
 
+When the operator has already made an explicit approval decision, the agent
+records it with `runPlan.update` through the normal workspace-bound MCP toolbox.
+Pass the exact `run_plan_id`, `approval_key`, and `approval_status`. Retain the
+operator identity in `decided_by` and available safe evidence references and
+original decision time in `decision_json`; `decided_at` is the time StackOS
+records the status transition. The operator's existing verbal decision is
+valid authority to record; do not ask for it again solely to unblock storage.
+Recording a decision does not invent authority or broaden what the operator
+approved. If a decision is missing or its scope is unclear, the gate stays
+unresolved.
+
+This uses the existing approval writer and status transitions. A controller
+token scopes the mutation to its project before any write; direct daemon MCP
+calls without a token must supply `project_id`. No active step grant, new run,
+REST detour, or replacement approval service is required. Pending/rejected
+approvals continue to block matching step claims and action execution, and the
+normal grants, credentials, and audit boundaries still apply after approval.
+
 Run-plan execution has one canonical lifecycle. A started run plan is durable
 workflow state, not a five-minute daemon job. The stale-run reaper preserves
 live started run plans and refreshes the linked audit heartbeat so normal
@@ -54,6 +72,33 @@ agent-facing check.
 `runPlan.claimStep` and `runPlan.recordStep` still refresh the linked audit run
 heartbeat, but agents do not need to keep calling `run.heartbeat` during normal
 workflow-backed delivery.
+
+### Workflow contract changes on upgrade or resume
+
+`runPlan.get`, `runPlan.getStep`, `runPlan.start`, recovery/reopen results, and
+`runPlan.claimStep` return `workflow_contract` for template-backed plans. It
+compares the frozen template snapshot with the currently installed effective
+workflow (including project template overrides). The comparison uses normalized
+contract contents, including instructions and output schemas, not just the
+version label. Identical version labels can still produce `status=mismatch`.
+Compact and raw responses retain both versions, SHA-256 digests, up to 40 changed
+JSON paths, their total count, and continuation guidance. `status=unavailable`
+means the installed or frozen contract cannot be resolved or validated; it does
+not establish compatibility. Plans without a template have no such diagnostic.
+The generic run-plan UI surfaces mismatch and unavailable warnings.
+
+This is an inspection/resume warning, not a silent migration or a replacement
+grant. The saved snapshot, step instructions, results, approvals, and audit
+history remain frozen. Before further side effects, describe the installed
+workflow and compare the changed contract with the current step and existing
+external evidence. Record the review and any unresolved blocker through the
+existing tracker/step evidence path. Continue the existing run only when the
+remaining work satisfies the current contract within its frozen grants. If it
+cannot, leave it blocked and prepare explicitly scoped follow-up work that
+references the original run and existing external objects. Do not rerun object
+creation or delivery to make an old run look current. In particular, an invoice
+workflow must retain existing invoice identities and reconcile their current
+provider state; a workflow upgrade never authorizes a duplicate invoice or send.
 
 `runPlan.recordStep(blocked)` is a recoverable pause. It keeps the run plan and
 linked run active, mirrors the step ticket as an active blocker, and lets the

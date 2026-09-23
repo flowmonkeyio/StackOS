@@ -49,6 +49,7 @@ CASES = [
     ("finance.cashflow-management", "complete"),
     ("finance.cashflow-management", "missing-opening-cash"),
     ("finance.payment-request", "sent"),
+    ("finance.payment-request", "manual-sent"),
     ("finance.payment-request", "suppressed"),
     ("finance.payment-request-followups", "paid-suppressed"),
     ("finance.payment-request-followups", "smtp-suppressed"),
@@ -131,7 +132,7 @@ def _step_result(workflow: str, case: str, step: str, refs: dict[str, str]) -> d
             "create-draft": "draft-prepared",
             "review-draft": "review-ready",
             "finalize-invoice": "finalized",
-            "send-invoice": "sent" if case == "sent" else "suppressed",
+            "send-invoice": case,
             "record-and-handoff": "recorded",
         }
         summary.update(
@@ -147,8 +148,17 @@ def _step_result(workflow: str, case: str, step: str, refs: dict[str, str]) -> d
             summary["approval_refs"] = [refs["approval-finalize"]]
         if step in {"send-invoice", "record-and-handoff"}:
             summary["delivery_state"] = case
-            if case == "sent":
+            if case in {"sent", "manual-sent"}:
                 summary["approval_refs"].append(refs["approval-send"])
+                if case == "manual-sent":
+                    # Synthetic output-contract rehearsal. Host proof and no-send
+                    # behavior are exercised by test_finance_delivery_evidence.
+                    summary.update(
+                        delivery_route="stripe-dashboard-email-without-link",
+                        manual_delivery_reconciliation_ref="simulated-external:manual-reconciliation",
+                        delivery_evidence_ref="simulated-external:delivery-proof",
+                        owner_send_approval_ref=refs["approval-send"],
+                    )
             else:
                 summary["suppression_ref"] = refs["decision"]
         if step == "record-and-handoff":

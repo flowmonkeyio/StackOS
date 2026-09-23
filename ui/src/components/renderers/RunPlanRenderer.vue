@@ -70,6 +70,22 @@ function callsForStep(stepPk: number): SchemaActionCallAuditOut[] {
       </template>
 
       <div class="space-y-4">
+        <UiCallout
+          v-if="plan.workflow_contract && plan.workflow_contract.status !== 'current'"
+          tone="warning"
+          density="compact"
+        >
+          <div class="space-y-1">
+            <p class="font-medium">
+              {{ plan.workflow_contract.message }}
+            </p>
+            <p class="text-xs">
+              Frozen version: {{ plan.workflow_contract.frozen_version ?? 'unknown' }}.
+              Installed version: {{ plan.workflow_contract.installed_version ?? 'unknown' }}.
+            </p>
+            <p>{{ plan.workflow_contract.next_action }}</p>
+          </div>
+        </UiCallout>
         <div
           v-if="(plan.consistency_issues ?? []).length > 0"
           class="space-y-2"
@@ -280,6 +296,7 @@ function callsForStep(stepPk: number): SchemaActionCallAuditOut[] {
             budget: plan.budget_snapshot_json,
             policy: plan.policy_snapshot_json,
             outputs: plan.output_contract_json,
+            workflow_contract: plan.workflow_contract,
             metadata: plan.metadata_json,
           })"
           max-height="16rem"

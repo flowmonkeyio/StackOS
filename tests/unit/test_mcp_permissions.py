@@ -117,8 +117,8 @@ def test_check_grant_for_system_skill_covers_bootstrap_setup_operations() -> Non
         check_grant("runPlan.claimStep", SYSTEM_SKILL)
     with pytest.raises(ToolNotGrantedError):
         check_grant("runPlan.recordStep", SYSTEM_SKILL)
-    with pytest.raises(ToolNotGrantedError):
-        check_grant("runPlan.update", SYSTEM_SKILL)
+    check_grant("runPlan.update", SYSTEM_SKILL)
+    check_grant("runPlan.update", RUN_PLAN_CONTROLLER_SKILL)
     with pytest.raises(ToolNotGrantedError):
         check_grant("resource.upsert", SYSTEM_SKILL)
     with pytest.raises(ToolNotGrantedError):

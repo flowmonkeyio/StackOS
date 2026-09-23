@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: finance.payment-request
 name: Finance Payment Request
-version: 0.5.1
+version: 0.5.5
 description: Prepare, review, finalize, and either send or explicitly hand off one Stripe invoice for an approved external payment request without making StackOS the billing system of record.
 domain: finance
 owner:
@@ -12,7 +12,7 @@ experience:
   why_ai: "An agent can prepare a bounded Stripe invoice from the selected external record while enforcing idempotency, separating draft work from customer delivery, and preserving owner decisions."
   operator_path:
     - "Request an invoice from the external billing record; the agent resolves workspace defaults and prepares the draft."
-    - "Review the exact draft once and approve its finalization and initial send together if desired; the agent records that decision against both technical gates."
+    - "Review the independently retrieved customer and invoice facts. For visual review, locate the saved draft in Stripe Dashboard and check whether its overflow Download PDF action works for this invoice/account; StackOS has no draft PDF API URL or stable Dashboard deep link. Approve finalization and customer send as separate decisions, or one exact-version decision recorded under both technical gates."
     - "Inspect a safe provider result, exception, or recovery recommendation; never provide customer data or payment instructions in chat."
   agent_path:
     - "Preflight one external payment request and resolve only safe account-bound Stripe references."
@@ -23,6 +23,7 @@ experience:
   recovery:
     - "For an unknown write outcome, retrieve/reconcile the same safe provider refs with the same deterministic key; never create a new key or duplicate customer/invoice/item."
     - "If approval is absent, stop at the review-ready draft and do not finalize or send."
+    - "If direct-deposit-only Pay online absence or a required visual draft review cannot be verified, hold the draft and report the specific Dashboard/manual-review gap. Stripe documents a Dashboard Email invoice without link option and a general Download PDF action; verify both for the selected account and invoice before relying on them. Never finalize merely to obtain a review PDF or link."
   safe_stopping_points:
     - "Stop with a draft/reconciliation recommendation before finalization when approval is not recorded."
     - "Stop after finalization but before send when the send gate is absent, delivery outcome is uncertain, or the external record instructs a separate settlement-only attachment."
@@ -39,7 +40,7 @@ public:
   prerequisites:
     - "A restricted Stripe connection with the invoice route selected"
     - "A selected workspace and one billing-request reference resolving an immutable external version with customer, lines, currency and terms"
-    - "Owner approval of the concrete draft before finalization and send; these approvals are produced during the run"
+    - "Explicit owner approval of the concrete draft before finalization and send; existing exact-scope decisions are verified and recorded without requesting approval again"
   proof:
     - "Safe external payment-request and Stripe invoice/customer refs"
     - "Action-call/provider request refs, idempotency/reconciliation status, and owner approval refs"
@@ -156,6 +157,34 @@ action_contracts:
     auth_ref: stripe
     risk_level: write
     description: Create only after the external request supplies approved details; use a deterministic idempotency key and reconcile unknown outcomes.
+  - key: stripe_customers_update
+    action: finance.stripe.customers.update
+    capability: stripe-invoicing
+    provider: stripe
+    auth_ref: stripe
+    risk_level: write
+    description: Update only the existing customer's approved billing details and independently retrieve their exact digests before invoice review.
+  - key: stripe_customer_tax_ids_list
+    action: finance.stripe.customers.tax-ids.list
+    capability: stripe-invoicing
+    provider: stripe
+    auth_ref: stripe
+    risk_level: read
+    description: Exhaust customer-scoped tax ID pages before deciding whether an approved identifier is absent.
+  - key: stripe_customer_tax_ids_retrieve
+    action: finance.stripe.customers.tax-ids.retrieve
+    capability: stripe-invoicing
+    provider: stripe
+    auth_ref: stripe
+    risk_level: read
+    description: Independently read the exact customer tax ID and actual Stripe verification status.
+  - key: stripe_customer_tax_ids_create
+    action: finance.stripe.customers.tax-ids.create
+    capability: stripe-invoicing
+    provider: stripe
+    auth_ref: stripe
+    risk_level: write
+    description: Create an explicitly supplied tax ID only after complete duplicate comparison; creation does not establish verification.
   - key: stripe_products_list
     action: finance.stripe.products.list
     capability: stripe-invoicing
@@ -191,6 +220,13 @@ action_contracts:
     auth_ref: stripe
     risk_level: write
     description: Create a draft invoice with the explicit approved currency and a deterministic idempotency key; it does not finalize or send.
+  - key: stripe_invoices_update
+    action: finance.stripe.invoices.update
+    capability: stripe-invoicing
+    provider: stripe
+    auth_ref: stripe
+    risk_level: write
+    description: Set a reviewed memo, complete custom-field list, footer and/or nonempty Stripe PaymentIntent methods on the draft. These settings do not establish Pay online absence; no finalize or send occurs.
   - key: stripe_invoice_items_create
     action: finance.stripe.invoice-items.create
     capability: stripe-invoicing
@@ -233,7 +269,23 @@ action_contracts:
     auth_ref: stripe
     approval_ref: owner-invoice-send
     risk_level: write
-    description: Owner-approved customer delivery action; resolve an unknown outcome with reads and never issue a new idempotency key.
+    description: Owner-approved customer delivery only, with no alternate review recipient; resolve an unknown outcome with reads and never issue a new idempotency key.
+  - key: stripe_invoice_pdf_download
+    action: finance.stripe.invoices.pdf.download
+    capability: stripe-invoicing
+    provider: stripe
+    auth_ref: stripe
+    risk_level: read
+    optional: true
+    description: Download an already finalized invoice PDF to private staging for authorized external custody. Draft invoices are unsupported; never finalize to obtain an artifact.
+  - key: stripe_invoice_pdf_cleanup
+    action: finance.stripe.invoices.pdf.cleanup
+    capability: stripe-invoicing
+    provider: stripe
+    auth_ref: stripe
+    risk_level: write
+    optional: true
+    description: Explicitly remove a staged invoice PDF only after verifying its copy in the selected external finance workspace.
 policies:
   - key: local-json-single-source
     kind: boundary
@@ -277,19 +329,22 @@ steps:
   - id: resolve-customer
     title: Resolve Or Create Customer
     purpose: Reconcile an approved external customer to a safe account-bound Stripe customer ref.
-    action_refs: [stripe_customers_list, stripe_customers_retrieve, stripe_customers_create]
+    action_refs: [stripe_customers_list, stripe_customers_retrieve, stripe_customers_create, stripe_customers_update, stripe_customer_tax_ids_list, stripe_customer_tax_ids_retrieve, stripe_customer_tax_ids_create]
     depends_on: [preflight]
     policy_refs: [external-backend-is-authoritative, deterministic-write-recovery, customer-payload-privacy]
     output_refs: [payment_request_summary]
     instructions:
       - "Use an existing verified workspace customer/account mapping first. If lookup by exact approved email returns more than one customer, stop this invoice for resolution; do not select the first. Persist the verified mapping externally."
       - "Create a customer only after complete bounded lookup and explicit supplied customer facts. On uncertain creation, reuse the same idempotency key and reconcile exact identity before another mutation."
+      - "For an approved customer tax ID, exhaust stripe_customer_tax_ids_list pages for this exact customer/account and compare type plus the SHA-256 of the exact approved value. Reuse an existing match and retrieve it independently; create only after all pages prove no match, with one stable idempotency key and a payload-secret value. Preserve Stripe's actual verification.status, including pending, unverified, unavailable or missing; successful creation is not verification. Unknown outcomes require reconciliation before any retry."
+      - "For registration numbers or other approved invoice defaults, independently read invoice_settings.custom_fields, preserve all existing fields, and supply the complete reviewed replacement list to stripe_customers_update. The list supports at most four name/value pairs; [] explicitly clears it and omission leaves it unchanged. Use payload-secret markers for names and values. Independently retrieve and compare the ordered field digests after the write. Customer defaults affect future invoices and never prove that an issued invoice changed."
+      - "When the approved request requires a correction to an existing customer, update only the supplied name, email, phone, or billing-address fields using opaque payload-secret markers and one stable idempotency key. Independently retrieve that customer after the write and compare exact UTF-8 name/email/phone/address-field SHA-256 observations against the approved external facts. The update echo and invoice do not verify a customer write. A missing, null, or mismatched observation blocks further invoice work until resolved; review-draft must then independently retrieve the invoice and verify its own customer snapshot."
     success_criteria:
       - "An existing or created customer is represented only by a safe provider ref and unknown writes have a same-key reconciliation path."
   - id: create-draft
     title: Create Or Reconcile Draft Invoice
     purpose: Prepare the approved external request as a Stripe draft invoice and item without finalizing or sending.
-    action_refs: [stripe_products_list, stripe_products_retrieve, stripe_prices_list, stripe_prices_retrieve, stripe_invoices_create, stripe_invoice_items_create, stripe_invoices_retrieve, stripe_invoices_list, stripe_invoice_items_list]
+    action_refs: [stripe_products_list, stripe_products_retrieve, stripe_prices_list, stripe_prices_retrieve, stripe_invoices_create, stripe_invoices_update, stripe_invoice_items_create, stripe_invoices_retrieve, stripe_invoices_list, stripe_invoice_items_list]
     depends_on: [resolve-customer]
     policy_refs: [deterministic-write-recovery, separate-finalize-and-send, customer-payload-privacy]
     output_refs: [payment_request_summary]
@@ -299,54 +354,76 @@ steps:
       - "Pass the approved currency explicitly to invoice creation. When effective_at is supplied, pass that exact timestamp and observe its returned value: it controls the printed issue date only, not the created, due, or payment date. An absent/null observation does not establish a match to a requested effective_at. Do not rely on Stripe's account/customer default or assume a later line changes the draft currency; compare the resulting invoice currency before adding lines."
       - "Use bounded Product/Price discovery only to select an existing catalog ref. Request include_business_details=true only when readable Product names or Price nicknames are needed; default safe refs do not supply them. Retrieve the selected Price's current terms and applicable invoice currency (including a supported currency option where present) before creating its line; its base currency need not equal the approved invoice currency when that option applies. The safe ref proves identity, not a term snapshot. Do not guess a selection or blanket-reject a complex Price merely because tiers or currency options need review."
       - "Create every approved line on the explicit draft invoice. A manual line retains its approved amount, currency and description. A catalog line uses its selected price_ref with explicit nonnegative quantity and only the optional currency/description allowed by the action. Stripe computes that line's total: construct that connector payload selectively and never send the proposal's retained observed catalog amount with price_ref. For uncertain writes, retrieve the known invoice or paginate customer/time-bounded invoice lists with correlation_matches; list exact invoice items and compare all lines before retry. Absence from one page is not absence. Ambiguity remains reconcile-required."
+      - "Before using stripe_invoices_update for this payment request, independently retrieve the invoice and require observed status=draft. The generic action does not enforce draft status itself; Stripe applies its own status/editability rules."
+      - "Apply an approved memo through stripe_invoices_update.description; a memo-only update is supported, omission leaves it unchanged and literal empty string clears it. Use a payload-secret marker for nonempty text. For invoice custom_fields, independently read and preserve existing fields before supplying the complete reviewed replacement list. Independently retrieve the exact invoice and compare description_sha256 and ordered custom_fields digests, separately from customer defaults. Bind invoice customer_tax_ids to the actual invoice snapshot. All three fields are material to finance_delivery.invoice_snapshot_digest."
+      - "An explicitly requested correction to an already issued invoice uses the existing invoice ref and direct update/read actions outside this draft-creation occurrence. Stripe enforces finalized editability: custom fields and customer tax-ID snapshots are frozen, and memo edits are restricted for most finalized invoices. Report the actual provider refusal without recreating, voiding, refinalizing or resending. A customer correction alone does not correct the issued invoice."
+      - "If the immutable external billing version supplies payment_presentation, update the draft's footer from its opaque payload-secret marker and/or the exact nonempty payment_method_types list with one stable idempotency key. Bind footer_sha256, method list, online_payment_link_state and any available payment_presentation.review_evidence_ref to that version. The footer conveys only the supplied instructions; payment_method_types controls Stripe PaymentIntent methods and cannot express disabling all payment methods. us_bank_account is ACH debit and customer_balance is Stripe-managed bank transfer, neither direct deposit to the operator's business bank. Neither field disables or proves absence of the recipient's Pay online button. Unknown update outcomes require an independent invoice retrieve before same-key retry."
     success_criteria:
       - "Draft state is safely proven or pending same-key reconciliation; no customer-facing delivery occurred."
   - id: review-draft
     title: Review Draft And Required Owner Gates
     purpose: Confirm external request consistency and make finalization/send approvals available to their exact action contracts.
     depends_on: [create-draft]
-    action_refs: [stripe_invoices_retrieve, stripe_invoice_items_list, stripe_prices_retrieve]
+    action_refs: [stripe_customers_retrieve, stripe_customer_tax_ids_list, stripe_customer_tax_ids_retrieve, stripe_invoices_retrieve, stripe_invoice_items_list, stripe_prices_retrieve]
     policy_refs: [external-backend-is-authoritative, separate-finalize-and-send]
     output_refs: [payment_request_summary]
     instructions:
       - "Do not treat a step approval or standing policy as a substitute for the recorded action-level approval required by finalization and send."
+      - "Independently compare any approved memo, ordered invoice custom fields and invoice customer_tax_ids with the exact invoice readback. Review current customer tax-ID verification separately; neither successful creation nor customer defaults establish what the issued invoice displays. Include these invoice fields in the material snapshot digest and invalidate stale presentation proof when they change. Preserve historical snapshots and approvals as history, never rewrite them."
       - "Match the concrete safe customer/invoice refs and intended recipient/terms against the external business-scoped approval record; the StackOS technical gate is action-ref scoped, not a payload-level approval record."
       - "Read the complete provider draft and all paginated items. Compare customer/account, invoice currency, manual line amount/description SHA-256, selected catalog price_ref/quantity and retained observed line amount, due terms, and actual subtotal/total against the immutable request. For each catalog line, review the current Price terms and applicable invoice currency, including the selected currency option where present, without treating its ref as a term snapshot; capture the independently reread line amount, draft total and subtotal into the immutable proposal before approval/finalization. Complex pricing needs an observed review, not a guessed selection or a blanket rejection. When effective_at was requested, compare the observed integer exactly; absent/null does not claim a match. Unexpected fees/tax/discounts, missing lines or an unreviewed mismatch stop finalization."
       - "Compare current_customer_email_sha256 and invoice_customer_email_sha256 with the exact approved primary recipient. Stripe API does not expose all Dashboard-only extra To/CC billing recipients; require externally verified recipient-setting scope before send. Missing/mismatched recipient evidence blocks delivery while preserving the draft."
+      - "After every customer or draft presentation write, independently call stripe_customers_retrieve and stripe_invoices_retrieve; do not use create/update echoes as verification. Compare each approved customer_billing_details name/email/phone/billing-address-field SHA-256 digest against the separate customer read and invoice customer snapshot, plus the exact invoice footer_sha256 and ordered payment_settings.payment_method_types list against the immutable billing version. Missing/null is not an exact match. The footer/method readback proves only saved API fields. recipient_pay_online_button_state=unverified explicitly means the recipient-visible button was not checked. Include verified fields and unresolved presentation state in proposal_version_ref and control_review_ref."
+      - "Independent read actions without an explicit StackOS idempotency_key fetch current provider state, including repeated reads in one step. An explicit read key requests replay of that observation; omit it for a fresh verification or use a new observation key. Read keys are never sent as Stripe Idempotency-Key headers."
+      - "For each supplied customer_billing_details digest, compare both the independently retrieved current customer and the invoice's own customer_name/customer_email/customer_phone/customer_address snapshot digests. Stripe copies those values into a draft but freezes them at finalization. A corrected customer with a stale invoice snapshot cannot pass review or send; missing/null readback is not a match."
+      - "For direct-deposit-only delivery, require separate evidence bound to this invoice/account and the exact selected send route that the recipient-visible Pay online button is absent: online_payment_link_state=absent with payment_presentation.review_evidence_ref, verifier and verification time. Stripe documents a manual Dashboard Email invoice without link choice that sends the customer a PDF only; verify the option is available for this saved invoice/account and verify the actual recipient-visible presentation before that customer send. The API send endpoint does not document inheriting this Dashboard choice, so Dashboard evidence alone cannot authorize stripe_invoices_send. Dashboard customer delivery requires a separate owner send decision and recipient checks, not an operator review-copy path. Invoice API readback, footer, us_bank_account, customer_balance and nullable links are insufficient; hold customer send while link state is visible or unknown."
+      - "The saved draft has no API PDF or hosted link and this connector exposes no stable authenticated Dashboard draft URL; draft_dashboard_link_state=not_exposed_by_stripe_api is a limitation, not a constructed link. Stripe documents an overflow Download PDF action for invoices in non-paid statuses and says a draft opens the editor; the operator must locate the specific draft in Dashboard and verify that download is available for this invoice/account. If an accessible review artifact is required and Dashboard download is unavailable, report that gap and hold the draft. Do not finalize merely to obtain a PDF or review link. A review copy sent only to the operator can use an actual downloaded PDF through a separately approved independent channel; never change the customer's billing email or call stripe_invoices_send for review."
       - "Produce proposal_version_ref and control_review_ref here. One owner decision may authorize finalize plus initial send for that exact proposal; record the same external decision under owner-invoice-finalization and owner-invoice-send separately. These remain two technical gates, not two necessary conversations."
+      - "Record an existing explicit owner decision, including verbal or conversation approval retained externally, through runPlan.update without asking the owner again when the exact approved scope remains unchanged. Use the existing run_plan_id, approval_key, approval_status, decided_by and decision_json arguments: decided_by identifies the owner, while decision_json carries safe existing external decision/evidence refs and original decision time when needed. Preserve the actor, original decision time and evidence in the external finance record. When one decision explicitly covers both finalization and initial send, record that same decision under both gates. This records the owner's decision, not agent self-approval; no new approval handoff or record format is required. Read back each gate, and keep missing recipient/presentation proof separate from approval recording."
       - "Any material change after review supersedes this proposal and requires a fresh decision/new run occurrence. Existing runtime gates do not bind payload fields; the orchestrator must compare the exact proposal before each mutation."
     success_criteria:
       - "The workflow can stop with a review-ready draft if either action gate is not recorded."
   - id: finalize-invoice
     title: Finalize Approved Invoice
     purpose: Run only the owner-approved Stripe finalization action and reconcile unknown outcomes with reads.
-    action_refs: [stripe_invoices_finalize, stripe_invoices_retrieve, stripe_invoice_items_list]
+    action_refs: [stripe_invoices_finalize, stripe_customers_retrieve, stripe_invoices_retrieve, stripe_invoice_items_list, stripe_invoice_pdf_download, stripe_invoice_pdf_cleanup]
     depends_on: [review-draft]
     policy_refs: [deterministic-write-recovery, separate-finalize-and-send]
     output_refs: [payment_request_summary]
     instructions:
-      - "Immediately reread the draft and items, compare the approved proposal, and finalize only on exact agreement with the technical gate approved. Inspect the actual action call and provider lifecycle; auto_advance stays false. Unknown outcome is reconcile-required, never finalized by assertion."
+      - "Immediately retrieve the customer and draft invoice independently, then reread items. Compare exact customer billing-detail and invoice snapshot digests, footer_sha256 and payment_settings.payment_method_types with the approved proposal; these API fields do not verify recipient-visible Pay online behavior. Finalize only on exact agreement with the owner-invoice-finalization gate and an explicit issuance decision, never merely to obtain a PDF or review link. For direct-deposit-only delivery, unresolved Pay online evidence keeps customer send blocked even if issuance was separately approved. Inspect the actual action call and provider lifecycle; auto_advance stays false. Unknown outcome is reconcile-required, never finalized by assertion."
+      - "Confirm the draft invoice's own customer name/email/phone/address snapshot digests match every supplied customer_billing_details expectation immediately before finalization; the current customer record alone is insufficient."
+      - "After independently verifying an already finalized invoice, the optional stripe_invoice_pdf_download action can stage its actual PDF for owner review before customer delivery. Finalization still needs its separate issuance decision and technical gate; never finalize merely to obtain an artifact. Verify the copied bytes/hash in the external finance workspace before stripe_invoice_pdf_cleanup. Download/cleanup does not send a review email or authorize customer delivery; use a separately authorized attachment-capable owner-only route if review delivery is requested."
     success_criteria:
       - "Finalization has the action-level owner-invoice-finalization technical gate and produces no send by implication."
   - id: send-invoice
     title: Send Approved Invoice
-    purpose: Run only the owner-approved Stripe customer send action and reconcile unknown outcomes with reads.
-    action_refs: [stripe_invoices_send, stripe_invoices_retrieve, stripe_invoice_items_list]
+    purpose: Execute the approved API send or reconcile independently verified prior manual delivery without another send.
+    action_refs: [stripe_invoices_send, stripe_customers_retrieve, stripe_invoices_retrieve, stripe_invoice_items_list, stripe_invoice_pdf_download, stripe_invoice_pdf_cleanup]
     depends_on: [finalize-invoice]
     policy_refs: [deterministic-write-recovery, separate-finalize-and-send]
     output_refs: [payment_request_summary]
     instructions:
+      - "While waiting for the owner send decision, an already finalized invoice PDF remains available through optional stripe_invoice_pdf_download; no customer send approval or send attempt is needed to download it. Verify custody in the external finance workspace before stripe_invoice_pdf_cleanup. These grants do not authorize a review-email route, customer delivery or finalization merely for an artifact; the PDF action rejects drafts."
       - "When sending, reread invoice/items and confirm the approved proposal and owner-invoice-send gate still match. Suppress send if paid, void, zero balance or otherwise no longer appropriate. When the external record instructs settlement-only for a known existing payment, record suppression_ref and delivery_state=suppressed, make no finance.stripe.invoices.send call, and hand the finalized invoice to the separate follow-ups settlement route. Never infer a send from an open remaining balance before that payment is linked. Otherwise inspect the actual send action outcome; an open invoice alone does not prove an email was sent."
+      - "Before sending, independently retrieve the customer and invoice again and check customer billing-detail digests, invoice snapshot, footer_sha256 and exact payment_settings.payment_method_types against the approved immutable version. These API fields do not verify recipient-visible Pay online behavior. For direct-deposit-only delivery through stripe_invoices_send, require current online_payment_link_state=absent with payment_presentation.review_evidence_ref from an actual recipient-visible verification of this exact API send route; recipient_pay_online_button_state=unverified and a Dashboard-only preview never satisfy the gate. The API does not document that it inherits Dashboard Email invoice without link. Any mismatch or visible/unknown link state stops API customer delivery. If link-absence evidence arrives only after finalization, bind it to a new immutable proposal version and obtain a fresh owner-invoice-send approval for that exact version rather than reusing a prior combined decision."
+      - "stripe_invoices_send has no recipient override and is customer delivery only. Dashboard Email invoice without link is an external manual route, not an API action. Until there is independent delivery proof and prior exact-version owner send authorization, keep status=exception, recovery_state=blocked and safe exception_refs; a Dashboard choice or open invoice does not prove a send. For an already completed manual send, use the external finance_delivery.py reconcile-manual-delivery check with the typed reconciliation ref and current checked_at. It must validate the exact invoice/account/snapshot, proposal version/digest, primary and every additional To/CC recipient, owner authorization before send, and independent retained delivery evidence. On success record status and delivery_state=manual-sent, delivery_route=stripe-dashboard-email-without-link, manual_delivery_reconciliation_ref, delivery_evidence_ref and owner_send_approval_ref. Make no stripe_invoices_send call, invent no send action_call_ref, and keep prior actual finalize/read audit refs separately. Uncertain outcomes remain unresolved; do not resend."
+      - "Immediately before any direct-deposit-only delivery run finance_delivery.py check-presentation against the selected external workspace, exact invoice/account, independently read invoice_snapshot_sha256, billing version, delivery route and current checked_at. payment_presentation.review_evidence_ref must resolve to the typed provider_observations.payment_presentation_evidence contract. The helper rejects unresolved, expired, future, superseded, mismatched or unavailable originals and unverified recipients. A Dashboard-only route cannot satisfy stripe-api-send. An unknown state is valid only for preparation, never permission to deliver."
+      - "An operator review copy requires an actual artifact and a separately authorized attachment-capable channel addressed only to the approved owner. For review, do not modify the customer's billing email; preserve all customer billing details and do not use stripe_invoices_send. The Stripe API supplies no draft review PDF URL, Dashboard-only no-link send parameter, recipient override or complete additional To/CC readback. Report those API limitations without guessing Dashboard behavior or using a customer send as a probe."
+      - "Also compare each supplied customer_billing_details expectation with the finalized invoice's frozen customer name/email/phone/address snapshot, independently of the current customer. A stale snapshot blocks send even when the customer record is correct."
       - "For a successful send in sandbox/test mode (livemode=false), record status and delivery_state as test-accepted: Stripe sends no email. Keep the same approval/audit proof and do not claim sent/delivered or create a live reminder handoff. A live-mode accepted send still does not prove inbox delivery."
     success_criteria:
-      - "An actual send request has the action-level owner-invoice-send technical gate; an instructed settlement-only suppression has its recorded suppression ref and no send call. Sandbox acceptance is test-accepted without email, and unknown delivery is not retried with a new key."
+      - "An actual API send request has the action-level owner-invoice-send technical gate; an instructed settlement-only suppression has its recorded suppression ref and no send call. Manual delivery completes only as manual-sent after successful external evidence reconciliation; unresolved handoffs remain blocked/exception. Manual reconciliation records no API-send action call and executes no send. Sandbox acceptance is test-accepted without email, and unknown delivery is not retried with a new key."
   - id: record-and-handoff
     title: Record External Status And Handoff
     purpose: Record safe Stripe outcome refs in the selected external backend and hand eligible open invoices or instructed no-send settlement work to follow-up.
+    action_refs: [stripe_invoice_pdf_download, stripe_invoice_pdf_cleanup]
     depends_on: [send-invoice]
     policy_refs: [external-backend-is-authoritative]
     output_refs: [payment_request_summary]
     instructions:
+      - "When an already finalized invoice PDF is needed, use the optional explicit PDF download action, verify and retain the actual bytes in the external finance workspace, then explicitly clean up private staging after custody readback. These actions do not supply a draft PDF or authorize finalization, send, customer billing changes or owner-review delivery."
+      - "For verified manual delivery retain delivery_state=manual-sent and the exact manual_delivery_reconciliation_ref, delivery_evidence_ref and owner_send_approval_ref when status becomes recorded. Carry forward the independent control review and external write proof. Do not synthesize API-send audit or treat a manual event as API-send behavior. This is completion of independently proven external delivery, not authority for another send."
       - "Retain test-accepted as the delivery_state when recording a sandbox send, with empty live handoff_refs. Do not turn a test acceptance into a sent invoice or live follow-up event. For the instructed no-send settlement path, finish this source run with delivery_state=suppressed, the suppression ref, finalized invoice/provider proof and a settlement-only handoff ref; it does not need owner-invoice-send because no send occurred."
     success_criteria:
       - "External status/proof and idempotent handoff refs are recorded without placing billing content in StackOS."
@@ -361,12 +438,16 @@ outputs:
       additionalProperties: false
       required: [status, billing_request_ref, recovery_state, exception_refs]
       properties:
-        status: {type: string, enum: [scoped, customer-resolved, draft-prepared, review-ready, finalized, sent, test-accepted, suppressed, recorded, reconcile-required, exception]}
+        status: {type: string, enum: [scoped, customer-resolved, draft-prepared, review-ready, finalized, sent, manual-sent, test-accepted, suppressed, recorded, reconcile-required, exception]}
         billing_request_ref: {type: string, minLength: 1}
         billing_policy_ref: {type: string, minLength: 1}
         proposal_version_ref: {type: string, minLength: 1}
         control_review_ref: {type: string, minLength: 1}
-        delivery_state: {type: string, enum: [sent, test-accepted, suppressed, unknown]}
+        delivery_state: {type: string, enum: [sent, manual-sent, test-accepted, suppressed, unknown]}
+        delivery_route: {type: string, enum: [stripe-api-send, stripe-dashboard-email-without-link]}
+        manual_delivery_reconciliation_ref: {type: string, minLength: 1}
+        delivery_evidence_ref: {type: string, minLength: 1}
+        owner_send_approval_ref: {type: string, minLength: 1}
         suppression_ref: {type: string, minLength: 1}
         customer_ref: {type: string, minLength: 1}
         invoice_ref: {type: string, minLength: 1}
@@ -379,13 +460,13 @@ outputs:
       allOf:
         - if:
             properties:
-              status: {enum: [review-ready, finalized, sent, test-accepted]}
+              status: {enum: [review-ready, finalized, sent, manual-sent, test-accepted]}
             required: [status]
           then:
             required: [proposal_version_ref, control_review_ref]
         - if:
             properties:
-              status: {enum: [customer-resolved, draft-prepared, review-ready, finalized, sent, test-accepted, suppressed, recorded]}
+              status: {enum: [customer-resolved, draft-prepared, review-ready, finalized, sent, manual-sent, test-accepted, suppressed, recorded]}
             required: [status]
           then:
             required: [customer_ref, action_call_refs]
@@ -393,13 +474,13 @@ outputs:
               action_call_refs: {minItems: 1}
         - if:
             properties:
-              status: {enum: [draft-prepared, review-ready, finalized, sent, test-accepted, suppressed, recorded]}
+              status: {enum: [draft-prepared, review-ready, finalized, sent, manual-sent, test-accepted, suppressed, recorded]}
             required: [status]
           then:
             required: [invoice_ref]
         - if:
             properties:
-              status: {enum: [finalized, sent, test-accepted]}
+              status: {enum: [finalized, sent, manual-sent, test-accepted]}
             required: [status]
           then:
             required: [approval_refs]
@@ -413,6 +494,23 @@ outputs:
             properties:
               approval_refs: {minItems: 2}
               delivery_state: {const: sent}
+        - if:
+            properties:
+              status: {const: manual-sent}
+            required: [status]
+          then:
+            required: [delivery_state]
+            properties:
+              delivery_state: {const: manual-sent}
+        - if:
+            properties:
+              delivery_state: {const: manual-sent}
+            required: [delivery_state]
+          then:
+            required: [delivery_route, manual_delivery_reconciliation_ref, delivery_evidence_ref, owner_send_approval_ref, proposal_version_ref, control_review_ref, approval_refs]
+            properties:
+              delivery_route: {const: stripe-dashboard-email-without-link}
+              approval_refs: {minItems: 2}
         - if:
             properties:
               status: {const: test-accepted}
@@ -429,11 +527,11 @@ outputs:
           then:
             required: [external_write_proof_ref, delivery_state, handoff_refs]
             properties:
-              delivery_state: {enum: [sent, test-accepted, suppressed]}
+              delivery_state: {enum: [sent, manual-sent, test-accepted, suppressed]}
         - if:
             properties:
               status: {const: recorded}
-              delivery_state: {enum: [sent, test-accepted]}
+              delivery_state: {enum: [sent, manual-sent, test-accepted]}
             required: [status, delivery_state]
           then:
             required: [approval_refs, proposal_version_ref, control_review_ref]
@@ -471,8 +569,9 @@ outputs:
 failure_handling:
   - "Never create a fresh idempotency key after a Stripe mutation outcome is unknown; retrieve/reconcile first."
   - "No live customer send occurs during engineering verification, and missing owner approval stops finalization or send at the review-ready state."
+  - "A Dashboard Email invoice without link choice is not send evidence. Keep the handoff blocked with safe exception refs until the external read-only reconciliation verifies prior owner authorization and independent exact-invoice delivery proof. Only that verified path can complete as manual-sent; never fabricate API-send audit, retry an uncertain manual send or claim Dashboard evidence establishes API behavior."
 metadata:
   artifact_grant_policy: explicit
   trigger_kinds: [manual, external]
   finance_record_owner: external-backend
-  state_model: [scoped, customer-resolved, draft-prepared, review-ready, finalized, sent, test-accepted, suppressed, recorded, reconcile-required, exception]
+  state_model: [scoped, customer-resolved, draft-prepared, review-ready, finalized, sent, manual-sent, test-accepted, suppressed, recorded, reconcile-required, exception]

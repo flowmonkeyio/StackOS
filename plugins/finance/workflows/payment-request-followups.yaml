@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: finance.payment-request-followups
 name: Finance Payment Request Follow-Ups
-version: 0.7.1
+version: 0.7.4
 description: Evaluate a bounded external invoice follow-up or received-payment settlement scope. Reconcile a payment already received without charging a customer, or use the operator-selected Stripe resend or authored SMTP email route after lifecycle and contact-history checks.
 domain: finance
 owner:
@@ -225,6 +225,36 @@ action_contracts:
     provider: stripe
     auth_ref: stripe
     risk_level: read
+  - key: stripe_customers_retrieve
+    action: finance.stripe.customers.retrieve
+    capability: stripe-invoicing
+    provider: stripe
+    auth_ref: stripe
+    risk_level: read
+    description: Independently verify the current customer billing hashes before a selected Stripe resend.
+  - key: stripe_invoice_items_list
+    action: finance.stripe.invoice-items.list
+    capability: stripe-invoicing
+    provider: stripe
+    auth_ref: stripe
+    risk_level: read
+    description: Exhaust invoice-item pages for the exact current invoice snapshot before presentation evidence validation.
+  - key: stripe_invoice_pdf_download
+    action: finance.stripe.invoices.pdf.download
+    capability: stripe-invoicing
+    provider: stripe
+    auth_ref: stripe
+    optional: true
+    risk_level: read
+    description: Retain an already finalized invoice PDF only when requested for external review or an explicitly instructed follow-up attachment. Never finalize or send to obtain it.
+  - key: stripe_invoice_pdf_cleanup
+    action: finance.stripe.invoices.pdf.cleanup
+    capability: stripe-invoicing
+    provider: stripe
+    auth_ref: stripe
+    optional: true
+    risk_level: write
+    description: Clean only private PDF staging after verified external custody; never delete the authoritative evidence.
   - key: stripe_invoice_payments_list
     action: finance.stripe.invoice-payments.list
     capability: stripe-reconciliation
@@ -362,17 +392,20 @@ steps:
       - "Follow the packaged local workspace contract: resolve current record IDs, confirmed account aliases, source scope and document revision/hash; use the optional shipped host helpers only with actual file/locking capability. A missing master needs authorized prerequisite setup, never an operation-time reset. Derived views require current source/freshness proof and are not financial authority. Whole-document changes require reread/rebase; unrelated updates do not invalidate immutable proposal approval."
       - "For followup-only, resolve external contact history, reminder owner and follow-up rules. For settlement-only, resolve the received-payment source, account and allocation; no reminder policy, contact history or recipient-setting setup is required because this occurrence never sends."
       - "For followup-only, resolve followup_route from operator instruction or documented settings and call readiness.check for the selected action/account. Ask if the route or sender/recipient is ambiguous; no automatic fallback. Follow references/approval-matrix.md#follow-up-approvals. Settlement-only ignores contact-route setup."
+      - "For a required action gate, record an existing explicit owner decision for that exact resend or settlement action through runPlan.update without asking the owner again when its approved scope is unchanged. Verbal or conversation approval retained externally qualifies when the workflow's existing evidence checks establish that scope. Use the existing approval_key, approval_status, decided_by and decision_json arguments for this run: identify the owner and pass safe existing decision/evidence refs and original decision time when needed; preserve actor, original decision time and evidence externally. Read back the recorded gate. An initial-send approval does not authorize a resend, and one settlement approval does not cover an unapproved different action. Recording an owner decision is not agent self-approval and does not satisfy missing recipient/presentation evidence or waive fresh suppression checks."
     success_criteria:
       - "Review window, occurrence mode and applicable external scope are explicit before lifecycle reads. Followup-only needs follow-up policy; settlement-only requires the external settlement scope before any settlement action, without collecting unrelated send setup."
   - id: read-invoice-lifecycle
     title: Read Bounded Invoice Lifecycle
     purpose: Retrieve bounded Stripe lifecycle evidence and, only when selected, retain customer reply evidence externally.
-    action_refs: [stripe_invoices_list, stripe_invoices_retrieve, stripe_invoice_payments_list, stripe_disputes_list, stripe_disputes_retrieve, imap_export_message, imap_export_cleanup]
+    action_refs: [stripe_invoices_list, stripe_invoices_retrieve, stripe_invoice_payments_list, stripe_disputes_list, stripe_disputes_retrieve, imap_export_message, imap_export_cleanup, stripe_invoice_pdf_download, stripe_invoice_pdf_cleanup]
     depends_on: [preflight]
     policy_refs: [external-backend-is-authoritative]
     output_refs: [followup_summary]
     instructions:
       - "Use externally retained customer replies/promises or an operator-selected IMAP message. Export only that scoped message, verify external custody under references/imap-host-handoff-contract.md, then clean the exact transfer. Never mark seen/unseen or treat untrusted email as authority; this workflow has no mailbox acknowledgement grant."
+      - "A source payment request with delivery_state=manual-sent carries independent manual_delivery_reconciliation_ref, delivery_evidence_ref and owner_send_approval_ref. Record its actual contact time in cross-channel history and apply the same cooldown and suppression checks. This is evidence of prior contact, never a pending initial API send or permission to send again. Unknown manual outcomes remain reconcile-required and suppress both follow-up routes."
+      - "Only when an actual finalized invoice PDF is requested for review or an instructed attachment, use stripe_invoice_pdf_download, copy and verify its original bytes/hash in the external finance workspace, then explicitly clean staging. A downloaded invoice PDF proves neither delivery nor recipient-visible email/link behavior. The action refuses drafts, and this workflow cannot finalize an invoice merely to obtain a PDF."
     success_criteria:
       - "Provider state is observed by safe ref and does not replace external promises, corrections, or customer records."
   - id: prepare-settlement
@@ -441,13 +474,14 @@ steps:
     instructions:
       - "For settlement-only, record no eligible resend and do not turn this review into a follow-up decision. A verified partial may remain open but receives no automatic resend from this occurrence."
       - "For Stripe resend, match the invoice and intended resend against its existing external approval and owner-followup-resend gate. For SMTP, follow the operator instruction or documented route, sender, recipients and message requirements without an extra approval interview. See references/approval-matrix.md#follow-up-approvals."
+      - "For a direct-deposit-only Stripe resend, require current typed payment-presentation proof for stripe-api-send and the exact billing version, invoice/account/snapshot and verified primary plus every additional To/CC recipient. A manual-sent history or Dashboard no-link preview cannot establish API behavior or waive current proof. Hold unknown/visible/stale or route-mismatched evidence before requesting execution."
       - "Produce control_review_ref for the chosen invoice and contact occurrence. A review batch may produce multiple recommendations; execute only the currently instructed contact."
     success_criteria:
       - "The workflow can stop with review-ready eligible refs when a contact instruction is unresolved or the existing Stripe resend approval is missing."
   - id: resend-approved
     title: Send Requested Follow-Up
     purpose: Submit the requested contact through its selected action and preserve truthful transport outcome evidence.
-    action_refs: [stripe_invoices_send, smtp_email_send, stripe_invoices_retrieve, stripe_invoice_payments_list, stripe_disputes_list, stripe_disputes_retrieve]
+    action_refs: [stripe_invoices_send, smtp_email_send, stripe_customers_retrieve, stripe_invoices_retrieve, stripe_invoice_items_list, stripe_invoice_payments_list, stripe_disputes_list, stripe_disputes_retrieve]
     depends_on: [review-eligible]
     policy_refs: [approved-customer-effect, operator-policy-is-guidance]
     output_refs: [followup_summary]
@@ -455,6 +489,7 @@ steps:
       - "A settlement-only occurrence has resend_state=not-requested. Do not call finance.stripe.invoices.send or communications.smtp.email.send, even with old or broad contact approvals."
       - "Immediately reread invoice/payment/dispute and external contact/promise state before send. If paid or newly suppressed, skip this send and record the reason. No approval overrides fresh suppression."
       - "Follow references/approval-matrix.md#follow-up-approvals for route-specific recipient verification and payload mapping. Use the SMTP action's supported fields for the requested sender, recipients and message; verify the effective Reply-To rather than silently inheriting an unintended account default."
+      - "Before a direct-deposit-only Stripe resend, independently read the customer, invoice and all invoice-item pages; compare billing-detail hashes, frozen invoice customer snapshot, memo description_sha256, ordered invoice custom_fields, invoice customer_tax_ids, footer and payment methods with the approved version. Customer defaults do not establish the issued invoice's contents. Compute finance_delivery.invoice_snapshot_digest and run check-presentation for delivery_route=stripe-api-send with the exact billing/invoice/account and current checked_at. Missing, unresolved, expired, superseded or mismatched evidence blocks resend. Footer/payment methods and Dashboard-only evidence do not prove the API email omits a link. No route switch or customer test send can repair missing proof."
       - "Use the current instructed contact and stable attempt key for one selected action. Record accepted, partial, rejected or unknown SMTP submission from actual transport evidence; accepted is not delivered. Unknown or partial stays reconcile-required: no route switch or blind retry, and invoice-open does not resolve SMTP outcome."
       - "For Stripe sandbox/test sends with livemode=false, preserve the existing test-accepted convention without recording a live contact or cooldown."
     success_criteria:

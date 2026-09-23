@@ -299,8 +299,10 @@ An unrelated receipt may change the file revision without changing an approved
 invoice; reread and rebase, then compare the scoped approved facts again.
 
 For a billing digest, select `version`, `customer_mapping_ref`,
-`recipient_settings_ref`, `external_project_ref` when present, `effective_at`
-when present, `currency`, `terms`, `lines`, `subtotal` and `total` when present,
+`recipient_settings_ref`, `customer_billing_details` when present,
+`external_project_ref` when present, `effective_at` when present,
+`payment_presentation` when present, `currency`, `terms`, `lines`,
+`subtotal` and `total` when present,
 `source_refs`, and `supersedes_ref` when present. Approval separately binds the
 stable `record_id`. Encode that selected object as UTF-8 JSON with sorted
 object keys, compact separators, Unicode preserved, no NaN/Infinity and no
@@ -309,6 +311,110 @@ strings. Do not hash the digest itself, record metadata, unrelated
 records, or later mutation attempts/provider observations. Dependency refs name
 immutable versions; changing their material content requires a new version/ref.
 The external format's digest convention is not a new StackOS approval engine.
+
+For a direct-deposit-only invoice, `payment_presentation` binds the exact
+invoice footer hash and Stripe payment-method selection readback. It also binds
+the separately observed Pay online link state. The Stripe invoice API does not
+prove that link is absent. Preparation may retain `unknown` without proof;
+delivery requires the external proof contract below. Footer text, selected
+PaymentIntent methods and nullable API links never establish recipient-visible
+presentation. A Dashboard preview for one route is not proof for the API route.
+
+### Payment presentation proof and delivery reconciliation
+
+`payment_presentation.review_evidence_ref` is a canonical `record_id` in the
+external `provider_observations` collection. It is not an arbitrary URL, note,
+StackOS artifact or opaque assertion. That observation's
+`payment_presentation_evidence` object must supply:
+
+- Exact `billing_version_ref`, `billing_version`, `billing_digest_sha256`,
+  `recipient_settings_ref` and `recipient_digest_sha256`. The latter uses the
+  existing `material_record_digest(record, "recipient_settings")` convention.
+- `invoice_snapshot_sha256`, calculated with the packaged
+  `finance_delivery.invoice_snapshot_digest` from an independent invoice read
+  and **all** invoice-item pages. The helper binds invoice/customer refs,
+  currency, totals, collection method, auto-advance, livemode, invoice customer
+  detail hashes, memo description hash, ordered custom-field name/value hashes,
+  invoice customer tax-ID type/value hashes, footer, payment settings, due/effective/created dates when
+  present, and line identity, amount, currency, quantity, pricing and description
+  hashes. It preserves missing versus null, excludes payment outcomes, lifecycle
+  status and expiring URLs, sorts lines by safe item ref, and rejects duplicate,
+  incomplete or cross-invoice/customer item input. Do not invent this digest.
+  Retain historical digests and approvals unchanged. A new material observation
+  needs a current snapshot and matching evidence; updating the helper never
+  rewrites prior financial records or makes old presentation proof current.
+- `delivery_route`: `stripe-api-send` or
+  `stripe-dashboard-email-without-link`; `online_payment_link_state`;
+  `verification_method`; nonempty `verifier_ref`; `verified_at`; and `expires_at`.
+  Delivery requires `verification_method=recipient-visible-route`, state
+  `absent`, and a checked time inside the verification interval. An independently
+  verified preview may qualify only when it establishes that exact route; this
+  contract does not require or authorize a test customer send.
+- One or more `attachment_refs` resolving retained original evidence in this
+  workspace, with matching source backlinks, file size and SHA-256. The parent
+  observation binds `object_type=invoice`, `object_ref`, `account_ref`,
+  `provider_ref` and `customer_ref`, plus observation time and source refs.
+
+The recipient record must name that exact invoice/account/customer, a verified
+primary email and its matching hash, all additional To/CC recipients or an
+explicit verified-none state, verifier, evidence refs and a verification expiry.
+Unknown additional recipients block delivery. Caller-selected verification
+lifetimes are explicit evidence facts; the helper invents no default window.
+
+The optional read-only host module
+[`finance_delivery.py`](../scripts/finance_delivery.py) resolves this contract
+with `validate_payment_presentation`. Use `check-presentation --finance-dir ...
+--billing-version-ref ... --invoice-ref ... --account-ref ...
+--invoice-snapshot-sha256 ... --delivery-route stripe-api-send --checked-at ...`
+immediately before delivery, with the independently calculated current snapshot
+and actual current time. It rejects missing, unresolved, stale, future,
+superseded, mismatched and unavailable evidence. Ordinary workspace validation
+resolves typed proof but does not expire historical records merely because time
+passed. This helper does not grant a provider action, inspect image contents,
+send email, or turn an unsupported Stripe API feature into a supported one.
+
+For an invoice already sent manually through Dashboard, retain a separate
+`provider_observations.invoice_delivery_evidence` observation with the same exact
+version/recipient/snapshot binding, route
+`stripe-dashboard-email-without-link`, `sent_by_ref`, `sent_at`, `outcome=sent`,
+`verifier_ref`, `verified_at`, retained `attachment_refs`, and
+`evidence_kind=provider-delivery-log` or `recipient-received-message`. The
+verifier must differ from the sender. A preview, selected button, open invoice,
+or the sender's claim alone is not independent delivery evidence. Evidence
+proves the recorded send, not inbox placement beyond what the original proves.
+
+The existing external `reviews` record for owner send approval must be approved,
+have `authority=owner`, include `owner-invoice-send` in scope, bind the exact
+proposal ID/version/digest, and include a `delivery_authorization` object with
+the same invoice/account, snapshot and recipient bindings, selected route and
+expiry. Its decision must precede send and remain valid at send time; later
+authorization cannot retroactively satisfy the check. These are external owner
+decisions, not fabricated API action gates or API-send audit records.
+
+An external `reconciliations.manual_invoice_delivery` object carries the exact
+bindings, `invoice_ref`, `account_ref`, `owner_authorization_ref`,
+`delivery_evidence_ref` and `outcome`. An `unknown` outcome can be retained, but
+only `verified-sent` with the complete independent proof can pass
+`reconcile_manual_invoice_delivery` / `reconcile-manual-delivery
+--finance-dir ... --reconciliation-ref ... --checked-at ...`. The helper also
+checks presentation and recipient evidence valid at the actual send time,
+original custody, live mode and ordered send/observation/verification times.
+The parent reconciliation must be `verified`, identify only the exact account
+and matched invoice, include the delivery source, and have no unmatched refs,
+differences or gaps. The delivery observation must identify a finalized invoice
+(`open`, `paid` or `uncollectible`), never a draft or unknown lifecycle state.
+It performs no network call or finance write and repeated checks return the same
+refs. Reconciliation never authorizes another send.
+
+The workflow can then record `status=manual-sent`,
+`delivery_state=manual-sent`, the exact route,
+`manual_delivery_reconciliation_ref`, `delivery_evidence_ref` and
+`owner_send_approval_ref`. Merge these safe refs with the existing proposal,
+control review, actual prior finalize/read audit and approval refs, and empty
+`exception_refs`; do not invent a send `action_call_ref`. The final recorded
+state retains this manual delivery state and external write proof. Uncertain
+outcomes remain blocked/unresolved. Typed proof/authorization material is
+immutable: correct it through new records and the existing correction chain.
 
 Keep approved material unchanged. Record observations, attempts and reviews in
 their linked collections. A material correction creates a new proposal version

@@ -366,6 +366,41 @@ def test_finance_action_refs_resolve_and_grants_exclude_finance_state_owners(
             assert set(step.action_refs).issubset(granted_actions)
 
 
+def test_payment_request_update_grants_end_before_review_and_send(
+    session: Session,
+    project_id: int,
+) -> None:
+    validation = RunPlanRepository(session).validate_plan(
+        project_id=project_id,
+        template_key="finance.payment-request",
+        plugin_slug="finance",
+        inputs_json=_strict_inputs()["finance.payment-request"],
+        enforce_required_inputs=True,
+    )
+    assert validation.valid, validation.errors
+    assert validation.plan is not None
+    plan = validation.plan
+
+    def granted(step_id: str) -> set[str]:
+        return {
+            ref
+            for grant in _step_grants(plan, step_id)
+            if grant.get("tool") == "action.execute"
+            for ref in grant.get("action_refs", [])
+        }
+
+    customer_update = "finance.stripe.customers.update"
+    invoice_update = "finance.stripe.invoices.update"
+    assert customer_update in granted("resolve-customer")
+    assert invoice_update in granted("create-draft")
+    for step_id in ("review-draft", "finalize-invoice", "send-invoice"):
+        assert {customer_update, invoice_update}.isdisjoint(granted(step_id))
+        assert "finance.stripe.customers.retrieve" in granted(step_id)
+        assert "finance.stripe.invoices.retrieve" in granted(step_id)
+    assert "finance.stripe.invoices.finalize" in granted("finalize-invoice")
+    assert "finance.stripe.invoices.send" in granted("send-invoice")
+
+
 def test_finance_payment_workflows_keep_distinct_action_level_owner_gates(
     session: Session,
     project_id: int,
@@ -410,18 +445,26 @@ def test_finance_payment_workflows_keep_distinct_action_level_owner_gates(
     )
     assert payment_steps["finalize-invoice"].action_refs == [
         "stripe_invoices_finalize",
+        "stripe_customers_retrieve",
         "stripe_invoices_retrieve",
         "stripe_invoice_items_list",
+        "stripe_invoice_pdf_download",
+        "stripe_invoice_pdf_cleanup",
     ]
     assert payment_steps["send-invoice"].action_refs == [
         "stripe_invoices_send",
+        "stripe_customers_retrieve",
         "stripe_invoices_retrieve",
         "stripe_invoice_items_list",
+        "stripe_invoice_pdf_download",
+        "stripe_invoice_pdf_cleanup",
     ]
     assert followup_steps["resend-approved"].action_refs == [
         "stripe_invoices_send",
         "smtp_email_send",
+        "stripe_customers_retrieve",
         "stripe_invoices_retrieve",
+        "stripe_invoice_items_list",
         "stripe_invoice_payments_list",
         "stripe_disputes_list",
         "stripe_disputes_retrieve",

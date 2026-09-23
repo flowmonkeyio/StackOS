@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -232,7 +233,11 @@ def test_payment_record_list_is_deferred_before_auth_or_http(
     listed = mcp_client.call_tool_structured(
         "action.list", {"project_id": project_id, "plugin_slug": "finance"}
     )
-    assert len(listed["items"]) == 29
+    assert len(listed["items"]) == 36
+    assert {
+        "finance.stripe.invoices.pdf.download",
+        "finance.stripe.invoices.pdf.cleanup",
+    } <= {item["action_ref"] for item in listed["items"]}
     assert action_ref not in {item["action_ref"] for item in listed["items"]}
     full = mcp_client.call_tool_structured(
         "action.list",
@@ -242,7 +247,7 @@ def test_payment_record_list_is_deferred_before_auth_or_http(
             "include_unavailable_integrations": True,
         },
     )
-    assert len(full["items"]) == 30
+    assert len(full["items"]) == 37
     deferred = next(item for item in full["items"] if item["action_ref"] == action_ref)
     assert deferred["availability_status"] == "deferred"
     assert deferred["executable"] is False
@@ -605,15 +610,22 @@ def test_invoice_payment_unavailable_linkage_preserves_page_and_audit_without_a_
     assert "pi_known" not in json.dumps({"result": result, "audit": audit})
 
 
-def _seed_stripe_credential(mcp: MCPClient, project_id: int) -> str:
+def _seed_stripe_credential(
+    mcp: MCPClient, project_id: int, *, provider_account_id: str = "acct_mcp_fixture"
+) -> str:
     engine = mcp.test_client.app.state.engine  # type: ignore[attr-defined]
+    display_name = (
+        "Stripe MCP fixture"
+        if provider_account_id == "acct_mcp_fixture"
+        else "Stripe MCP other-account fixture"
+    )
     with Session(engine) as session:
         credential_ref = (
             AuthRepository(session)
             .store_credential(
                 provider_key="stripe",
                 auth_method_key="api_key",
-                display_name="Stripe MCP fixture",
+                display_name=display_name,
                 fields={"api_key": STRIPE_SECRET},
                 attach_project_id=project_id,
             )
@@ -626,8 +638,8 @@ def _seed_stripe_credential(mcp: MCPClient, project_id: int) -> str:
         session.add(
             CredentialAccount(
                 credential_id=credential.id,
-                provider_account_id="acct_mcp_fixture",
-                display_name="Stripe MCP fixture",
+                provider_account_id=provider_account_id,
+                display_name=display_name,
             )
         )
         session.commit()
@@ -749,6 +761,280 @@ def _complete_payment_request_predecessors(
                 "run_token": run_token,
             },
         )
+
+
+@pytest.mark.parametrize("object_type", ["customer", "invoice"])
+def test_stripe_update_direct_uses_secret_refs_and_independent_readback(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    object_type: str,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    credential_ref = _seed_stripe_credential(mcp_client, project_id)
+    provider_id = "cus_mcp_fixture" if object_type == "customer" else "in_mcp_fixture"
+    ref_field = "customer_ref" if object_type == "customer" else "invoice_ref"
+    object_ref = _seed_stripe_object_ref(
+        mcp_client,
+        project_id=project_id,
+        credential_ref=credential_ref,
+        object_type=f"stripe.{object_type}",
+        provider_object_id=provider_id,
+    )
+
+    def secret(value: str) -> dict[str, str]:
+        saved = mcp_client.call_tool_structured(
+            "secret.set", {"project_id": project_id, "value": value}
+        )["data"]
+        return {"$secret_ref": saved["secret_ref"]}
+
+    if object_type == "customer":
+        private = {"name": "Correct Billing Name", "line1": "101 Private Lane", "country": "US"}
+        payload = {
+            ref_field: object_ref,
+            "name": secret(private["name"]),
+            "address": {"line1": secret(private["line1"]), "country": secret(private["country"])},
+        }
+        provider_response = stripe_customer(
+            id=provider_id,
+            name=private["name"],
+            address={"line1": private["line1"], "country": private["country"]},
+        )
+    else:
+        private = {"footer": "Please pay by direct deposit to the approved account."}
+        payload = {
+            ref_field: object_ref,
+            "footer": secret(private["footer"]),
+            "payment_method_types": ["customer_balance"],
+        }
+        provider_response = stripe_invoice(
+            id=provider_id,
+            footer=private["footer"],
+            payment_settings={"payment_method_types": ["customer_balance"]},
+            hosted_invoice_url=None,
+            invoice_pdf=None,
+        )
+
+    action_ref = f"finance.stripe.{object_type}s.update"
+    args = {
+        "project_id": project_id,
+        "action_ref": action_ref,
+        "credential_ref": credential_ref,
+        "input_json": payload,
+        "confirm_direct": True,
+        "intent_id": f"mcp-{object_type}-update-fixture",
+        "intent_summary": "Fixture owner requested an existing draft billing correction.",
+    }
+    bad_ref = mcp_client.call_tool_error(
+        "action.run", {**args, "input_json": {**payload, ref_field: provider_id}}
+    )
+    assert bad_ref["message"] == "ValidationError"
+    foreign_credential_ref = _seed_stripe_credential(
+        mcp_client, project_id, provider_account_id="acct_other_fixture"
+    )
+    wrong_account = mcp_client.call_tool_error(
+        "action.run",
+        {
+            **args,
+            "credential_ref": foreign_credential_ref,
+            "intent_id": f"mcp-{object_type}-wrong-account-fixture",
+        },
+    )
+    assert wrong_account["message"] == "ConflictError"
+    assert wrong_account["data"]["error"] == (
+        "provider object reference is not valid for this connection and object type"
+    )
+    assert httpx_mock.get_requests() == []
+
+    httpx_mock.add_response(
+        method="POST",
+        url=f"https://api.stripe.com/v1/{object_type}s/{provider_id}",
+        json=provider_response,
+    )
+    written = mcp_client.call_tool_structured("action.run", args)["data"]
+    assert written["status"] == "success"
+    saved = json.loads(Path(written["output"]["path"]).read_text(encoding="utf-8"))
+    write_data = saved["response"]["output_json"]["data"]
+    assert write_data[ref_field] == object_ref
+
+    read_url = f"https://api.stripe.com/v1/{object_type}s/{provider_id}"
+    if object_type == "invoice":
+        read_url += "?expand%5B%5D=customer"
+    httpx_mock.add_response(method="GET", url=read_url, json=provider_response)
+    read = mcp_client.call_tool_structured(
+        "action.run",
+        {
+            "project_id": project_id,
+            "action_ref": f"finance.stripe.{object_type}s.retrieve",
+            "credential_ref": credential_ref,
+            "input_json": {ref_field: object_ref},
+        },
+    )["data"]
+    read_data = json.loads(Path(read["output"]["path"]).read_text(encoding="utf-8"))["response"][
+        "output_json"
+    ]["data"]
+    if object_type == "customer":
+        expected_name_hash = hashlib.sha256(private["name"].encode()).hexdigest()
+        expected_line_hash = hashlib.sha256(private["line1"].encode()).hexdigest()
+        assert write_data["name_sha256"] == read_data["name_sha256"] == expected_name_hash
+        assert (
+            write_data["address_field_sha256"]["line1"]
+            == read_data["address_field_sha256"]["line1"]
+            == expected_line_hash
+        )
+        expected_form = {
+            "name": [private["name"]],
+            "address[line1]": [private["line1"]],
+            "address[country]": [private["country"]],
+        }
+    else:
+        expected_footer_hash = hashlib.sha256(private["footer"].encode()).hexdigest()
+        assert write_data["footer_sha256"] == read_data["footer_sha256"] == expected_footer_hash
+        assert (
+            write_data["payment_settings"]
+            == read_data["payment_settings"]
+            == {"payment_method_types": ["customer_balance"]}
+        )
+        assert write_data["status"] == read_data["status"] == "draft"
+        expected_form = {
+            "footer": [private["footer"]],
+            "payment_settings[payment_method_types][]": ["customer_balance"],
+        }
+
+    requests = httpx_mock.get_requests()
+    assert [request.method for request in requests] == ["POST", "GET"]
+    assert parse_qs(requests[0].content.decode()) == expected_form
+    assert requests[0].headers["Idempotency-Key"]
+    assert "Idempotency-Key" not in requests[1].headers
+    audit_response = mcp_client.test_client.get(
+        f"/api/v1/projects/{project_id}/action-calls",
+        params={"action_key": f"stripe.{object_type}s.update", "status": "success"},
+        headers=mcp_client._headers(),
+    )
+    assert audit_response.status_code == 200
+    audit = audit_response.json()["items"]
+    assert len(audit) == 1
+    assert audit[0]["id"] == written["action_call_id"]
+    exposed = json.dumps({"write": written, "saved": saved, "read": read, "audit": audit})
+    assert STRIPE_SECRET not in exposed
+    assert provider_id not in exposed
+    assert all(json.dumps(value) not in exposed for value in private.values())
+
+
+@pytest.mark.parametrize(
+    ("object_type", "allowed_step"),
+    [("customer", "resolve-customer"), ("invoice", "create-draft")],
+)
+def test_stripe_update_execute_uses_payment_request_step_grant_without_delivery(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    object_type: str,
+    allowed_step: str,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    credential_ref = _seed_stripe_credential(mcp_client, project_id)
+    provider_id = "cus_mcp_fixture" if object_type == "customer" else "in_mcp_fixture"
+    ref_field = "customer_ref" if object_type == "customer" else "invoice_ref"
+    object_ref = _seed_stripe_object_ref(
+        mcp_client,
+        project_id=project_id,
+        credential_ref=credential_ref,
+        object_type=f"stripe.{object_type}",
+        provider_object_id=provider_id,
+    )
+    private_text = "Reviewed billing name" if object_type == "customer" else "Bank transfer only."
+    secret_ref = mcp_client.call_tool_structured(
+        "secret.set", {"project_id": project_id, "value": private_text}
+    )["data"]["secret_ref"]
+    payload = {
+        ref_field: object_ref,
+        ("name" if object_type == "customer" else "footer"): {"$secret_ref": secret_ref},
+    }
+    action_ref = f"finance.stripe.{object_type}s.update"
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {
+            "project_id": project_id,
+            "workflow_key": "finance.payment-request",
+            "plugin_slug": "finance",
+            "inputs_json": _payment_request_inputs(),
+        },
+    )
+    plan_id = created["data"]["id"]
+    started = mcp_client.call_tool_structured(
+        "runPlan.start", {"project_id": project_id, "run_plan_id": plan_id}
+    )["data"]
+    run_token = started["run_token"]
+    args = {
+        "project_id": project_id,
+        "action_ref": action_ref,
+        "credential_ref": credential_ref,
+        "input_json": payload,
+        "run_token": run_token,
+        "idempotency_key": f"mcp-granted-{object_type}-update",
+        "output_policy_json": {"mode": "inline"},
+        "response_mode": "raw",
+    }
+    predecessors = [("preflight", "scoped")]
+    if object_type == "invoice":
+        predecessors.append(("resolve-customer", "customer-resolved"))
+    for step_id, status in predecessors:
+        mcp_client.call_tool_structured(
+            "runPlan.claimStep",
+            {"run_plan_id": plan_id, "step_id": step_id, "run_token": run_token},
+        )
+        denied = mcp_client.call_tool_error("action.execute", args)
+        assert denied["message"] == "ToolNotGrantedError"
+        assert httpx_mock.get_requests() == []
+        mcp_client.call_tool_structured(
+            "runPlan.recordStep",
+            {
+                "run_plan_id": plan_id,
+                "step_id": step_id,
+                "status": "success",
+                "result_json": _payment_request_result(status, invoice_ref=object_ref),
+                "run_token": run_token,
+            },
+        )
+    claimed = mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {"run_plan_id": plan_id, "step_id": allowed_step, "run_token": run_token},
+    )["data"]
+    response = (
+        stripe_customer(id=provider_id, name=private_text)
+        if object_type == "customer"
+        else stripe_invoice(id=provider_id, footer=private_text)
+    )
+    httpx_mock.add_response(
+        method="POST", url=f"https://api.stripe.com/v1/{object_type}s/{provider_id}", json=response
+    )
+    executed = mcp_client.call_tool_structured("action.execute", args)["data"]
+    assert executed["action_call"]["status"] == "success"
+    assert executed["action_call"]["run_plan_step_id"] == claimed["id"]
+    data = executed["output_json"]["data"]
+    expected_hash = hashlib.sha256(private_text.encode()).hexdigest()
+    assert data["name_sha256" if object_type == "customer" else "footer_sha256"] == expected_hash
+    replay = mcp_client.call_tool_structured("action.execute", args)["data"]
+    assert replay["action_call"]["id"] == executed["action_call"]["id"]
+    requests = httpx_mock.get_requests()
+    assert len(requests) == 1
+    assert requests[0].method == "POST"
+    assert requests[0].url.path == f"/v1/{object_type}s/{provider_id}"
+    assert requests[0].headers["Idempotency-Key"]
+    audit_response = mcp_client.test_client.get(
+        f"/api/v1/projects/{project_id}/action-calls",
+        params={"run_plan_id": plan_id, "action_key": f"stripe.{object_type}s.update"},
+        headers=mcp_client._headers(),
+    )
+    assert audit_response.status_code == 200
+    audit = audit_response.json()["items"]
+    assert len(audit) == 1
+    assert audit[0]["run_plan_step_id"] == claimed["id"]
+    exposed = json.dumps({"execute": executed, "replay": replay, "audit": audit})
+    assert STRIPE_SECRET not in exposed
+    assert private_text not in exposed
+    assert provider_id not in exposed
 
 
 @pytest.mark.parametrize(

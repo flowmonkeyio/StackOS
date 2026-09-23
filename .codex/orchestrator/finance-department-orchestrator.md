@@ -1,10 +1,14 @@
 # Finance Department Orchestrator
 
-Source skill preset: `stackos.finance.department-orchestrator` v0.7.2. Keep this adaptation aligned with `plugins/finance/skill-presets/finance.yaml`. This is main-agent guidance, not a subagent.
+Source skill preset: `stackos.finance.department-orchestrator` v0.7.4. Keep this adaptation aligned with `plugins/finance/skill-presets/finance.yaml`. This is main-agent guidance, not a subagent.
 
 Use the strongest reasoning configuration available in the current host for this integration role without replacing the user or workspace model selection. Finance subagents intentionally omit `model` and inherit the host selection while setting role-appropriate reasoning effort; see [official Codex subagent configuration](https://learn.chatgpt.com/docs/agent-configuration/subagents).
 
 ## Operating boundary
+
+For direct-deposit-only API send/resend follow the external delivery-evidence contract in `plugins/finance/references/local-workspace-contract.md`: compute the exact snapshot from independent invoice and complete item reads, then validate current billing version, account, recipient and `stripe-api-send` proof. Unknown, stale, unresolved or route-mismatched proof blocks contact; Dashboard-only evidence and footer/payment methods do not establish API email behavior. Prior manual Dashboard delivery completes only through read-only external reconciliation of exact prior owner send approval and independent retained delivery proof. Preserve `manual-sent` with reconciliation/delivery/owner approval refs, without another send or fabricated API audit. Carry its actual contact time into follow-up suppression; uncertain outcomes stay unresolved.
+
+When an actual finalized invoice PDF is needed, use the explicit download action, verify custody in the external finance workspace and clean staging afterward. The API supplies no draft PDF, no-link send parameter, review-recipient override or complete additional To/CC enumeration. Never finalize to obtain a review artifact or alter customer billing details to deliver a review copy.
 
 StackOS provides workflows, provider actions, daemon-held credentials, active grants, approval occurrences, and audit. It does not provide a ledger, finance state model, accounting/tax engine, finance resource/artifact store, filesystem connector, scheduler, or model selector.
 
@@ -83,6 +87,8 @@ Invoice creation must supply the approved currency explicitly; independently ver
 For HTTP 409, `idempotency_key_in_use` or `idempotency_error`, retain the original operation key and exact parameters, and reconcile the original write before proceeding. Never change the key to bypass a conflict or mismatch. A read retry header is transport advice, not permission to repeat an uncertain write.
 
 For actions that require approval, material changes to recipient, action, object/account, content, amount, policy, or external-record version/digest need a fresh approval occurrence. One human decision can cover distinct finalize and send gates only when it binds the exact same immutable facts/version. Check and record each technical gate separately. Respect declared gates: reads and ordinary draft preparation may not need an approval.
+
+Record an existing explicit owner decision through `runPlan.update` without a new approval handoff or repeated owner conversation when the exact approved scope is unchanged. A verbal/conversation decision retained externally is usable under the existing workflow evidence checks. Identify the owner in `decided_by`; pass safe existing decision/evidence refs and the original decision time in `decision_json` as applicable. Preserve the original actor, time, scope and evidence in the external finance record, then read back each recorded gate. This records the owner's decision, never the agent's own approval judgment. One decision populates both finalize and initial-send gates only when it explicitly covers both; initial-send approval is not general resend permission. Recording approval does not resolve missing recipient/presentation evidence, changed scope, revocation or uncertain provider outcomes.
 
 Before Stripe send/resend compare current customer and invoice primary-email hashes plus the external recipient-settings version bound to the approval. That record names approved primary and additional To/CC or explicit verified-none versus unknown, account/customer/invoice scope, verifier/time/evidence and validity/recheck condition. Reuse current verified settings within scope without reinterviewing the owner per invoice. Expiry, edits, changed scope/version or uncertainty requires reverification; material recipient changes need fresh approval. Unknown scope stops delivery but preserves drafts; settlement-only needs no send-recipient setup.
 

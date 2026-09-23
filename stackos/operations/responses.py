@@ -389,6 +389,7 @@ _CONTENT_OMIT_FIELDS = frozenset({"content"})
 _VERBATIM_KEEP_FIELDS = frozenset(
     {
         "action_execution_guidance",
+        "workflow_contract",
         "binding",
         "candidate_workspaces",
         "candidate_projects",

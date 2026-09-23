@@ -185,8 +185,9 @@ class _Candidate:
 class WorkflowTemplateLoader:
     """Load workflow templates from plugin files, project DB rows, and repo overrides."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, sync_plugins: bool = True) -> None:
         self._s = session
+        self._sync_plugins = sync_plugins
 
     def list_templates(
         self,
@@ -1160,7 +1161,8 @@ class WorkflowTemplateLoader:
         )
 
     def _load_plugin_templates(self, *, plugin_slug: str | None) -> list[LoadedWorkflowTemplate]:
-        self._sync_builtin_plugins()
+        if self._sync_plugins:
+            self._sync_builtin_plugins()
         loaded: list[LoadedWorkflowTemplate] = []
         seen_paths: set[str] = set()
         clone_root = _clone_plugins_root()

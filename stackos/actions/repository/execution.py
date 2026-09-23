@@ -79,6 +79,7 @@ class ActionExecutionMixin:
         credential_ref: str | None = None,
         output_policy_json: dict[str, Any] | None = None,
         default_external_file_output: bool = False,
+        derived_workflow_idempotency: bool = False,
         run_id: int | None = None,
         run_plan_id: int | None = None,
         run_plan_step_id: int | None = None,
@@ -159,6 +160,18 @@ class ActionExecutionMixin:
             runtime_context=runtime_context,
             default_external_file_output=default_external_file_output,
         )
+        if derived_workflow_idempotency and manifest.risk_level == "read":
+            if run_plan_id is None or run_plan_step_id is None:
+                raise ValidationError(
+                    "derived workflow idempotency requires an active run-plan step",
+                    data={"action_ref": manifest.action_ref, "side_effect": "not_started"},
+                )
+            # A new workflow read observes current provider state. Reusing an
+            # automatically derived key would replay a pre-mutation snapshot.
+            # Explicit caller keys still select replay, including for reads.
+            idempotency_key = None
+            metadata_json = dict(metadata_json or {})
+            metadata_json.pop("dedupe_source", None)
         metadata_json = _metadata_with_execution_context(metadata_json, runtime_context)
         if manifest.connector_key is None:
             raise ValidationError(
