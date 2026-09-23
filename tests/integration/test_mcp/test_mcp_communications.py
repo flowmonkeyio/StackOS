@@ -16,6 +16,7 @@ from sqlmodel import Session, select
 from stackos.actions import ActionRepository
 from stackos.actions.telegram import TelegramActionConnector
 from stackos.auth_providers import AuthRepository
+from stackos.auth_providers.repository.telegram_application import TelegramApplicationRepository
 from stackos.db.models import Action, ActionCall, Credential, CredentialAccount, CredentialScope
 from stackos.integrations.telegram_tdlib.native import TelegramTdlibNativeError
 from stackos.integrations.telegram_tdlib.service import TelegramTdlibServiceError
@@ -43,13 +44,17 @@ def _seed_telegram_credential(
     _install_fake_telegram_connector(mcp)
     engine = mcp.test_client.app.state.engine  # type: ignore[attr-defined]
     with Session(engine) as session:
+        application_fields = (
+            {}
+            if TelegramApplicationRepository(session).configured()
+            else {"api_id": 12345, "api_hash": "test-telegram-application-hash"}
+        )
         created = AuthRepository(session).store_credential(
             provider_key="telegram",
             auth_method_key=("tdlib-bot-token" if account_kind == "bot" else "tdlib-user-session"),
             display_name=account_name,
             fields={
-                "api_id": 12345,
-                "api_hash": "test-telegram-application-hash",
+                **application_fields,
                 **({"bot_token": bot_token} if account_kind == "bot" else {}),
                 "proxy_enabled": False,
             },
@@ -3116,7 +3121,7 @@ def test_telegram_transient_read_repairs_missing_tdlib_runtime_without_storing_r
     seeded_project: dict,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
-    credential_ref = _seed_telegram_credential(mcp_client, project_id)
+    credential_ref = _seed_telegram_credential(mcp_client, project_id, account_kind="user")
     mcp_client.call_tool_structured(
         "communicationProfile.upsert",
         {
@@ -3161,7 +3166,7 @@ def test_telegram_transient_native_timeout_has_safe_retry_without_auditing_body(
     seeded_project: dict,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
-    credential_ref = _seed_telegram_credential(mcp_client, project_id)
+    credential_ref = _seed_telegram_credential(mcp_client, project_id, account_kind="user")
     mcp_client.call_tool_structured(
         "communicationProfile.upsert",
         {
