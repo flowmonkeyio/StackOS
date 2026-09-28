@@ -52,6 +52,84 @@ describe('AccountsView', () => {
     vi.restoreAllMocks()
   })
 
+  it('creates service-account JSON locally, reports token-only verification, and edits without disclosing the key', async () => {
+    const methods = [
+      { key: 'oauth2_authorization_code', label: 'Connect with Google', auth_type: 'oauth',
+        interactive: true, payload_format: 'json', fields: [] },
+      { key: 'service-account', label: 'Service account', auth_type: 'oauth',
+        interactive: false, payload_format: 'json', fields: [
+          { key: 'service_account_json', label: 'Service-account JSON key', type: 'secret', secret: true, required: true },
+          { key: 'delegated_subject', label: 'Delegated Workspace user', type: 'text', secret: false, required: false },
+        ] },
+    ]
+    const provider = authProvider('google-workspace', 'Google Workspace', 'oauth', methods)
+    const account = authConnection({ revokedAt: null, providerKey: 'google-workspace',
+      credentialRef: 'cred_google', authType: 'oauth', authMethodKey: 'service-account',
+      label: 'Workspace service account' })
+    let created = false
+    const writes: Array<{ url: string; body: Record<string, unknown> }> = []
+    const summary = 'Google service-account token acquired; resource access is unverified.'
+    const nextAction = 'Verify access to the intended Google resource before relying on this Account.'
+    globalThis.fetch = vi.fn(async (input, init) => {
+      const url = String(input)
+      if (init?.body) writes.push({ url, body: JSON.parse(String(init.body)) })
+      if (url === '/api/v1/auth/accounts') return json({ project_id: null, provider_key: null,
+        providers: [provider], accounts: created ? [account] : [] })
+      if (url === '/api/v1/projects?limit=50') return json({ items: [], next_cursor: null, total_estimate: 0 })
+      if (url === '/api/v1/auth/accounts/google-workspace') {
+        created = true
+        return json({ data: account }, 201)
+      }
+      if (url === '/api/v1/auth/accounts/cred_google/test') return json({ data: {
+        credential_ref: 'cred_google', provider_key: 'google-workspace', ok: true,
+        status: 'connected', summary, next_action: nextAction, checked_at: '2026-09-25T00:00:00Z',
+        retryable: false, metadata: { verification: 'token_acquisition_only', resource_access: 'unverified' },
+      } })
+      if (url === '/api/v1/auth/accounts/cred_google') {
+        if (init?.method === 'PATCH') return json({ data: account })
+        return json({ account, values: { delegated_subject: 'user@example.com' },
+          secret_present: { service_account_json: true } })
+      }
+      return json({})
+    }) as typeof fetch
+    const router = createRouter({ history: createMemoryHistory(),
+      routes: [{ path: '/accounts', component: AccountsView }] })
+    await router.push('/accounts')
+    await router.isReady()
+    const wrapper = mount({ template: '<RouterView />' },
+      { global: { plugins: [router], stubs: { teleport: true } } })
+    await vi.waitFor(() => expect(wrapper.text()).toContain('No Accounts yet'))
+    await clickButton(wrapper, 'Add Account')
+    const radio = wrapper.findAll('input[type="radio"]').find((item) => item.attributes('value') === 'service-account')
+    expect(radio).toBeDefined()
+    await radio!.setValue()
+    const key = wrapper.find<HTMLInputElement>('input[type="password"]')
+    const synthetic = JSON.stringify({ type: 'service_account', private_key: 'synthetic\\nkey' }, null, 2)
+    await key.setValue(synthetic)
+    await wrapper.find<HTMLInputElement>('input[placeholder="Service - Default"]').setValue(account.display_name)
+    const subject = wrapper.find<HTMLInputElement>('input[id$="delegated_subject"]')
+    await subject.setValue('user@example.com')
+    await clickButton(wrapper, 'Save and verify')
+    await vi.waitFor(() => expect(wrapper.text()).toContain(summary))
+    expect(wrapper.text()).toContain(nextAction)
+    expect(wrapper.text()).not.toContain('Account verified.')
+    const saved = writes.find(({ url }) => url.endsWith('/google-workspace'))!.body
+    expect(saved.auth_method_key).toBe('service-account')
+    expect(JSON.parse((saved.fields as Record<string, string>).service_account_json!)).toEqual(JSON.parse(synthetic))
+    expect(wrapper.html()).not.toContain('synthetic')
+    expect(writes.some(({ url }) => url.endsWith('/start'))).toBe(false)
+    await clickButton(wrapper, 'Test')
+    await vi.waitFor(() => expect(wrapper.text()).toContain(nextAction))
+    await clickButton(wrapper, 'Edit')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Authentication method is locked'))
+    expect(wrapper.find<HTMLInputElement>('input[type="password"]').element.value).toBe('')
+    expect(wrapper.findAll('input[type="radio"]').every((item) => item.attributes('disabled') !== undefined)).toBe(true)
+    await wrapper.find<HTMLInputElement>('input[id$="delegated_subject"]').setValue('')
+    await clickButton(wrapper, 'Save changes')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Account updated.'))
+    expect(writes.find(({ url }) => url.endsWith('/cred_google'))!.body.fields).toEqual({ delegated_subject: '' })
+  })
+
   it('verifies a Telegram bot once during creation and shows its saved offline authorization', async () => {
     const provider = authProvider('telegram', 'Telegram', 'tdlib', telegramBotMethod)
     const account = authConnection({
@@ -838,6 +916,61 @@ describe('AccountsView', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('Account verified.'))
     expect(wrapper.text()).not.toContain('Verification failed')
     expect(wrapper.text()).not.toContain('Permission denied.')
+  })
+
+  it('shows Google API-disabled guidance from Test and after reloading Accounts', async () => {
+    const provider = authProvider('google-search-console', 'Google Search Console', 'oauth', [])
+    const diagnostic = {
+      credential_ref: 'cred_search',
+      provider_key: 'google-search-console',
+      ok: false,
+      status: 'failed',
+      summary: "Google Search Console API is not enabled for this credential's Google Cloud project.",
+      checked_at: '2026-09-28T00:00:00Z',
+      retryable: false,
+      next_action: "Enable the Google Search Console API in the credential's Google Cloud project, then test the Account again.",
+      metadata: { provider_status_code: 403, provider_reason: 'SERVICE_DISABLED', reason_code: 'api_disabled' },
+    }
+    const account = {
+      ...authConnection({ revokedAt: null, providerKey: 'google-search-console',
+        credentialRef: 'cred_search', authType: 'oauth', authMethodKey: 'service-account',
+        label: 'Search performance' }),
+      last_test: null as typeof diagnostic | null,
+    }
+    globalThis.fetch = vi.fn(async (input, init) => {
+      const url = String(input)
+      if (url === '/api/v1/auth/accounts') {
+        return json({ project_id: null, provider_key: null, providers: [provider], accounts: [account] })
+      }
+      if (url === '/api/v1/projects?limit=50') {
+        return json({ items: [], next_cursor: null, total_estimate: 0 })
+      }
+      if (url === '/api/v1/auth/accounts/cred_search/test') {
+        expect(init?.method).toBe('POST')
+        account.last_test = diagnostic
+        return json({ data: diagnostic })
+      }
+      return json({})
+    }) as typeof fetch
+    const router = createRouter({ history: createMemoryHistory(),
+      routes: [{ path: '/accounts', component: AccountsView }] })
+    await router.push('/accounts')
+    await router.isReady()
+    const mountAccounts = () => mount({ template: '<RouterView />' },
+      { global: { plugins: [router], stubs: { teleport: true } } })
+    const wrapper = mountAccounts()
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Search performance'))
+    await clickButton(wrapper, 'Test')
+    await vi.waitFor(() => expect(wrapper.text()).toContain(diagnostic.next_action))
+    expect(wrapper.text()).toContain(diagnostic.summary)
+    expect(wrapper.text()).toContain('Connected')
+    wrapper.unmount()
+    const reloaded = mountAccounts()
+    await vi.waitFor(() => expect(reloaded.text()).toContain('Verification failed'))
+    expect(reloaded.text()).toContain(diagnostic.summary)
+    expect(reloaded.text()).toContain(diagnostic.next_action)
+    expect(reloaded.text()).not.toContain('Account verified.')
+    reloaded.unmount()
   })
 
   it('shows a saved Telegram sign-in while offline and only one persisted Test failure', async () => {

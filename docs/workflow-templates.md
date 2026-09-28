@@ -508,6 +508,17 @@ new context-sharing field for agent guidance; use `selected_context_json` for
 project context and the existing workflow requirement fields for agent/skill
 contracts.
 
+Follow [canonical project guidance consumption](./agent-operating-model.md#canonical-project-guidance-consumption)
+when selecting or consuming those references. Keep authoritative content at its
+existing owner; carry safe refs, scope, current source revision/digest and
+approval evidence through selected context and bounded handoffs. An effective
+template digest or a frozen run snapshot does not prove that a referenced
+resource or artifact is still current. Re-read affected source owners at
+dispatch, resume and before application. Missing optional brand guidance does
+not block unrelated work; do not turn reference sharing into new access or
+execution authority. Infrastructure setup only validates/materializes guidance;
+authorized prerequisite setup persists applicable refs through existing owners.
+
 The optional `source` argument on template and extension operations filters the
 template origin (`plugin`, `project`, `user`, or `repo`). It is not provenance;
 use `created_by` for the extension write actor.

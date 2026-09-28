@@ -14,6 +14,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
 
 from stackos.artifacts import redact_secrets
+from stackos.auth_providers.google_service_account import (
+    GOOGLE_SERVICE_ACCOUNT_PROVIDERS,
+    delegated_subject,
+    validate_service_account,
+)
 from stackos.db.models import (
     Credential,
     CredentialScope,
@@ -90,6 +95,8 @@ class CredentialStorageMixin:
                 self._s
             ).prepare_first_setup(fields)
         secret_values, safe_config = self._split_credential_fields(method=method, fields=fields)
+        if method.key == "service-account":
+            self._validate_google_service_account(provider.key, secret_values, safe_config)
         if provider.key == "telegram":
             from stackos.integrations.telegram_tdlib.account_config import normalize_account_config
 
@@ -259,6 +266,16 @@ class CredentialStorageMixin:
         method = self._get_auth_method(provider, credential.auth_method_key)
         assert method is not None
         declared = {field.key: field for field in method.fields}
+        if method.key == "service-account":
+            # Blank secret form inputs preserve the stored key, including acquired state.
+            fields = {
+                key: value
+                for key, value in fields.items()
+                if not (
+                    key == "service_account_json"
+                    and (value is None or (isinstance(value, str) and not value.strip()))
+                )
+            }
         unknown = sorted(set(fields) - set(declared))
         if unknown:
             raise ValidationError(
@@ -279,6 +296,8 @@ class CredentialStorageMixin:
             method=method,
             fields=merged,
         )
+        if method.key == "service-account":
+            self._validate_google_service_account(provider.key, secret_values, safe_config)
         if provider.key == "telegram":
             from stackos.integrations.telegram_tdlib.account_config import normalize_account_config
 
@@ -314,6 +333,11 @@ class CredentialStorageMixin:
                     data={"provider_key": "aws-s3"},
                 ) from exc
         existing_config = dict(credential.config_json or {})
+        subject_changed = method.key == "service-account" and safe_config.get(
+            "delegated_subject"
+        ) != existing_config.get("delegated_subject")
+        if method.key == "service-account" and "delegated_subject" in fields:
+            existing_config.pop("delegated_subject", None)
         if provider.key == "telegram":
             from stackos.integrations.telegram_tdlib.account_config import PROXY_CONFIG_FIELDS
 
@@ -353,7 +377,8 @@ class CredentialStorageMixin:
             and fields[field.key] != existing_secret_values.get(field.key)
         }
         scope_state_reset = bool(
-            changed_secret_fields and self._method_requires_local_scope_gate(method)
+            (changed_secret_fields or subject_changed)
+            and self._method_requires_local_scope_gate(method)
         )
         resolved_status = credential.status
         secret_payload = declared_secret_payload
@@ -382,6 +407,14 @@ class CredentialStorageMixin:
             )
             if telegram_auth_identity_changed:
                 resolved_status = "pending"
+        elif method.key == "service-account" and (changed_secret_fields or subject_changed):
+            # Both the signing key and delegated identity bind the acquired token.
+            secret_payload = declared_secret_payload
+            credential.expires_at = None
+            safe_config["scope_status"] = "unknown"
+            safe_config.pop("scope_evidence_source", None)
+            safe_config.pop("scope_evidence_basis", None)
+            resolved_status = "connected"
         elif method.payload_format == "json" and not changed_secret_fields:
             # Safe-field and display-name edits must not discard acquired OAuth
             # tokens, pending application state, refresh material, or other
@@ -453,6 +486,19 @@ class CredentialStorageMixin:
             )
         self._s.commit()
         return Envelope(data=AuthCredentialSetOut(**self._account_out(credential).model_dump()))
+
+    @staticmethod
+    def _validate_google_service_account(
+        provider_key: str,
+        secret_values: dict[str, str],
+        safe_config: dict[str, Any],
+    ) -> None:
+        if provider_key not in GOOGLE_SERVICE_ACCOUNT_PROVIDERS:
+            raise ValidationError("Provider does not support Google service accounts")
+        validate_service_account(secret_values.get("service_account_json"))
+        subject = delegated_subject(provider_key, safe_config.get("delegated_subject"))
+        if subject is not None:
+            safe_config["delegated_subject"] = subject
 
     def attach_account(
         self,
@@ -714,11 +760,20 @@ class CredentialStorageMixin:
                 secret_values[field.key] = self._secret_field_value(field=field, raw=raw)
             else:
                 safe_config[field.key] = self._safe_field_value(field=field, raw=raw)
-        if redact_secrets(safe_config) != safe_config:
+        redacted_config = redact_secrets(safe_config)
+        if redacted_config != safe_config:
+            affected_fields = sorted(
+                key for key, value in safe_config.items() if redacted_config[key] != value
+            )
+            diagnostics: dict[str, Any] = {
+                "auth_method_key": method.key,
+                "fields": affected_fields,
+            }
+            if len(affected_fields) == 1:
+                diagnostics["field"] = affected_fields[0]
             raise ValidationError(
-                "non-secret credential fields include secret-like keys; mark them as secret "
-                "in the provider auth method",
-                data={"auth_method_key": method.key},
+                "non-secret credential fields contain secret material or secret-like keys",
+                data=diagnostics,
             )
         return secret_values, safe_config
 

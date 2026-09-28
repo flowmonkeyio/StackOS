@@ -5,12 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from jsonschema import Draft202012Validator
 from sqlmodel import Session
 
 from stackos.context.repository.utils import _FIELD_MAP
 from stackos.plugins.manifest import BUILTIN_PLUGIN_MANIFESTS
 from stackos.repositories.base import ConflictError
-from stackos.workflows.run_plan_schema import run_plan_from_template
+from stackos.workflows.run_plan_schema import run_plan_from_template, validate_run_plan_obj
 from stackos.workflows.template_loader import WorkflowTemplateLoader
 from stackos.workflows.template_schema import WorkflowTemplateSpec
 
@@ -147,7 +148,7 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     foundation_outputs = {item.key: item for item in branding_foundation_described.spec.outputs}
     assert "out_of_scope" in foundation_outputs["voice_review_report"].schema_data["required"]
     assert branding_content_described.summary.plugin_slug == "branding"
-    assert branding_content_described.spec.version == "0.6.0"
+    assert branding_content_described.spec.version == "0.6.1"
     assert branding_content_described.spec.metadata_json["default_branding_workflow"] is True
     assert branding_content_described.spec.metadata_json["workflow_family"] == (
         "content-production"
@@ -484,10 +485,10 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "scope-work",
         "define-requirements",
         "discover-impact",
-        "plan-tickets",
         "design-approach",
-        "review-design",
         "design-tests",
+        "plan-tickets",
+        "review-design",
         "deliver-tickets",
         "verify-delivery",
         "review-delivery",
@@ -639,6 +640,85 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert all(
         "payload" not in step.model_dump_json() for step in communications_described.spec.steps
     )
+
+
+def test_engineering_readiness_and_acceptance_contract_survives_plan_derivation(
+    session: Session,
+) -> None:
+    described = WorkflowTemplateLoader(session).describe_template(
+        key="engineering.tracked-delivery",
+        plugin_slug="engineering",
+    )
+    spec = described.spec
+    expected_order = [
+        "scope-work",
+        "define-requirements",
+        "discover-impact",
+        "design-approach",
+        "design-tests",
+        "plan-tickets",
+        "review-design",
+        "deliver-tickets",
+        "verify-delivery",
+        "review-delivery",
+        "audit-tracker",
+        "release-closeout",
+    ]
+    assert spec.version == "0.4.0"
+    assert [step.id for step in spec.steps] == expected_order
+    assert spec.metadata_json["step_ids"] == expected_order
+    assert spec.skill_preset_requirements[0].applies_to_steps == expected_order
+    expected_dependencies = {
+        step_id: expected_order[index - 1 : index] if index else []
+        for index, step_id in enumerate(expected_order)
+    }
+    assert {step.id: step.depends_on for step in spec.steps} == expected_dependencies
+
+    reviewer = next(item for item in spec.agent_requirements if item.role == "delivery-reviewer")
+    assert reviewer.requirement == "required"
+    assert reviewer.applies_to_steps == expected_order
+    assert "explicitly ticketed discovery" in reviewer.purpose
+    steps = {step.id: step for step in spec.steps}
+    assert steps["review-design"].title == "Delivery Readiness Review"
+    assert {"delegated_ticket_acceptance", "ticket_and_integration_proof"} <= set(
+        steps["review-design"].policy_refs
+    )
+    assert {"delegated_ticket_acceptance", "recovery_reconciliation"} <= set(
+        steps["deliver-tickets"].policy_refs
+    )
+    policy_text = {item.key: item.description for item in spec.policies}
+    assert "every independent first executable child" in policy_text["workflow_dependency_spine"]
+    assert "all terminal children" in policy_text["workflow_dependency_spine"]
+    assert "unaccepted sibling candidate" in policy_text["ticket_and_integration_proof"]
+    assert "does not reopen its completed children" in policy_text["recovery_reconciliation"]
+
+    expected_outputs = {
+        "scope_summary",
+        "requirements_brief",
+        "flow_design",
+        "impact_map",
+        "design_summary",
+        "test_plan",
+        "tracker_plan",
+        "design_review",
+        "delivery_summary",
+        "verification_summary",
+        "review_summary",
+        "tracker_audit",
+        "release_summary",
+    }
+    assert {output.key for output in spec.outputs if output.required} == expected_outputs
+    assert {ref for step in spec.steps for ref in step.output_refs} == expected_outputs
+    for output in spec.outputs:
+        Draft202012Validator.check_schema(output.schema_data)
+
+    plan = run_plan_from_template(described, inputs_json={"goal": "prove delegated delivery"})
+    validation = validate_run_plan_obj(plan.model_dump(mode="json"))
+    assert validation.valid, validation.errors
+    assert validation.warnings == []
+    assert plan.template_version == "0.4.0"
+    assert [step.id for step in plan.steps] == expected_order
+    assert {step.id: step.depends_on for step in plan.steps} == expected_dependencies
 
 
 def test_builtin_workflow_preset_requirements_are_step_mapped(session: Session) -> None:
@@ -1052,7 +1132,7 @@ def test_website_seo_analysis_has_public_fallback_and_evidence_contract(
         plugin_slug="seo",
     )
     spec = described.spec
-    assert spec.version == "0.5.0"
+    assert spec.version == "0.6.1"
 
     assert [step.id for step in spec.steps] == [
         "scope-audit",

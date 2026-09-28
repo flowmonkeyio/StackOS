@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: marketing.campaign-production
 name: Marketing Campaign Production
-version: 0.1.0
+version: 0.1.1
 description: Reusable end-to-end campaign production workflow from brand and product intake through planned media generation, landing page variants, visual signoff, and a local gallery of all produced artifacts.
 domain: marketing
 owner:
@@ -88,6 +88,15 @@ agent_requirements:
     purpose: Verify every produced asset and page against the approved plan with rendered evidence and explicit verdicts.
     applies_to_steps:
       - visual-signoff
+  - role: voice-reviewer
+    requirement: recommended
+    agent_preset_ref: branding.voice-reviewer
+    purpose: Independently review material branded copy against the selected authoritative foundation and exact campaign candidate.
+    applies_to_steps:
+      - visual-signoff
+    handoff_notes:
+      - Main requires this existing reviewer for material branded copy; pure visual or factual checks alone do not trigger it. Approved external, document or legacy foundations remain usable without branding foundation setup.
+      - Author and reviewer receive the same selected foundation refs/revisions and exact copy or asset candidate identity; bind the review artifact to both and let main adjudicate.
 skill_requirements:
   - skill_ref: stackos:stackos
     requirement: recommended
@@ -121,12 +130,12 @@ inputs:
     name: Brand Identity
     type: object
     required: false
-    description: Inline brand identity (name, voice, palette, typography, logo refs, rules). Optional only when brand_profile_ref or a stored brand-profile resource resolves it; intake must elicit it otherwise.
+    description: Inline identity evidence or proposed campaign choices. Resolve against the selected approved project foundation first; conflicting inline values do not override it. Elicit only missing decisions needed for this campaign.
   - key: brand_profile_ref
     name: Brand Profile Ref
     type: string
     required: false
-    description: External id or title of a stored brand-profile resource to reuse instead of inline brand_identity.
+    description: Ref identifying the selected approved foundation, including a legacy marketing profile when explicitly selected. Resolve exact owner and revision; a title match or inline identity does not establish authority.
   - key: product_description
     name: Product Description
     type: string
@@ -160,7 +169,7 @@ inputs:
 context_requirements:
   - id: brand_profiles
     source: resources
-    purpose: Reuse stored brand identity instead of re-eliciting it each campaign.
+    purpose: Inspect legacy marketing identity when selected by project guidance; it does not override another selected approved foundation or require migration.
     filters:
       plugin_slug: marketing
       resource_keys:
@@ -340,7 +349,7 @@ action_contracts:
 resource_contracts:
   - key: brand_profiles
     resource: brand-profile
-    purpose: Store or update the durable brand identity used to steer prompts, pages, and signoff checks.
+    purpose: Retain legacy marketing identity under its existing owner. Update only when explicit operator scope selects that owner for reconciliation; campaign choices must not create or overwrite a competing canonical foundation.
   - key: campaign_briefs
     resource: campaign-brief
     purpose: Store the canonical campaign record; brief, media request, plan decisions, workspace and gallery paths, and lifecycle status.
@@ -393,7 +402,9 @@ steps:
     title: Intake Campaign Brief
     purpose: Convert operator inputs into a complete structured campaign brief with persisted input artifacts and an explicit media request.
     instructions:
-      - Resolve brand identity from brand_identity, brand_profile_ref, or stored brand-profile resources; elicit it when none resolves.
+      - Main resolves the selected authoritative foundation from selected_context_json, brand_profile_ref and current scoped resource.get/query, artifact reads or authorized sources. Preserve exact owner refs, actual revisions and approval/freshness evidence in artifacts linked by campaign_brief output evidence_refs and workspace_summary.source_refs; the stored campaign-brief uses its existing brand_profile_ref and notes. Approved external, document or legacy marketing foundations remain valid; do not require branding setup or migrate historical records when an existing source is usable.
+      - Compare inline brand_identity with that selected foundation. Keep compatible campaign choices in the run brief; flag conflicts and unsupported claims rather than replacing project identity. Missing or ambiguous foundation blocks dependent branded production only, while factual intake can proceed. Reuse existing operator decisions and elicit only material missing choices.
+      - A brand_profiles resource grant is capability, not authorization to change identity. Preserve legacy records; reconcile the selected canonical owner only within explicit existing operator scope and current grants, otherwise prepare an owner handoff. Never create a competing marketing profile to work around a selected foundation.
       - Treat the media request as a required operator decision; when kinds, counts, or aspect ratios are missing or ambiguous, stop and ask instead of assuming.
       - Persist every product photo as an artifact so downstream steps reference stable refs; reject inputs that are neither reachable URLs nor readable files.
       - Complete the brief to professional standard; objective, audience and awareness level, single-minded proposition, tone, mandatories and do-not-say rules, placement-resolved deliverables, and a success metric per deliverable.
@@ -541,6 +552,7 @@ steps:
       - Render every asset and page before judging; review rendered output across a mobile-to-desktop viewport sweep, never source alone.
       - Check each manifest entry's acceptance criteria one by one; product and label fidelity, palette against brand hex, exact in-image and on-page text, ratio and safe-zone compliance, relative path integrity, and page weight budget.
       - Record one campaign-evidence verdict per reviewed item with screenshot artifact refs, separating blocking findings from notes.
+      - For material branded copy, main dispatches the independent voice-reviewer using the exact candidate and selected foundation refs/revisions. Bind visual, voice and disclosure findings to that same candidate and foundation in review artifacts referenced by campaign-evidence.artifact_refs; main adjudicates before accepting signoff. Do not invent extra fields in strict evidence records.
       - Return failures to the producing step with concrete repair guidance and re-verify after fixes instead of softening criteria.
       - Update the signoff section of campaign.md with per-item outcomes.
     policy_refs:
@@ -563,6 +575,7 @@ steps:
       - Build gallery.html in the workspace root with relative links only; a plain-language campaign summary on top, a visual grid of every asset with readable labels and playable videos, and one card per landing page variant stating its angle in one sentence.
       - Show signoff status per item in plain language and keep all technical identifiers, JSON, and run-plan jargon out of the page.
       - Record gallery_path on the campaign-brief resource and in campaign.md.
+      - Re-read the selected foundation and exact candidate refs before carrying signoff into the final gallery. Changed content or applicable guidance requires affected review even when the other revision is unchanged; retain old receipts as history and do not present them as current approval.
     policy_refs:
       - workspace_canonical
       - local_gallery_only
@@ -583,6 +596,7 @@ steps:
       - Finalize campaign.md with final links, decisions, limitations, and the production log, and set the campaign-brief resource status to complete.
       - Hand the operator the gallery path as the single entry point, with variant pages and the workspace listed beneath it.
       - Name the natural next steps without executing them; media-buying experiment or launch workflows can consume the stored creative and landing-page records directly.
+      - Carry exact candidate, selected foundation revisions and current review artifact refs into any downstream handoff. The next owner rechecks them immediately before authorized application or publication; this local campaign workflow neither publishes nor authorizes a canonical foundation update.
       - Capture durable lessons through the learning hook only when evidence supports them.
     policy_refs:
       - evidence_over_assertion

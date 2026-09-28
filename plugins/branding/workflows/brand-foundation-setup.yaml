@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: branding.brand-foundation-setup
 name: Brand Foundation Setup
-version: 0.3.0
+version: 0.3.1
 description: Build or refresh the project brand voice, editorial boundaries, evidence standard, anti-generic writing tests, and durable voice guide before content production.
 domain: branding
 owner:
@@ -295,6 +295,7 @@ steps:
       - Check status, version, linkage, voice rules, kill tests, evidence standard, sanitization boundary, and supersession state.
       - Return exact repair guidance if the foundation is not retrievable or ambiguous.
       - Return the minimal content-production handoff and stop. Do not update the content workflow extension or start another run.
+      - Include exact profile and guide owner refs, actual revisions or digests, finalization decision and retrieval evidence in the existing handoff artifact. Main can select these through selected_context_json for role-relevant SEO, branding, marketing or other work; creating this foundation does not silently replace a different approved project source or grant downstream actions.
     depends_on: [finalize-and-persist]
     context_refs: [current_brand_profiles, existing_voice_artifacts]
     policy_refs: [one_current_foundation, handoff_is_not_execution]

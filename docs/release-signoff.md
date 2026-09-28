@@ -36,6 +36,25 @@ IMAP/Slack/Google Ads output fixes include the dedicated
 exercise direct/granted response files and audit, truthful partial-result
 indicators, and cursor reuse without live provider work.
 
+Google service-account coverage includes `test_google_service_accounts.py`,
+`test_google_service_account_actions.py`, and `test_mcp_google_service_accounts.py`
+in the signoff target. These use synthetic keys and mocked Google HTTP to verify
+token renewal, provider restrictions, exact-page Search Console reads through
+direct and granted MCP calls, project access, response files and audit. Live
+Google resource access still requires an operator-configured Account. The
+`test_mcp_auth.py` suite also verifies project attachment for agent Account tests
+while the local-admin REST setup can test a global Account.
+`test_mcp_auth_provider_wrappers.py` covers provider checks and safe failure
+diagnostics through that same project-scoped MCP path.
+
+Telegram restoration coverage includes the native authorization, Account session
+operation, and app lifespan suites. These exercise failed startup restoration,
+saved-session tests, disconnect and generation fencing, and the original
+restore-before-delivery startup order. Account test-history coverage checks that
+safe provider failure reasons remain useful without exposing response bodies or
+credentials. Synthetic lifecycle proof does not replace the operator's check
+after installing a local test build.
+
 ## Agent Flow Matrix
 
 For agency/setup package changes, include

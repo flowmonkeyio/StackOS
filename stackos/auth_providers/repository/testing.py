@@ -29,6 +29,159 @@ def _integration_class_for(kind: str) -> type[Any] | None:
     return repository_package.integration_class_for(kind)
 
 
+_GOOGLE_PROBE_APIS = {
+    "google-search-console": "Google Search Console API",
+    "google-analytics": "Google Analytics Admin API",
+    "google-tag-manager": "Google Tag Manager API",
+}
+_ERROR_STAGES = frozenset(
+    {
+        "test",
+        "connect",
+        "authenticate",
+        "login",
+        "select",
+        "tls",
+        "credential",
+        "config",
+        "list_objects_v2",
+        "auth.test",
+    }
+)
+_ERROR_REASONS = frozenset(
+    {
+        "connection_refused",
+        "dns_error",
+        "timeout",
+        "network_error",
+        "transport_error",
+        "transport_failure",
+        "tls_certificate_error",
+        "tls_configuration_error",
+        "tls_negotiation_error",
+        "authentication_failed",
+        "authorization_failed",
+        "permission_denied",
+        "invalid_credentials",
+        "expired_credentials",
+        "access_denied",
+        "provider_unavailable",
+        "rate_limited",
+        "protocol_error",
+        "probe_error",
+    }
+)
+_GOOGLE_ERROR_REASONS = frozenset({"SERVICE_DISABLED", "ACCESS_TOKEN_SCOPE_INSUFFICIENT"})
+_GOOGLE_LEGACY_ERROR_REASONS = frozenset(
+    {"accessNotConfigured", "insufficientPermissions", "forbidden", "authError"}
+)
+
+
+def _known_error_value(value: Any, allowed: frozenset[str]) -> str | None:
+    # Do not stringify arbitrary values or echo unreviewed text, even after redaction.
+    return value if isinstance(value, str) and len(value) <= 64 and value in allowed else None
+
+
+def _google_probe_reason(data: Mapping[str, Any]) -> str | None:
+    """Read only bounded, known Google reason enums; never parse messages or URLs."""
+    payload = data.get("provider_error")
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if not isinstance(error, dict):
+        return None
+    details = error.get("details")
+    if isinstance(details, list):
+        for detail in details[:8]:
+            if (
+                not isinstance(detail, dict)
+                or detail.get("@type") != "type.googleapis.com/google.rpc.ErrorInfo"
+            ):
+                continue
+            reason = _known_error_value(detail.get("reason"), _GOOGLE_ERROR_REASONS)
+            if reason is not None:
+                return reason
+    errors = error.get("errors")
+    if isinstance(errors, list):
+        for item in errors[:8]:
+            if isinstance(item, dict):
+                reason = _known_error_value(item.get("reason"), _GOOGLE_LEGACY_ERROR_REASONS)
+                if reason is not None:
+                    return reason
+    return None
+
+
+def _failed_test_result(provider_key: str, exc: RepositoryError) -> dict[str, Any]:
+    """Project thrown provider failures onto reviewed Account Test diagnostics."""
+    stage = _known_error_value(exc.data.get("stage"), _ERROR_STAGES) or "test"
+    reason = _known_error_value(exc.data.get("reason_code"), _ERROR_REASONS) or "probe_error"
+    metadata: dict[str, Any] = {"stage": stage, "reason_code": reason}
+    summary = f"{provider_key} credential test failed at {stage}."
+    next_action = "Review the Account configuration and provider availability, then test again."
+    retryable = bool(exc.retryable)
+    # RepositoryError.http_status describes our transport response, not the provider.
+    status = exc.data.get("status")
+    if type(status) is int and 400 <= status <= 599:
+        metadata["provider_status_code"] = status
+        retryable = status == 429 or status >= 500
+        provider_reason = (
+            _google_probe_reason(exc.data) if provider_key in _GOOGLE_PROBE_APIS else None
+        )
+        if provider_reason is not None:
+            metadata["provider_reason"] = provider_reason
+        if status == 403 and provider_reason in {"SERVICE_DISABLED", "accessNotConfigured"}:
+            metadata["reason_code"] = "api_disabled"
+            api = _GOOGLE_PROBE_APIS[provider_key]
+            summary = f"{api} is not enabled for this credential's Google Cloud project."
+            next_action = (
+                f"Enable the {api} in the credential's Google Cloud project, "
+                "then test the Account again."
+            )
+        elif status == 401:
+            metadata["reason_code"] = "authentication_failed"
+            summary = "The provider rejected the Account's authentication (HTTP 401)."
+            next_action = "Review or reconnect this Account in local Accounts, then test again."
+        elif status == 403:
+            metadata["reason_code"] = "permission_denied"
+            summary = "The provider denied access to the account verification request (HTTP 403)."
+            next_action = (
+                "Review this Account's resource permissions and required API scopes, "
+                "then test again."
+            )
+        elif status == 429:
+            metadata["reason_code"] = "rate_limited"
+            summary = "The provider rate-limited the account verification request (HTTP 429)."
+            next_action = "Test again later after the provider's rate limit resets."
+        elif status >= 500:
+            metadata["reason_code"] = "provider_unavailable"
+            summary = (
+                f"The provider could not complete the account verification request (HTTP {status})."
+            )
+            next_action = (
+                "Test again later; if the failure persists, check the provider's service status."
+            )
+        else:
+            metadata["reason_code"] = "provider_http_error"
+            summary = f"The provider rejected the account verification request (HTTP {status})."
+    reply_code = exc.data.get("reply_code")
+    if type(reply_code) is int and 400 <= reply_code <= 599:
+        metadata["reply_code"] = str(reply_code)
+    elif (
+        isinstance(reply_code, str)
+        and len(reply_code) == 3
+        and reply_code.isascii()
+        and reply_code.isdigit()
+        and 400 <= int(reply_code) <= 599
+    ):
+        metadata["reply_code"] = reply_code
+    return {
+        "ok": False,
+        "status": "failed",
+        "summary": summary,
+        "retryable": retryable,
+        "next_action": next_action,
+        "metadata": metadata,
+    }
+
+
 class CredentialTestingMixin:
     """Run provider auth tests and persist only redacted metadata."""
 
@@ -39,13 +192,21 @@ class CredentialTestingMixin:
         credential_ref: str,
     ) -> Envelope[AuthTestOut]:
         if project_id is None:
-            credential, row = self._global_credential(credential_ref)
-            assert row.id is not None
-            from stackos.repositories.projects import IntegrationCredentialRepository
-
-            secret_payload = IntegrationCredentialRepository(self._s).get_decrypted(row.id)
+            credential, _ = self._global_credential(credential_ref)
+            resolved = await self._resolve_for_use(
+                project_id=None,
+                provider_key=credential.provider_key,
+                credential_ref=credential_ref,
+                operation="account.test.resolve",
+                required_scopes=[],
+                local_admin=True,
+            )
+            credential, secret_payload = (
+                resolved.credential,
+                resolved.secret_payload,
+            )
         else:
-            credential, row = self._resolve_credential(
+            credential, _ = self._resolve_credential(
                 project_id=project_id,
                 credential_ref=credential_ref,
             )
@@ -57,10 +218,13 @@ class CredentialTestingMixin:
                 required_scopes=[],
             )
             credential = resolved.credential
-            row = resolved.integration
             secret_payload = resolved.secret_payload
         integration_cls = _integration_class_for(credential.provider_key)
-        if integration_cls is None:
+        acquisition_only = (
+            credential.auth_method_key == "service-account"
+            and credential.provider_key in {"google-ads", "google-workspace"}
+        )
+        if integration_cls is None and not acquisition_only:
             raise ValidationError(
                 f"auth provider {credential.provider_key!r} has no test wrapper",
                 data={
@@ -87,32 +251,31 @@ class CredentialTestingMixin:
             )
         extra = self._integration_extra(credential)
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                integration = integration_cls(
-                    payload=secret_payload,
-                    project_id=project_id or 0,
-                    http=client,
-                    probe_context=probe_context,
-                    **extra,
-                )
-                raw_result = await integration.test_credentials()
+            if acquisition_only:
+                raw_result = {
+                    "ok": True,
+                    "status": "connected",
+                    "summary": (
+                        "Google service-account token acquired; resource access is unverified."
+                    ),
+                    "metadata": {
+                        "verification": "token_acquisition_only",
+                        "resource_access": "unverified",
+                    },
+                }
+            else:
+                assert integration_cls is not None
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    integration = integration_cls(
+                        payload=secret_payload,
+                        project_id=project_id or 0,
+                        http=client,
+                        probe_context=probe_context,
+                        **extra,
+                    )
+                    raw_result = await integration.test_credentials()
         except RepositoryError as exc:
-            safe = redact_secrets(exc.data)
-            stage = str(safe.get("stage") or "test")[:80]
-            reason_code = str(safe.get("reason_code") or type(exc).__name__)[:120]
-            metadata = {
-                "stage": stage,
-                "reason_code": reason_code,
-            }
-            if safe.get("reply_code") is not None:
-                metadata["reply_code"] = str(safe["reply_code"])[:3]
-            raw_result = {
-                "ok": False,
-                "status": "failed",
-                "summary": f"{credential.provider_key} credential test failed at {stage}",
-                "retryable": bool(exc.retryable),
-                "metadata": metadata,
-            }
+            raw_result = _failed_test_result(credential.provider_key, exc)
         out = self._normalize_test_result(
             credential=credential,
             provider_key=credential.provider_key,

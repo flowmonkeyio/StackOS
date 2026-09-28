@@ -1,8 +1,8 @@
 schema_version: stackos.workflow-template.v1
 key: engineering.tracked-delivery
 name: Engineering Tracked Delivery
-version: 0.3.0
-description: Reusable SDLC workflow for requirements, flow design, discovery, project-native design, test planning, delivery, verification, review, and truthful release closeout.
+version: 0.4.0
+description: Reusable SDLC workflow for requirements, project-native design and proof planning, executable ticket breakdown, delegated delivery with immediate independent review, integrated verification, and truthful release closeout.
 domain: engineering
 owner:
   team: StackOS
@@ -17,20 +17,23 @@ experience:
   agent_path:
     - "Define requirements and affected flows before planning tickets."
     - "Discover the real code and system boundaries, then design the approach and proof plan."
-    - "Deliver through dependency-linked tickets, run the planned verification, and adjudicate independent review."
+    - "Build executable dependency-linked tickets from the design and proof plan, then review delivery readiness."
+    - "Delegate independent tickets in parallel, verify each immediately, and accept integrated results before releasing dependents."
+    - "Prove the assembled outcome using current ticket evidence and remaining integration checks."
     - "Audit tracker truth and close only when evidence matches the result."
   progress_signals:
     - "Requirements defined"
     - "Impact discovered"
-    - "Design reviewed"
-    - "Test plan verified"
-    - "Delivery in progress"
+    - "Design and proof plan defined"
+    - "Ticket delivery readiness reviewed"
+    - "Ticket delivery and review in progress"
     - "Verification complete"
     - "Independent review adjudicated"
     - "Release truth recorded"
   recovery:
     - "Record blockers in the run and tracker instead of hiding them in chat."
     - "Use run consistency and recovery operations to resume a blocked step without losing prior handoffs."
+    - "Before reopening an earlier gate, stop active assignments and their processes, preserve evidence, and reconcile affected child tickets explicitly. Existing runs retain their frozen step order."
   safe_stopping_points:
     - "Stop after a reviewed design or diagnosis when implementation authority was not granted."
 public:
@@ -74,7 +77,7 @@ agent_requirements:
   - role: planning
     requirement: required
     agent_preset_ref: stackos.sdlc.planning
-    purpose: Convert requirements and impact evidence into scoped tasks, tickets, dependencies, blockers, and definition of done.
+    purpose: Convert requirements, impact evidence, design, and the proof plan into independently executable tickets with dependencies, ownership, acceptance criteria, and review handoffs.
     applies_to_steps:
       - scope-work
       - plan-tickets
@@ -94,18 +97,27 @@ agent_requirements:
   - role: delivery
     requirement: required
     agent_preset_ref: stackos.sdlc.delivery
-    purpose: Implement tracker tickets one by one, debug root causes when checks fail, update state truthfully, and preserve project conventions.
+    purpose: Implement one assigned ticket per agent, self-check the candidate, and return evidence for immediate independent review and main-agent acceptance.
     applies_to_steps:
       - deliver-tickets
       - verify-delivery
   - role: delivery-reviewer
-    requirement: recommended
+    requirement: required
     agent_preset_ref: stackos.sdlc.delivery-reviewer
-    purpose: Use for non-micro, high-risk, cross-boundary, or independently reviewed delivery; otherwise the main agent records why specialist review was unnecessary and still produces the review disposition.
+    purpose: Independently verify every executable child ticket immediately after its candidate is ready, including explicitly ticketed discovery or design; support delivery readiness and integrated review without requiring a new agent for every workflow mirror.
     applies_to_steps:
+      - scope-work
+      - define-requirements
+      - discover-impact
+      - design-approach
+      - design-tests
+      - plan-tickets
       - review-design
+      - deliver-tickets
+      - verify-delivery
       - review-delivery
       - audit-tracker
+      - release-closeout
 skill_requirements:
   - skill_ref: stackos:stackos
     requirement: required
@@ -126,10 +138,10 @@ skill_preset_requirements:
       - scope-work
       - define-requirements
       - discover-impact
-      - plan-tickets
       - design-approach
-      - review-design
       - design-tests
+      - plan-tickets
+      - review-design
       - deliver-tickets
       - verify-delivery
       - review-delivery
@@ -228,7 +240,7 @@ policies:
     description: When the operator explicitly asks to use a workflow, engineering workflow, StackOS workflow, "the workflow", to follow the SDLC, for release-grade delivery, or equivalent lifecycle enforcement, agents must create or resolve the workflow-backed run plan before creating tracker tickets; direct tracker tasks are valid only when the operator asks for task/dependency tracking without invoking lifecycle intent.
   - key: workflow_dependency_spine
     kind: delivery
-    description: run_plan_id and step_id attachment is containment/linkage only; an activates edge connects an executable child to its active parent step, while blocks edges connect work to prerequisites that must complete.
+    description: run_plan_id and step_id attachment is containment/linkage only; an activates edge connects every independent first executable child to its active parent step, blocks edges hold dependents until accepted prerequisites complete, and all terminal children block the next workflow step.
   - key: effective_delivery_contract
     kind: requirements
     description: Material operator input and accepted decisions compile into one precedence-aware current contract; retired decisions remain auditable and unresolved material contradictions block implementation.
@@ -246,7 +258,16 @@ policies:
     description: Failed means an attempted check or action failed; deferred means work was not executed because of an explicit instruction or external prerequisite and requires a named resume condition.
   - key: main_agent_accountability
     kind: orchestration
-    description: The curated SDLC subset supports the work; the main agent remains responsible for integration, final decisions, and user-facing truth.
+    description: The main agent is the sole workflow controller and tracker lifecycle writer, owns dispatch, integration, finding adjudication and acceptance, and remains responsible for final decisions and user-facing truth; specialists return bounded evidence rather than completing their own tickets.
+  - key: delegated_ticket_acceptance
+    kind: delivery
+    description: Delegate executable child tickets with up to three active ticket lifecycles within host capacity; implementation, independent review, and repair share the same ticket. Review starts at the next available scheduling opportunity after a candidate is ready, takes priority over new implementations, and cannot be postponed to batch closeout. Every executable child, including explicitly ticketed discovery, needs independent review and main-agent acceptance before completion; generated workflow mirrors do not require separate subagents.
+  - key: ticket_and_integration_proof
+    kind: verification
+    description: Ticket acceptance proves the assigned local obligations against accepted prerequisite state; combined business requirements remain explicit integration obligations. A ticket cannot pass by relying on an unaccepted sibling candidate. Integrate its reviewed result and validate any relevant integration changes before completion releases dependents. Reuse current ticket evidence at later gates and execute the remaining combined proof.
+  - key: recovery_reconciliation
+    kind: recovery
+    description: Before reopening an earlier gate, quiesce active agents and processes, preserve receipts, invalidate affected proof, and explicitly reconcile affected child tickets and dependencies. Reopening a run-plan step does not reopen its completed children. Resume against the new contract revision and candidate; existing runs keep their frozen template order.
   - key: orchestrator_feedback_gate
     kind: orchestration
     description: The agreed plan is the delivery contract. Only the main orchestrator may admit feedback as work, and only when it protects the agreed outcome or changed-surface correctness/safety; otherwise defer or reject it and ask the operator before material expansion.
@@ -307,6 +328,7 @@ steps:
       - Treat contradictory current contract entries as blocking unresolved decisions; do not ask implementation to reconcile them implicitly.
       - Keep the brief project-adapted and implementation-aware, but avoid importing domain assumptions from another project.
       - Name the proof surface expected for each acceptance criterion.
+      - Trace the original operator request and subsequent clarifications to current acceptance criteria; distinguish ticket-local obligations from combined business outcomes whose proof belongs to integration.
     policy_refs:
       - evidence_over_assertion
       - effective_delivery_contract
@@ -344,43 +366,6 @@ steps:
     success_criteria:
       - Mutation owners, read paths, shared contracts, and verification surfaces are visible.
       - Hidden downstream risk is surfaced before ticket planning.
-  - id: plan-tickets
-    title: Plan Tracker Tickets
-    purpose: Create or update tracker tasks/tickets with dependencies, sequencing, blockers, owned scopes, and definition of done.
-    instructions:
-      - "Slice work by ownership and proof surface: requirements/discovery, contracts, data, backend/runtime, UI, tests, docs/signoff, verification, and release when relevant."
-      - Include flow-design, E2E/manual flow proof, and independent closeout-verification tickets when the work is non-micro or touches user/data/system/business behavior.
-      - When workflow intent was explicit, create every discovery, design, delivery, verification, and closeout ticket under the workflow task/run plan from the start.
-      - Use a direct tracker task only when the operator asks for task/dependency tracking without invoking a workflow.
-      - Give each ticket dependencies, likely files or operation surfaces, acceptance criteria, and completion evidence expectations.
-      - Create no ticket from feedback unless the main orchestrator traces it to the agreed deliverable or changed-surface correctness/safety.
-      - "For workflow-backed child tickets, pass run_plan_id and step_id at creation time; treat them as attachment/provenance only, update child ticket status/evidence with tracker.updateTicket, and reserve runPlan.claimStep/runPlan.recordStep for generated workflow step mirror tickets."
-      - Add an activates edge from the active workflow step mirror to the first executable child; use blocks edges only for prerequisites that must complete.
-      - "Keep the workflow graph to one root: the first generated workflow step mirror ticket. Any extra root under a workflow-backed task is detached work that must be repaired before delivery continues."
-      - Make the first executable child of a workflow step activate from the workflow step ticket, and make the next workflow step block on the terminal child tickets from the prior step.
-      - Keep delivery verification, docs, signoff, and release tickets inside the delivery graph so they cannot become ready independently of the workflow spine.
-      - Keep independent verification tickets inside the graph before closeout so one-brain, cleanup, architecture/contracts, and business-flow findings cannot be bypassed.
-      - After creating or updating workflow-backed tickets, call tracker.get with run_plan_id and include_graph=true; review graph warnings, repair material sequencing issues, and record non-blocking cleanup instead of freezing progress.
-      - Keep the tracker aligned with project rules; the tracker mirrors work, it does not replace policy or verification.
-    policy_refs:
-      - truthful_tracker_state
-      - workflow_selection_precedence
-      - workflow_dependency_spine
-      - status_semantics
-      - main_agent_accountability
-      - orchestrator_feedback_gate
-    depends_on:
-      - discover-impact
-    output_refs:
-      - tracker_plan
-    success_criteria:
-      - Tickets are executable without rereading the whole conversation.
-      - No delivery truth is split across a direct tracker task and a later workflow task when the operator requested a workflow.
-      - Dependencies match the actual delivery order and no loose ends are hidden.
-      - Flow design, E2E/manual proof, and independent verification are represented in the graph or explicitly waived.
-      - Workflow-backed work includes an explicit graph check covering parent step ticket, first child dependency, terminal child tickets, next-step handoff, and detached branches.
-      - tracker.get include_graph=true has been reviewed, with material workflow-spine warnings repaired or captured as explicit follow-up risk.
-      - Detached delivery, verification, docs, signoff, or release branches are either repaired or explicitly tracked as non-blocking cleanup.
   - id: design-approach
     title: Design Approach
     purpose: Identify canonical ownership, shared operations, data invariants, adapter surfaces, grants, docs, tests, rollout, and rollback implications.
@@ -390,36 +375,19 @@ steps:
       - Prefer one source of truth with multiple consumers or adapters. Avoid pass-through aliases, duplicate helpers, parallel repositories/services, compatibility layers without a need, and logic copied between surfaces.
       - Name alternatives rejected, contract boundaries touched, and required migration or compatibility handling.
       - For StackOS work, keep one operation/spec/source of truth and expose it through adapters rather than duplicating logic.
+      - Define interface and prerequisite handoffs, ownership boundaries, shared-resource constraints, and risk-based proof obligations so test design and ticket planning can produce independent assignments.
     policy_refs:
       - one_brain_delivery
       - project_adaptation_required
     resource_refs:
       - decisions
     depends_on:
-      - plan-tickets
+      - discover-impact
     output_refs:
       - design_summary
     success_criteria:
       - The design avoids duplicate logic and names every touched contract boundary.
       - Future agents can implement without guessing architecture or validation.
-  - id: review-design
-    title: Review Design
-    purpose: Challenge the requirements, impact map, ticket plan, and design before implementation.
-    instructions:
-      - Review from behavior, contract, security, grant, migration, UI, docs, tracker, and release perspectives.
-      - Confirm the effective contract has no unresolved contradictions and that high-risk classifications have proportionate architecture, data, permission, test, independent-review, and release-authority gates.
-      - Lead with blocking issues and distinguish non-blocking risks from preferences.
-      - Do not begin implementation until blocking design gaps are resolved, or explicitly waived/deferred with an owner, reason, and resume condition.
-    policy_refs:
-      - evidence_over_assertion
-      - main_agent_accountability
-    depends_on:
-      - design-approach
-    output_refs:
-      - design_review
-    success_criteria:
-      - Blocking design gaps are resolved before delivery starts.
-      - Review findings are actionable and scoped.
   - id: design-tests
     title: Design Tests, TDD, And Manual Scenarios
     purpose: "Own the full proof plan before delivery: TDD/red-first automated tests, verification commands, agent-executed E2E/manual flow scenarios, expected outcomes, and signoff requirements."
@@ -434,7 +402,8 @@ steps:
       - For browser-assisted platform flows that depend on login state, name the stable StackOS browser profile_key, operator login precondition, cookie/session reuse expectation, and whether that precondition blocks closeout.
       - Prefer targeted checks first and broaden based on blast radius.
       - Include docs/tracker/signoff verification when the project makes them part of done.
-      - Have the main orchestrator or a designated reviewer verify the test design before delivery starts; treat an unverified or incomplete proof plan as a blocker unless explicitly waived.
+      - Separate locally provable ticket obligations from the combined user/business acceptance proof, identifying accepted baseline state, environments, shared fixtures, and evidence that remains valid across unrelated changes.
+      - Submit the proof plan to the delivery readiness review after ticket breakdown; treat an unverified or incomplete proof plan as a blocker before implementation unless explicitly waived.
     policy_refs:
       - evidence_over_assertion
       - quality_over_speed
@@ -442,7 +411,7 @@ steps:
       - mandatory_flow_design
       - agent_executed_flow_proof
     depends_on:
-      - review-design
+      - design-approach
     output_refs:
       - test_plan
     success_criteria:
@@ -450,18 +419,88 @@ steps:
       - Every changed or at-risk user/data/system/business flow has E2E/manual or automated proof coverage, or an explicit closeout waiver.
       - Manual scenarios include steps, expected outcomes, and evidence requirements.
       - Browser-login scenarios state whether a stable profile_key and persisted cookies/session are required, already satisfied, or operator-owned.
-      - The test design itself has been verified or explicitly waived before implementation starts.
+      - The test design is complete enough for ticket planning and delivery readiness review; implementation remains gated on its verification or explicit waiver.
       - Delivery knows which checks prove the change and which checks are residual.
+  - id: plan-tickets
+    title: Plan Tracker Tickets
+    purpose: Turn the completed design and proof plan into executable assignments with dependencies, exclusive ownership, acceptance criteria, review instructions, and integration obligations.
+    instructions:
+      - Slice implementation by independently acceptable outcomes, ownership and proof surface using the requirements, impact map, design_summary, and test_plan. Preparation already completed in workflow mirrors needs no duplicate child tickets.
+      - Represent flow proof and integration work in the plan where it is a distinct deliverable; keep per-ticket review and repair inside the same child ticket instead of creating duplicate verification tickets.
+      - When workflow intent was explicit, create every discovery, design, delivery, verification, and closeout ticket under the workflow task/run plan from the start.
+      - Use a direct tracker task only when the operator asks for task/dependency tracking without invoking a workflow.
+      - Give each ticket its run/step identity, current contract revision, objective, acceptance-criterion refs, non-goals, accepted design and flow refs, accepted prerequisite handoffs, exact owned paths and shared resources, constraints, and stop/escalation conditions.
+      - Include the approved checks or scenarios, commands, preconditions, expected results, evidence requirements, independent review contract, and worker return fields in the ticket brief. A targeted raw tracker.brief supplies the full packet; compact briefs are navigation only.
+      - Partition ticket-local acceptance from the remaining combined requirement proof; no prerequisite ticket may require proof that only a blocked downstream ticket can provide. Record which final integration checks close each combined requirement.
+      - Identify up to three safe concurrent ticket lifecycles and serialize or isolate conflicting ownership of interfaces, generated files, migrations, databases, ports, browser sessions, and other shared resources. Distinct filenames alone do not establish independence.
+      - Create no ticket from feedback unless the main orchestrator traces it to the agreed deliverable or changed-surface correctness/safety.
+      - "For workflow-backed child tickets, pass run_plan_id and step_id at creation time; treat them as attachment/provenance only, have the main agent update child ticket status/evidence with tracker.updateTicket, and reserve runPlan.claimStep/runPlan.recordStep for generated workflow step mirror tickets."
+      - Add an activates edge from the active workflow step mirror to every independent first executable child; use blocks edges only for prerequisites that must complete.
+      - "Keep the workflow graph to one root: the first generated workflow step mirror ticket. Any extra root under a workflow-backed task is detached work that must be repaired before delivery continues."
+      - Make every independent first executable child of a workflow step activate from the workflow step ticket, and make the next workflow step block on all terminal child tickets from the prior step.
+      - Keep delivery verification, docs, signoff, and release tickets inside the delivery graph so they cannot become ready independently of the workflow spine.
+      - Independent review and main-agent acceptance gate completion of every executable child, including any discovery or design children created earlier; workflow mirrors retain their required output dispositions without requiring one subagent per mirror.
+      - After creating or updating workflow-backed tickets, call tracker.get with run_plan_id and include_graph=true; review graph warnings, repair material sequencing issues, and record non-blocking cleanup instead of freezing progress.
+      - Keep the tracker aligned with project rules; the tracker mirrors work, it does not replace policy or verification.
+    policy_refs:
+      - truthful_tracker_state
+      - workflow_selection_precedence
+      - workflow_dependency_spine
+      - status_semantics
+      - main_agent_accountability
+      - orchestrator_feedback_gate
+      - delegated_ticket_acceptance
+      - ticket_and_integration_proof
+    depends_on:
+      - design-tests
+    output_refs:
+      - tracker_plan
+    success_criteria:
+      - Tickets contain the current design, proof, ownership, constraints, dependencies, and review handoff needed to execute without rereading the whole conversation.
+      - No delivery truth is split across a direct tracker task and a later workflow task when the operator requested a workflow.
+      - Dependencies match the actual delivery order and no loose ends are hidden.
+      - Ticket-local acceptance and combined flow proof have explicit owners, and independent ticket review cannot be bypassed by completing a delivery ticket.
+      - Workflow-backed work includes an explicit graph check covering parent step ticket, every independent first child dependency, all terminal child tickets, next-step handoff, and detached branches.
+      - tracker.get include_graph=true has been reviewed, with material workflow-spine warnings repaired or captured as explicit follow-up risk.
+      - Detached delivery, verification, docs, signoff, or release branches are either repaired or explicitly tracked as non-blocking cleanup.
+  - id: review-design
+    title: Delivery Readiness Review
+    purpose: Review the complete requirements, design, proof plan, executable tickets, dependencies, and resources before implementation.
+    instructions:
+      - Review from behavior, contract, security, grant, migration, UI, docs, tracker, and release perspectives.
+      - Confirm the effective contract has no unresolved contradictions and that high-risk classifications have proportionate architecture, data, permission, test, independent-review, and release-authority gates.
+      - Check coverage against the original operator request and subsequent clarifications, rather than trusting the requirement summary alone. Identify omitted outcomes and unjustified scope expansion.
+      - Verify the test plan and each delivery packet together, including ticket-local acceptance, combined requirement proof, current design/contract revisions, prerequisite handoffs, independent review, and expected evidence.
+      - Confirm the proposed concurrent work has compatible ownership and available environments, tools, permissions, shared resources, and host capacity. Record blocking prerequisites and a concrete resume condition before dispatch.
+      - Lead with blocking issues and distinguish non-blocking risks from preferences.
+      - Do not begin implementation until blocking design gaps are resolved, or explicitly waived/deferred with an owner, reason, and resume condition.
+    policy_refs:
+      - evidence_over_assertion
+      - main_agent_accountability
+      - delegated_ticket_acceptance
+      - ticket_and_integration_proof
+    depends_on:
+      - plan-tickets
+    output_refs:
+      - design_review
+    success_criteria:
+      - Blocking requirement, design, proof, ticket, dependency, and execution-resource gaps are resolved before delivery starts, or an authorized disposition makes the remaining delivery boundary explicit.
+      - Review findings are actionable and scoped.
   - id: deliver-tickets
     title: Deliver Tickets
-    purpose: Claim ready tracker tickets, implement one by one, update status, and record focused verification evidence.
+    purpose: Delegate ready tickets, independently verify each candidate immediately, and accept integrated results before completing tickets and releasing dependents.
     instructions:
-      - Claim the next ready ticket, read its brief, implement narrowly, and patch tracker state as facts change.
+      - The main agent dispatches complete current ticket packets under the orchestrator preset, with up to three active ticket lifecycles within host capacity. Each specialist owns one bounded assignment; the main agent alone controls run steps, durable lifecycle writes, and acceptance.
+      - Start independent review at the next available scheduling opportunity after each implementation candidate is ready, ahead of new implementations. Keep the ticket in progress through review and repairs; the implementer cannot verify independently or complete their own ticket.
+      - Bind assignments and receipts to ticket, attempt, contract revision, candidate, covered paths, accepted dependencies, environment, and time. Reject delayed results from superseded assignments and evidence that relies on unaccepted sibling changes.
+      - The reviewer checks the candidate against the current requirements, accepted design, and proof plan, returning criterion-level evidence, concrete findings, missing proof, and a verdict. The main agent adjudicates findings and routes required repairs to the delivery agent for focused independent re-verification.
+      - Integrate the reviewed result, resolve conflicts and recheck any affected proof, then record the independent review and main-agent acceptance before completing the ticket. Dependents may use only that accepted result.
       - For red-first work, prove the red is trustworthy before production edits and rerun the same slice to green.
       - At integration points, compare actual changed paths, migrations, generated contracts, cross-package imports, and test layers with planned ticket ownership; material drift reopens impact, design, and test planning.
       - When the delivery changes repository state, identify the integrated release candidate and capture the repository fingerprint needed to keep later verification truthful.
       - Keep unrelated user changes intact and record blockers instead of hiding them in chat.
       - Do not add reviewer suggestions, adjacent cleanup, or "while here" work outside the agreed plan.
+      - Preserve ticket receipts for later integrated verification; choose final checks from remaining combined obligations and evidence freshness rather than automatically repeating all ticket checks.
     policy_refs:
       - truthful_tracker_state
       - one_brain_delivery
@@ -469,21 +508,26 @@ steps:
       - orchestrator_feedback_gate
       - release_candidate_lock
       - scope_drift_control
+      - delegated_ticket_acceptance
+      - ticket_and_integration_proof
+      - recovery_reconciliation
     resource_refs:
       - decisions
       - evidence
     depends_on:
-      - design-tests
+      - review-design
     output_refs:
       - delivery_summary
     success_criteria:
       - Ticket state matches reality.
       - Targeted verification proves the behavior named in each ticket definition of done.
+      - Every completed executable child has current independent review and main-agent acceptance of its integrated result; required review or repair remains visible as unfinished work.
   - id: verify-delivery
     title: Verify Delivery
-    purpose: Run and report the mandatory verification stack for the actual diff and risk profile.
+    purpose: Prove the assembled outcome, cross-ticket interactions, remaining requirements, and mandatory project checks using current ticket receipts plus the remaining integrated proof.
     instructions:
       - Classify changed surfaces and choose the smallest convincing checks first.
+      - Map accepted ticket receipts to the approved proof plan and verify their candidate, prerequisite, environment, and scope freshness. Reuse valid receipts; execute remaining combined-flow checks and recheck only evidence invalidated by relevant changes, failures, or project requirements.
       - Record enough structured evidence to reproduce and judge each check. Repository-bound executed checks identify the covered candidate; other checks identify their exact run, environment, scope, time, result, and lifecycle.
       - Execute, update, or explicitly mark every automated and manual proof item from the test plan; do not silently replace the test design with ad hoc checks.
       - Execute the agent-owned E2E/manual flow scenarios from the test plan before signoff, capturing evidence for changed user, data, system, and business flows.
@@ -497,6 +541,8 @@ steps:
       - agent_executed_flow_proof
       - release_candidate_lock
       - status_semantics
+      - ticket_and_integration_proof
+      - recovery_reconciliation
     resource_refs:
       - evidence
     depends_on:
@@ -510,8 +556,9 @@ steps:
       - Unrun or blocked checks are explicit.
   - id: review-delivery
     title: Review Delivery
-    purpose: Review completed delivery across behavior, QA, integration contracts, security boundaries, docs, tracker evidence, and release risk.
+    purpose: Independently review the assembled outcome and remaining integration risks across behavior, contracts, security, docs, evidence, and release authority.
     instructions:
+      - Reconcile ticket acceptance receipts against the current integrated candidate and operator outcomes. Reuse current ticket review evidence; investigate combined behavior and remaining risk without repeating complete ticket audits automatically.
       - Reconstruct user/agent/operator flow, data flow, permission/grant boundary, and mutation safety before findings.
       - For non-micro work, run or verify independent closeout checks for one-brain ownership, cleanup/dead-code risk, architecture/contracts, and business/user/data/system flow regressions.
       - Each independent closeout check must compare pre-change behavior or code path, what changed, current delivered behavior, and why the result is safe.
@@ -530,6 +577,8 @@ steps:
       - orchestrator_feedback_gate
       - finding_lifecycle
       - release_candidate_lock
+      - ticket_and_integration_proof
+      - recovery_reconciliation
     resource_refs:
       - evidence
     depends_on:
@@ -545,7 +594,9 @@ steps:
     title: Audit Tracker Truth
     purpose: Confirm tracker state, run-plan state, docs, tests, evidence, and the actual diff agree before closeout.
     instructions:
+      - The main agent reconciles durable state and final claims; use specialist help only for a concrete unresolved audit question.
       - Compare completed tickets with code, verification, docs, run-plan steps, and evidence.
+      - Verify every completed executable child has current independent review, main-agent acceptance, and accepted prerequisite state; tracker.verify proves structural consistency, not implementation correctness or reviewer independence.
       - Reconcile workflow/ticket state, repository evidence, review findings, browser artifacts, verification counts, operator gates, and release authorization as one closeout state.
       - Confirm flow_design, test_plan, E2E/manual flow proof, independent verification, and final claims agree.
       - Mark hidden required work, stale blockers, dangling dependencies, stale repository fingerprints, and deferred scope explicitly.
@@ -565,6 +616,8 @@ steps:
       - orchestrator_feedback_gate
       - release_candidate_lock
       - status_semantics
+      - delegated_ticket_acceptance
+      - recovery_reconciliation
     depends_on:
       - review-delivery
     output_refs:
@@ -600,6 +653,7 @@ steps:
     success_criteria:
       - Release readiness reflects tracker reality and verification evidence.
       - Deferred scope and post-release checks are explicit.
+
 outputs:
   - key: scope_summary
     name: Scope Summary
@@ -776,7 +830,7 @@ outputs:
     name: Tracker Plan
     type: object
     required: true
-    description: Dependency-linked implementation, verification, review, and release tickets with evidence expectations.
+    description: Executable ticket packets derived from design and proof planning, with safe concurrency, dependencies, ownership, local acceptance, combined proof ownership, independent review, and evidence expectations.
     schema:
       type: object
       required: [task_ref, tickets, dependencies, evidence_expectations, approval_gates]
@@ -810,10 +864,10 @@ outputs:
         migration_or_removal: {type: object}
         risk_controls: {type: array}
   - key: design_review
-    name: Design Review
+    name: Delivery Readiness Review
     type: object
     required: true
-    description: Explicit architecture disposition, including a reason when review is waived or not applicable.
+    description: Explicit readiness disposition covering operator-source requirements, design, proof, ticket packets, dependency graph, environments, authority and shared resources, including reasons for any authorized waiver or not-applicable item.
     schema:
       type: object
       required: [disposition, reason, blockers, repairs, residual_risk, evidence_refs]
@@ -830,7 +884,7 @@ outputs:
     name: Test Plan
     type: object
     required: true
-    description: Risk-based automated and agent-executed scenarios, fixtures, commands, TDD expectations, and acceptance evidence.
+    description: Risk-based automated and agent-executed scenarios, fixtures, commands, TDD expectations, ticket-local acceptance and combined requirement proof, submitted to readiness review after ticket planning.
     schema:
       type: object
       required:
@@ -854,7 +908,7 @@ outputs:
     name: Delivery Summary
     type: object
     required: true
-    description: Implemented changes, files, decisions, deviations, checks, remaining work, and contextual release-candidate evidence.
+    description: Implemented changes, current per-ticket implementation/review/acceptance receipts, integrated files, decisions, deviations, checks, remaining work, and contextual release-candidate evidence. Receipts bind ticket, attempt, contract revision, candidate, coverage, accepted prerequisites, environment and capture time.
     schema:
       type: object
       required: [changes, file_refs, decisions, deviations, checks, remaining_work]
@@ -867,12 +921,13 @@ outputs:
         remaining_work: {type: array}
         scope_comparison: {type: object}
         tdd_receipts: {type: array}
+        ticket_receipts: {type: array}
         release_candidate: {type: object}
   - key: verification_summary
     name: Verification Summary
     type: object
     required: true
-    description: Structured current proof with executed state, failures, required unexecuted checks, and evidence lifecycle.
+    description: Structured current integrated proof, including reused valid ticket evidence, executed state, failures, required unexecuted checks, and evidence lifecycle.
     schema:
       type: object
       required:
@@ -1041,6 +1096,9 @@ failure_handling:
   - If project guidance or host-agent format is missing, record the exact gap and ask for it before writing local agent files.
   - If tracker dependencies reveal blocked work, update ticket blockers instead of continuing with invisible chat-only state.
   - If verification fails, use root-cause debugging before broad reruns or speculative fixes.
+  - Keep ordinary ticket review and repair within the active step and child ticket; route findings through the main agent and independently re-verify required repairs before acceptance.
+  - Before a material scope change or late integration failure requires an earlier gate, stop all active assignments and their processes, preserve receipts, and explicitly reopen or otherwise reconcile affected child tickets and dependency edges. Reopening a run-plan step alone does not reopen completed children.
+  - Resume affected assignments with a new attempt and current contract revision; ignore superseded results and invalidate only affected evidence. Never rewrite an existing run's frozen step order to match a newer template.
   - If actual changed scope materially exceeds the plan, return to impact discovery, architecture, and test design before continuing.
   - If material covered repository state changes after verification, reopen the earliest affected gate and invalidate only the proof whose validity changed.
   - If flow design, E2E/manual flow proof, or independent closeout verification is missing for non-micro work, return to the earliest affected step instead of closing the delivery.
@@ -1066,10 +1124,10 @@ metadata:
     - scope-work
     - define-requirements
     - discover-impact
-    - plan-tickets
     - design-approach
-    - review-design
     - design-tests
+    - plan-tickets
+    - review-design
     - deliver-tickets
     - verify-delivery
     - review-delivery

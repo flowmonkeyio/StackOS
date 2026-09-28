@@ -490,7 +490,11 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
           credentialRef,
           tested.data.ok ? 'success' : 'danger',
           tested.data.ok
-            ? credentialTestMessage(provider.key, tested.data.metadata, 'Account verified.')
+            ? credentialTestMessage(
+                provider.key,
+                tested.data.metadata,
+                credentialVerificationMessage(tested.data) || 'Account verified.',
+              )
             : `${credentialVerificationMessage(tested.data)} The Account was saved.`,
         )
       } catch (testError) {
@@ -580,7 +584,7 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
           ? credentialTestMessage(
               response.data.provider_key,
               response.data.metadata,
-              response.data.summary,
+              credentialVerificationMessage(response.data),
             )
           : credentialVerificationMessage(response.data),
       )

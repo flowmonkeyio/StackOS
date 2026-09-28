@@ -239,6 +239,7 @@ def test_account_edit_test_and_revoke_are_global_admin_actions(
     tested = api.post(f"/api/v1/auth/accounts/{ref}/test")
     blocked = api.post(f"/api/v1/auth/accounts/{ref}/revoke")
     detached = api.delete(f"/api/v1/projects/{project_id}/connections/accounts/{ref}")
+    detached_test = api.post(f"/api/v1/auth/accounts/{ref}/test")
     revoked = api.post(f"/api/v1/auth/accounts/{ref}/revoke")
 
     assert edited.status_code == 200, edited.text
@@ -248,6 +249,9 @@ def test_account_edit_test_and_revoke_are_global_admin_actions(
     assert blocked.status_code == 409
     assert "Detach" in blocked.text
     assert detached.status_code == 200
+    assert detached_test.status_code == 200, detached_test.text
+    assert detached_test.json()["data"]["ok"] is True
+    assert detached_test.json()["project_id"] is None
     assert revoked.status_code == 200, revoked.text
     assert revoked.json()["data"]["status"] == "revoked"
 

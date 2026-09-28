@@ -1,6 +1,6 @@
 # Finance Department Orchestrator
 
-Source skill preset: `stackos.finance.department-orchestrator` v0.7.4. Keep this adaptation aligned with `plugins/finance/skill-presets/finance.yaml`. This is main-agent guidance, not a subagent.
+Source skill preset: `stackos.finance.department-orchestrator` v0.7.5. Keep this adaptation aligned with `plugins/finance/skill-presets/finance.yaml`. This is main-agent guidance, not a subagent.
 
 Use the strongest reasoning configuration available in the current host for this integration role without replacing the user or workspace model selection. Finance subagents intentionally omit `model` and inherit the host selection while setting role-appropriate reasoning effort; see [official Codex subagent configuration](https://learn.chatgpt.com/docs/agent-configuration/subagents).
 
@@ -115,3 +115,19 @@ Tax preparation gathers current official sources and produces a dated obligation
 ## Finish truthfully
 
 Record safe external/provider/action/approval refs, bounded status, version/digest proof, partial progress, conflict/recovery condition, and next owner decision. The final owner digest must allow a later run to resume without chat context. Never treat a tracker note, action audit, or specialist summary as the finance record.
+
+## Canonical Project Guidance
+
+Follow [canonical project guidance](../../docs/agent-operating-model.md#canonical-project-guidance-consumption).
+
+At setup, startup, dispatch, handoff, resume/compaction and before affected
+application, resolve the same approved source refs through the effective extension and
+existing owners. Check actual source revision/digest and approval evidence, not only
+the template digest. Pass each role its relevant subset, provenance, candidate and
+gaps; reconcile changed sources and repeat affected reviews. Missing brand does not
+block factual/technical or unrelated finance work. Material branded copy requires its
+selected authoritative foundation (branding profile/guide or approved equivalent) and
+independent voice review bound to source refs/revisions and the exact candidate.
+Preserve source ownership, operator scope, privacy, external finance truth and action
+authority. Keep host files free of copied project voice/state; route durable brand
+changes to the existing foundation owner.

@@ -458,25 +458,36 @@ describe('ConnectionsView reusable Accounts', () => {
     expect(wrapper.html()).not.toContain('fc-secret')
   })
 
-  it('shows a saved verification failure after loading an attached Account', async () => {
-    const provider = authProvider('stripe', 'Stripe', 'api-key', apiKeyMethod())
+  it.each([
+    ['stripe', 'Stripe', 'This key cannot access the account verification endpoint.', 'Use a test key with the required account read permission.'],
+    ['google-search-console', 'Google Search Console', "Google Search Console API is not enabled for this credential's Google Cloud project.", "Enable the Google Search Console API in the credential's Google Cloud project, then test the Account again."],
+  ])('shows a saved %s verification failure after loading an attached Account', async (providerKey, label, summary, nextAction) => {
+    const isGoogle = providerKey === 'google-search-console'
+    const authType = isGoogle ? 'oauth' : 'api-key'
+    const methodKey = isGoogle ? 'service-account' : 'api_key'
+    const methods = isGoogle
+      ? [{ key: methodKey, label: 'Service account', auth_type: authType, interactive: false, payload_format: 'json', fields: [] }]
+      : apiKeyMethod()
+    const provider = authProvider(providerKey, label, authType, methods)
     const account = {
       ...authConnection({
         revokedAt: null,
-        providerKey: 'stripe',
-        credentialRef: 'cred_stripe',
-        label: 'Stripe - Sandbox',
+        providerKey,
+        authType,
+        authMethodKey: methodKey,
+        credentialRef: 'cred_diagnostic',
+        label: `${label} - Diagnostic`,
         lastTestedAt: '2026-09-05T00:00:00Z',
       }),
       last_test: {
-        credential_ref: 'cred_stripe',
-        provider_key: 'stripe',
+        credential_ref: 'cred_diagnostic',
+        provider_key: providerKey,
         ok: false,
         status: 'connected',
-        summary: 'This key cannot access the account verification endpoint.',
+        summary,
         checked_at: '2026-09-05T00:00:00Z',
         retryable: false,
-        next_action: 'Use a test key with the required account read permission.',
+        next_action: nextAction,
         metadata: { authorization: 'Bearer never-render-this-canary' },
       },
     }
@@ -498,7 +509,7 @@ describe('ConnectionsView reusable Accounts', () => {
 
     for (let load = 0; load < 2; load += 1) {
       const wrapper = mountConnections(router)
-      await vi.waitFor(() => expect(wrapper.text()).toContain('Stripe - Sandbox'))
+      await vi.waitFor(() => expect(wrapper.text()).toContain(`${label} - Diagnostic`))
       expect(wrapper.text()).toContain('Verification failed')
       expect(wrapper.text()).toContain(account.last_test.summary)
       expect(wrapper.text()).toContain(account.last_test.next_action)

@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: branding.content-production
 name: Branding Content Production
-version: 0.6.0
+version: 0.6.1
 description: End-to-end journalist-led branding workflow that turns a topic, evidence, research, or current work into a voice-consistent canonical piece, optional generated image set, executable channel publication jobs, automated publishing, and durable content memory.
 domain: branding
 owner:
@@ -141,7 +141,7 @@ inputs:
     name: Source Scope
     type: object
     required: false
-    description: Optional local artifacts, commits, tickets, docs, metrics, screenshots, or prior work to inspect.
+    description: Optional local artifacts, commits, tickets, docs, metrics, screenshots, or prior work to inspect. refs carries exact reviewed SEO opportunity or canonical-content synchronization handoff artifacts and their selected source records.
     schema:
       type: object
       properties:
@@ -382,7 +382,10 @@ steps:
     title: Interview Capture
     purpose: Decide whether first-hand operator context is needed, then ask only the useful journalist-style questions or record why the interview can be skipped.
     instructions:
-      - Load the Level 2 overlay or stop for setup when project-specific voice, sources, disclosure policy, or channel rules are missing.
+      - Main resolves selected authoritative foundation refs from selected_context_json, branding_overlay_ref and scoped current source reads. Approved external, document or legacy guidance is usable; branding profile/guide reads are required only when those are the selected owners. Record actual source revisions and approval/freshness evidence. Missing or ambiguous guidance blocks only dependent branded copy or disclosure decisions; continue supported factual preparation without inventing identity or automatically requiring foundation setup.
+      - For SEO-origin work, read source_scope.refs and verify the exact selected opportunity record/revision, review_ref, adjudication_ref, evidence_index_ref, existing_page_refs, disposition, gap evidence, intended scope and next_owner from the durable handoff. Reconcile current canonical content and live pages before acting; a create disposition is not permission to duplicate an existing article or publish.
+      - For a canonical-content synchronization handoff, reuse the exact already-applied candidate and current review/foundation revisions plus implementation/readback receipts. Reconcile only the named content-piece when existing operator authority and current grants cover the update; otherwise retain a pending handoff. Do not redraft, republish or replay applied edits to repair bookkeeping. Use packet_only unless existing authority explicitly covers another publication mode.
+      - Carry synchronization-only scope through every phase by reusing current schema-compatible outputs and retained artifact refs with explicit no-op reasons. Do not start a fresh interview, angle, draft, image or channel production merely to update memory. Retrieve missing required prior receipts from their actual owners; never fabricate phase outputs or treat missing receipts as current review. Record publication skipped and reuse existing packet/job refs without scheduling or executing them.
       - Respect interview_mode. In auto mode, require an interview when experience, judgment, surprise, stakes, or tradeoffs are central and not already captured in cleared evidence.
       - When interviewing, ask bounded journalist-style follow-up questions before treating the operator's first statement as publishable evidence.
       - When skipping, record the reason, evidence used instead, and any perspective the piece cannot claim.
@@ -482,7 +485,7 @@ steps:
     title: Draft Canonical
     purpose: Write the canonical piece in the adapted operator voice from the selected angle and evidence pack.
     instructions:
-      - Draft only from the selected angle, cleared evidence, brand profile, and channel-independent canonical structure.
+      - Draft only from the selected angle, cleared evidence, selected authoritative foundation, and channel-independent canonical structure. Reuse a current reviewed applied candidate unchanged for synchronization-only work; do not turn owner reconciliation into a new article.
       - Treat angle risks and evidence limits as meaning constraints rather than mandatory wording; do not copy planning-language caveats into public prose by default.
       - Compare the actual draft with named representative work and completed earlier sequential articles for repeated opening moves, caveat or contrast syntax, transition and sentence cadence, section logic, and conclusion moves; repair avoidable clusters before review.
       - Mark position changes explicitly instead of silently contradicting prior positions.
@@ -519,6 +522,7 @@ steps:
       - Cut unsupported claims or return them as explicit questions.
       - Classify every finding as blocker, repair, preference, or out-of-scope/unsupported and cite its evidence, profile, position, or channel-contract basis.
       - Attach review refs to the content-piece review log.
+      - Author and independent reviewers use the same exact candidate identity and selected foundation refs/revisions. Bind claim, voice and disclosure receipts to both in their artifacts, referenced by the existing review log. Reuse current reviews for an unchanged synchronization candidate; changed content or an applicable guide requires affected review and main adjudication, while old receipts remain historical.
     depends_on:
       - draft-canonical
     context_refs:
@@ -635,6 +639,7 @@ steps:
       - Resolve sanitization blockers; ask only when missing operator context would materially change the content or disclosure boundary.
       - Treat the current request, publication_intent, target channels, supplied evidence, and recorded operator decisions as the run's authority without another human checkpoint.
       - Upsert the content-piece memory index before any external publication.
+      - Recheck selected foundation revisions and exact candidate against current reviews before canonical owner updates. Reuse existing scoped authorization, but do not infer permission from guidance or a resource grant alone. For synchronization-only scope preserve implementation receipts and record the updated owner readback without generating another publication job.
       - Record explicit decisions when positions or brand-profile rules change.
     depends_on:
       - render-channel-packets
@@ -667,6 +672,7 @@ steps:
     instructions:
       - If publication_intent is packet_only or no external publication job was selected, record the step skipped with the final content packet refs and perform no external action.
       - For stage or publish, execute only jobs for the named target channels and destinations; never infer an additional destination or broaden the requested scope.
+      - Immediately before any selected external write, re-read the exact candidate and selected foundation refs/revisions used by review. Changed applicable guidance invalidates affected older review even when content is unchanged; repair and re-review before applying. A synchronization-only handoff performs no repeat publication.
       - If a selected job lacks a destination or schedule choice that materially changes the action, ask one bounded question instead of guessing.
       - Execute each selected publication job through its selected API, browser, admin UI, script, or operator-confirmed manual path.
       - Record provider, browser, script, URL, schedule, blocked, failed, or manual confirmation evidence per channel.

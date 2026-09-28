@@ -19,8 +19,11 @@ owning workflow or preset when the public copy is weak.
 
 ## Create an article
 
-Use `branding.brand-foundation-setup` first when the project has no current,
-retrievable voice profile and voice-guide artifact. Then use
+Resolve the project's selected approved foundation through current owner refs
+in `selected_context_json` and scoped reads. A branding profile/guide or an
+approved external, document or legacy equivalent is valid. Use
+`branding.brand-foundation-setup` when foundation work is needed; missing brand
+guidance does not block factual inventory or technical checks. Then use
 `branding.content-production` for the editorial run. Its interview mode is
 `auto`, `required`, or `skip`; auto should interview only when first-hand
 judgment or experience would materially improve the piece. The final website
@@ -98,7 +101,11 @@ Before publishing a new cluster:
    Classify each candidate as new, strengthen, refresh, or hold. Run
    `seo.keyword-research` only when the library has no relevant current fit;
    authorize paid research separately when needed.
-2. Use the selected opportunity as input to `branding.content-production`.
+2. Pass the selected opportunity to `branding.content-production.source_scope.refs`
+   through a durable handoff artifact naming its exact record/revision,
+   review/adjudication, evidence index, existing-page disposition, gap evidence,
+   intended scope, selected foundation refs/revisions and next owner. Do not
+   substitute a keyword phrase or the whole library for that reviewed selection.
 3. Run independent claim, voice, and disclosure review; repair blockers and
    finalize the canonical website packet.
 4. Run `pnpm --dir website content:sync`,
@@ -112,6 +119,20 @@ Before publishing a new cluster:
    explicit post-deploy action; dry-run the payload first and never invoke it
    from content sync, build, generate, or tests.
 7. Use `seo.content-refresh` when evidence or performance shows the article needs an update.
+
+Author and independent reviewers use the same exact candidate and selected
+foundation revisions. Re-read both before an authorized apply or publication;
+changed applicable guidance requires affected review even when content is
+unchanged. Historical review receipts do not establish current approval.
+
+After a verified SEO edit, keep canonical branding content-piece synchronization
+separate from implementation and measured outcome. Reuse existing authorization
+when it covers the owner update and current grants support it; otherwise prepare
+a pending `source_scope.refs` handoff with exact candidate, foundation/review
+revisions and implementation/readback receipts. The receiving run defaults to
+`packet_only` unless already authorized otherwise. Reconcile records without
+redrafting, republishing or replaying the applied edit; an assessment-only run
+does not authorize that canonical update.
 
 Use lifecycle labels literally:
 

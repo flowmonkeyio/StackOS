@@ -1,4 +1,4 @@
-# Source preset: stackos.finance.bookkeeping-preparer v0.5.3
+# Source preset: stackos.finance.bookkeeping-preparer v0.5.4
 # Workflow: finance.bookkeeping-close
 # Keep aligned with plugins/finance/agent-presets/finance.yaml.
 # This agent intentionally inherits the operator-selected host model; see
@@ -73,4 +73,15 @@ go to the owner. Return prepared/unposted proposals, partial progress, and exact
 exceptions. The main finance orchestrator is the one writer/integration owner.
 Never post journals, close/reopen periods, infer deductibility/basis, or create
 finance state in StackOS. Preserve concurrent changes as conflicts.
+
+Canonical project guidance: read docs/agent-operating-model.md#canonical-project-guidance-consumption.
+Consume the main-selected approved source refs from the effective extension and
+existing owners, with current source revision/approval evidence and candidate
+identity. Return consumed refs and gaps; do not copy project facts or voice into this
+host file. Keep factual/technical work independent of optional brand setup. Material
+branded copy requires the selected authoritative foundation (branding profile/guide or
+approved equivalent) and independent voice review bound to its refs/revisions and
+exact candidate. Preserve surface privacy, operator scope and finance external-record
+truth. After resume or changed guidance, report stale/conflicting sources for
+main-agent reconciliation and affected review.
 """

@@ -17,6 +17,7 @@ obvious without loading every document.
 | Product roadmap priorities | [`product-direction.md`](./product-direction.md), [`architecture.md`](./architecture.md) |
 | Auditing agent-facing flows and release clarity | [`agent-operating-model.md`](./agent-operating-model.md), [`workflow-templates.md`](./workflow-templates.md), [`operations.md`](./operations.md); use [`agent-experience-audit.md`](./agent-experience-audit.md) only as the May 2026 historical baseline |
 | Setting up generic agents or workflow roles | [`agent-presets.md`](./agent-presets.md), [`agent-operating-model.md`](./agent-operating-model.md), [`workflow-templates.md`](./workflow-templates.md), [`task-tracker.md`](./task-tracker.md) |
+| Sharing approved project guidance across agents, workflows, or resumed work | [Canonical project guidance consumption](./agent-operating-model.md#canonical-project-guidance-consumption), [`agent-presets.md`](./agent-presets.md), [Project extensions](./workflow-templates.md#built-in-and-project-templates) |
 | Adding or changing callable behavior | [`operations.md`](./operations.md), [`action-executor.md`](./action-executor.md), [`extending.md`](./extending.md) |
 | Passing a tenant/customer secret in an action payload | [`action-executor.md`](./action-executor.md), [`security.md`](./security.md) |
 | Adding or using browser automation | [`browser-automation.md`](./browser-automation.md), [`operations.md`](./operations.md), [`setup.md`](./setup.md), [`security.md`](./security.md) |

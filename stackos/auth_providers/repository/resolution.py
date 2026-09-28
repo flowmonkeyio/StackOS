@@ -12,6 +12,7 @@ from typing import Any, ClassVar
 import httpx
 from sqlmodel import col, select
 
+from stackos.auth_providers.google_service_account import JWT_GRANT, sign_assertion
 from stackos.auth_providers.oauth_contracts import OAuthProviderContract, oauth_contract_for
 from stackos.db.models import (
     Credential,
@@ -107,10 +108,29 @@ class CredentialResolutionMixin:
         required_scopes: list[str] | tuple[str, ...] | None = None,
     ) -> ResolvedCredential:
         """Resolve, renew if needed, then enforce declared action scopes."""
+        return await self._resolve_for_use(
+            project_id=project_id,
+            provider_key=provider_key,
+            credential_ref=credential_ref,
+            operation=operation,
+            required_scopes=required_scopes,
+        )
+
+    async def _resolve_for_use(
+        self,
+        *,
+        project_id: int | None,
+        provider_key: str | None,
+        credential_ref: str | None,
+        operation: str,
+        required_scopes: list[str] | tuple[str, ...] | None = None,
+        local_admin: bool = False,
+    ) -> ResolvedCredential:
 
         credential, row = self._resolve_credential(
             project_id=project_id,
             credential_ref=credential_ref,
+            local_admin=local_admin,
         )
         if provider_key is not None and credential.provider_key != provider_key:
             raise ValidationError(
@@ -139,6 +159,7 @@ class CredentialResolutionMixin:
                 project_id=project_id,
                 credential_ref=credential.credential_ref,
                 contract=contract,
+                local_admin=local_admin,
             )
         elif credential.expires_at is not None and credential.expires_at <= utcnow():
             credential.status = "repair-required"
@@ -182,13 +203,15 @@ class CredentialResolutionMixin:
     async def _renew_under_lock(
         self,
         *,
-        project_id: int,
+        project_id: int | None,
         credential_ref: str,
         contract: OAuthProviderContract,
+        local_admin: bool = False,
     ) -> tuple[Credential, IntegrationCredential]:
         credential, row = self._resolve_credential(
             project_id=project_id,
             credential_ref=credential_ref,
+            local_admin=local_admin,
         )
         assert row.id is not None
         loop = asyncio.get_running_loop()
@@ -199,7 +222,13 @@ class CredentialResolutionMixin:
             credential, row = self._resolve_credential(
                 project_id=project_id,
                 credential_ref=credential_ref,
+                local_admin=local_admin,
             )
+            # The saved identity may have changed while this acquisition waited.
+            current_contract = self._optional_oauth_contract(credential)
+            if current_contract is None or credential.status not in {"connected", "expired"}:
+                raise ConflictError("credential changed before renewal")
+            contract = current_contract
             if not self._needs_renewal(
                 credential=credential,
                 row=row,
@@ -219,6 +248,8 @@ class CredentialResolutionMixin:
                     grant_type=(
                         "client_credentials"
                         if contract.flow == "client_credentials"
+                        else JWT_GRANT
+                        if contract.flow == "jwt_bearer"
                         else "refresh_token"
                     ),
                 )
@@ -297,8 +328,13 @@ class CredentialResolutionMixin:
                 isinstance(response_body.get(field), str | list)
                 for field in contract.response_scope_fields
             )
-            if response_declares_scopes or contract.flow == "client_credentials":
+            if response_declares_scopes or contract.flow in {"client_credentials", "jwt_bearer"}:
                 safe_config["scope_status"] = "known"
+            if contract.flow == "jwt_bearer":
+                safe_config["scope_evidence_source"] = "google_service_account_exchange"
+                safe_config["scope_evidence_basis"] = (
+                    "provider_response" if "scope" in response_body else "accepted_signed_request"
+                )
             safe_config.update(
                 self._provider_response_config(
                     contract=contract,
@@ -317,11 +353,13 @@ class CredentialResolutionMixin:
                 current_credential, current_row = self._resolve_credential(
                     project_id=project_id,
                     credential_ref=credential_ref,
+                    local_admin=local_admin,
                 )
-                if not self._needs_renewal(
+                current_contract = self._optional_oauth_contract(current_credential)
+                if current_contract is not None and not self._needs_renewal(
                     credential=current_credential,
                     row=current_row,
-                    contract=contract,
+                    contract=current_contract,
                 ):
                     return current_credential, current_row
                 raise ConflictError(
@@ -341,7 +379,9 @@ class CredentialResolutionMixin:
                 credential=credential,
                 response_body=response_body,
                 fallback_scopes=(
-                    contract.scopes if contract.flow == "client_credentials" else None
+                    contract.scopes
+                    if contract.flow in {"client_credentials", "jwt_bearer"}
+                    else None
                 ),
                 contract=contract,
             )
@@ -357,6 +397,7 @@ class CredentialResolutionMixin:
             return self._resolve_credential(
                 project_id=project_id,
                 credential_ref=credential_ref,
+                local_admin=local_admin,
             )
 
     async def _request_renewal(
@@ -365,6 +406,19 @@ class CredentialResolutionMixin:
         contract: OAuthProviderContract,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
+        if contract.flow == "jwt_bearer":
+            return await self._post_oauth_token_request(
+                contract=contract,
+                application={},
+                data={
+                    "grant_type": JWT_GRANT,
+                    "assertion": sign_assertion(
+                        value=payload.get("service_account_json"),
+                        scopes=contract.scopes,
+                        subject=contract.delegated_subject,
+                    ),
+                },
+            )
         if contract.flow == "client_credentials":
             request_data = {
                 "grant_type": "client_credentials",
@@ -478,6 +532,21 @@ class CredentialResolutionMixin:
         credential: Credential,
     ) -> OAuthProviderContract | None:
         method = self._configured_auth_method(credential)
+        if credential.auth_method_key == "service-account":
+            if method is None:
+                raise ValidationError(
+                    "saved service-account method is unavailable",
+                    data={
+                        "provider_key": credential.provider_key,
+                        "credential_ref": credential.credential_ref,
+                        "next_action": "Restore the provider method or select a supported Account.",
+                    },
+                )
+            return oauth_contract_for(
+                credential.provider_key,
+                safe_config=credential.config_json,
+                auth_method_key=credential.auth_method_key,
+            )
         has_refresh_material = bool(
             method is not None and any(field.key == "refresh_token" for field in method.fields)
         )
@@ -522,7 +591,11 @@ class CredentialResolutionMixin:
         contract: OAuthProviderContract,
     ) -> bool:
         payload = self._json_payload(row)
-        if contract.flow == "client_credentials" and not payload.get("access_token"):
+        if contract.flow in {"client_credentials", "jwt_bearer"} and not payload.get(
+            "access_token"
+        ):
+            return True
+        if contract.flow == "jwt_bearer" and credential.expires_at is None:
             return True
         if (
             contract.flow == "authorization_code"
@@ -549,11 +622,16 @@ class CredentialResolutionMixin:
     def _resolve_credential(
         self,
         *,
-        project_id: int,
+        project_id: int | None,
         credential_ref: str | None,
+        local_admin: bool = False,
     ) -> tuple[Credential, IntegrationCredential]:
         if credential_ref is None:
             raise ValidationError("credential_ref is required")
+        if project_id is None:
+            if not local_admin:
+                raise ValidationError("project_id is required for credential execution")
+            return self._global_credential(credential_ref)
         credential = self.require_attached_account(
             project_id=project_id,
             credential_ref=credential_ref,

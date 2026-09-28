@@ -632,6 +632,7 @@ def test_marketing_campaign_production_template_validates_and_describes(
         "marketing.campaign.media-producer",
         "marketing.campaign.landing-page-builder",
         "marketing.campaign.visual-signoff-reviewer",
+        "branding.voice-reviewer",
     }
     assert spec["skill_preset_requirements"][0]["skill_preset_ref"] == (
         "marketing.campaign-production-orchestrator"

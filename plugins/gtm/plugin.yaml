@@ -895,10 +895,41 @@ providers:
           secret: false
           required: false
           placeholder: safe send policy reference
+      - key: service-account
+        label: Service account
+        description: Use a shared calendar directly, or an explicitly delegated Workspace user for Gmail and attendee invitations. No user consent redirect.
+        auth_type: oauth
+        interactive: false
+        payload_format: json
+        permission_verification:
+          evidence_source: oauth_response
+          enforcement: local_required
+        fields:
+        - key: service_account_json
+          label: Service-account JSON key
+          type: secret
+          secret: true
+          required: true
+        - key: delegated_subject
+          label: Delegated Workspace user
+          type: text
+          secret: false
+          required: false
+          placeholder: authorized-user@example.com
+        - key: workspace_ref
+          label: Workspace Ref
+          type: text
+          secret: false
+          required: false
+        - key: send_policy_ref
+          label: Send Policy Ref
+          type: text
+          secret: false
+          required: false
     config:
       setup:
-        credential_label: Google OAuth credential
-        setup_note: Create OAuth credentials in Google Cloud for Gmail/Calendar scopes, complete user consent, then store the token in StackOS.
+        credential_label: Google Workspace credential
+        setup_note: Choose OAuth or a service-account JSON key. Without a delegated user, share a calendar with the service-account email and use its explicit calendar ref; Gmail, primary calendar, and attendee invitations require a Workspace admin to authorize domain-wide delegation and the Delegated Workspace user field. Personal Gmail requires OAuth. Clearing the delegated user returns to shared-calendar-only access.
         homepage_url: https://workspace.google.com/
         signup_url: https://workspace.google.com/business/signup/welcome
         console_url: https://console.cloud.google.com/

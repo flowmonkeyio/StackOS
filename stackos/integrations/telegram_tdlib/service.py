@@ -16,7 +16,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from stackos.integrations.telegram_tdlib.native import TelegramTdlibClosedError
+from stackos.integrations.telegram_tdlib.native import (
+    TelegramTdlibClosedError,
+    TelegramTdlibRequestError,
+)
 from stackos.integrations.telegram_tdlib.sessions import (
     TelegramTdlibSession,
     TelegramTdlibSessionConfig,
@@ -97,7 +100,7 @@ class _RuntimeSession:
     authorization_state: dict[str, Any] | None = None
     authorization_revision: int = 0
     receiver: asyncio.Task[None] | None = None
-    failure: TelegramTdlibServiceError | None = None
+    failure: Exception | None = None
     retired: bool = False
     message_receipts: OrderedDict[tuple[int, int], dict[str, Any]] = field(
         default_factory=OrderedDict
@@ -384,9 +387,12 @@ class TelegramTdlibService:
         except TelegramTdlibClosedError:
             if self._is_current(entry):
                 await self._fail(entry, "TDLib session closed before its lifecycle was retired")
-        except Exception:
+        except Exception as exc:
             if self._is_current(entry):
-                await self._fail(entry, "TDLib update dispatch failed")
+                # Request errors already discard native text at the ABI boundary.
+                # Keep their typed code/name so restoration can distinguish auth
+                # loss from transport/rate-limit failures during getMe.
+                await self._fail(entry, "TDLib update dispatch failed", error=exc)
 
     async def _record_authorization_state(
         self, entry: _RuntimeSession, state: dict[str, Any]
@@ -438,9 +444,15 @@ class TelegramTdlibService:
         except TimeoutError as exc:
             raise TelegramTdlibServiceError("TDLib authorization state timed out") from exc
 
-    async def _fail(self, entry: _RuntimeSession, message: str) -> None:
+    async def _fail(
+        self, entry: _RuntimeSession, message: str, *, error: Exception | None = None
+    ) -> None:
         async with entry.state_changed:
-            entry.failure = TelegramTdlibServiceError(message)
+            entry.failure = (
+                error
+                if isinstance(error, TelegramTdlibRequestError)
+                else TelegramTdlibServiceError(message)
+            )
             entry.state_changed.notify_all()
         self._fail_message_waiters(entry, entry.failure)
 
@@ -537,7 +549,7 @@ class TelegramTdlibService:
         return chat_id, temporary_message_id
 
     @staticmethod
-    def _fail_message_waiters(entry: _RuntimeSession, error: TelegramTdlibServiceError) -> None:
+    def _fail_message_waiters(entry: _RuntimeSession, error: Exception) -> None:
         for waiters in entry.message_waiters.values():
             for waiter in waiters:
                 if not waiter.done():

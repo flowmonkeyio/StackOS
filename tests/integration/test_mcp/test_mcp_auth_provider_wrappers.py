@@ -83,7 +83,7 @@ def test_auth_test_dispatches_to_firecrawl(
 
     out = mcp_client.call_tool_structured(
         "account.test",
-        {"credential_ref": credential_ref, "response_mode": "raw"},
+        {"project_id": project_id, "credential_ref": credential_ref, "response_mode": "raw"},
     )
 
     assert out["data"]["ok"] is True
@@ -122,7 +122,7 @@ def test_failed_probe_diagnostics_survive_mcp_and_rest_inventory(
     )
     ref = _credential_ref(mcp_client, project_id=project_id, provider_key="firecrawl")
     tested = mcp_client.call_tool_structured(
-        "account.test", {"credential_ref": ref, "response_mode": "raw"}
+        "account.test", {"project_id": project_id, "credential_ref": ref, "response_mode": "raw"}
     )["data"]
     assert tested["ok"] is False
     assert tested["retryable"] is False
@@ -178,7 +178,7 @@ def test_imap_failed_probe_is_actionable_in_compact_account_inventory(
     )
     created.raise_for_status()
     ref = _credential_ref(mcp_client, project_id=project_id, provider_key="imap")
-    arguments = {"credential_ref": ref}
+    arguments = {"project_id": project_id, "credential_ref": ref}
     if response_mode is not None:
         arguments["response_mode"] = response_mode
     tested = mcp_client.call_tool_structured("account.test", arguments)["data"]
@@ -224,7 +224,7 @@ def test_auth_test_dispatches_to_wordpress_provider_manifest(
 
     out = mcp_client.call_tool_structured(
         "account.test",
-        {"credential_ref": credential_ref, "response_mode": "raw"},
+        {"project_id": project_id, "credential_ref": credential_ref, "response_mode": "raw"},
     )
 
     rendered = json.dumps(out)
@@ -256,7 +256,7 @@ def test_auth_test_dispatches_to_ghost_provider_manifest(
 
     out = mcp_client.call_tool_structured(
         "account.test",
-        {"credential_ref": credential_ref, "response_mode": "raw"},
+        {"project_id": project_id, "credential_ref": credential_ref, "response_mode": "raw"},
     )
 
     rendered = json.dumps(out)

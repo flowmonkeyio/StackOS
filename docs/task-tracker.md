@@ -132,7 +132,7 @@ onto blocking readiness.
 
 For workflow-backed delivery, graph readiness should be visible:
 
-- the first executable child ticket for a workflow step has an `activates`
+- every independent first child ticket for a workflow step has an `activates`
   edge from the mirrored step ticket
 - the next mirrored workflow step has `blocks` edges from the terminal child ticket or
   tickets from the prior step
@@ -203,6 +203,43 @@ Lifecycle timestamps follow the visible state. Moving a task or ticket into a
 terminal status sets `completed_at`; reopening it to `in-progress` or
 `not-started` clears `completed_at` so audits do not treat active work as
 historically complete.
+
+## Delegated Work And Recovery
+
+Workflow guidance decides who may accept a ticket. For engineering tracked
+delivery, the main agent assigns explicit keys, serializes tracker writes and
+marks a child complete only after independent review and acceptance of its
+integrated result. Implementation, review and repair use the same
+`in-progress` ticket with phase/assignment context in existing metadata and
+receipts in evidence. The tracker does not enforce this semantic acceptance:
+`tracker.verify` checks structural state, and `tracker.pick` is an assignment
+update rather than an exclusive lease. `tracker.next` may include in-progress
+work. Workers must not independently pull the same queue.
+
+Compact briefs are navigation packets. Request targeted
+`tracker.brief(ticket_key=..., response_mode="raw")` when assignment or review
+needs full goals, definition of done, ownership, context and evidence. Preserve
+existing JSON contents when patching evidence or metadata: supplied JSON
+fields replace the prior field rather than deep-merging it.
+
+Store assignment attempt, contract revision and candidate references with
+receipts so delayed results cannot satisfy a newer assignment. Before parking
+or reassigning work, confirm the worker and its processes are quiescent. Keep
+the blocker, unfinished obligations and resume condition visible after compute
+capacity is released; a failed attempt remains failed evidence.
+
+`tracker.reopen` with an explicit `step_id` can also return a started workflow
+to an earlier gate. It resets that step and all later positions and clears their
+current step results; it does not stop agents or actions, reset attached child
+statuses, or refresh approval decisions. Before a rewind, preserve retained
+receipts in ticket evidence or other authorized durable records, quiesce all
+agents/processes and in-flight actions, and identify affected evidence and
+accepted children. Reopen through the run-plan lifecycle, explicitly reconcile
+affected child statuses and dependents, re-evaluate approvals for current scope,
+and reclaim the step before resuming. Unaffected valid evidence can be reused.
+Ordinary ticket repair within an active delivery step needs no workflow rewind.
+Existing plans retain their frozen order, grants and output contracts after a
+source-template update.
 
 ## Status Events
 

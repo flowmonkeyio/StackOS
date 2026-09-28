@@ -1,276 +1,464 @@
 schema_version: stackos.workflow-template.v1
 key: seo.keyword-research
 name: SEO Keyword Research
-version: 0.1.0
-description: Reusable research template for turning a business goal into SEO opportunity resources.
+version: 0.2.1
+description: Evidence-led intent opportunities that choose useful existing-page improvements before proposing missing
+  content.
 domain: seo
-owner:
-  team: StackOS
+owner: {team: StackOS}
 experience:
-  problem: "Keyword research produces broad high-volume lists when it is not anchored to the business, audience, product proximity, and existing authority."
-  outcome: "A prioritized opportunity map that separates near-term article ideas, supporting clusters, evidence, and topics to avoid."
-  why_ai: "AI can connect keyword data, SERP patterns, competitor evidence, and project context while the operator owns positioning and priority."
-  operator_path:
-    - "State the business goal, audience, product proximity, markets, and topics to avoid."
-    - "Choose approved keyword and competitor data sources."
-    - "Review the opportunity map and select content priorities."
-  agent_path:
-    - "Translate the business brief into explicit opportunity criteria before collecting data."
-    - "Use approved keyword, SERP, and competitor sources and preserve provenance."
-    - "Cluster by intent and business fit, score with transparent tradeoffs, and propose concrete article angles."
-  progress_signals:
-    - "Opportunity criteria set"
-    - "Data collected"
-    - "Intent clusters built"
-    - "Priorities scored"
-    - "Article opportunities ready"
-  recovery:
-    - "If a provider is unavailable, use approved exports or stop with the exact missing dataset."
-    - "Do not fill the report with broad terms that fail the product-proximity or authority test."
-  safe_stopping_points:
-    - "Stop after the prioritized opportunity map; article production is a separate approved job."
+  problem: Keyword research produces broad high-volume lists when it is not anchored to the business, audience,
+    product proximity, and existing authority.
+  outcome: A reviewed opportunity map choosing refresh, link, create, overlap investigation, deferral or rejection
+    with existing-page evidence and a clear validation handoff.
+  why_ai: AI can connect keyword data, SERP patterns, competitor evidence, and project context while the operator
+    owns positioning and priority.
+  operator_path: ['State the business goal, audience, product proximity, markets, and topics to avoid.', Choose
+      approved keyword and competitor data sources., Review the opportunity map and select content priorities.]
+  agent_path: ['Read business goals and an existing-content inventory, including pages absent from Search Console.',
+    'Collect the smallest useful approved research, first-party or export evidence set.', 'Map intent and business
+      fit to existing pages, independently review dispositions, and store one canonical opportunity map.']
+  progress_signals: [Opportunity criteria set, Data collected, Intent clusters built, Priorities scored, Article
+      opportunities ready]
+  recovery: ['If a provider is unavailable, use approved exports or stop with the exact missing dataset.', Do not
+      fill the report with broad terms that fail the product-proximity or authority test.]
+  safe_stopping_points: [Stop after the prioritized opportunity map; article production is a separate approved job.]
   handoffs:
-    - workflow_key: branding.content-production
-      relationship: conditional
-      when: "A selected opportunity should become an evidence-backed branded article."
+    - {workflow_key: branding.content-production, relationship: conditional, when: A selected opportunity should
+        become an evidence-backed branded article.}
+    - {workflow_key: seo.content-refresh, relationship: conditional, when: Reviewed opportunities call for a bounded
+        existing-page or internal-link improvement.}
 public:
-  audience: "SEO and content teams choosing what to write next"
-  setup: connection-required
-  prerequisites:
-    - "A business goal, audience, market, and product-proximity boundary"
-    - "Topics to include and avoid"
-    - "Connected keyword and SERP data sources or approved exports"
-  proof:
-    - "Source-linked keyword set"
-    - "Intent and business-fit clusters"
-    - "Transparent priority scoring"
-    - "Concrete article angles and avoidance list"
+  audience: SEO and content teams choosing which existing pages to improve and which content gaps to fill
+  setup: mixed
+  prerequisites: ['A business goal, audience, market, and product-proximity boundary', Topics to include and avoid,
+    Connected keyword and SERP data sources or approved exports]
+  proof: [Source-linked intent and existing-page map, 'Reviewed dispositions, confidence and next validation', Explicit
+      avoidance and defer decisions, Durable evidence and current opportunity resource refs]
   featured: true
-when_to_use:
-  - A project needs SEO opportunities from seed terms, competitors, or an agent-defined research angle.
-when_not_to_use:
-  - The user already has a reviewed opportunity set and only needs execution.
+when_to_use: ['A project needs SEO opportunities from seed terms, competitors, or an agent-defined research angle.']
+when_not_to_use: [The user already has a reviewed opportunity set and only needs execution.]
 agent_requirements:
   - role: seo-keyword-research
     requirement: required
     agent_preset_ref: seo.workflow.keyword-research
     purpose: Lead keyword discovery, clustering, evidence review, and opportunity handoff.
-    applies_to_steps:
-      - orient
-      - collect_evidence
-      - store_opportunities
-      - capture_learning
+    applies_to_steps: [orient, collect_evidence, review_opportunities, store_opportunities, capture_learning]
   - role: planning
     requirement: recommended
     agent_preset_ref: stackos.sdlc.planning
     purpose: Break selected opportunities into executable follow-up tickets.
-    applies_to_steps:
-      - store_opportunities
-      - capture_learning
+    applies_to_steps: [store_opportunities, capture_learning]
+  - role: delivery-reviewer
+    requirement: required
+    agent_preset_ref: stackos.sdlc.delivery-reviewer
+    purpose: Independently challenge intent/page dispositions, evidence coverage and unsupported ranking or conversion
+      claims; main agent adjudicates.
+    applies_to_steps: [review_opportunities]
 skill_requirements:
   - skill_ref: stackos:stackos
     requirement: recommended
-    purpose: Teach the main agent how to operate StackOS MCP, workflow templates, run plans, tracker tasks/tickets, dependencies, and evidence.
-    setup_notes:
-      - Use this skill before planning or executing the workflow when the host supports skills.
-      - Work through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in chat.
+    purpose: Teach the main agent how to operate StackOS MCP, workflow templates, run plans, tracker tasks/tickets,
+      dependencies, and evidence.
+    setup_notes: [Use this skill before planning or executing the workflow when the host supports skills., Work
+        through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in
+        chat.]
 skill_preset_requirements:
-  - skill_preset_ref: stackos.workflow-orchestrator
-    requirement: required
-    purpose: Coordinate workflow selection, readiness, specialist handoffs, approvals, safe stopping, verification, and recovery without adding domain-specific process.
+  - {skill_preset_ref: stackos.workflow-orchestrator, requirement: required, purpose: 'Coordinate workflow selection,
+      readiness, specialist handoffs, approvals, safe stopping, verification, and recovery without adding domain-specific
+      process.'}
 inputs:
-  - key: goal
-    name: Goal
-    type: string
-    required: true
-  - key: seed_terms
-    name: Seed Terms
+  - {key: goal, name: Goal, type: string, required: true}
+  - {key: seed_terms, name: Seed Terms, type: array, required: false}
+  - {key: competitor_domains, name: Competitor Domains, type: array, required: false}
+  - key: evidence_sources
+    name: Evidence Sources
     type: array
     required: false
-  - key: competitor_domains
-    name: Competitor Domains
+    default: [exports]
+    schema:
+      type: array
+      items:
+        type: string
+        enum: [exports, public, gsc, ga4, research]
+      uniqueItems: true
+    description: Selected ready evidence routes; exports can supply all required evidence without provider calls.
+  - key: source_refs
+    name: Source Refs
     type: array
     required: false
+    schema:
+      type: array
+      items: {type: string, minLength: 1}
+    description: Approved exports, page content, URL inventory, prior records, selected project foundation or connected
+      property refs. Main resolves current scoped sources; host file access is separate host authority.
+  - key: measurement_scope
+    name: Measurement Scope
+    type: object
+    required: false
+    schema: {type: object}
+    description: Requested property/site, dates, timezone, country/device/search type, brand/cohort, key-event definition,
+      attribution and comparison purpose; unresolved fields remain explicit unknowns.
+  - {key: site_url, type: string, required: false, description: Optional public website root for content and sitemap
+      inspection.}
 context_requirements:
   - id: recent_seo_research
     source: resources
     purpose: Avoid repeating recent SEO research and reuse known opportunities.
     filters:
       plugin_slug: seo
-      resource_keys:
-        - keyword-opportunity
-        - serp-snapshot
-    fields:
-      - resource_key
-      - title
-      - status
-      - data_json
-      - updated_at
+      resource_keys: [keyword-opportunity, serp-snapshot, content-piece, content-refresh, website-seo-analysis,
+        link-opportunity, search-performance-snapshot]
+    fields: [resource_key, title, status, data_json, updated_at]
     max_items: 20
   - id: accepted_learnings
     source: learnings
     purpose: Pull project-level lessons tagged with SEO before choosing research direction.
     filters:
-      tags:
-        - seo
-    fields:
-      - statement
-      - confidence
-      - tags
-      - evidence_json
+      tags: [seo]
+    fields: [statement, confidence, tags, evidence_json]
     max_items: 10
 capability_requirements:
-  - key: seo-research
-    required: true
-    preferred_providers:
-      - dataforseo
-      - ahrefs
+  - {key: seo-research, required: true}
+  - {key: seo-measurement, required: false}
+  - {key: web-retrieval, required: false}
 auth_requirements:
-  - key: dataforseo
-    provider: dataforseo
-    auth_type: basic
-    optional: true
-  - key: ahrefs
-    provider: ahrefs
-    auth_type: api-key
-    optional: true
+  - {key: dataforseo, provider: dataforseo, auth_type: basic, optional: true}
+  - {key: ahrefs, provider: ahrefs, auth_type: api-key, optional: true}
+  - {key: google_search_console, provider: google-search-console, auth_type: oauth, optional: true}
+  - {key: google_analytics, provider: google-analytics, auth_type: oauth, optional: true}
 action_contracts:
-  - key: keyword_research
-    action: keyword.research
-    capability: seo-research
-    provider: dataforseo
-    risk_level: cost
-    auth_ref: dataforseo
-  - key: serp_analysis
-    action: serp.analyze
-    capability: seo-research
-    provider: dataforseo
-    risk_level: cost
-    auth_ref: dataforseo
-  - key: competitor_keywords
-    action: competitor.keywords
-    capability: seo-research
-    provider: ahrefs
-    risk_level: cost
-    auth_ref: ahrefs
-    optional: true
+  - {key: keyword_research, action: keyword.research, capability: seo-research, provider: dataforseo, risk_level: cost,
+    auth_ref: dataforseo, optional: true}
+  - {key: serp_analysis, action: serp.analyze, capability: seo-research, provider: dataforseo, risk_level: cost,
+    auth_ref: dataforseo, optional: true}
+  - {key: competitor_keywords, action: competitor.keywords, capability: seo-research, provider: ahrefs, risk_level: cost,
+    auth_ref: ahrefs, optional: true}
+  - {key: public_web_read, action: utils.web.read, capability: web-retrieval, risk_level: read, optional: true}
+  - {key: public_sitemap_fetch, action: utils.sitemap.fetch, capability: web-retrieval, risk_level: read, optional: true}
+  - {key: gsc_search_analytics, action: search-console.search-analytics.query, capability: seo-measurement, provider: google-search-console,
+    auth_ref: google_search_console, risk_level: read, optional: true}
+  - {key: ga4_property_metadata, action: ga4.properties.metadata.get, capability: seo-measurement, provider: google-analytics,
+    auth_ref: google_analytics, risk_level: read, optional: true}
+  - {key: ga4_historical_report, action: ga4.properties.run_report, capability: seo-measurement, provider: google-analytics,
+    auth_ref: google_analytics, risk_level: read, optional: true}
 resource_contracts:
-  - key: opportunities
-    resource: keyword-opportunity
-    purpose: Store reviewed opportunities with evidence, priority, and next-step notes.
-  - key: serp_snapshots
-    resource: serp-snapshot
-    purpose: Store compact SERP evidence the agent can reuse later.
+  - {key: opportunities, resource: keyword-opportunity, purpose: 'Store reviewed opportunities with evidence, priority,
+      and next-step notes.'}
+  - {key: serp_snapshots, resource: serp-snapshot, purpose: Store compact SERP evidence the agent can reuse later.}
+  - {key: performance_snapshot, resource: search-performance-snapshot, purpose: Store current scoped measurements
+      without equating search clicks and analytics sessions.}
 policies:
-  - key: no_secret_exposure
-    kind: auth
-    description: Agents may reference provider keys and credential refs but never receive secret values.
-  - key: agent_decides_scope
-    kind: execution
-    description: The template defines contracts; the run plan chooses exact queries, providers, and records.
-  - key: preserve_fetched_data
-    kind: evidence
-    description: If provider data was fetched, keep the returned response-file paths and cite them in synthesized outputs before considering another provider call. Use schema.get with schema_ref only when the response-file envelope schema is needed.
-approval_gates:
-  - key: operator_cost_review
-    description: Required when the run plan expects material provider spend.
-    required_when: estimated_cost_above_project_threshold
+  - {key: no_secret_exposure, kind: auth, description: Agents may reference provider keys and credential refs but
+      never receive secret values.}
+  - {key: agent_decides_scope, kind: execution, description: 'The template defines contracts; the run plan chooses
+      exact queries, providers, and records.'}
+  - {key: evidence_and_history, kind: evidence, description: 'Use measured, observed, or inferred claims with scope,
+      confidence, and a validation path. Every evidence ref resolves through a typed index to a durable action receipt,
+      operator source, or intentionally retained artifact. Read response files before another provider call; temporary
+      paths are not durable proof. Unversioned records and prior analyses are history until revalidated; every new
+      output uses its explicit contract_version.'}
+  - {key: comparable_measurement, kind: accuracy, description: 'Keep GSC query/page clicks distinct from GA4 session/user/event
+      metrics. Record property, capture time, window/timezone, filters, dimensions, cohort and entry-page semantics,
+      canonical URL mapping, coverage, denominators, and attribution. Missing or unavailable values are null, never
+      zero. Low samples, truncation, incomplete periods, or incomparable cohorts make the outcome inconclusive.
+      Before/after observations alone do not prove causation.'}
+  - {key: agent_judgment, kind: methodology, description: 'Positions, CTR, decay, volume and long-query length are
+      investigation aids, never guaranteed lifts, mandatory thresholds, or AI Mode detectors. Use reader task, business
+      fit, current SERP and existing content; do not insert exact phrases mechanically, rotate useful links, or
+      change dates/URLs solely for SEO.'}
+  - {key: optional_sources, kind: readiness, description: Use the smallest useful ready source set within budget.
+      All provider actions are optional; approved exports and supplied page content can satisfy an export-only run.
+      Record source coverage and missing inputs rather than inventing evidence. No external retrieval of private
+      content without an explicit sharing boundary. Default export/public preparation authorizes no paid provider
+      call. Use paid research only when the selected scope fits an existing explicit project/operator budget or
+      an explicit operator cost decision; otherwise use available evidence or defer that source. No unconditional
+      cost gate belongs on an export-only step.}
+approval_gates: []
 steps:
   - id: orient
-    title: Orient From History
-    purpose: Read recent research, learnings, and the current project goal; if the user did not provide seed terms or competitors, ask a small number of plain-language clarifying questions and propose initial research angles.
-    input_refs:
-      - goal
-      - seed_terms
-      - competitor_domains
-    context_refs:
-      - recent_seo_research
-      - accepted_learnings
-    policy_refs:
-      - agent_decides_scope
+    title: Orient And Map Existing Work
+    purpose: Define reader tasks, business fit, markets and current page coverage before selecting opportunities.
+    instructions: ['Read prior research as historical context until revalidated. Define target readers, product
+        proximity, excluded topics and scope from the brief.', Build or reuse one bounded page inventory; include
+        existing pages and useful new pages without impressions. Group by the task answered rather than word overlap.,
+      'Main resolves approved role-relevant guidance from selected_context_json and source_refs using scoped resource.get/query,
+        artifact reads or the authorized source. Preserve selected owner refs, actual revisions and approval/freshness
+        evidence in the existing evidence index scope. Approved external, document or legacy foundations remain valid;
+        do not require branding setup when a usable source is selected. Missing or ambiguous foundation blocks only
+        dependent brand judgments; factual inventory and evidence collection can proceed with explicit limitations.']
+    input_refs: [goal, seed_terms, competitor_domains, site_url, evidence_sources, source_refs, measurement_scope]
+    context_refs: [recent_seo_research, accepted_learnings]
+    policy_refs: [agent_decides_scope, agent_judgment]
+    success_criteria: [The business criteria and existing-content coverage are explicit; missing evidence is named.]
   - id: collect_evidence
-    title: Collect Evidence
-    purpose: Execute only the provider calls the run plan grants and the agent still needs; preserve returned response-file paths, use schema.get with schema_ref only when needed, and inspect files before rerunning paid research.
-    action_refs:
-      - keyword_research
-      - serp_analysis
-      - competitor_keywords
-    policy_refs:
-      - no_secret_exposure
-      - preserve_fetched_data
-    output_refs:
-      - raw_provider_data_refs
-    approval_refs:
-      - operator_cost_review
-    depends_on:
-      - orient
+    title: Collect Relevant Evidence
+    purpose: Gather bounded first-party, public, research or supplied-export evidence.
+    instructions: [Select bounded provider calls or approved exports from the declared evidence_sources. Export-only
+        runs need no connected provider; inspect supplied content and export coverage before deciding what is missing.,
+      'Read existing page content, sitemap/CMS/operator inventory and existing links, including useful pages with
+        no Search Console impressions. Keep one canonical URL inventory with coverage limits; do not infer complete
+        crawl or orphan status from a sample.', 'For GSC record the exact property, final date window, search type,
+        country/device/query/page filters, aggregation and pagination. Top-row query data and anonymized query omissions
+        are coverage limitations, not a complete query census.', 'For GA4 inspect metadata when needed, select compatible
+        dimensions/metrics, and define the organic cohort, session landing page versus first-user acquisition, key
+        events, denominators and attribution. Do not join queries to individual visitors or equate clicks with sessions.',
+      'Reconcile canonical URLs, redirects, parameters and unmatched rows. Retain window/timezone differences, consent/tracking
+        gaps, low samples, truncation and missing fields. Do not silently convert missing measurements to zero.',
+      'Before any dependent snapshot, proposal or summary needs evidence_index_ref, retain one canonical index artifact
+        with exactly source_ledger, evidence_index and limitations. The artifact does not contain snapshot_refs
+        or its own returned ref. Retain claim-supporting source payloads first when the index cites them, then call
+        artifact.create for the index and keep its actual returned ref; never invent a future ref.', 'With that
+        real evidence_index_ref, store current-version search-performance-snapshot records under the active resource
+        grant. Their evidence_refs resolve in the retained index. Complete the evidence_packet output with the index
+        contents/ref plus the newly returned snapshot_refs and inventory_ref; snapshot refs belong in this logical
+        packet, not in the index artifact, so no reference cycle is required.', 'For exports with no usable measurements,
+        keep snapshot_refs empty and explain the gap. Export-only preparation never waits for a cost approval or
+        invents a paid call. Retain one current package index; older retained versions stay readable as historical
+        evidence.']
+    action_refs: [keyword_research, serp_analysis, competitor_keywords, public_web_read, public_sitemap_fetch, gsc_search_analytics,
+      ga4_property_metadata, ga4_historical_report]
+    policy_refs: [no_secret_exposure, evidence_and_history, comparable_measurement, optional_sources]
+    output_refs: [evidence_packet]
+    depends_on: [orient]
+    success_criteria: [Evidence packet records every considered source and resolves used refs; export-only runs
+        remain executable when supplied evidence is sufficient.]
+    resource_refs: [performance_snapshot]
+  - id: review_opportunities
+    title: Review Intent And Page Dispositions
+    purpose: Make one reviewed choice for each opportunity, including deliberate no-change choices.
+    instructions: ['For each intent name reader_task, business_fit, existing_page_refs, disposition, rationale,
+        evidence_refs, confidence, next_validation and next_owner. Choose refresh, link, create, investigate_overlap, defer
+        or reject.', 'Create requires a demonstrated gap after reviewing existing content and current SERP intent.
+        Similar query wording does not justify a sibling page. Treat overlap as investigation, not an automatic
+        merge or redirect.', Have the independent reviewer challenge every draft choice and material claim. Main
+        agent adjudicates accepted/revised/rejected drafts and produces one canonical opportunity set; preserve
+        review rationale and references., 'Keep volume, average position and CTR as contextual prioritization aids.
+        Describe uncertainties and opportunity cost; do not promise ranking or conversion lift.', 'Before emitting
+        opportunity_summary, persist independent review and main-agent adjudication as intentional artifacts and
+        retain their actual returned review_ref/adjudication_ref. The summary uses the already retained evidence_index_ref
+        for claim-supporting source evidence. If review identifies missing material source evidence, collect it
+        only under an appropriate active source grant, then re-review. Before emitting the summary with newly used
+        evidence, create and verify a replacement index with all earlier and new source entries, then call
+        artifact.supersede with the old and replacement refs at this review step. Use that actual current index ref;
+        exclude the index creation/replacement and later storage receipts from its own contents. Do not fabricate
+        future refs or change the canonical set during storage.']
+    policy_refs: [agent_judgment, evidence_and_history, comparable_measurement]
+    output_refs: [opportunity_summary]
+    depends_on: [collect_evidence]
+    success_criteria: ['Every canonical opportunity has the current resource contract, resolvable evidence, a disposition
+        and next validation; rejected drafts cannot silently reappear.']
   - id: store_opportunities
-    title: Store Opportunities
-    purpose: Persist a useful list of keyword opportunities, not just one or two terms, with clusters, metrics, source refs, and a polished brief/CSV when the run grants artifact writes.
-    resource_refs:
-      - opportunities
-      - serp_snapshots
-    output_refs:
-      - opportunity_summary
-      - synthesized_keyword_research
-    depends_on:
-      - collect_evidence
+    title: Store Reviewed Opportunities
+    purpose: Persist the canonical opportunity map with future-readable evidence and handoffs.
+    instructions: [Persist the unchanged canonical opportunity_summary and its individual current records with the
+        actual current evidence_index_ref fixed during review. Do not replace summary refs or findings after independent
+        review. Retain final reports and storage receipts separately; they are not inputs into their own evidence
+        index., Store current-version keyword-opportunity records and intentional final evidence/report artifacts.
+        The summary is the sole reviewed set; resource records and any derived CSV/report must match it., Keep raw
+        response paths as temporary execution aids. Preserve action receipts and promote only claim-supporting payloads
+        that need durable retention to artifacts., Read back returned refs. Refresh/link dispositions hand off to
+        seo.content-refresh; technical work to engineering.tracked-delivery; justified new articles to branding.content-production.
+        This research run does not implement or publish., 'For a selected article opportunity prepare a durable handoff
+        artifact for branding.content-production source_scope.refs. It names the selected opportunity record and revision,
+        review_ref, adjudication_ref, evidence_index_ref, existing_page_refs, disposition, gap evidence, intended scope,
+        selected foundation refs/revisions and next_owner. Source refs point to this artifact and the exact reviewed
+        records; do not add fields to the strict opportunity schema or copy the whole opportunity library. Default the
+        receiving publication_intent to packet_only unless existing operator authority explicitly covers another mode.']
+    resource_refs: [opportunities, serp_snapshots, performance_snapshot]
+    output_refs: [opportunity_record_refs]
+    depends_on: [review_opportunities]
+    success_criteria: ['Every canonical opportunity has a verified durable resource ref, final review ref, and correct
+        next-owner handoff.']
   - id: capture_learning
-    title: Capture Learning
-    purpose: Record reusable lessons or rejected patterns for future runs.
-    context_refs:
-      - accepted_learnings
-    depends_on:
-      - store_opportunities
+    title: Capture Supported Learning
+    purpose: Keep reusable evidence-supported lessons separate from speculative heuristics.
+    instructions: [Record only supported durable lessons or rejection patterns with evidence; no fabricated learnings
+        are required for closeout.]
+    context_refs: [accepted_learnings]
+    depends_on: [store_opportunities]
+    success_criteria: [Closeout states evidence limits and the next useful action without claiming implementation
+        or lift.]
 outputs:
+  - key: evidence_packet
+    name: Evidence Packet
+    type: object
+    required: true
+    description: Logical output containing the retained index contents and its actual ref plus subsequently stored
+      snapshot refs. The index artifact stores only source_ledger, evidence_index and limitations; it excludes snapshot_refs
+      and its own ref.
+    schema:
+      type: object
+      additionalProperties: false
+      required: [contract_version, source_ledger, evidence_index, snapshot_refs, inventory_ref, limitations, evidence_index_ref]
+      properties:
+        contract_version: {const: stackos.seo.evidence-packet.v1}
+        source_ledger:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [source, evaluated_at, status, evidence_class, coverage, limitations, evidence_refs]
+            properties:
+              source: {type: string}
+              evaluated_at: {type: string, format: date-time}
+              status:
+                type: string
+                enum: [used, unavailable, skipped, failed]
+              evidence_class:
+                type: string
+                enum: [public-observation, first-party-provider, third-party-provider, operator-supplied]
+              coverage: {type: string}
+              reporting_window: {type: object, additionalProperties: true}
+              limitations:
+                type: array
+                items: {type: string}
+              evidence_refs:
+                type: array
+                items: {type: string}
+              reason: {type: string}
+        evidence_index:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [evidence_ref, kind, source, captured_at, lifecycle_state, scope, receipt_ref, limitations]
+            properties:
+              evidence_ref: {type: string, minLength: 1}
+              kind:
+                type: string
+                enum: [action-receipt, operator-context, prior-analysis, artifact]
+              source: {type: string, minLength: 1}
+              captured_at: {type: string, format: date-time}
+              lifecycle_state:
+                type: string
+                enum: [current, historical, superseded]
+              scope: {type: object, additionalProperties: true}
+              receipt_ref: {type: string, minLength: 1}
+              action_call_id: {type: integer, minimum: 1}
+              action_ref: {type: string}
+              output_sha256: {type: string, pattern: '^[a-fA-F0-9]{64}$'}
+              artifact_ref: {type: string}
+              reporting_window: {type: object, additionalProperties: true}
+              limitations:
+                type: array
+                items: {type: string}
+            allOf:
+              - if:
+                  properties:
+                    kind: {const: action-receipt}
+                  required: [kind]
+                then:
+                  required: [action_call_id, action_ref]
+              - if:
+                  properties:
+                    kind: {const: artifact}
+                  required: [kind]
+                then:
+                  required: [artifact_ref]
+        snapshot_refs:
+          type: array
+          items: {type: string, minLength: 1}
+        inventory_ref: {type: string, minLength: 1}
+        limitations:
+          type: array
+          items: {type: string, minLength: 1}
+        evidence_index_ref: {type: string, minLength: 1}
   - key: opportunity_summary
-    name: Opportunity Summary
-    description: Reviewed opportunity set with clusters, metrics, evidence refs, assumptions, and recommended next steps.
+    name: Reviewed Opportunity Summary
+    description: Canonical reviewed intent opportunities with existing-page dispositions, business criteria, review receipts, evidence index and limitations.
     type: object
     required: true
     schema:
       type: object
-      required: [criteria, clusters, prioritized_opportunities, avoidance_list, assumptions, evidence_refs, recommended_next_steps]
+      additionalProperties: false
+      required: [contract_version, criteria, opportunities, review_ref, adjudication_ref, evidence_index_ref, limitations]
       properties:
+        contract_version: {const: stackos.seo.opportunity-summary.v1}
         criteria: {type: object}
-        clusters: {type: array}
-        prioritized_opportunities: {type: array}
-        avoidance_list: {type: array}
-        assumptions: {type: array}
-        evidence_refs: {type: array, items: {type: string}}
-        recommended_next_steps: {type: array}
-  - key: raw_provider_data_refs
-    name: Raw Provider Data Refs
-    description: Response-file paths for preserved provider request/response envelopes, usually schema stackos.action-output.v1, to avoid paid roundtrips.
+        opportunities:
+          type: array
+          items: {$ref: '#/$defs/opportunity'}
+          minItems: 0
+        review_ref: {type: string, minLength: 1}
+        adjudication_ref: {type: string, minLength: 1}
+        limitations:
+          type: array
+          items: {type: string, minLength: 1}
+        evidence_index_ref: {type: string, minLength: 1}
+      $defs:
+        opportunity:
+          type: object
+          additionalProperties: false
+          required: [contract_version, intent, reader_task, business_fit, existing_page_refs, disposition, rationale,
+            confidence, next_validation, evidence_refs, evidence_index_ref]
+          properties:
+            contract_version: {const: stackos.seo.keyword-opportunity.v1}
+            intent: {type: string, minLength: 1}
+            reader_task: {type: string, minLength: 1}
+            business_fit: {type: string, minLength: 1}
+            existing_page_refs:
+              type: array
+              items: {type: string, minLength: 1}
+            disposition:
+              type: string
+              enum: [refresh, link, create, investigate_overlap, defer, reject]
+            rationale: {type: string, minLength: 1}
+            confidence:
+              type: string
+              enum: [high, medium, low]
+            next_validation: {type: string, minLength: 1}
+            gap_evidence: {type: string, minLength: 1}
+            priority: {type: string, minLength: 1}
+            next_owner: {type: string, minLength: 1}
+            evidence_refs:
+              type: array
+              items: {type: string, minLength: 1}
+              minItems: 1
+              uniqueItems: true
+            evidence_index_ref: {type: string, minLength: 1}
+          allOf:
+            - if:
+                required: [disposition]
+                properties:
+                  disposition:
+                    enum: [create]
+              then:
+                required: [gap_evidence]
+            - if:
+                required: [disposition]
+                properties:
+                  disposition:
+                    enum: [refresh, link, investigate_overlap]
+              then:
+                properties:
+                  existing_page_refs:
+                    type: array
+                    items: {type: string, minLength: 1}
+                    minItems: 1
+                    uniqueItems: true
+  - key: opportunity_record_refs
+    name: Stored Opportunity Refs
+    description: Verified durable resource references for the canonical opportunity set, preserving reviewed decisions for later authorized work.
     type: array
     required: true
-    schema: {type: array, items: {type: string, minLength: 1}, uniqueItems: true}
-  - key: synthesized_keyword_research
-    name: Synthesized Keyword Research
-    description: Polished research output, normally markdown plus optional CSV-style table, with ranked keyword clusters and raw-data refs.
-    type: object
-    required: true
     schema:
-      type: object
-      required: [brief_ref, ranked_clusters, opportunity_table, raw_data_refs, methodology]
-      properties:
-        brief_ref: {type: string}
-        csv_ref: {type: string}
-        ranked_clusters: {type: array}
-        opportunity_table: {type: array}
-        raw_data_refs: {type: array, items: {type: string}}
-        methodology: {type: object}
+      type: array
+      items: {type: string, minLength: 1}
 learning_hooks:
-  - key: research_reuse
-    prompt: Record only durable SEO research lessons with evidence and project provenance.
+  - {key: research_reuse, prompt: Record only durable SEO research lessons with evidence and project provenance.}
 metadata:
   builtin: true
   run_mode: stackos_run_plan
   mcp_tool_grants:
-    - step_id: capture_learning
-      tool: learning.create
-  step_ids:
-    - orient
-    - collect_evidence
-    - store_opportunities
-    - capture_learning
+    - {step_id: collect_evidence, tool: artifact.create}
+    - {step_id: store_opportunities, tool: artifact.create}
+    - {step_id: capture_learning, tool: learning.create}
+    - {step_id: review_opportunities, tool: artifact.create}
+    - {step_id: review_opportunities, tool: artifact.supersede}
+  step_ids: [orient, collect_evidence, review_opportunities, store_opportunities, capture_learning]
+  artifact_grant_policy: explicit
+failure_handling: ['Use approved exports for unavailable optional providers. If evidence cannot support a disposition,
+    defer with the exact gap; if a durable write fails, do not claim stored completion.']

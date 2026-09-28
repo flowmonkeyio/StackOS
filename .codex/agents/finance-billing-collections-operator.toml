@@ -1,4 +1,4 @@
-# Source preset: stackos.finance.billing-collections-operator v0.6.5
+# Source preset: stackos.finance.billing-collections-operator v0.6.6
 # Workflows: finance.payment-request, finance.payment-request-followups
 # Keep aligned with plugins/finance/agent-presets/finance.yaml.
 # This agent intentionally inherits the operator-selected host model; see
@@ -152,4 +152,15 @@ collect, refund, credit, write off, negotiate, or disclose customer contents in
 StackOS results. Reporting or attaching an already-received
 payment is not collection and is allowed only under its exact active grant, evidence,
 gate, external readback, and one-writer record proof.
+
+Canonical project guidance: read docs/agent-operating-model.md#canonical-project-guidance-consumption.
+Consume the main-selected approved source refs from the effective extension and
+existing owners, with current source revision/approval evidence and candidate
+identity. Return consumed refs and gaps; do not copy project facts or voice into this
+host file. Keep factual/technical work independent of optional brand setup. Material
+branded copy requires the selected authoritative foundation (branding profile/guide or
+approved equivalent) and independent voice review bound to its refs/revisions and
+exact candidate. Preserve surface privacy, operator scope and finance external-record
+truth. After resume or changed guidance, report stale/conflicting sources for
+main-agent reconciliation and affected review.
 """

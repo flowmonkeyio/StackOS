@@ -178,3 +178,37 @@ def test_microsoft_contract_validates_tenant_path_segment() -> None:
 def test_provider_without_core_oauth_contract_is_rejected() -> None:
     with pytest.raises(ValidationError, match="no daemon OAuth contract"):
         oauth_contract_for("unknown-provider")
+
+
+@pytest.mark.parametrize(
+    "provider_key", [key for key in EXPECTED_CONTRACTS if key.startswith("google-")]
+)
+def test_service_account_is_explicit_with_fixed_scopes(provider_key: str) -> None:
+    contract = oauth_contract_for(provider_key, auth_method_key="service-account")
+    assert contract.flow == "jwt_bearer"
+    assert contract.token_endpoint == "https://oauth2.googleapis.com/token"
+    assert contract.authorization_endpoint is None
+    assert contract.required_token_type == "Bearer"
+    if provider_key == "google-workspace":
+        assert contract.scopes == ("https://www.googleapis.com/auth/calendar.events",)
+        delegated = oauth_contract_for(
+            provider_key,
+            auth_method_key="service-account",
+            safe_config={"delegated_subject": "reader@example.com"},
+        )
+        assert delegated.scopes == oauth_contract_for(provider_key).scopes
+        assert delegated.delegated_subject == "reader@example.com"
+    else:
+        assert contract.scopes == oauth_contract_for(provider_key).scopes
+    assert oauth_contract_for(provider_key).flow == "authorization_code"
+
+
+def test_service_account_contract_rejects_other_providers_and_nonworkspace_delegation() -> None:
+    with pytest.raises(ValidationError):
+        oauth_contract_for("linear", auth_method_key="service-account")
+    with pytest.raises(ValidationError):
+        oauth_contract_for(
+            "google-ads",
+            auth_method_key="service-account",
+            safe_config={"delegated_subject": "reader@example.com"},
+        )

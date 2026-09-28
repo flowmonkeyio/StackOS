@@ -57,13 +57,22 @@ state can be re-read. The main agent owns integration, cross-run or batch
 coherence, feedback routing, and final claims; specialist outputs are bounded
 evidence and recommendations.
 
+Apply [canonical project guidance consumption](./docs/agent-operating-model.md#canonical-project-guidance-consumption)
+at setup, dispatch, cross-workflow handoff, resume and before affected changes.
+Use the same approved source refs and current revision/approval evidence, with
+only the constraints relevant to each role. Host files contain resolution
+guidance and source provenance, never copied project voice or facts. Material
+branded copy requires its applicable current foundation and independent voice
+review; missing brand does not block factual, technical or unrelated finance
+work. Existing project/source owners and action authority remain unchanged.
+
 Project-local main-agent mappings:
 
 - `engineering.tracked-delivery` ->
   [`.codex/orchestrator/sdlc-delivery-orchestrator.md`](./.codex/orchestrator/sdlc-delivery-orchestrator.md)
 - `branding.brand-foundation-setup` and `branding.content-production` ->
   [`.codex/orchestrator/branding-content-orchestrator.md`](./.codex/orchestrator/branding-content-orchestrator.md)
-- `agency.setup`, `agency.project-setup`, `seo.keyword-research`, and `seo.website-analysis` ->
+- `agency.setup`, `agency.project-setup`, `seo.keyword-research`, `seo.content-refresh`, and `seo.website-analysis` ->
   [`.codex/orchestrator/workflow-orchestrator.md`](./.codex/orchestrator/workflow-orchestrator.md)
 - `finance.receipt-intake`, `finance.bookkeeping-close`,
   `finance.payment-request`, `finance.payment-request-followups`,

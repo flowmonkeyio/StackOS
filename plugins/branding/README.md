@@ -15,6 +15,29 @@ source-linked research, independent voice review, finalization, and a final
 retrieval check. It separates channel-independent voice from image style,
 channel mechanics, and temporary campaign tone.
 
+Other workflows consume the selected approved project foundation through
+existing `selected_context_json` owner refs and current scoped reads. That source
+may be this profile/guide or an approved external, document or legacy equivalent;
+do not require foundation setup merely because this plugin does not own it.
+Foundation closeout returns exact owner revisions, the decision and retrieval
+evidence without silently changing another workflow's source selection.
+
+`branding.content-production.source_scope.refs` receives the exact selected SEO
+opportunity and its reviewed handoff, including disposition, current existing-page
+coverage, evidence index, intended scope and next owner. It also accepts a
+canonical-content synchronization handoff after an applied SEO change. In that
+case, reuse the current exact candidate and review/implementation receipts;
+update only the selected content owner within existing authority and grants.
+Otherwise keep synchronization pending. Do not redraft, republish or replay an
+applied edit to repair bookkeeping. Default to `packet_only` unless another mode
+is already authorized.
+
+Authors and independent reviewers consume the same selected foundation refs and
+actual revisions. Review artifacts bind both that foundation and the exact
+candidate; the content-piece review log retains their refs. Recheck both before
+canonical updates or publication. Changed applicable guidance requires affected
+review even if the prose did not change; retain old receipts as history.
+
 `branding.content-production` is the end-to-end content loop. It decides whether
 an operator interview is required, useful, or unnecessary, researches the
 facts across the right sources, pulls supporting artifacts, proposes angles,

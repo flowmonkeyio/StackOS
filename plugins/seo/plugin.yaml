@@ -206,13 +206,33 @@ providers:
           type: text
           secret: false
           required: false
+      - key: service-account
+        label: Service account
+        description: Use a Google service-account JSON key with access to the Search Console property. No user consent redirect.
+        auth_type: oauth
+        interactive: false
+        payload_format: json
+        permission_verification:
+          evidence_source: oauth_response
+          enforcement: local_required
+        fields:
+        - key: service_account_json
+          label: Service-account JSON key
+          type: secret
+          secret: true
+          required: true
+        - key: default_site_url
+          label: Default Site URL
+          type: text
+          secret: false
+          required: false
     config:
       scopes:
         - https://www.googleapis.com/auth/webmasters.readonly
-      setup_note: Use Google OAuth with the read-only Search Console scope. StackOS supports a direct access token or a daemon-held OAuth client refresh-token payload; no legacy gscOauth tools or GSC metric tables are used.
+      setup_note: Choose Google OAuth or a service-account JSON key with Search Console property access. Both use the read-only Search Console scope.
       setup:
-        credential_label: Google Search Console OAuth credential
-        setup_note: Create a Google Cloud OAuth client with Search Console API enabled, grant https://www.googleapis.com/auth/webmasters.readonly, and store either an access token or refresh-token credential in StackOS.
+        credential_label: Google Search Console credential
+        setup_note: Enable Search Console API. For service-account setup, add the key's client_email as a user of the target Search Console property, then enter the JSON key locally. Restricted property access supports performance reads; Cloud IAM alone does not grant property access. OAuth remains available.
         homepage_url: https://search.google.com/search-console/about
         console_url: https://search.google.com/search-console
         credential_url: https://console.cloud.google.com/apis/credentials
@@ -227,6 +247,8 @@ providers:
           docs_url: verified
           fallback_url: verified
       docs:
+        - https://developers.google.com/webmaster-tools/v1/quickstart/quickstart-python
+        - https://support.google.com/webmasters/answer/7687615
         - https://developers.google.com/webmaster-tools/v1/how-tos/authorizing
         - https://developers.google.com/webmaster-tools/v1/sites/list
         - https://developers.google.com/webmaster-tools/v1/searchanalytics/query
@@ -298,13 +320,33 @@ providers:
           type: text
           secret: false
           required: false
+      - key: service-account
+        label: Service account
+        description: Use a Google service-account JSON key granted access to the GA4 account or property. No user consent redirect.
+        auth_type: oauth
+        interactive: false
+        payload_format: json
+        permission_verification:
+          evidence_source: oauth_response
+          enforcement: local_required
+        fields:
+        - key: service_account_json
+          label: Service-account JSON key
+          type: secret
+          secret: true
+          required: true
+        - key: default_property_ref
+          label: Default GA4 Property
+          type: text
+          secret: false
+          required: false
     config:
       scopes:
         - https://www.googleapis.com/auth/analytics.readonly
-      setup_note: Use Google OAuth with the Analytics read-only scope for GA4 Admin/Data API reporting. Measurement Protocol and Analytics write/admin scopes are intentionally deferred.
+      setup_note: Choose Google OAuth or a service-account JSON key with Analytics read-only access for GA4 Admin/Data API reporting. Measurement Protocol and write/admin scopes remain deferred.
       setup:
-        credential_label: Google Analytics OAuth credential
-        setup_note: Create a Google Cloud OAuth client with Analytics Admin/Data APIs enabled, grant https://www.googleapis.com/auth/analytics.readonly, and store either an access token or refresh-token credential in StackOS.
+        credential_label: Google Analytics credential
+        setup_note: Enable Analytics Admin and Data APIs. For service-account setup, grant the key's client_email Viewer access to the GA4 property or account, then enter the JSON key locally. Cloud IAM alone does not grant Analytics access. OAuth remains available.
         homepage_url: https://marketingplatform.google.com/about/analytics/
         console_url: https://analytics.google.com/analytics/web/
         credential_url: https://console.cloud.google.com/apis/credentials
@@ -390,13 +432,33 @@ providers:
           type: text
           secret: false
           required: false
+      - key: service-account
+        label: Service account
+        description: Use a Google service-account JSON key granted access to the Tag Manager account and containers. No user consent redirect.
+        auth_type: oauth
+        interactive: false
+        payload_format: json
+        permission_verification:
+          evidence_source: oauth_response
+          enforcement: local_required
+        fields:
+        - key: service_account_json
+          label: Service-account JSON key
+          type: secret
+          secret: true
+          required: true
+        - key: default_account_ref
+          label: Default Account Ref
+          type: text
+          secret: false
+          required: false
     config:
       scopes:
         - https://www.googleapis.com/auth/tagmanager.readonly
-      setup_note: Use Google OAuth with the Tag Manager read-only scope. Container/workspace mutations, versioning, publish, and permission-management scopes are intentionally deferred.
+      setup_note: Choose Google OAuth or a service-account JSON key with Tag Manager read-only access. Container/workspace mutations, versioning, publish, and permission-management scopes remain deferred.
       setup:
-        credential_label: Google Tag Manager OAuth credential
-        setup_note: Create a Google Cloud OAuth client with Tag Manager API enabled, grant https://www.googleapis.com/auth/tagmanager.readonly, and store either an access token or refresh-token credential in StackOS.
+        credential_label: Google Tag Manager credential
+        setup_note: Enable Tag Manager API. For service-account setup, add the key's client_email to the Tag Manager account with read access to the relevant containers, then enter the JSON key locally. OAuth remains available.
         homepage_url: https://tagmanager.google.com/
         console_url: https://tagmanager.google.com/
         credential_url: https://console.cloud.google.com/apis/credentials
@@ -1441,31 +1503,740 @@ resources:
   - key: keyword-opportunity
     name: Keyword Opportunity
     description: Agent-curated keyword or query opportunity with evidence and priority metadata.
-    schema: *object_schema
+    schema:
+      type: object
+      description: New records use the explicit current contract. Unversioned records retain historical shape and
+        update compatibility; revalidate them before using as current proof.
+      oneOf:
+        - not:
+            required: [contract_version]
+        - {$ref: '#/$defs/current'}
+      $defs:
+        current:
+          type: object
+          additionalProperties: false
+          required: [contract_version, intent, reader_task, business_fit, existing_page_refs, disposition, rationale,
+            confidence, next_validation, evidence_refs, evidence_index_ref]
+          properties:
+            contract_version: {const: stackos.seo.keyword-opportunity.v1}
+            intent: {type: string, minLength: 1}
+            reader_task: {type: string, minLength: 1}
+            business_fit: {type: string, minLength: 1}
+            existing_page_refs:
+              type: array
+              items: {type: string, minLength: 1}
+            disposition:
+              type: string
+              enum: [refresh, link, create, investigate_overlap, defer, reject]
+            rationale: {type: string, minLength: 1}
+            confidence:
+              type: string
+              enum: [high, medium, low]
+            next_validation: {type: string, minLength: 1}
+            gap_evidence: {type: string, minLength: 1}
+            priority: {type: string, minLength: 1}
+            next_owner: {type: string, minLength: 1}
+            evidence_refs:
+              type: array
+              items: {type: string, minLength: 1}
+              minItems: 1
+              uniqueItems: true
+            evidence_index_ref: {type: string, minLength: 1}
+          allOf:
+            - if:
+                required: [disposition]
+                properties:
+                  disposition:
+                    enum: [create]
+              then:
+                required: [gap_evidence]
+            - if:
+                required: [disposition]
+                properties:
+                  disposition:
+                    enum: [refresh, link, investigate_overlap]
+              then:
+                properties:
+                  existing_page_refs:
+                    type: array
+                    items: {type: string, minLength: 1}
+                    minItems: 1
+                    uniqueItems: true
+    config: {schema_version: stackos.resource.v1, record_kind: keyword-opportunity, agent_guidance: 'Author new
+        records with contract_version and the current schema. Unversioned records, including schemaVersion/collections
+        payloads, remain historical and updatable; do not promote them to current proof without revalidation. Keep
+        bulky content in intentionally retained artifacts. evidence_index_ref identifies the single durable package
+        evidence index; resolve every evidence_ref there without copying the index into each record. Temporary response-file
+        paths are execution hints, never durable receipts. Agents decide SEO meaning; this schema checks record
+        shape and explicit state only.'}
+    ui_schema:
+      table_columns: [contract_version, disposition]
+      summary_fields: [evidence_index_ref]
+      detail_sections:
+        - title: Record and evidence
+          fields: [contract_version, intent, reader_task, business_fit, existing_page_refs, disposition, rationale,
+            confidence, next_validation, gap_evidence, priority, next_owner, evidence_refs, evidence_index_ref]
   - key: serp-snapshot
     name: SERP Snapshot
     description: Normalized SERP evidence captured for later comparison or brief creation.
-    schema: *object_schema
+    schema: {type: object, additionalProperties: true}
   - key: content-brief
     name: Content Brief
     description: Reusable content brief contract created by an agent.
-    schema: *object_schema
+    schema: {type: object, additionalProperties: true}
   - key: content-piece
     name: Content Piece
     description: SEO content work item, draft pointer, ownership metadata, or refresh state.
-    schema: *object_schema
+    schema: {type: object, additionalProperties: true}
   - key: content-refresh
     name: Content Refresh
     description: Refresh opportunity, diagnosis, action taken, and observed result.
-    schema: *object_schema
+    schema:
+      type: object
+      description: New records use the explicit current contract. Unversioned records retain historical shape and
+        update compatibility; revalidate them before using as current proof.
+      oneOf:
+        - not:
+            required: [contract_version]
+        - {$ref: '#/$defs/current'}
+      $defs:
+        current:
+          type: object
+          additionalProperties: false
+          required: [contract_version, mode, content_refs, goal, diagnosis_ref, proposal_ref, proposal_version,
+            review, implementation, outcome, followup, evidence_index_ref, evidence_refs]
+          properties:
+            contract_version: {const: stackos.seo.content-refresh.v1}
+            mode:
+              type: string
+              enum: [prepare, apply, assess]
+            content_refs:
+              type: array
+              items: {type: string, minLength: 1}
+              minItems: 1
+              uniqueItems: true
+            goal: {type: string, minLength: 1}
+            diagnosis_ref: {type: string, minLength: 1}
+            proposal_ref: {type: string, minLength: 1}
+            proposal_version: {type: string, minLength: 1}
+            prior_refresh_ref: {type: string, minLength: 1}
+            review:
+              type: object
+              additionalProperties: false
+              required: [reviewer_ref, reviewed_at, adjudicator_ref, adjudication_ref, dispositions]
+              properties:
+                reviewer_ref: {type: string, minLength: 1}
+                reviewed_at: {type: string, format: date-time}
+                adjudicator_ref: {type: string, minLength: 1}
+                adjudication_ref: {type: string, minLength: 1}
+                dispositions:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [change_id, disposition, rationale, evidence_refs]
+                    properties:
+                      change_id: {type: string, minLength: 1}
+                      disposition:
+                        type: string
+                        enum: [accepted, revised, rejected]
+                      rationale: {type: string, minLength: 1}
+                      evidence_refs:
+                        type: array
+                        items: {type: string, minLength: 1}
+                        minItems: 1
+                        uniqueItems: true
+                  minItems: 0
+            implementation:
+              type: object
+              additionalProperties: false
+              required: [status, change_results]
+              properties:
+                status:
+                  type: string
+                  enum: [prepared, partial, applied, verified, blocked, unknown]
+                change_results:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [change_id, status, receipt_refs, verification_refs, recovery_note]
+                    properties:
+                      change_id: {type: string, minLength: 1}
+                      status:
+                        type: string
+                        enum: [proposed, skipped, applied, verified, failed, unknown]
+                      receipt_refs:
+                        type: array
+                        items: {type: string, minLength: 1}
+                      verification_refs:
+                        type: array
+                        items: {type: string, minLength: 1}
+                      recovery_note: {type: string, minLength: 1}
+                      attempt_id: {type: string, minLength: 1}
+                    allOf:
+                      - if:
+                          required: [status]
+                          properties:
+                            status:
+                              enum: [applied, verified, failed, unknown]
+                        then:
+                          required: [attempt_id]
+                          properties:
+                            receipt_refs: {type: array, minItems: 1}
+                      - if:
+                          required: [status]
+                          properties:
+                            status:
+                              enum: [verified]
+                        then:
+                          properties:
+                            verification_refs:
+                              type: array
+                              items: {type: string, minLength: 1}
+                              minItems: 1
+                              uniqueItems: true
+                  minItems: 0
+                operator_approval_ref: {type: string, minLength: 1}
+                delivery_ref: {type: string, minLength: 1}
+              allOf:
+                - if:
+                    required: [status]
+                    properties:
+                      status: {const: verified}
+                  then:
+                    properties:
+                      change_results:
+                        contains:
+                          required: [status]
+                          properties:
+                            status: {const: verified}
+                        items:
+                          properties:
+                            status:
+                              enum: [verified, skipped]
+                - if:
+                    required: [status]
+                    properties:
+                      status: {const: applied}
+                  then:
+                    properties:
+                      change_results:
+                        contains:
+                          required: [status]
+                          properties:
+                            status:
+                              enum: [applied, verified]
+                        items:
+                          properties:
+                            status:
+                              enum: [applied, verified, skipped]
+            outcome:
+              type: object
+              additionalProperties: false
+              required: [status, summary, baseline_snapshot_refs, followup_snapshot_refs, limitations]
+              properties:
+                status:
+                  type: string
+                  enum: [pending, inconclusive, observed]
+                summary: {type: string, minLength: 1}
+                baseline_snapshot_refs:
+                  type: array
+                  items: {type: string, minLength: 1}
+                followup_snapshot_refs:
+                  type: array
+                  items: {type: string, minLength: 1}
+                limitations:
+                  type: array
+                  items: {type: string, minLength: 1}
+                comparison_ref: {type: string, minLength: 1}
+              allOf:
+                - if:
+                    required: [status]
+                    properties:
+                      status:
+                        enum: [observed]
+                  then:
+                    required: [comparison_ref]
+                    properties:
+                      baseline_snapshot_refs:
+                        type: array
+                        items: {type: string, minLength: 1}
+                        minItems: 1
+                        uniqueItems: true
+                      followup_snapshot_refs:
+                        type: array
+                        items: {type: string, minLength: 1}
+                        minItems: 1
+                        uniqueItems: true
+            followup:
+              type: object
+              additionalProperties: false
+              required: [status, due_at, next_mode, next_action]
+              properties:
+                status:
+                  type: string
+                  enum: [scheduled, completed, blocked, not-needed]
+                due_at:
+                  type: [string, 'null']
+                  format: date-time
+                next_mode:
+                  type: string
+                  enum: [apply, assess]
+                next_action: {type: string, minLength: 1}
+              allOf:
+                - if:
+                    required: [status]
+                    properties:
+                      status: {const: scheduled}
+                  then:
+                    properties:
+                      due_at: {type: string, minLength: 1}
+                - if:
+                    required: [status]
+                    properties:
+                      status: {const: blocked}
+                  then:
+                    properties:
+                      due_at: {type: 'null'}
+            evidence_index_ref: {type: string, minLength: 1}
+            evidence_refs:
+              type: array
+              items: {type: string, minLength: 1}
+              minItems: 1
+              uniqueItems: true
+          allOf:
+            - if:
+                required: [mode]
+                properties:
+                  mode:
+                    enum: [prepare]
+              then:
+                properties:
+                  implementation:
+                    properties:
+                      status:
+                        enum: [prepared, blocked]
+                      change_results:
+                        items:
+                          properties:
+                            status:
+                              enum: [proposed, skipped]
+                  outcome:
+                    properties:
+                      status:
+                        enum: [pending, inconclusive]
+            - if:
+                required: [mode]
+                properties:
+                  mode:
+                    enum: [assess]
+              then:
+                required: [prior_refresh_ref]
+            - if:
+                required: [mode, implementation]
+                properties:
+                  mode: {const: apply}
+                  implementation:
+                    required: [status]
+                    properties:
+                      status:
+                        enum: [partial, applied, verified, unknown]
+              then:
+                properties:
+                  implementation:
+                    required: [operator_approval_ref]
+            - if:
+                required: [implementation]
+                properties:
+                  implementation:
+                    required: [change_results]
+                    properties:
+                      change_results:
+                        not:
+                          contains:
+                            required: [status]
+                            properties:
+                              status:
+                                enum: [applied, verified]
+              then:
+                properties:
+                  followup:
+                    properties:
+                      next_mode: {const: apply}
+                  outcome:
+                    properties:
+                      status:
+                        enum: [pending, inconclusive]
+    config: {schema_version: stackos.resource.v1, record_kind: content-refresh, agent_guidance: 'Author new records
+        with contract_version and the current schema. Unversioned records, including schemaVersion/collections payloads,
+        remain historical and updatable; do not promote them to current proof without revalidation. Keep bulky content
+        in intentionally retained artifacts. evidence_index_ref identifies the single durable package evidence index;
+        resolve every evidence_ref there without copying the index into each record. Temporary response-file paths
+        are execution hints, never durable receipts. Agents decide SEO meaning; this schema checks record shape
+        and explicit state only.'}
+    ui_schema:
+      table_columns: [contract_version, mode]
+      summary_fields: [evidence_index_ref]
+      detail_sections:
+        - title: Record and evidence
+          fields: [contract_version, mode, content_refs, goal, diagnosis_ref, proposal_ref, proposal_version, prior_refresh_ref,
+            review, implementation, outcome, followup, evidence_index_ref, evidence_refs]
   - key: link-opportunity
     name: Link Opportunity
     description: Internal or external link opportunity with rationale and status.
-    schema: *object_schema
+    schema:
+      type: object
+      description: New records use the explicit current contract. Unversioned records retain historical shape and
+        update compatibility; revalidate them before using as current proof.
+      oneOf:
+        - not:
+            required: [contract_version]
+        - {$ref: '#/$defs/current'}
+      $defs:
+        current:
+          type: object
+          additionalProperties: false
+          required: [contract_version, change_id, source_url, destination_url, locator, existing_text, proposed_text,
+            anchor_text, reason_to_click, source_version_ref, scope, checks, status, evidence_refs, evidence_index_ref]
+          properties:
+            contract_version: {const: stackos.seo.link-opportunity.v1}
+            change_id: {type: string, minLength: 1}
+            source_url: {type: string, minLength: 1}
+            destination_url: {type: string, minLength: 1}
+            locator: {type: string, minLength: 1}
+            existing_text: {type: string, minLength: 1}
+            proposed_text: {type: string, minLength: 1}
+            anchor_text: {type: string, minLength: 1}
+            reason_to_click: {type: string, minLength: 1}
+            source_version_ref: {type: string, minLength: 1}
+            scope:
+              type: string
+              enum: [page, shared-template]
+            checks:
+              type: object
+              additionalProperties: false
+              required: [existing_link, destination, shared_template_scope, evidence_refs]
+              properties:
+                existing_link:
+                  type: string
+                  enum: [absent, present, unknown]
+                destination:
+                  type: string
+                  enum: [verified, invalid, unknown]
+                shared_template_scope:
+                  type: string
+                  enum: [not-shared, reviewed, unknown]
+                evidence_refs:
+                  type: array
+                  items: {type: string, minLength: 1}
+                  minItems: 1
+                  uniqueItems: true
+            status:
+              type: string
+              enum: [proposed, reviewed, applied, verified, rejected, stale, failed, unknown]
+            receipt_refs:
+              type: array
+              items: {type: string, minLength: 1}
+            evidence_refs:
+              type: array
+              items: {type: string, minLength: 1}
+              minItems: 1
+              uniqueItems: true
+            evidence_index_ref: {type: string, minLength: 1}
+          allOf:
+            - if:
+                required: [status]
+                properties:
+                  status:
+                    enum: [applied, verified]
+              then:
+                required: [receipt_refs]
+                properties:
+                  receipt_refs:
+                    type: array
+                    items: {type: string, minLength: 1}
+                    minItems: 1
+                    uniqueItems: true
+    config: {schema_version: stackos.resource.v1, record_kind: link-opportunity, agent_guidance: 'Author new records
+        with contract_version and the current schema. Unversioned records, including schemaVersion/collections payloads,
+        remain historical and updatable; do not promote them to current proof without revalidation. Keep bulky content
+        in intentionally retained artifacts. evidence_index_ref identifies the single durable package evidence index;
+        resolve every evidence_ref there without copying the index into each record. Temporary response-file paths
+        are execution hints, never durable receipts. Agents decide SEO meaning; this schema checks record shape
+        and explicit state only.'}
+    ui_schema:
+      table_columns: [contract_version, status]
+      summary_fields: [evidence_index_ref]
+      detail_sections:
+        - title: Record and evidence
+          fields: [contract_version, change_id, source_url, destination_url, locator, existing_text, proposed_text,
+            anchor_text, reason_to_click, source_version_ref, scope, checks, status, receipt_refs, evidence_refs,
+            evidence_index_ref]
   - key: search-performance-snapshot
     name: Search Performance Snapshot
     description: Imported or summarized search-performance metrics for agent analysis.
-    schema: *object_schema
+    schema:
+      type: object
+      description: New records use the explicit current contract. Unversioned records retain historical shape and
+        update compatibility; revalidate them before using as current proof.
+      oneOf:
+        - not:
+            required: [contract_version]
+        - {$ref: '#/$defs/current'}
+      $defs:
+        current:
+          type: object
+          additionalProperties: false
+          required: [contract_version, source, source_ref, property_ref, captured_at, window, filters, dimensions,
+            cohort, url_mapping, metric_definitions, metrics, coverage, sample, comparability, comparison_status,
+            evidence_index_ref, evidence_refs, limitations]
+          properties:
+            contract_version: {const: stackos.seo.search-performance-snapshot.v1}
+            source:
+              type: string
+              enum: [gsc, ga4, export, other]
+            source_ref: {type: string, minLength: 1}
+            property_ref: {type: string, minLength: 1}
+            captured_at: {type: string, format: date-time}
+            window:
+              type: object
+              additionalProperties: false
+              required: [start, end, timezone, data_state]
+              properties:
+                start: {type: string, minLength: 1}
+                end: {type: string, minLength: 1}
+                timezone:
+                  type: [string, 'null']
+                data_state:
+                  type: string
+                  enum: [final, partial, unknown]
+            filters:
+              type: object
+              additionalProperties: false
+              required: [search_type, country, device, brand_scope, other]
+              properties:
+                search_type:
+                  type: [string, 'null']
+                country:
+                  type: [string, 'null']
+                device:
+                  type: [string, 'null']
+                brand_scope:
+                  type: [string, 'null']
+                other: {type: object}
+            dimensions:
+              type: array
+              items: {type: string, minLength: 1}
+            cohort:
+              type: object
+              additionalProperties: false
+              required: [definition, scope, entry_page_semantics]
+              properties:
+                definition: {type: string, minLength: 1}
+                scope:
+                  type: string
+                  enum: [query, page, session, user, event, unknown]
+                entry_page_semantics:
+                  type: [string, 'null']
+            url_mapping:
+              type: object
+              additionalProperties: false
+              required: [strategy, mapping_ref, unmatched_count, limitations]
+              properties:
+                strategy: {type: string, minLength: 1}
+                mapping_ref:
+                  type: [string, 'null']
+                unmatched_count:
+                  type: [integer, 'null']
+                  minimum: 0
+                limitations:
+                  type: array
+                  items: {type: string, minLength: 1}
+            metric_definitions:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [name, unit, denominator, attribution_model, attribution_window]
+                properties:
+                  name: {type: string, minLength: 1}
+                  unit: {type: string, minLength: 1}
+                  denominator:
+                    type: object
+                    additionalProperties: false
+                    required: [metric, value, scope, limitation]
+                    properties:
+                      metric:
+                        type: [string, 'null']
+                      value:
+                        type: [number, 'null']
+                      scope:
+                        type: [string, 'null']
+                      limitation:
+                        type: [string, 'null']
+                    allOf:
+                      - if:
+                          required: [value]
+                          properties:
+                            value: {type: 'null'}
+                        then:
+                          properties:
+                            limitation: {type: string, minLength: 1}
+                  attribution_model:
+                    type: [string, 'null']
+                  attribution_window:
+                    type: [string, 'null']
+              minItems: 1
+            metrics:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [name, value, availability]
+                properties:
+                  name: {type: string, minLength: 1}
+                  value:
+                    type: [number, 'null']
+                  availability:
+                    type: string
+                    enum: [measured, missing, unavailable]
+                allOf:
+                  - if:
+                      required: [availability]
+                      properties:
+                        availability:
+                          enum: [measured]
+                    then:
+                      properties:
+                        value: {type: number}
+                  - if:
+                      required: [availability]
+                      properties:
+                        availability:
+                          enum: [missing, unavailable]
+                    then:
+                      properties:
+                        value: {type: 'null'}
+              minItems: 0
+            rows_artifact_ref: {type: string, minLength: 1}
+            coverage:
+              type: object
+              additionalProperties: false
+              required: [status, row_count, total_rows, pagination]
+              properties:
+                status:
+                  type: string
+                  enum: [complete, sampled, truncated, unknown]
+                row_count: {type: integer, minimum: 0}
+                total_rows:
+                  type: [integer, 'null']
+                  minimum: 0
+                pagination: {type: string, minLength: 1}
+            sample:
+              type: object
+              additionalProperties: false
+              required: [status, rationale]
+              properties:
+                status:
+                  type: string
+                  enum: [sufficient, insufficient, unknown]
+                rationale: {type: string, minLength: 1}
+            comparability:
+              type: object
+              additionalProperties: false
+              required: [status, limitations]
+              properties:
+                status:
+                  type: string
+                  enum: [comparable, incomparable, unknown]
+                limitations:
+                  type: array
+                  items: {type: string, minLength: 1}
+            comparison_status:
+              type: string
+              enum: [ready, inconclusive]
+            evidence_index_ref: {type: string, minLength: 1}
+            evidence_refs:
+              type: array
+              items: {type: string, minLength: 1}
+              minItems: 1
+              uniqueItems: true
+            limitations:
+              type: array
+              items: {type: string, minLength: 1}
+          allOf:
+            - if:
+                properties:
+                  sample:
+                    properties:
+                      status:
+                        enum: [insufficient, unknown]
+                    required: [status]
+                required: [sample]
+              then:
+                properties:
+                  comparison_status: {const: inconclusive}
+            - if:
+                properties:
+                  coverage:
+                    properties:
+                      status:
+                        enum: [truncated, unknown]
+                    required: [status]
+                required: [coverage]
+              then:
+                properties:
+                  comparison_status: {const: inconclusive}
+            - if:
+                properties:
+                  comparability:
+                    properties:
+                      status:
+                        enum: [incomparable, unknown]
+                    required: [status]
+                required: [comparability]
+              then:
+                properties:
+                  comparison_status: {const: inconclusive}
+            - if:
+                properties:
+                  window:
+                    properties:
+                      data_state:
+                        enum: [partial, unknown]
+                    required: [data_state]
+                required: [window]
+              then:
+                properties:
+                  comparison_status: {const: inconclusive}
+            - if:
+                required: [metrics]
+                properties:
+                  metrics:
+                    contains:
+                      required: [availability]
+                      properties:
+                        availability:
+                          enum: [missing, unavailable]
+              then:
+                properties:
+                  comparison_status: {const: inconclusive}
+    config: {schema_version: stackos.resource.v1, record_kind: search-performance-snapshot, agent_guidance: 'Author
+        new records with contract_version and the current schema. Unversioned records, including schemaVersion/collections
+        payloads, remain historical and updatable; do not promote them to current proof without revalidation. Keep
+        bulky content in intentionally retained artifacts. evidence_index_ref identifies the single durable package
+        evidence index; resolve every evidence_ref there without copying the index into each record. Temporary response-file
+        paths are execution hints, never durable receipts. Agents decide SEO meaning; this schema checks record
+        shape and explicit state only.'}
+    ui_schema:
+      table_columns: [contract_version, source]
+      summary_fields: [evidence_index_ref]
+      detail_sections:
+        - title: Record and evidence
+          fields: [contract_version, source, source_ref, property_ref, captured_at, window, filters, dimensions,
+            cohort, url_mapping, metric_definitions, metrics, rows_artifact_ref, coverage, sample, comparability,
+            comparison_status, evidence_index_ref, evidence_refs, limitations]
   - key: website-seo-analysis
     name: Website SEO Analysis
     description: Compact durable index for a completed or partial website SEO analysis and its evidence artifacts.

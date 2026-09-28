@@ -1,239 +1,997 @@
 schema_version: stackos.workflow-template.v1
 key: seo.content-refresh
 name: SEO Content Refresh
-version: 0.1.0
-description: Reusable template for diagnosing and executing a content refresh without assuming one universal content workflow.
+version: 0.2.1
+description: Prepare, apply, or assess one bounded multi-page SEO refresh with exact edits, independent review,
+  partial-change recovery and honest delayed measurement.
 domain: seo
-owner:
-  team: StackOS
+owner: {team: StackOS}
 experience:
-  problem: "Content refreshes turn into broad rewrites when search intent, current performance, technical issues, and conversion purpose are not diagnosed first."
-  outcome: "A focused page refresh with traceable changes, preserved useful content, and a verification plan."
-  why_ai: "AI can compare search evidence, page structure, project context, and editorial constraints while keeping the final judgment and publication boundary explicit."
-  operator_path:
-    - "Choose the page, business goal, search intent, and performance window."
-    - "Provide approved analytics, query, and content sources."
-    - "Review the proposed changes before publication."
-  agent_path:
-    - "Diagnose intent, performance, technical, content, and conversion gaps before editing."
-    - "Map each proposed change to evidence and preserve what already works."
-    - "Prepare or apply the bounded refresh, then verify content and technical acceptance criteria."
-  progress_signals:
-    - "Page and intent scoped"
-    - "Diagnosis complete"
-    - "Refresh plan reviewed"
-    - "Changes applied"
-    - "Verification complete"
-  recovery:
-    - "If query or performance evidence is missing, return a bounded diagnostic and data request."
-    - "If publication is not authorized, stop with a review-ready patch or content packet."
-  safe_stopping_points:
-    - "Stop with a review-ready refresh plan or patch when publication was not authorized."
+  problem: Content refreshes turn into broad rewrites when search intent, current performance, technical issues,
+    and conversion purpose are not diagnosed first.
+  outcome: One reviewed refresh record distinguishing proposed or applied changes, per-change verification and later
+    measured outcomes; preparation and assessment never imply publication.
+  why_ai: AI can compare search evidence, page structure, project context, and editorial constraints while keeping
+    the final judgment and publication boundary explicit.
+  operator_path: ['Choose the bounded page set, business goal and prepare/apply/assess mode; preparation is the
+      default.', Supply available page/search/analytics evidence or approved exports and existing review/implementation
+      refs., Review exact edits when needed; existing explicit authorization carries forward only for the same reviewed
+      scope., 'Inspect implementation receipts and a later assessment, including inconclusive outcomes.']
+  agent_path: ['Recover existing state and fix scope, evidence routes and measurement semantics.', Diagnose before
+      proposing exact page/link edits; independently review and adjudicate one proposal version., 'Apply only authorized
+      current changes, preserve partial/unknown receipts, verify, and retain a future assessment hook.', In assess
+      mode inspect earlier implementation and comparable later evidence without editing or reapplying.]
+  progress_signals: [Page and intent scoped, Diagnosis complete, Refresh plan reviewed, Changes applied, Verification
+      complete]
+  recovery: [Preserve applied and unknown change receipts; inspect actual current state before retrying an uncertain
+      action., 'If inputs, authorization or destination checks are missing, retain a prepared/blocked packet and
+      exact repair steps.', 'Resume delayed measurement from the prior refresh ref in assess mode, preserving original
+      implementation evidence.', 'If no changes are confirmed applied, route follow-up to apply or a blocked implementation
+      handoff; schedule assess only after actual implementation exists.']
+  safe_stopping_points: [Prepare closes with the reviewed exact proposal and explicit next_mode apply implementation
+      prerequisite; no implementation means no scheduled outcome assessment., Apply closes with verified or explicit
+      partial implementation and outcome pending when no valid later window exists., Assess closes with observed
+      or inconclusive outcome and never reapplies changes.]
+  handoffs:
+    - {workflow_key: engineering.tracked-delivery, relationship: conditional, when: Repository changes need engineering
+        delivery or a shared-template/technical change exceeds the bounded refresh.}
 public:
-  audience: "SEO and content teams improving existing pages"
+  audience: SEO and content teams improving existing pages
   setup: mixed
-  prerequisites:
-    - "A page, business goal, and target search intent"
-    - "Approved performance and query evidence"
-    - "Editorial, technical, and publication boundaries"
-  proof:
-    - "Evidence-linked diagnosis"
-    - "Change map"
-    - "Content and technical verification"
-    - "Publication receipt only when authorized"
+  prerequisites: [A bounded page set and business goal, 'Approved page content and search/analytics evidence, connected
+      or exported', Review and exact execution authorization only for apply; an earlier implementation record for
+      assess]
+  proof: [Current reviewed exact change proposal, Per-change implementation and verification receipts or review-ready
+      handoff, Versioned baseline/follow-up measurements with comparability limits, One durable refresh record and
+      delayed assess hook]
   featured: false
-when_to_use:
-  - Existing content needs a refresh diagnosis, evidence gathering, and recorded follow-through.
-when_not_to_use:
-  - The user needs new content creation rather than updating existing work.
+when_to_use: [Existing pages or their internal connections need bounded evidence-led improvement., A prior refresh
+    needs outcome assessment without reapplying changes.]
+when_not_to_use: [The user needs new content creation rather than updating existing work.]
 agent_requirements:
   - role: seo-content-refresh
     requirement: required
     agent_preset_ref: seo.workflow.content-refresh
     purpose: Diagnose content gaps and prepare a source-backed refresh brief.
-    applies_to_steps:
-      - read_history
-      - diagnose
-      - execute_change
-      - record_outcome
+    applies_to_steps: [read_history, collect_evidence, diagnose, propose_changes, review_changes, apply_or_prepare,
+      verify_changes, assess_outcome, record_outcome]
   - role: delivery-reviewer
-    requirement: recommended
+    requirement: required
     agent_preset_ref: stackos.sdlc.delivery-reviewer
-    purpose: Review content, SEO evidence, and any UI/publishing signoff before completion.
-    applies_to_steps:
-      - diagnose
-      - execute_change
-      - record_outcome
+    purpose: Independently review exact proposal/version, evidence, execution boundary and canonical implementation/outcome
+      claims; main agent adjudicates.
+    applies_to_steps: [review_changes, assess_outcome, record_outcome]
+  - role: voice-reviewer
+    requirement: recommended
+    agent_preset_ref: branding.voice-reviewer
+    purpose: Independently review material branded copy against the selected authoritative foundation and exact candidate.
+    applies_to_steps: [review_changes]
+    handoff_notes:
+      - Main requires this review when proposed changes materially affect branded copy; factual or technical checks alone do not trigger it. Resolve this existing role for that branch without requiring branding foundation setup.
+      - Author and reviewer receive the same candidate identity and selected foundation refs/revisions, including an approved external, document or legacy equivalent. Return an artifact receipt bound to both; main adjudicates.
 skill_requirements:
   - skill_ref: stackos:stackos
     requirement: recommended
-    purpose: Teach the main agent how to operate StackOS MCP, workflow templates, run plans, tracker tasks/tickets, dependencies, and evidence.
-    setup_notes:
-      - Use this skill before planning or executing the workflow when the host supports skills.
-      - Work through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in chat.
+    purpose: Teach the main agent how to operate StackOS MCP, workflow templates, run plans, tracker tasks/tickets,
+      dependencies, and evidence.
+    setup_notes: [Use this skill before planning or executing the workflow when the host supports skills., Work
+        through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in
+        chat.]
 skill_preset_requirements:
-  - skill_preset_ref: stackos.workflow-orchestrator
-    requirement: required
-    purpose: Coordinate workflow selection, readiness, specialist handoffs, approvals, safe stopping, verification, and recovery without adding domain-specific process.
+  - {skill_preset_ref: stackos.workflow-orchestrator, requirement: required, purpose: 'Coordinate workflow selection,
+      readiness, specialist handoffs, approvals, safe stopping, verification, and recovery without adding domain-specific
+      process.'}
 inputs:
-  - key: content_ref
-    name: Content Ref
+  - {key: content_ref, name: Content Ref, type: string, required: false, description: Existing single-page input
+      remains supported; normalize together with content_refs into one bounded set.}
+  - key: content_refs
+    name: Content Refs
+    type: array
+    required: false
+    schema:
+      type: array
+      items: {type: string, minLength: 1}
+      minItems: 1
+      uniqueItems: true
+    description: Explicit bounded page set. Resolve at least one page from this, content_ref or prior_refresh_ref
+      before execution.
+  - {key: refresh_goal, name: Refresh Goal, type: string, required: true}
+  - key: mode
+    name: Mode
     type: string
-    required: true
-  - key: refresh_goal
-    name: Refresh Goal
-    type: string
-    required: true
+    required: false
+    default: prepare
+    schema:
+      type: string
+      enum: [prepare, apply, assess]
+  - {key: prior_refresh_ref, type: string, required: false, description: Required for assess; optional for apply
+      recovery/reusing a reviewed current proposal.}
+  - {key: reviewed_proposal_ref, type: string, required: false, description: Optional saved current proposal. Apply
+      may instead prepare and review the same exact packet within this run.}
+  - {key: execution_operator_approval_ref, type: string, required: false, description: Existing explicit operator
+      authorization for the exact reviewed change/version and host or provider boundary; never fabricated by the
+      agent.}
+  - key: evidence_sources
+    name: Evidence Sources
+    type: array
+    required: false
+    default: [exports]
+    schema:
+      type: array
+      items:
+        type: string
+        enum: [exports, public, gsc, ga4, research]
+      uniqueItems: true
+    description: Selected ready evidence routes; exports can supply all required evidence without provider calls.
+  - key: source_refs
+    name: Source Refs
+    type: array
+    required: false
+    schema:
+      type: array
+      items: {type: string, minLength: 1}
+    description: Approved exports, page content, URL inventory, prior records or connected property refs. Host file
+      access is separate host authority.
+  - key: measurement_scope
+    name: Measurement Scope
+    type: object
+    required: false
+    schema: {type: object}
+    description: Requested property/site, dates, timezone, country/device/search type, brand/cohort, key-event definition,
+      attribution and comparison purpose; unresolved fields remain explicit unknowns.
 context_requirements:
   - id: recent_refreshes
     source: resources
     purpose: Understand prior refresh actions for the same or similar content.
     filters:
       plugin_slug: seo
-      resource_keys:
-        - content-refresh
-        - content-piece
-    fields:
-      - resource_key
-      - title
-      - status
-      - data_json
-      - updated_at
+      resource_keys: [content-refresh, content-piece, link-opportunity, keyword-opportunity, search-performance-snapshot,
+        website-seo-analysis]
+    fields: [resource_key, title, status, data_json, updated_at]
     max_items: 20
   - id: related_experiments
     source: experiments
     purpose: Include active SEO experiments before proposing a change.
     filters:
       domain: seo
-      statuses:
-        - active
-        - planned
-    fields:
-      - name
-      - hypothesis
-      - status
-      - metric_targets_json
-      - variants
+      statuses: [active, planned]
+    fields: [name, hypothesis, status, metric_targets_json, variants]
     max_items: 10
   - id: relevant_decisions
     source: decisions
     purpose: Keep prior project decisions visible without flooding the context window.
     filters:
-      tags:
-        - seo
-    fields:
-      - title
-      - decision
-      - rationale
-      - status
-      - tags
+      tags: [seo]
+    fields: [title, decision, rationale, status, tags]
     max_items: 10
 capability_requirements:
-  - key: seo-content
-    required: true
-  - key: seo-measurement
-    required: false
+  - {key: seo-content, required: true}
+  - {key: seo-measurement, required: false}
+  - {key: web-retrieval, required: false}
 auth_requirements:
-  - key: dataforseo
-    provider: dataforseo
-    auth_type: basic
-    optional: true
+  - {key: dataforseo, provider: dataforseo, auth_type: basic, optional: true}
+  - {key: google_search_console, provider: google-search-console, auth_type: oauth, optional: true}
+  - {key: google_analytics, provider: google-analytics, auth_type: oauth, optional: true}
 action_contracts:
-  - key: serp_analysis
-    action: serp.analyze
-    capability: seo-research
-    provider: dataforseo
-    risk_level: cost
-    auth_ref: dataforseo
+  - {key: serp_analysis, action: serp.analyze, capability: seo-research, provider: dataforseo, risk_level: cost,
+    auth_ref: dataforseo, optional: true}
+  - {key: public_web_read, action: utils.web.read, capability: web-retrieval, risk_level: read, optional: true}
+  - {key: public_sitemap_fetch, action: utils.sitemap.fetch, capability: web-retrieval, risk_level: read, optional: true}
+  - {key: gsc_search_analytics, action: search-console.search-analytics.query, capability: seo-measurement, provider: google-search-console,
+    auth_ref: google_search_console, risk_level: read, optional: true}
+  - {key: ga4_property_metadata, action: ga4.properties.metadata.get, capability: seo-measurement, provider: google-analytics,
+    auth_ref: google_analytics, risk_level: read, optional: true}
+  - {key: ga4_historical_report, action: ga4.properties.run_report, capability: seo-measurement, provider: google-analytics,
+    auth_ref: google_analytics, risk_level: read, optional: true}
 resource_contracts:
-  - key: content_piece
-    resource: content-piece
-    purpose: Store the content work item and links to external files or systems.
-  - key: refresh_record
-    resource: content-refresh
-    purpose: Store diagnosis, action taken, expected effect, and follow-up timing.
-  - key: performance_snapshot
-    resource: search-performance-snapshot
-    purpose: Store imported or summarized metrics used as evidence.
+  - {key: content_piece, resource: content-piece, purpose: Store the content work item and links to external files
+      or systems.}
+  - {key: refresh_record, resource: content-refresh, purpose: 'Store diagnosis, action taken, expected effect, and
+      follow-up timing.'}
+  - {key: performance_snapshot, resource: search-performance-snapshot, purpose: Store imported or summarized metrics
+      used as evidence.}
+  - {key: link_opportunities, resource: link-opportunity, purpose: Store exact contextual link proposals and check/receipt
+      refs as current records.}
 policies:
-  - key: no_secret_exposure
-    kind: auth
-    description: Secrets stay in daemon-side credential storage and are never included in run-plan steps.
-  - key: explicit_change_record
-    kind: audit
-    description: Every material change must be recorded as a resource, learning, decision, or experiment observation.
-approval_gates:
-  - key: operator_change_review
-    description: Required before applying changes outside StackOS storage.
-    required_when: external_system_change
+  - {key: no_secret_exposure, kind: auth, description: Secrets stay in daemon-side credential storage and are never
+      included in run-plan steps.}
+  - {key: explicit_change_record, kind: audit, description: 'Every material change must be recorded as a resource,
+      learning, decision, or experiment observation.'}
+  - {key: evidence_and_history, kind: evidence, description: 'Use measured, observed, or inferred claims with scope,
+      confidence, and a validation path. Every evidence ref resolves through a typed index to a durable action receipt,
+      operator source, or intentionally retained artifact. Read response files before another provider call; temporary
+      paths are not durable proof. Unversioned records and prior analyses are history until revalidated; every new
+      output uses its explicit contract_version.'}
+  - {key: comparable_measurement, kind: accuracy, description: 'Keep GSC query/page clicks distinct from GA4 session/user/event
+      metrics. Record property, capture time, window/timezone, filters, dimensions, cohort and entry-page semantics,
+      canonical URL mapping, coverage, denominators, and attribution. Missing or unavailable values are null, never
+      zero. Low samples, truncation, incomplete periods, or incomparable cohorts make the outcome inconclusive.
+      Before/after observations alone do not prove causation.'}
+  - {key: agent_judgment, kind: methodology, description: 'Positions, CTR, decay, volume and long-query length are
+      investigation aids, never guaranteed lifts, mandatory thresholds, or AI Mode detectors. Use reader task, business
+      fit, current SERP and existing content; do not insert exact phrases mechanically, rotate useful links, or
+      change dates/URLs solely for SEO.'}
+  - {key: optional_sources, kind: readiness, description: Use the smallest useful ready source set within budget.
+      All provider actions are optional; approved exports and supplied page content can satisfy an export-only run.
+      Record source coverage and missing inputs rather than inventing evidence. No external retrieval of private
+      content without an explicit sharing boundary. Default export/public preparation authorizes no paid provider
+      call. Use paid research only when the selected scope fits an existing explicit project/operator budget or
+      an explicit operator cost decision; otherwise use available evidence or defer that source. No unconditional
+      cost gate belongs on an export-only step.}
+  - {key: mode_and_authority, kind: boundary, description: 'Prepare is the default and creates no website changes.
+      Apply requires an independently reviewed current proposal and explicit matching authority; same-run reviewed
+      apply and reuse of a current saved packet are supported. Assess only reads and records outcomes, preserves
+      earlier implementation receipts and never edits/reapplies. Host repository authority is separate from StackOS
+      scope. Provider publication requires an explicit supported action, active grant and approval in the effective
+      workflow/run or a separately authorized handoff; no generic write authority is implied. The default template
+      has no provider-mutation action or unconditional approval gate. Host apply still requires actual operator
+      authority for the exact reviewed edits and project release rules. A provider write route must first be explicitly
+      specialized with its concrete supported action, active step grant and applicable gate; absence of a default
+      gate never authorizes publication.'}
+  - {key: recover_per_change, kind: recovery, description: 'Record every attempted change and receipt. Preserve
+      successful changes; for failed or unknown attempts inspect actual current state before retry. Bind approved
+      edits to exact source versions and reviewed proposal version; stale content requires revised review. A changed
+      sentence, wrong destination, duplicate link or unreviewed shared-template scope blocks that change, not an
+      unrelated verified one.'}
+  - {key: implementation_is_not_outcome, kind: accuracy, description: 'Implementation and search/business outcome
+      are separate states. Verification proves the requested edit, not lift. Prepare or any packet without confirmed
+      applied changes routes next_mode apply; make its implementation prerequisite explicit and use blocked with
+      due_at null when the execution route is unavailable. Only confirmed applied changes may schedule a later assess
+      with a concrete due date. Insufficient samples, incomplete/truncated data or incomparable cohorts close inconclusive.
+      Preserve attribution limits, unrelated changes and seasonality; before/after comparison alone is observational.'}
+approval_gates: []
 steps:
   - id: read_history
-    title: Read History
-    input_refs:
-      - content_ref
-      - refresh_goal
-    context_refs:
-      - recent_refreshes
-      - related_experiments
-      - relevant_decisions
-    policy_refs:
-      - explicit_change_record
+    title: Recover Scope And Mode
+    purpose: Normalize one bounded page set and recover prior proposals/receipts before new work.
+    instructions: ['Default mode to prepare. Resolve content_refs from content_ref, supplied page set or prior_refresh_ref;
+        stop with the missing scope if no page can be identified. Keep the business goal and approved access/sharing
+        boundary explicit.', 'Read prior refreshes, link records, decisions and experiments. Unversioned payloads
+        remain historical; do not treat old paths or approvals as current proof.', Assess requires prior_refresh_ref
+        and actual prior implementation evidence. Preserve those original receipts and skip proposal/application
+        work. Apply may reuse a still-current saved reviewed proposal or prepare and independently review one in
+        this run., 'Main resolves the selected authoritative foundation and canonical content owner from selected_context_json,
+        source_refs and current scoped reads. Preserve actual source revisions, approval/freshness and any branding
+        content-piece ref in existing index scope and artifacts; SEO content-piece is a work pointer, not a competing
+        canonical article. Approved external, document or legacy guidance is usable without branding setup. Missing
+        guidance blocks only dependent branded changes; factual diagnosis can proceed with limitations.']
+    input_refs: [content_ref, content_refs, refresh_goal, mode, prior_refresh_ref, reviewed_proposal_ref, execution_operator_approval_ref,
+      evidence_sources, source_refs, measurement_scope]
+    context_refs: [recent_refreshes, related_experiments, relevant_decisions]
+    policy_refs: [mode_and_authority, evidence_and_history]
+    success_criteria: ['Mode, bounded page set, prior state and source/execution boundaries are explicit; assess
+        has an existing implementation to assess.']
+  - id: collect_evidence
+    title: Collect Baseline Or Follow-Up Evidence
+    purpose: Capture the smallest useful native/source-export evidence set with comparable metadata.
+    instructions: [Select bounded provider calls or approved exports from the declared evidence_sources. Export-only
+        runs need no connected provider; inspect supplied content and export coverage before deciding what is missing.,
+      'Read existing page content, sitemap/CMS/operator inventory and existing links, including useful pages with
+        no Search Console impressions. Keep one canonical URL inventory with coverage limits; do not infer complete
+        crawl or orphan status from a sample.', 'For GSC record the exact property, final date window, search type,
+        country/device/query/page filters, aggregation and pagination. Top-row query data and anonymized query omissions
+        are coverage limitations, not a complete query census.', 'For GA4 inspect metadata when needed, select compatible
+        dimensions/metrics, and define the organic cohort, session landing page versus first-user acquisition, key
+        events, denominators and attribution. Do not join queries to individual visitors or equate clicks with sessions.',
+      'Reconcile canonical URLs, redirects, parameters and unmatched rows. Retain window/timezone differences, consent/tracking
+        gaps, low samples, truncation and missing fields. Do not silently convert missing measurements to zero.',
+      In assess mode fetch only evidence needed to inspect the existing changes and compare the later window; keep
+        original baseline and implementation refs unchanged., 'Before any dependent snapshot, proposal or summary
+        needs evidence_index_ref, retain one canonical index artifact with exactly source_ledger, evidence_index
+        and limitations. The artifact does not contain snapshot_refs or its own returned ref. Retain claim-supporting
+        source payloads first when the index cites them, then call artifact.create for the index and keep its actual
+        returned ref; never invent a future ref.', 'With that real evidence_index_ref, store current-version search-performance-snapshot
+        records under the active resource grant. Their evidence_refs resolve in the retained index. Complete the
+        evidence_packet output with the index contents/ref plus the newly returned snapshot_refs and inventory_ref;
+        snapshot refs belong in this logical packet, not in the index artifact, so no reference cycle is required.',
+      'For exports with no usable measurements, keep snapshot_refs empty and explain the gap. Export-only preparation
+        never waits for a cost approval or invents a paid call. Retain one current package index; older retained
+        versions stay readable as historical evidence.']
+    action_refs: [serp_analysis, public_web_read, public_sitemap_fetch, gsc_search_analytics, ga4_property_metadata,
+      ga4_historical_report]
+    policy_refs: [no_secret_exposure, optional_sources, comparable_measurement, evidence_and_history]
+    output_refs: [evidence_packet]
+    depends_on: [read_history]
+    success_criteria: ['The packet distinguishes missing from zero, records inventory/source coverage and preserves
+        exact measurement definitions and durable refs.']
+    resource_refs: [performance_snapshot]
   - id: diagnose
-    title: Diagnose Refresh Need
-    action_refs:
-      - serp_analysis
-    resource_refs:
-      - content_piece
-      - performance_snapshot
-    policy_refs:
-      - no_secret_exposure
-    depends_on:
-      - read_history
-  - id: execute_change
-    title: Execute Change
-    purpose: Agent performs the chosen external or repository work using tools available in the current environment.
-    approval_refs:
-      - operator_change_review
-    policy_refs:
-      - explicit_change_record
-    depends_on:
-      - diagnose
+    title: Diagnose Before Editing
+    purpose: Separate intent, technical, content, internal-link and measurement issues.
+    instructions: ['Tie every issue to reader task, business fit, actual page evidence and confidence. Identify
+        measured/observed/inferred claims and missing validation.', 'Choose the smallest useful change; investigate
+        intent mismatch and technical problems before cosmetic wording. Preserve useful content and stable URLs.
+        Do not require keywords in every field, artificial freshness, or a fixed pillar/link structure.', In assess
+        mode read the prior diagnosis and record changed assumptions only; do not create a new implementation scope.]
+    policy_refs: [agent_judgment, evidence_and_history, mode_and_authority]
+    output_refs: [diagnosis]
+    depends_on: [collect_evidence]
+    success_criteria: ['Diagnosis names evidence, uncertainty and page purpose; assess retains original change scope.']
+  - id: propose_changes
+    title: Prepare Exact Multi-Page Changes
+    purpose: Make each edit reviewable against current source content and destination evidence.
+    instructions: ['For prepare/apply create one versioned change_proposal with a stable change_id per edit, source
+        URL, locator, exact existing_text and proposed_text, source_version_ref, change type, scope, reader reason
+        and evidence refs. Preserve each page separately within the bounded set.', 'For internal links include destination_url
+        and anchor_text; show the complete existing/proposed sentence. Check a crawlable direct destination, redirect/canonical/indexability
+        suitability, absent existing equivalent link, source freshness and shared-template impact. Use real inspected
+        pages; unknown, duplicate or unsuitable destinations remain blocked/rejected.', 'Assess each link direction
+        independently. Retain useful links; natural descriptive anchors and selected footer navigation are reader
+        choices, not ranking guarantees. Footer/shared-template edits need explicit reviewed affected scope and
+        desktop/mobile checks.', 'When reusing a saved proposal verify its exact content/version, source versions,
+        target checks and review before retaining it. Stale edits require a revised proposal and review. In assess
+        mode carry forward the prior proposal ref/version without creating new edits.']
+    policy_refs: [mode_and_authority, recover_per_change, agent_judgment]
+    output_refs: [change_proposal]
+    depends_on: [diagnose]
+    success_criteria: ['Every proposed edit is exact, attributable to current source evidence and independently
+        reviewable; assess reuses the prior proposal unchanged.']
+  - id: review_changes
+    title: Review And Adjudicate The Proposal
+    purpose: Independently review before applying and preserve one canonical reviewed version.
+    instructions: [Use the actual package evidence_index_ref already retained during collect_evidence before preserving
+        the exact reviewed proposal. Review artifacts remain separately retained refs until assess_outcome incorporates
+        their evidence entries into the final canonical index., 'The delivery-reviewer independently checks each
+        exact change, rationale, evidence, source/destination checks, shared-template impact, verification plan
+        and intended execution boundary.', 'Main agent records accepted/revised/rejected dispositions for every
+        change_id and adjudicates reviewer findings. Only accepted or revised, rechecked changes belong in the canonical
+        proposal. A materially revised sentence/version requires current review; approval for older content does
+        not transfer silently.', 'Preserve the exact reviewed change_proposal as an intentional artifact and retain
+        review/adjudication refs. Apply can review here in this run or verify an existing current review for the
+        exact saved proposal. For assess, verify and carry forward earlier proposal/review refs without authorizing
+        more changes.', 'For material branded copy, main dispatches the independent voice-reviewer with the exact
+        candidate and selected foundation refs/revisions. Preserve content and foundation identity in the existing
+        review artifact and index; inspect claim and disclosure effects too. A changed candidate or applicable guide
+        invalidates affected older reviews until rechecked and adjudicated. Keep old receipts as history, not current proof.']
+    policy_refs: [mode_and_authority, recover_per_change, evidence_and_history]
+    output_refs: [reviewed_proposal_ref]
+    depends_on: [propose_changes]
+    success_criteria: [One proposal version and independent review/main adjudication resolve every change; no self-review
+        or stale approval is treated as current authority.]
+  - id: apply_or_prepare
+    title: Apply Authorized Changes Or Preserve Preparation
+    purpose: Perform only current accepted edits inside the explicitly authorized boundary.
+    instructions: ['Use the granted public_web_read action for public source/destination rechecks or readback when
+        host page access is unavailable. This is a read-only action; supplied current exports or host reads remain
+        usable within their proven coverage. Missing live access becomes a verification limitation, never permission
+        to mutate through an ungranted route.', 'In prepare and assess modes never edit, publish or reapply. Record
+        this step as no-change with the relevant proposal/prior receipt refs. Prepare keeps proposed states; assess
+        carries earlier implementation states unchanged.', 'In apply mode confirm matching explicit authorization
+        and current reviewed proposal/version immediately before editing. Host repository edits use host authority
+        and project delivery rules; an unsupported provider publishing route produces a review-ready handoff, not
+        an improvised action. Provider writes require the exact supported action and scoped grant/approval in the
+        effective workflow/run.', 'Re-read every source and destination check. Skip duplicates or already-applied
+        exact edits; block stale text, changed destination or unreviewed shared-template scope and route revised
+        content to review.', 'Immediately before apply re-read the selected foundation and exact candidate identity
+        used by current reviews. A changed applicable guide requires affected review even when content is unchanged;
+        an unavailable or ambiguous source blocks only dependent edits. Existing authorization carries forward within
+        its exact scope; guidance and a resource grant alone do not authorize owner updates.', 'Record each attempt_id, per-change status, actual receipt and verification/recovery
+        note. Preserve applied/verified edits if another page fails. For unknown or failed attempts inspect current
+        external/repository state before any retry; never replay an uncertain mutation blindly. Use stable provider
+        intent/idempotency keys when a supported write route is granted.']
+    policy_refs: [mode_and_authority, recover_per_change, explicit_change_record]
+    output_refs: [implementation_receipts]
+    depends_on: [review_changes]
+    success_criteria: [Every attempted change has truthful state and receipt/recovery context; no apply occurs in
+        prepare/assess or from stale/absent authorization.]
+    action_refs: [public_web_read]
+  - id: verify_changes
+    title: Verify Each Changed Page
+    purpose: Prove implementation independently of delayed performance effects.
+    instructions: ['Use the granted public_web_read action for public source/destination rechecks or readback when
+        host page access is unavailable. This is a read-only action; supplied current exports or host reads remain
+        usable within their proven coverage. Missing live access becomes a verification limitation, never permission
+        to mutate through an ungranted route.', 'For applied changes verify exact resulting content, intended href/anchor,
+        direct destination and absence of unintended duplicate edits; check shared templates on desktop/mobile and
+        material affected pages.', Capture per-change readback/test evidence and remaining failed/unknown status
+        without flattening partial success. In prepare verify only packet completeness; in assess inspect earlier
+        changed state without repairing or reapplying it., Repository changes remain distinct from deployed publication;
+        claim live visibility only with an actual deployment/public readback receipt. Verification is not evidence
+        of search lift.]
+    policy_refs: [recover_per_change, implementation_is_not_outcome, mode_and_authority]
+    depends_on: [apply_or_prepare]
+    success_criteria: ['Implementation receipts distinguish proposed/applied/verified/failed/unknown, preserve successful
+        changes, and support the claimed repository or live boundary.']
+    action_refs: [public_web_read]
+  - id: assess_outcome
+    title: Assess Outcomes Or Schedule Follow-Up
+    purpose: Compare only sufficiently observed, comparable windows and state uncertainty honestly.
+    instructions: ['When no change is confirmed applied, close with pending or inconclusive outcome and next_mode
+        apply plus the explicit implementation prerequisite. Prepare does not schedule assess. For unavailable routes
+        set followup.status blocked and due_at null. Once actual applied changes exist, a pending outcome may schedule
+        next_mode assess with a concrete later date; no later data or lift is manufactured.', 'For assess compare
+        original baseline with follow-up using matching property, window lengths, timezone, filters, dimensions,
+        cohorts, URL map, denominator, key-event definition and attribution. Explain unavoidable source differences
+        and preserve native metrics.', 'If samples are insufficient, data incomplete/truncated, metrics missing,
+        tracking changed or cohorts incomparable, return inconclusive and an exact validation/follow-up action.
+        Examine seasonality, unrelated releases, attribution delay and assisted outcomes; zero immediate signups
+        is an investigation prompt.', Have the independent reviewer challenge outcome claims; main agent adjudicates
+        one canonical refresh_summary. State observational changes rather than causal lift without an appropriate
+        evaluation design. Assess never implements new fixes; proposed follow-up work is a separate explicit scope.,
+      'Separate verified implementation from canonical content synchronization. Record the selected content owner,
+        exact applied candidate, review/foundation revisions, implementation/readback receipts, synchronization status
+        and next_owner in a durable handoff artifact referenced by the existing evidence index. Pending synchronization
+        does not undo verified edits or establish measured lift. If prior operator authority covers that owner update
+        and the current route/grants support it, main may reconcile the owner using current reviewed receipts; otherwise
+        prepare a branding.content-production source_scope.refs handoff with publication_intent packet_only unless
+        already authorized otherwise. Never redraft, republish or replay applied edits merely to repair bookkeeping;
+        assessment-only authority does not permit a canonical owner update.',
+      'Before emitting canonical refresh_summary, ensure the current index covers every claim-supporting verification/outcome
+        source. If new evidence was used, retain its artifacts first, create a replacement index artifact containing
+        all earlier and new entries/source ledger/limitations, verify it, then call artifact.supersede on the old
+        index with the replacement ref. Otherwise reuse the existing actual ref. Emit the summary only after the
+        final current evidence_index_ref is known; preserve earlier index versions and snapshot/implementation receipts.
+        The index excludes its own creation, replacement and later record-storage receipts, avoiding self-reference.
+        A failed index lifecycle action retains actual refs and blocks canonical closeout until reconciled.']
+    policy_refs: [comparable_measurement, implementation_is_not_outcome, mode_and_authority]
+    output_refs: [refresh_summary]
+    depends_on: [verify_changes]
+    success_criteria: ['One reviewed summary separates implementation state from pending/inconclusive/observed outcome,
+        preserving baseline, later evidence and limitations.', 'The final current evidence index exists before refresh_summary
+        is emitted, and covers its verification/outcome evidence without indexing its own lifecycle receipts.']
   - id: record_outcome
-    title: Record Outcome
-    resource_refs:
-      - refresh_record
-      - content_piece
-      - performance_snapshot
-    output_refs:
-      - refresh_summary
-    depends_on:
-      - execute_change
+    title: Store The Canonical Refresh And Follow-Up
+    purpose: Make future recovery and delayed measurement possible without replaying edits.
+    instructions: ['Persist the unchanged canonical refresh_summary emitted by assess_outcome with its actual final
+        evidence_index_ref. Do not change evidence refs or findings after that reviewed summary. Storage/readback
+        receipts are closeout evidence and do not need to be inserted into their own claim-supporting index. If
+        material source evidence changes, return to assessment/review before replacing the canonical summary.',
+      Store one current-version content-refresh record from the canonical refresh_summary. Store current link-opportunity
+        and measurement records only when relevant; content-piece remains the content work pointer. Derived reports
+        must agree with this canonical outcome., 'Persist exact reviewed proposal, review/adjudication and claim-supporting
+        evidence as intentional artifacts when needed; use compact durable refs rather than duplicate packets. Read
+        back stored refs and resolve every evidence ref; a failed write cannot be called complete.', 'For packets
+        without confirmed applied changes, retain next_mode apply and an implementation prerequisite; when unavailable
+        use blocked/due_at null. For pending or inconclusive outcomes after implementation, retain the concrete
+        next assess action/date or blocked measurement gap and prior refresh identity in tracker/follow-up context.
+        Later occurrences read this durable record without replaying changes. No scheduler or external send is created.',
+      'Keep canonical synchronization pending until the selected owner update is authorized, written and read back.
+        Return the exact handoff artifact and next owner separately from implementation and outcome status. Existing
+        SEO resource grants do not imply permission to mutate a branding content-piece or any other canonical owner.']
+    resource_refs: [refresh_record, content_piece, performance_snapshot, link_opportunities]
+    policy_refs: [evidence_and_history, implementation_is_not_outcome, recover_per_change]
+    output_refs: [refresh_record_ref]
+    depends_on: [assess_outcome]
+    success_criteria: ['Verified durable refs locate the exact reviewed changes, partial receipts, baseline and
+        future assessment; implementation completion never implies measured lift.']
 outputs:
-  - key: refresh_summary
-    name: Refresh Summary
+  - key: evidence_packet
+    name: Evidence Packet
     type: object
     required: true
-    description: Source-linked diagnosis, approved changes, verification evidence, and residual SEO risk.
+    description: Logical output containing the retained index contents and its actual ref plus subsequently stored
+      snapshot refs. The index artifact stores only source_ledger, evidence_index and limitations; it excludes snapshot_refs
+      and its own ref.
     schema:
       type: object
-      required: [content_ref, diagnosis, changes, verification, residual_risk, evidence_refs]
+      additionalProperties: false
+      required: [contract_version, source_ledger, evidence_index, snapshot_refs, inventory_ref, limitations, evidence_index_ref]
       properties:
-        content_ref: {type: string}
-        diagnosis: {type: object}
-        changes: {type: array}
-        verification: {type: array}
-        before_metrics: {type: object}
-        after_metrics: {type: object}
-        residual_risk: {type: array}
-        evidence_refs: {type: array, items: {type: string}}
+        contract_version: {const: stackos.seo.evidence-packet.v1}
+        source_ledger:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [source, evaluated_at, status, evidence_class, coverage, limitations, evidence_refs]
+            properties:
+              source: {type: string}
+              evaluated_at: {type: string, format: date-time}
+              status:
+                type: string
+                enum: [used, unavailable, skipped, failed]
+              evidence_class:
+                type: string
+                enum: [public-observation, first-party-provider, third-party-provider, operator-supplied]
+              coverage: {type: string}
+              reporting_window: {type: object, additionalProperties: true}
+              limitations:
+                type: array
+                items: {type: string}
+              evidence_refs:
+                type: array
+                items: {type: string}
+              reason: {type: string}
+        evidence_index:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [evidence_ref, kind, source, captured_at, lifecycle_state, scope, receipt_ref, limitations]
+            properties:
+              evidence_ref: {type: string, minLength: 1}
+              kind:
+                type: string
+                enum: [action-receipt, operator-context, prior-analysis, artifact]
+              source: {type: string, minLength: 1}
+              captured_at: {type: string, format: date-time}
+              lifecycle_state:
+                type: string
+                enum: [current, historical, superseded]
+              scope: {type: object, additionalProperties: true}
+              receipt_ref: {type: string, minLength: 1}
+              action_call_id: {type: integer, minimum: 1}
+              action_ref: {type: string}
+              output_sha256: {type: string, pattern: '^[a-fA-F0-9]{64}$'}
+              artifact_ref: {type: string}
+              reporting_window: {type: object, additionalProperties: true}
+              limitations:
+                type: array
+                items: {type: string}
+            allOf:
+              - if:
+                  properties:
+                    kind: {const: action-receipt}
+                  required: [kind]
+                then:
+                  required: [action_call_id, action_ref]
+              - if:
+                  properties:
+                    kind: {const: artifact}
+                  required: [kind]
+                then:
+                  required: [artifact_ref]
+        snapshot_refs:
+          type: array
+          items: {type: string, minLength: 1}
+        inventory_ref: {type: string, minLength: 1}
+        limitations:
+          type: array
+          items: {type: string, minLength: 1}
+        evidence_index_ref: {type: string, minLength: 1}
+  - key: diagnosis
+    name: Scoped Diagnosis
+    description: Evidence-linked diagnosis of the bounded page set, with confidence and limitations that justify the proposed changes.
+    type: object
+    required: true
+    schema:
+      type: object
+      additionalProperties: false
+      required: [contract_version, summary, evidence_refs, confidence, limitations]
+      properties:
+        contract_version: {const: stackos.seo.refresh-diagnosis.v1}
+        summary: {type: string, minLength: 1}
+        evidence_refs:
+          type: array
+          items: {type: string, minLength: 1}
+          minItems: 1
+          uniqueItems: true
+        confidence:
+          type: string
+          enum: [high, medium, low]
+        limitations:
+          type: array
+          items: {type: string, minLength: 1}
+  - key: change_proposal
+    name: Exact Change Proposal
+    description: Versioned multi-page edit packet with exact source text, proposed text, source revisions, contextual link checks and validation plan.
+    type: object
+    required: true
+    schema:
+      type: object
+      additionalProperties: false
+      required: [contract_version, proposal_version, content_refs, changes, validation_plan, evidence_index_ref]
+      properties:
+        contract_version: {const: stackos.seo.refresh-proposal.v1}
+        proposal_version: {type: string, minLength: 1}
+        content_refs:
+          type: array
+          items: {type: string, minLength: 1}
+          minItems: 1
+          uniqueItems: true
+        changes:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [change_id, change_type, source_url, locator, existing_text, proposed_text, source_version_ref,
+              scope, reader_reason, evidence_refs]
+            properties:
+              change_id: {type: string, minLength: 1}
+              change_type:
+                type: string
+                enum: [copy, metadata, structure, internal-link, technical-handoff]
+              source_url: {type: string, minLength: 1}
+              locator: {type: string, minLength: 1}
+              existing_text: {type: string}
+              proposed_text: {type: string}
+              source_version_ref: {type: string, minLength: 1}
+              scope:
+                type: string
+                enum: [page, shared-template]
+              reader_reason: {type: string, minLength: 1}
+              evidence_refs:
+                type: array
+                items: {type: string, minLength: 1}
+                minItems: 1
+                uniqueItems: true
+              destination_url: {type: string, minLength: 1}
+              anchor_text: {type: string, minLength: 1}
+              checks:
+                type: object
+                additionalProperties: false
+                required: [existing_link, destination, shared_template_scope, evidence_refs]
+                properties:
+                  existing_link:
+                    type: string
+                    enum: [absent, present, unknown]
+                  destination:
+                    type: string
+                    enum: [verified, invalid, unknown]
+                  shared_template_scope:
+                    type: string
+                    enum: [not-shared, reviewed, unknown]
+                  evidence_refs:
+                    type: array
+                    items: {type: string, minLength: 1}
+                    minItems: 1
+                    uniqueItems: true
+            allOf:
+              - if:
+                  required: [change_type]
+                  properties:
+                    change_type:
+                      enum: [internal-link]
+                then:
+                  required: [destination_url, anchor_text, checks]
+          minItems: 0
+        validation_plan:
+          type: array
+          items: {type: string, minLength: 1}
+        evidence_index_ref: {type: string, minLength: 1}
+  - key: reviewed_proposal_ref
+    name: Reviewed Proposal Ref
+    description: Durable reference to the exact proposal version retained after independent review and main-agent adjudication.
+    type: string
+    required: true
+    schema: {type: string, minLength: 1}
+  - key: implementation_receipts
+    name: Per-Change Implementation Receipts
+    description: Actual per-edit states, attempt and verification receipts, and recovery notes preserving partial success and uncertain outcomes.
+    type: array
+    required: true
+    schema:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        required: [change_id, status, receipt_refs, verification_refs, recovery_note]
+        properties:
+          change_id: {type: string, minLength: 1}
+          status:
+            type: string
+            enum: [proposed, skipped, applied, verified, failed, unknown]
+          receipt_refs:
+            type: array
+            items: {type: string, minLength: 1}
+          verification_refs:
+            type: array
+            items: {type: string, minLength: 1}
+          recovery_note: {type: string, minLength: 1}
+          attempt_id: {type: string, minLength: 1}
+        allOf:
+          - if:
+              required: [status]
+              properties:
+                status:
+                  enum: [applied, verified, failed, unknown]
+            then:
+              required: [attempt_id]
+              properties:
+                receipt_refs: {type: array, minItems: 1}
+          - if:
+              required: [status]
+              properties:
+                status:
+                  enum: [verified]
+            then:
+              properties:
+                verification_refs:
+                  type: array
+                  items: {type: string, minLength: 1}
+                  minItems: 1
+                  uniqueItems: true
+      minItems: 0
+  - key: refresh_summary
+    name: Canonical Reviewed Refresh Summary
+    description: Current versioned refresh record separating implementation from measured outcomes, with reviewed proposal, final evidence index and follow-up route.
+    type: object
+    required: true
+    schema:
+      type: object
+      $ref: '#/$defs/current'
+      $defs:
+        current:
+          type: object
+          additionalProperties: false
+          required: [contract_version, mode, content_refs, goal, diagnosis_ref, proposal_ref, proposal_version,
+            review, implementation, outcome, followup, evidence_index_ref, evidence_refs]
+          properties:
+            contract_version: {const: stackos.seo.content-refresh.v1}
+            mode:
+              type: string
+              enum: [prepare, apply, assess]
+            content_refs:
+              type: array
+              items: {type: string, minLength: 1}
+              minItems: 1
+              uniqueItems: true
+            goal: {type: string, minLength: 1}
+            diagnosis_ref: {type: string, minLength: 1}
+            proposal_ref: {type: string, minLength: 1}
+            proposal_version: {type: string, minLength: 1}
+            prior_refresh_ref: {type: string, minLength: 1}
+            review:
+              type: object
+              additionalProperties: false
+              required: [reviewer_ref, reviewed_at, adjudicator_ref, adjudication_ref, dispositions]
+              properties:
+                reviewer_ref: {type: string, minLength: 1}
+                reviewed_at: {type: string, format: date-time}
+                adjudicator_ref: {type: string, minLength: 1}
+                adjudication_ref: {type: string, minLength: 1}
+                dispositions:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [change_id, disposition, rationale, evidence_refs]
+                    properties:
+                      change_id: {type: string, minLength: 1}
+                      disposition:
+                        type: string
+                        enum: [accepted, revised, rejected]
+                      rationale: {type: string, minLength: 1}
+                      evidence_refs:
+                        type: array
+                        items: {type: string, minLength: 1}
+                        minItems: 1
+                        uniqueItems: true
+                  minItems: 0
+            implementation:
+              type: object
+              additionalProperties: false
+              required: [status, change_results]
+              properties:
+                status:
+                  type: string
+                  enum: [prepared, partial, applied, verified, blocked, unknown]
+                change_results:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [change_id, status, receipt_refs, verification_refs, recovery_note]
+                    properties:
+                      change_id: {type: string, minLength: 1}
+                      status:
+                        type: string
+                        enum: [proposed, skipped, applied, verified, failed, unknown]
+                      receipt_refs:
+                        type: array
+                        items: {type: string, minLength: 1}
+                      verification_refs:
+                        type: array
+                        items: {type: string, minLength: 1}
+                      recovery_note: {type: string, minLength: 1}
+                      attempt_id: {type: string, minLength: 1}
+                    allOf:
+                      - if:
+                          required: [status]
+                          properties:
+                            status:
+                              enum: [applied, verified, failed, unknown]
+                        then:
+                          required: [attempt_id]
+                          properties:
+                            receipt_refs: {type: array, minItems: 1}
+                      - if:
+                          required: [status]
+                          properties:
+                            status:
+                              enum: [verified]
+                        then:
+                          properties:
+                            verification_refs:
+                              type: array
+                              items: {type: string, minLength: 1}
+                              minItems: 1
+                              uniqueItems: true
+                  minItems: 0
+                operator_approval_ref: {type: string, minLength: 1}
+                delivery_ref: {type: string, minLength: 1}
+              allOf:
+                - if:
+                    required: [status]
+                    properties:
+                      status: {const: verified}
+                  then:
+                    properties:
+                      change_results:
+                        contains:
+                          required: [status]
+                          properties:
+                            status: {const: verified}
+                        items:
+                          properties:
+                            status:
+                              enum: [verified, skipped]
+                - if:
+                    required: [status]
+                    properties:
+                      status: {const: applied}
+                  then:
+                    properties:
+                      change_results:
+                        contains:
+                          required: [status]
+                          properties:
+                            status:
+                              enum: [applied, verified]
+                        items:
+                          properties:
+                            status:
+                              enum: [applied, verified, skipped]
+            outcome:
+              type: object
+              additionalProperties: false
+              required: [status, summary, baseline_snapshot_refs, followup_snapshot_refs, limitations]
+              properties:
+                status:
+                  type: string
+                  enum: [pending, inconclusive, observed]
+                summary: {type: string, minLength: 1}
+                baseline_snapshot_refs:
+                  type: array
+                  items: {type: string, minLength: 1}
+                followup_snapshot_refs:
+                  type: array
+                  items: {type: string, minLength: 1}
+                limitations:
+                  type: array
+                  items: {type: string, minLength: 1}
+                comparison_ref: {type: string, minLength: 1}
+              allOf:
+                - if:
+                    required: [status]
+                    properties:
+                      status:
+                        enum: [observed]
+                  then:
+                    required: [comparison_ref]
+                    properties:
+                      baseline_snapshot_refs:
+                        type: array
+                        items: {type: string, minLength: 1}
+                        minItems: 1
+                        uniqueItems: true
+                      followup_snapshot_refs:
+                        type: array
+                        items: {type: string, minLength: 1}
+                        minItems: 1
+                        uniqueItems: true
+            followup:
+              type: object
+              additionalProperties: false
+              required: [status, due_at, next_mode, next_action]
+              properties:
+                status:
+                  type: string
+                  enum: [scheduled, completed, blocked, not-needed]
+                due_at:
+                  type: [string, 'null']
+                  format: date-time
+                next_mode:
+                  type: string
+                  enum: [apply, assess]
+                next_action: {type: string, minLength: 1}
+              allOf:
+                - if:
+                    required: [status]
+                    properties:
+                      status: {const: scheduled}
+                  then:
+                    properties:
+                      due_at: {type: string, minLength: 1}
+                - if:
+                    required: [status]
+                    properties:
+                      status: {const: blocked}
+                  then:
+                    properties:
+                      due_at: {type: 'null'}
+            evidence_index_ref: {type: string, minLength: 1}
+            evidence_refs:
+              type: array
+              items: {type: string, minLength: 1}
+              minItems: 1
+              uniqueItems: true
+          allOf:
+            - if:
+                required: [mode]
+                properties:
+                  mode:
+                    enum: [prepare]
+              then:
+                properties:
+                  implementation:
+                    properties:
+                      status:
+                        enum: [prepared, blocked]
+                      change_results:
+                        items:
+                          properties:
+                            status:
+                              enum: [proposed, skipped]
+                  outcome:
+                    properties:
+                      status:
+                        enum: [pending, inconclusive]
+            - if:
+                required: [mode]
+                properties:
+                  mode:
+                    enum: [assess]
+              then:
+                required: [prior_refresh_ref]
+            - if:
+                required: [mode, implementation]
+                properties:
+                  mode: {const: apply}
+                  implementation:
+                    required: [status]
+                    properties:
+                      status:
+                        enum: [partial, applied, verified, unknown]
+              then:
+                properties:
+                  implementation:
+                    required: [operator_approval_ref]
+            - if:
+                required: [implementation]
+                properties:
+                  implementation:
+                    required: [change_results]
+                    properties:
+                      change_results:
+                        not:
+                          contains:
+                            required: [status]
+                            properties:
+                              status:
+                                enum: [applied, verified]
+              then:
+                properties:
+                  followup:
+                    properties:
+                      next_mode: {const: apply}
+                  outcome:
+                    properties:
+                      status:
+                        enum: [pending, inconclusive]
+  - key: refresh_record_ref
+    name: Stored Refresh Ref
+    description: Verified durable resource reference for resuming the canonical refresh, recovering incomplete changes or assessing later results.
+    type: string
+    required: true
+    schema: {type: string, minLength: 1}
 learning_hooks:
-  - key: refresh_learning
-    prompt: Record reusable SEO refresh lessons only when supported by evidence.
+  - {key: refresh_learning, prompt: Record reusable SEO refresh lessons only when supported by evidence.}
 metadata:
   builtin: true
   run_mode: stackos_run_plan
-  step_ids:
-    - read_history
-    - diagnose
-    - execute_change
-    - record_outcome
+  artifact_grant_policy: explicit
+  mcp_tool_grants:
+    - {step_id: collect_evidence, tool: artifact.create}
+    - {step_id: review_changes, tool: artifact.create}
+    - {step_id: record_outcome, tool: artifact.create}
+    - {step_id: assess_outcome, tool: artifact.supersede}
+    - {step_id: assess_outcome, tool: artifact.create}
+  step_ids: [read_history, collect_evidence, diagnose, propose_changes, review_changes, apply_or_prepare, verify_changes,
+    assess_outcome, record_outcome]
+failure_handling: [Keep per-change receipts and successful changes. Reconcile unknown state and source freshness
+    before retry; unsupported or unauthorized routes stop with a review-ready handoff., 'Close missing/insufficient/incomparable
+    measurement as pending or inconclusive with an assess hook. A failed durable write remains a storage failure,
+    not completed closeout.']

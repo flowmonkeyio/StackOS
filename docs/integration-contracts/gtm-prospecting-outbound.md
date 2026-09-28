@@ -65,6 +65,13 @@ Official sources used:
 
 ## Auth and Safe Setup Fields
 
+Google Workspace's additive `service-account` method uses the
+[shared Google contract](google-service-accounts.md). Direct access is limited
+to an explicit shared calendar without attendees. Gmail, primary calendars and
+invitations require a saved `delegated_subject` and authorized domain-wide
+delegation; action `user_ref` cannot enable it. Account Test proves token
+acquisition only. Existing OAuth and write-action authority remain unchanged.
+
 Apollo:
 
 - Auth: API key/Bearer token. Some operations require a master API key, including People API Search.
@@ -108,7 +115,7 @@ Salesloft:
 Google Workspace:
 
 - Auth: OAuth with least-privilege scopes. Gmail send can use `gmail.send`; Calendar event insert can use `calendar.events` or narrower eligible scopes depending on the app model.
-- Current StackOS path: shared interactive Google authorization code plus the
+- Current StackOS path: explicit service-account setup or shared interactive Google authorization code plus the
   retained manual-token compatibility method; both action scopes are enforced
   before connector dispatch.
 - Safe auth method fields: `workspace_ref`, `user_ref`, `calendar_ref`, `send_as_ref`, `oauth_client_ref`, `domain_wide_delegation_ref`, `quota_project_ref`.

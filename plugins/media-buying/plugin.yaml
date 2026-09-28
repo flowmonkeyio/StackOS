@@ -189,10 +189,40 @@ providers:
           secret: false
           required: false
           placeholder: safe customer account reference
+      - key: service-account
+        label: Service account
+        description: Use a Google service-account JSON key granted Google Ads account access, plus a developer token. No delegated user or consent redirect.
+        auth_type: oauth
+        interactive: false
+        payload_format: json
+        permission_verification:
+          evidence_source: oauth_response
+          enforcement: local_required
+        fields:
+        - key: service_account_json
+          label: Service-account JSON key
+          type: secret
+          secret: true
+          required: true
+        - key: developer_token
+          label: Developer Token
+          type: secret
+          secret: true
+          required: true
+        - key: manager_account_ref
+          label: Manager Account Ref
+          type: text
+          secret: false
+          required: false
+        - key: customer_ref
+          label: Customer Ref
+          type: text
+          secret: false
+          required: false
     config:
       setup:
-        credential_label: Google Ads developer token and OAuth refresh token
-        setup_note: Enable Google Ads API access, create OAuth client credentials, collect a refresh token, and store all four required secret fields in StackOS.
+        credential_label: Google Ads developer token and Google credential
+        setup_note: Enable Google Ads API and obtain a developer token. Choose OAuth or grant a service account access in Google Ads and enter its JSON key locally. Service accounts do not need a delegated user. Use Manager Account Ref for the login-customer-id header when accessing customers through a manager.
         homepage_url: https://ads.google.com/home/
         signup_url: https://ads.google.com/home/
         console_url: https://ads.google.com/aw/apicenter

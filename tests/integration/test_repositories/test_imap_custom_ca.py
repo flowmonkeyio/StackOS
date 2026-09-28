@@ -15,6 +15,7 @@ import stackos.actions.imap as imap_actions
 import stackos.integrations.imap as imap_integration
 from stackos.actions import ActionRepository
 from stackos.auth_providers import AuthRepository
+from stackos.auth_providers.repository.schema import AuthFieldOut, AuthMethodOut
 from stackos.db.models import Credential
 from stackos.repositories.base import ValidationError
 from stackos.repositories.projects import IntegrationCredentialRepository
@@ -126,6 +127,29 @@ def test_imap_account_rejects_invalid_trust_without_changing_saved_ca(
         )
     assert update.value.data["field"] == "tls_ca_pem"
     assert _row(session, account.credential_ref).config_json["tls_ca_pem"].strip() == ca.strip()
+
+
+@pytest.mark.parametrize("field_names", [("tls_ca_pem",), ("public_note", "tls_ca_pem")])
+def test_nonsecret_guard_reports_only_offending_declared_field_names(
+    session: Session, field_names: tuple[str, ...]
+) -> None:
+    _ca, _leaf, key = certificates()
+    method = AuthMethodOut(
+        key="synthetic-public-fields",
+        label="Synthetic public fields",
+        auth_type="api-key",
+        fields=[AuthFieldOut(key=name, label=name) for name in (*field_names, "safe_note")],
+    )
+    with pytest.raises(ValidationError) as exc:
+        AuthRepository(session)._split_credential_fields(
+            method=method,
+            fields={**dict.fromkeys(field_names, key.decode()), "safe_note": "public context"},
+        )
+    expected = {"auth_method_key": method.key, "fields": list(field_names)}
+    if len(field_names) == 1:
+        expected["field"] = field_names[0]
+    assert exc.value.data == expected
+    assert "PRIVATE KEY" not in str(exc.value)
 
 
 def test_imap_context_adds_only_account_ca_to_default_trust(

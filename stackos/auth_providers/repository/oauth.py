@@ -7,8 +7,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import math
 import secrets
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import unquote_plus, urlencode, urlparse
 
@@ -479,19 +480,22 @@ class OAuthLifecycleMixin:
 
         client_id = application.get("client_id")
         client_secret = application.get("client_secret")
-        if not isinstance(client_id, str) or not client_id:
+        signed_grant = contract.flow == "jwt_bearer"
+        if not signed_grant and (not isinstance(client_id, str) or not client_id):
             raise ValidationError("OAuth application id is missing")
-        if not isinstance(client_secret, str) or not client_secret:
+        if not signed_grant and (not isinstance(client_secret, str) or not client_secret):
             raise ValidationError("OAuth application private value is missing")
         request_data = dict(data)
-        if contract.client_auth_style != "basic":
+        if not signed_grant and contract.client_auth_style != "basic":
+            assert isinstance(client_id, str) and isinstance(client_secret, str)
             request_data.update({"client_id": client_id, "client_secret": client_secret})
         headers = None
         user_agent = application.get("user_agent")
         if isinstance(user_agent, str) and user_agent.strip():
             headers = {"User-Agent": user_agent.strip()}
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
             if contract.client_auth_style == "basic":
+                assert isinstance(client_id, str) and isinstance(client_secret, str)
                 response = await client.post(
                     contract.token_endpoint,
                     data=request_data,
@@ -520,7 +524,7 @@ class OAuthLifecycleMixin:
                 repair_required=False,
                 status_code=response.status_code,
             )
-        if response.status_code >= 400:
+        if response.status_code >= 300:
             error_code = ""
             try:
                 error_body = response.json()
@@ -596,6 +600,8 @@ class OAuthLifecycleMixin:
             requirements = contract.authorization_code_response_requirements
         elif grant_type == "refresh_token":
             requirements = contract.refresh_token_response_requirements
+        elif contract.flow == "jwt_bearer":
+            requirements = ("expires_in",)
         else:
             requirements = ()
 
@@ -607,7 +613,13 @@ class OAuthLifecycleMixin:
                     invalid_fields.append(requirement)
             elif requirement == "expires_in":
                 value = response_body.get("expires_in")
-                if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
+                if (
+                    not isinstance(value, (int, float))
+                    or isinstance(value, bool)
+                    or not math.isfinite(value)
+                    or value <= 0
+                    or value > (datetime.max - utcnow()).total_seconds()
+                ):
                     invalid_fields.append(requirement)
             elif requirement == "scope_evidence":
                 if not self._response_scopes(
@@ -631,6 +643,16 @@ class OAuthLifecycleMixin:
                 or token_type.strip().casefold() != contract.required_token_type.casefold()
             ):
                 invalid_fields.append("token_type")
+        if contract.flow == "jwt_bearer" and "scope" in response_body:
+            raw_scope = response_body["scope"]
+            # Omission is the documented signed-request fallback; malformed or empty
+            # present scope is never treated as omission or as the requested grants.
+            if (
+                not isinstance(raw_scope, str)
+                or not raw_scope.strip()
+                or any(ord(char) < 32 or ord(char) > 126 for char in raw_scope)
+            ):
+                invalid_fields.append("scope")
         if contract.required_scope_subset:
             returned_scopes = set(
                 self._response_scopes(

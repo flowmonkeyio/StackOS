@@ -77,7 +77,12 @@ def test_aignc_auth_probe_persists_safe_diagnostics_without_inventing_capabiliti
         assert tested.metadata["generation_verified"] is False
     else:
         assert tested.status == "failed"
-        assert "failed" in tested.summary
+        assert tested.summary
+        assert tested.next_action
+        if probe == "unauthorized":
+            assert tested.metadata["reason_code"] == "authentication_failed"
+            assert tested.metadata["provider_status_code"] == 401
+            assert tested.retryable is False
     assert len(httpx_mock.get_requests()) == 1
     request = httpx_mock.get_requests()[0]
     assert request.headers["Authorization"] == f"Bearer {_API_KEY}"

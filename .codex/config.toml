@@ -15,8 +15,8 @@
 # `.codex/orchestrator/branding-content-orchestrator.md`.
 #
 # Project-local SEO agents are adapted from
-# `plugins/seo/agent-presets/seo.yaml` for `seo.keyword-research` and
-# `seo.website-analysis`. Shared planning and review roles reuse the SDLC agents
+# `plugins/seo/agent-presets/seo.yaml` for `seo.keyword-research`,
+# `seo.content-refresh`, and `seo.website-analysis`. Shared planning and review roles reuse the SDLC agents
 # above. Main-agent guidance lives at `.codex/orchestrator/workflow-orchestrator.md`.
 #
 # Project-local finance agents are adapted from
@@ -78,6 +78,9 @@ config_file = "agents/brand-sanitization-reviewer.toml"
 
 [agents.seo_keyword_research]
 config_file = "agents/seo-keyword-research.toml"
+
+[agents.seo_content_refresh]
+config_file = "agents/seo-content-refresh.toml"
 
 [agents.seo_website_analysis]
 config_file = "agents/seo-website-analysis.toml"

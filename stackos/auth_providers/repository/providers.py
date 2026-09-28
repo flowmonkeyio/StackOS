@@ -211,6 +211,8 @@ class ProviderMetadataMixin:
         """Return the one canonical readiness decision for an auth method."""
 
         posture = method.permission_verification
+        if method.key == "service-account":
+            return True
         if posture is not None:
             return posture.enforcement == "local_required"
         # Compatibility: legacy manifests retain the prior OAuth-only gate until

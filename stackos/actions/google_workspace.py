@@ -60,8 +60,18 @@ class GoogleWorkspaceActionConnector:
     async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
         headers = bearer_headers(request, "access_token", "token")
         payload = request.input_json
+        direct_service_account = (
+            request.credential is not None
+            and request.credential.credential.auth_method_key == "service-account"
+            and not (request.credential.config_json or {}).get("delegated_subject")
+        )
         match request.operation:
             case "gmail.message.send":
+                if direct_service_account:
+                    raise ValidationError(
+                        "Gmail service-account access requires an explicitly delegated "
+                        "Workspace user"
+                    )
                 message = payload.get("message")
                 if not isinstance(message, dict) or not isinstance(message.get("raw"), str):
                     raise ValidationError("Gmail send requires message.raw base64url MIME")
@@ -86,6 +96,16 @@ class GoogleWorkspaceActionConnector:
                     if key in payload:
                         params[_camel(key)] = payload[key]
                 calendar_id = str(resolve_ref(request, payload["calendar_ref"], "calendars"))
+                if direct_service_account:
+                    if calendar_id == "primary":
+                        raise ValidationError(
+                            "Direct service-account access requires an explicit shared calendar"
+                        )
+                    if event.get("attendees"):
+                        raise ValidationError(
+                            "Service-account attendee invitations require a delegated "
+                            "Workspace user"
+                        )
                 status, body, response_headers = await send_json(
                     method="POST",
                     url=f"{_CALENDAR_BASE}/calendars/{q(calendar_id)}/events",

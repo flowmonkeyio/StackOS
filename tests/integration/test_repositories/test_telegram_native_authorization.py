@@ -20,6 +20,7 @@ from stackos.auth_providers.repository.utils import utcnow
 from stackos.config import Settings
 from stackos.db.models import Credential, IntegrationCredential
 from stackos.integrations.telegram_tdlib.daemon import restore_telegram_accounts
+from stackos.integrations.telegram_tdlib.native import TelegramTdlibRequestError
 from stackos.integrations.telegram_tdlib.service import TelegramTdlibService
 from stackos.integrations.telegram_tdlib.sessions import TelegramTdlibSessionReceipt
 from stackos.mcp.context import MCPContext
@@ -169,6 +170,156 @@ async def _wait_for_native_request(native: _IdentitySession, count: int) -> None
             return
         await asyncio.sleep(0)
     raise AssertionError(f"TDLib did not receive request {count}")
+
+
+@pytest.mark.asyncio
+async def test_restore_get_me_failure_from_native_callback_preserves_sign_in_and_diagnostics(
+    session: Session,
+    settings: Settings,
+    monkeypatch,
+) -> None:
+    from unittest.mock import Mock
+
+    import stackos.integrations.telegram_tdlib.daemon as daemon
+
+    account_ref = _user_account(session)
+    initial = _Runtime(states=[{"@type": "authorizationStateReady"}])
+    initial.me["id"] = 987654
+    await AuthRepository(session).connect_telegram_session(
+        credential_ref=account_ref,
+        runtime=initial,
+        settings=settings,
+    )
+
+    class Failing(_IdentitySession):
+        async def _request(self, request, **kwargs):
+            if request.get("@type") == "getMe":
+                raise TelegramTdlibRequestError(
+                    code=429, phase="request", error_name="FLOOD_WAIT", retry_after_seconds=4
+                )
+            return await super()._request(request, **kwargs)
+
+    first, second = Failing(), _IdentitySession()
+    _queue_ready(first)
+    _queue_ready(second)
+    engine = cast(Engine, session.get_bind())
+    runtime = _native_authorization_service(engine, first, second)
+    log = Mock()
+    monkeypatch.setattr(daemon, "get_logger", lambda _name: log)
+    try:
+        await asyncio.wait_for(restore_telegram_accounts(engine, settings, runtime), timeout=3)
+        session.expire_all()
+        assert first.closed is True
+        assert second.closed is False
+        assert runtime.active_generation(account_ref=account_ref) is None
+        repo = AuthRepository(session)
+        assert (
+            repo.telegram_authorization_status(credential_ref=account_ref).status == "disconnected"
+        )
+        log.warning.assert_called_once_with(
+            "telegram.account.restore_failed",
+            credential_ref=account_ref,
+            error_type="TelegramTdlibRequestError",
+            code=429,
+            phase="request",
+            error_name="FLOOD_WAIT",
+            retry_after_seconds=4,
+        )
+        await repo.connect_telegram_session(
+            credential_ref=account_ref,
+            runtime=runtime,
+            settings=settings,
+        )
+        assert (
+            repo.get_telegram_session_status(
+                credential_ref=account_ref,
+                runtime=runtime,
+            )["connected"]
+            is True
+        )
+    finally:
+        await runtime.close_all()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["configure", "getMe"])
+@pytest.mark.parametrize("verified", [False, True])
+@pytest.mark.parametrize("rejected", [False, True])
+async def test_bot_connect_failure_preserves_only_verified_operational_authorization(
+    session: Session,
+    settings: Settings,
+    phase: str,
+    verified: bool,
+    rejected: bool,
+) -> None:
+    account_ref = _bot_account(session, display_name="Connect recovery bot")
+    repo = AuthRepository(session)
+    database = settings.data_dir / "telegram-tdlib" / account_ref / "database" / "saved.bin"
+    if verified:
+        initial = _Runtime(states=[{"@type": "authorizationStateReady"}])
+        await repo.connect_telegram_session(
+            credential_ref=account_ref,
+            runtime=initial,
+            settings=settings,
+        )
+        await repo.disconnect_telegram_session(credential_ref=account_ref, runtime=initial)
+        database.write_bytes(b"saved encrypted bot authorization")
+    identity = repo._telegram_verified_identity(_credential(session, account_ref))
+    failure = TelegramTdlibRequestError(
+        code=401 if rejected else 500,
+        phase="request",
+        error_name="SESSION_REVOKED" if rejected else None,
+    )
+
+    class ConfigureFailure(_Runtime):
+        async def configure(self, **kwargs):
+            self.configurations.append(kwargs)
+            raise failure
+
+    class IdentityFailure(_IdentitySession):
+        async def _request(self, request, **kwargs):
+            assert request == {"@type": "getMe"}
+            self.requests.append((dict(request), dict(kwargs)))
+            raise failure
+
+    native = IdentityFailure()
+    _queue_ready(native)
+    runtime = (
+        ConfigureFailure(states=[])
+        if phase == "configure"
+        else _native_authorization_service(cast(Engine, session.get_bind()), native)
+    )
+    try:
+        with pytest.raises(TelegramTdlibRequestError) as raised:
+            await asyncio.wait_for(
+                repo.connect_telegram_session(
+                    credential_ref=account_ref,
+                    runtime=runtime,
+                    settings=settings,
+                ),
+                timeout=3,
+            )
+        assert raised.value is failure
+        session.expire_all()
+        credential = _credential(session, account_ref)
+        assert repo._telegram_verified_identity(credential) == identity
+        assert repo._telegram_desired_connected(credential) is True
+        assert repo.telegram_authorization_status(credential_ref=account_ref).status == (
+            "disconnected" if verified and not rejected else "repair-required"
+        )
+        assert runtime.active_generation(account_ref=account_ref) is None
+        if verified:
+            assert database.read_bytes() == b"saved encrypted bot authorization"
+        if phase == "configure":
+            assert runtime.requests == []
+            assert len(runtime.configurations) == 1
+            assert len(runtime.closed) == 1
+        else:
+            assert native.closed is True
+            assert [request for request, _ in native.requests] == [{"@type": "getMe"}]
+    finally:
+        if isinstance(runtime, TelegramTdlibService):
+            await runtime.close_all()
 
 
 def _credential(session: Session, credential_ref: str) -> Credential:

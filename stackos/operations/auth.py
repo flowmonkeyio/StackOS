@@ -385,15 +385,15 @@ def operation_specs() -> list[OperationSpec]:
             when_to_use=("After an Account is created, repaired, or rotated.",),
             prerequisites=(
                 "Use account.list to obtain the opaque credential_ref.",
-                "For a Telegram MCP or CLI test, pass an attached project_id; "
-                "local-admin REST may test a global Account.",
+                "For an MCP or CLI test, pass the project_id to which the Account is attached; "
+                "explicit trusted local-admin REST may test a global Account.",
                 "Do not ask the operator to paste secrets into chat.",
             ),
             returns=("Sanitized provider and account probe evidence.",),
             examples=(
                 OperationExample(
-                    title="Test an Account",
-                    arguments={"credential_ref": "cred_..."},
+                    title="Test an attached Account",
+                    arguments={"project_id": 1, "credential_ref": "cred_..."},
                 ),
                 OperationExample(
                     title="Test an attached Telegram Account",

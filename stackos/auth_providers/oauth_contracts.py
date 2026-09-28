@@ -6,9 +6,13 @@ import re
 from dataclasses import dataclass, replace
 from typing import Literal
 
+from stackos.auth_providers.google_service_account import (
+    GOOGLE_SERVICE_ACCOUNT_PROVIDERS,
+    delegated_subject,
+)
 from stackos.repositories.base import ValidationError
 
-OAuthFlow = Literal["authorization_code", "client_credentials"]
+OAuthFlow = Literal["authorization_code", "client_credentials", "jwt_bearer"]
 ClientAuthStyle = Literal["body", "basic"]
 PKCEMode = Literal["required", "supported", "unavailable"]
 OAuthTokenResponseRequirement = Literal["refresh_token", "expires_in", "scope_evidence"]
@@ -36,6 +40,7 @@ class OAuthProviderContract:
     required_token_type: str | None = None
     required_scope_subset: tuple[str, ...] = ()
     hook: str | None = None
+    delegated_subject: str | None = None
 
 
 _GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -240,6 +245,7 @@ def oauth_contract_for(
     provider_key: str,
     *,
     safe_config: dict[str, object] | None = None,
+    auth_method_key: str | None = None,
 ) -> OAuthProviderContract:
     """Return a trusted provider contract with validated endpoint variants."""
 
@@ -251,6 +257,23 @@ def oauth_contract_for(
             data={"provider_key": provider_key},
         ) from exc
     config = safe_config or {}
+    if auth_method_key == "service-account":
+        if provider_key not in GOOGLE_SERVICE_ACCOUNT_PROVIDERS:
+            raise ValidationError("Provider does not support Google service accounts")
+        subject = delegated_subject(provider_key, config.get("delegated_subject"))
+        scopes = contract.scopes
+        if provider_key == "google-workspace" and subject is None:
+            scopes = ("https://www.googleapis.com/auth/calendar.events",)
+        return replace(
+            contract,
+            flow="jwt_bearer",
+            authorization_endpoint=None,
+            scopes=scopes,
+            pkce_mode="unavailable",
+            authorization_params=(),
+            required_token_type="Bearer",
+            delegated_subject=subject,
+        )
     if provider_key == "microsoft-365":
         tenant = str(config.get("tenant") or "common").strip()
         if not _TENANT_RE.fullmatch(tenant) or ".." in tenant:

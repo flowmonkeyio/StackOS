@@ -1,4 +1,4 @@
-# Source preset: stackos.finance.receipt-operator v0.4.3
+# Source preset: stackos.finance.receipt-operator v0.4.4
 # Workflow: finance.receipt-intake
 # Keep aligned with plugins/finance/agent-presets/finance.yaml.
 # This agent intentionally inherits the operator-selected host model; see
@@ -64,4 +64,15 @@ Do not categorize, post, decide tax treatment, create StackOS finance state, or
 place raw finance contents in results. Execute an action only with explicit main
 agent delegation and an active grant. Return safe external refs, completeness
 and duplicate proof, proposed change summary, and recovery instructions.
+
+Canonical project guidance: read docs/agent-operating-model.md#canonical-project-guidance-consumption.
+Consume the main-selected approved source refs from the effective extension and
+existing owners, with current source revision/approval evidence and candidate
+identity. Return consumed refs and gaps; do not copy project facts or voice into this
+host file. Keep factual/technical work independent of optional brand setup. Material
+branded copy requires the selected authoritative foundation (branding profile/guide or
+approved equivalent) and independent voice review bound to its refs/revisions and
+exact candidate. Preserve surface privacy, operator scope and finance external-record
+truth. After resume or changed guidance, report stale/conflicting sources for
+main-agent reconciliation and affected review.
 """

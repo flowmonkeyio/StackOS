@@ -7,6 +7,8 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 _SECRET_KEY_PARTS = (
+    "service_account_json",
+    "assertion",
     "access_token",
     "api_key",
     "apikey",
@@ -21,12 +23,17 @@ _SECRET_KEY_PARTS = (
 )
 _SECRET_TEXT_RE = re.compile(
     r"(?i)([\"']?(?:access[_-]?token|api[_-]?key|apikey|authorization|client[_-]?secret|"
-    r"credential|password|private[_-]?key|refresh[_-]?token|secret|token)[\"']?\s*[:=]\s*"
+    r"service[_-]?account[_-]?json|assertion|credential|password|private[_-]?key|refresh[_-]?token|secret|token)[\"']?\s*[:=]\s*"
     r"[\"']?)(?!bearer\b)([^\"'\s,;}&]+)"
 )
 _AUTH_BEARER_TEXT_RE = re.compile(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s,;}&]+")
 _BEARER_TEXT_RE = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+")
 _TELEGRAM_BOT_URL_RE = re.compile(r"(?i)(/bot)\d{5,}:[A-Za-z0-9_-]+(?=/)")
+_PEM_PRIVATE_KEY_RE = re.compile(
+    r"-----BEGIN (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----.*?"
+    r"-----END (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----",
+    re.DOTALL,
+)
 _SIGNED_URL_PARAM_RE = re.compile(
     r"(?i)([?&](?:x-amz-[^=&\s\"']+|x-goog-[^=&\s\"']+|x-oss-[^=&\s\"']+|"
     r"signature|sig|expires|expiresat|policy|security-token|token)=)[^&#\s\"']+"
@@ -64,7 +71,8 @@ def redact_secrets(value: Any) -> Any:
 
 def redact_secret_text(value: str) -> str:
     """Redact secret-like assignments inside vendor-controlled text."""
-    redacted = _AUTH_BEARER_TEXT_RE.sub(lambda match: f"{match.group(1)}[redacted]", value)
+    redacted = _PEM_PRIVATE_KEY_RE.sub("[redacted private key]", value)
+    redacted = _AUTH_BEARER_TEXT_RE.sub(lambda match: f"{match.group(1)}[redacted]", redacted)
     redacted = _SIGNED_URL_PARAM_RE.sub(lambda match: f"{match.group(1)}[redacted]", redacted)
     redacted = _SECRET_TEXT_RE.sub(lambda match: f"{match.group(1)}[redacted]", redacted)
     redacted = _TELEGRAM_BOT_URL_RE.sub(lambda match: f"{match.group(1)}[redacted]", redacted)

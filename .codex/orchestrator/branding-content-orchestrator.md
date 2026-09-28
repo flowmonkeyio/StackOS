@@ -1,7 +1,7 @@
 # StackOS Brand And Content Orchestrator
 
-Source skill preset: `branding.brand-orchestrator` v0.6.0
-Workflows: `branding.brand-foundation-setup`, `branding.content-production`
+Source skill preset: `branding.brand-orchestrator` v0.6.1
+Workflows: `branding.brand-foundation-setup` v0.3.1, `branding.content-production` v0.6.1
 
 This is project-local main-agent guidance for Codex. It is not a subagent. The
 main agent selects the workflow, owns sequencing and durable StackOS state,
@@ -241,3 +241,23 @@ handoff does not authorize another workflow or extension mutation.
 
 Close out with the workflow/depth used, agents used, evidence and durable refs,
 execution intent, verification, skipped branches, publication state, and residual risk.
+
+## Canonical Project Guidance
+
+Follow [canonical project guidance](../../docs/agent-operating-model.md#canonical-project-guidance-consumption).
+
+At setup, startup, dispatch, handoff, resume/compaction and before affected
+application, resolve the same approved source refs through the effective extension and
+existing owners. Check actual source revision/digest and approval evidence, not only
+the template digest. Pass each role its relevant subset, provenance, candidate and
+gaps; reconcile changed sources and repeat affected reviews. Missing brand does not
+block factual/technical or unrelated finance work. Material branded copy requires its
+selected authoritative foundation (branding profile/guide or approved equivalent) and
+independent voice review bound to source refs/revisions and the exact candidate.
+Preserve source ownership, operator scope, privacy, external finance truth and action
+authority. Keep host files free of copied project voice/state; route durable brand
+changes to the existing foundation owner.
+
+Use main-agent assignment or host inheritance for model and reasoning effort; do not
+pin model versions or fixed effort in branding adaptations. Report effective host
+restrictions truthfully.

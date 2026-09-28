@@ -81,6 +81,10 @@ LOCAL_CODEX_BRANDING_AGENT_PRESETS = {
 }
 
 LOCAL_CODEX_SEO_AGENT_PRESETS = {
+    "seo_content_refresh": (
+        "agents/seo-content-refresh.toml",
+        "seo.workflow.content-refresh",
+    ),
     "seo_keyword_research": (
         "agents/seo-keyword-research.toml",
         "seo.workflow.keyword-research",
@@ -119,17 +123,69 @@ LOCAL_CODEX_FINANCE_AGENT_PRESETS = {
 }
 
 
-def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
+def _assert_sdlc_materializations(agent_dir: Path) -> None:
     workflow = yaml.safe_load(
         (REPO_ROOT / "plugins/engineering/workflows/tracked-delivery.yaml").read_text(
             encoding="utf-8"
         )
     )
-    workflow_refs = {item["agent_preset_ref"] for item in workflow["agent_requirements"]}
+    requirements = {
+        item["agent_preset_ref"]: item["requirement"] for item in workflow["agent_requirements"]
+    }
     expected_refs = {preset for _config_path, preset in LOCAL_CODEX_AGENT_PRESETS.values()}
+    assert set(requirements) == expected_refs
+    loader = AgentPresetLoader()
+    instructions = {}
 
-    assert workflow_refs == expected_refs
+    for agent_name, (config_file, preset_ref) in LOCAL_CODEX_AGENT_PRESETS.items():
+        text = (agent_dir / Path(config_file).name).read_text(encoding="utf-8")
+        parsed = tomllib.loads(text)
+        source = loader.describe_preset(key=preset_ref).preset
+        assert f"Source preset: {preset_ref} v{source.version}" in text
+        assert f"Workflow: {workflow['key']} v{workflow['version']}" in text
+        assert f"Workflow requirement: {requirements[preset_ref]}" in text
+        assert "Keep aligned with plugins/engineering/agent-presets/sdlc.yaml." in text
+        assert parsed["name"] == agent_name
+        assert "model" not in parsed
+        assert "model_reasoning_effort" not in parsed
+        prompt = parsed["developer_instructions"]
+        assert "sole writer of durable run/tracker state" in prompt
+        assert "assignment attempt ID" in prompt
+        assert "contract revision" in prompt
+        assert "candidate identity" in prompt
+        assert "TPF_LLM_TOOL=codex tpf" in prompt
+        assert "native StackOS MCP" in prompt
+        instructions[agent_name] = prompt
 
+    # Protect the delegation/acceptance boundaries without snapshotting each prompt.
+    planning = instructions["sdlc_planning"]
+    assert "selected candidate design and proof plan" in planning
+    assert "up to three active ticket lifecycles" in planning
+    assert "shared resources, dirty baseline" in planning
+    assert "integration-only proof" in planning
+    assert "Conditional SEO use" in planning
+    assert "frozen v0.3 run" in planning
+    assert "provisional breakdown" in planning
+    assert "enrich the same ticket packets" in planning
+    delivery = instructions["sdlc_delivery"]
+    assert "Return candidate-ready promptly" in delivery
+    assert "Do not call `tracker.pick`" in delivery
+    assert "unaccepted changes" in delivery
+    reviewer = instructions["sdlc_delivery_reviewer"]
+    assert "do not edit production implementation or its acceptance tests" in reviewer
+    assert "independent review is required even for small tickets" in reviewer
+    assert "main agent owns final adjudication and acceptance" in reviewer
+    assert "sole canonical finding register" in reviewer
+    assert "`review-design` is design-only" in reviewer
+    assert "combined dispatch readiness within the current authorized step" in reviewer
+    proof = instructions["sdlc_test_designer"]
+    assert "ticket-local acceptance from integration-only proof" in proof
+    assert "stable StackOS browser `profile_key`" in proof
+    assert "combined readiness review" in proof
+
+
+def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
+    _assert_sdlc_materializations(REPO_ROOT / ".codex/agents")
     config = tomllib.loads((REPO_ROOT / ".codex/config.toml").read_text(encoding="utf-8"))
     assert config["features"]["code_mode"] == {
         "enabled": False,
@@ -142,58 +198,8 @@ def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
         | set(LOCAL_CODEX_FINANCE_AGENT_PRESETS)
     )
 
-    for agent_name, (config_file, preset_ref) in LOCAL_CODEX_AGENT_PRESETS.items():
+    for agent_name, (config_file, _preset_ref) in LOCAL_CODEX_AGENT_PRESETS.items():
         assert config["agents"][agent_name]["config_file"] == config_file
-        local_path = REPO_ROOT / ".codex" / config_file
-        local_text = local_path.read_text(encoding="utf-8")
-
-        assert f"Source preset: {preset_ref} v0.2.0" in local_text
-        assert "Workflow: engineering.tracked-delivery" in local_text
-        assert "Keep aligned with plugins/engineering/agent-presets/sdlc.yaml." in local_text
-        tomllib.loads(local_text)
-
-    test_designer_text = (REPO_ROOT / ".codex/agents/sdlc-test-designer.toml").read_text(
-        encoding="utf-8"
-    )
-    reviewer_text = (REPO_ROOT / ".codex/agents/sdlc-delivery-reviewer.toml").read_text(
-        encoding="utf-8"
-    )
-    planning_text = (REPO_ROOT / ".codex/agents/sdlc-planning.toml").read_text(encoding="utf-8")
-    orchestrator_text = (REPO_ROOT / ".codex/orchestrator/sdlc-delivery-orchestrator.md").read_text(
-        encoding="utf-8"
-    )
-
-    assert "manual proof depth" in test_designer_text
-    assert "full manual signoff" in test_designer_text
-    assert "agent-executable E2E/manual proof scenario matrix" in test_designer_text
-    assert "changed user/data/system/business flows" in test_designer_text
-    assert "stable StackOS browser `profile_key`" in test_designer_text
-    assert "test-design verification status" in test_designer_text
-    assert "evidence-backed validity status" in reviewer_text
-    assert "claims to verify" in reviewer_text
-    assert "independent closeout checks" in reviewer_text
-    assert "before the change, what changed, what exists now" in reviewer_text
-    assert "without concrete evidence" in reviewer_text
-    assert "planned persistent `profile_key`" in reviewer_text
-    assert "include_graph=true" in planning_text
-    assert "detached branches" in planning_text
-    assert "Additional workflow: seo.keyword-research" in planning_text
-    assert "Additional workflow: seo.website-analysis" in reviewer_text
-    assert "Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.3.0" in (orchestrator_text)
-    assert "not a subagent" in orchestrator_text
-    assert "Quality beats speed" in orchestrator_text
-    assert "StackOS browser `profile_key`" in orchestrator_text
-    assert "Reviewer and verifier outputs are advisory claims" in orchestrator_text
-    assert "sole gatekeeper for all feedback" in orchestrator_text
-    assert "Subagents can" in orchestrator_text
-    assert "over-engineering risk" in orchestrator_text
-    assert "Every non-micro delivery needs an explicit flow design" in orchestrator_text
-    assert "E2E/manual flow scenarios are agent-executed" in orchestrator_text
-    assert "one-brain ownership" in orchestrator_text
-    assert "Project-Native Architecture And One Brain" in orchestrator_text
-    assert "Specialists and subagents investigate and recommend" in orchestrator_text
-    assert "pass-through" in orchestrator_text
-    assert "parallel repositories/services/policies" in orchestrator_text
 
 
 def test_codex_local_branding_agents_track_branding_presets() -> None:
@@ -222,12 +228,14 @@ def test_codex_local_branding_agents_track_branding_presets() -> None:
         local_text = (REPO_ROOT / ".codex" / config_file).read_text(encoding="utf-8")
         preset_version = AgentPresetLoader().describe_preset(key=preset_ref).preset.version
         assert f"Source preset: {preset_ref} v{preset_version}" in local_text
-        tomllib.loads(local_text)
+        local = tomllib.loads(local_text)
+        assert "model" not in local
+        assert "model_reasoning_effort" not in local
 
     orchestrator_text = (
         REPO_ROOT / ".codex/orchestrator/branding-content-orchestrator.md"
     ).read_text(encoding="utf-8")
-    assert "Source skill preset: `branding.brand-orchestrator` v0.6.0" in orchestrator_text
+    assert "Source skill preset: `branding.brand-orchestrator` v0.6.1" in orchestrator_text
     assert "not a subagent" in orchestrator_text
     assert "Sequential Batch And Feedback Control" in orchestrator_text
     assert "one ordered article ticket" in orchestrator_text
@@ -252,20 +260,27 @@ def test_codex_local_seo_agents_track_seo_workflows() -> None:
     website_analysis = yaml.safe_load(
         (REPO_ROOT / "plugins/seo/workflows/website-analysis.yaml").read_text(encoding="utf-8")
     )
+    content_refresh = yaml.safe_load(
+        (REPO_ROOT / "plugins/seo/workflows/content-refresh.yaml").read_text(encoding="utf-8")
+    )
     workflow_refs = {
         item["agent_preset_ref"]
-        for workflow in (keyword_research, website_analysis)
+        for workflow in (keyword_research, content_refresh, website_analysis)
         for item in workflow["agent_requirements"]
     }
     local_seo_refs = {preset for _config_path, preset in LOCAL_CODEX_SEO_AGENT_PRESETS.values()}
     reused_sdlc_refs = {preset for _config_path, preset in LOCAL_CODEX_AGENT_PRESETS.values()}
+    reused_branding_refs = {
+        preset for _config_path, preset in LOCAL_CODEX_BRANDING_AGENT_PRESETS.values()
+    }
 
     assert {ref for ref in workflow_refs if ref.startswith("seo.workflow.")} == (local_seo_refs)
     assert workflow_refs - local_seo_refs == {
         "stackos.sdlc.planning",
         "stackos.sdlc.delivery-reviewer",
+        "branding.voice-reviewer",
     }
-    assert workflow_refs - local_seo_refs <= reused_sdlc_refs
+    assert workflow_refs - local_seo_refs <= reused_sdlc_refs | reused_branding_refs
 
     config = tomllib.loads((REPO_ROOT / ".codex/config.toml").read_text(encoding="utf-8"))
     for agent_name, (config_file, preset_ref) in LOCAL_CODEX_SEO_AGENT_PRESETS.items():
@@ -274,7 +289,18 @@ def test_codex_local_seo_agents_track_seo_workflows() -> None:
         preset_version = AgentPresetLoader().describe_preset(key=preset_ref).preset.version
         assert f"Source preset: {preset_ref} v{preset_version}" in local_text
         assert "Keep aligned with plugins/seo/agent-presets/seo.yaml." in local_text
-        tomllib.loads(local_text)
+        local = tomllib.loads(local_text)
+        assert "model" not in local
+        assert "model_reasoning_effort" not in local
+        source = AgentPresetLoader().describe_preset(key=preset_ref).preset
+        adaptation = source.project_adaptation.required_agent_action
+        assert "without fixed model or reasoning-effort defaults" in adaptation
+        assert "Recommended tools are not grants" in adaptation
+        assert "untrusted" in adaptation
+        assert "tracker.updateTicket" not in source.recommended_tools
+        assert "run/step/attempt" in local["developer_instructions"]
+        assert "superseded receipts" in local["developer_instructions"]
+        assert "untrusted evidence" in local["developer_instructions"]
 
     keyword_text = (REPO_ROOT / ".codex/agents/seo-keyword-research.toml").read_text(
         encoding="utf-8"
@@ -293,14 +319,33 @@ def test_codex_local_seo_agents_track_seo_workflows() -> None:
     assert "Additional workflow: seo.keyword-research" in (
         REPO_ROOT / ".codex/agents/sdlc-planning.toml"
     ).read_text(encoding="utf-8")
-    assert "Additional workflow: seo.website-analysis" in (
+    assert "seo.content-refresh, seo.website-analysis (required)" in (
         REPO_ROOT / ".codex/agents/sdlc-delivery-reviewer.toml"
     ).read_text(encoding="utf-8")
-    assert "Source skill preset: `stackos.workflow-orchestrator` v0.1.3" in (orchestrator_text)
+    assert "Source skill preset: `stackos.workflow-orchestrator` v0.1.5" in (orchestrator_text)
     assert "not a subagent" in orchestrator_text
     assert "unavailable optional providers do not block a ready route" in orchestrator_text
     assert "parallel planning, review, evidence" in orchestrator_text
     assert "handoff never authorizes execution by itself" in orchestrator_text
+
+
+def test_seo_rehearsal_corpus_keeps_inputs_separate_from_expected_decisions() -> None:
+    corpus = yaml.safe_load(
+        (REPO_ROOT / "tests/fixtures/seo_agent_scenarios.yaml").read_text(encoding="utf-8")
+    )
+    # Corpus shape is not evidence that an agent passed the behavior rehearsal.
+    cases = corpus["cases"]
+    assert len(cases) == 8
+    assert len({case["id"] for case in cases}) == len(cases)
+    for case in cases:
+        assert case["workflow"] in {
+            "seo.keyword-research",
+            "seo.content-refresh",
+            "seo.website-analysis",
+        }
+        assert case["prompt"]
+        assert case["observations"]
+        assert case["expected"]
 
 
 def test_codex_local_finance_agents_track_finance_presets_without_model_override() -> None:
@@ -331,12 +376,12 @@ def test_codex_local_finance_agents_track_finance_presets_without_model_override
         "finance_control_reviewer": "xhigh",
     }
     expected_versions = {
-        "finance_receipt_operator": "0.4.3",
-        "finance_bookkeeping_preparer": "0.5.3",
-        "finance_billing_collections_operator": "0.6.5",
-        "finance_cashflow_preparer": "0.4.3",
-        "finance_tax_preparer": "0.4.3",
-        "finance_control_reviewer": "0.6.4",
+        "finance_receipt_operator": "0.4.4",
+        "finance_bookkeeping_preparer": "0.5.4",
+        "finance_billing_collections_operator": "0.6.6",
+        "finance_cashflow_preparer": "0.4.4",
+        "finance_tax_preparer": "0.4.4",
+        "finance_control_reviewer": "0.6.5",
     }
     for agent_name, (config_file, preset_ref) in LOCAL_CODEX_FINANCE_AGENT_PRESETS.items():
         assert config["agents"][agent_name]["config_file"] == config_file
@@ -368,7 +413,7 @@ def test_codex_local_finance_agents_track_finance_presets_without_model_override
     orchestrator_text = (
         REPO_ROOT / ".codex/orchestrator/finance-department-orchestrator.md"
     ).read_text(encoding="utf-8")
-    assert "Source skill preset: `stackos.finance.department-orchestrator` v0.7.4" in (
+    assert "Source skill preset: `stackos.finance.department-orchestrator` v0.7.5" in (
         orchestrator_text
     )
     assert "not a subagent" in orchestrator_text
@@ -544,7 +589,7 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     assert by_key["stackos.workflow.workflow-author"].plugin_slug == "core"
     assert by_key["branding.claim-auditor"].plugin_slug == "branding"
     assert by_key["seo.workflow.website-analysis"].plugin_slug == "seo"
-    assert by_key["seo.workflow.website-analysis"].version == "0.4.0"
+    assert by_key["seo.workflow.website-analysis"].version == "0.5.1"
     assert by_key["stackos.finance.receipt-operator"].plugin_slug == "finance"
     assert by_key["stackos.finance.receipt-operator"].agent_type == "mcp-tool-consumer"
     assert by_key["stackos.finance.control-reviewer"].role_class == "review"
@@ -715,7 +760,7 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
     delivery = loader.describe_preset(key="stackos.sdlc.delivery").preset
     reviewer = loader.describe_preset(key="stackos.sdlc.delivery-reviewer").preset
 
-    assert architecture.version == "0.2.0"
+    assert architecture.version == "0.3.1"
     architecture_text = " ".join(
         [
             *architecture.prompt_contract.responsibilities,
@@ -779,6 +824,112 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
     assert "claims to verify" in reviewer_text
     assert "without concrete evidence" in reviewer_text
     assert "planned persistent profile_key" in reviewer_text
+
+
+def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -> None:
+    loader = AgentPresetLoader()
+    presets = {
+        key: loader.describe_preset(key=f"stackos.sdlc.{key}").preset
+        for key in (
+            "requirements-flow-definer",
+            "codebase-explorer",
+            "planning",
+            "architecture",
+            "test-designer",
+            "delivery",
+            "delivery-reviewer",
+        )
+    }
+
+    def contract_text(key: str, *fields: str) -> str:
+        contract = presets[key].prompt_contract
+        return " ".join(item for field in fields for item in getattr(contract, field)).lower()
+
+    for preset in presets.values():
+        assert preset.version == "0.3.1"
+        assert preset.prompt_contract.mission
+        assert preset.prompt_contract.handoff_inputs
+        assert preset.prompt_contract.handoff_outputs
+        assert preset.prompt_contract.success_criteria
+        assert preset.project_adaptation == presets["delivery"].project_adaptation
+
+    shared = presets["delivery"].project_adaptation.required_agent_action.lower()
+    assert "sole writer of durable run/tracker state" in shared
+    assert "delegation and model choice" in shared
+    assert "do not pin a model or reasoning effort" in shared
+    assert "assignment attempt" in shared
+    assert "contract revision" in shared
+    assert "stale, or contradictory inputs" in shared
+    assert "other workflows or standalone assignments" in shared
+
+    requirements = contract_text("requirements-flow-definer", "responsibilities", "must_not_do")
+    assert "subsequent clarifications" in requirements
+    assert "acceptance-criterion ids" in requirements
+    assert "do not discard a source requirement" in requirements
+
+    planning = contract_text("planning", "responsibilities", "must_do", "must_not_do")
+    for obligation in (
+        "up to three active tickets",
+        "selected design and proof plan",
+        "ac ids",
+        "shared resources",
+        "dirty baseline",
+        "side-effect authority",
+        "ticket-local acceptance from integration-only proof",
+        "not depend on proof requiring an unfinished downstream ticket",
+        "independent review for an executable tracked-delivery child",
+        "seo or other workflow reuse",
+    ):
+        assert obligation in planning
+
+    architecture_inputs = contract_text("architecture", "handoff_inputs")
+    assert "requirements and flow design, impact map" in architecture_inputs
+    assert "approved task/ticket plan" not in architecture_inputs
+    design = contract_text("architecture", "must_do")
+    assert "test designer owns executable scenarios" in design
+    proof = contract_text("test-designer", "must_do", "handoff_inputs")
+    assert "selected candidate design" in proof
+    assert "combined readiness review" in proof
+    assert "evidence reuse and invalidation" in proof
+
+    delivery = contract_text("delivery", "must_do", "must_not_do", "handoff_outputs")
+    for boundary in (
+        "do not self-claim queue work",
+        "write durable run/tracker state",
+        "unaccepted changes",
+        "candidate-ready",
+        "ticket/attempt/contract ids",
+        "repair receipt",
+    ):
+        assert boundary in delivery
+    lifecycle_tools = {
+        "tracker.pick",
+        "tracker.updateTicket",
+        "tracker.reopen",
+        "runPlan.claimStep",
+        "runPlan.recordStep",
+    }
+    assert lifecycle_tools.isdisjoint(presets["delivery"].recommended_tools)
+
+    reviewer = contract_text(
+        "delivery-reviewer", "responsibilities", "must_do", "must_not_do", "handoff_outputs"
+    )
+    for boundary in (
+        "canonical operator sources",
+        "omitted requirements",
+        "independence from implementation",
+        "every executable child",
+        "run authorized focused checks",
+        "do not edit production implementation",
+        "main agent's final acceptance decision",
+        "tracker.verify structural consistency",
+        "per-ac disposition/evidence",
+        "pass/repair/blocked recommendation",
+    ):
+        assert boundary in reviewer
+    assert lifecycle_tools.isdisjoint(presets["delivery-reviewer"].recommended_tools)
+    # The unused release role is intentionally outside this source revision.
+    assert loader.describe_preset(key="stackos.sdlc.release-ops").preset.version == "0.2.1"
 
 
 def test_customer_support_thread_preset_requires_route_and_media_fidelity() -> None:

@@ -37,6 +37,13 @@ Implication: Meta actions must model the hierarchy `ad account -> campaign -> ad
 
 ### Google Ads API
 
+Google Ads also supports direct service accounts without a delegated user.
+The service-account email needs Ads access; the developer token and existing
+manager/customer configuration remain required as applicable. The
+[shared Google contract](google-service-accounts.md) covers local setup and
+token-only testing. Sources: [service-account setup](https://developers.google.com/google-ads/api/docs/oauth/service-accounts)
+and [REST authentication](https://developers.google.com/google-ads/api/rest/auth).
+
 - OAuth and credential setup: https://developers.google.com/google-ads/api/docs/oauth/overview and https://developers.google.com/google-ads/api/docs/oauth/credential-management
 - Customer/account access: https://developers.google.com/google-ads/api/docs/account-management/listing-accounts and https://developers.google.com/google-ads/api/docs/account-management/get-account-hierarchy
 - Campaigns/ad groups/ads: https://developers.google.com/google-ads/api/docs/campaigns/overview, https://developers.google.com/google-ads/api/docs/campaigns/create-campaigns, https://developers.google.com/google-ads/api/docs/campaigns/create-ad-groups, and https://developers.google.com/google-ads/api/docs/ads/overview

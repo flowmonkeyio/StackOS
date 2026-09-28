@@ -97,6 +97,9 @@ signoff: lint typecheck test-transfer-connectors ## Before commit/release: setup
 		tests/integration/test_mcp/test_mcp_imap_output.py \
 		tests/integration/test_mcp/test_mcp_slack_history.py \
 		tests/integration/test_mcp/test_mcp_google_ads_pagination.py \
+		tests/integration/test_mcp/test_mcp_google_service_accounts.py \
+		tests/integration/test_mcp/test_mcp_auth.py \
+		tests/integration/test_mcp/test_mcp_auth_provider_wrappers.py \
 		tests/integration/test_mcp/test_mcp_finance_billing_workflow.py \
 		tests/integration/test_mcp/test_mcp_finance_email_followups.py \
 		tests/integration/test_mcp/test_mcp_bridge_agent_path.py \
@@ -107,6 +110,7 @@ signoff: lint typecheck test-transfer-connectors ## Before commit/release: setup
 		tests/integration/test_mcp/test_mcp_tracker.py \
 		tests/integration/test_mcp/test_mcp_communications.py \
 		tests/integration/test_mcp/test_mcp_agent_presets.py \
+		tests/integration/test_mcp/test_mcp_seo_workflows.py \
 		tests/integration/test_mcp/test_mcp_agent_requests.py \
 		tests/integration/test_mcp/test_mcp_stripe_actions.py \
 		tests/integration/test_repositories/test_tracker.py \
@@ -125,6 +129,8 @@ signoff: lint typecheck test-transfer-connectors ## Before commit/release: setup
 		tests/integration/test_repositories/test_video_provider_actions.py \
 		tests/integration/test_repositories/test_agent_requests.py \
 		tests/integration/test_repositories/test_auth_providers.py \
+		tests/integration/test_repositories/test_google_service_accounts.py \
+		tests/integration/test_repositories/test_google_service_account_actions.py \
 		tests/integration/test_repositories/test_auth_test_history.py \
 		tests/integration/test_repositories/test_smtp_actions.py \
 		tests/integration/test_repositories/test_imap_actions.py \
@@ -132,6 +138,9 @@ signoff: lint typecheck test-transfer-connectors ## Before commit/release: setup
 		tests/integration/test_repositories/test_imap_custom_ca.py \
 		tests/integration/test_repositories/test_telegram_actions.py \
 		tests/integration/test_repositories/test_telegram_account_lifecycle.py \
+		tests/integration/test_repositories/test_telegram_native_authorization.py \
+		tests/integration/test_repositories/test_telegram_account_session_operations.py \
+		tests/integration/test_app_lifespan.py \
 		tests/integration/test_repositories/test_telegram_delivery_payloads.py \
 		tests/integration/test_repositories/test_telegram_receipt_recovery.py \
 		tests/integration/test_repositories/test_workflow_templates.py \

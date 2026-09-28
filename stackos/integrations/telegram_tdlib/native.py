@@ -55,6 +55,16 @@ _SAFE_TDLIB_ERROR_NAMES = frozenset(
     }
 )
 _MAX_RETRY_AFTER_SECONDS = 7 * 24 * 60 * 60
+_SAVED_AUTH_REJECTIONS = frozenset(
+    {
+        "AUTH_KEY_UNREGISTERED",
+        "SESSION_REVOKED",
+        "BOT_TOKEN_INVALID",
+        "TOKEN_INVALID",
+        "USER_DEACTIVATED",
+        "USER_DEACTIVATED_BAN",
+    }
+)
 
 
 class TelegramTdlibNativeError(RuntimeError):
@@ -84,6 +94,42 @@ class TelegramTdlibRequestError(TelegramTdlibNativeError):
             else ""
         )
         super().__init__(f"TDLib rejected a request during {phase}{suffix}{classification}.{retry}")
+
+
+def saved_authorization_rejected(error: BaseException) -> bool:
+    """Only explicit, already-allowlisted provider auth evidence invalidates sign-in."""
+    return (
+        isinstance(error, TelegramTdlibRequestError) and error.error_name in _SAVED_AUTH_REJECTIONS
+    )
+
+
+def safe_request_error_details(error: BaseException) -> dict[str, object]:
+    """Keep diagnostic protocol facts, never TDLib text or local exception strings."""
+    details: dict[str, object] = {"error_type": type(error).__name__}
+    if isinstance(error, TelegramTdlibRequestError):
+        if isinstance(error.code, int) and not isinstance(error.code, bool):
+            details["code"] = error.code
+        if error.phase in {
+            "request",
+            "native receive",
+            "service initialization",
+            "getMe",
+            "setTdlibParameters",
+        }:
+            details["phase"] = error.phase
+        name, _ = safe_error_metadata(error.error_name)
+        if error.error_name in {"FLOOD_WAIT", "SLOWMODE_WAIT"}:
+            name = error.error_name
+        if name is not None:
+            details["error_name"] = name
+        delay = error.retry_after_seconds
+        if (
+            isinstance(delay, int)
+            and not isinstance(delay, bool)
+            and 0 < delay <= _MAX_RETRY_AFTER_SECONDS
+        ):
+            details["retry_after_seconds"] = delay
+    return details
 
 
 class TelegramTdlibClosedError(TelegramTdlibNativeError):

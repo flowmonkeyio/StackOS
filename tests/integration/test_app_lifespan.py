@@ -7,6 +7,7 @@ state dir, both with mode 0600.
 
 from __future__ import annotations
 
+import asyncio
 import stat
 from unittest.mock import Mock
 
@@ -180,3 +181,112 @@ def test_native_close_failure_still_stops_scheduler_and_disposes_runtime_state(
     assert runtime.closed is True
     assert app.state.scheduler_running is False
     assert app.state.scheduler.running is False
+
+
+@pytest.mark.asyncio
+async def test_startup_preserves_queued_delivery_until_telegram_restore_finishes(
+    settings: Settings,
+    monkeypatch: MonkeyPatch,
+    tmp_path,
+) -> None:
+    from datetime import UTC, datetime
+
+    from sqlmodel import select
+
+    from stackos.db.models import Credential, DurableActionItem
+    from stackos.repositories.projects import IntegrationCredentialRepository
+    from tests.integration.test_repositories.test_durable_action_dispatcher import (
+        _DispatchConnector,
+        _dispatcher,
+        _job,
+        _seed_database,
+    )
+
+    # This regression covers an installed restart. Finish fresh schema setup
+    # before create_app establishes the seed used by synthetic Account backing.
+    upgrade_to_head(settings)
+    app = create_app(settings)
+    queue_engine, project_id, account_ref, call_id = _seed_database(tmp_path)
+    now = datetime.now(UTC).replace(tzinfo=None)
+    _job(queue_engine, project_id, account_ref, call_id, now)
+    with Session(queue_engine) as session:
+        credential = session.exec(
+            select(Credential).where(Credential.credential_ref == account_ref)
+        ).one()
+        credential.status = "pending"
+        session.add(credential)
+        # The dispatcher's seeding helper deliberately uses placeholder bytes;
+        # exercise real local decryption here instead of its usual auth mock.
+        IntegrationCredentialRepository(session).set(
+            credential_ref=account_ref,
+            provider_key=credential.provider_key,
+            integration_credential_id=credential.integration_credential_id,
+            secret_payload=b"synthetic-test-key",
+            commit=False,
+        )
+        session.commit()
+
+    restore_started, restore_release = asyncio.Event(), asyncio.Event()
+    startup_complete, stop = asyncio.Event(), asyncio.Event()
+    connector = _DispatchConnector()
+    dispatcher_started = False
+
+    class Runtime:
+        async def close_all(self):
+            pass
+
+    class Dispatcher:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def start(self):
+            nonlocal dispatcher_started
+            dispatcher_started = True
+            await _dispatcher(queue_engine, connector).run_once(now=now)
+
+        async def stop(self):
+            pass
+
+    async def restore(*_args):
+        restore_started.set()
+        await restore_release.wait()
+        with Session(queue_engine) as session:
+            credential = session.exec(
+                select(Credential).where(Credential.credential_ref == account_ref)
+            ).one()
+            credential.status = "connected"
+            session.add(credential)
+            session.commit()
+
+    monkeypatch.setattr(server_module, "build_telegram_runtime", lambda *_args: Runtime())
+    monkeypatch.setattr(server_module, "restore_telegram_accounts", restore)
+    monkeypatch.setattr(server_module, "DurableActionDispatcher", Dispatcher)
+
+    async def run_lifespan():
+        async with app.router.lifespan_context(app):
+            startup_complete.set()
+            await stop.wait()
+
+    task = asyncio.create_task(run_lifespan())
+    try:
+        await asyncio.wait_for(restore_started.wait(), timeout=5)
+        assert dispatcher_started is False
+        assert startup_complete.is_set() is False
+        with Session(queue_engine) as session:
+            item = session.exec(select(DurableActionItem)).one()
+            assert item.state == "pending"
+            assert item.attempt_count == 0
+        assert connector.requests == []
+        restore_release.set()
+        await asyncio.wait_for(startup_complete.wait(), timeout=5)
+        assert dispatcher_started is True
+        with Session(queue_engine) as session:
+            item = session.exec(select(DurableActionItem)).one()
+            assert item.state == "succeeded", item.error
+            assert item.error is None
+        assert len(connector.requests) == 1
+    finally:
+        restore_release.set()
+        stop.set()
+        await asyncio.wait_for(task, timeout=5)
+        queue_engine.dispose()

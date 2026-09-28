@@ -1462,7 +1462,9 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                     "setup_note": (
                         "Store the Gemini Developer API key from Google AI Studio. "
                         "StackOS resolves it inside the daemon for Gemini image "
-                        "generation and editing actions."
+                        "generation and editing actions. Service-account-bound "
+                        "authorization keys use this same API-key method; JSON "
+                        "service-account keys are not exposed for these endpoints."
                     ),
                     "setup": {
                         "credential_label": "Gemini API key",
@@ -1521,7 +1523,9 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 config={
                     "setup_note": (
                         "Store the Gemini Developer API key from Google AI Studio. "
-                        "StackOS resolves it inside the daemon for Veo video actions."
+                        "StackOS resolves it inside the daemon for Veo video actions. "
+                        "Service-account-bound authorization keys use this same "
+                        "API-key method; JSON service-account keys are not exposed."
                     ),
                     "setup": {
                         "credential_label": "Gemini API key",

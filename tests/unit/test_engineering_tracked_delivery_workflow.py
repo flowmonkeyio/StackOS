@@ -70,21 +70,21 @@ def _impact_map() -> dict:
     }
 
 
-def test_tracked_delivery_v030_keeps_one_key_and_twelve_steps() -> None:
+def test_tracked_delivery_v040_keeps_one_key_and_twelve_steps() -> None:
     workflow = _workflow()
     validation = validate_workflow_template_obj(workflow)
 
     assert validation.valid is True, validation.errors
     assert workflow["key"] == "engineering.tracked-delivery"
-    assert workflow["version"] == "0.3.0"
+    assert workflow["version"] == "0.4.0"
     assert [step["id"] for step in workflow["steps"]] == [
         "scope-work",
         "define-requirements",
         "discover-impact",
-        "plan-tickets",
         "design-approach",
-        "review-design",
         "design-tests",
+        "plan-tickets",
+        "review-design",
         "deliver-tickets",
         "verify-delivery",
         "review-delivery",
@@ -100,7 +100,7 @@ def test_tracked_delivery_v030_keeps_one_key_and_twelve_steps() -> None:
     assert requirements["delivery"] == "required"
     assert requirements["architecture"] == "recommended"
     assert requirements["test-designer"] == "recommended"
-    assert requirements["delivery-reviewer"] == "recommended"
+    assert requirements["delivery-reviewer"] == "required"
     selection_text = " ".join(workflow["when_to_use"]).lower()
     assert "follow the sdlc" in selection_text
     assert "release-grade" in selection_text

@@ -124,6 +124,7 @@ def test_agent_preset_tools_are_callable(mcp_client: MCPClient) -> None:
         "stackos.sdlc.requirements-flow-definer",
         "stackos.sdlc.planning",
         "stackos.sdlc.delivery",
+        "stackos.sdlc.delivery-reviewer",
     }
     recommended_agent_keys = {
         agent["preset"]["summary"]["key"] for agent in engineering_resolved["recommended_agents"]
@@ -132,7 +133,6 @@ def test_agent_preset_tools_are_callable(mcp_client: MCPClient) -> None:
         "stackos.sdlc.codebase-explorer",
         "stackos.sdlc.architecture",
         "stackos.sdlc.test-designer",
-        "stackos.sdlc.delivery-reviewer",
     }
     engineering_skill_refs = {
         item["skill_ref"] for item in engineering_resolved["skill_requirements"]
@@ -191,6 +191,47 @@ def test_agent_preset_tools_are_callable(mcp_client: MCPClient) -> None:
         }
     )
     assert "action.execute" in handoff_tool_text
+
+
+def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
+    mcp_client: MCPClient,
+) -> None:
+    request = {"workflow_key": "engineering.tracked-delivery", "plugin_slug": "engineering"}
+    raw = mcp_client.call_tool_structured(
+        "agentPreset.resolveForWorkflow", {**request, "response_mode": "raw"}
+    )
+    compact = mcp_client.call_tool_structured("agentPreset.resolveForWorkflow", request)
+    compact = compact.get("data", compact)
+
+    expected = {item["preset"]["summary"]["key"]: item for item in raw["required_agents"]}
+    actual = {item["preset"]["key"]: item for item in compact["required_agents"]}
+    assert set(actual) == set(expected)
+    assert "stackos.sdlc.delivery-reviewer" in actual
+    for key, item in actual.items():
+        assert item["preset"]["version"] == "0.3.1"
+        adaptation = item["project_adaptation"]
+        full_adaptation = expected[key]["project_adaptation"]
+        assert adaptation["adaptation_required"] is True
+        assert "retrieve the raw/complete applicable preset contract" in adaptation["instruction"]
+        assert adaptation["conditional_context_refs"] == full_adaptation["conditional_context_refs"]
+        # Compact is navigation; long adaptation prose may require a raw read.
+        assert full_adaptation["required_agent_action"].startswith(
+            adaptation["required_agent_action"].removesuffix("...")
+        )
+        assert "assignment attempt" in full_adaptation["required_agent_action"]
+        assert "stale, or contradictory inputs" in full_adaptation["required_agent_action"]
+        assert item["preset"]["handoff_outputs"]
+        assert (
+            "sole writer of durable run/tracker state"
+            in (item["project_adaptation"]["required_agent_action"])
+        )
+
+    delivery = actual["stackos.sdlc.delivery"]["preset"]
+    assert "candidate-ready" in " ".join(delivery["must_do"])
+    assert "ticket/attempt/contract IDs" in " ".join(delivery["handoff_outputs"])
+    reviewer = actual["stackos.sdlc.delivery-reviewer"]["preset"]
+    assert "every executable child" in " ".join(reviewer["must_do"])
+    assert "pass/repair/blocked recommendation" in " ".join(reviewer["handoff_outputs"])
 
 
 def test_branding_content_production_presets_resolve_end_to_end(
@@ -364,11 +405,11 @@ def test_website_seo_analysis_presets_resolve_end_to_end(
         for agent in resolved["required_agents"]
         if agent["preset"]["summary"]["key"] == "seo.workflow.website-analysis"
     )
-    assert website_agent["preset"]["summary"]["version"] == "0.4.0"
+    assert website_agent["preset"]["summary"]["version"] == "0.5.1"
     assert resolved["required_skill_presets"][0]["preset"]["summary"]["key"] == (
         "stackos.workflow-orchestrator"
     )
-    assert resolved["required_skill_presets"][0]["preset"]["summary"]["version"] == "0.1.3"
+    assert resolved["required_skill_presets"][0]["preset"]["summary"]["version"] == "0.1.5"
     assert resolved["unresolved_requirements"] == []
     assert resolved["unresolved_skill_preset_requirements"] == []
 
@@ -399,7 +440,7 @@ def test_agency_setup_presets_resolve_without_specialists(
         assert raw["unresolved_skill_preset_requirements"] == []
         raw_summary = raw["required_skill_presets"][0]["preset"]["summary"]
         assert raw_summary["key"] == "stackos.workflow-orchestrator"
-        assert raw_summary["version"] == "0.1.3"
+        assert raw_summary["version"] == "0.1.5"
         assert raw_summary["generic_preset"] is True
         assert raw_summary["adaptation_required"] is True
         assert compact["required_agents"] == []
@@ -407,7 +448,7 @@ def test_agency_setup_presets_resolve_without_specialists(
         assert compact["required_skill_presets"][0]["preset"]["key"] == (
             "stackos.workflow-orchestrator"
         )
-        assert compact["required_skill_presets"][0]["preset"]["version"] == "0.1.3"
+        assert compact["required_skill_presets"][0]["preset"]["version"] == "0.1.5"
 
 
 def test_finance_workflow_presets_resolve_end_to_end(mcp_client: MCPClient) -> None:
@@ -492,7 +533,7 @@ def test_finance_operational_guidance_survives_compact_workflow_resolution(
         compact = compact.get("data", compact)
         raw_skill = raw["required_skill_presets"][0]
         compact_skill = compact["required_skill_presets"][0]
-        assert compact_skill["preset"]["version"] == "0.7.4"
+        assert compact_skill["preset"]["version"] == "0.7.5"
         assert compact_skill["project_adaptation"] == raw_skill["project_adaptation"]
         assert any("capability preflight" in item for item in compact_skill["preset"]["must_do"])
         conditional = {

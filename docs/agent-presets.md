@@ -9,6 +9,17 @@ Presets implement the responsibility model in the canonical
 owns integration and judgment, specialists own bounded contracts, and StackOS
 owns durable state and explicit execution.
 
+All preset families follow [canonical project guidance consumption](./agent-operating-model.md#canonical-project-guidance-consumption).
+Resolve the same approved sources and their current revision/approval evidence,
+then pass the role-relevant subset through existing context and handoff contracts.
+The required `canonical project guidance` context ref asks for that resolution;
+it does not make every possible brand or business source mandatory. Public-copy
+authors and voice reviewers use the same selected foundation refs/revisions and candidate;
+research, technical, communication and finance roles apply their own relevant
+boundaries. A host adaptation records this method and source-preset version,
+never a copied voice profile or approval snapshot. Presets include the protocol
+summary so projects without this repository's docs can apply it.
+
 Every bundled preset is generic and must be adapted before use:
 
 - `generic_preset: true`
@@ -143,13 +154,13 @@ The tracked-delivery workflow uses this baseline:
 scope
 -> requirements and flow definition
 -> codebase impact discovery
--> tracker ticket planning
 -> architecture/design
--> design review
 -> test and verification design
--> delivery
--> verification
--> delivery review
+-> executable ticket planning
+-> delivery readiness review (design, proof and ticket plan)
+-> delegated delivery with immediate independent ticket review
+-> integrated verification
+-> integrated delivery review
 -> tracker truth audit
 -> release closeout
 ```
@@ -195,11 +206,11 @@ The core support and engineering preset subset is deliberately small:
 | `support.workflow.delivery-handoff` | Converts a same-thread operator instruction and support conclusion into delivery-ready tracker work with durable chat refs. |
 | `stackos.sdlc.requirements-flow-definer` | Defines actors, flows, acceptance criteria, non-goals, and evidence expectations. |
 | `stackos.sdlc.codebase-explorer` | Maps real execution paths, ownership, downstream fallout, tests, and docs before changes. |
-| `stackos.sdlc.planning` | Converts requirements and impact evidence into tracker tickets with dependencies and definition of done. |
+| `stackos.sdlc.planning` | Converts requirements, impact, design and proof into actionable ticket packets with ownership and dependencies. |
 | `stackos.sdlc.architecture` | Chooses and challenges the project-native design, canonical owner, contracts, rollout, and validation plan. |
 | `stackos.sdlc.test-designer` | Owns the full proof plan: TDD/red-first gates, automated checks, risk-appropriate manual proof, expected outcomes, and signoff evidence. |
-| `stackos.sdlc.delivery` | Implements scoped tickets, debugs root causes, verifies the diff, and records tracker/evidence updates truthfully. |
-| `stackos.sdlc.delivery-reviewer` | Reviews design and delivery across behavior, contracts, tests, tracker truth, docs, security, and release risk. |
+| `stackos.sdlc.delivery` | Implements assigned tickets, self-checks, repairs admitted findings and returns candidate evidence for acceptance. |
+| `stackos.sdlc.delivery-reviewer` | Independently reviews readiness, individual tickets or integrated delivery within an explicit scope; returns findings without repairing implementation or accepting tickets. |
 
 Use this subset as the only support/engineering agent set for a project.
 Workflows pick the roles they need. For example, customer feedback intake uses
@@ -217,9 +228,74 @@ When browser-assisted platform work depends on login state, the test plan must
 name the stable StackOS browser `profile_key`, whether the operator must log in
 once, whether cookies/session reuse is expected, and whether that precondition
 is closeout-blocking or operator-owned. The main orchestrator or a designated
-reviewer verifies that plan before delivery starts. If a project already has
-local agents, adapt or replace them so each role maps cleanly to this subset
-without overlapping responsibilities.
+reviewer verifies that plan with the design and ticket breakdown before delivery
+starts. Preparation roles need not each be a separate agent invocation. The
+main agent may apply their contracts directly when sufficient current context
+exists; tracked delivery delegates implementation and requires independent
+review of every executable child ticket, including an explicitly ticketed
+discovery task. Generated workflow step mirrors retain their phase gates.
+
+### Engineering Delegation And Acceptance
+
+The workflow owns phase order and gates; the
+`stackos.sdlc.delivery-orchestrator` skill preset owns scheduling, model choice,
+recovery and acceptance. Specialist presets own bounded task behavior. The
+main agent reads their complete applicable contracts before execution. Compact
+preset resolution is useful for routing and may truncate adaptation text;
+request targeted raw resolution or description when it omits instructions.
+The resulting assignment can still be bounded and reference only relevant
+context. The
+main agent stays in the existing thread with its current model/settings and
+selects supported child models and reasoning effort per assignment. Generic
+presets carry no model/version pins. Host capabilities, operator preferences,
+risk and observed performance guide selection; a requested model and its
+effective fallback must not be reported as the same when the host overrides it.
+
+The orchestrator coordinates at most three active ticket assignments by
+default, including implementation, queued review, review and repair. Ready
+reviews take priority over starting new tickets. Capacity must allow an
+independent reviewer: reserve and reuse a reviewer slot when completed agent
+threads cannot be retired. A reviewer can review multiple tickets, but cannot
+review work it implemented. Each agent has one active assignment; queue work
+without retasking a busy reviewer.
+
+The ticket packet includes current operator and acceptance refs, design,
+accepted prerequisites, contract/assignment identity, owned paths and shared
+resources, proof steps and expected results, authorized environment, and return
+and stop conditions. Read the full targeted `tracker.brief` with
+`response_mode="raw"` when compact navigation omits required fields, then send
+the specialist a bounded packet. Keep durable facts in existing run/ticket
+context and evidence, and reference them from schema-valid phase outputs.
+
+Ticket-local acceptance must be distinct from integration-only obligations.
+An interface ticket can pass its contract checks before a consumer is built;
+the complete user journey remains an open workflow obligation. Readiness
+checks coverage against authoritative operator input as well as derived
+criteria, and rejects dependencies that make a ticket's required proof depend
+on its own blocked consumers.
+
+Implementation and self-check produce a candidate. A separate reviewer checks
+that candidate against the assigned requirements and actual evidence. The main
+agent adjudicates findings, routes repairs, integrates the reviewed result,
+rechecks affected evidence, then marks the ticket complete. Until acceptance,
+the ticket stays `in-progress`. There is no separate review ticket by default
+and no new tracker status. Main-agent scheduling and acceptance are guidance,
+not daemon-enforced leases or semantic verification.
+
+Review must identify its candidate, assignment attempt, contract revision and
+relevant environment. Disjoint file ownership does not prove independence: a
+check may import another ticket's unaccepted helper or use a shared fixture.
+Wait for the actual dependency or isolate and rerun against an accepted base.
+Final verification/review covers assembled behavior and remaining obligations,
+reusing valid ticket receipts instead of automatically repeating them.
+
+Source upgrades do not rewrite existing run-plan snapshots or host-local
+files. Existing runs keep their frozen structure and output contracts. Local
+adaptations record the version they actually implement and are refreshed only
+in an authorized adaptation phase; a source-only change must not relabel old
+local prompts as current. During a scoped source revision, use an explicit
+current session packet where needed. The workflow's required outputs remain
+schema-valid even when preparation is concise.
 
 The main agent should detect or read the host convention before writing local
 agents. For Codex-style projects, inspect `.codex/config.toml` and existing
@@ -375,7 +451,8 @@ ref before attachment. The finance backend contract owns the recovery method.
 
 All presets are expected to work through the existing StackOS tracker:
 
-- planning agents create scoped tasks/tickets
+- planning agents prepare scoped tasks/tickets; the current workflow or
+  assignment names the durable writer (the main agent for tracked delegation)
 - explicit workflow intent takes precedence over direct tracker tasks; create or
   resolve the workflow-backed run plan before tracker ticket creation
 - all discovery, design, delivery, verification, and closeout tickets for an
@@ -398,7 +475,9 @@ All presets are expected to work through the existing StackOS tracker:
   `tracker.reopen` with the task, run-plan, or linked run id plus a reason
 - planning agents must dependency-bridge child tickets into the mirrored
   workflow step chain
-- delivery agents claim/update tickets as work starts and completes
+- in engineering tracked delegation, the main agent assigns explicit ticket
+  keys and owns lifecycle/evidence writes; delivery agents return candidate
+  evidence and blockers rather than independently pulling or completing work
 - verifier and reviewer agents compare completion claims with actual evidence
 - reviewers verify evidence before closeout
 - reviewer findings are claims until the orchestrator adjudicates them against
@@ -412,7 +491,7 @@ All presets are expected to work through the existing StackOS tracker:
 Planning agents should produce deliverable tickets with logical sequencing,
 clear dependencies, no dangling loose ends, and concrete definition of done.
 For workflow-backed work, their plan must include a graph check covering the
-parent step ticket, first executable child, terminal children, next-step
+parent step ticket, every independent first child, terminal children, next-step
 handoff, and detached branches. After creating or changing workflow-backed
 tickets, call `tracker.get` with `run_plan_id` and `include_graph=true`;
 repair warnings that hide required work or invalidate readiness claims, and

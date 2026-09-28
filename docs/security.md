@@ -6,6 +6,23 @@ explains *what* is loosened, *why*, and *what* still defends the surface.
 
 ## Local Daemon Auth Posture
 
+Google service-account JSON keys use the existing encrypted Account backing.
+Only the explicit saved `service-account` method on the five reviewed providers
+can select signing. The daemon validates service-account identity and RSA keys,
+signs in memory, and exchanges only at `https://oauth2.googleapis.com/token`
+without redirects or ambient credentials. Key-provided certificate URLs and
+credential-source configuration never select network destinations.
+
+The shared lifecycle owns token expiry, renewal locking, compare-and-swap
+updates, scope enforcement and audit. Key/delegated-user changes invalidate
+cached identity and scope state. Assertions, keys and token responses are not
+agent output; shared redaction covers nested JSON keys, assertions and PEM text.
+An accepted signed grant can establish the requested scopes when Google's
+response omits `scope`, as allowed by OAuth 2.0 section 5.1; an explicitly
+returned scope remains authoritative. This narrow grant rule does not change
+manual OAuth refresh behavior. Scope evidence does not grant Google resource
+permissions. See the [reviewed provider contract](integration-contracts/google-service-accounts.md).
+
 The daemon binds to `127.0.0.1:5180` only and serves the committed StackOS UI
 bundle from the same origin. The Vue/Vite development UI, when used, runs on
 `127.0.0.1:5173` and proxies `/api` and `/mcp` to the daemon on `5180`. Every
@@ -87,10 +104,12 @@ credential fields remain write-only and unavailable on MCP/CLI. When a tool
 needs a credential, the agent passes an opaque `credential_ref`; the daemon
 verifies that the Account is attached to the project, then resolves and
 decrypts the backing secret inside the vendor wrapper process.
-For Telegram, an agent's `account.test` probe also requires that project
-attachment; it reads only safe identity/authorization status through TDLib and
-does not start a durable session or expose a sign-in challenge. The local
-Accounts Test button can probe a global Account before attachment.
+Every MCP or CLI `account.test` probe requires the current project and an
+Account attached to it before credential resolution or provider access. Only
+explicit trusted local-admin REST, including the local Accounts Test button,
+can probe a global Account before attachment. A Telegram test reads only safe
+identity/authorization status through TDLib; it does not start a durable session
+or expose a sign-in challenge.
 
 Provider manifests declare typed `auth_methods`. The UI renders those methods
 directly, so an API-key system, SMTP system, OAuth2 system, and custom webhook

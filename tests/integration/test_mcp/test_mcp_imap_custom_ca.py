@@ -50,9 +50,14 @@ def test_native_imap_account_ca_reaches_mcp_probe(
     credential_ref = created.json()["data"]["credential_ref"]
     out = mcp_client.call_tool_structured(
         "account.test",
-        {"credential_ref": credential_ref, "response_mode": "raw"},
+        {
+            "project_id": seeded_project["data"]["id"],
+            "credential_ref": credential_ref,
+            "response_mode": "raw",
+        },
     )
     assert out["data"]["ok"] is True
+    assert out["project_id"] == seeded_project["data"]["id"]
     assert len(observed) == 1
     assert ssl.PEM_cert_to_DER_cert(ca) in observed[0].get_ca_certs(binary_form=True)
     assert observed[0].check_hostname is True

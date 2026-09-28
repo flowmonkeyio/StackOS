@@ -47,7 +47,9 @@ Normal agents may use:
   `repair_required`, are excluded from `ready_count`, and include a targeted
   Account repair action. Pass
   `include_unavailable=true` only for deliberate provider setup/catalog work.
-- `account.test`: run a daemon-side health probe and return a sanitized result.
+- `account.test`: run a daemon-side health probe for an Account attached to the
+  current project and return a sanitized result. MCP and CLI calls require that
+  project scope; only explicit trusted local-admin REST may test a global Account.
 - `account.session.status`, `account.session.connect`, and
   `account.session.disconnect`: inspect or explicitly control the managed TDLib
   session for a Telegram Account attached to the current project. The Account
@@ -80,6 +82,9 @@ provider endpoint is accessible. A failed probe remains visible even when the
 Account lifecycle is `connected`; account selection and provider-enforced
 permissions do not change. The UI labels saved connections as connected, not
 verified-ready, and renders failed-check guidance as plain text.
+Provider failures retain reviewed status and reason fields in this normalized
+result, with repair guidance where the cause is known. Provider response bodies,
+arbitrary error messages, and credential material are not diagnostic output.
 
 ## Setup Flow
 
@@ -111,6 +116,43 @@ verified-ready, and renders failed-check guidance as plain text.
 
 No step requires an agent prompt, workflow template, or repository file to carry
 secret material.
+
+### Google Service Accounts
+
+Search Console, Google Analytics, Tag Manager, Google Ads and Google Workspace
+offer the explicit **Service account** method alongside their existing OAuth
+methods. Enter the downloaded JSON key in the local Account panel; never give
+the key to an agent or put it in chat. The daemon validates and encrypts it,
+acquires short-lived Google tokens, and renews them through the shared Account
+lifecycle without a browser consent redirect. This is a service-account OAuth
+grant, not an API key for private performance data.
+
+Grant the service-account email access to the intended Google resource before
+using it. Search Console property access, GA4 property/account access, Tag
+Manager container access and Google Ads access are separate from Cloud IAM.
+Google Ads also requires its developer token; `manager_account_ref` supplies the
+existing `login-customer-id` header where needed.
+
+Workspace accepts an optional `delegated_subject` authorized by a Workspace
+admin through domain-wide delegation. Without it, only an explicitly shared
+calendar without attendees is supported. Gmail, `primary` calendars and attendee
+invitations require delegation. `user_ref` selects a mailbox; it cannot enable
+delegation. Personal Gmail uses OAuth. Clearing the subject or replacing the key
+discards acquired tokens and scope evidence; leaving the secret field blank on
+edit preserves the key. Each Account's method remains immutable.
+
+Search Console, Analytics and Tag Manager test their existing read-only
+inventories. An empty result authenticates the request but proves no access to a
+particular resource. Ads and Workspace currently test token acquisition only and
+explicitly report resource access as unverified. Token scopes do not replace
+resource permissions. Verify the exact site, property, container, customer or
+calendar with an authorized action before relying on that access.
+
+Gemini Image and Veo retain their Gemini Developer API key method, including
+Google's service-account-bound authorization keys. StackOS does not expose JSON
+service-account keys for these media endpoints or switch them to Vertex AI.
+The [Google service-account contract](integration-contracts/google-service-accounts.md)
+records the complete provider matrix, official sources and verification limits.
 
 Provider manifests declare `auth_methods`. Each method defines its fields,
 which fields are daemon-secret, whether the payload is raw or JSON, and whether
@@ -335,6 +377,12 @@ set after restart. Disconnect clears that state, stops the native receiver, and
 holds future delivery until an agent explicitly connects again. StackOS never
 chooses either action, and there is no implicit ad-hoc or time-limited mode.
 
+Startup restores requested sessions once, before starting queued delivery.
+An operational failure during native setup or the identity check preserves the
+saved sign-in, identity, native database, and connection request. The session
+remains offline and can be explicitly reconnected. A required sign-in or
+confirmed identity mismatch still requires Account repair.
+
 A bot's later explicit session connection reuses its saved authorization. If
 Telegram invalidated it, TDLib can authenticate again from the daemon-held
 token. For a new user Account, the Accounts drawer shows Account details first.
@@ -353,6 +401,11 @@ check. An agent can invoke `account.test` for an Account attached to its
 project; the global Accounts button remains a local setup control. If Telegram
 invalidated the saved authorization, Test reports the need to sign in again
 instead of treating an offline session as an incomplete setup.
+An Account with a saved identity can also be tested after a prior repair
+failure: Test obtains fresh evidence from the saved native database instead
+of repeating the cached failure. This temporary probe preserves the requested
+connection state and does not submit bot credentials or user challenges. It
+does not replace a live session or one being restored.
 From global Accounts, attach the Account to a project before connecting it;
 from that project's Connections page, an agent explicitly connects it.
 Disconnecting later preserves the saved sign-in, so a normal reconnect does

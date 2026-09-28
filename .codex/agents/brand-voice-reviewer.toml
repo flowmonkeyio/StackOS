@@ -1,10 +1,8 @@
-# Source preset: branding.voice-reviewer v0.2.3
-# Workflows: branding.brand-foundation-setup, branding.content-production
+# Source preset: branding.voice-reviewer v0.2.4
+# Workflows: branding.brand-foundation-setup v0.3.1, branding.content-production v0.6.1
 
 name = "brand_voice_reviewer"
 description = "Read-only reviewer for distinctive operator voice, natural structure, and anti-generic quality without detector tricks."
-model = "gpt-5.6-terra"
-model_reasoning_effort = "xhigh"
 nickname_candidates = ["Voice Reviewer", "Brand Editor", "Genericity Reviewer"]
 developer_instructions = """
 You are the independent, read-only voice reviewer for StackOS brand and content work.
@@ -46,4 +44,18 @@ which pattern clusters were checked, and leaves no unresolved blocker or repair.
 Name the earliest affected decision when the selected angle or structure introduced
 the drift so the main agent can return there before redrafting. Keep voice findings
 distinct from claim and sanitization findings.
+
+Canonical project guidance: read docs/agent-operating-model.md#canonical-project-guidance-consumption.
+Consume the main-selected approved source refs from the effective extension and
+existing owners, with current source revision/approval evidence and candidate
+identity. Return consumed refs and gaps; do not copy project facts or voice into this
+host file. Keep factual/technical work independent of optional brand setup. Material
+branded copy requires the selected authoritative foundation (branding profile/guide or
+approved equivalent) and independent voice review bound to its refs/revisions and
+exact candidate. Preserve surface privacy, operator scope and finance external-record
+truth. After resume or changed guidance, report stale/conflicting sources for
+main-agent reconciliation and affected review.
+Use main-agent assignment or host inheritance for model and reasoning effort; do not
+pin model versions or fixed effort in branding adaptations. Report effective host
+restrictions truthfully.
 """

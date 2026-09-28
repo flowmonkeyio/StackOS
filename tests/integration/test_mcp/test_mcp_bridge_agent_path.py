@@ -1788,12 +1788,13 @@ def test_bridge_toolbox_operates_setup_actions(
             proxy,
             client,
             "account.test",
-            {"credential_ref": credential_ref},
+            {"project_id": project_id, "credential_ref": credential_ref},
             request_id="auth-test",
         )
     )
     assert tested["data"]["ok"] is True
     assert tested["data"]["provider_key"] == "firecrawl"
+    assert tested["project_id"] == project_id
 
 
 def test_bridge_allows_started_run_plan_controller_tools(mcp_client: MCPClient) -> None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from pytest_httpx import HTTPXMock
 
 from stackos.auth import derive_ui_token
@@ -19,7 +20,7 @@ from .test_mcp_bridge_agent_path import (
 )
 
 
-def _create_firecrawl_credential(mcp: MCPClient, project_id: int) -> dict:
+def _create_firecrawl_credential(mcp: MCPClient, project_id: int | None) -> dict:
     response = mcp.test_client.post(
         "/api/v1/auth/accounts/firecrawl",
         json={
@@ -66,6 +67,7 @@ def test_auth_status_and_test_return_sanitized_refs(
     tested = mcp_client.call_tool_structured(
         "account.test",
         {
+            "project_id": project_id,
             "credential_ref": credential_ref,
             "response_mode": "raw",
         },
@@ -74,7 +76,32 @@ def test_auth_status_and_test_return_sanitized_refs(
     assert tested["data"]["ok"] is True
     assert tested["data"]["provider_key"] == "firecrawl"
     assert tested["data"]["credential_ref"] == credential_ref
+    assert tested["project_id"] == project_id
     assert "fc-secret" not in json.dumps(tested)
+
+
+@pytest.mark.parametrize("project_supplied", [False, True])
+def test_nontelegram_account_test_requires_project_attachment_before_http(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    project_supplied: bool,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    account = _create_firecrawl_credential(mcp_client, None)
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.firecrawl.dev/v2/scrape",
+        json={"data": {"markdown": "# ok"}},
+        is_optional=True,
+    )
+    arguments = {"credential_ref": account["credential_ref"]}
+    if project_supplied:
+        arguments["project_id"] = project_id
+    denied = mcp_client.call_tool_error("account.test", arguments)
+    expected = "not attached" if project_supplied else "requires an attached project"
+    assert expected in json.dumps(denied)
+    assert httpx_mock.get_requests() == []
 
 
 def test_local_admin_auth_mutations_are_not_system_granted(
@@ -229,7 +256,7 @@ def test_telegram_account_test_requires_project_attachment_for_mcp(
         json={
             "auth_method_key": "tdlib-user-session",
             "display_name": "Detached Telegram user",
-            "fields": {"api_id": 12345, "api_hash": "application-hash"},
+            "fields": {},
         },
         headers=mcp_client._headers(),
     )

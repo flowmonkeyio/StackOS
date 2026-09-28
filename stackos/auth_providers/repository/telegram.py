@@ -27,6 +27,10 @@ from sqlmodel import col, select
 from stackos.config import Settings
 from stackos.db.models import Credential, CredentialAccount, IntegrationCredential
 from stackos.integrations.telegram_tdlib.account_config import account_proxy
+from stackos.integrations.telegram_tdlib.native import (
+    safe_request_error_details,
+    saved_authorization_rejected,
+)
 from stackos.integrations.telegram_tdlib.sessions import (
     TelegramTdlibSessionConfig,
 )
@@ -306,13 +310,11 @@ class TelegramAuthorizationMixin:
                         correlation_id=f"telegram-auth:{credential_ref}:{generation}:qr",
                     )
             self._s.expire_all()
-        except Exception:
-            self._record_telegram_repair(
+        except Exception as exc:
+            self._record_telegram_session_failure(
                 credential=credential,
                 generation=generation,
-                repair_hint=(
-                    "Telegram authorization could not be started. Review the Account setup."
-                ),
+                error=exc,
             )
             with suppress(Exception):
                 await runtime.close(account_ref=credential_ref, generation=generation)
@@ -493,11 +495,11 @@ class TelegramAuthorizationMixin:
                 runtime=runtime,
                 generation=generation,
             )
-        except Exception:
-            self._record_telegram_repair(
+        except Exception as exc:
+            self._record_telegram_session_failure(
                 credential=credential,
                 generation=generation,
-                repair_hint="Telegram session could not be restored. Review the Account setup.",
+                error=exc,
             )
             with suppress(Exception):
                 await runtime.close(account_ref=credential_ref, generation=generation)
@@ -512,6 +514,19 @@ class TelegramAuthorizationMixin:
             generation=generation,
             state=state,
         )
+        if (
+            status.status == "challenge"
+            and self._telegram_verified_identity(credential) is not None
+        ):
+            self._record_telegram_repair(
+                credential=credential,
+                generation=generation,
+                repair_hint=(
+                    "Telegram saved session is no longer authorized. Reauthorize this Account."
+                ),
+            )
+            await runtime.close(account_ref=credential_ref, generation=generation)
+            return Envelope(data=self.telegram_authorization_status(credential_ref=credential_ref))
         if status.status == "verifying":
             await self.synchronize_telegram_ready(
                 credential_ref=credential_ref,
@@ -669,6 +684,9 @@ class TelegramAuthorizationMixin:
         elif current is not None and current["state"] == "challenge":
             status = "authorization_required"
             next_action = "Complete Telegram user authorization in local Accounts."
+        elif current is not None and current["state"] == "disconnected":
+            status = "disconnected"
+            next_action = "Retry account.session.connect to restore the saved Telegram session."
         else:
             status = "connecting"
             next_action = (
@@ -790,16 +808,20 @@ class TelegramAuthorizationMixin:
                 metadata_json={"generation": generation},
             )
             self._s.commit()
-        except Exception:
-            self._record_telegram_repair(
+        except Exception as exc:
+            self._record_telegram_session_failure(
                 credential=credential,
                 generation=generation,
-                repair_hint=(
-                    "Telegram Account identity could not be confirmed. Review the Account setup."
-                ),
+                error=exc,
             )
-            with suppress(Exception):
-                await runtime.close(account_ref=credential_ref, generation=generation)
+            # During configure the receiver calls this method. Let the service
+            # retain the typed failure before configure retires its client;
+            # closing here would replace useful diagnostics with "retired".
+            if not self._telegram_runtime_is_connecting(
+                runtime=runtime, credential_ref=credential_ref, generation=generation
+            ):
+                with suppress(Exception):
+                    await runtime.close(account_ref=credential_ref, generation=generation)
             raise
 
     @_serialized_telegram_transition
@@ -941,13 +963,13 @@ class TelegramAuthorizationMixin:
         active_generation = runtime.active_generation(account_ref=credential_ref)
         close_generation: int | None = None
         probe_generation: int | None = None
-        if current is not None and current["state"] == "repair-required":
+        if current is not None and current["state"] == "repair-required" and saved_identity is None:
             out = AuthTestOut(
                 credential_ref=credential_ref,
                 provider_key="telegram",
                 ok=False,
                 status="failed",
-                summary="Telegram saved authorization needs repair.",
+                summary="Telegram Account authorization needs repair.",
                 checked_at=utcnow().isoformat(),
                 next_action="Reauthorize this Telegram Account in local Accounts.",
             )
@@ -984,19 +1006,6 @@ class TelegramAuthorizationMixin:
                 checked_at=utcnow().isoformat(),
                 retryable=True,
                 next_action="Retry the Account test after the session change finishes.",
-            )
-        elif desired_connected and not live:
-            # A Test must not replace an explicitly connected session that may
-            # be starting or recovering under account.session.connect.
-            out = AuthTestOut(
-                credential_ref=credential_ref,
-                provider_key="telegram",
-                ok=False,
-                status="failed",
-                summary="Telegram Account session is not currently available.",
-                checked_at=utcnow().isoformat(),
-                retryable=True,
-                next_action="Connect this Telegram Account, then test again.",
             )
         else:
             try:
@@ -1061,6 +1070,14 @@ class TelegramAuthorizationMixin:
                         if account_kind == "bot"
                         else None,
                     )
+                    if not live:
+                        self._write_telegram_state(
+                            credential=credential,
+                            generation=current["generation"],
+                            state="disconnected",
+                            challenge=None,
+                            repair_hint=None,
+                        )
                     receipt = runtime.bootstrap_receipt(
                         account_ref=credential_ref,
                         generation=probe_generation,
@@ -1097,7 +1114,16 @@ class TelegramAuthorizationMixin:
                     checked_at=utcnow().isoformat(),
                     next_action="Reauthorize this Telegram Account in local Accounts.",
                 )
-            except Exception:
+            except Exception as exc:
+                rejected = saved_authorization_rejected(exc)
+                if rejected:
+                    self._record_telegram_repair(
+                        credential=credential,
+                        generation=current["generation"],
+                        repair_hint=(
+                            "Telegram rejected the saved authorization. Reauthorize this Account."
+                        ),
+                    )
                 out = AuthTestOut(
                     credential_ref=credential_ref,
                     provider_key="telegram",
@@ -1105,8 +1131,13 @@ class TelegramAuthorizationMixin:
                     status="failed",
                     summary="Telegram native session could not complete its safe account probe.",
                     checked_at=utcnow().isoformat(),
-                    retryable=True,
-                    next_action="Check Telegram connectivity and retry this Account test.",
+                    retryable=not rejected,
+                    metadata=safe_request_error_details(exc),
+                    next_action=(
+                        "Reauthorize this Telegram Account in local Accounts."
+                        if rejected
+                        else "Check Telegram connectivity and retry this Account test."
+                    ),
                 )
             finally:
                 if close_generation is not None:
@@ -1400,6 +1431,39 @@ class TelegramAuthorizationMixin:
         )
         self._s.commit()
 
+    def _record_telegram_session_failure(
+        self, *, credential: Credential, generation: int, error: BaseException
+    ) -> None:
+        """Operational failure stops a transport, not a previously verified sign-in."""
+        self._s.refresh(credential)
+        current = self._telegram_state(credential)
+        if current is None or current["generation"] != generation or credential.status == "revoked":
+            return
+        if (
+            isinstance(error, ConflictError)
+            or saved_authorization_rejected(error)
+            or self._telegram_verified_identity(credential) is None
+            or current["state"] == "repair-required"
+        ):
+            self._record_telegram_repair(
+                credential=credential,
+                generation=generation,
+                repair_hint=(
+                    "Telegram saved authorization could not be verified. Review the Account setup."
+                ),
+            )
+            return
+        self._write_telegram_state(
+            credential=credential,
+            generation=generation,
+            state="disconnected",
+            challenge=None,
+            repair_hint=(
+                "Telegram session is temporarily unavailable. Retry the saved session connection."
+            ),
+        )
+        self._s.commit()
+
     def _authorization_projection(
         self, state: Mapping[str, Any], *, include_qr_link: bool
     ) -> dict[str, Any]:
@@ -1522,6 +1586,10 @@ class TelegramAuthorizationMixin:
             generation=generation,
             correlation_id=f"telegram-auth:{credential.credential_ref}:{generation}:get-me",
         )
+        self._s.refresh(credential)
+        current = self._telegram_state(credential)
+        if current is None or current["generation"] != generation or credential.status == "revoked":
+            raise ConflictError("Telegram authorization generation is stale")
         self._synchronize_telegram_identity_from_user(
             credential=credential,
             user=user,

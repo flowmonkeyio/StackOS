@@ -10,7 +10,11 @@ from stackos.auth_providers import AuthRepository
 from stackos.config import Settings
 from stackos.db.models import Credential
 from stackos.integrations.telegram_tdlib.holds import telegram_native_auth_hold_reason
-from stackos.integrations.telegram_tdlib.native import TelegramTdlibClient, load_managed_tdlib
+from stackos.integrations.telegram_tdlib.native import (
+    TelegramTdlibClient,
+    load_managed_tdlib,
+    safe_request_error_details,
+)
 from stackos.integrations.telegram_tdlib.receipts import reconcile_telegram_receipt
 from stackos.integrations.telegram_tdlib.runtime import tdlib_runtime_root
 from stackos.integrations.telegram_tdlib.service import TelegramTdlibService
@@ -132,5 +136,5 @@ async def restore_telegram_accounts(
             get_logger(__name__).warning(
                 "telegram.account.restore_failed",
                 credential_ref=account_ref,
-                error_type=type(exc).__name__,
+                **safe_request_error_details(exc),
             )

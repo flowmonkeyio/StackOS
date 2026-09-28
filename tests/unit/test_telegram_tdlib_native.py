@@ -143,3 +143,36 @@ def test_request_error_drops_unrecognized_provider_text() -> None:
     assert secret not in str(error)
     assert secret not in repr(error)
     assert secret not in error.__dict__.values()
+
+
+@pytest.mark.parametrize("message", ["FLOOD_WAIT_42", "SESSION_REVOKED", "secret-value"])
+def test_request_diagnostics_only_keep_structured_safe_fields(message: str) -> None:
+    from stackos.integrations.telegram_tdlib.native import (
+        safe_request_error_details,
+        saved_authorization_rejected,
+    )
+
+    with pytest.raises(TelegramTdlibRequestError) as caught:
+        _raise_if_error({"@type": "error", "code": 401, "message": message}, phase="request")
+    details = safe_request_error_details(caught.value)
+    assert "secret-value" not in str(details)
+    assert details["code"] == 401
+    assert details["phase"] == "request"
+    assert saved_authorization_rejected(caught.value) is (message == "SESSION_REVOKED")
+    if message == "FLOOD_WAIT_42":
+        assert details["error_name"] == "FLOOD_WAIT"
+        assert details["retry_after_seconds"] == 42
+
+
+def test_request_diagnostics_reject_untrusted_phase_and_name() -> None:
+    from stackos.integrations.telegram_tdlib.native import safe_request_error_details
+
+    details = safe_request_error_details(
+        TelegramTdlibRequestError(
+            code=500,
+            phase="secret-value",
+            error_name="secret-value",
+            retry_after_seconds=-1,
+        )
+    )
+    assert details == {"error_type": "TelegramTdlibRequestError", "code": 500}

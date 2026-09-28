@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: seo.website-analysis
 name: Website SEO Analysis
-version: 0.5.0
+version: 0.6.1
 description: Agency-style, evidence-led website mapping and SEO analysis that keeps one reviewed finding register, uses connected first-party and research tools when useful, and retains a public-site fallback.
 domain: seo
 owner:
@@ -444,6 +444,7 @@ steps:
       - Turn the business goal, markets, included and excluded sections, date window, expected site size, and access constraints into a bounded page/template sampling plan.
       - Treat an omitted access_boundary as public-only. For authenticated or private-network targets, require an explicit authorized scope and external-provider-sharing decision before collection; never send prohibited private content or URLs to Jina, Firecrawl, or another external retrieval provider.
       - Record missing context, blocked access, robots constraints, and unresolved scope questions as limitations before evidence collection.
+      - Main resolves approved audience, business and disclosure guidance from selected_context_json and current scoped source reads. Retain selected owner refs, actual revisions and approval/freshness evidence in the existing evidence index; use an approved external, document or legacy source when selected. Missing brand guidance does not block factual public analysis; limit dependent brand judgments and do not start foundation setup or mutate project guidance from this read-only audit.
     success_criteria:
       - audit_scope satisfies its output schema and names the canonical target, business goal, boundaries, dates, sampling plan, and limitations.
       - The sampling plan explains which sections and representative templates will be inspected and why.
@@ -505,6 +506,8 @@ steps:
       - Mark every considered source used, unavailable, skipped, or failed with evaluation time, coverage, limitations, evidence class, and reason; include public and operator-supplied sources as well as connected providers.
       - Build one typed evidence_index for evidence actually used by findings. Prior analyses remain historical until current evidence revalidates them, and every current entry must point to a durable action receipt, operator ref, or artifact ref. Preserve claim-supporting native browser captures as generic artifacts with the session ref and capture time.
       - Keep Search Console, GA4, GTM, and third-party semantics distinct and do not turn inventory or indexed-version data into live behavior claims.
+      - Record the exact property, capture time, reporting window/timezone, country/device/search type, dimensions, organic cohort and landing-page versus first-user semantics, canonical URL mapping, metric denominators, attribution and pagination/coverage. Preserve missing as unknown rather than zero; low samples, incomplete or truncated data and incomparable cohorts yield inconclusive comparisons.
+      - Compare native search and analytics aggregates by reconciled URL/scope; never infer query-to-person joins, equate clicks with sessions, or call before/after movement causal lift without appropriate evaluation. Include supplied exports when connected sources are absent.
     success_criteria:
       - source_ledger covers every source considered and evidence_index resolves every evidence ref used by public observations, inventory rows, and later findings without treating temporary response paths as durable proof.
       - All provider queries are bounded by the declared scope and no optional provider is treated as a prerequisite.
@@ -544,6 +547,8 @@ steps:
     instructions:
       - Reconcile public URL/template observations with sitemap, Search Console, analytics, tag, and optional third-party sets without erasing differences in canonicalization or measurement scope.
       - Diagnose technical, on-page, content, performance, measurement, international/local, and optional authority issues only where the available evidence supports them.
+      - Include useful inventory pages without Search Console impressions. A sampled public map cannot prove complete crawl or orphan status. For internal-link findings name the actual source passage and destination, reader benefit, existing-link/destination checks and any shared-template scope; exact edits belong in the bounded refresh handoff.
+      - Use intent, reader task and business fit before refresh/link/create recommendations. Positions, CTR, decay, volume and long queries are investigation aids, not guaranteed lifts or AI Mode detection; do not prescribe keyword repetition, artificial date changes or rotating useful links.
       - Classify every draft finding as measured, observed, or inferred and attach affected scope, confidence, resolvable evidence refs, limitations, and a concrete validation path.
       - When performance is not measured, record it as unmeasured with a handoff for validation rather than estimating Core Web Vitals.
     success_criteria:

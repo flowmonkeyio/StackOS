@@ -157,7 +157,7 @@ class AccountUpdateInput(MCPInput):
 class AccountTestInput(MCPInput):
     model_config = ConfigDict(
         extra="forbid",
-        json_schema_extra={"example": {"credential_ref": "cred_..."}},
+        json_schema_extra={"example": {"project_id": 1, "credential_ref": "cred_..."}},
     )
 
     credential_ref: str
@@ -761,24 +761,23 @@ async def account_test(
 ) -> WriteEnvelope[AuthTestOut]:
     repo = AuthRepository(ctx.session)
     account = repo.get_account(credential_ref=inp.credential_ref)
-    if account.provider_key == "telegram":
-        local_admin_rest = (
-            ctx.extras.get("surface") == "rest" and ctx.extras.get("trusted_local_admin") is True
-        )
-        test_project_id: int | None = None
-        if not local_admin_rest:
-            if ctx.project_id is None:
-                raise ConflictError(
-                    "Telegram Account test requires an attached project",
-                    data={"next_action": "Select an attached project and retry account.test."},
-                )
-            repo.require_attached_account(
-                project_id=ctx.project_id,
-                credential_ref=inp.credential_ref,
-                provider_key="telegram",
-                require_connected=False,
+    local_admin_rest = (
+        ctx.extras.get("surface") == "rest" and ctx.extras.get("trusted_local_admin") is True
+    )
+    test_project_id: int | None = None
+    if not local_admin_rest:
+        if ctx.project_id is None:
+            raise ConflictError(
+                "Account test requires an attached project",
+                data={"next_action": "Select an attached project and retry account.test."},
             )
-            test_project_id = ctx.project_id
+        repo.require_attached_account(
+            project_id=ctx.project_id,
+            credential_ref=inp.credential_ref,
+            require_connected=False,
+        )
+        test_project_id = ctx.project_id
+    if account.provider_key == "telegram":
         env = await repo.test_telegram_authorization(
             project_id=test_project_id,
             credential_ref=inp.credential_ref,
@@ -787,7 +786,7 @@ async def account_test(
         )
     else:
         env = await repo.test(
-            project_id=None,
+            project_id=test_project_id,
             credential_ref=inp.credential_ref,
         )
     return WriteEnvelope[AuthTestOut](
