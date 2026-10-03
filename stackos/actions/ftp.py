@@ -1139,6 +1139,13 @@ def _config_bool(
     default: bool,
 ) -> bool:
     value = config.get(key, payload.get(key, default))
+    # Account select fields use the same textual values accepted by auth testing.
+    if not isinstance(value, bool):
+        normalized = str(value).lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off"}:
+            return False
     if not isinstance(value, bool):
         raise ValidationError(f"ftp credential {key} must be a boolean")
     return value
