@@ -11,12 +11,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DESKTOP_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${DESKTOP_DIR}/.." && pwd)"
-CONNECTORS_ROOT="${STACKOS_CONNECTORS_SOURCE:-${REPO_ROOT}/../StackOSConnectors}"
-if [[ ! -f "${CONNECTORS_ROOT}/pyproject.toml" ]]; then
-  echo "StackOSConnectors source is missing: ${CONNECTORS_ROOT}; set STACKOS_CONNECTORS_SOURCE or check out the matched sibling package" >&2
-  exit 1
-fi
-CONNECTORS_ROOT="$(cd "${CONNECTORS_ROOT}" && pwd)"
 BUILD_DIR="${STACKOS_DESKTOP_BUILD_DIR:-${DESKTOP_DIR}/payload-build}"
 PAYLOAD_DIR="${STACKOS_DESKTOP_PAYLOAD_DIR:-${DESKTOP_DIR}/payload/stackos}"
 UV_BIN="${UV:-uv}"
@@ -27,7 +21,6 @@ rm -rf "${BUILD_DIR}" "${PAYLOAD_DIR}"
 mkdir -p "${BUILD_DIR}/dist" "${PAYLOAD_DIR}/bin"
 
 "${UV_BIN}" build --wheel --out-dir "${BUILD_DIR}/dist" "${REPO_ROOT}"
-"${UV_BIN}" build --wheel --out-dir "${BUILD_DIR}/dist" "${CONNECTORS_ROOT}"
 
 wheel_count="$(find "${BUILD_DIR}/dist" -name 'stackos-*.whl' | wc -l | tr -d ' ')"
 if [[ "${wheel_count}" != "1" ]]; then
@@ -37,12 +30,6 @@ if [[ "${wheel_count}" != "1" ]]; then
 fi
 
 WHEEL_PATH="$(find "${BUILD_DIR}/dist" -name 'stackos-*.whl' -print -quit)"
-connector_wheel_count="$(find "${BUILD_DIR}/dist" -name 'stackos_connectors-*.whl' | wc -l | tr -d ' ')"
-if [[ "${connector_wheel_count}" != "1" ]]; then
-  echo "expected exactly one stackos-connectors wheel, found ${connector_wheel_count}" >&2
-  exit 1
-fi
-CONNECTORS_WHEEL_PATH="$(find "${BUILD_DIR}/dist" -name 'stackos_connectors-*.whl' -print -quit)"
 LOCKED_REQUIREMENTS_PATH="${BUILD_DIR}/requirements.lock"
 
 "${UV_BIN}" export \
@@ -51,7 +38,6 @@ LOCKED_REQUIREMENTS_PATH="${BUILD_DIR}/requirements.lock"
   --no-dev \
   --no-editable \
   --no-emit-project \
-  --no-emit-package stackos-connectors \
   --format requirements.txt \
   --output-file "${LOCKED_REQUIREMENTS_PATH}"
 "${UV_BIN}" venv "${PAYLOAD_DIR}/.venv" --python "${PYTHON_VERSION}"
@@ -61,7 +47,6 @@ LOCKED_REQUIREMENTS_PATH="${BUILD_DIR}/requirements.lock"
 "${UV_BIN}" pip install \
   --python "${PAYLOAD_DIR}/.venv/bin/python" \
   --no-deps \
-  "${CONNECTORS_WHEEL_PATH}" \
   "${WHEEL_PATH}"
 "${UV_BIN}" pip check --python "${PAYLOAD_DIR}/.venv/bin/python"
 find "${PAYLOAD_DIR}/.venv" \
@@ -96,7 +81,6 @@ normalize_payload_metadata_paths() {
     -type f -delete
   PAYLOAD_DIR_ENV="${PAYLOAD_DIR}" \
   REPO_ROOT_ENV="${REPO_ROOT}" \
-  CONNECTORS_ROOT_ENV="${CONNECTORS_ROOT}" \
   BUILD_DIR_ENV="${BUILD_DIR}" \
   HOME_ENV="${HOME}" \
     "${PYTHON_LINK}" - <<'PY'
@@ -107,7 +91,6 @@ from pathlib import Path
 root = Path(os.environ["PAYLOAD_DIR_ENV"])
 markers = (
     os.environ["REPO_ROOT_ENV"],
-    os.environ["CONNECTORS_ROOT_ENV"],
     os.environ["BUILD_DIR_ENV"],
     "desktop/payload/stackos",
     "~/.local/share/uv/python",
@@ -125,7 +108,6 @@ for candidate in root.rglob("*"):
     if not any(marker in text for marker in markers):
         continue
     text = text.replace(os.environ["REPO_ROOT_ENV"], "__STACKOS_REPO__")
-    text = text.replace(os.environ["CONNECTORS_ROOT_ENV"], "__STACKOS_CONNECTORS_REPO__")
     text = text.replace(os.environ["BUILD_DIR_ENV"], "__STACKOS_PAYLOAD_BUILD__")
     text = text.replace("desktop/payload/stackos", "__STACKOS_PAYLOAD__")
     text = text.replace(f"{os.environ['HOME_ENV']}/.local/share/uv", "__STACKOS_UV_CACHE__")
@@ -289,7 +271,6 @@ if find "${PAYLOAD_DIR}/.venv" -name "direct_url.json" -print -quit | grep -q .;
 fi
 if grep -R -I -F \
   -e "${REPO_ROOT}" \
-  -e "${CONNECTORS_ROOT}" \
   -e "${BUILD_DIR}" \
   -e "desktop/payload/stackos" \
   -e "~/.local/share/uv/python" \

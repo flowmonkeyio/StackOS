@@ -161,9 +161,8 @@ webhook/polling rather than fetching prior chat history.
 
 For repository development:
 
-Keep the matched `StackOSConnectors` checkout beside this repository at
-`../StackOSConnectors`. `uv` uses that local package for development; installed
-StackOS distributions use the separately built `stackos-connectors` dependency.
+`uv` installs the pinned `stackos-connectors` release from PyPI along with the
+other Python dependencies. A separate connectors checkout is not required.
 
 ```bash
 make install

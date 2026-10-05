@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.32 - 2026-10-05
+
+- Consume the published `stackos-connectors==0.1.1` package from PyPI, including
+  connector resources in desktop builds without a sibling source checkout.
+- Fix FTP actions using textual passive-mode values saved by the account
+  selector, preserving explicit enabled and disabled choices.
+
 ## 2.1.29 - 2026-09-23
 
 - Added scoped Stripe customer and invoice corrections, customer tax IDs and

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "stackos"
-version = "2.1.29"
+version = "2.1.32"
 description = "Local StackOS daemon (FastAPI + SQLite/WAL + MCP Streamable HTTP) plus Vue UI for project-scoped tools, plugins, workflow templates, and run plans."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -23,7 +23,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "stackos-connectors==0.1.0",
+    "stackos-connectors==0.1.1",
     "fastapi[standard]>=0.115",
     "uvicorn[standard]>=0.32",
     "sqlmodel>=0.0.22",
@@ -47,9 +47,6 @@ dependencies = [
 [project.scripts]
 stackos = "stackos.cli:app"
 "stackos.browser" = "stackos.browser_cli:main"
-
-[tool.uv.sources]
-stackos-connectors = { path = "../StackOSConnectors", editable = true }
 
 [project.urls]
 Homepage = "https://github.com/flowmonkeyio/stackos"

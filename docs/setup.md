@@ -49,10 +49,9 @@ provided separately by the host agent runtime.
 
 Use this path when working from this repository:
 
-Keep the matched `StackOSConnectors` checkout at `../StackOSConnectors`.
-The normal dependency is `stackos-connectors==0.1.0`; the repository's uv source
-override installs that sibling in editable mode for development. The override
-does not become a local-path dependency in the built StackOS wheel.
+The pinned dependency `stackos-connectors==0.1.1` is installed from PyPI by
+`uv`. Its resolved distribution and hashes are recorded in `uv.lock`; a
+separate connectors checkout is not required.
 
 ```bash
 make install
@@ -88,20 +87,18 @@ The Vite app proxies `/api` and `/mcp` to the daemon on port `5180`.
 
 ## Package Or Operator Setup
 
-Until both packages are published, build both wheels into one directory and
-make that directory available to the installer:
+Build the StackOS wheel and let the installer resolve its pinned connector
+dependency from PyPI:
 
 ```bash
-uv build --wheel ../StackOSConnectors --out-dir dist
 uv build --wheel --out-dir dist
-pipx install /absolute/path/to/dist/stackos-VERSION-py3-none-any.whl \
-  --pip-args="--find-links=/absolute/path/to/dist"
+pipx install /absolute/path/to/dist/stackos-VERSION-py3-none-any.whl
 ```
 
-Replace `VERSION` with the built StackOS version. Keep the matching connector
-wheel in the same directory. The installed application does not require either
-checkout. `stackos install` configures application state and assets after Python
-dependencies are installed; it does not install missing Python packages.
+Replace `VERSION` with the built StackOS version. The installed application does
+not require a source checkout. `stackos install` configures application state
+and assets after Python dependencies are installed; it does not install missing
+Python packages.
 
 Use this path when StackOS is installed as a Python package or pipx app:
 

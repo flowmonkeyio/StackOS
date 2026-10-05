@@ -1729,7 +1729,7 @@ wheels = [
 
 [[package]]
 name = "stackos"
-version = "2.1.29"
+version = "2.1.32"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -1782,7 +1782,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "s3transfer", specifier = ">=0.19.1,<0.20" },
     { name = "sqlmodel", specifier = ">=0.0.22" },
-    { name = "stackos-connectors", editable = "../StackOSConnectors" },
+    { name = "stackos-connectors", specifier = "==0.1.1" },
     { name = "structlog", specifier = ">=24.4" },
     { name = "typer", specifier = ">=0.13" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
@@ -1802,8 +1802,8 @@ dev = [
 
 [[package]]
 name = "stackos-connectors"
-version = "0.1.0"
-source = { editable = "../StackOSConnectors" }
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "boto3" },
     { name = "botocore" },
@@ -1813,25 +1813,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "s3transfer" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "boto3", specifier = ">=1.43.51,<1.44" },
-    { name = "botocore", specifier = ">=1.43.51,<1.44" },
-    { name = "cryptography", specifier = ">=43" },
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "jsonschema", specifier = ">=4.23" },
-    { name = "pydantic", specifier = ">=2.6" },
-    { name = "s3transfer", specifier = ">=0.19.1,<0.20" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "build", specifier = ">=1.2" },
-    { name = "pytest", specifier = ">=8" },
-    { name = "pytest-asyncio", specifier = ">=0.24" },
-    { name = "pytest-httpx", specifier = ">=0.34" },
-    { name = "ruff", specifier = ">=0.8" },
+sdist = { url = "https://files.pythonhosted.org/packages/25/ab/73d8483e7f242be74ba15cd57ccfde4615a1660ccb24998f3ee6b1bdfc2a/stackos_connectors-0.1.1.tar.gz", hash = "sha256:17d21f28c1ea690d9bdf282a66c7127048762aa4a3878a7228914c2334ae6232", size = 2288334, upload-time = "2026-10-05T21:45:26.217Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/24/08/5ced4e1caeedcc933f1c82c682f1990eeaac733c8d47ff89cf1cb72a67d0/stackos_connectors-0.1.1-py3-none-any.whl", hash = "sha256:4b8a7ce8e5e15b5419ead83c29a05d03bc8e0ce8aaaecdb337ba383ad7e4fb29", size = 2318897, upload-time = "2026-10-05T21:45:24.516Z" },
 ]
 
 [[package]]

@@ -416,6 +416,7 @@ def _credential_ref(
     project_id: int,
     *,
     tls_mode: str = "explicit",
+    passive_mode: bool | str = True,
 ) -> str:
     ActionRepository(session).describe(action_ref="utils.ftp.directory.list")
     return (
@@ -429,7 +430,7 @@ def _credential_ref(
                 "port": 21,
                 "tls_mode": tls_mode,
                 "username": "deploy",
-                "passive_mode": True,
+                "passive_mode": passive_mode,
             },
             attach_project_id=project_id,
         )
@@ -442,6 +443,33 @@ def _patch_ftps(monkeypatch: pytest.MonkeyPatch) -> None:
 
     _FakeFTPTLS.reset()
     monkeypatch.setattr(ftp_module.ftplib, "FTP_TLS", _FakeFTPTLS)
+
+
+@pytest.mark.parametrize(
+    ("saved_value", "expected"),
+    [(True, True), (False, False), ("true", True), ("false", False)],
+)
+def test_ftp_account_passive_mode_values_reach_directory_action(
+    session: Session,
+    project_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+    saved_value: bool | str,
+    expected: bool,
+) -> None:
+    _patch_ftps(monkeypatch)
+    credential_ref = _credential_ref(session, project_id, passive_mode=saved_value)
+    result = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="utils.ftp.directory.list",
+            input_json={"remote_path": "/"},
+            credential_ref=credential_ref,
+        )
+    )
+    assert result.data.output_json["status"] == "success"
+    values = [call[1] for call in _FakeFTPTLS.instances[0].calls if call[0] == "set_pasv"]
+    assert len(values) == 1
+    assert values[0] is expected
 
 
 def _ftp_connector_request(
