@@ -5,15 +5,19 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
+from stackos_connectors.connectors.alibaba_wan.integration import AlibabaWanIntegration
 
 from stackos.actions.connectors import (
     ActionConnectorRequest,
     ActionConnectorResult,
     ActionValidationIssue,
 )
-from stackos.actions.media_artifacts import cost_usd_to_cents, register_generated_media_artifacts
-from stackos.config import Settings
-from stackos.integrations.alibaba_wan import AlibabaWanIntegration
+from stackos.actions.media_artifacts import (
+    cost_usd_to_cents,
+    execute_media_native,
+    media_projection_failure,
+    register_generated_media_artifacts,
+)
 from stackos.repositories.base import ValidationError
 
 
@@ -213,64 +217,62 @@ class AlibabaWanVideoActionConnector:
         if request.credential is None:
             raise ValidationError("alibaba-wan action requires a resolved credential")
         payload = request.input_json
-        asset_dir = request.asset_dir or Settings().generated_assets_dir
         async with httpx.AsyncClient(timeout=180.0) as http:
-            client = AlibabaWanIntegration(
-                payload=request.credential.secret_payload,
-                project_id=request.project_id,
-                http=http,
-                asset_dir=asset_dir,
-            )
-            result = await client.generate_video(
-                prompt=str(payload["prompt"]),
-                mode=str(payload.get("mode", "text-to-video")),
-                region=str(payload.get("region", AlibabaWanIntegration.DEFAULT_REGION)),
-                resolution=str(payload.get("resolution", "720P")),
-                aspect_ratio=str(payload.get("aspect_ratio", "16:9")),
-                duration=int(payload.get("duration", 5)),
-                prompt_extend=(
-                    payload["prompt_extend"]
+            result = await execute_media_native(
+                request,
+                {
+                    "prompt": str(payload["prompt"]),
+                    "mode": str(payload.get("mode", "text-to-video")),
+                    "region": str(payload.get("region", AlibabaWanIntegration.DEFAULT_REGION)),
+                    "resolution": str(payload.get("resolution", "720P")),
+                    "aspect_ratio": str(payload.get("aspect_ratio", "16:9")),
+                    "duration": int(payload.get("duration", 5)),
+                    "prompt_extend": payload["prompt_extend"]
                     if isinstance(payload.get("prompt_extend"), bool)
-                    else True
-                ),
-                watermark=(
-                    payload["watermark"] if isinstance(payload.get("watermark"), bool) else None
-                ),
-                negative_prompt=(
-                    str(payload["negative_prompt"])
+                    else True,
+                    "watermark": payload["watermark"]
+                    if isinstance(payload.get("watermark"), bool)
+                    else None,
+                    "negative_prompt": str(payload["negative_prompt"])
                     if isinstance(payload.get("negative_prompt"), str)
-                    else None
-                ),
-                seed=(
-                    int(payload["seed"])
+                    else None,
+                    "seed": int(payload["seed"])
                     if isinstance(payload.get("seed"), int)
-                    and not isinstance(payload.get("seed"), bool)
-                    else None
-                ),
-                first_frame_url=_optional_url(payload.get("first_frame_url")),
-                last_frame_url=_optional_url(payload.get("last_frame_url")),
-                first_clip_url=_optional_url(payload.get("first_clip_url")),
-                audio_url=_optional_url(payload.get("audio_url")),
-                poll_interval_seconds=float(payload.get("poll_interval_seconds", 15)),
-                poll_timeout_seconds=float(payload.get("poll_timeout_seconds", 1800)),
+                    and (not isinstance(payload.get("seed"), bool))
+                    else None,
+                    "first_frame_url": _optional_url(payload.get("first_frame_url")),
+                    "last_frame_url": _optional_url(payload.get("last_frame_url")),
+                    "first_clip_url": _optional_url(payload.get("first_clip_url")),
+                    "audio_url": _optional_url(payload.get("audio_url")),
+                    "poll_interval_seconds": float(payload.get("poll_interval_seconds", 15)),
+                    "poll_timeout_seconds": float(payload.get("poll_timeout_seconds", 1800)),
+                },
+                http=http,
+                connector=self.key,
+                output_subdir="alibaba-wan",
+                qps=1.0,
+                pricing=None,
             )
-        output_json = result.data if isinstance(result.data, dict) else {"data": result.data}
-        output_json = register_generated_media_artifacts(
-            request,
-            output_json,
-            kind="video",
-            provider_key="alibaba-wan",
-            source="alibaba-wan-action",
-            metadata_builder=lambda item: {
-                "task_id": item.get("task_id"),
-                "mode": item.get("mode"),
-            },
-        )
-        return ActionConnectorResult(
-            output_json=output_json,
-            metadata_json={"vendor": "alibaba-wan"},
-            cost_cents=cost_usd_to_cents(result.cost_usd),
-        )
+        try:
+            output_json = result.data if isinstance(result.data, dict) else {"data": result.data}
+            output_json = register_generated_media_artifacts(
+                request,
+                output_json,
+                kind="video",
+                provider_key="alibaba-wan",
+                source="alibaba-wan-action",
+                metadata_builder=lambda item: {
+                    "task_id": item.get("task_id"),
+                    "mode": item.get("mode"),
+                },
+            )
+            return ActionConnectorResult(
+                output_json=output_json,
+                metadata_json={"vendor": "alibaba-wan"},
+                cost_cents=cost_usd_to_cents(result.cost_usd),
+            )
+        except Exception as exc:
+            raise media_projection_failure(exc, result) from None
 
 
 def _is_http_url(value: Any) -> bool:

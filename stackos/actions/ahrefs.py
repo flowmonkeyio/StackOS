@@ -2,22 +2,23 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import httpx
 
 from stackos.actions.connectors import (
+    ActionConnectorError,
     ActionConnectorRequest,
     ActionConnectorResult,
     ActionValidationIssue,
 )
 from stackos.actions.vendor_utils import (
-    credential_payload,
     int_range,
     issue,
     optional_str,
     required_str,
     unknown_operation,
 )
-from stackos.integrations.ahrefs import AhrefsIntegration
 from stackos.repositories.base import ValidationError
 
 AHREFS_ACTION_MAX_ROWS = 1000
@@ -41,6 +42,10 @@ class AhrefsActionConnector:
     """Decision-free adapter for Ahrefs SEO actions."""
 
     key = "ahrefs"
+
+    def __init__(self, *, client=None, options=None) -> None:
+        self._client = client
+        self._options = options
 
     def validate(self, request: ActionConnectorRequest) -> list[ActionValidationIssue]:
         payload = request.input_json
@@ -74,60 +79,95 @@ class AhrefsActionConnector:
         return 0
 
     async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
-        payload = request.input_json
         if request.operation not in _AHREFS_OPERATIONS:
             raise ValidationError(f"unsupported Ahrefs operation {request.operation!r}")
-        async with httpx.AsyncClient(timeout=60.0) as http:
-            client = AhrefsIntegration(
-                payload=credential_payload(request),
-                project_id=request.project_id,
-                http=http,
+        from stackos_connectors import CallOptions, ConnectorClient
+        from stackos_connectors.catalog import load_registry
+        from stackos_connectors.connectors.ahrefs.integration import AhrefsIntegration
+
+        from stackos.actions.package_bridge import PackageActionConnector
+        from stackos.integrations._rate_limit import get_bucket
+
+        if self._client is None:
+            self._client = ConnectorClient(registry=load_registry("connectors/ahrefs/catalog.json"))
+        options = self._options or CallOptions()
+        limiter = (
+            options.rate_limiter
+            if options.rate_limiter is not None
+            else get_bucket(
+                project_id=request.project_id, kind="ahrefs", qps=AhrefsIntegration.default_qps
             )
-            limits_result = await client.limits_and_usage()
-            limits_info = _limits_info(limits_result.data)
+        )
+        # A single caller-owned transport is shared by admission and the paid call.
+        from contextlib import nullcontext
+
+        async with (
+            nullcontext(options.http)
+            if options.http is not None
+            else httpx.AsyncClient(timeout=60.0)
+        ) as http:
+            adapter = PackageActionConnector(
+                "ahrefs",
+                client=self._client,
+                options=replace(options, http=http, rate_limiter=limiter),
+            )
+            limits_result = await adapter.execute_native(
+                replace(
+                    request,
+                    action_key="limits_and_usage",
+                    operation="limits_and_usage",
+                    input_json={},
+                )
+            )
+            limits_info = _limits_info(limits_result.output_json)
             row_limit, row_limit_source = row_limit_for_subscription(
                 limits_info.get("subscription")
             )
-            match request.operation:
-                case "competitor.keywords" | "keywords_for_site":
-                    requested_limit = int(payload.get("limit", AHREFS_DEFAULT_ROWS))
-                    _enforce_plan_row_limit(
-                        requested_limit=requested_limit,
-                        row_limit=row_limit,
-                        subscription=limits_info.get("subscription"),
-                    )
-                    call_result = await client.keywords_for_site(
-                        target=str(payload["target"]),
-                        country=str(payload.get("country", "us")),
-                        limit=requested_limit,
-                        date_=payload.get("date"),
-                    )
-                case "backlink.research" | "top_backlinks":
-                    requested_limit = int(payload.get("limit", AHREFS_DEFAULT_ROWS))
-                    _enforce_plan_row_limit(
-                        requested_limit=requested_limit,
-                        row_limit=row_limit,
-                        subscription=limits_info.get("subscription"),
-                    )
-                    call_result = await client.top_backlinks(
-                        target=str(payload["target"]),
-                        mode=str(payload.get("mode", "domain")),
-                        limit=requested_limit,
-                    )
-                case _:
-                    raise ValidationError(f"unsupported Ahrefs operation {request.operation!r}")
-        if isinstance(call_result.data, dict):
-            output = call_result.data
-        else:
-            output = {"data": call_result.data}
+            requested_limit = int(request.input_json.get("limit", AHREFS_DEFAULT_ROWS))
+            try:
+                _enforce_plan_row_limit(
+                    requested_limit=requested_limit,
+                    row_limit=row_limit,
+                    subscription=limits_info.get("subscription"),
+                )
+            except ValidationError as exc:
+                raise ActionConnectorError(
+                    exc.detail,
+                    provider_error=exc.data,
+                    output_json={"status": "failed", "data": exc.data},
+                    metadata_json={
+                        "vendor": "ahrefs",
+                        "operation": request.operation,
+                        "provider_executed": True,
+                        "primary_request_executed": False,
+                        "preflight_requests": ["limits_and_usage"],
+                        "retry_safe": True,
+                    },
+                ) from None
+            action_key = (
+                "competitor.keywords"
+                if request.operation in {"competitor.keywords", "keywords_for_site"}
+                else "backlink.research"
+            )
+            try:
+                call_result = await adapter.execute_native(
+                    replace(request, action_key=action_key, operation=action_key)
+                )
+            except ActionConnectorError as exc:
+                exc.metadata_json = {
+                    **exc.metadata_json,
+                    "provider_executed": True,
+                    "preflight_requests": ["limits_and_usage"],
+                }
+                raise
         return ActionConnectorResult(
-            output_json=output,
+            output_json=call_result.output_json,
             metadata_json=_metadata(
                 request.operation,
                 limits_info=limits_info,
                 row_limit=row_limit,
                 row_limit_source=row_limit_source,
-                api_units=(call_result.metadata or {}).get("api_units"),
+                api_units=(call_result.metadata_json or {}).get("api_units"),
             ),
             cost_cents=0,
         )

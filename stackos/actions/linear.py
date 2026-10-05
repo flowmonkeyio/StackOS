@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, replace
 from typing import Any
 
-import httpx
+from stackos_connectors import CallOptions, ConnectorClient
+from stackos_connectors.catalog import load_registry
+from stackos_connectors.connectors.linear.contract import LINEAR_ACTION_SPECS as _NATIVE_SPECS
 
 from stackos.actions.connectors import (
     ActionConnectorError,
@@ -13,10 +16,9 @@ from stackos.actions.connectors import (
     ActionConnectorResult,
     ActionValidationIssue,
 )
+from stackos.actions.package_bridge import PackageActionConnector
 from stackos.actions.vendor_utils import issue, unknown_operation
 from stackos.artifacts import redact_secrets
-from stackos.integrations.linear import LinearIntegration
-from stackos.mcp.errors import IntegrationDownError, RateLimitedError
 from stackos.repositories.base import ValidationError
 from stackos.repositories.provider_refs import ProviderObjectReferenceRepository
 
@@ -37,114 +39,15 @@ class LinearActionSpec:
         return self.scope == "write"
 
 
-LINEAR_ACTION_SPECS: dict[str, LinearActionSpec] = {
-    "viewer.get": LinearActionSpec("graphql/viewer/get.graphql", "viewer", "read", "user"),
-    "teams.list": LinearActionSpec("graphql/teams/list.graphql", "teams", "read", "team"),
-    "teams.get": LinearActionSpec("graphql/teams/get.graphql", "team", "read", "team"),
-    "users.list": LinearActionSpec("graphql/users/list.graphql", "users", "read", "user"),
-    "users.get": LinearActionSpec("graphql/users/get.graphql", "user", "read", "user"),
-    "workflow_states.list": LinearActionSpec(
-        "graphql/workflow-states/list.graphql",
-        "workflowStates",
-        "read",
-        "workflow-state",
-    ),
-    "workflow_states.get": LinearActionSpec(
-        "graphql/workflow-states/get.graphql",
-        "workflowState",
-        "read",
-        "workflow-state",
-    ),
-    "projects.list": LinearActionSpec(
-        "graphql/projects/list.graphql", "projects", "read", "project"
-    ),
-    "projects.get": LinearActionSpec("graphql/projects/get.graphql", "project", "read", "project"),
-    "cycles.list": LinearActionSpec("graphql/cycles/list.graphql", "cycles", "read", "cycle"),
-    "cycles.get": LinearActionSpec("graphql/cycles/get.graphql", "cycle", "read", "cycle"),
-    "issue_labels.list": LinearActionSpec(
-        "graphql/issue-labels/list.graphql",
-        "issueLabels",
-        "read",
-        "issue-label",
-    ),
-    "issue_labels.get": LinearActionSpec(
-        "graphql/issue-labels/get.graphql",
-        "issueLabel",
-        "read",
-        "issue-label",
-    ),
-    "issues.list": LinearActionSpec("graphql/issues/list.graphql", "issues", "read", "issue"),
-    "issues.get": LinearActionSpec("graphql/issues/get.graphql", "issue", "read", "issue"),
-    "issues.search": LinearActionSpec(
-        "graphql/issues/search.graphql", "searchIssues", "read", "issue"
-    ),
-    "comments.list": LinearActionSpec(
-        "graphql/comments/list.graphql", "comments", "read", "comment"
-    ),
-    "comments.get": LinearActionSpec("graphql/comments/get.graphql", "comment", "read", "comment"),
-    "issue_relations.list": LinearActionSpec(
-        "graphql/issue-relations/list.graphql", "issue", "read", "issue"
-    ),
-    "issue_relations.get": LinearActionSpec(
-        "graphql/issue-relations/get.graphql",
-        "issueRelation",
-        "read",
-        "issue-relation",
-    ),
-    "issues.create": LinearActionSpec(
-        "graphql/issues/create.graphql", "issueCreate", "write", "issue"
-    ),
-    "issues.update": LinearActionSpec(
-        "graphql/issues/update.graphql", "issueUpdate", "write", "issue"
-    ),
-    "issues.archive": LinearActionSpec(
-        "graphql/issues/archive.graphql", "issueArchive", "write", "issue"
-    ),
-    "issues.unarchive": LinearActionSpec(
-        "graphql/issues/unarchive.graphql", "issueUnarchive", "write", "issue"
-    ),
-    "issues.labels.add": LinearActionSpec(
-        "graphql/issues/add-label.graphql", "issueAddLabel", "write", "issue"
-    ),
-    "issues.labels.remove": LinearActionSpec(
-        "graphql/issues/remove-label.graphql", "issueRemoveLabel", "write", "issue"
-    ),
-    "comments.create": LinearActionSpec(
-        "graphql/comments/create.graphql", "commentCreate", "write", "comment"
-    ),
-    "comments.update": LinearActionSpec(
-        "graphql/comments/update.graphql", "commentUpdate", "write", "comment"
-    ),
-    "comments.resolve": LinearActionSpec(
-        "graphql/comments/resolve.graphql", "commentResolve", "write", "comment"
-    ),
-    "comments.unresolve": LinearActionSpec(
-        "graphql/comments/unresolve.graphql", "commentUnresolve", "write", "comment"
-    ),
-    "comments.delete": LinearActionSpec(
-        "graphql/comments/delete.graphql",
-        "commentDelete",
-        "write",
-        deleted_input_ref="comment_ref",
-    ),
-    "issue_relations.create": LinearActionSpec(
-        "graphql/issue-relations/create.graphql",
-        "issueRelationCreate",
-        "write",
-        "issue-relation",
-    ),
-    "issue_relations.update": LinearActionSpec(
-        "graphql/issue-relations/update.graphql",
-        "issueRelationUpdate",
-        "write",
-        "issue-relation",
-    ),
-    "issue_relations.delete": LinearActionSpec(
-        "graphql/issue-relations/delete.graphql",
-        "issueRelationDelete",
-        "write",
-        deleted_input_ref="relation_ref",
-    ),
+LINEAR_ACTION_SPECS = {
+    key: LinearActionSpec(
+        spec.document,
+        spec.root,
+        spec.scope,
+        spec.output_type,
+        {"comments.delete": "comment_ref", "issue_relations.delete": "relation_ref"}.get(key),
+    )
+    for key, spec in _NATIVE_SPECS.items()
 }
 
 _GET_REFS = {
@@ -300,49 +203,56 @@ class LinearActionConnector:
             project_id=request.project_id,
         )
         variables = _variables_for_action(request, refs)
-        async with httpx.AsyncClient(timeout=60.0) as http:
-            integration = LinearIntegration(
-                payload=request.credential.secret_payload,
-                project_id=request.project_id,
-                http=http,
-                auth_method_key=request.credential.credential.auth_method_key,
-            )
-            try:
-                result = await integration.execute_document(
-                    document_path=spec.document,
-                    variables=variables or None,
-                    op=f"action.{request.action_key}",
-                    write=spec.write,
-                )
-            except (IntegrationDownError, RateLimitedError) as exc:
-                raise _connector_error(
-                    exc,
-                    request=request,
-                    spec=spec,
-                ) from exc
+        result = await _native_adapter(request).execute_native(
+            replace(request, input_json=variables)
+        )
 
-        body = result.data
+        body = result.output_json["body"]
         if not isinstance(body, dict) or not isinstance(body.get("data"), dict):
             raise ValidationError("Linear connector received an invalid transport result")
-        safe_data = _safe_output(
-            body["data"],
-            refs=refs,
-            credential=request.credential.credential,
-            object_type=None,
-            entity_type=spec.output_type,
-        )
-        if not isinstance(safe_data, dict):
-            raise ValidationError("Linear connector could not normalize provider output")
-        if spec.deleted_input_ref:
-            root = safe_data.get(spec.root)
-            if isinstance(root, dict):
-                root["deleted_ref"] = request.input_json[spec.deleted_input_ref]
+        try:
+            safe_data = _safe_output(
+                body["data"],
+                refs=refs,
+                credential=request.credential.credential,
+                object_type=None,
+                entity_type=spec.output_type,
+            )
+            if not isinstance(safe_data, dict):
+                raise ValidationError("Linear connector could not normalize provider output")
+            if spec.deleted_input_ref:
+                root = safe_data.get(spec.root)
+                if isinstance(root, dict):
+                    root["deleted_ref"] = request.input_json[spec.deleted_input_ref]
+        except Exception as exc:
+            root = body["data"].get(spec.root)
+            if isinstance(root, dict) and spec.output_type:
+                root = root.get(spec.output_type.replace("-", ""), root)
+                # Mutation payload uses issue/comment/issueRelation field names.
+                for field in ("issue", "comment", "issueRelation"):
+                    if isinstance(root, dict) and isinstance(root.get(field), dict):
+                        root = root[field]
+                        break
+            receipt = _projection_receipt(root, result.metadata_json)
+            details = {
+                "reason_code": "response_normalization_failed",
+                "provider_executed": True,
+                "retry_safe": False,
+                "outcome_unknown": spec.write,
+                "provider_receipt": receipt,
+            }
+            raise ActionConnectorError(
+                "Linear response could not be persisted",
+                provider_error=details,
+                output_json={"status": "failed", **details, "provider_error": details},
+                metadata_json={"provider_executed": True, "retry_safe": False},
+            ) from exc
         metadata = {
             "vendor": "linear",
             "operation": request.action_key,
             "schema_ref": spec.document,
             "schema_operation": spec.root,
-            **(result.metadata or {}),
+            **(result.metadata_json or {}),
         }
         return ActionConnectorResult(
             output_json={
@@ -655,46 +565,43 @@ def _safe_ref_metadata(value: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _connector_error(
-    exc: IntegrationDownError | RateLimitedError,
-    *,
-    request: ActionConnectorRequest,
-    spec: LinearActionSpec,
-) -> ActionConnectorError:
-    data = dict(exc.data) if isinstance(exc.data, dict) else {}
-    status = data.get("status")
-    provider_status_code = status if isinstance(status, int) else None
-    provider_error: dict[str, Any] = {
-        "reason_code": str(data.get("reason_code") or "provider_failure"),
-        "outcome_unknown": bool(data.get("outcome_unknown")),
-    }
-    for key in ("partial_data", "rate_limit", "retry_after"):
-        if key in data:
-            provider_error[key] = data[key]
-    if isinstance(data.get("provider_error"), dict):
-        provider_error["details"] = data["provider_error"]
-    safe_provider_error = redact_secrets(provider_error)
-    return ActionConnectorError(
-        "Linear action failed",
-        provider_status_code=provider_status_code,
-        provider_error=safe_provider_error,
-        output_json={
-            "status": "failed",
-            "provider_status_code": provider_status_code,
-            "provider_error": safe_provider_error,
-        },
-        metadata_json={
-            "vendor": "linear",
-            "operation": request.action_key,
-            "schema_ref": spec.document,
-            "schema_operation": spec.root,
-        },
-    )
-
-
 __all__ = [
     "LINEAR_ACTION_SPECS",
     "LINEAR_OPERATION",
     "LinearActionConnector",
     "LinearActionSpec",
 ]
+
+
+def _native_adapter(request):
+    from stackos_connectors.connectors.linear.integration import LinearIntegration
+
+    from stackos.integrations._rate_limit import get_bucket
+
+    return PackageActionConnector(
+        "linear",
+        client=ConnectorClient(registry=load_registry("connectors/linear/catalog.json")),
+        options=CallOptions(
+            rate_limiter=get_bucket(
+                project_id=request.project_id, kind="linear", qps=LinearIntegration.default_qps
+            )
+        ),
+    )
+
+
+def _projection_receipt(body, metadata):
+    # Only transport request identity and the returned root object ID cross this failure boundary.
+    receipt = {}
+    if (
+        isinstance(body, dict)
+        and isinstance(body.get("id"), str)
+        and re.fullmatch(r"[A-Za-z0-9_-]{1,200}", body["id"])
+    ):
+        receipt["object_id"] = body["id"]
+    if (
+        isinstance(metadata, dict)
+        and isinstance(metadata.get("request_id"), str)
+        and re.fullmatch(r"[A-Za-z0-9_-]{1,200}", metadata["request_id"])
+    ):
+        receipt["request_id"] = metadata["request_id"]
+    return redact_secrets(receipt)

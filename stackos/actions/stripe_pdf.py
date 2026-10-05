@@ -12,6 +12,7 @@ import json
 import os
 import re
 from collections.abc import Mapping
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -26,8 +27,6 @@ from stackos.actions.connectors import (
 )
 from stackos.artifacts import redact_secrets
 from stackos.config import Settings
-from stackos.integrations.stripe import StripeIntegration
-from stackos.mcp.errors import IntegrationDownError, RateLimitedError
 from stackos.repositories.base import ValidationError
 from stackos.repositories.provider_refs import ProviderObjectReferenceRepository
 
@@ -320,21 +319,19 @@ async def execute_pdf(request: ActionConnectorRequest) -> ActionConnectorResult:
                 safe_ref=invoice_ref,
                 expected_object_type="stripe.invoice",
             )
-            async with httpx.AsyncClient(timeout=30.0) as http:
-                integration = StripeIntegration(
-                    payload=request.credential.secret_payload,
-                    project_id=request.project_id,
-                    http=http,
-                    auth_method_key=request.credential.credential.auth_method_key,
+            from stackos.actions.stripe import _native_adapter
+
+            result = await _native_adapter(request).execute_native(
+                replace(
+                    request,
+                    action_key="stripe.invoices.retrieve",
+                    operation="rest.v1",
+                    input_json={"invoice_id": resolved.provider_object_id},
                 )
-                result = await integration.request(
-                    method="GET",
-                    path=f"/invoices/{resolved.provider_object_id}",
-                    op=request.action_key,
-                )
-            if result.metadata:
-                metadata.update(redact_secrets(result.metadata))
-            invoice = result.data
+            )
+            if result.metadata_json:
+                metadata.update(redact_secrets(result.metadata_json))
+            invoice = result.output_json["body"]
             if (
                 not isinstance(invoice, Mapping)
                 or invoice.get("object") != "invoice"
@@ -356,10 +353,6 @@ async def execute_pdf(request: ActionConnectorRequest) -> ActionConnectorResult:
             payload = await _pdf_bytes(_safe_url(invoice.get("invoice_pdf")), limit)
             output = _stage(request, invoice_ref, payload)
             output["finalized_at"] = finalized_at
-    except (IntegrationDownError, RateLimitedError) as exc:
-        from stackos.actions.stripe import _connector_error
-
-        raise _connector_error(exc) from exc
     except ActionConnectorError as exc:
         exc.metadata_json.update(metadata)
         raise

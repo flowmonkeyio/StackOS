@@ -8,8 +8,7 @@ from typing import Any
 
 import httpx
 from pytest_httpx import HTTPXMock
-
-from stackos.integrations.serper import SerperIntegration
+from stackos_connectors.connectors.serper.integration import SerperIntegration
 
 
 def _json_body(request: httpx.Request) -> Any:
@@ -30,7 +29,6 @@ def test_search_posts_google_search_payload(
         async with httpx.AsyncClient() as client:
             integration = SerperIntegration(
                 payload=b"serper-secret",
-                project_id=project_id,
                 http=client,
             )
             return await integration.search(
@@ -71,7 +69,6 @@ def test_credentials_probe_uses_minimal_search(
         async with httpx.AsyncClient() as client:
             integration = SerperIntegration(
                 payload=b"serper-secret",
-                project_id=project_id,
                 http=client,
             )
             return await integration.test_credentials()

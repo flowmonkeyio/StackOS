@@ -8,9 +8,8 @@ import json
 
 import httpx
 from pytest_httpx import HTTPXMock
-
-from stackos.integrations.ghost import GhostIntegration
-from stackos.integrations.wordpress import WordPressIntegration
+from stackos_connectors.connectors.ghost.integration import GhostIntegration
+from stackos_connectors.connectors.wordpress.integration import WordPressIntegration
 
 
 def test_wordpress_test_credentials_uses_application_password_basic_auth(
@@ -29,7 +28,6 @@ def test_wordpress_test_credentials_uses_application_password_basic_auth(
                 payload=json.dumps(
                     {"username": "editor", "application_password": "app pass"}
                 ).encode("utf-8"),
-                project_id=project_id,
                 http=client,
                 site_url="https://wp.example",
             )
@@ -65,7 +63,6 @@ def test_wordpress_create_post_uses_explicit_rest_payload(
                 payload=json.dumps(
                     {"username": "editor", "application_password": "app pass"}
                 ).encode("utf-8"),
-                project_id=project_id,
                 http=client,
                 site_url="https://wp.example",
             )
@@ -113,7 +110,6 @@ def test_ghost_test_credentials_builds_admin_jwt(
         async with httpx.AsyncClient() as client:
             integ = GhostIntegration(
                 payload=b"keyid:00112233445566778899aabbccddeeff",
-                project_id=project_id,
                 http=client,
                 site_url="https://ghost.example",
                 api_version="v5.0",
@@ -144,7 +140,6 @@ def test_ghost_create_post_uses_html_source_payload(
         async with httpx.AsyncClient() as client:
             integ = GhostIntegration(
                 payload=b"keyid:00112233445566778899aabbccddeeff",
-                project_id=project_id,
                 http=client,
                 site_url="https://ghost.example",
                 api_version="v5.0",

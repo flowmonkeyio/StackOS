@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import pytest
-
-from stackos.integrations.telegram_tdlib.proxy import (
+from stackos_connectors.connectors.telegram.tdlib.proxy import (
     TelegramProxyConfig,
     TelegramProxyController,
     TelegramProxyValidationError,

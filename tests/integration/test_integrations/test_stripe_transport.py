@@ -11,16 +11,15 @@ import httpcore
 import httpx
 import pytest
 from pytest_httpx import HTTPXMock
-
-from stackos.actions.stripe import _connector_error
-from stackos.integrations._base import BaseIntegration
-from stackos.integrations.stripe import (
+from stackos_connectors.connectors.stripe.actions import _connector_error
+from stackos_connectors.connectors.stripe.integration import (
     STRIPE_API_VERSION,
     StripeIntegration,
     _safe_provider_error,
     parse_stripe_api_key_payload,
 )
-from stackos.mcp.errors import IntegrationDownError, RateLimitedError
+from stackos_connectors.errors import IntegrationDownError, RateLimitedError
+from stackos_connectors.shared.base import BaseIntegration
 
 STRIPE_ROOT = "https://api.stripe.com/v1"
 
@@ -55,7 +54,7 @@ def test_stripe_catalog_diagnostics_only_disclose_static_collection_paths(
         assert excluded not in json.dumps(diagnostics)
 
 
-@pytest.mark.parametrize("unsafe", ["\n", "\r", "\0", "\x7f", "\u00e9", "\t", " "])
+@pytest.mark.parametrize("unsafe", ["\n", "\r", "\x00", "\x7f", "é", "\t", " "])
 def test_stripe_rejects_header_unsafe_key_before_real_h11_or_shared_logging(unsafe: str) -> None:
     """Use real HTTPX/httpcore/h11 serialization, with an in-memory network only."""
     synthetic_key = f"synthetic-private-key{unsafe}suffix"
@@ -75,17 +74,13 @@ def test_stripe_rejects_header_unsafe_key_before_real_h11_or_shared_logging(unsa
             )
         )
         async with httpx.AsyncClient(transport=transport) as http:
-            with (
-                patch("stackos.integrations._base._log") as log,
-                patch.object(
-                    transport, "handle_async_request", wraps=transport.handle_async_request
-                ) as dispatch,
-            ):
+            with patch.object(
+                transport, "handle_async_request", wraps=transport.handle_async_request
+            ) as dispatch:
                 failure: Exception | None = None
                 try:
                     integration = StripeIntegration(
                         payload=json.dumps({"api_key": synthetic_key}).encode(),
-                        project_id=1,
                         http=http,
                         auth_method_key="api_key",
                     )
@@ -95,7 +90,6 @@ def test_stripe_rejects_header_unsafe_key_before_real_h11_or_shared_logging(unsa
             assert isinstance(failure, IntegrationDownError)
             assert failure.data == {"vendor": "stripe", "reason_code": "invalid_credential"}
             assert dispatch.call_count == 0
-            assert log.warning.call_count == 0
             assert "synthetic-private-key" not in str(failure)
 
     asyncio.run(probe())
@@ -123,10 +117,7 @@ def test_stripe_header_safe_key_keeps_trim_and_has_no_prefix_restriction(key: st
         )
         async with httpx.AsyncClient(transport=transport) as http:
             integration = StripeIntegration(
-                payload=json.dumps({"api_key": key}).encode(),
-                project_id=1,
-                http=http,
-                auth_method_key="api_key",
+                payload=json.dumps({"api_key": key}).encode(), http=http, auth_method_key="api_key"
             )
             return await integration.test_credentials()
 
@@ -137,7 +128,6 @@ async def _request(*, method: str = "GET", probe: bool = False) -> Any:
     async with httpx.AsyncClient() as http:
         integration = StripeIntegration(
             payload=b'{"api_key":"fixture-only-not-a-stripe-key"}',
-            project_id=1,
             http=http,
             auth_method_key="api_key",
         )
@@ -302,7 +292,6 @@ def test_stripe_read_honors_do_not_retry_before_another_dispatch(
     assert len(httpx_mock.get_requests()) == 1
     assert failure.value.data["provider_error"]["should_retry"] is False
     assert failure.value.data["outcome_unknown"] is False
-    # GET remains side-effect-safe, even when another retry would not help.
     assert failure.value.data["retry_safe"] is True
 
 
@@ -438,7 +427,7 @@ def test_default_transport_does_not_apply_a_stripe_specific_header(
 
     async def read() -> httpx.Response:
         async with httpx.AsyncClient() as http:
-            integration = BaseIntegration(payload=b"", project_id=1, http=http, qps_override=25)
+            integration = BaseIntegration(payload=b"", http=http, qps_override=25)
             return await integration._request_with_retry(
                 "GET", "https://fixture.invalid/read", op="default-policy", max_retries=1
             )

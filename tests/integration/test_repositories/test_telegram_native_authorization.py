@@ -13,6 +13,8 @@ from typing import Any, cast
 import pytest
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
+from stackos_connectors.connectors.telegram.tdlib.native import TelegramTdlibRequestError
+from stackos_connectors.connectors.telegram.tdlib.sessions import TelegramTdlibSessionReceipt
 
 from stackos.auth_providers import AuthRepository
 from stackos.auth_providers.repository.telegram_application import TelegramApplicationRepository
@@ -20,9 +22,7 @@ from stackos.auth_providers.repository.utils import utcnow
 from stackos.config import Settings
 from stackos.db.models import Credential, IntegrationCredential
 from stackos.integrations.telegram_tdlib.daemon import restore_telegram_accounts
-from stackos.integrations.telegram_tdlib.native import TelegramTdlibRequestError
 from stackos.integrations.telegram_tdlib.service import TelegramTdlibService
-from stackos.integrations.telegram_tdlib.sessions import TelegramTdlibSessionReceipt
 from stackos.mcp.context import MCPContext
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.operations.auth_handlers import (

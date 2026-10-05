@@ -101,7 +101,7 @@ provider request.
 | --- | --- |
 | Endpoint | `POST https://api.linear.app/graphql` only |
 | Authorization | OAuth: `Authorization: Bearer <daemon-resolved access token>`; personal key: the raw daemon-resolved key as the complete `Authorization` value |
-| Documents | repository-owned `.graphql` files below `plugins/linear/graphql/` |
+| Documents | bundled `.graphql` files below `stackos_connectors/connectors/linear/assets/graphql/` |
 | Caller-supplied query | forbidden |
 | Request body cap | 256 KiB |
 | Response body cap | 5 MiB |
@@ -122,9 +122,9 @@ because they do not affect executable document validation.
 
 | Evidence | Value |
 | --- | --- |
-| Snapshot | `plugins/linear/schema/introspection-2026-07-23.json` |
-| Metadata | `plugins/linear/schema/introspection-2026-07-23.metadata.json` |
-| Root policy | `plugins/linear/schema/root-policy-2026-07-23.json` |
+| Snapshot | `stackos_connectors/connectors/linear/schemas/introspection-2026-07-23.json` |
+| Metadata | `stackos_connectors/connectors/linear/schemas/introspection-2026-07-23.metadata.json` |
+| Root policy | `stackos_connectors/connectors/linear/schemas/root-policy-2026-07-23.json` |
 | SHA-256 | `e3ed66bdf20c08167ba614c0b54f7b281038e2c6c83c6dddff24d050260ff8c1` |
 | Query roots | 163 |
 | Mutation roots | 371 |

@@ -7,7 +7,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from stackos.actions import ActionConnectorRequest, ActionRepository
-from stackos.actions.google_workspace import GoogleWorkspaceActionConnector
+from stackos.actions.package_bridge import PackageActionConnector
 from stackos.auth_providers import AuthRepository
 from stackos.repositories.base import ValidationError
 
@@ -103,7 +103,7 @@ async def test_direct_workspace_restrictions_precede_action_http(
         session, project_id, service_key, httpx_mock, operation, payload
     )
     with pytest.raises(ValidationError, match=reason):
-        await GoogleWorkspaceActionConnector().execute(request)
+        await PackageActionConnector("google-workspace").execute(request)
     assert len(httpx_mock.get_requests()) == 1  # Token acquisition only.
 
 

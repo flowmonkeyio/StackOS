@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
+from stackos_connectors.connectors.google_veo.integration import GoogleVeoIntegration
+from stackos_connectors.errors import IntegrationDownError
 
 from stackos.actions.connectors import (
     ActionConnectorRequest,
@@ -14,11 +16,11 @@ from stackos.actions.connectors import (
 from stackos.actions.media_artifacts import (
     artifact_path,
     cost_usd_to_cents,
+    execute_media_native,
+    media_projection_failure,
     register_generated_media_artifacts,
 )
 from stackos.config import Settings
-from stackos.integrations.google_veo import GoogleVeoIntegration
-from stackos.mcp.errors import IntegrationDownError
 from stackos.repositories.base import ValidationError
 
 
@@ -300,78 +302,69 @@ class GoogleVeoVideoActionConnector:
         asset_dir = request.asset_dir or Settings().generated_assets_dir
         mode = str(payload.get("mode") or "text-to-video")
         async with httpx.AsyncClient(timeout=180.0) as http:
-            client = GoogleVeoIntegration(
-                payload=request.credential.secret_payload,
-                project_id=request.project_id,
-                http=http,
-                asset_dir=asset_dir,
-            )
-            result = await client.generate_video(
-                prompt=str(payload["prompt"]),
-                model=str(payload.get("model", GoogleVeoIntegration.DEFAULT_MODEL)),
-                mode=mode,
-                duration_seconds=(
-                    int(payload["duration_seconds"])
+            result = await execute_media_native(
+                request,
+                {
+                    "prompt": str(payload["prompt"]),
+                    "model": str(payload.get("model", GoogleVeoIntegration.DEFAULT_MODEL)),
+                    "mode": mode,
+                    "duration_seconds": int(payload["duration_seconds"])
                     if isinstance(payload.get("duration_seconds"), int)
-                    and not isinstance(payload.get("duration_seconds"), bool)
-                    else None
-                ),
-                aspect_ratio=str(payload.get("aspect_ratio", "16:9")),
-                resolution=(
-                    str(payload["resolution"])
+                    and (not isinstance(payload.get("duration_seconds"), bool))
+                    else None,
+                    "aspect_ratio": str(payload.get("aspect_ratio", "16:9")),
+                    "resolution": str(payload["resolution"])
                     if isinstance(payload.get("resolution"), str)
-                    else None
-                ),
-                input_image_path=(
-                    artifact_path(
-                        asset_dir,
-                        str(payload["input_image_ref"]),
-                        label="input_image_ref",
+                    else None,
+                    "input_image_path": artifact_path(
+                        asset_dir, str(payload["input_image_ref"]), label="input_image_ref"
                     )
                     if isinstance(payload.get("input_image_ref"), str)
-                    else None
-                ),
-                last_frame_path=(
-                    artifact_path(asset_dir, str(payload["last_frame_ref"]), label="last_frame_ref")
+                    else None,
+                    "last_frame_path": artifact_path(
+                        asset_dir, str(payload["last_frame_ref"]), label="last_frame_ref"
+                    )
                     if isinstance(payload.get("last_frame_ref"), str)
-                    else None
-                ),
-                enhance_prompt=(
-                    payload["enhance_prompt"]
+                    else None,
+                    "enhance_prompt": payload["enhance_prompt"]
                     if isinstance(payload.get("enhance_prompt"), bool)
-                    else None
-                ),
-                person_generation=(
-                    str(payload["person_generation"])
+                    else None,
+                    "person_generation": str(payload["person_generation"])
                     if isinstance(payload.get("person_generation"), str)
-                    else None
-                ),
-                seed=(
-                    int(payload["seed"])
+                    else None,
+                    "seed": int(payload["seed"])
                     if isinstance(payload.get("seed"), int)
-                    and not isinstance(payload.get("seed"), bool)
-                    else None
-                ),
-                poll_interval_seconds=float(payload.get("poll_interval_seconds", 10)),
-                poll_timeout_seconds=float(payload.get("poll_timeout_seconds", 1800)),
+                    and (not isinstance(payload.get("seed"), bool))
+                    else None,
+                    "poll_interval_seconds": float(payload.get("poll_interval_seconds", 10)),
+                    "poll_timeout_seconds": float(payload.get("poll_timeout_seconds", 1800)),
+                },
+                http=http,
+                connector=self.key,
+                output_subdir="google-veo",
+                qps=1.0,
+                pricing=None,
             )
-        output_json = result.data if isinstance(result.data, dict) else {"data": result.data}
-        output_json = register_generated_media_artifacts(
-            request,
-            output_json,
-            kind="video",
-            provider_key="google-veo",
-            source="google-veo-action",
-            metadata_builder=lambda item: {
-                "operation_name": item.get("operation_name"),
-                "sample_index": item.get("sample_index"),
-            },
-        )
-        return ActionConnectorResult(
-            output_json=output_json,
-            metadata_json={"vendor": "google-veo"},
-            cost_cents=cost_usd_to_cents(result.cost_usd),
-        )
+        try:
+            output_json = result.data if isinstance(result.data, dict) else {"data": result.data}
+            output_json = register_generated_media_artifacts(
+                request,
+                output_json,
+                kind="video",
+                provider_key="google-veo",
+                source="google-veo-action",
+                metadata_builder=lambda item: {
+                    "operation_name": item.get("operation_name"),
+                    "sample_index": item.get("sample_index"),
+                },
+            )
+            return ActionConnectorResult(
+                output_json=output_json,
+                metadata_json={"vendor": "google-veo"},
+                cost_cents=cost_usd_to_cents(result.cost_usd),
+            )
+        except Exception as exc:
+            raise media_projection_failure(exc, result) from None
 
 
 def _raise_bad_ref(path_key: str) -> None:

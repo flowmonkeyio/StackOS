@@ -100,6 +100,8 @@ def test_failed_probe_diagnostics_survive_mcp_and_rest_inventory(
     response_mode: str,
 ) -> None:
     class Probe:
+        default_qps = 1.0
+
         def __init__(self, **_kwargs: object) -> None:
             pass
 
@@ -114,7 +116,7 @@ def test_failed_probe_diagnostics_survive_mcp_and_rest_inventory(
             }
 
     monkeypatch.setattr(
-        "stackos.auth_providers.repository.integration_class_for", lambda _key: Probe
+        "stackos.auth_providers.repository.testing.integration_class_for", lambda _key: Probe
     )
     project_id = seeded_project["data"]["id"]
     _create_integration_credential(
@@ -157,7 +159,9 @@ def test_imap_failed_probe_is_actionable_in_compact_account_inventory(
     def unavailable(*_args: object, **_kwargs: object) -> None:
         raise ConnectionRefusedError("private IMAP transcript with fixture-password")
 
-    monkeypatch.setattr("stackos.integrations.imap.imaplib.IMAP4_SSL", unavailable)
+    monkeypatch.setattr(
+        "stackos_connectors.connectors.imap.integration.imaplib.IMAP4_SSL", unavailable
+    )
     project_id = seeded_project["data"]["id"]
     created = mcp_client.test_client.post(
         "/api/v1/auth/accounts/imap",

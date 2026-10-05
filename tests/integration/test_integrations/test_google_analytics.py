@@ -9,9 +9,8 @@ from typing import Any
 import httpx
 import pytest
 from pytest_httpx import HTTPXMock
-
-from stackos.integrations.google_analytics import GoogleAnalyticsIntegration
-from stackos.repositories.base import ValidationError
+from stackos_connectors.connectors.google_analytics.integration import GoogleAnalyticsIntegration
+from stackos_connectors.errors import ValidationError
 
 
 def _access_payload() -> bytes:
@@ -32,7 +31,6 @@ def test_google_analytics_wrapper_does_not_refresh_tokens_locally(
                         "refresh_token": "refresh",
                     }
                 ).encode("utf-8"),
-                project_id=project_id,
                 http=client,
                 qps_override=1000.0,
             )
@@ -68,7 +66,6 @@ def test_google_analytics_wrapper_maps_data_api_endpoints(
         async with httpx.AsyncClient() as client:
             integration = GoogleAnalyticsIntegration(
                 payload=_access_payload(),
-                project_id=project_id,
                 http=client,
                 qps_override=1000.0,
             )

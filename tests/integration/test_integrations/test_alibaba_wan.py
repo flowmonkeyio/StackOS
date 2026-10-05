@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
 from pytest_httpx import HTTPXMock
-
-from stackos.integrations.alibaba_wan import AlibabaWanIntegration
-from stackos.mcp.errors import IntegrationDownError
+from stackos_connectors.connectors.alibaba_wan.integration import AlibabaWanIntegration
+from stackos_connectors.errors import IntegrationDownError
 
 
 def test_text_to_video_submits_dashscope_task_polls_and_persists(
@@ -54,9 +54,8 @@ def test_text_to_video_submits_dashscope_task_polls_and_persists(
         async with httpx.AsyncClient() as client:
             integ = AlibabaWanIntegration(
                 payload=b"dashscope-key",
-                project_id=project_id,
                 http=client,
-                asset_dir=tmp_path,
+                output_dir=tmp_path / "alibaba-wan",
             )
             return await integ.generate_video(
                 prompt="video prompt",
@@ -66,6 +65,8 @@ def test_text_to_video_submits_dashscope_task_polls_and_persists(
                 duration=5,
                 prompt_extend=False,
                 poll_interval_seconds=0,
+                region="singapore",
+                poll_timeout_seconds=1800.0,
             )
 
     result = asyncio.run(go())
@@ -83,10 +84,10 @@ def test_text_to_video_submits_dashscope_task_polls_and_persists(
         },
     }
     item = result.data["data"][0]
-    assert item["url"].startswith("/generated-assets/alibaba-wan/alibaba-wan-video-")
+    assert item["path"].startswith(str(tmp_path / "alibaba-wan/alibaba-wan-video-"))
     assert item["task_id"] == "task_123"
     assert "video_url" not in item
-    assert (tmp_path / item["url"].removeprefix("/generated-assets/")).read_bytes() == b"wan-video"
+    assert (Path(item["path"])).read_bytes() == b"wan-video"
 
 
 def test_image_to_video_sends_url_media_protocol(
@@ -121,9 +122,8 @@ def test_image_to_video_sends_url_media_protocol(
         async with httpx.AsyncClient() as client:
             integ = AlibabaWanIntegration(
                 payload=b"dashscope-key",
-                project_id=project_id,
                 http=client,
-                asset_dir=tmp_path,
+                output_dir=tmp_path / "alibaba-wan",
             )
             await integ.generate_video(
                 prompt="animate frame",
@@ -134,6 +134,10 @@ def test_image_to_video_sends_url_media_protocol(
                 resolution="1080P",
                 duration=10,
                 poll_interval_seconds=0,
+                region="singapore",
+                aspect_ratio="16:9",
+                prompt_extend=True,
+                poll_timeout_seconds=1800.0,
             )
 
     asyncio.run(go())
@@ -180,9 +184,8 @@ def test_video_continuation_sends_first_clip_and_optional_last_frame(
         async with httpx.AsyncClient() as client:
             integ = AlibabaWanIntegration(
                 payload=b"dashscope-key",
-                project_id=project_id,
                 http=client,
-                asset_dir=tmp_path,
+                output_dir=tmp_path / "alibaba-wan",
             )
             await integ.generate_video(
                 prompt="continue clip",
@@ -192,6 +195,10 @@ def test_video_continuation_sends_first_clip_and_optional_last_frame(
                 resolution="720P",
                 duration=6,
                 poll_interval_seconds=0,
+                region="singapore",
+                aspect_ratio="16:9",
+                prompt_extend=True,
+                poll_timeout_seconds=1800.0,
             )
 
     asyncio.run(go())
@@ -211,7 +218,6 @@ def test_video_continuation_rejects_audio_url(
         async with httpx.AsyncClient() as client:
             integ = AlibabaWanIntegration(
                 payload=b"dashscope-key",
-                project_id=project_id,
                 http=client,
             )
             await integ.generate_video(
@@ -220,6 +226,12 @@ def test_video_continuation_rejects_audio_url(
                 first_clip_url="https://cdn.example/clip.mp4",
                 audio_url="https://cdn.example/audio.mp3",
                 poll_interval_seconds=0,
+                region="singapore",
+                resolution="720P",
+                aspect_ratio="16:9",
+                duration=5,
+                prompt_extend=True,
+                poll_timeout_seconds=1800.0,
             )
 
     with pytest.raises(IntegrationDownError, match="does not support audio_url"):
@@ -252,10 +264,19 @@ def test_failed_task_status_raises(
         async with httpx.AsyncClient() as client:
             integ = AlibabaWanIntegration(
                 payload=b"dashscope-key",
-                project_id=project_id,
                 http=client,
             )
-            return await integ.generate_video(prompt="bad", poll_interval_seconds=0)
+            return await integ.generate_video(
+                prompt="bad",
+                poll_interval_seconds=0,
+                mode="text-to-video",
+                region="singapore",
+                resolution="720P",
+                aspect_ratio="16:9",
+                duration=5,
+                prompt_extend=True,
+                poll_timeout_seconds=1800.0,
+            )
 
     with pytest.raises(IntegrationDownError, match="ended with status FAILED"):
         asyncio.run(go())
@@ -276,10 +297,42 @@ def test_text_to_video_raises_on_auth_failure(
         async with httpx.AsyncClient() as client:
             integ = AlibabaWanIntegration(
                 payload=b"bad-key",
-                project_id=project_id,
                 http=client,
             )
-            return await integ.generate_video(prompt="auth", poll_interval_seconds=0)
+            return await integ.generate_video(
+                prompt="auth",
+                poll_interval_seconds=0,
+                mode="text-to-video",
+                region="singapore",
+                resolution="720P",
+                aspect_ratio="16:9",
+                duration=5,
+                prompt_extend=True,
+                poll_timeout_seconds=1800.0,
+            )
 
     with pytest.raises(IntegrationDownError, match="client error 401"):
         asyncio.run(go())
+
+
+def test_host_default_choices_and_generated_asset_projection(host_media_projection):
+    from stackos.actions.alibaba_wan import AlibabaWanVideoActionConnector
+
+    result, native_data = asyncio.run(
+        host_media_projection(
+            AlibabaWanVideoActionConnector(),
+            provider="alibaba-wan",
+            operation="video.generate",
+            data={"prompt": "fixture"},
+            output_subdir="alibaba-wan",
+        )
+    )
+    assert native_data["mode"] == "text-to-video"
+    assert native_data["region"] == "singapore"
+    assert native_data["resolution"] == "720P"
+    assert native_data["aspect_ratio"] == "16:9"
+    assert native_data["duration"] == 5
+    assert native_data["prompt_extend"] is True
+    assert native_data["poll_interval_seconds"] == 15.0
+    assert native_data["poll_timeout_seconds"] == 1800.0
+    assert result.metadata_json["vendor"] == "alibaba-wan"

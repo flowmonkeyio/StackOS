@@ -11,6 +11,7 @@ from sqlmodel import Session
 
 from stackos.actions import ActionRepository
 from stackos.auth_providers import AuthRepository
+from stackos.db.models import ActionCall
 from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.resources import ResourceRepository
 from stackos.repositories.secrets import PayloadSecretRepository
@@ -101,7 +102,7 @@ def test_smtp_action_is_executable_and_sends_without_secret_leak(
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.smtp as smtp_module
+    import stackos_connectors.connectors.smtp.actions as smtp_module
 
     _FakeSMTP.instances.clear()
     _FakeSMTP.refused = {"bad@example.test": (550, b"mailbox unavailable")}
@@ -190,7 +191,7 @@ def test_smtp_ssl_path_uses_smtp_ssl(
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.smtp as smtp_module
+    import stackos_connectors.connectors.smtp.actions as smtp_module
 
     _FakeSMTPSSL.instances.clear()
     _FakeSMTPSSL.refused = {}
@@ -222,7 +223,7 @@ def test_smtp_address_secret_ref_validates_without_decrypting_then_sends(
     monkeypatch: pytest.MonkeyPatch,
     field: str,
 ) -> None:
-    import stackos.actions.smtp as smtp_module
+    import stackos_connectors.connectors.smtp.actions as smtp_module
 
     _FakeSMTP.instances.clear()
     _FakeSMTP.refused = {}
@@ -291,7 +292,7 @@ def test_smtp_invalid_addresses_never_connect_or_send(
     field: str,
     use_secret_ref: bool,
 ) -> None:
-    import stackos.actions.smtp as smtp_module
+    import stackos_connectors.connectors.smtp.actions as smtp_module
 
     _FakeSMTP.instances.clear()
     monkeypatch.setattr(smtp_module.smtplib, "SMTP", _FakeSMTP)
@@ -329,7 +330,7 @@ def test_smtp_literal_secret_projection_never_reaches_transport(
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.smtp as smtp_module
+    import stackos_connectors.connectors.smtp.actions as smtp_module
 
     _FakeSMTP.instances.clear()
     monkeypatch.setattr(smtp_module.smtplib, "SMTP", _FakeSMTP)
@@ -350,3 +351,41 @@ def test_smtp_literal_secret_projection_never_reaches_transport(
         )
 
     assert not _FakeSMTP.instances
+
+
+def test_smtp_storage_failure_retains_relay_receipt_and_no_retry(
+    session: Session, project_id: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from stackos_connectors.connectors.smtp import actions as native_smtp
+
+    import stackos.actions.smtp as host_smtp
+
+    credential_ref = _credential_ref(session, project_id)
+    _FakeSMTP.instances.clear()
+    _FakeSMTP.refused = {}
+    monkeypatch.setattr(native_smtp.smtplib, "SMTP", _FakeSMTP)
+
+    def fail_history(*args, **kwargs):
+        raise RuntimeError("injected storage failure")
+
+    monkeypatch.setattr(host_smtp, "_store_outbound_email", fail_history)
+    with pytest.raises(ConflictError) as failed:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="communications.smtp.email.send",
+                input_json={
+                    "recipients": ["ok@example.test"],
+                    "subject": "fixture",
+                    "text": "hello",
+                },
+                credential_ref=credential_ref,
+            )
+        )
+    call = session.get(ActionCall, failed.value.data["action_call_id"])
+    assert call.response_json["message_id"]
+    assert call.response_json["status"] == "accepted"
+    assert call.metadata_json["provider_executed"] is True
+    assert call.metadata_json["retry_safe"] is False
+    assert len(_FakeSMTP.instances) == 1
+    assert _FakeSMTP.instances[0].send_args is not None

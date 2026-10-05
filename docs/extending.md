@@ -62,14 +62,18 @@ providers:
           credential_url: directional
 ```
 
-Provider implementation belongs in daemon-side integration code. It should own:
+Native provider implementation belongs in the separate `stackos-connectors`
+package, grouped under `connectors/<provider>/`. Keep action mappings, native
+schemas, fixed request assets, provider reference Markdown and icons in that
+directory. Its catalog declares names, descriptions, setup and resolved auth
+schemas for consumers, including agents.
 
-- provider transport and safe health probes
-- retries and rate limits
-- budget checks
-- request/response normalization
-- credential usage recording
-- safe error messages
+The package owns provider transport, protocol validation, explicit named
+requests, safe credential probes and provider error/receipt facts. The caller
+can supply transport clients, rate buckets, output directories and authorized
+native sessions. StackOS owns budgets, admission policy, credential lifecycle,
+safe refs, artifacts, usage recording and audit. Add a host action adapter only
+for that host behavior; use the shared package bridge for native data calls.
 
 OAuth lifecycle does not belong in the connector. Add the provider's trusted
 protocol data to the central OAuth contract and set `interactive: true` only
@@ -151,11 +155,12 @@ as the fixed-document reference:
 
 - pin a dated introspection snapshot and its checksum;
 - define an exhaustive allowed/excluded root policy;
-- store one reviewed document per action under the plugin;
+- store one reviewed document per action in the connector package's provider
+  `assets/graphql/` directory;
 - make public input schemas strict and construct provider filters/inputs in the
   connector;
-- keep one hard-coded action/document/root/scope table that manifest config
-  must match but cannot override;
+- keep one native action/document/root table that host manifest config must
+  match but cannot override; enforce StackOS scopes in the host;
 - validate all variables, arguments, enums, and projections against the pinned
   schema and reject deprecated selections;
 - convert reusable provider ids into account-bound opaque refs;

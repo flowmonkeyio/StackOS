@@ -9,9 +9,8 @@ from typing import Any, ClassVar
 
 import httpx
 import pytest
-
-from stackos.integrations.ftp import FtpIntegration
-from stackos.mcp.errors import IntegrationDownError
+from stackos_connectors.connectors.ftp.integration import FtpIntegration
+from stackos_connectors.errors import IntegrationDownError
 
 
 class _AuthFTP:
@@ -68,7 +67,6 @@ def test_ftp_auth_probe_rejects_url_in_host(project_id: int) -> None:
             with pytest.raises(IntegrationDownError, match="hostname or IP address"):
                 FtpIntegration(
                     payload=json.dumps({"password": "ftp-secret"}).encode(),
-                    project_id=project_id,
                     http=client,
                     host="ftp://ftp.example.test/public_html",
                     username="deploy",
@@ -81,7 +79,7 @@ def test_ftp_auth_probe_protects_ftps_data_and_returns_safe_metadata(
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.integrations.ftp as ftp_module
+    import stackos_connectors.connectors.ftp.integration as ftp_module
 
     _AuthFTP.instances.clear()
     _AuthFTP.pwd_value = "/"
@@ -91,7 +89,6 @@ def test_ftp_auth_probe_protects_ftps_data_and_returns_safe_metadata(
         async with httpx.AsyncClient() as client:
             integration = FtpIntegration(
                 payload=json.dumps({"password": "ftp-secret"}).encode(),
-                project_id=project_id,
                 http=client,
                 host="ftp.example.test",
                 port=21,
@@ -123,7 +120,7 @@ def test_ftp_auth_probe_exact_redacts_password_echoed_by_pwd(
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.integrations.ftp as ftp_module
+    import stackos_connectors.connectors.ftp.integration as ftp_module
 
     _AuthFTP.instances.clear()
     _AuthFTP.pwd_value = "/server/ftp-secret\r\n"
@@ -133,7 +130,6 @@ def test_ftp_auth_probe_exact_redacts_password_echoed_by_pwd(
         async with httpx.AsyncClient() as client:
             integration = FtpIntegration(
                 payload=json.dumps({"password": "ftp-secret"}).encode(),
-                project_id=project_id,
                 http=client,
                 host="ftp.example.test",
                 username="deploy",
@@ -150,7 +146,7 @@ def test_ftp_auth_probe_reports_sanitized_login_rejection(
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.integrations.ftp as ftp_module
+    import stackos_connectors.connectors.ftp.integration as ftp_module
 
     _RejectingAuthFTP.instances.clear()
     monkeypatch.setattr(ftp_module.ftplib, "FTP", _RejectingAuthFTP)
@@ -159,7 +155,6 @@ def test_ftp_auth_probe_reports_sanitized_login_rejection(
         async with httpx.AsyncClient() as client:
             integration = FtpIntegration(
                 payload=json.dumps({"password": "ftp-secret"}).encode(),
-                project_id=project_id,
                 http=client,
                 host="ftp.example.test",
                 tls_mode="none",
@@ -174,6 +169,8 @@ def test_ftp_auth_probe_reports_sanitized_login_rejection(
                 "reason_code": "login_rejected",
                 "reply_code": "530",
             }
-            assert "ftp-secret" not in json.dumps(excinfo.value.to_dict())
+        assert "ftp-secret" not in json.dumps(
+            {"detail": excinfo.value.detail, "data": excinfo.value.data}
+        )
 
     asyncio.run(go())

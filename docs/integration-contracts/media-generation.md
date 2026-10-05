@@ -43,19 +43,21 @@ verification signoff for every media-generation tool.
 
 Use this split for each delivery:
 
-- `stackos/integrations/<provider>.py`: reusable first-party API wrapper.
-  It must inherit `BaseIntegration`, expose typed methods for the provider's
-  actual operations, keep secrets inside daemon process memory, and record
-  provider request/job ids through the existing audit path.
-- `stackos/actions/<provider>.py`: thin decision-free adapter from the utils
-  action manifest to the reusable wrapper. It must not choose strategy or
-  silently downgrade unsupported modes.
+- `StackOSConnectors/src/stackos_connectors/connectors/<provider>/`: native
+  provider protocol, named actions, schemas, fixed resources, docs and icons.
+  It receives resolved authentication and explicit inputs, returns provider
+  request/job facts, and writes plain files into the supplied output directory.
+- `stackos/actions/<provider>.py`: host adapter from the utils action manifest
+  to the package. It owns host input defaults and asset resolution, budget
+  estimates, generated-file registration and safe public output. It must not
+  choose strategy or silently downgrade unsupported modes. The shared executor
+  owns credentials, permissions and action-call audit.
 - `stackos/plugins/manifest.py`: one provider manifest and independent action
   entries per provider operation. Agents discover what is possible from action
   schemas and capability metadata, not from hidden connector logic.
-- `stackos/integrations/__init__.py` and `stackos/actions/__init__.py`: explicit
-  registration only after wrapper, connector, tests, docs, and changelog are
-  delivered together.
+- The package catalog index and StackOS action/probe registries: explicit
+  registration only after native implementation, host adapter, tests, docs and
+  changelog are delivered together.
 
 Keep the provider-neutral `video-generation` provider and
 `utils.video.generate` action only as the deferred placeholder. Concrete video

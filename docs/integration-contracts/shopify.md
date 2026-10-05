@@ -2,10 +2,12 @@
 
 StackOS exposes Shopify only through curated actions backed by the local
 Shopify Admin GraphQL connector. Agents do not receive the Admin API token and
-do not send arbitrary GraphQL. The connector reads static GraphQL documents from
-`plugins/shopify/graphql/`, builds variables from action input schemas, sends
+do not send arbitrary GraphQL. The connector package reads static documents from
+`stackos_connectors/connectors/shopify/assets/graphql/`, builds native variables, sends
 the request with daemon-held auth, and returns sanitized data plus Shopify cost
-metadata.
+metadata. Portable provider notes and exact source links live in that package's
+`connectors/shopify/docs/shopify.md`; this document owns StackOS setup, public
+actions and report composition.
 
 ## Official Contract Sources
 
@@ -32,22 +34,13 @@ The connector accepts only `*.myshopify.com` domains for the Admin GraphQL
 endpoint. Operators should create a custom app/token in Shopify with the least
 scopes needed for the specific actions they intend to run.
 
-## GraphQL Surface Count
+## Public Action Surface
 
-The official Admin GraphQL API is one HTTP endpoint with many root fields. The
-2026-07 schema evidence gathered for this delivery showed:
-
-- `QueryRoot`: 268 root query fields.
-- `Mutation`: 483 root mutation fields.
-- Total schema root actions: 751.
-- Rendered documentation listed 478 mutation fields at audit time; the schema
-  contained five additional mutation fields not present in that rendered list.
-
-StackOS does not expose those 751 root fields directly. This plugin exposes 58
-curated actions copied from the `cob-shopify-mcp` tool catalog and corrected
-against Shopify's 2026-07 documentation. The generic `shopifyql_query` tool was
-removed because it exposed arbitrary ShopifyQL instead of a curated agent
-action.
+The plugin exposes 58 curated actions. The native package exposes 59 named
+actions: the two host reports are replaced by three explicit supporting reads.
+These counts describe different contracts. The package performs the native
+requests; StackOS owns report selection, filtering, sorting and aggregation.
+Agents cannot submit arbitrary ShopifyQL or GraphQL through these actions.
 
 | Domain | Action count |
 | --- | ---: |
@@ -90,11 +83,11 @@ mode in `plugins/shopify/plugin.yaml`.
 - Order actions that select customer name/email fields require `read_customers`
   in addition to `read_orders`, and live use can require Shopify protected
   customer data approval.
-- `low_stock_report` reads inventory items, filters inventory levels below the
-  requested threshold in the connector, sorts by available quantity ascending,
+- `low_stock_report` reads inventory items through the package, filters levels below the
+  requested threshold in the host adapter, sorts by available quantity ascending,
   and returns a bounded result set.
 - `inventory_risk_report` combines product variant inventory and recent sales
-  GraphQL reads. The connector caps internal pagination at 20 pages and reports
+  native GraphQL reads. The host adapter caps internal pagination at 20 pages and reports
   truncation in metadata if the cap is reached.
 
 ## Error, Rate, And Cost Handling
@@ -110,12 +103,13 @@ mode in `plugins/shopify/plugin.yaml`.
 
 ## Verification State
 
-Automated coverage added in this delivery:
+Automated host coverage includes:
 
 - `tests/integration/test_integrations/test_shopify.py`
 - `tests/integration/test_repositories/test_auth_providers.py`
 - `tests/integration/test_repositories/test_shopify_actions.py`
-- `docs/integration-contracts/shopify-action-signoff.md`
+
+Native protocol and fixed-document tests live with the standalone package.
 
 Covered behavior:
 
@@ -129,9 +123,5 @@ Covered behavior:
   filtering, lower-case product status search, order tag replacement,
   collection creation argument shape, product `UNLISTED` status, and mutation
   `userErrors` have focused repository tests.
-- A July 8, 2026 manual verifier pass checked every Shopify action against
-  official Shopify documentation. Rows with blockers were fixed locally and
-  signed off in `shopify-action-signoff.md`.
-
-Live smoke with a real Shopify store token remains an operator-provided release
-gate, because this session did not have Shopify credentials.
+Live smoke with a real Shopify store token remains separate release evidence.
+Source extraction and mocked calls do not establish live store permissions.

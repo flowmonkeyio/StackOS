@@ -10,8 +10,7 @@ from __future__ import annotations
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
-
-from stackos.integrations.sitemap import (
+from stackos_connectors.connectors.sitemap.integration import (
     DEFAULT_TIMEOUT_S,
     MAX_ENTRIES_PER_FETCH,
     MAX_INDEX_DEPTH,
@@ -19,6 +18,7 @@ from stackos.integrations.sitemap import (
     SitemapFetchError,
     fetch_sitemap_entries,
 )
+
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput
 from stackos.mcp.server import ToolRegistry

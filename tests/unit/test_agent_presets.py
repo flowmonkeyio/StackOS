@@ -1078,7 +1078,7 @@ def test_trackbooth_agent_preset_names_runtime_sync_and_stackos_boundaries() -> 
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "plugins/trackbooth/plugin.yaml" in refs
-    assert "plugins/trackbooth/agent-api/README.md" in refs
+    assert not any(ref.startswith("plugins/trackbooth/agent-api/") for ref in refs)
     assert "docs/integration-contracts/trackbooth.md" in conditional_refs
     assert "trackbooth.catalog.sync" in contract_text
     assert "trackbooth.api.*" in contract_text

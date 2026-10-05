@@ -6,10 +6,10 @@ import json
 from typing import Any
 
 from sqlmodel import Session
+from stackos_connectors.connectors.telegram.tdlib.sessions import TelegramApplicationCredentials
 
 from stackos.crypto.aes_gcm import decrypt, encrypt
 from stackos.db.models import TelegramApplication
-from stackos.integrations.telegram_tdlib.sessions import TelegramApplicationCredentials
 from stackos.repositories.base import ConflictError, ValidationError
 
 _APPLICATION_KIND = "telegram-application"

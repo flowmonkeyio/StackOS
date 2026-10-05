@@ -9,27 +9,19 @@ from typing import Any
 import httpx
 import pytest
 from pytest_httpx import HTTPXMock
+from stackos_connectors.connectors.pipedrive.integration import PipedriveIntegration
+from stackos_connectors.probe import AuthMethodProbeContext
 
-from stackos.actions.connectors import ActionConnectorRequest
-from stackos.actions.pipedrive import PipedriveActionConnector
+from stackos.actions.connectors import ActionConnectorError, ActionConnectorRequest
+from stackos.actions.package_bridge import PackageActionConnector
 from stackos.auth_providers.repository.schema import (
-    AuthMethodProbeContext,
-    PermissionVerificationOut,
     ResolvedCredential,
 )
 from stackos.db.models import Credential, IntegrationCredential
-from stackos.integrations.pipedrive import PipedriveIntegration
-from stackos.repositories.base import ValidationError
 
 
-def _context(method: str, *, evidence_source: str, enforcement: str) -> AuthMethodProbeContext:
-    return AuthMethodProbeContext(
-        auth_method_key=method,
-        permission_verification=PermissionVerificationOut(
-            evidence_source=evidence_source,
-            enforcement=enforcement,
-        ),
-    )
+def _context(method: str) -> AuthMethodProbeContext:
+    return AuthMethodProbeContext(auth_method_key=method)
 
 
 def _action_request(
@@ -39,7 +31,11 @@ def _action_request(
     project_id: int,
 ) -> ActionConnectorRequest:
     credential = ResolvedCredential(
-        credential=Credential(credential_ref="cred_pipedrive", provider_key="pipedrive"),
+        credential=Credential(
+            credential_ref="cred_pipedrive",
+            provider_key="pipedrive",
+            auth_method_key=config.get("auth_method_key"),
+        ),
         integration=IntegrationCredential(
             encrypted_payload=b"not-used",
             nonce=b"0" * 12,
@@ -83,13 +79,10 @@ def test_pipedrive_api_token_probe_uses_saved_method_transport_without_grant_evi
         async with httpx.AsyncClient() as client:
             integration = PipedriveIntegration(
                 payload=json.dumps({"api_token": token}).encode(),
-                project_id=project_id,
                 http=client,
                 api_domain="https://acme.pipedrive.com",
                 probe_context=_context(
                     "api_token",
-                    evidence_source="unavailable",
-                    enforcement="provider_enforced",
                 ),
                 qps_override=1000.0,
             )
@@ -128,26 +121,15 @@ def test_pipedrive_api_token_probe_uses_saved_method_transport_without_grant_evi
 
 
 def test_pipedrive_manual_oauth_fails_closed_without_oauth_response_evidence(
-    httpx_mock: HTTPXMock,
-    project_id: int,
-) -> None:
-    async def go() -> dict[str, Any]:
-        async with httpx.AsyncClient() as client:
-            integration = PipedriveIntegration(
-                payload=b'{"access_token":"pipedrive-oauth-token-canary"}',
-                project_id=project_id,
-                http=client,
-                api_domain="https://acme.pipedrive.com",
-                probe_context=_context(
-                    "oauth2_token",
-                    evidence_source="unavailable",
-                    enforcement="local_required",
-                ),
-                qps_override=1000.0,
-            )
-            return await integration.test_credentials()
-
-    assert asyncio.run(go()) == {
+    httpx_mock, host_probe_preflight
+):
+    result = host_probe_preflight(
+        "pipedrive",
+        "oauth2_token",
+        evidence_source="unavailable",
+        enforcement="local_required",
+    )
+    assert result == {
         "ok": False,
         "vendor": "pipedrive",
         "status": "permission_evidence_unavailable",
@@ -173,13 +155,10 @@ def test_pipedrive_oauth_probe_uses_bearer_only_when_the_saved_method_is_oauth(
         async with httpx.AsyncClient() as client:
             integration = PipedriveIntegration(
                 payload=json.dumps({"access_token": token, "api_token": "wrong-token"}).encode(),
-                project_id=project_id,
                 http=client,
                 api_domain="https://acme.pipedrive.com",
                 probe_context=_context(
                     "oauth2_authorization_code",
-                    evidence_source="oauth_response",
-                    enforcement="local_required",
                 ),
                 qps_override=1000.0,
             )
@@ -204,7 +183,7 @@ def test_pipedrive_action_uses_api_token_only_for_the_saved_api_token_method(
         project_id=project_id,
     )
 
-    asyncio.run(PipedriveActionConnector().execute(request))
+    asyncio.run(PackageActionConnector("pipedrive").execute(request))
     sent = httpx_mock.get_requests()[0]
 
     assert sent.headers["x-api-token"] == "pipedrive-api-canary"
@@ -216,7 +195,7 @@ def test_pipedrive_action_rejects_unknown_method_and_non_pipedrive_domain_before
     httpx_mock: HTTPXMock,
     project_id: int,
 ) -> None:
-    connector = PipedriveActionConnector()
+    connector = PackageActionConnector("pipedrive")
     unknown_method = _action_request(
         payload={"api_token": "pipedrive-api-canary"},
         config={"api_domain": "acme.pipedrive.com"},
@@ -233,11 +212,11 @@ def test_pipedrive_action_rejects_unknown_method_and_non_pipedrive_domain_before
         project_id=project_id,
     )
 
-    with pytest.raises(ValidationError, match="saved auth method"):
+    with pytest.raises(ActionConnectorError, match="saved auth method"):
         asyncio.run(connector.execute(unknown_method))
-    with pytest.raises(ValidationError, match=r"tenant .pipedrive.com"):
+    with pytest.raises(ActionConnectorError, match=r"tenant .pipedrive.com"):
         asyncio.run(connector.execute(unsafe_domain))
-    with pytest.raises(ValidationError, match="HTTPS origin"):
+    with pytest.raises(ActionConnectorError, match="HTTPS origin"):
         asyncio.run(connector.execute(invalid_port))
 
     assert httpx_mock.get_requests() == []

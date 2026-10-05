@@ -8,8 +8,9 @@ from typing import Any
 
 import httpx
 from pytest_httpx import HTTPXMock
-
-from stackos.integrations.google_search_console import GoogleSearchConsoleIntegration
+from stackos_connectors.connectors.google_search_console.integration import (
+    GoogleSearchConsoleIntegration,
+)
 
 
 def _payload() -> bytes:
@@ -18,7 +19,6 @@ def _payload() -> bytes:
 
 def test_search_console_wrapper_maps_read_endpoints(
     httpx_mock: HTTPXMock,
-    project_id: int,
 ) -> None:
     httpx_mock.add_response(
         method="GET",
@@ -52,7 +52,6 @@ def test_search_console_wrapper_maps_read_endpoints(
         async with httpx.AsyncClient() as client:
             integration = GoogleSearchConsoleIntegration(
                 payload=_payload(),
-                project_id=project_id,
                 http=client,
                 qps_override=1000.0,
             )
@@ -90,7 +89,6 @@ def test_search_console_wrapper_maps_read_endpoints(
 
 def test_search_console_test_credentials_returns_sanitized_site_summary(
     httpx_mock: HTTPXMock,
-    project_id: int,
 ) -> None:
     httpx_mock.add_response(
         method="GET",
@@ -107,7 +105,6 @@ def test_search_console_test_credentials_returns_sanitized_site_summary(
         async with httpx.AsyncClient() as client:
             integration = GoogleSearchConsoleIntegration(
                 payload=_payload(),
-                project_id=project_id,
                 http=client,
                 qps_override=1000.0,
             )

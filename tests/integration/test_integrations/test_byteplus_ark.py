@@ -11,9 +11,10 @@ from typing import Any
 import httpx
 import pytest
 from pytest_httpx import HTTPXMock
+from stackos_connectors.errors import IntegrationDownError
+from stackos_connectors.shared.byteplus.ark import BytePlusArkIntegration
 
-from stackos.integrations.byteplus_ark import BytePlusArkIntegration
-from stackos.mcp.errors import IntegrationDownError
+from stackos.actions.byteplus_seedream import _host_media_cost, _MediaPricing
 
 
 def _png_bytes(width: int, height: int) -> bytes:
@@ -76,9 +77,8 @@ def test_generate_image_uses_modelark_json_and_persists_urls(
         async with httpx.AsyncClient() as client:
             integ = BytePlusArkIntegration(
                 payload=b"ark-key",
-                project_id=project_id,
                 http=client,
-                asset_dir=tmp_path,
+                output_dir=tmp_path / "byteplus-ark",
             )
             return await integ.generate_image(
                 prompt="Editorial product poster",
@@ -86,6 +86,8 @@ def test_generate_image_uses_modelark_json_and_persists_urls(
                 size="2K",
                 output_format="png",
                 watermark=False,
+                model="seedream-5-0-lite-260128",
+                sequential_image_generation="disabled",
             )
 
     result = asyncio.run(go())
@@ -105,19 +107,30 @@ def test_generate_image_uses_modelark_json_and_persists_urls(
         "watermark": False,
         "output_format": "png",
     }
-    assert item["url"].startswith("/generated-assets/byteplus-ark/byteplus-ark-")
+    assert item["path"].startswith(str(tmp_path / "byteplus-ark/byteplus-ark-"))
     assert item["file_format"] == "jpg"
     assert item["provider_url_persisted"] is True
-    assert item_2["url"].startswith("/generated-assets/byteplus-ark/byteplus-ark-")
+    assert item_2["path"].startswith(str(tmp_path / "byteplus-ark/byteplus-ark-"))
     assert provider_url not in rendered
     assert provider_url_2 not in rendered
-    assert (tmp_path / item["url"].removeprefix("/generated-assets/")).read_bytes() == (
-        b"byteplus-image-one"
+    assert (Path(item["path"])).read_bytes() == (b"byteplus-image-one")
+    assert (Path(item_2["path"])).read_bytes() == (b"byteplus-image-two")
+    assert (
+        _host_media_cost(
+            "image.generate",
+            {
+                "prompt": "Editorial product poster",
+                "region": "eu-west-1",
+                "size": "2K",
+                "output_format": "png",
+                "watermark": False,
+                "model": "seedream-5-0-lite-260128",
+                "sequential_image_generation": "disabled",
+            },
+            result.data,
+        )
+        == 0.07
     )
-    assert (tmp_path / item_2["url"].removeprefix("/generated-assets/")).read_bytes() == (
-        b"byteplus-image-two"
-    )
-    assert result.cost_usd == 0.07
 
 
 def test_edit_image_uploads_generated_asset_data_url_and_persists_base64(
@@ -146,15 +159,16 @@ def test_edit_image_uploads_generated_asset_data_url_and_persists_base64(
         async with httpx.AsyncClient() as client:
             integ = BytePlusArkIntegration(
                 payload=b"ark-key",
-                project_id=project_id,
                 http=client,
-                asset_dir=tmp_path,
+                output_dir=tmp_path / "byteplus-ark",
             )
             return await integ.edit_image(
                 prompt="Keep the object, change the backdrop",
                 input_image_paths=[source],
                 model="seedream-4-0-250828",
                 size="2048x2048",
+                region="ap-southeast-1",
+                sequential_image_generation="disabled",
             )
 
     result = asyncio.run(go())
@@ -165,13 +179,25 @@ def test_edit_image_uploads_generated_asset_data_url_and_persists_base64(
 
     assert body["image"].startswith("data:image/png;base64,")
     assert body["response_format"] == "url"
-    assert item["url"].startswith("/generated-assets/byteplus-ark/byteplus-ark-")
+    assert item["path"].startswith(str(tmp_path / "byteplus-ark/byteplus-ark-"))
     assert item["provider_b64_persisted"] is True
     assert "b64_json" not in rendered
-    assert (tmp_path / item["url"].removeprefix("/generated-assets/")).read_bytes() == (
-        b"byteplus-b64-image"
+    assert (Path(item["path"])).read_bytes() == (b"byteplus-b64-image")
+    assert (
+        _host_media_cost(
+            "image.edit",
+            {
+                "prompt": "Keep the object, change the backdrop",
+                "input_image_paths": [source],
+                "model": "seedream-4-0-250828",
+                "size": "2048x2048",
+                "region": "ap-southeast-1",
+                "sequential_image_generation": "disabled",
+            },
+            result.data,
+        )
+        == 0.03
     )
-    assert result.cost_usd == 0.03
 
 
 def test_generated_media_requires_asset_dir_to_prevent_temporary_url_leak(
@@ -189,15 +215,20 @@ def test_generated_media_requires_asset_dir_to_prevent_temporary_url_leak(
         async with httpx.AsyncClient() as client:
             integ = BytePlusArkIntegration(
                 payload=b"ark-key",
-                project_id=project_id,
                 http=client,
             )
-            await integ.generate_image(prompt="poster")
+            await integ.generate_image(
+                prompt="poster",
+                model="seedream-5-0-lite-260128",
+                size="2K",
+                region="ap-southeast-1",
+                sequential_image_generation="disabled",
+            )
 
     with pytest.raises(IntegrationDownError) as exc:
         asyncio.run(go())
 
-    assert "generated-assets persistence" in exc.value.detail
+    assert "require output_dir" in exc.value.detail
     assert len(httpx_mock.get_requests()) == 1
 
 
@@ -242,7 +273,7 @@ def test_size_validation_matches_documented_limits() -> None:
     assert BytePlusArkIntegration.validate_size("1500x1500", model="seedream-4-0-250828") is True
     assert BytePlusArkIntegration.validate_size("3K", model="seedream-4-5-251128") is False
     assert BytePlusArkIntegration.validate_size("30000x10") is False
-    assert BytePlusArkIntegration.estimate_image_cost_usd(generated_images=0) == 0.0
+    assert _MediaPricing.estimate_image_cost_usd(generated_images=0) == 0.0
 
 
 def test_test_credentials_is_explicitly_non_billable_format_only(project_id: int) -> None:
@@ -250,7 +281,6 @@ def test_test_credentials_is_explicitly_non_billable_format_only(project_id: int
         async with httpx.AsyncClient() as client:
             integ = BytePlusArkIntegration(
                 payload=b"ark-key",
-                project_id=project_id,
                 http=client,
             )
             return await integ.test_credentials()
@@ -259,3 +289,22 @@ def test_test_credentials_is_explicitly_non_billable_format_only(project_id: int
     assert result["ok"] is True
     assert result["status"] == "format-only"
     assert result["probe_mode"] == "non_billable_format_only"
+
+
+def test_host_default_choices_and_generated_asset_projection(host_media_projection):
+    from stackos.actions.byteplus_seedream import BytePlusSeedreamImageActionConnector
+
+    result, native_data = asyncio.run(
+        host_media_projection(
+            BytePlusSeedreamImageActionConnector(),
+            provider="byteplus-seedream",
+            operation="image.generate",
+            data={"prompt": "fixture"},
+            output_subdir="byteplus-ark",
+        )
+    )
+    assert native_data["model"] == "seedream-5-0-lite-260128"
+    assert native_data["size"] == "2K"
+    assert native_data["region"] == "ap-southeast-1"
+    assert native_data["sequential_image_generation"] == "disabled"
+    assert result.metadata_json["vendor"] == "byteplus-ark"

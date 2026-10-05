@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
@@ -19,8 +20,9 @@ from graphql.language import OperationDefinitionNode
 from stackos.actions.linear import LINEAR_ACTION_SPECS
 
 PLUGIN_ROOT = Path(__file__).parents[2] / "plugins" / "linear"
-GRAPHQL_ROOT = PLUGIN_ROOT / "graphql"
-SCHEMA_ROOT = PLUGIN_ROOT / "schema"
+NATIVE_ROOT = files("stackos_connectors.connectors.linear")
+GRAPHQL_ROOT = NATIVE_ROOT / "assets" / "graphql"
+SCHEMA_ROOT = NATIVE_ROOT / "schemas"
 SCHEMA_FILE = SCHEMA_ROOT / "introspection-2026-07-23.json"
 METADATA_FILE = SCHEMA_ROOT / "introspection-2026-07-23.metadata.json"
 ROOT_POLICY_FILE = SCHEMA_ROOT / "root-policy-2026-07-23.json"
@@ -141,9 +143,18 @@ def test_linear_schema_snapshot_metadata_is_complete_and_hashed() -> None:
 
 def test_exactly_34_fixed_linear_action_documents_validate() -> None:
     assert len(ACTION_DOCUMENTS) == 34
-    actual_paths = {
-        path.relative_to(GRAPHQL_ROOT).as_posix() for path in GRAPHQL_ROOT.rglob("*.graphql")
-    }
+
+    def document_paths(directory: Any, prefix: str = "") -> set[str]:
+        paths = set()
+        for child in directory.iterdir():
+            relative = f"{prefix}{child.name}"
+            if child.is_dir():
+                paths.update(document_paths(child, relative + "/"))
+            elif child.name.endswith(".graphql"):
+                paths.add(relative)
+        return paths
+
+    actual_paths = document_paths(GRAPHQL_ROOT)
     expected_paths = {
         path for path, _root in (*ACTION_DOCUMENTS.values(), *AUTH_DOCUMENTS.values())
     }

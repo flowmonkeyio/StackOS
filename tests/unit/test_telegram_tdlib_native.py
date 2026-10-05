@@ -5,8 +5,7 @@ import json
 from collections import deque
 
 import pytest
-
-from stackos.integrations.telegram_tdlib.native import (
+from stackos_connectors.connectors.telegram.tdlib.native import (
     TelegramTdlibClient,
     TelegramTdlibNativeError,
     TelegramTdlibRequestError,
@@ -147,10 +146,9 @@ def test_request_error_drops_unrecognized_provider_text() -> None:
 
 @pytest.mark.parametrize("message", ["FLOOD_WAIT_42", "SESSION_REVOKED", "secret-value"])
 def test_request_diagnostics_only_keep_structured_safe_fields(message: str) -> None:
-    from stackos.integrations.telegram_tdlib.native import (
-        safe_request_error_details,
-        saved_authorization_rejected,
-    )
+    from stackos_connectors.connectors.telegram.tdlib.native import safe_request_error_details
+
+    from stackos.integrations.telegram_tdlib.native import saved_authorization_rejected
 
     with pytest.raises(TelegramTdlibRequestError) as caught:
         _raise_if_error({"@type": "error", "code": 401, "message": message}, phase="request")
@@ -165,7 +163,7 @@ def test_request_diagnostics_only_keep_structured_safe_fields(message: str) -> N
 
 
 def test_request_diagnostics_reject_untrusted_phase_and_name() -> None:
-    from stackos.integrations.telegram_tdlib.native import safe_request_error_details
+    from stackos_connectors.connectors.telegram.tdlib.native import safe_request_error_details
 
     details = safe_request_error_details(
         TelegramTdlibRequestError(

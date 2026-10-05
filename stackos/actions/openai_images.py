@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
+from stackos_connectors.connectors.openai_images.integration import OpenAIImagesIntegration
 
 from stackos.actions.connectors import (
     ActionConnectorRequest,
     ActionConnectorResult,
     ActionValidationIssue,
 )
+from stackos.actions.media_artifacts import execute_media_native, media_projection_failure
 from stackos.config import Settings
-from stackos.integrations.openai_images import OpenAIImagesIntegration
 from stackos.repositories.base import ValidationError
 from stackos.repositories.resources import ArtifactRepository
 
@@ -173,7 +174,7 @@ class OpenAIImagesActionConnector:
         quality = str(payload.get("quality", "medium"))
         raw_n = payload.get("n", 1)
         n = raw_n if isinstance(raw_n, int) and not isinstance(raw_n, bool) else 1
-        estimated = OpenAIImagesIntegration.estimate_image_cost_usd(
+        estimated = _MediaPricing.estimate_image_cost_usd(
             model=model,
             size=size,
             quality=quality,
@@ -189,44 +190,61 @@ class OpenAIImagesActionConnector:
         payload = request.input_json
         asset_dir = request.asset_dir or Settings().generated_assets_dir
         async with httpx.AsyncClient(timeout=120.0) as http:
-            client = OpenAIImagesIntegration(
-                payload=request.credential.secret_payload,
-                project_id=request.project_id,
-                http=http,
-                asset_dir=asset_dir,
-            )
             match request.operation:
                 case "image.edit":
                     fidelity = payload.get("input_fidelity")
-                    result = await client.edit(
-                        prompt=str(payload["prompt"]),
-                        input_image_paths=[
-                            _artifact_path(asset_dir, str(ref))
-                            for ref in payload["input_image_refs"]
-                        ],
-                        size=str(payload.get("size", "auto")),
-                        quality=str(payload.get("quality", "medium")),
-                        n=int(payload.get("n", 1)),
-                        model=str(payload.get("model", OpenAIImagesIntegration.DEFAULT_MODEL)),
-                        output_format=str(payload.get("output_format", "webp")),
-                        input_fidelity=str(fidelity) if isinstance(fidelity, str) else None,
+                    result = await execute_media_native(
+                        request,
+                        {
+                            "prompt": str(payload["prompt"]),
+                            "input_image_paths": [
+                                _artifact_path(asset_dir, str(ref))
+                                for ref in payload["input_image_refs"]
+                            ],
+                            "size": str(payload.get("size", "auto")),
+                            "quality": str(payload.get("quality", "medium")),
+                            "n": int(payload.get("n", 1)),
+                            "model": str(
+                                payload.get("model", OpenAIImagesIntegration.DEFAULT_MODEL)
+                            ),
+                            "output_format": str(payload.get("output_format", "webp")),
+                            "input_fidelity": str(fidelity) if isinstance(fidelity, str) else None,
+                        },
+                        http=http,
+                        connector=self.key,
+                        output_subdir="openai-images",
+                        qps=10.0,
+                        pricing=_host_media_cost,
                     )
                 case _:
-                    result = await client.generate(
-                        prompt=str(payload["prompt"]),
-                        size=str(payload.get("size", "1536x1024")),
-                        quality=str(payload.get("quality", "medium")),
-                        n=int(payload.get("n", 1)),
-                        model=str(payload.get("model", OpenAIImagesIntegration.DEFAULT_MODEL)),
-                        output_format=str(payload.get("output_format", "webp")),
+                    result = await execute_media_native(
+                        request,
+                        {
+                            "prompt": str(payload["prompt"]),
+                            "size": str(payload.get("size", "1536x1024")),
+                            "quality": str(payload.get("quality", "medium")),
+                            "n": int(payload.get("n", 1)),
+                            "model": str(
+                                payload.get("model", OpenAIImagesIntegration.DEFAULT_MODEL)
+                            ),
+                            "output_format": str(payload.get("output_format", "webp")),
+                        },
+                        http=http,
+                        connector=self.key,
+                        output_subdir="openai-images",
+                        qps=10.0,
+                        pricing=_host_media_cost,
                     )
-        output_json = result.data if isinstance(result.data, dict) else {"data": result.data}
-        output_json = _register_generated_image_artifacts(request, output_json)
-        return ActionConnectorResult(
-            output_json=output_json,
-            metadata_json={"vendor": "openai-images"},
-            cost_cents=_cost_usd_to_cents(result.cost_usd),
-        )
+        try:
+            output_json = result.data if isinstance(result.data, dict) else {"data": result.data}
+            output_json = _register_generated_image_artifacts(request, output_json)
+            return ActionConnectorResult(
+                output_json=output_json,
+                metadata_json={"vendor": "openai-images"},
+                cost_cents=_cost_usd_to_cents(result.cost_usd),
+            )
+        except Exception as exc:
+            raise media_projection_failure(exc, result) from None
 
 
 def _artifact_path(asset_dir: Path, artifact_ref: str) -> Path:
@@ -317,3 +335,69 @@ def _cost_usd_to_cents(cost_usd: float) -> int:
 
 
 __all__ = ["OpenAIImagesActionConnector"]
+
+
+class _MediaPricing:
+    _GPT_IMAGE_MODELS = OpenAIImagesIntegration._GPT_IMAGE_MODELS
+    _IMAGE_COSTS: ClassVar[dict[tuple[str, str, str], float]] = {
+        ("gpt-image-2", "1024x1024", "low"): 0.006,
+        ("gpt-image-2", "1024x1024", "medium"): 0.053,
+        ("gpt-image-2", "1024x1024", "high"): 0.211,
+        ("gpt-image-2", "1536x1024", "low"): 0.005,
+        ("gpt-image-2", "1536x1024", "medium"): 0.041,
+        ("gpt-image-2", "1536x1024", "high"): 0.165,
+        ("gpt-image-2", "1024x1536", "low"): 0.005,
+        ("gpt-image-2", "1024x1536", "medium"): 0.041,
+        ("gpt-image-2", "1024x1536", "high"): 0.165,
+        ("gpt-image-1.5", "1024x1024", "low"): 0.009,
+        ("gpt-image-1.5", "1024x1024", "medium"): 0.034,
+        ("gpt-image-1.5", "1024x1024", "high"): 0.133,
+        ("gpt-image-1.5", "1536x1024", "low"): 0.013,
+        ("gpt-image-1.5", "1536x1024", "medium"): 0.050,
+        ("gpt-image-1.5", "1536x1024", "high"): 0.200,
+        ("gpt-image-1.5", "1024x1536", "low"): 0.013,
+        ("gpt-image-1.5", "1024x1536", "medium"): 0.050,
+        ("gpt-image-1.5", "1024x1536", "high"): 0.200,
+        ("gpt-image-1", "1024x1024", "low"): 0.011,
+        ("gpt-image-1", "1024x1024", "medium"): 0.042,
+        ("gpt-image-1", "1024x1024", "high"): 0.167,
+        ("gpt-image-1", "1536x1024", "low"): 0.016,
+        ("gpt-image-1", "1536x1024", "medium"): 0.063,
+        ("gpt-image-1", "1536x1024", "high"): 0.250,
+        ("gpt-image-1", "1024x1536", "low"): 0.016,
+        ("gpt-image-1", "1024x1536", "medium"): 0.063,
+        ("gpt-image-1", "1024x1536", "high"): 0.250,
+        ("gpt-image-1-mini", "1024x1024", "low"): 0.005,
+        ("gpt-image-1-mini", "1024x1024", "medium"): 0.011,
+        ("gpt-image-1-mini", "1024x1024", "high"): 0.036,
+        ("gpt-image-1-mini", "1536x1024", "low"): 0.006,
+        ("gpt-image-1-mini", "1536x1024", "medium"): 0.015,
+        ("gpt-image-1-mini", "1536x1024", "high"): 0.052,
+        ("gpt-image-1-mini", "1024x1536", "low"): 0.006,
+        ("gpt-image-1-mini", "1024x1536", "medium"): 0.015,
+        ("gpt-image-1-mini", "1024x1536", "high"): 0.052,
+    }
+
+    @classmethod
+    def estimate_image_cost_usd(cls, *, model: str, size: str, quality: str, n: int = 1) -> float:
+        """Estimate output-image cost for the current StackOS-supported sizes."""
+        if model not in cls._GPT_IMAGE_MODELS:
+            return 0.04 * n
+        normalized_size = size if size != "auto" else "1024x1024"
+        normalized_quality = quality if quality != "auto" else "high"
+        per_image = cls._IMAGE_COSTS.get((model, normalized_size, normalized_quality))
+        if per_image is None:
+            model_costs = [
+                cost
+                for (cost_model, _size, cost_quality), cost in cls._IMAGE_COSTS.items()
+                if cost_model == model and cost_quality == normalized_quality
+            ]
+            per_image = max(model_costs) if model_costs else 0.04
+        return per_image * n
+
+
+def _host_media_cost(operation: str, data: dict[str, Any], output: dict[str, Any]) -> float:
+    estimated = _MediaPricing.estimate_image_cost_usd(
+        model=data["model"], size=data["size"], quality=data["quality"], n=data["n"]
+    )
+    return estimated

@@ -13,14 +13,16 @@ from typing import Any, Literal
 
 import yaml
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
-
-from stackos.integrations.aignc_contract import (
+from stackos_connectors.connectors.aignc.contract import (
     AIGNC_AUDIO_FORMATS,
     AIGNC_AUDIO_MODELS,
     AIGNC_GROUNDING_MODELS,
     AIGNC_IMAGE_MODEL,
     AIGNC_MODELS,
     AIGNC_TEXT_MODELS,
+)
+
+from stackos.integrations.aignc_contract import (
     DEFAULT_READ_TIMEOUT_SECONDS,
     MAX_AUDIO_BYTES,
     MAX_MESSAGES,

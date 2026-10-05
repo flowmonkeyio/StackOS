@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from stackos.actions.trackbooth_assets import _expand_schema_descriptor
+from stackos_connectors.connectors.trackbooth.assets import _expand_schema_descriptor
 
 
 def test_canonical_json_schema_is_authoritative_and_independent() -> None:

@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
+from stackos_connectors.errors import IntegrationDownError
+from stackos_connectors.shared.byteplus.ark import BytePlusArkIntegration
+from stackos_connectors.shared.byteplus.media import _generated_image_count
 
 from stackos.actions.connectors import (
     ActionConnectorRequest,
     ActionConnectorResult,
     ActionValidationIssue,
 )
+from stackos.actions.media_artifacts import execute_media_native, media_projection_failure
 from stackos.config import Settings
-from stackos.integrations.byteplus_ark import BytePlusArkIntegration
-from stackos.mcp.errors import IntegrationDownError
 from stackos.repositories.base import ValidationError
 from stackos.repositories.resources import ArtifactRepository
 
@@ -232,7 +234,7 @@ class BytePlusSeedreamImageActionConnector:
         ]
 
     def estimate_cost_cents(self, request: ActionConnectorRequest) -> int:
-        estimated = BytePlusArkIntegration.estimate_image_cost_usd(
+        estimated = _MediaPricing.estimate_image_cost_usd(
             model=self._model(request.input_json),
             generated_images=self._requested_output_count(request.input_json),
         )
@@ -259,44 +261,58 @@ class BytePlusSeedreamImageActionConnector:
             str(payload["output_format"]) if isinstance(payload.get("output_format"), str) else None
         )
         async with httpx.AsyncClient(timeout=180.0) as http:
-            client = BytePlusArkIntegration(
-                payload=request.credential.secret_payload,
-                project_id=request.project_id,
-                http=http,
-                asset_dir=asset_dir,
-            )
             if request.operation == "image.edit":
-                result = await client.edit_image(
-                    prompt=prompt,
-                    model=model,
-                    size=size,
-                    region=region,
-                    sequential_image_generation=sequential_image_generation,
-                    max_images=max_images,
-                    watermark=watermark,
-                    output_format=output_format,
-                    input_image_paths=[
-                        _artifact_path(asset_dir, str(ref)) for ref in payload["input_image_refs"]
-                    ],
+                result = await execute_media_native(
+                    request,
+                    {
+                        "prompt": prompt,
+                        "model": model,
+                        "size": size,
+                        "region": region,
+                        "sequential_image_generation": sequential_image_generation,
+                        "max_images": max_images,
+                        "watermark": watermark,
+                        "output_format": output_format,
+                        "input_image_paths": [
+                            _artifact_path(asset_dir, str(ref))
+                            for ref in payload["input_image_refs"]
+                        ],
+                    },
+                    http=http,
+                    connector=self.key,
+                    output_subdir="byteplus-ark",
+                    qps=1.0,
+                    pricing=_host_media_cost,
                 )
             else:
-                result = await client.generate_image(
-                    prompt=prompt,
-                    model=model,
-                    size=size,
-                    region=region,
-                    sequential_image_generation=sequential_image_generation,
-                    max_images=max_images,
-                    watermark=watermark,
-                    output_format=output_format,
+                result = await execute_media_native(
+                    request,
+                    {
+                        "prompt": prompt,
+                        "model": model,
+                        "size": size,
+                        "region": region,
+                        "sequential_image_generation": sequential_image_generation,
+                        "max_images": max_images,
+                        "watermark": watermark,
+                        "output_format": output_format,
+                    },
+                    http=http,
+                    connector=self.key,
+                    output_subdir="byteplus-ark",
+                    qps=1.0,
+                    pricing=_host_media_cost,
                 )
-        output_json = result.data if isinstance(result.data, dict) else {"data": result.data}
-        output_json = _register_generated_image_artifacts(request, output_json)
-        return ActionConnectorResult(
-            output_json=output_json,
-            metadata_json={"vendor": "byteplus-ark"},
-            cost_cents=_cost_usd_to_cents(result.cost_usd),
-        )
+        try:
+            output_json = result.data if isinstance(result.data, dict) else {"data": result.data}
+            output_json = _register_generated_image_artifacts(request, output_json)
+            return ActionConnectorResult(
+                output_json=output_json,
+                metadata_json={"vendor": "byteplus-ark"},
+                cost_cents=_cost_usd_to_cents(result.cost_usd),
+            )
+        except Exception as exc:
+            raise media_projection_failure(exc, result) from None
 
     @staticmethod
     def _model(payload: dict[str, Any]) -> str:
@@ -393,3 +409,50 @@ def _cost_usd_to_cents(cost_usd: float) -> int:
 
 
 __all__ = ["BytePlusSeedreamImageActionConnector"]
+
+
+class _MediaPricing:
+    DEFAULT_SEEDREAM_MODEL = BytePlusArkIntegration.DEFAULT_SEEDREAM_MODEL
+    _COSTS_USD: ClassVar[dict[str, float]] = {
+        "seedream-5-0-lite-260128": 0.035,
+        "seedream-4-5-251128": 0.04,
+        "seedream-4-0-250828": 0.03,
+    }
+
+    @classmethod
+    def estimate_image_cost_usd(
+        cls,
+        *,
+        model: str = DEFAULT_SEEDREAM_MODEL,
+        generated_images: int = 1,
+    ) -> float:
+        price = cls._COSTS_USD.get(model, cls._COSTS_USD[cls.DEFAULT_SEEDREAM_MODEL])
+        return max(0, generated_images) * price
+
+    def _extract_actual_cost_usd(
+        self,
+        op: str,
+        *,
+        request: Any,
+        response: Any,
+        estimated: float,
+    ) -> float:
+        del op
+        if not isinstance(response, dict):
+            return estimated
+        model = (
+            str(request.get("model") or self.DEFAULT_SEEDREAM_MODEL)
+            if isinstance(request, dict)
+            else self.DEFAULT_SEEDREAM_MODEL
+        )
+        generated = _generated_image_count(response)
+        if generated is None:
+            return estimated
+        return self.estimate_image_cost_usd(model=model, generated_images=generated)
+
+
+def _host_media_cost(operation: str, data: dict[str, Any], output: dict[str, Any]) -> float:
+    estimated = _MediaPricing.estimate_image_cost_usd(model=data["model"])
+    return _MediaPricing()._extract_actual_cost_usd(
+        operation, request=data, response=output, estimated=estimated
+    )

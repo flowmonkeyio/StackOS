@@ -13,6 +13,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from stackos_connectors.connectors.telegram.tdlib.native import (
+    CtypesTdlibJsonAbi,
+    _execute_service_request,
+)
+
 from stackos.browser.runtime import packaged_stackos_root
 
 TDLIB_RUNTIME_DIRNAME = "telegram-tdlib-runtime"
@@ -223,3 +228,22 @@ __all__ = [
     "tdlib_runtime_root",
     "verify_tdlib_runtime",
 ]
+
+
+def load_managed_tdlib(*, runtime_root: Path) -> tuple[TelegramTdlibRuntime, CtypesTdlibJsonAbi]:
+    """Verify and load one exact packaged library, including its native version."""
+    runtime = verify_tdlib_runtime(runtime_root=runtime_root)
+    abi = CtypesTdlibJsonAbi.load(runtime.library_path)
+    version = _execute_service_request(abi, {"@type": "getOption", "name": "version"})
+    if version.get("@type") != "optionValueString" or version.get("value") != runtime.tdlib_version:
+        raise TelegramTdlibRuntimeError(
+            "The managed TDLib library version doesn't match its manifest."
+        )
+    # TDLib logging is process-global. Disable its default stderr/OS stream before
+    # creating clients so phone codes, bot tokens, proxy credentials, and message
+    # payloads never enter daemon logs through the native library.
+    _execute_service_request(
+        abi,
+        {"@type": "setLogStream", "log_stream": {"@type": "logStreamEmpty"}},
+    )
+    return runtime, abi

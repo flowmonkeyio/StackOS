@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: trackbooth.agent-api-operator
     name: Trackbooth Agent API Operator
-    version: 0.1.1
+    version: 0.1.2
     description: Operates Trackbooth Agent API inventory only through StackOS manual catalog sync, generated actions, and daemon-held API-key auth.
     domain: trackbooth
     role: trackbooth-agent-api-operator
@@ -33,8 +33,6 @@ presets:
           purpose: Host-side StackOS skill for MCP, toolbox, action.run/action.execute, tracker, dependency, and evidence mechanics.
         - ref: plugins/trackbooth/plugin.yaml
           purpose: Trackbooth provider setup fields, fixed actions, manual inventory refresh config, and safe API URL contract.
-        - ref: plugins/trackbooth/agent-api/README.md
-          purpose: Copied Trackbooth Agent API source bundle summary used as a reference fixture, not the live production inventory source.
       conditional_context_refs:
         - ref: docs/integration-contracts/trackbooth.md
           purpose: Trackbooth StackOS action bridge contract, manual catalog sync flow, auth boundary, generated action behavior, and business dry-run notes.

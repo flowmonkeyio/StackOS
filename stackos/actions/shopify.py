@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from importlib import resources
-from pathlib import Path
 from typing import Any
 
 import httpx
+from stackos_connectors.connectors.shopify.integration import ShopifyIntegration
 
 from stackos.actions.connectors import (
     ActionConnectorError,
@@ -15,7 +15,6 @@ from stackos.actions.connectors import (
     ActionConnectorResult,
     ActionValidationIssue,
 )
-from stackos.actions.provider_utils import connector_error_from_integration
 from stackos.actions.shopify_payloads import (
     _clean_variables,
     _dict_value,
@@ -23,55 +22,14 @@ from stackos.actions.shopify_payloads import (
     _inventory_risk_item,
     _limit,
     _low_stock_items,
-    _required_str,
-    _shopifyql_queries,
-    _validate_action_payload,
-    _variables_for_action,
 )
 from stackos.actions.vendor_utils import (
-    credential_config_str,
-    credential_payload,
     issue,
     unknown_operation,
 )
-from stackos.artifacts import redact_secret_text, redact_secrets
-from stackos.integrations.shopify import SHOPIFY_DEFAULT_API_VERSION, ShopifyIntegration
-from stackos.mcp.errors import IntegrationDownError, RateLimitedError
 from stackos.repositories.base import ValidationError
 
 MAX_GRAPHQL_PAGES = 20
-_TAGS_ADD = """mutation TagsAdd($id: ID!, $tags: [String!]!) {
-  tagsAdd(id: $id, tags: $tags) {
-    node { id }
-    userErrors { field message }
-  }
-}"""
-
-_TAGS_REMOVE = """mutation TagsRemove($id: ID!, $tags: [String!]!) {
-  tagsRemove(id: $id, tags: $tags) {
-    node { id }
-    userErrors { field message }
-  }
-}"""
-
-_RECENT_SALES_QUERY = """query RecentSales($first: Int!, $query: String, $after: String) {
-  orders(first: $first, query: $query, after: $after) {
-    edges {
-      node {
-        lineItems(first: 250) {
-          edges {
-            node {
-              quantity
-              variant { id }
-            }
-          }
-          pageInfo { hasNextPage endCursor }
-        }
-      }
-    }
-    pageInfo { hasNextPage endCursor }
-  }
-}"""
 
 
 class ShopifyActionConnector:
@@ -79,7 +37,17 @@ class ShopifyActionConnector:
 
     key = "shopify"
 
+    def __init__(self, *, client=None, options=None) -> None:
+        self._client = client
+        self._options = options
+
     def validate(self, request: ActionConnectorRequest) -> list[ActionValidationIssue]:
+        if request.action_key not in {"low_stock_report", "inventory_risk_report"}:
+            from stackos.actions.package_bridge import PackageActionConnector
+
+            return PackageActionConnector(
+                "shopify", client=self._client, options=self._options
+            ).validate(request)
         if request.operation != "admin.graphql":
             return unknown_operation(request)
         issues: list[ActionValidationIssue] = []
@@ -103,7 +71,19 @@ class ShopifyActionConnector:
             if not add and not remove:
                 issues.append(issue("$", "provide at least one tag in add or remove", "required"))
         try:
-            _validate_action_payload(request.action_key, request.input_json)
+            if request.action_key == "inventory_risk_report":
+                _int_value(
+                    request.input_json,
+                    "days_of_stock_threshold",
+                    default=30,
+                    minimum=1,
+                    maximum=3650,
+                )
+            else:
+                _int_value(
+                    request.input_json, "threshold", default=10, minimum=0, maximum=1_000_000
+                )
+            _limit(request.input_json, default=25, maximum=100)
         except ValidationError as exc:
             issues.append(issue("$", exc.detail, "validation_error"))
         return issues
@@ -115,42 +95,62 @@ class ShopifyActionConnector:
         if request.operation != "admin.graphql":
             raise ValidationError(f"unsupported Shopify operation {request.operation!r}")
         spec = _shopify_spec(request)
-        store_domain = credential_config_str(
-            request,
-            "store_domain",
-            "shop_domain",
-            "shop",
-            label="config_json.store_domain",
-        )
-        config = request.credential.config_json if request.credential is not None else {}
-        api_version = (
-            str(config.get("api_version")).strip()
-            if isinstance(config, dict) and config.get("api_version") is not None
-            else SHOPIFY_DEFAULT_API_VERSION
-        )
-        async with httpx.AsyncClient(timeout=60.0) as http:
-            integration = ShopifyIntegration(
-                payload=credential_payload(request),
-                project_id=request.project_id,
-                http=http,
-                store_domain=store_domain,
-                api_version=api_version,
+        if request.action_key in {"low_stock_report", "inventory_risk_report"}:
+            from contextlib import nullcontext
+
+            from stackos_connectors import CallOptions, ConnectorClient
+            from stackos_connectors.catalog import load_registry
+
+            from stackos.integrations._rate_limit import get_bucket
+
+            if self._client is None:
+                self._client = ConnectorClient(
+                    registry=load_registry("connectors/shopify/catalog.json")
+                )
+            options = self._options or CallOptions()
+            limiter = (
+                options.rate_limiter
+                if options.rate_limiter is not None
+                else get_bucket(
+                    project_id=request.project_id,
+                    kind="shopify",
+                    qps=ShopifyIntegration.default_qps,
+                )
             )
-            try:
-                mode = str(spec.get("mode") or "graphql")
-                if mode == "shopifyql":
-                    return await _execute_shopifyql_action(request, integration, spec)
-                if mode == "tag_mutations":
-                    return await _execute_tag_mutations(request, integration)
-                if mode == "inventory_risk":
-                    return await _execute_inventory_risk(request, integration, spec)
-                return await _execute_graphql_action(request, integration, spec)
-            except (IntegrationDownError, RateLimitedError) as exc:
-                raise connector_error_from_integration(
-                    exc,
-                    provider="shopify",
-                    operation=request.action_key,
-                ) from exc
+            async with (
+                nullcontext(options.http)
+                if options.http is not None
+                else httpx.AsyncClient(timeout=60.0)
+            ) as http:
+                pages = _NativeShopifyPages(
+                    request,
+                    client=self._client,
+                    options=replace(options, http=http, rate_limiter=limiter),
+                )
+                try:
+                    if request.action_key == "low_stock_report":
+                        return await _execute_low_stock_report(request, pages, spec)
+                    return await _execute_inventory_risk(request, pages, spec)
+                except ActionConnectorError:
+                    raise
+                except Exception:
+                    if not pages.completed_pages:
+                        raise
+                    raise ActionConnectorError(
+                        "Shopify report computation failed after a provider read",
+                        metadata_json={
+                            "vendor": "shopify",
+                            "operation": request.action_key,
+                            "provider_executed": True,
+                            "completed_pages": pages.completed_pages,
+                            "retry_safe": True,
+                        },
+                    ) from None
+        from stackos.actions.package_bridge import PackageActionConnector
+
+        return await PackageActionConnector(
+            "shopify", client=self._client, options=self._options
+        ).execute(request)
 
 
 def _shopify_spec(
@@ -175,31 +175,12 @@ def _shopify_spec(
     return raw
 
 
-async def _execute_graphql_action(
-    request: ActionConnectorRequest,
-    integration: ShopifyIntegration,
-    spec: dict[str, Any],
-) -> ActionConnectorResult:
-    if request.action_key == "low_stock_report":
-        return await _execute_low_stock_report(request, integration, spec)
-    query = _read_shopify_asset(str(spec["graphql_file"]))
-    variables = _variables_for_action(request.action_key, request.input_json)
-    body, metadata = await _admin_graphql(
-        integration,
-        action_key=request.action_key,
-        query=query,
-        variables=variables,
-    )
-    data = _successful_graphql_data(body, action_key=request.action_key, metadata=metadata)
-    return _result(request.action_key, data=data, metadata=metadata)
-
-
 async def _execute_low_stock_report(
     request: ActionConnectorRequest,
-    integration: ShopifyIntegration,
+    integration: _NativeShopifyPages,
     spec: dict[str, Any],
 ) -> ActionConnectorResult:
-    query = _read_shopify_asset(str(spec["graphql_file"]))
+    del spec
     threshold = _int_value(
         request.input_json,
         "threshold",
@@ -215,18 +196,10 @@ async def _execute_low_stock_report(
     combined_metadata: dict[str, Any] = {}
 
     for _page in range(MAX_GRAPHQL_PAGES):
-        body, metadata = await _admin_graphql(
-            integration,
-            action_key=request.action_key,
-            query=query,
-            variables=_clean_variables({"first": 50, "after": after}),
+        data, metadata = await integration.page(
+            "list_inventory_item_availability", _clean_variables({"first": 50, "after": after})
         )
         combined_metadata.update(metadata)
-        data = _successful_graphql_data(
-            body,
-            action_key=request.action_key,
-            metadata=metadata,
-        )
         connection = data.get("inventoryItems") if isinstance(data, dict) else None
         if not isinstance(connection, dict):
             break
@@ -259,115 +232,12 @@ async def _execute_low_stock_report(
     )
 
 
-async def _execute_tag_mutations(
-    request: ActionConnectorRequest,
-    integration: ShopifyIntegration,
-) -> ActionConnectorResult:
-    payload = request.input_json
-    product_id = _required_str(payload, "id")
-    output: dict[str, Any] = {"productId": product_id}
-    combined_metadata: dict[str, Any] = {}
-    if payload.get("add"):
-        variables = {"id": product_id, "tags": list(payload["add"])}
-        body, metadata = await _admin_graphql(
-            integration,
-            action_key=request.action_key,
-            query=_TAGS_ADD,
-            variables=variables,
-        )
-        output["add"] = _successful_graphql_data(
-            body, action_key=request.action_key, metadata=metadata
-        )
-        combined_metadata.update(metadata)
-    if payload.get("remove"):
-        variables = {"id": product_id, "tags": list(payload["remove"])}
-        body, metadata = await _admin_graphql(
-            integration,
-            action_key=request.action_key,
-            query=_TAGS_REMOVE,
-            variables=variables,
-        )
-        output["remove"] = _successful_graphql_data(
-            body, action_key=request.action_key, metadata=metadata
-        )
-        combined_metadata.update(metadata)
-    return _result(request.action_key, data=output, metadata=combined_metadata)
-
-
-async def _execute_shopifyql_action(
-    request: ActionConnectorRequest,
-    integration: ShopifyIntegration,
-    spec: dict[str, Any],
-) -> ActionConnectorResult:
-    wrapper_query = _read_shopify_asset(str(spec["graphql_file"]))
-    queries = _shopifyql_queries(request.action_key, request.input_json)
-    results: list[dict[str, Any]] = []
-    combined_metadata: dict[str, Any] = {}
-    for label, query in queries:
-        body, metadata = await _admin_graphql(
-            integration,
-            action_key=request.action_key,
-            query=wrapper_query,
-            variables={"query": query},
-        )
-        data = _successful_graphql_data(body, action_key=request.action_key, metadata=metadata)
-        results.append({"name": label, "query": query, "result": _shopifyql_result(data)})
-        combined_metadata.update(metadata)
-    output: dict[str, Any] = results[0] if len(results) == 1 else {"queries": results}
-    return _result(request.action_key, data=output, metadata=combined_metadata)
-
-
-def _shopifyql_result(data: dict[str, Any]) -> dict[str, Any]:
-    result = data.get("shopifyqlQuery")
-    if not isinstance(result, dict):
-        raise ActionConnectorError(
-            "ShopifyQL query failed: missing shopifyqlQuery result",
-            provider_error={"message": "missing shopifyqlQuery"},
-        )
-    parse_errors = result.get("parseErrors")
-    if parse_errors:
-        provider_error = {"parseErrors": redact_secrets(parse_errors)}
-        raise ActionConnectorError(
-            f"ShopifyQL parse error: {_user_error_summary(parse_errors)}",
-            provider_error=provider_error,
-            output_json={
-                "status": "failed",
-                "provider_error": provider_error,
-                "parseErrors": redact_secrets(parse_errors),
-            },
-        )
-    table_data = result.get("tableData")
-    if not isinstance(table_data, dict):
-        return {"data": [], "columns": []}
-    columns = [
-        {
-            "name": col.get("name"),
-            "dataType": col.get("dataType"),
-            "displayName": col.get("displayName"),
-        }
-        for col in table_data.get("columns") or []
-        if isinstance(col, dict)
-    ]
-    rows: list[dict[str, Any]] = []
-    for row in table_data.get("rows") or []:
-        if isinstance(row, list):
-            rows.append(
-                {
-                    str(columns[idx].get("name")): row[idx] if idx < len(row) else None
-                    for idx in range(len(columns))
-                }
-            )
-        elif isinstance(row, dict):
-            rows.append(row)
-    return {"data": rows, "columns": columns}
-
-
 async def _execute_inventory_risk(
     request: ActionConnectorRequest,
-    integration: ShopifyIntegration,
+    integration: _NativeShopifyPages,
     spec: dict[str, Any],
 ) -> ActionConnectorResult:
-    inventory_query = _read_shopify_asset(str(spec["graphql_file"]))
+    del spec
     threshold = int(request.input_json.get("days_of_stock_threshold") or 30)
     limit = int(request.input_json.get("limit") or 25)
     variants: list[dict[str, Any]] = []
@@ -376,13 +246,9 @@ async def _execute_inventory_risk(
 
     for _page in range(MAX_GRAPHQL_PAGES):
         variables = {"first": 250, "after": after}
-        body, _metadata = await _admin_graphql(
-            integration,
-            action_key=request.action_key,
-            query=inventory_query,
-            variables=_clean_variables(variables),
+        data, _metadata = await integration.page(
+            "list_product_variant_inventory", _clean_variables(variables)
         )
-        data = _successful_graphql_data(body, action_key=request.action_key, metadata={})
         connection = data.get("productVariants") if isinstance(data, dict) else None
         if not isinstance(connection, dict):
             break
@@ -428,7 +294,7 @@ async def _execute_inventory_risk(
 
 
 async def _recent_sales_velocity(
-    integration: ShopifyIntegration,
+    integration: _NativeShopifyPages,
     action_key: str,
 ) -> tuple[dict[str, int], bool]:
     end = datetime.now(UTC).date()
@@ -438,13 +304,10 @@ async def _recent_sales_velocity(
     velocity: dict[str, int] = {}
     truncated = False
     for _page in range(MAX_GRAPHQL_PAGES):
-        body, _metadata = await _admin_graphql(
-            integration,
-            action_key=action_key,
-            query=_RECENT_SALES_QUERY,
-            variables=_clean_variables({"first": 250, "query": query_text, "after": after}),
+        data, _metadata = await integration.page(
+            "list_order_variant_quantities",
+            _clean_variables({"first": 250, "query": query_text, "after": after}),
         )
-        data = _successful_graphql_data(body, action_key=action_key, metadata={})
         connection = data.get("orders") if isinstance(data, dict) else None
         if not isinstance(connection, dict):
             break
@@ -473,85 +336,6 @@ async def _recent_sales_velocity(
     return velocity, truncated
 
 
-async def _admin_graphql(
-    integration: ShopifyIntegration,
-    *,
-    action_key: str,
-    query: str,
-    variables: dict[str, Any] | None,
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    result = await integration.admin_graphql(
-        query=query,
-        variables=_clean_variables(variables or {}),
-        op=f"action.{action_key}",
-    )
-    if not isinstance(result.data, dict):
-        raise ActionConnectorError(
-            "Shopify returned a non-JSON GraphQL response",
-            provider_error={"message": "non-json-response"},
-            metadata_json={"vendor": "shopify", "operation": action_key},
-        )
-    metadata = {
-        "vendor": "shopify",
-        "operation": action_key,
-        "store_domain": integration.store_domain,
-        "api_version": integration.api_version,
-    }
-    if result.metadata:
-        metadata.update(result.metadata)
-    return result.data, metadata
-
-
-def _successful_graphql_data(
-    body: dict[str, Any],
-    *,
-    action_key: str,
-    metadata: dict[str, Any],
-) -> dict[str, Any]:
-    errors = body.get("errors")
-    if errors:
-        provider_error = redact_secrets({"errors": errors})
-        raise ActionConnectorError(
-            f"Shopify GraphQL error: {_graphql_error_summary(errors)}",
-            provider_error=provider_error,
-            output_json={
-                "status": "failed",
-                "provider_error": provider_error,
-                "errors": redact_secrets(errors),
-            },
-            metadata_json=metadata,
-        )
-    data = body.get("data")
-    if not isinstance(data, dict):
-        provider_error = {"message": "missing data"}
-        raise ActionConnectorError(
-            "Shopify GraphQL response missing data object",
-            provider_error=provider_error,
-            output_json={
-                "status": "failed",
-                "provider_error": provider_error,
-                "body": redact_secrets(body),
-            },
-            metadata_json=metadata,
-        )
-    user_errors = _collect_user_errors(data)
-    if user_errors:
-        provider_error = {"userErrors": redact_secrets(user_errors)}
-        raise ActionConnectorError(
-            f"Shopify userErrors: {_user_error_summary(user_errors)}",
-            provider_error=provider_error,
-            output_json={
-                "status": "failed",
-                "provider_error": provider_error,
-                "data": data,
-                "userErrors": redact_secrets(user_errors),
-            },
-            metadata_json=metadata,
-        )
-    del action_key
-    return data
-
-
 def _result(action_key: str, *, data: Any, metadata: dict[str, Any]) -> ActionConnectorResult:
     return ActionConnectorResult(
         output_json={
@@ -563,66 +347,34 @@ def _result(action_key: str, *, data: Any, metadata: dict[str, Any]) -> ActionCo
     )
 
 
-def _read_shopify_asset(relative_path: str) -> str:
-    asset_path = Path(relative_path)
-    if (
-        asset_path.is_absolute()
-        or ".." in asset_path.parts
-        or not asset_path.parts
-        or asset_path.parts[0] != "graphql"
-    ):
-        raise ValidationError("Shopify asset path must stay under graphql/")
-    repo_path = Path(__file__).resolve().parents[2] / "plugins" / "shopify" / asset_path
-    if repo_path.is_file():
-        return repo_path.read_text(encoding="utf-8")
-    node = (
-        resources.files("stackos")
-        .joinpath("_assets")
-        .joinpath("plugins")
-        .joinpath("shopify")
-        .joinpath(relative_path)
-    )
-    if node.is_file():
-        return node.read_text(encoding="utf-8")
-    raise ValidationError(f"Shopify asset not found: {relative_path}")
-
-
-def _collect_user_errors(value: Any) -> list[Any]:
-    found: list[Any] = []
-    if isinstance(value, dict):
-        user_errors = value.get("userErrors")
-        if isinstance(user_errors, list) and user_errors:
-            found.extend(user_errors)
-        for item in value.values():
-            found.extend(_collect_user_errors(item))
-    elif isinstance(value, list):
-        for item in value:
-            found.extend(_collect_user_errors(item))
-    return found
-
-
-def _graphql_error_summary(errors: Any) -> str:
-    if isinstance(errors, list):
-        messages = [
-            str(item.get("message") or item)
-            for item in errors[:5]
-            if isinstance(item, dict) or item is not None
-        ]
-        return redact_secret_text("; ".join(messages) or "Shopify GraphQL error")
-    if isinstance(errors, dict):
-        return redact_secret_text(str(errors.get("message") or errors))
-    return redact_secret_text(str(errors))
-
-
-def _user_error_summary(errors: Any) -> str:
-    if isinstance(errors, list):
-        messages = [
-            str(item.get("message") or item)
-            for item in errors[:5]
-            if isinstance(item, dict) or item is not None
-        ]
-        return redact_secret_text("; ".join(messages) or "Shopify user error")
-    return redact_secret_text(str(errors))
-
-
 __all__ = ["ShopifyActionConnector"]
+
+
+class _NativeShopifyPages:
+    """Call named native pages inside one authorized host report action."""
+
+    def __init__(self, request: ActionConnectorRequest, *, client, options) -> None:
+        from stackos.actions.package_bridge import PackageActionConnector
+
+        self.request = request
+        self.adapter = PackageActionConnector("shopify", client=client, options=options)
+        self.completed_pages = 0
+
+    async def page(
+        self, action_key: str, data: dict[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        try:
+            result = await self.adapter.execute_native(
+                replace(
+                    self.request, action_key=action_key, operation="admin.graphql", input_json=data
+                )
+            )
+        except ActionConnectorError as exc:
+            exc.metadata_json = {**exc.metadata_json, "operation": self.request.action_key}
+            if self.completed_pages:
+                exc.metadata_json["provider_executed"] = True
+                exc.metadata_json["completed_pages"] = self.completed_pages
+            raise
+        self.completed_pages += 1
+        metadata = {**(result.metadata_json or {}), "operation": self.request.action_key}
+        return result.output_json["data"], metadata

@@ -7,11 +7,11 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session
+from stackos_connectors.connectors.sitemap.integration import fetch_sitemap_entries
 
 from stackos.api.deps import get_session
 from stackos.api.envelopes import WriteResponse, write_response
 from stackos.api.pagination import PageResponse, page_response, pagination_params
-from stackos.integrations.sitemap import fetch_sitemap_entries
 from stackos.repositories.projects import (
     IntegrationBudgetOut,
     IntegrationBudgetRepository,

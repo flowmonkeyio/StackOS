@@ -11,12 +11,9 @@ from stackos.action_availability import (
 from stackos.actions.ahrefs import AhrefsActionConnector
 from stackos.actions.aignc import AigncActionConnector
 from stackos.actions.alibaba_wan import AlibabaWanVideoActionConnector
-from stackos.actions.apollo import ApolloActionConnector
 from stackos.actions.branding import BrandingActionConnector
 from stackos.actions.byteplus_seedance import BytePlusSeedanceVideoActionConnector
 from stackos.actions.byteplus_seedream import BytePlusSeedreamImageActionConnector
-from stackos.actions.clay import ClayActionConnector
-from stackos.actions.cloudflare import CloudflareActionConnector
 from stackos.actions.connectors import (
     DEFAULT_ACTION_CONNECTORS,
     ActionConnector,
@@ -26,22 +23,12 @@ from stackos.actions.connectors import (
     ActionConnectorResult,
     ActionValidationIssue,
 )
-from stackos.actions.dataforseo import DataForSeoActionConnector
-from stackos.actions.firecrawl import FirecrawlActionConnector
-from stackos.actions.ftp import FtpActionConnector
-from stackos.actions.ghost import GhostActionConnector
-from stackos.actions.google_ads import GoogleAdsActionConnector
-from stackos.actions.google_analytics import GoogleAnalyticsActionConnector
 from stackos.actions.google_gemini_image import GoogleGeminiImageActionConnector
-from stackos.actions.google_search_console import GoogleSearchConsoleActionConnector
-from stackos.actions.google_tag_manager import GoogleTagManagerActionConnector
 from stackos.actions.google_veo import GoogleVeoVideoActionConnector
-from stackos.actions.google_workspace import GoogleWorkspaceActionConnector
 from stackos.actions.http import HttpActionConnector
 from stackos.actions.hubspot import HubSpotActionConnector
 from stackos.actions.ideogram_images import IdeogramImagesActionConnector
 from stackos.actions.imap import ImapActionConnector
-from stackos.actions.jina import JinaActionConnector
 from stackos.actions.kling_video import KlingVideoActionConnector
 from stackos.actions.linear import LinearActionConnector
 from stackos.actions.manifest import (
@@ -49,13 +36,9 @@ from stackos.actions.manifest import (
     ExecutableActionManifest,
     parse_action_manifest,
 )
-from stackos.actions.meta_ads import MetaAdsActionConnector
-from stackos.actions.microsoft_graph import MicrosoftGraphActionConnector
 from stackos.actions.mock_provider import MockProviderActionConnector
 from stackos.actions.openai_images import OpenAIImagesActionConnector
-from stackos.actions.outreach import OutreachActionConnector
-from stackos.actions.pipedrive import PipedriveActionConnector
-from stackos.actions.reddit import RedditActionConnector
+from stackos.actions.package_bridge import PackageActionConnector
 from stackos.actions.repository import (
     ActionCallAuditOut,
     ActionCallOut,
@@ -65,19 +48,12 @@ from stackos.actions.repository import (
     ActionValidationOut,
 )
 from stackos.actions.reve_images import ReveImagesActionConnector
-from stackos.actions.s3 import S3ActionConnector
-from stackos.actions.salesforce import SalesforceActionConnector
-from stackos.actions.salesloft import SalesloftActionConnector
-from stackos.actions.serper import SerperActionConnector
 from stackos.actions.shopify import ShopifyActionConnector
-from stackos.actions.sitemap import SitemapActionConnector
 from stackos.actions.slack_bot import SlackBotActionConnector
 from stackos.actions.smtp import SmtpActionConnector
 from stackos.actions.stripe import StripeActionConnector
-from stackos.actions.taboola import TaboolaActionConnector
 from stackos.actions.telegram import TelegramActionConnector
 from stackos.actions.trackbooth import TrackboothActionConnector
-from stackos.actions.wordpress import WordPressActionConnector
 from stackos.actions.xai_imagine import XAIImagineActionConnector
 
 DEFAULT_ACTION_CONNECTORS.register(OpenAIImagesActionConnector())
@@ -92,35 +68,10 @@ DEFAULT_ACTION_CONNECTORS.register(KlingVideoActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(LinearActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(BytePlusSeedreamImageActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(BytePlusSeedanceVideoActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(FirecrawlActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(FtpActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(S3ActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(CloudflareActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(JinaActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(RedditActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(SitemapActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(DataForSeoActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(SerperActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(AhrefsActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(GoogleSearchConsoleActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(GoogleAnalyticsActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(GoogleTagManagerActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(WordPressActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(GhostActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(HttpActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(HubSpotActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(SalesforceActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(ApolloActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(BrandingActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(PipedriveActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(OutreachActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(SalesloftActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(GoogleWorkspaceActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(MicrosoftGraphActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(ClayActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(MetaAdsActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(GoogleAdsActionConnector())
-DEFAULT_ACTION_CONNECTORS.register(TaboolaActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(TelegramActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(TrackboothActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(ShopifyActionConnector())
@@ -129,6 +80,33 @@ DEFAULT_ACTION_CONNECTORS.register(SmtpActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(ImapActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(StripeActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(MockProviderActionConnector())
+
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("apollo"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("clay"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("cloudflare"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("dataforseo"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("firecrawl"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("ftp"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("ghost"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("google-ads"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("google-analytics"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("google-indexing"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("google-search-console"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("google-tag-manager"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("google-workspace"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("jina"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("meta-ads"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("microsoft-365"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("outreach"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("pipedrive"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("reddit"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("aws-s3"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("salesforce"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("salesloft"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("serper"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("sitemap"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("taboola"))
+DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("wordpress"))
 
 __all__ = [
     "ACTION_MANIFEST_SCHEMA_VERSION",
@@ -150,52 +128,27 @@ __all__ = [
     "AhrefsActionConnector",
     "AigncActionConnector",
     "AlibabaWanVideoActionConnector",
-    "ApolloActionConnector",
     "BrandingActionConnector",
     "BytePlusSeedanceVideoActionConnector",
     "BytePlusSeedreamImageActionConnector",
-    "ClayActionConnector",
-    "CloudflareActionConnector",
-    "DataForSeoActionConnector",
     "ExecutableActionManifest",
-    "FirecrawlActionConnector",
-    "FtpActionConnector",
-    "GhostActionConnector",
-    "GoogleAdsActionConnector",
-    "GoogleAnalyticsActionConnector",
     "GoogleGeminiImageActionConnector",
-    "GoogleSearchConsoleActionConnector",
-    "GoogleTagManagerActionConnector",
     "GoogleVeoVideoActionConnector",
-    "GoogleWorkspaceActionConnector",
     "HttpActionConnector",
     "HubSpotActionConnector",
     "IdeogramImagesActionConnector",
     "ImapActionConnector",
-    "JinaActionConnector",
     "KlingVideoActionConnector",
     "LinearActionConnector",
-    "MetaAdsActionConnector",
-    "MicrosoftGraphActionConnector",
     "MockProviderActionConnector",
     "OpenAIImagesActionConnector",
-    "OutreachActionConnector",
-    "PipedriveActionConnector",
-    "RedditActionConnector",
     "ReveImagesActionConnector",
-    "S3ActionConnector",
-    "SalesforceActionConnector",
-    "SalesloftActionConnector",
-    "SerperActionConnector",
     "ShopifyActionConnector",
-    "SitemapActionConnector",
     "SlackBotActionConnector",
     "SmtpActionConnector",
     "StripeActionConnector",
-    "TaboolaActionConnector",
     "TelegramActionConnector",
     "TrackboothActionConnector",
-    "WordPressActionConnector",
     "XAIImagineActionConnector",
     "build_action_availability",
     "build_action_exposure",

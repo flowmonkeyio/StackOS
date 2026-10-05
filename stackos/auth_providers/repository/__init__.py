@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from stackos.integrations import integration_class_for
-
 from .repository import AuthRepository
 from .schema import (
     AccountAuthChallengeOut,
@@ -40,5 +38,4 @@ __all__ = [
     "AuthTestOut",
     "OAuthCallbackOut",
     "ResolvedCredential",
-    "integration_class_for",
 ]

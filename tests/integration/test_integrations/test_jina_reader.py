@@ -7,8 +7,7 @@ from typing import Any
 
 import httpx
 from pytest_httpx import HTTPXMock
-
-from stackos.integrations.jina_reader import JinaReaderIntegration
+from stackos_connectors.connectors.jina.integration import JinaReaderIntegration
 
 
 def test_read_returns_markdown(httpx_mock: HTTPXMock, project_id: int) -> None:
@@ -20,7 +19,7 @@ def test_read_returns_markdown(httpx_mock: HTTPXMock, project_id: int) -> None:
 
     async def go() -> Any:
         async with httpx.AsyncClient() as client:
-            integ = JinaReaderIntegration(payload=b"jina-key", project_id=project_id, http=client)
+            integ = JinaReaderIntegration(payload=b"jina-key", http=client)
             return await integ.read(url="https://example.com")
 
     result = asyncio.run(go())
@@ -37,7 +36,7 @@ def test_read_works_without_api_key(httpx_mock: HTTPXMock, project_id: int) -> N
 
     async def go() -> Any:
         async with httpx.AsyncClient() as client:
-            integ = JinaReaderIntegration(payload=b"", project_id=project_id, http=client)
+            integ = JinaReaderIntegration(payload=b"", http=client)
             return await integ.read(url="https://example.com")
 
     result = asyncio.run(go())

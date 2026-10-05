@@ -11,10 +11,10 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from pytest_httpx import HTTPXMock
 from sqlmodel import Session, select
+from stackos_connectors.errors import IntegrationDownError
 
 from stackos.auth_providers import AuthRepository
 from stackos.db.models import Credential, CredentialUsageEvent
-from stackos.mcp.errors import IntegrationDownError
 
 
 def test_account_inventory_keeps_latest_test_separate_from_connected_state(
@@ -298,6 +298,8 @@ def test_thrown_probe_failure_does_not_echo_unreviewed_provider_data(
     """Opaque provider payloads must not become summaries or arbitrary metadata."""
 
     class FailingIntegration:
+        default_qps = 1000.0
+
         def __init__(self, **kwargs: object) -> None:
             pass
 
@@ -317,7 +319,7 @@ def test_thrown_probe_failure_does_not_echo_unreviewed_provider_data(
         attach_project_id=project_id,
     ).data
     monkeypatch.setattr(
-        "stackos.auth_providers.repository.testing._integration_class_for",
+        "stackos.auth_providers.repository.testing.integration_class_for",
         lambda _: FailingIntegration,
     )
     out = asyncio.run(repo.test(project_id=project_id, credential_ref=account.credential_ref)).data

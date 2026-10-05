@@ -131,7 +131,9 @@ expose a generic text-generation action.
    attribute requests. StackOS sends those as safe attribution headers during
    setup probes and future provider calls.
 
-The auth test calls the read-only models endpoint. Do not paste model prompts
+The auth test calls the read-only models endpoint. The credits endpoint requires
+credit-management access and is excluded from this normal setup probe.
+Do not paste model prompts
 or OpenRouter keys into agent chat; a future model action must define workflow
 policy, grants, budgets, output persistence, and audit shape first.
 
@@ -222,6 +224,8 @@ The wrapper probes ``GET /wp-json/wp/v2/users/me?context=edit`` using Basic Auth
 with the application password. The publishing action posts the agent-supplied
 ``post`` object to ``POST /wp-json/wp/v2/posts`` through direct ``action.run``
 for one explicit call or run-plan-scoped ``action.execute``.
+Successful authentication at `users/me?context=edit` does not establish
+permission to create or publish posts; WordPress enforces that on the write.
 
 ---
 

@@ -11,9 +11,8 @@ from typing import Any
 import httpx
 import pytest
 from pytest_httpx import HTTPXMock
-
-from stackos.integrations.google_veo import GoogleVeoIntegration
-from stackos.mcp.errors import IntegrationDownError
+from stackos_connectors.connectors.google_veo.integration import GoogleVeoIntegration
+from stackos_connectors.errors import IntegrationDownError
 
 
 def test_generate_video_uses_long_running_operation_and_persists_video(
@@ -64,9 +63,8 @@ def test_generate_video_uses_long_running_operation_and_persists_video(
         async with httpx.AsyncClient() as client:
             integ = GoogleVeoIntegration(
                 payload=b"gemini-key",
-                project_id=project_id,
                 http=client,
-                asset_dir=tmp_path,
+                output_dir=tmp_path / "google-veo",
             )
             return await integ.generate_video(
                 prompt="cinematic product video",
@@ -74,6 +72,9 @@ def test_generate_video_uses_long_running_operation_and_persists_video(
                 aspect_ratio="16:9",
                 resolution="720p",
                 poll_interval_seconds=0,
+                model="veo-3.1-generate-preview",
+                mode="text-to-video",
+                poll_timeout_seconds=1800.0,
             )
 
     result = asyncio.run(go())
@@ -92,8 +93,8 @@ def test_generate_video_uses_long_running_operation_and_persists_video(
     assert download.headers["x-goog-api-key"] == "gemini-key"
     assert result.data["operation_name"] == "operations/veo-123"
     item = result.data["data"][0]
-    assert item["url"].startswith("/generated-assets/google-veo/google-veo-video-")
-    path = tmp_path / item["url"].removeprefix("/generated-assets/")
+    assert item["path"].startswith(str(tmp_path / "google-veo/google-veo-video-"))
+    path = Path(item["path"])
     assert path.read_bytes() == b"veo-video"
 
 
@@ -114,10 +115,16 @@ def test_generate_video_rejects_non_google_operation_url(
         async with httpx.AsyncClient() as client:
             integ = GoogleVeoIntegration(
                 payload=b"gemini-key",
-                project_id=project_id,
                 http=client,
             )
-            return await integ.generate_video(prompt="bad operation host")
+            return await integ.generate_video(
+                prompt="bad operation host",
+                model="veo-3.1-generate-preview",
+                mode="text-to-video",
+                aspect_ratio="16:9",
+                poll_interval_seconds=10.0,
+                poll_timeout_seconds=1800.0,
+            )
 
     with pytest.raises(IntegrationDownError, match="operation URL"):
         asyncio.run(go())
@@ -173,11 +180,17 @@ def test_generate_video_strips_api_key_on_cross_origin_download_redirect(
         async with httpx.AsyncClient() as client:
             integ = GoogleVeoIntegration(
                 payload=b"gemini-key",
-                project_id=project_id,
                 http=client,
-                asset_dir=tmp_path,
+                output_dir=tmp_path / "google-veo",
             )
-            await integ.generate_video(prompt="download redirect", poll_interval_seconds=0)
+            await integ.generate_video(
+                prompt="download redirect",
+                poll_interval_seconds=0,
+                model="veo-3.1-generate-preview",
+                mode="text-to-video",
+                aspect_ratio="16:9",
+                poll_timeout_seconds=1800.0,
+            )
 
     asyncio.run(go())
     requests = httpx_mock.get_requests()
@@ -232,9 +245,8 @@ def test_generate_video_sends_first_and_last_frame_inline_data(
         async with httpx.AsyncClient() as client:
             integ = GoogleVeoIntegration(
                 payload=b"gemini-key",
-                project_id=project_id,
                 http=client,
-                asset_dir=tmp_path,
+                output_dir=tmp_path / "google-veo",
             )
             await integ.generate_video(
                 prompt="interpolate frames",
@@ -242,6 +254,9 @@ def test_generate_video_sends_first_and_last_frame_inline_data(
                 input_image_path=first,
                 last_frame_path=last,
                 poll_interval_seconds=0,
+                model="veo-3.1-generate-preview",
+                aspect_ratio="16:9",
+                poll_timeout_seconds=1800.0,
             )
 
     asyncio.run(go())
@@ -279,10 +294,16 @@ def test_generate_video_raises_on_operation_error(
         async with httpx.AsyncClient() as client:
             integ = GoogleVeoIntegration(
                 payload=b"gemini-key",
-                project_id=project_id,
                 http=client,
             )
-            return await integ.generate_video(prompt="bad", poll_interval_seconds=0)
+            return await integ.generate_video(
+                prompt="bad",
+                poll_interval_seconds=0,
+                model="veo-3.1-generate-preview",
+                mode="text-to-video",
+                aspect_ratio="16:9",
+                poll_timeout_seconds=1800.0,
+            )
 
     with pytest.raises(IntegrationDownError, match="operation failed"):
         asyncio.run(go())
@@ -310,10 +331,36 @@ def test_generate_video_raises_on_completed_operation_without_video(
         async with httpx.AsyncClient() as client:
             integ = GoogleVeoIntegration(
                 payload=b"gemini-key",
-                project_id=project_id,
                 http=client,
             )
-            return await integ.generate_video(prompt="empty", poll_interval_seconds=0)
+            return await integ.generate_video(
+                prompt="empty",
+                poll_interval_seconds=0,
+                model="veo-3.1-generate-preview",
+                mode="text-to-video",
+                aspect_ratio="16:9",
+                poll_timeout_seconds=1800.0,
+            )
 
     with pytest.raises(IntegrationDownError, match="completed without generated video"):
         asyncio.run(go())
+
+
+def test_host_default_choices_and_generated_asset_projection(host_media_projection):
+    from stackos.actions.google_veo import GoogleVeoVideoActionConnector
+
+    result, native_data = asyncio.run(
+        host_media_projection(
+            GoogleVeoVideoActionConnector(),
+            provider="google-veo",
+            operation="video.generate",
+            data={"prompt": "fixture"},
+            output_subdir="google-veo",
+        )
+    )
+    assert native_data["model"] == "veo-3.1-generate-preview"
+    assert native_data["mode"] == "text-to-video"
+    assert native_data["aspect_ratio"] == "16:9"
+    assert native_data["poll_interval_seconds"] == 10.0
+    assert native_data["poll_timeout_seconds"] == 1800.0
+    assert result.metadata_json["vendor"] == "google-veo"

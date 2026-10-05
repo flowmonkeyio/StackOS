@@ -1472,8 +1472,11 @@ MCP tools such as `telegram.sendMessage` or
 
 ### Telegram Actions
 
-Action connector: `stackos/actions/telegram.py`, backed by the managed native
-runtime in `stackos/integrations/telegram_tdlib/`.
+Action connector: `stackos/actions/telegram.py`. StackOS manages Account
+authorization, TDLib installation, session generations, admission and receipt
+persistence in `stackos/integrations/telegram_tdlib/`. The connector package's
+`connectors/telegram/` directory owns native protocol requests and the TDLib
+binding, using a caller-supplied authorized session.
 
 Action refs:
 

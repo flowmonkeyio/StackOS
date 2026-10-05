@@ -10,8 +10,8 @@ is the local gate for provider-specific contract work.
 - Use official provider documentation as the primary source.
 - Link the exact documentation page for auth, object operations, rate limits,
   pagination, errors, and provider-specific constraints.
-- Do not invent executable actions. If a connector is not implemented in
-  `stackos/actions`, mark the action with an explicit deferred
+- Do not invent executable actions. If a native connector is not implemented in
+  `stackos-connectors` and wired through a StackOS action adapter, mark the action with an explicit deferred
   `execution_mode` and `deferred_reason`.
 - StackOS stores static contracts, validates explicit inputs, resolves
   daemon-held credentials, calls connectors, and records audit. Agents and
@@ -32,8 +32,9 @@ is the local gate for provider-specific contract work.
 - Templates describe setup, context requirements, action/resource contracts,
   approval gates, outputs, and failure behavior. Concrete action inputs belong
   in run plans.
-- Resources store durable records and provenance; connectors normalize external
-  responses into safe JSON and action-call audit rows.
+- Resources store durable records and provenance. The connector package returns
+  provider facts and plain files; StackOS adapters project safe refs and output,
+  and the action runtime owns action-call audit rows.
 - External provider action outputs are file-backed by default for MCP and REST
   calls through `action.run` or `action.execute`; CLI calls default to raw
   inline output unless an explicit output policy says otherwise. Connectors
@@ -101,5 +102,7 @@ async video jobs, unsupported provider features, and per-provider signoff.
 
 When implementation files need provider-specific details, add concise comments
 with links to the exact official documentation page. Do not add link dumps to
-runtime code; place larger doc ledgers in this directory and reference them from
-manifests or implementation comments only when useful.
+runtime code. Portable provider protocol notes belong beside the provider in
+the connector package's `docs/` directory. Keep StackOS auth lifecycle, refs,
+grants, artifacts, workflows and signoff guidance here; link the native notes
+instead of copying them back into host guidance.

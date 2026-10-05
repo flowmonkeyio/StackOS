@@ -8,19 +8,11 @@ Official docs verified:
 from __future__ import annotations
 
 import asyncio
-import base64
-import binascii
-import hashlib
-import imaplib
 import os
 import re
 import shutil
-from collections.abc import Mapping, Sequence
-from contextlib import suppress
-from email import policy
-from email.message import EmailMessage, Message
-from email.parser import BytesParser
-from email.utils import getaddresses
+from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -38,8 +30,8 @@ from stackos.actions.provider_utils import (
     issue,
     unknown_operation,
 )
+from stackos.artifacts import redact_secrets
 from stackos.config import Settings
-from stackos.integrations.imap import imap_ssl_context
 from stackos.repositories.base import ValidationError
 from stackos.repositories.resources import ResourceRepository
 
@@ -79,6 +71,10 @@ class ImapActionConnector:
     """Decision-free adapter for explicit IMAP mailbox calls."""
 
     key = "imap"
+
+    def __init__(self, *, client=None, options=None) -> None:
+        self._client = client
+        self._options = options
 
     def validate(self, request: ActionConnectorRequest) -> list[ActionValidationIssue]:
         payload = request.input_json
@@ -122,253 +118,172 @@ class ImapActionConnector:
         return 0
 
     async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
-        match request.operation:
-            case "mailbox.list":
-                result = await asyncio.to_thread(_list_mailboxes, request)
-                _store_mailboxes(request, result.output_json.get("mailboxes") or [])
-                return result
-            case "messages.search":
-                result = await asyncio.to_thread(_search_messages, request)
-                _store_cursor(request, result.output_json)
-                return result
-            case "message.fetch":
-                result = await asyncio.to_thread(_fetch_message, request)
-                _store_inbound_message(request, result.output_json)
-                return result
-            case "message.export":
-                return await asyncio.to_thread(_export_message, request)
-            case "message.export.cleanup":
-                return await asyncio.to_thread(_cleanup_export, request)
-            case "message.mark_seen":
-                result = await asyncio.to_thread(_mark_message, request, seen=True)
-                _store_message_status(request, result.output_json)
-                return result
-            case "message.mark_unseen":
-                result = await asyncio.to_thread(_mark_message, request, seen=False)
-                _store_message_status(request, result.output_json)
-                return result
-            case _:
-                raise ValidationError(f"unsupported IMAP operation {request.operation!r}")
-
-
-def _list_mailboxes(request: ActionConnectorRequest) -> ActionConnectorResult:
-    settings = _imap_settings(request)
-    client = _login(settings)
-    try:
-        # IMAP LIST command: https://www.rfc-editor.org/rfc/rfc9051.html#name-list-command
-        typ, data = client.list()
-        _ensure_ok(typ, "LIST")
-        mailboxes = [_parse_list_line(line) for line in data or [] if line]
-        return _connector_result(
-            request,
-            {
-                "mailboxes": mailboxes,
-                "mailbox_count": len(mailboxes),
-            },
-            settings,
+        if request.operation == "message.export.cleanup":
+            return await asyncio.to_thread(_cleanup_export, request)
+        if request.operation == "message.export":
+            return await _export_message(request, self)
+        try:
+            result = await self._native(request)
+        except ActionConnectorError as exc:
+            if (
+                request.operation.startswith("message.mark_")
+                and exc.output_json.get("store_confirmed") is False
+            ):
+                output = dict(exc.output_json)
+                mailbox = output.pop("mailbox_name", None)
+                if isinstance(mailbox, str):
+                    output["mailbox_ref"] = _mailbox_ref(mailbox)
+                requested_seen = output.pop("requested_seen", None)
+                if isinstance(requested_seen, bool):
+                    output["requested_attention_status"] = "read" if requested_seen else "unread"
+                exc.output_json = redact_secrets(output)
+                exc.metadata_json = redact_secrets(exc.metadata_json)
+            raise
+        output = result.output_json
+        mailbox = output.get("mailbox_name")
+        if mailbox:
+            output["mailbox_ref"] = _mailbox_ref(str(mailbox))
+        if request.operation == "mailbox.list":
+            for item in output.get("mailboxes", []):
+                item["mailbox_ref"] = _mailbox_ref(item["name"])
+        if request.operation == "messages.search":
+            output["message_refs"] = [f"imap-message:{mailbox}:{uid}" for uid in output["uids"]]
+        if request.operation == "message.fetch":
+            output["message_ref"] = f"imap-message:{mailbox}:{output['uid']}"
+            output["content_completeness"]["full_content_action_ref"] = (
+                "communications.imap.message.export"
+            )
+        if request.operation.startswith("message.mark_"):
+            output["attention_status"] = "read" if output.pop("seen") else "unread"
+            output.pop("mailbox_name", None)
+            result.metadata_json["acknowledgement"] = True
+        try:
+            match request.operation:
+                case "mailbox.list":
+                    _store_mailboxes(request, output.get("mailboxes") or [])
+                case "messages.search":
+                    _store_cursor(request, output)
+                case "message.fetch":
+                    _store_inbound_message(request, output)
+                case "message.mark_seen" | "message.mark_unseen":
+                    _store_message_status(request, output)
+        except Exception as exc:
+            raise ActionConnectorError(
+                "IMAP operation completed but communication state could not be stored",
+                output_json=output,
+                metadata_json={
+                    **(result.metadata_json or {}),
+                    "provider_executed": True,
+                    "retry_safe": not request.operation.startswith("message.mark_"),
+                },
+            ) from exc
+        return ActionConnectorResult(
+            output_json=redact_secrets(output), metadata_json=redact_secrets(result.metadata_json)
         )
-    finally:
-        _logout(client)
+
+    async def _native(self, request: ActionConnectorRequest, *, output_dir=None):
+        from stackos_connectors import CallOptions, ConnectorClient
+        from stackos_connectors.catalog import load_registry
+
+        from stackos.actions.package_bridge import PackageActionConnector
+
+        settings = _imap_settings(request)
+        prepared = dict(request.input_json)
+        if request.operation != "mailbox.list":
+            prepared.pop("mailbox_ref", None)
+            prepared["mailbox"] = _mailbox_name(request, settings)
+        if request.operation == "messages.search":
+            prepared.setdefault("limit", settings["search_limit"])
+        if request.operation == "message.fetch":
+            prepared.setdefault("max_body_bytes", _DEFAULT_BODY_BYTES)
+            prepared["preview_chars"] = 500
+            prepared.setdefault(
+                "fields", ["subject", "from", "to", "date", "message_id", "text_preview", "flags"]
+            )
+        if request.operation == "message.export":
+            prepared["limits"] = _export_limits()
+        if self._client is None:
+            self._client = ConnectorClient(registry=load_registry("connectors/imap/catalog.json"))
+        options = self._options or CallOptions()
+        if output_dir is not None:
+            options = replace(options, output_dir=output_dir)
+            request = replace(request, asset_dir=output_dir)
+        return await PackageActionConnector(
+            "imap", client=self._client, options=options
+        ).execute_native(replace(request, input_json=prepared))
 
 
-def _search_messages(request: ActionConnectorRequest) -> ActionConnectorResult:
+async def _export_message(
+    request: ActionConnectorRequest, connector: ImapActionConnector
+) -> ActionConnectorResult:
     settings = _imap_settings(request)
-    mailbox = _mailbox_name(request, settings)
-    limit = int(request.input_json.get("limit") or settings.get("search_limit") or _DEFAULT_LIMIT)
-    client = _login(settings)
-    try:
-        readonly_select = _select(client, mailbox, readonly=True)
-        after_uid = request.input_json.get("after_uid")
-        expected_uidvalidity = request.input_json.get("expected_uidvalidity")
-        if after_uid is not None and expected_uidvalidity is None:
-            raise ValidationError("IMAP search continuation requires expected_uidvalidity")
-        if expected_uidvalidity is not None:
-            actual_uidvalidity = _required_uidvalidity(readonly_select.get("uidvalidity"))
-            if actual_uidvalidity != str(expected_uidvalidity):
-                raise ValidationError(
-                    "IMAP UIDVALIDITY changed; restart search without after_uid and "
-                    "reconcile message identities before continuing"
-                )
-        raw_criteria = request.input_json.get("criteria") or {}
-        criteria = _search_criteria(raw_criteria)
-        lower = max(int(raw_criteria.get("uid_from") or 1), int(after_uid or 0) + 1)
-        uid_to = raw_criteria.get("uid_to")
-        upper = _MAX_UIDVALIDITY if uid_to is None or uid_to == "*" else int(uid_to)
-        if after_uid is not None and lower <= upper:
-            criteria.extend(["UID", f"{lower}:*"])
-        # IMAP UID SEARCH command:
-        # https://www.rfc-editor.org/rfc/rfc9051.html#name-uid-command
-        # n:* can return the highest UID even when it is below n. Filter the
-        # intended bounds locally, and never send a UID beyond the 32-bit range.
-        matched_uids: list[int] = []
-        if lower <= upper:
-            typ, data = client.uid("SEARCH", None, *criteria)
-            _ensure_ok(typ, "UID SEARCH")
-            matched_uids = sorted({uid for uid in _uid_list(data) if lower <= uid <= upper})
-        uids = matched_uids[:limit]
-        has_more = len(matched_uids) > len(uids)
-        result = {
-            "mailbox_ref": _mailbox_ref(mailbox),
-            "mailbox_name": mailbox,
-            "uidvalidity": readonly_select.get("uidvalidity"),
-            "criteria": criteria,
-            "uids": uids,
-            "message_refs": [f"imap-message:{mailbox}:{uid}" for uid in uids],
-            "count": len(uids),
-            "matched_count": len(matched_uids),
-            "has_more": has_more,
-            "next_after_uid": uids[-1] if has_more else None,
-            "limit": limit,
-        }
-        return _connector_result(request, result, settings)
-    finally:
-        _logout(client)
-
-
-def _fetch_message(request: ActionConnectorRequest) -> ActionConnectorResult:
-    settings = _imap_settings(request)
-    mailbox = _mailbox_name(request, settings)
-    uid = int(request.input_json["uid"])
-    fields = _requested_fields(request.input_json.get("fields"))
-    max_body_bytes = int(request.input_json.get("max_body_bytes", _DEFAULT_BODY_BYTES))
-    client = _login(settings)
-    try:
-        select_data = _select(client, mailbox, readonly=True)
-        # Use UID FETCH and BODY.PEEK so reads do not mutate \\Seen.
-        # https://www.rfc-editor.org/rfc/rfc9051.html#name-fetch-command
-        typ, data = client.uid(
-            "FETCH",
-            str(uid),
-            f"(UID FLAGS RFC822.SIZE BODY.PEEK[]<0.{max_body_bytes}>)",
-        )
-        _ensure_ok(typ, "UID FETCH")
-        raw, flags, size = _fetch_payload(data, uid=uid)
-        if raw is None:
-            raise ValidationError(f"IMAP message UID {uid} was not found")
-        if size is not None and size < len(raw):
-            raise ValidationError("IMAP fetch returned more message bytes than RFC822.SIZE")
-        bounded_raw = raw[:max_body_bytes]
-        parsed = BytesParser(policy=policy.default).parsebytes(bounded_raw)
-        message = _message_output(
-            parsed,
-            fields=fields,
-            mailbox=mailbox,
-            uid=uid,
-            uidvalidity=select_data.get("uidvalidity"),
-            flags=flags,
-            size=size,
-            max_body_bytes=max_body_bytes,
-            fetched_bytes=len(raw),
-            parsed_bytes=len(bounded_raw),
-        )
-        return _connector_result(request, message, settings)
-    finally:
-        _logout(client)
-
-
-def _export_message(request: ActionConnectorRequest) -> ActionConnectorResult:
-    """Stage one exact RFC822 message without creating StackOS evidence state."""
-    settings = _imap_settings(request)
-    client: Any | None = None
-    transfer_dir: Path | None = None
-    transfer_id: str | None = None
-    asset_root: Path | None = None
+    transfer_id = transfer_dir = asset_root = None
     try:
         _require_export_tls(settings)
-        mailbox = _mailbox_name(request, settings)
-        uid = int(request.input_json["uid"])
-        client = _login(settings)
-        selected = _select(client, mailbox, readonly=True)
-        uidvalidity = _required_uidvalidity(selected.get("uidvalidity"))
-        # RFC822.SIZE is deliberately fetched before the full BODY.PEEK literal.
-        typ, preflight = client.uid("FETCH", str(uid), "(UID RFC822.SIZE)")
-        _ensure_export_ok(typ)
-        preflight_size, _unused_literal = _export_fetch_tuple(
-            preflight,
-            uid=uid,
-            require_literal=False,
-        )
-        if preflight_size > _MAX_EXPORT_MESSAGE_BYTES:
-            raise _export_error(
-                "oversize",
-                "IMAP message exceeds the 10 MiB evidence export limit",
-                details={"size_bytes": preflight_size, "max_bytes": _MAX_EXPORT_MESSAGE_BYTES},
-            )
-
-        # BODY.PEEK and readonly SELECT ensure exporting never changes \Seen.
-        typ, fetched = client.uid("FETCH", str(uid), "(UID RFC822.SIZE BODY.PEEK[])")
-        _ensure_export_ok(typ)
-        fetched_size, raw = _export_fetch_tuple(fetched, uid=uid, require_literal=True)
-        assert raw is not None
-        if fetched_size != preflight_size or len(raw) != preflight_size:
-            raise _export_error(
-                "size_mismatch",
-                "IMAP evidence export did not return the preflighted message size",
-                details={
-                    "expected_bytes": preflight_size,
-                    "received_bytes": len(raw),
-                },
-            )
-
-        attachments = _export_attachments(raw)
-        transfer_id, transfer_dir, asset_root = _create_transfer_dir(request)
-        raw_manifest = _stage_export_file(transfer_dir, "original.eml", raw)
-        attachment_manifest = [
-            {
-                "ordinal": ordinal,
-                "path": f"attachment-{ordinal:03d}",
-                "media_type": media_type,
-                **_stage_export_file(transfer_dir, f"attachment-{ordinal:03d}", payload),
-            }
-            for ordinal, (media_type, payload) in enumerate(attachments, start=1)
-        ]
-        staging_uri = _generated_assets_uri(asset_root, transfer_dir)
         account_ref = _safe_account_ref(request)
-        return _export_result(
+        transfer_id, transfer_dir, asset_root = _create_transfer_dir(request)
+        native = await connector._native(request, output_dir=transfer_dir)
+        output = native.output_json
+        result = _export_result(
             operation="message.export",
             tls_mode=str(settings["tls_mode"]),
             body={
                 "transfer_kind": "imap-staged-evidence.v1",
                 "transfer_id": transfer_id,
-                "staging_uri": staging_uri,
+                "staging_uri": _generated_assets_uri(asset_root, transfer_dir),
                 "source_identity": {
                     "provider_key": "imap",
                     "account_ref": account_ref,
-                    "mailbox_ref": _mailbox_ref(mailbox),
-                    "uidvalidity": uidvalidity,
-                    "uid": uid,
-                    "content_sha256": raw_manifest["sha256"],
+                    "mailbox_ref": _mailbox_ref(output["mailbox_name"]),
+                    "uidvalidity": output["uidvalidity"],
+                    "uid": output["uid"],
+                    "content_sha256": output["content_sha256"],
                 },
-                "raw_mime": {"path": "original.eml", **raw_manifest},
-                "attachments": attachment_manifest,
-                "attachment_count": len(attachment_manifest),
-                "attachment_total_bytes": sum(item["bytes"] for item in attachment_manifest),
+                **{
+                    key: output[key]
+                    for key in (
+                        "raw_mime",
+                        "attachments",
+                        "attachment_count",
+                        "attachment_total_bytes",
+                    )
+                },
             },
         )
+        result.metadata_json = {**(result.metadata_json or {}), **(native.metadata_json or {})}
+        return result
     except ActionConnectorError as exc:
         _cleanup_partial_export_or_raise(
-            transfer_id=transfer_id,
-            transfer_dir=transfer_dir,
-            asset_root=asset_root,
+            transfer_id=transfer_id, transfer_dir=transfer_dir, asset_root=asset_root
         )
-        exc.metadata_json.setdefault("operation", "message.export")
-        exc.metadata_json.setdefault("tls_mode", str(settings.get("tls_mode") or "unknown"))
+        exc.metadata_json.update(
+            {
+                "evidence_transfer": True,
+                "operation": "message.export",
+                "tls_mode": str(settings.get("tls_mode") or "unknown"),
+            }
+        )
         raise
     except Exception as exc:
-        failure = _export_error(
+        _cleanup_partial_export_or_raise(
+            transfer_id=transfer_id, transfer_dir=transfer_dir, asset_root=asset_root
+        )
+        raise _export_error(
             "export_failed",
             "IMAP evidence export could not complete safely",
             details={"error_category": type(exc).__name__},
-        )
-        _cleanup_partial_export_or_raise(
-            transfer_id=transfer_id,
-            transfer_dir=transfer_dir,
-            asset_root=asset_root,
-        )
-        raise failure from exc
-    finally:
-        if client is not None:
-            _logout(client)
+        ) from exc
+
+
+def _export_limits() -> dict[str, int]:
+    return {
+        "message_bytes": _MAX_EXPORT_MESSAGE_BYTES,
+        "attachments": _MAX_EXPORT_ATTACHMENTS,
+        "attachment_bytes": _MAX_EXPORT_ATTACHMENT_BYTES,
+        "attachment_total_bytes": _MAX_EXPORT_ATTACHMENT_TOTAL_BYTES,
+        "mime_parts": _MAX_EXPORT_MIME_PARTS,
+        "mime_depth": _MAX_EXPORT_MIME_DEPTH,
+    }
 
 
 def _cleanup_export(request: ActionConnectorRequest) -> ActionConnectorResult:
@@ -409,66 +324,6 @@ def _cleanup_export(request: ActionConnectorRequest) -> ActionConnectorResult:
     )
 
 
-def _mark_message(
-    request: ActionConnectorRequest,
-    *,
-    seen: bool,
-) -> ActionConnectorResult:
-    settings = _imap_settings(request)
-    mailbox = _mailbox_name(request, settings)
-    uid = int(request.input_json["uid"])
-    expected_uidvalidity = request.input_json.get("expected_uidvalidity")
-    client = _login(settings)
-    try:
-        selected = _select(client, mailbox, readonly=False)
-        selected_uidvalidity = selected.get("uidvalidity")
-        if expected_uidvalidity is not None:
-            actual_uidvalidity = _required_uidvalidity(selected_uidvalidity)
-            if actual_uidvalidity != str(expected_uidvalidity):
-                raise ValidationError("IMAP UIDVALIDITY no longer matches the selected mailbox")
-        op = "+FLAGS" if seen else "-FLAGS"
-        # IMAP STORE command for \\Seen lifecycle:
-        # https://www.rfc-editor.org/rfc/rfc9051.html#name-store-command
-        # A tagged OK also permits a nonexistent UID (RFC 9051 section 6.4.9).
-        # Observe the exact UID's flags before claiming acknowledgement.
-        try:
-            typ, _data = client.uid("STORE", str(uid), op, "(\\Seen)")
-            _ensure_ok(typ, f"UID STORE {op}")
-            typ, data = client.uid("FETCH", str(uid), "(UID FLAGS)")
-            _ensure_ok(typ, "UID FETCH flags")
-            matches = []
-            for item in data or []:
-                if not isinstance(item, bytes):
-                    continue
-                metadata = _safe_decode(item)
-                if _single_fetch_number(metadata, r"\bUID\s+(\d+)") == uid and re.search(
-                    r"\bFLAGS\s+\([^)]*\)", metadata, re.IGNORECASE
-                ):
-                    matches.append(_parse_flags(metadata))
-            if len(matches) != 1 or (("\\Seen" in matches[0]) != seen):
-                raise ValidationError("IMAP flag readback did not confirm the requested UID state")
-        except Exception as exc:
-            raise ActionConnectorError(
-                "IMAP flag write outcome requires reconciliation",
-                provider_error={
-                    "outcome_unknown": True,
-                    "retry_safe": False,
-                    "recovery": "Re-read the exact mailbox epoch, UID and flags before "
-                    "acknowledging or retrying; retain staged evidence until confirmed.",
-                },
-            ) from exc
-        result = {
-            "mailbox_ref": _mailbox_ref(mailbox),
-            "uid": uid,
-            "uidvalidity": selected_uidvalidity,
-            "attention_status": "read" if seen else "unread",
-            "store_applied": True,
-        }
-        return _mark_result(request, result, settings)
-    finally:
-        _logout(client)
-
-
 def _imap_settings(request: ActionConnectorRequest) -> dict[str, Any]:
     config = credential_config(request)
     payload = credential_payload(request)
@@ -491,49 +346,6 @@ def _imap_settings(request: ActionConnectorRequest) -> dict[str, Any]:
         "mailbox_refs": _mailbox_ref_map(config.get("mailbox_refs")),
         "search_limit": _config_int(config, payload, "search_limit", default=_DEFAULT_LIMIT),
     }
-
-
-def _login(settings: Mapping[str, Any]) -> Any:
-    host = str(settings["host"])
-    port = int(settings["port"])
-    timeout = float(settings["timeout_s"])
-    tls_context = imap_ssl_context(settings.get("tls_ca_pem"))
-    if settings["tls_mode"] == "ssl":
-        client: Any = imaplib.IMAP4_SSL(
-            host,
-            port,
-            ssl_context=tls_context,
-            timeout=timeout,
-        )
-    else:
-        client = imaplib.IMAP4(host, port, timeout=timeout)
-    if settings["tls_mode"] == "starttls":
-        client.starttls(ssl_context=tls_context)
-    client.login(str(settings["username"]), str(settings["password"]))
-    return client
-
-
-def _logout(client: Any) -> None:
-    # LOGOUT releases selection without expunging pre-existing \\Deleted mail.
-    # CLOSE would delete unrelated messages after a writable flag action.
-    # https://www.rfc-editor.org/rfc/rfc9051.html#section-6.4.1
-    with suppress(Exception):
-        client.logout()
-
-
-def _select(client: Any, mailbox: str, *, readonly: bool) -> dict[str, Any]:
-    typ, _data = client.select(mailbox, readonly=readonly)
-    _ensure_ok(typ, "SELECT")
-    uidvalidity = None
-    try:
-        response = client.response("UIDVALIDITY")
-    except Exception:
-        response = None
-    if isinstance(response, tuple) and len(response) == 2:
-        values = response[1]
-        if isinstance(values, list) and values:
-            uidvalidity = _safe_decode(values[0])
-    return {"uidvalidity": uidvalidity}
 
 
 def _mailbox_name(
@@ -584,258 +396,6 @@ def _mailbox_ref_map(value: Any) -> dict[str, str]:
     return {}
 
 
-def _search_criteria(raw: Any) -> list[str]:
-    if raw is None:
-        return ["ALL"]
-    if not isinstance(raw, Mapping):
-        raise ValidationError("criteria must be an object")
-    criteria: list[str] = []
-    if raw.get("unseen") is True:
-        criteria.append("UNSEEN")
-    if raw.get("seen") is True:
-        criteria.append("SEEN")
-    for key in ("since", "before"):
-        value = raw.get(key)
-        if value is not None:
-            text = str(value).strip()
-            if not _DATE_RE.match(text):
-                raise ValidationError(f"criteria.{key} must use IMAP date format DD-Mon-YYYY")
-            criteria.extend([key.upper(), text])
-    for key in _TEXT_CRITERIA:
-        value = raw.get(key)
-        if value is not None:
-            text = str(value).strip()
-            if not text or _has_crlf(text):
-                raise ValidationError(f"criteria.{key} must be non-empty text without CR/LF")
-            criteria.extend([key.upper() if key != "text" else "TEXT", text])
-    uid_from = raw.get("uid_from")
-    uid_to = raw.get("uid_to")
-    if uid_from is not None or uid_to is not None:
-        start = _positive_int(uid_from or 1, "criteria.uid_from")
-        end = _positive_int(uid_to or "*", "criteria.uid_to", allow_star=True)
-        criteria.extend(["UID", f"{start}:{end}"])
-    return criteria or ["ALL"]
-
-
-def _uid_list(data: Sequence[Any] | None) -> list[int]:
-    if not data:
-        return []
-    text = " ".join(_safe_decode(item) for item in data if item)
-    out: list[int] = []
-    for part in text.split():
-        if part.isdigit():
-            out.append(int(part))
-    return out
-
-
-def _fetch_payload(
-    data: Sequence[Any] | None, *, uid: int
-) -> tuple[bytes | None, list[str], int | None]:
-    if not data:
-        return None, [], None
-    matches: list[tuple[bytes, list[str], int | None]] = []
-    for item in data:
-        if isinstance(item, tuple) and len(item) >= 2:
-            meta = _safe_decode(item[0])
-            if _single_fetch_number(meta, r"\bUID\s+(\d+)") != uid:
-                raise ValidationError("IMAP fetch returned a mismatched or missing message UID")
-            if not isinstance(item[1], bytes):
-                raise ValidationError("IMAP fetch returned an invalid message literal")
-            matches.append((item[1], sorted(set(_parse_flags(meta))), _parse_size(meta)))
-    if len(matches) > 1:
-        raise ValidationError("IMAP fetch returned ambiguous message literals")
-    return matches[0] if matches else (None, [], None)
-
-
-def _export_fetch_tuple(
-    data: Sequence[Any] | None,
-    *,
-    uid: int,
-    require_literal: bool,
-) -> tuple[int, bytes | None]:
-    """Bind UID, RFC822.SIZE, and an optional literal from one FETCH response."""
-    matches: list[tuple[int, bytes | None]] = []
-    for item in data or []:
-        literal: bytes | None
-        if isinstance(item, tuple) and len(item) >= 2:
-            metadata = _safe_decode(item[0])
-            literal = item[1] if isinstance(item[1], bytes) else None
-        elif isinstance(item, bytes):
-            # imaplib returns metadata-only FETCH responses (for example,
-            # RFC822.SIZE preflight) as a bare bytes item. Literal-bearing
-            # FETCH responses use a (metadata, literal) tuple.
-            metadata = _safe_decode(item)
-            literal = None
-        else:
-            continue
-        response_uid = _single_fetch_number(metadata, r"\bUID\s+(\d+)")
-        if response_uid is None:
-            continue
-        if response_uid != uid:
-            raise _export_error(
-                "fetch_mismatch", "IMAP evidence export returned a different message UID"
-            )
-        size = _single_fetch_number(metadata, r"\bRFC822\.SIZE\s+(\d+)")
-        if size is None:
-            raise _export_error(
-                "fetch_mismatch", "IMAP evidence export did not return a usable message size"
-            )
-        if require_literal:
-            literal_size = _single_fetch_number(metadata, r"\bBODY(?:\.PEEK)?\[\]\s+\{(\d+)\}")
-            if literal is None or literal_size is None or literal_size != len(literal):
-                raise _export_error(
-                    "fetch_truncated",
-                    "IMAP evidence export did not return a complete message literal",
-                )
-        elif literal not in {None, b""}:
-            raise _export_error(
-                "fetch_mismatch", "IMAP evidence preflight unexpectedly returned message content"
-            )
-        matches.append((size, literal))
-    if len(matches) != 1:
-        raise _export_error(
-            "fetch_ambiguous", "IMAP evidence export did not return exactly one matching message"
-        )
-    return matches[0]
-
-
-def _single_fetch_number(metadata: str, expression: str) -> int | None:
-    values = re.findall(expression, metadata, flags=re.IGNORECASE)
-    if len(values) != 1:
-        return None
-    try:
-        return int(values[0])
-    except ValueError:
-        return None
-
-
-def _required_uidvalidity(value: Any) -> str:
-    if isinstance(value, bool):
-        raise _export_error(
-            "uidvalidity_invalid", "IMAP mailbox UIDVALIDITY is unavailable or invalid"
-        )
-    text = str(value or "").strip()
-    if not text.isascii() or not text.isdigit():
-        raise _export_error(
-            "uidvalidity_invalid", "IMAP mailbox UIDVALIDITY is unavailable or invalid"
-        )
-    numeric = int(text)
-    if numeric < 1 or numeric > _MAX_UIDVALIDITY:
-        raise _export_error(
-            "uidvalidity_invalid", "IMAP mailbox UIDVALIDITY is unavailable or invalid"
-        )
-    return str(numeric)
-
-
-def _export_attachments(raw: bytes) -> list[tuple[str, bytes]]:
-    try:
-        message = BytesParser(policy=policy.default).parsebytes(raw)
-    except Exception as exc:
-        raise _export_error("malformed", "IMAP evidence MIME is malformed") from exc
-    if message.defects:
-        raise _export_error("malformed", "IMAP evidence MIME is malformed")
-
-    parts = _bounded_mime_parts(message)
-    attachments: list[tuple[str, bytes]] = []
-    attachment_paths: list[tuple[int, ...]] = []
-    attachment_total = 0
-    for part, path in parts:
-        if any(path[: len(parent)] == parent for parent in attachment_paths):
-            continue
-        if not _is_attachment(part):
-            continue
-        if len(attachments) >= _MAX_EXPORT_ATTACHMENTS:
-            raise _export_error(
-                "attachment_count_exceeded",
-                "IMAP evidence export exceeds the attachment count limit",
-                details={"max_attachments": _MAX_EXPORT_ATTACHMENTS},
-            )
-        payload = _attachment_bytes(part)
-        if len(payload) > _MAX_EXPORT_ATTACHMENT_BYTES:
-            raise _export_error(
-                "attachment_oversize",
-                "IMAP evidence export contains an attachment above the 8 MiB limit",
-                details={"max_attachment_bytes": _MAX_EXPORT_ATTACHMENT_BYTES},
-            )
-        attachment_total += len(payload)
-        if attachment_total > _MAX_EXPORT_ATTACHMENT_TOTAL_BYTES:
-            raise _export_error(
-                "attachment_total_oversize",
-                "IMAP evidence export exceeds the attachment aggregate limit",
-                details={"max_attachment_total_bytes": _MAX_EXPORT_ATTACHMENT_TOTAL_BYTES},
-            )
-        attachments.append((_safe_media_type(part.get_content_type()), payload))
-        attachment_paths.append(path)
-    return attachments
-
-
-def _bounded_mime_parts(message: Message) -> list[tuple[Message, tuple[int, ...]]]:
-    stack: list[tuple[Message, int, tuple[int, ...]]] = [(message, 1, ())]
-    collected: list[tuple[Message, tuple[int, ...]]] = []
-    part_count = 0
-    while stack:
-        part, depth, path = stack.pop()
-        part_count += 1
-        if part_count > _MAX_EXPORT_MIME_PARTS or depth > _MAX_EXPORT_MIME_DEPTH:
-            raise _export_error(
-                "mime_structure_exceeded", "IMAP evidence MIME structure exceeds limits"
-            )
-        if part.defects:
-            raise _export_error("malformed", "IMAP evidence MIME is malformed")
-        collected.append((part, path))
-        if not part.is_multipart():
-            continue
-        children = part.get_payload()
-        if not isinstance(children, list):
-            raise _export_error("malformed", "IMAP evidence MIME is malformed")
-        stack.extend(
-            (child, depth + 1, (*path, index))
-            for index, child in reversed(list(enumerate(children)))
-            if isinstance(child, Message)
-        )
-        if len(children) != sum(isinstance(child, Message) for child in children):
-            raise _export_error("malformed", "IMAP evidence MIME is malformed")
-    return collected
-
-
-def _is_attachment(part: Message) -> bool:
-    return part.get_content_disposition() == "attachment" or part.get_filename() is not None
-
-
-def _attachment_bytes(part: Message) -> bytes:
-    if part.is_multipart() or part.get_content_type().lower() == "message/rfc822":
-        return part.as_bytes(policy=policy.default)
-    encoding = str(part.get("Content-Transfer-Encoding") or "").strip().lower()
-    if encoding not in {"", "7bit", "8bit", "binary", "base64", "quoted-printable"}:
-        raise _export_error(
-            "unsupported_encoding", "IMAP evidence attachment encoding is unsupported"
-        )
-    if encoding == "base64":
-        encoded = part.get_payload()
-        if not isinstance(encoded, str):
-            raise _export_error("malformed", "IMAP evidence attachment is malformed")
-        try:
-            return base64.b64decode("".join(encoded.split()), validate=True)
-        except (ValueError, binascii.Error) as exc:
-            raise _export_error("malformed", "IMAP evidence attachment is malformed") from exc
-    payload = part.get_payload(decode=True)
-    if payload is None:
-        raw_payload = part.get_payload()
-        if raw_payload is None or raw_payload == "":
-            return b""
-        raise _export_error("malformed", "IMAP evidence attachment is malformed")
-    if not isinstance(payload, bytes):
-        raise _export_error("malformed", "IMAP evidence attachment is malformed")
-    return payload
-
-
-def _safe_media_type(value: str) -> str:
-    candidate = str(value or "").strip().lower()
-    if len(candidate) <= 127 and re.fullmatch(r"[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+", candidate):
-        return candidate
-    return "application/octet-stream"
-
-
 def _generated_assets_root(request: ActionConnectorRequest) -> Path:
     configured = request.asset_dir or Settings().generated_assets_dir
     if configured.is_symlink():
@@ -876,29 +436,6 @@ def _create_transfer_dir(request: ActionConnectorRequest) -> tuple[str, Path, Pa
             continue
         return transfer_id, transfer_dir, asset_root
     raise _export_error("staging_unavailable", "IMAP evidence staging could not be created safely")
-
-
-def _stage_export_file(directory: Path, name: str, payload: bytes) -> dict[str, Any]:
-    target = directory / name
-    _assert_contained(directory, target)
-    temporary = directory / f".{name}.{uuid4().hex}.tmp"
-    _assert_contained(directory, temporary)
-    try:
-        with temporary.open("xb") as file_obj:
-            file_obj.write(payload)
-            file_obj.flush()
-            os.fsync(file_obj.fileno())
-        os.replace(temporary, target)
-        staged = target.read_bytes()
-    except OSError as exc:
-        with suppress(FileNotFoundError):
-            temporary.unlink()
-        raise _export_error(
-            "staging_unavailable", "IMAP evidence staging could not be written safely"
-        ) from exc
-    if staged != payload:
-        raise _export_error("staging_mismatch", "IMAP evidence staging verification failed")
-    return {"bytes": len(staged), "sha256": hashlib.sha256(staged).hexdigest()}
 
 
 def _generated_assets_uri(asset_root: Path, transfer_dir: Path) -> str:
@@ -1003,11 +540,6 @@ def _require_export_tls(settings: Mapping[str, Any]) -> None:
         raise _export_error("tls_required", "IMAP evidence export requires SSL or STARTTLS")
 
 
-def _ensure_export_ok(status: Any) -> None:
-    if str(status).upper() != "OK":
-        raise _export_error("provider_rejected", "IMAP evidence export request was not accepted")
-
-
 def _export_result(
     *,
     operation: str,
@@ -1041,151 +573,6 @@ def _export_error(
         output_json=output,
         metadata_json={"vendor": "imap", "evidence_transfer": True, "category": category},
     )
-
-
-def _message_output(
-    message: Message,
-    *,
-    fields: set[str],
-    mailbox: str,
-    uid: int,
-    uidvalidity: str | None,
-    flags: list[str],
-    size: int | None,
-    max_body_bytes: int,
-    fetched_bytes: int,
-    parsed_bytes: int,
-) -> dict[str, Any]:
-    # One extra character detects local body clipping without an unbounded read.
-    text_body, html_body = _message_bodies(message, max_body_bytes=max_body_bytes + 1)
-    headers = {
-        key: str(message.get(key) or "")
-        for key in ("Subject", "From", "To", "Cc", "Date", "Message-ID")
-        if message.get(key) is not None
-    }
-    base: dict[str, Any] = {
-        "mailbox_ref": _mailbox_ref(mailbox),
-        "mailbox_name": mailbox,
-        "uid": uid,
-        "uidvalidity": uidvalidity,
-        "message_ref": f"imap-message:{mailbox}:{uid}",
-        "size_bytes": size,
-    }
-    candidates = {
-        "subject": str(message.get("Subject") or ""),
-        "from": _addresses(message.get_all("From", [])),
-        "to": _addresses(message.get_all("To", [])),
-        "cc": _addresses(message.get_all("Cc", [])),
-        "date": str(message.get("Date") or ""),
-        "message_id": str(message.get("Message-ID") or ""),
-        "text_preview": text_body[:500],
-        "html_preview": html_body[:500],
-        "body_text": text_body[:max_body_bytes],
-        "body_html": html_body[:max_body_bytes],
-        "flags": flags,
-        "headers": headers,
-    }
-    for key in fields:
-        base[key] = candidates[key]
-    field_limits = {
-        "text_preview": (text_body, 500),
-        "html_preview": (html_body, 500),
-        "body_text": (text_body, max_body_bytes),
-        "body_html": (html_body, max_body_bytes),
-    }
-    base["content_completeness"] = {
-        "scope": "parsed_fields_from_mime_prefix",
-        "fetched_bytes": fetched_bytes,
-        "parsed_bytes": parsed_bytes,
-        "max_body_bytes": max_body_bytes,
-        "raw_message_complete": parsed_bytes == size if size is not None else None,
-        "raw_message_truncated": parsed_bytes < size if size is not None else None,
-        "truncated_fields": sorted(
-            key
-            for key, (text, limit) in field_limits.items()
-            if key in fields and len(text) > limit
-        ),
-        "mime_parse_defects": any(part.defects for part in message.walk()),
-        "full_content_action_ref": "communications.imap.message.export",
-    }
-    return base
-
-
-def _requested_fields(raw: Any) -> set[str]:
-    if raw is None:
-        return {"subject", "from", "to", "date", "message_id", "text_preview", "flags"}
-    if not isinstance(raw, list) or not raw:
-        raise ValidationError("fields must be a non-empty array")
-    fields = {str(item) for item in raw}
-    invalid = fields - _MESSAGE_FIELDS
-    if invalid:
-        raise ValidationError(f"unsupported IMAP message fields: {', '.join(sorted(invalid))}")
-    return fields
-
-
-def _message_bodies(message: Message, *, max_body_bytes: int) -> tuple[str, str]:
-    text = ""
-    html = ""
-    if message.is_multipart():
-        for part in message.walk():
-            content_type = part.get_content_type()
-            disposition = str(part.get("Content-Disposition") or "").lower()
-            if "attachment" in disposition:
-                continue
-            if content_type == "text/plain" and not text:
-                text = _part_text(part, max_body_bytes=max_body_bytes)
-            elif content_type == "text/html" and not html:
-                html = _part_text(part, max_body_bytes=max_body_bytes)
-    elif isinstance(message, EmailMessage):
-        if message.get_content_type() == "text/html":
-            html = _part_text(message, max_body_bytes=max_body_bytes)
-        else:
-            text = _part_text(message, max_body_bytes=max_body_bytes)
-    else:
-        payload = message.get_payload(decode=True)
-        text = _safe_decode(payload)[:max_body_bytes] if payload else ""
-    return text[:max_body_bytes], html[:max_body_bytes]
-
-
-def _part_text(part: Message, *, max_body_bytes: int) -> str:
-    if isinstance(part, EmailMessage):
-        try:
-            content = part.get_content()
-        except Exception:
-            raw = part.get_payload(decode=True)
-            return _safe_decode(raw)[:max_body_bytes] if raw else ""
-        if isinstance(content, bytes):
-            return _safe_decode(content)[:max_body_bytes]
-        return str(content)[:max_body_bytes]
-    raw = part.get_payload(decode=True)
-    return _safe_decode(raw)[:max_body_bytes] if raw else ""
-
-
-def _addresses(values: Sequence[str]) -> list[str]:
-    return [address for _name, address in getaddresses(values) if address]
-
-
-def _parse_list_line(value: Any) -> dict[str, Any]:
-    text = _safe_decode(value)
-    flags = re.findall(r"\\[A-Za-z]+", text)
-    mailbox = text.split(' "/" ')[-1].strip().strip('"') if ' "/" ' in text else text.split()[-1]
-    return {
-        "mailbox_ref": _mailbox_ref(mailbox),
-        "name": mailbox,
-        "flags": flags,
-    }
-
-
-def _parse_flags(text: str) -> list[str]:
-    match = re.search(r"FLAGS \(([^)]*)\)", text, flags=re.IGNORECASE)
-    if match is None:
-        return []
-    return [part for part in match.group(1).split() if part]
-
-
-def _parse_size(text: str) -> int | None:
-    match = re.search(r"RFC822\.SIZE\s+(\d+)", text, flags=re.IGNORECASE)
-    return int(match.group(1)) if match else None
 
 
 def _store_mailboxes(request: ActionConnectorRequest, mailboxes: list[dict[str, Any]]) -> None:
@@ -1291,53 +678,6 @@ def _store_message_status(request: ActionConnectorRequest, result: Mapping[str, 
     )
 
 
-def _connector_result(
-    request: ActionConnectorRequest,
-    body: dict[str, Any],
-    settings: Mapping[str, Any],
-) -> ActionConnectorResult:
-    return ActionConnectorResult(
-        output_json={
-            "provider": "imap",
-            "operation": request.operation,
-            "status": "success",
-            **body,
-        },
-        metadata_json={
-            "vendor": "imap",
-            "operation": request.operation,
-            "tls_mode": settings["tls_mode"],
-        },
-    )
-
-
-def _mark_result(
-    request: ActionConnectorRequest,
-    body: dict[str, Any],
-    settings: Mapping[str, Any],
-) -> ActionConnectorResult:
-    """Return only the allowed acknowledgement projection, never IMAP STORE bytes."""
-    return ActionConnectorResult(
-        output_json={
-            "provider": "imap",
-            "operation": request.operation,
-            "status": "success",
-            **body,
-        },
-        metadata_json={
-            "vendor": "imap",
-            "operation": request.operation,
-            "tls_mode": settings["tls_mode"],
-            "acknowledgement": True,
-        },
-    )
-
-
-def _ensure_ok(status: Any, label: str) -> None:
-    if str(status).upper() != "OK":
-        raise ValidationError(f"IMAP {label} failed with status {status!r}")
-
-
 def _config_text(
     config: Mapping[str, Any],
     payload: Mapping[str, Any],
@@ -1419,6 +759,9 @@ def _optional_uidvalidity(
     payload: Mapping[str, Any],
     issues: list[ActionValidationIssue],
 ) -> None:
+    from stackos_connectors.connectors.imap.actions import _required_uidvalidity
+    from stackos_connectors.errors import ConnectorError
+
     value = payload.get("expected_uidvalidity")
     if value is None:
         return
@@ -1433,7 +776,7 @@ def _optional_uidvalidity(
         return
     try:
         _required_uidvalidity(value)
-    except ActionConnectorError:
+    except ConnectorError:
         issues.append(
             issue(
                 "$.expected_uidvalidity",

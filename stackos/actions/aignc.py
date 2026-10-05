@@ -10,20 +10,28 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from stackos_connectors.connectors.aignc.contract import (
+    AIGNC_AUDIO_MODELS,
+    AIGNC_GROUNDING_MODELS,
+    AIGNC_TEXT_MODELS,
+)
+from stackos_connectors.errors import IntegrationDownError, RateLimitedError
 
 from stackos.actions.connectors import (
     ActionConnectorRequest,
     ActionConnectorResult,
     ActionValidationIssue,
 )
-from stackos.actions.media_artifacts import artifact_path, register_generated_media_artifacts
+from stackos.actions.media_artifacts import (
+    artifact_path,
+    execute_media_native,
+    media_projection_failure,
+    register_generated_media_artifacts,
+)
+from stackos.actions.package_bridge import host_probe_error
 from stackos.actions.provider_utils import connector_error_from_integration
 from stackos.config import Settings
-from stackos.integrations.aignc import AigncIntegration
 from stackos.integrations.aignc_contract import (
-    AIGNC_AUDIO_MODELS,
-    AIGNC_GROUNDING_MODELS,
-    AIGNC_TEXT_MODELS,
     DEFAULT_READ_TIMEOUT_SECONDS,
     MAX_AUDIO_BYTES,
     MAX_MESSAGES,
@@ -32,7 +40,6 @@ from stackos.integrations.aignc_contract import (
     MAX_TEXT_LENGTH,
     MIN_READ_TIMEOUT_SECONDS,
 )
-from stackos.mcp.errors import IntegrationDownError, RateLimitedError
 from stackos.repositories.base import NotFoundError, ValidationError
 from stackos.repositories.resources import ArtifactRepository
 
@@ -170,7 +177,6 @@ class AigncActionConnector:
         if issues:
             raise ValidationError(issues[0].message)
         payload = request.input_json
-        asset_dir = request.asset_dir or Settings().generated_assets_dir
         audio = _audio_artifact(request) if request.operation == "audio.analyze" else None
         timeout = (
             httpx.Timeout(180.0)
@@ -186,38 +192,84 @@ class AigncActionConnector:
             request.progress_callback({"phase": "requesting", "operation": request.operation})
         try:
             async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as http:
-                client = AigncIntegration(
-                    payload=request.credential.secret_payload,
-                    project_id=request.project_id,
-                    http=http,
-                    asset_dir=asset_dir,
-                )
                 if request.operation == "models.list":
-                    result = await client.models()
+                    result = await execute_media_native(
+                        request,
+                        {},
+                        http=http,
+                        connector=self.key,
+                        output_subdir="aignc",
+                        qps=1.0,
+                        pricing=None,
+                        caller_limits={
+                            "max_response_bytes": 30 * 1024 * 1024,
+                            "max_image_bytes": 20 * 1024 * 1024,
+                            "max_audio_bytes": 20 * 1024 * 1024,
+                        },
+                    )
                 elif request.operation == "chat.complete":
-                    result = await client.chat_complete(
-                        model=payload["model"],
-                        messages=payload["messages"],
-                        max_tokens=payload["output_limit"],
-                        google_search=payload.get("google_search", False),
+                    result = await execute_media_native(
+                        request,
+                        {
+                            "model": payload["model"],
+                            "messages": payload["messages"],
+                            "max_tokens": payload["output_limit"],
+                            "google_search": payload.get("google_search", False),
+                        },
+                        http=http,
+                        connector=self.key,
+                        output_subdir="aignc",
+                        qps=1.0,
+                        pricing=None,
+                        caller_limits={
+                            "max_response_bytes": 30 * 1024 * 1024,
+                            "max_image_bytes": 20 * 1024 * 1024,
+                            "max_audio_bytes": 20 * 1024 * 1024,
+                        },
                     )
                 elif request.operation == "image.generate":
-                    result = await client.generate_image(
-                        prompt=payload["prompt"],
-                        max_tokens=payload.get("output_limit", 2048),
+                    result = await execute_media_native(
+                        request,
+                        {
+                            "prompt": payload["prompt"],
+                            "max_tokens": payload.get("output_limit", 2048),
+                        },
+                        http=http,
+                        connector=self.key,
+                        output_subdir="aignc",
+                        qps=1.0,
+                        pricing=None,
+                        caller_limits={
+                            "max_response_bytes": 30 * 1024 * 1024,
+                            "max_image_bytes": 20 * 1024 * 1024,
+                            "max_audio_bytes": 20 * 1024 * 1024,
+                        },
                     )
                 else:
                     assert audio is not None
-                    result = await client.analyze_audio(
-                        model=payload["model"],
-                        instruction=payload["instruction"],
-                        audio_path=audio[0],
-                        format=audio[1],
-                        max_tokens=payload["output_limit"],
+                    result = await execute_media_native(
+                        request,
+                        {
+                            "model": payload["model"],
+                            "instruction": payload["instruction"],
+                            "audio_path": audio[0],
+                            "format": audio[1],
+                            "max_tokens": payload["output_limit"],
+                        },
+                        http=http,
+                        connector=self.key,
+                        output_subdir="aignc",
+                        qps=1.0,
+                        pricing=None,
+                        caller_limits={
+                            "max_response_bytes": 30 * 1024 * 1024,
+                            "max_image_bytes": 20 * 1024 * 1024,
+                            "max_audio_bytes": 20 * 1024 * 1024,
+                        },
                     )
         except (IntegrationDownError, RateLimitedError) as exc:
             error = connector_error_from_integration(
-                exc,
+                host_probe_error(exc),
                 provider=self.key,
                 operation=request.operation,
             )
@@ -230,22 +282,27 @@ class AigncActionConnector:
                 if field in exc.data:
                     error.output_json[field] = exc.data[field]
             raise error from exc
-        output = result.data
-        if not isinstance(output, dict):
-            raise ValidationError("AIGNC returned an invalid normalized response")
-        if request.operation == "image.generate":
-            if request.progress_callback is not None:
-                request.progress_callback({"phase": "persisting", "operation": request.operation})
-            output = register_generated_media_artifacts(
-                request,
-                output,
-                kind="image",
-                provider_key=self.key,
-                source="aignc-action",
-            )
-        elif request.operation == "audio.analyze":
-            output = {**output, "audio_artifact_id": payload["audio_artifact_id"]}
-        return ActionConnectorResult(output_json=output, metadata_json={"vendor": self.key})
+        try:
+            output = result.data
+            if not isinstance(output, dict):
+                raise ValidationError("AIGNC returned an invalid normalized response")
+            if request.operation == "image.generate":
+                if request.progress_callback is not None:
+                    request.progress_callback(
+                        {"phase": "persisting", "operation": request.operation}
+                    )
+                output = register_generated_media_artifacts(
+                    request,
+                    output,
+                    kind="image",
+                    provider_key=self.key,
+                    source="aignc-action",
+                )
+            elif request.operation == "audio.analyze":
+                output = {**output, "audio_artifact_id": payload["audio_artifact_id"]}
+            return ActionConnectorResult(output_json=output, metadata_json={"vendor": self.key})
+        except Exception as exc:
+            raise media_projection_failure(exc, result) from None
 
 
 def _nonblank(value: Any, path: str, issues: list[ActionValidationIssue]) -> None:

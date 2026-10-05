@@ -64,6 +64,6 @@ complete integration evidence.
 No live Google credential, resource permission, production mailbox send, event
 creation or Ads mutation is certified by these fixtures. Existing pagination,
 quota, budget and provider-error contracts remain in
-[current connectors](current-connectors.md), [media buying](media-buying.md) and
+[connector quality](connector-quality.md), [media buying](media-buying.md) and
 [GTM outbound](gtm-prospecting-outbound.md). Service-account setup does not relax
 write approval, run grants, project attachment or exact-Account selection.

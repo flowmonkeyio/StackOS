@@ -126,13 +126,13 @@ def test_wheel_bounds_supported_mcp_major(built_wheel: Path) -> None:
     assert mcp_requirements == ["mcp<3,>=2.0"]
 
 
-def test_wheel_includes_s3_runtime_ui_asset_and_sdk_requirements(
+def test_wheel_keeps_s3_host_assets_and_uses_separate_connector_package(
     built_wheel: Path,
 ) -> None:
     names = _wheel_names(built_wheel)
 
-    assert "stackos/actions/s3.py" in names
-    assert "stackos/integrations/s3.py" in names
+    assert "stackos/integrations/s3.py" not in names
+    assert not any(name.startswith("stackos_connectors/") for name in names)
     assert "stackos/plugins/builtin_utils_s3.py" in names
     assert "stackos/ui_dist/images/integrations/s3.png" in names
 
@@ -141,3 +141,9 @@ def test_wheel_includes_s3_runtime_ui_asset_and_sdk_requirements(
         metadata = wheel.read(metadata_name).decode("utf-8")
     for dependency in ("boto3", "botocore", "s3transfer"):
         assert f"Requires-Dist: {dependency}" in metadata
+    requirements = Parser().parsestr(metadata).get_all("Requires-Dist", [])
+    connector_requirements = [
+        value for value in requirements if value.startswith("stackos-connectors")
+    ]
+    assert connector_requirements == ["stackos-connectors==0.1.0"]
+    assert all("file:" not in value and " @ " not in value for value in requirements)

@@ -28,7 +28,7 @@ def test_native_imap_account_ca_reaches_mcp_probe(
         def logout(self):
             return "BYE", []
 
-    monkeypatch.setattr("stackos.integrations.imap.imaplib.IMAP4_SSL", Probe)
+    monkeypatch.setattr("stackos_connectors.connectors.imap.integration.imaplib.IMAP4_SSL", Probe)
     created = mcp_client.test_client.post(
         "/api/v1/auth/accounts/imap",
         json={

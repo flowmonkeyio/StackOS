@@ -7,6 +7,8 @@ from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+from stackos_connectors.connectors.telegram.tdlib.native import TelegramTdlibNativeError
+from stackos_connectors.connectors.telegram.tdlib.sessions import TelegramTdlibSessionError
 
 from stackos.actions import ActionRepository
 from stackos.auth_providers import (
@@ -25,12 +27,7 @@ from stackos.auth_providers import (
 from stackos.auth_providers.repository.telegram_application import TelegramApplicationRepository
 from stackos.config import Settings
 from stackos.db.models import Credential
-from stackos.integrations.telegram_tdlib import (
-    TelegramTdlibNativeError,
-    TelegramTdlibRuntimeError,
-    TelegramTdlibServiceError,
-    TelegramTdlibSessionError,
-)
+from stackos.integrations.telegram_tdlib import TelegramTdlibRuntimeError, TelegramTdlibServiceError
 from stackos.integrations.telegram_tdlib.holds import telegram_native_auth_hold_reason
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope

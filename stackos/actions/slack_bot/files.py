@@ -10,11 +10,15 @@ from typing import Any
 
 import httpx
 
-from stackos.actions.connectors import ActionConnectorRequest, ActionConnectorResult
+from stackos.actions.connectors import (
+    ActionConnectorError,
+    ActionConnectorRequest,
+    ActionConnectorResult,
+)
+from stackos.artifacts import redact_secrets
 from stackos.config import Settings
 from stackos.repositories.base import ValidationError
 
-from .http import _slack_api, _slack_upload_bytes
 from .refs import _channel_id, _message_ref, _nested, _surface_ref, _thread_ref, _thread_ts
 from .results import _metadata
 from .storage import _store_file_upload
@@ -30,80 +34,65 @@ class _SlackUploadFile:
     size_bytes: int
 
 
-async def _upload_files(request: ActionConnectorRequest) -> ActionConnectorResult:
+async def _upload_files(request: ActionConnectorRequest, connector) -> ActionConnectorResult:
     payload = request.input_json
     channel = _channel_id(request, payload.get("channel_ref") or payload.get("surface_ref"))
-    resolved_thread_ts = _thread_ts(request, payload.get("thread_ref"))
+    thread_ts = _thread_ts(request, payload.get("thread_ref"))
     files = _file_items(request)
-    uploaded: list[dict[str, Any]] = []
-    last_upload_headers: httpx.Headers | None = None
-
-    for item in files:
-        _status, body, _headers = await _slack_api(
-            request,
-            "POST",
-            "files.getUploadURLExternal",
-            form_body={"filename": item.filename, "length": str(item.size_bytes)},
-        )
-        data = body if isinstance(body, Mapping) else {}
-        upload_url = data.get("upload_url")
-        file_id = data.get("file_id")
-        if not isinstance(upload_url, str) or not upload_url.strip():
-            raise ValidationError("Slack files.getUploadURLExternal did not return upload_url")
-        if not isinstance(file_id, str) or not file_id.strip():
-            raise ValidationError("Slack files.getUploadURLExternal did not return file_id")
-        content = item.path.read_bytes()
-        _status, _body, last_upload_headers = await _slack_upload_bytes(
-            request,
-            upload_url=upload_url,
-            content=content,
-            mime_type=item.mime_type,
-        )
-        uploaded.append(
+    prepared = {
+        "channel": channel,
+        "files": [
             {
-                "id": file_id,
-                "title": item.title,
+                "path": str(item.path),
                 "filename": item.filename,
-                "artifact_ref": item.artifact_ref,
+                "title": item.title,
                 "mime_type": item.mime_type,
-                "size_bytes": item.size_bytes,
-                "upload_status_code": _status,
             }
-        )
-    complete_payload: dict[str, Any] = {
-        "files": [{"id": item["id"], "title": item["title"]} for item in uploaded],
-        "channel_id": channel,
+            for item in files
+        ],
     }
     if _has_text(payload.get("initial_comment")):
-        complete_payload["initial_comment"] = str(payload["initial_comment"])
-    if resolved_thread_ts is not None:
-        complete_payload["thread_ts"] = resolved_thread_ts
-    status, body, headers = await _slack_api(
+        prepared["initial_comment"] = str(payload["initial_comment"])
+    if thread_ts:
+        prepared["thread_ts"] = thread_ts
+    native = await connector._native(request, prepared)
+    output = native.output_json
+    sent = output["sent_payload"]
+    for record, item in zip(sent["files"], files, strict=True):
+        record["artifact_ref"] = item.artifact_ref
+    result = _file_upload_result(
         request,
-        "POST",
-        "files.completeUploadExternal",
-        json_body=complete_payload,
+        status=output["status_code"],
+        body=output["data"],
+        headers=httpx.Headers(output["headers"]),
+        sent_payload=sent,
+        deleted_artifact_refs=[],
+        upload_headers=httpx.Headers(output["upload_headers"]),
     )
-    sent_payload = {
-        **complete_payload,
-        "channel": channel,
-        "files": uploaded,
-    }
-    _store_file_upload(request, body, sent_payload)
-    deleted_artifact_refs = (
-        _delete_uploaded_artifacts(request, files)
-        if payload.get("delete_after_upload") is True
-        else []
-    )
-    return _file_upload_result(
-        request,
-        status=status,
-        body=body,
-        headers=headers,
-        sent_payload=sent_payload,
-        deleted_artifact_refs=deleted_artifact_refs,
-        upload_headers=last_upload_headers,
-    )
+    result.metadata_json = {**(result.metadata_json or {}), **(native.metadata_json or {})}
+    result.output_json = redact_secrets(result.output_json)
+    result.metadata_json = redact_secrets(result.metadata_json)
+    try:
+        _store_file_upload(request, output["data"], sent)
+        deleted = (
+            _delete_uploaded_artifacts(request, files)
+            if payload.get("delete_after_upload") is True
+            else []
+        )
+        result.output_json.update(
+            {"deleted_artifact_refs": deleted, "local_artifact_deleted": bool(deleted)}
+        )
+    except Exception as exc:
+        raise ActionConnectorError(
+            "Slack upload completed but local state could not be finalized",
+            output_json=result.output_json,
+            metadata_json={
+                **(result.metadata_json or {}),
+                "provider_executed": True,
+                "retry_safe": False,
+            },
+        ) from exc
+    return result
 
 
 def _file_items(request: ActionConnectorRequest) -> list[_SlackUploadFile]:
@@ -153,6 +142,9 @@ def _artifact_path(request: ActionConnectorRequest, artifact_ref: str) -> Path:
     path = (root / relative).resolve()
     if root != path and root not in path.parents:
         raise ValidationError("file.artifact_ref must stay inside generated assets")
+    private_root = (root / "imap-transfers").resolve()
+    if path == private_root or private_root in path.parents:
+        raise ValidationError("file.artifact_ref cannot expose private IMAP transfer evidence")
     if not path.is_file():
         raise ValidationError("file.artifact_ref does not point to an existing file")
     return path

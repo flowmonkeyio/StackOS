@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from stackos_connectors.connectors.sitemap.integration import (
+    SitemapEntry,
+    SitemapFetchError,
+    SitemapFetchResult,
+)
 
 from stackos.api import projects as projects_module
-from stackos.integrations.sitemap import SitemapEntry, SitemapFetchError, SitemapFetchResult
 
 
 @pytest.fixture(autouse=True)

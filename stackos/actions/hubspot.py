@@ -22,6 +22,7 @@ import mimetypes
 import re
 import uuid
 from collections.abc import Mapping
+from dataclasses import replace
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -29,6 +30,8 @@ from typing import Any
 from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
 
 import httpx
+from stackos_connectors import ConnectorClient
+from stackos_connectors.catalog import load_registry
 
 from stackos.actions.connectors import (
     ActionConnectorError,
@@ -36,6 +39,7 @@ from stackos.actions.connectors import (
     ActionConnectorResult,
     ActionValidationIssue,
 )
+from stackos.actions.package_bridge import PackageActionConnector
 from stackos.actions.provider_utils import (
     bearer_headers,
     credential_config,
@@ -43,20 +47,16 @@ from stackos.actions.provider_utils import (
     int_range,
     list_field,
     optional_str,
-    q,
     required_str,
-    send_json,
     unknown_operation,
 )
-from stackos.artifacts import redact_secret_text
+from stackos.artifacts import redact_secret_text, redact_secrets
 from stackos.config import Settings
 from stackos.repositories.base import ValidationError
 from stackos.repositories.provider_refs import ProviderObjectReferenceRepository
 from stackos.repositories.resources import ArtifactRepository, ResourceRepository
 from stackos.secret_refs import redact_secret_values
 
-_BASE_URL = "https://api.hubapi.com"
-_LATEST_CRM_OBJECTS_VERSION = "2026-03"
 _CONTACT_OBJECT_TYPE_ID = "0-1"
 _CAMPAIGN_PROPERTIES = {
     "name": "hs_name",
@@ -178,15 +178,6 @@ _BULK_EXPORT_STATES = {
 }
 _DEFAULT_BULK_EXPORT_MAX_BYTES = 262_144_000
 _SAFE_EXPORT_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
-
-
-def _object_api_url(object_type: str, suffix: str = "") -> str:
-    path = f"/crm/objects/{_LATEST_CRM_OBJECTS_VERSION}/{object_type}"
-    return f"{_BASE_URL}{path}{suffix}"
-
-
-def _metadata_url(path: str) -> str:
-    return f"{_BASE_URL}{path}"
 
 
 def _ref_context(request: ActionConnectorRequest) -> tuple[ProviderObjectReferenceRepository, Any]:
@@ -1844,34 +1835,6 @@ def _validated_date(value: Any, *, field: str) -> str | None:
     return value
 
 
-def _campaign_write_body(payload: Mapping[str, Any]) -> dict[str, Any]:
-    properties: dict[str, Any] = {}
-    for input_key, provider_key in _CAMPAIGN_PROPERTIES.items():
-        if payload.get(input_key) is not None:
-            properties[provider_key] = payload[input_key]
-    for date_key in ("start_date", "end_date"):
-        if date_key in payload:
-            properties[_CAMPAIGN_PROPERTIES[date_key]] = _validated_date(
-                payload.get(date_key),
-                field=date_key,
-            )
-    status = payload.get("status")
-    if status is not None and status not in _CAMPAIGN_STATUSES:
-        raise ValidationError("HubSpot campaign status is not supported")
-    currency = payload.get("currency_code")
-    if currency is not None:
-        if not isinstance(currency, str) or len(currency) != 3 or not currency.isalpha():
-            raise ValidationError("HubSpot campaign currency_code must be a 3-letter code")
-        properties["hs_currency_code"] = currency.upper()
-    start_date = properties.get("hs_start_date")
-    end_date = properties.get("hs_end_date")
-    if start_date is not None and end_date is not None and start_date > end_date:
-        raise ValidationError("HubSpot campaign start_date must not follow end_date")
-    if not properties:
-        raise ValidationError("HubSpot campaign update requires at least one field")
-    return {"properties": properties}
-
-
 def _resolved_optional_ref(
     request: ActionConnectorRequest,
     *,
@@ -2307,11 +2270,13 @@ async def _resolved_contact_email(
         safe_ref=_required_safe_ref(request.input_json, "contact_ref"),
         expected_object_type="contact",
     )
-    _status, body, _response_headers = await send_json(
-        method="GET",
-        url=_object_api_url("contacts", f"/{q(contact.provider_object_id)}"),
-        headers=headers,
-        params={"properties": "email", "archived": "false"},
+    _status, body, _response_headers = await _native_call(
+        request,
+        "crm.contacts.get",
+        {
+            "contact_id": contact.provider_object_id,
+            **({"properties": "email", "archived": "false"}),
+        },
         redact_values=(str(contact.provider_object_id),),
     )
     properties = body.get("properties") if isinstance(body, dict) else None
@@ -2467,32 +2432,6 @@ def _event_property_value_issue(
                 code="type_error",
             )
         )
-
-
-def _marketing_event_write_body(payload: Mapping[str, Any]) -> dict[str, Any]:
-    body: dict[str, Any] = {
-        "externalAccountId": payload["external_account_key"],
-        "externalEventId": payload["external_event_key"],
-        "eventName": payload["name"],
-        "eventOrganizer": payload["organizer"],
-    }
-    for input_key, provider_key in (
-        ("event_type", "eventType"),
-        ("description", "eventDescription"),
-        ("event_url", "eventUrl"),
-        ("start_at", "startDateTime"),
-        ("end_at", "endDateTime"),
-        ("event_cancelled", "eventCancelled"),
-        ("event_completed", "eventCompleted"),
-    ):
-        if payload.get(input_key) is not None:
-            body[provider_key] = payload[input_key]
-    custom_properties = payload.get("custom_properties")
-    if isinstance(custom_properties, dict):
-        body["customProperties"] = [
-            {"name": str(name), "value": value} for name, value in sorted(custom_properties.items())
-        ]
-    return {"inputs": [body]}
 
 
 def _marketing_event_item(
@@ -4149,6 +4088,38 @@ class HubSpotActionConnector:
         return 0
 
     async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
+        receipt: dict[str, Any] = {}
+        try:
+            return await self._execute(request, receipt)
+        except ActionConnectorError as exc:
+            if receipt.get("write"):
+                details = {
+                    "provider_executed": True,
+                    "retry_safe": False,
+                    "provider_receipt": receipt.get("provider_receipt", {}),
+                }
+                exc.output_json.update(details)
+                exc.metadata_json.update(details)
+                if isinstance(exc.provider_error, dict):
+                    exc.provider_error.update(details)
+            raise
+        except Exception as exc:
+            if not receipt.get("write"):
+                raise
+            details = {
+                "reason_code": "response_normalization_failed",
+                "provider_executed": True,
+                "retry_safe": False,
+                "provider_receipt": receipt.get("provider_receipt", {}),
+            }
+            raise ActionConnectorError(
+                "HubSpot response could not be persisted",
+                provider_error=details,
+                output_json={"status": "failed", **details, "provider_error": details},
+                metadata_json={"provider_executed": True, "retry_safe": False},
+            ) from exc
+
+    async def _execute(self, request: ActionConnectorRequest, receipt) -> ActionConnectorResult:
         headers = bearer_headers(request, "access_token")
         payload = request.input_json
         match request.operation:
@@ -4162,12 +4133,12 @@ class HubSpotActionConnector:
                     )
                     if value
                 )
-                status, body, response_headers = await send_json(
-                    method="POST",
-                    url=_metadata_url("/crm/exports/2026-03/export/async"),
-                    headers=headers,
-                    json_body=request_body,
+                status, body, response_headers = await _native_call(
+                    request,
+                    "bulk.exports.create",
+                    request_body,
                     redact_values=redactions,
+                    receipt=receipt,
                 )
                 return _bulk_export_create_result(
                     request,
@@ -4179,14 +4150,15 @@ class HubSpotActionConnector:
             case "bulk.exports.status":
                 job = _bulk_export_job(request)
                 job_metadata = _bulk_export_job_metadata(job)
-                status, body, response_headers = await send_json(
-                    method="GET",
-                    url=_metadata_url(f"/crm/exports/2026-03/export/{q(job.provider_object_id)}"),
-                    headers=headers,
+                status, body, response_headers = await _native_call(
+                    request,
+                    "bulk.exports.status",
+                    {"job_id": job.provider_object_id, **({})},
                     redact_values=(
                         job.provider_object_id,
                         *tuple(job_metadata["provider_property_names"]),
                     ),
+                    receipt=receipt,
                 )
                 return _bulk_export_status_result(
                     request,
@@ -4199,17 +4171,15 @@ class HubSpotActionConnector:
             case "bulk.exports.result":
                 job = _bulk_export_job(request)
                 job_metadata = _bulk_export_job_metadata(job)
-                status, body, response_headers = await send_json(
-                    method="GET",
-                    url=_metadata_url(
-                        "/crm/exports/2026-03/export/async/tasks/"
-                        f"{q(job.provider_object_id)}/status"
-                    ),
-                    headers=headers,
+                status, body, response_headers = await _native_call(
+                    request,
+                    "bulk.exports.result",
+                    {"job_id": job.provider_object_id, **({})},
                     redact_values=(
                         job.provider_object_id,
                         *tuple(job_metadata["provider_property_names"]),
                     ),
+                    receipt=receipt,
                 )
                 return await _bulk_export_result(
                     request,
@@ -4230,10 +4200,8 @@ class HubSpotActionConnector:
                 | "sales.goal_targets.properties.list"
             ):
                 object_type = request.operation.split(".")[1]
-                status, body, response_headers = await send_json(
-                    method="GET",
-                    url=_metadata_url(f"/crm/properties/2026-03/{object_type}"),
-                    headers=headers,
+                status, body, response_headers = await _native_call(
+                    request, request.operation, {}, receipt=receipt
                 )
                 properties, lifecycle_stages = _property_metadata(
                     request,
@@ -4259,11 +4227,8 @@ class HubSpotActionConnector:
                     owner_params["after"] = str(payload["after"])
                 if isinstance(payload.get("archived"), bool):
                     owner_params["archived"] = "true" if payload["archived"] else "false"
-                status, body, response_headers = await send_json(
-                    method="GET",
-                    url=_metadata_url("/crm/owners/2026-03"),
-                    headers=headers,
-                    params=owner_params,
+                status, body, response_headers = await _native_call(
+                    request, "crm.owners.list", owner_params, receipt=receipt
                 )
                 return _safe_metadata_result(
                     operation=request.operation,
@@ -4273,10 +4238,8 @@ class HubSpotActionConnector:
                     results=_owner_metadata(request, body),
                 )
             case "crm.deals.pipelines.list":
-                status, body, response_headers = await send_json(
-                    method="GET",
-                    url=_metadata_url("/crm/pipelines/2026-03/deals"),
-                    headers=headers,
+                status, body, response_headers = await _native_call(
+                    request, "crm.deals.pipelines.list", {}, receipt=receipt
                 )
                 return _safe_metadata_result(
                     operation=request.operation,
@@ -4290,7 +4253,7 @@ class HubSpotActionConnector:
                 | "crm.contact_deal.labels.list"
                 | "crm.company_deal.labels.list"
             ):
-                relationship, from_type, to_type = {
+                relationship, _from_type, _to_type = {
                     "crm.contact_company.labels.list": (
                         "contact-company",
                         "contacts",
@@ -4307,10 +4270,8 @@ class HubSpotActionConnector:
                         "deals",
                     ),
                 }[request.operation]
-                status, body, response_headers = await send_json(
-                    method="GET",
-                    url=_metadata_url(f"/crm/associations/2026-03/{from_type}/{to_type}/labels"),
-                    headers=headers,
+                status, body, response_headers = await _native_call(
+                    request, request.operation, {}, receipt=receipt
                 )
                 return _safe_metadata_result(
                     operation=request.operation,
@@ -4337,36 +4298,32 @@ class HubSpotActionConnector:
                     _label,
                     category,
                     type_id,
-                    from_type,
-                    to_type,
-                    from_plural,
-                    to_plural,
+                    _from_type,
+                    _to_type,
+                    _from_plural,
+                    _to_plural,
                 ) = _resolved_association(request)
                 association_type = {
                     "associationCategory": category,
                     "associationTypeId": type_id,
                 }
                 if request.operation.endswith(".associate"):
-                    status, body, response_headers = await send_json(
-                        method="PUT",
-                        url=_metadata_url(
-                            "/crm/objects/2026-03/"
-                            f"{from_type}/{q(from_record.provider_object_id)}/associations/"
-                            f"{to_type}/{q(to_record.provider_object_id)}"
-                        ),
-                        headers=headers,
-                        json_body=[association_type],
+                    status, body, response_headers = await _native_call(
+                        request,
+                        request.operation,
+                        {
+                            "from_id": from_record.provider_object_id,
+                            "to_id": to_record.provider_object_id,
+                            **({"types": [association_type]}),
+                        },
+                        receipt=receipt,
                     )
                     relationship_state = "associated"
                 else:
-                    status, body, response_headers = await send_json(
-                        method="POST",
-                        url=_metadata_url(
-                            "/crm/associations/2026-03/"
-                            f"{from_plural}/{to_plural}/batch/labels/archive"
-                        ),
-                        headers=headers,
-                        json_body={
+                    status, body, response_headers = await _native_call(
+                        request,
+                        request.operation,
+                        {
                             "inputs": [
                                 {
                                     "types": [association_type],
@@ -4375,6 +4332,7 @@ class HubSpotActionConnector:
                                 }
                             ]
                         },
+                        receipt=receipt,
                     )
                     relationship_state = "label_removed"
                 return _association_result(
@@ -4387,25 +4345,27 @@ class HubSpotActionConnector:
             case "sales.line_items.associate_deal" | "sales.line_items.dissociate_deal":
                 line_item, deal = _resolved_line_item_deal(request)
                 if request.operation.endswith(".associate_deal"):
-                    status, body, response_headers = await send_json(
-                        method="PUT",
-                        url=_metadata_url(
-                            "/crm/objects/2026-03/line_items/"
-                            f"{q(line_item.provider_object_id)}/associations/default/deals/"
-                            f"{q(deal.provider_object_id)}"
-                        ),
-                        headers=headers,
+                    status, body, response_headers = await _native_call(
+                        request,
+                        "sales.line_items.associate_deal",
+                        {
+                            "line_item_id": line_item.provider_object_id,
+                            "deal_id": deal.provider_object_id,
+                            **({}),
+                        },
+                        receipt=receipt,
                     )
                     relationship_state = "associated"
                 else:
-                    status, body, response_headers = await send_json(
-                        method="DELETE",
-                        url=_metadata_url(
-                            "/crm/objects/2026-03/line_items/"
-                            f"{q(line_item.provider_object_id)}/associations/deals/"
-                            f"{q(deal.provider_object_id)}"
-                        ),
-                        headers=headers,
+                    status, body, response_headers = await _native_call(
+                        request,
+                        "sales.line_items.dissociate_deal",
+                        {
+                            "line_item_id": line_item.provider_object_id,
+                            "deal_id": deal.provider_object_id,
+                            **({}),
+                        },
+                        receipt=receipt,
                     )
                     relationship_state = "dissociated"
                 return _line_item_deal_result(
@@ -4424,17 +4384,11 @@ class HubSpotActionConnector:
                 | "sales.line_items.batch_upsert"
             ):
                 object_type = request.operation.split(".")[1]
-                status, body, response_headers = await send_json(
-                    method="POST",
-                    url=_object_api_url(object_type, "/batch/upsert"),
-                    headers=headers,
-                    json_body={
-                        "inputs": _upsert_inputs(
-                            request,
-                            object_type=object_type,
-                            payload=payload,
-                        )
-                    },
+                status, body, response_headers = await _native_call(
+                    request,
+                    request.operation,
+                    {"inputs": _upsert_inputs(request, object_type=object_type, payload=payload)},
+                    receipt=receipt,
                 )
                 return _batch_result(
                     request,
@@ -4452,11 +4406,8 @@ class HubSpotActionConnector:
                     activity_type=activity_type,
                     payload=payload,
                 )
-                status, body, response_headers = await send_json(
-                    method="POST",
-                    url=_object_api_url(activity_type),
-                    headers=headers,
-                    json_body=request_body,
+                status, body, response_headers = await _native_call(
+                    request, request.operation, request_body, receipt=receipt
                 )
                 return _activity_result(
                     request,
@@ -4476,15 +4427,11 @@ class HubSpotActionConnector:
                 | "sales.quotes.search"
             ):
                 object_type = request.operation.split(".")[1]
-                status, body, response_headers = await send_json(
-                    method="POST",
-                    url=_object_api_url(object_type, "/search"),
-                    headers=headers,
-                    json_body=_search_body(
-                        request,
-                        object_type=object_type,
-                        payload=payload,
-                    ),
+                status, body, response_headers = await _native_call(
+                    request,
+                    request.operation,
+                    _search_body(request, object_type=object_type, payload=payload),
+                    receipt=receipt,
                 )
                 return _record_result(
                     request,
@@ -4512,11 +4459,8 @@ class HubSpotActionConnector:
                     goal_params["after"] = str(after)
                 if isinstance(payload.get("archived"), bool):
                     goal_params["archived"] = "true" if payload["archived"] else "false"
-                status, body, response_headers = await send_json(
-                    method="GET",
-                    url=_object_api_url("goal_targets"),
-                    headers=headers,
-                    params=goal_params,
+                status, body, response_headers = await _native_call(
+                    request, "sales.goal_targets.list", goal_params, receipt=receipt
                 )
                 return _record_result(
                     request,
@@ -4535,11 +4479,8 @@ class HubSpotActionConnector:
                     form_list_params["archived"] = "true" if payload["archived"] else "false"
                 if isinstance(payload.get("form_types"), list):
                     form_list_params["formTypes"] = payload["form_types"]
-                status, body, response_headers = await send_json(
-                    method="GET",
-                    url=_metadata_url("/marketing/v3/forms"),
-                    headers=headers,
-                    params=form_list_params,
+                status, body, response_headers = await _native_call(
+                    request, "marketing.forms.list", form_list_params, receipt=receipt
                 )
                 return _safe_metadata_result(
                     operation=request.operation,
@@ -4555,13 +4496,11 @@ class HubSpotActionConnector:
                     form_submission_params["limit"] = payload["limit"]
                 if payload.get("after"):
                     form_submission_params["after"] = str(payload["after"])
-                status, body, response_headers = await send_json(
-                    method="GET",
-                    url=_metadata_url(
-                        f"/form-integrations/v1/submissions/forms/{q(form.provider_object_id)}"
-                    ),
-                    headers=headers,
-                    params=form_submission_params,
+                status, body, response_headers = await _native_call(
+                    request,
+                    "marketing.forms.submissions.list",
+                    {"form_id": form.provider_object_id, **(form_submission_params)},
+                    receipt=receipt,
                 )
                 return _form_submission_result(
                     request,
@@ -4582,11 +4521,8 @@ class HubSpotActionConnector:
                 ):
                     if payload.get(input_key) is not None:
                         search_body[provider_key] = payload[input_key]
-                status, body, response_headers = await send_json(
-                    method="POST",
-                    url=_metadata_url("/crm/lists/2026-03/search"),
-                    headers=headers,
-                    json_body=search_body,
+                status, body, response_headers = await _native_call(
+                    request, "marketing.segments.list", search_body, receipt=receipt
                 )
                 return _segment_search_result(
                     request,
@@ -4601,13 +4537,11 @@ class HubSpotActionConnector:
                     membership_params["limit"] = payload["limit"]
                 if payload.get("after"):
                     membership_params["after"] = str(payload["after"])
-                status, body, response_headers = await send_json(
-                    method="GET",
-                    url=_metadata_url(
-                        f"/crm/lists/2026-03/{q(segment.provider_object_id)}/memberships"
-                    ),
-                    headers=headers,
-                    params=membership_params,
+                status, body, response_headers = await _native_call(
+                    request,
+                    "marketing.segments.memberships.list",
+                    {"segment_id": segment.provider_object_id, **(membership_params)},
+                    receipt=receipt,
                 )
                 return _segment_membership_result(
                     request,
@@ -4619,14 +4553,11 @@ class HubSpotActionConnector:
             case "marketing.segments.memberships.add" | "marketing.segments.memberships.remove":
                 segment = _resolved_segment(request, require_mutable=True)
                 provider_ids, safe_by_provider_id = _resolved_contact_refs(request)
-                mutation = request.operation.rsplit(".", 1)[1]
-                status, body, response_headers = await send_json(
-                    method="PUT",
-                    url=_metadata_url(
-                        f"/crm/lists/2026-03/{q(segment.provider_object_id)}/memberships/{mutation}"
-                    ),
-                    headers=headers,
-                    json_body=provider_ids,
+                status, body, response_headers = await _native_call(
+                    request,
+                    request.operation,
+                    {"segment_id": segment.provider_object_id, **({"ids": provider_ids})},
+                    receipt=receipt,
                 )
                 return _segment_mutation_result(
                     request,
@@ -4653,11 +4584,8 @@ class HubSpotActionConnector:
                     campaign_list_params["limit"] = payload["limit"]
                 if payload.get("after"):
                     campaign_list_params["after"] = payload["after"]
-                status, body, response_headers = await send_json(
-                    method="GET",
-                    url=_metadata_url("/marketing/campaigns/2026-03"),
-                    headers=headers,
-                    params=campaign_list_params,
+                status, body, response_headers = await _native_call(
+                    request, "marketing.campaigns.list", campaign_list_params, receipt=receipt
                 )
                 return _campaign_result(
                     request,
@@ -4684,13 +4612,11 @@ class HubSpotActionConnector:
                     value = _validated_date(payload.get(key), field=key)
                     if value is not None:
                         campaign_get_params[provider_key] = value
-                status, body, response_headers = await send_json(
-                    method="GET",
-                    url=_metadata_url(
-                        f"/marketing/campaigns/2026-03/{q(campaign.provider_object_id)}"
-                    ),
-                    headers=headers,
-                    params=campaign_get_params,
+                status, body, response_headers = await _native_call(
+                    request,
+                    "marketing.campaigns.get",
+                    {"campaign_id": campaign.provider_object_id, **(campaign_get_params)},
+                    receipt=receipt,
                 )
                 return _campaign_result(
                     request,
@@ -4699,11 +4625,11 @@ class HubSpotActionConnector:
                     headers=response_headers,
                 )
             case "marketing.campaigns.create":
-                status, body, response_headers = await send_json(
-                    method="POST",
-                    url=_metadata_url("/marketing/campaigns/2026-03"),
-                    headers=headers,
-                    json_body=_campaign_write_body(payload),
+                status, body, response_headers = await _native_call(
+                    request,
+                    "marketing.campaigns.create",
+                    dict(payload),
+                    receipt=receipt,
                 )
                 return _campaign_result(
                     request,
@@ -4713,13 +4639,14 @@ class HubSpotActionConnector:
                 )
             case "marketing.campaigns.update":
                 campaign = _resolved_campaign(request)
-                status, body, response_headers = await send_json(
-                    method="PATCH",
-                    url=_metadata_url(
-                        f"/marketing/campaigns/2026-03/{q(campaign.provider_object_id)}"
-                    ),
-                    headers=headers,
-                    json_body=_campaign_write_body(payload),
+                status, body, response_headers = await _native_call(
+                    request,
+                    "marketing.campaigns.update",
+                    {
+                        **{key: value for key, value in payload.items() if key != "campaign_ref"},
+                        "campaign_id": campaign.provider_object_id,
+                    },
+                    receipt=receipt,
                 )
                 return _campaign_result(
                     request,
@@ -4743,11 +4670,8 @@ class HubSpotActionConnector:
                 ):
                     if isinstance(payload.get(input_key), bool):
                         email_list_params[provider_key] = "true" if payload[input_key] else "false"
-                status, body, response_headers = await send_json(
-                    method="GET",
-                    url=_metadata_url("/marketing/emails/2026-03"),
-                    headers=headers,
-                    params=email_list_params,
+                status, body, response_headers = await _native_call(
+                    request, "marketing.emails.list", email_list_params, receipt=receipt
                 )
                 return _email_result(
                     request,
@@ -4757,10 +4681,11 @@ class HubSpotActionConnector:
                 )
             case "marketing.emails.get":
                 email = _resolved_email(request)
-                status, body, response_headers = await send_json(
-                    method="GET",
-                    url=_metadata_url(f"/marketing/emails/2026-03/{q(email.provider_object_id)}"),
-                    headers=headers,
+                status, body, response_headers = await _native_call(
+                    request,
+                    "marketing.emails.get",
+                    {"email_id": email.provider_object_id, **({})},
+                    receipt=receipt,
                 )
                 return _email_result(
                     request,
@@ -4769,11 +4694,11 @@ class HubSpotActionConnector:
                     headers=response_headers,
                 )
             case "marketing.emails.create":
-                status, body, response_headers = await send_json(
-                    method="POST",
-                    url=_metadata_url("/marketing/emails/2026-03"),
-                    headers=headers,
-                    json_body=_email_write_body(request, create=True),
+                status, body, response_headers = await _native_call(
+                    request,
+                    "marketing.emails.create",
+                    _email_write_body(request, create=True),
+                    receipt=receipt,
                 )
                 return _email_result(
                     request,
@@ -4783,10 +4708,11 @@ class HubSpotActionConnector:
                 )
             case "marketing.emails.update":
                 email = _resolved_email(request)
-                _current_status, current, _current_headers = await send_json(
-                    method="GET",
-                    url=_metadata_url(f"/marketing/emails/2026-03/{q(email.provider_object_id)}"),
-                    headers=headers,
+                _current_status, current, _current_headers = await _native_call(
+                    request,
+                    "marketing.emails.get",
+                    {"email_id": email.provider_object_id, **({})},
+                    receipt=receipt,
                 )
                 current_state = (
                     str(current.get("state") or "").strip().upper()
@@ -4801,11 +4727,14 @@ class HubSpotActionConnector:
                     raise ValidationError(
                         "HubSpot marketing email updates require a provider-verified draft"
                     )
-                status, body, response_headers = await send_json(
-                    method="PATCH",
-                    url=_metadata_url(f"/marketing/emails/2026-03/{q(email.provider_object_id)}"),
-                    headers=headers,
-                    json_body=_email_write_body(request, create=False),
+                status, body, response_headers = await _native_call(
+                    request,
+                    "marketing.emails.update",
+                    {
+                        "email_id": email.provider_object_id,
+                        **(_email_write_body(request, create=False)),
+                    },
+                    receipt=receipt,
                 )
                 return _email_result(
                     request,
@@ -4848,16 +4777,12 @@ class HubSpotActionConnector:
                     request,
                     headers=headers,
                 )
-                status, body, response_headers = await send_json(
-                    method="POST",
-                    url=_metadata_url("/marketing/transactional/2026-03/single-email/send"),
-                    headers=headers,
-                    json_body={
+                status, body, response_headers = await _native_call(
+                    request,
+                    "transactional.single_email.send",
+                    {
                         "emailId": email_id,
-                        "message": {
-                            "to": contact_email,
-                            "sendId": payload["send_id"],
-                        },
+                        "message": {"to": contact_email, "sendId": payload["send_id"]},
                         "contactProperties": {},
                         "customProperties": custom_properties,
                     },
@@ -4866,6 +4791,7 @@ class HubSpotActionConnector:
                         str(contact.provider_object_id),
                         str(email.provider_object_id),
                     ),
+                    receipt=receipt,
                 )
                 return _transactional_email_result(
                     request,
@@ -4889,11 +4815,11 @@ class HubSpotActionConnector:
                     subscription_params["includeTranslations"] = (
                         "true" if payload["include_translations"] else "false"
                     )
-                status, body, response_headers = await send_json(
-                    method="GET",
-                    url=_metadata_url("/communication-preferences/2026-03/definitions"),
-                    headers=headers,
-                    params=subscription_params,
+                status, body, response_headers = await _native_call(
+                    request,
+                    "marketing.subscription_types.list",
+                    subscription_params,
+                    receipt=receipt,
                 )
                 return _safe_metadata_result(
                     operation=request.operation,
@@ -4907,14 +4833,12 @@ class HubSpotActionConnector:
                     request,
                     headers=headers,
                 )
-                status, body, response_headers = await send_json(
-                    method="GET",
-                    url=_metadata_url(
-                        f"/communication-preferences/2026-03/statuses/{q(contact_email)}"
-                    ),
-                    headers=headers,
-                    params={"channel": "EMAIL"},
+                status, body, response_headers = await _native_call(
+                    request,
+                    "marketing.contact_preferences.get",
+                    {"email": contact_email, **({"channel": "EMAIL"})},
                     redact_values=(contact_email,),
+                    receipt=receipt,
                 )
                 return _preference_result(
                     request,
@@ -4951,20 +4875,23 @@ class HubSpotActionConnector:
                     raise ValidationError(
                         "HubSpot subscription ref does not contain a numeric id"
                     ) from exc
-                status, body, response_headers = await send_json(
-                    method="POST",
-                    url=_metadata_url(
-                        f"/communication-preferences/2026-03/statuses/{q(contact_email)}"
-                    ),
-                    headers=headers,
-                    json_body={
-                        "subscriptionId": subscription_id,
-                        "statusState": status_state,
-                        "legalBasis": payload["legal_basis"],
-                        "legalBasisExplanation": payload["legal_basis_explanation"],
-                        "channel": "EMAIL",
+                status, body, response_headers = await _native_call(
+                    request,
+                    "marketing.contact_preferences.update",
+                    {
+                        "email": contact_email,
+                        **(
+                            {
+                                "subscriptionId": subscription_id,
+                                "statusState": status_state,
+                                "legalBasis": payload["legal_basis"],
+                                "legalBasisExplanation": payload["legal_basis_explanation"],
+                                "channel": "EMAIL",
+                            }
+                        ),
                     },
                     redact_values=(contact_email,),
+                    receipt=receipt,
                 )
                 return _preference_result(
                     request,
@@ -4981,11 +4908,8 @@ class HubSpotActionConnector:
                     marketing_event_params["after"] = payload["after"]
                 if isinstance(payload.get("limit"), int):
                     marketing_event_params["limit"] = payload["limit"]
-                status, body, response_headers = await send_json(
-                    method="GET",
-                    url=_metadata_url("/marketing/marketing-events/2026-03"),
-                    headers=headers,
-                    params=marketing_event_params,
+                status, body, response_headers = await _native_call(
+                    request, "marketing.events.list", marketing_event_params, receipt=receipt
                 )
                 return _marketing_event_result(
                     request,
@@ -4999,12 +4923,12 @@ class HubSpotActionConnector:
                     for key in ("external_account_key", "external_event_key")
                     if payload.get(key)
                 )
-                status, body, response_headers = await send_json(
-                    method="POST",
-                    url=_metadata_url("/marketing/marketing-events/2026-03/events/upsert"),
-                    headers=headers,
-                    json_body=_marketing_event_write_body(payload),
+                status, body, response_headers = await _native_call(
+                    request,
+                    "marketing.events.upsert",
+                    dict(payload),
                     redact_values=dynamic_redactions,
+                    receipt=receipt,
                 )
                 return _marketing_event_result(
                     request,
@@ -5025,11 +4949,11 @@ class HubSpotActionConnector:
                     event_definition_params["includeProperties"] = (
                         "true" if payload["include_properties"] else "false"
                     )
-                status, body, response_headers = await send_json(
-                    method="GET",
-                    url=_metadata_url("/events/2026-03/event-definitions"),
-                    headers=headers,
-                    params=event_definition_params,
+                status, body, response_headers = await _native_call(
+                    request,
+                    "marketing.behavioral_events.definitions.list",
+                    event_definition_params,
+                    receipt=receipt,
                 )
                 return _behavioral_definition_result(
                     request,
@@ -5060,11 +4984,10 @@ class HubSpotActionConnector:
                     contact=contact,
                     occurrence_key=str(payload["occurrence_key"]),
                 )
-                status, body, response_headers = await send_json(
-                    method="POST",
-                    url=_metadata_url("/events/2026-03/send"),
-                    headers=headers,
-                    json_body={
+                status, body, response_headers = await _native_call(
+                    request,
+                    "marketing.behavioral_events.send",
+                    {
                         "eventName": definition.provider_object_id,
                         "objectId": contact.provider_object_id,
                         "occurredAt": payload["occurred_at"],
@@ -5076,6 +4999,7 @@ class HubSpotActionConnector:
                         contact.provider_object_id,
                         provider_uuid,
                     ),
+                    receipt=receipt,
                 )
                 return _behavioral_event_result(
                     request,
@@ -5115,11 +5039,8 @@ class HubSpotActionConnector:
                     deal_list_params["after"] = str(after)
                 if isinstance(payload.get("archived"), bool):
                     deal_list_params["archived"] = "true" if payload["archived"] else "false"
-                status, body, response_headers = await send_json(
-                    method="GET",
-                    url=_object_api_url("deals"),
-                    headers=headers,
-                    params=deal_list_params,
+                status, body, response_headers = await _native_call(
+                    request, "crm.deals.list", deal_list_params, receipt=receipt
                 )
                 return _record_result(
                     request,
@@ -5133,3 +5054,38 @@ class HubSpotActionConnector:
 
 
 __all__ = ["HubSpotActionConnector"]
+
+
+async def _native_call(request, operation, data, *, redact_values=(), receipt=None):
+    client = ConnectorClient(registry=load_registry("connectors/hubspot/catalog.json"))
+    adapter = PackageActionConnector("hubspot", client=client)
+    try:
+        result = await adapter.execute_native(
+            replace(
+                request, action_key="hubspot." + operation, operation=operation, input_json=data
+            )
+        )
+    except ActionConnectorError as exc:
+        # Keep host-only identifier/privacy redactions on the host side of the native boundary.
+        exc.provider_error = redact_secret_values(exc.provider_error, tuple(redact_values))
+        exc.output_json = redact_secret_values(exc.output_json, tuple(redact_values))
+        exc.metadata_json = redact_secret_values(exc.metadata_json, tuple(redact_values))
+        raise
+    body = result.output_json["body"]
+    if receipt is not None and client.registry.action("hubspot", "hubspot." + operation).config.get(
+        "write"
+    ):
+        identity = {}
+        if (
+            isinstance(body, dict)
+            and isinstance(body.get("id"), (str, int))
+            and not isinstance(body.get("id"), bool)
+            and re.fullmatch(r"[A-Za-z0-9_-]{1,200}", str(body["id"]))
+        ):
+            identity["object_id"] = str(body["id"])
+        if isinstance(result.metadata_json.get("request_id"), str) and re.fullmatch(
+            r"[A-Za-z0-9_-]{1,200}", result.metadata_json["request_id"]
+        ):
+            identity["request_id"] = result.metadata_json["request_id"]
+        receipt.update(write=True, provider_receipt=redact_secrets(identity))
+    return result.output_json["status_code"], body, result.output_json["headers"]

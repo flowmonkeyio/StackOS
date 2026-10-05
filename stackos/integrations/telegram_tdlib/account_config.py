@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from stackos.repositories.base import ValidationError
+from stackos_connectors.connectors.telegram.tdlib.proxy import (
+    TelegramProxyConfig,
+    TelegramProxyValidationError,
+)
 
-from .proxy import TelegramProxyConfig, TelegramProxyValidationError
+from stackos.repositories.base import ValidationError
 
 PROXY_SECRET_FIELDS = frozenset({"proxy_username", "proxy_password", "proxy_secret"})
 PROXY_CONFIG_FIELDS = frozenset(

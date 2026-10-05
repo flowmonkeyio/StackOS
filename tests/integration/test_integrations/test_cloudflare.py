@@ -9,9 +9,8 @@ from typing import Any
 
 import httpx
 import pytest
-
-from stackos.integrations.cloudflare import CloudflareIntegration
-from stackos.mcp.errors import IntegrationDownError, RateLimitedError
+from stackos_connectors.connectors.cloudflare.integration import CloudflareIntegration
+from stackos_connectors.errors import IntegrationDownError, RateLimitedError
 
 _ZONE_ID = "023e105f4ecef8ad9ca31a8372d0c353"
 _RECORD_ID = "372e67954025e0ba6aaa6d586b9e0b59"
@@ -38,7 +37,6 @@ def _run(
         async with httpx.AsyncClient(transport=transport) as client:
             integration = CloudflareIntegration(
                 payload=b"cloudflare-token",
-                project_id=1,
                 http=client,
             )
             return await operation(integration)
@@ -320,7 +318,9 @@ def test_success_false_is_failure_and_auth_probe_claims_only_zone_read() -> None
         _run(disabled_handler, lambda client: client.test_credentials())
     assert exc_info.value.data["reason_code"] == "token_not_active"
     assert exc_info.value.data["token_status"] == "disabled"
-    assert "token-id" not in json.dumps(exc_info.value.to_dict())
+    assert "token-id" not in json.dumps(
+        {"detail": exc_info.value.detail, "data": exc_info.value.data}
+    )
 
 
 @pytest.mark.parametrize(
@@ -424,7 +424,7 @@ def test_read_retries_transient_failures_then_preserves_success_metadata(
     async def no_wait(delay: float) -> None:
         sleeps.append(delay)
 
-    monkeypatch.setattr("stackos.integrations._base.asyncio.sleep", no_wait)
+    monkeypatch.setattr("stackos_connectors.shared.base.asyncio.sleep", no_wait)
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)

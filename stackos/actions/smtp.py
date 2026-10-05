@@ -8,15 +8,13 @@ Official docs verified:
 
 from __future__ import annotations
 
-import asyncio
-import smtplib
 from collections.abc import Mapping, Sequence
-from contextlib import suppress
-from email.message import EmailMessage
-from email.utils import formataddr, make_msgid, parseaddr
+from dataclasses import replace
+from email.utils import parseaddr
 from typing import Any
 
 from stackos.actions.connectors import (
+    ActionConnectorError,
     ActionConnectorRequest,
     ActionConnectorResult,
     ActionValidationIssue,
@@ -52,6 +50,10 @@ class SmtpActionConnector:
 
     key = "smtp"
 
+    def __init__(self, *, client=None, options=None) -> None:
+        self._client = client
+        self._options = options
+
     def validate(self, request: ActionConnectorRequest) -> list[ActionValidationIssue]:
         if request.operation != "email.send":
             return unknown_operation(request)
@@ -79,74 +81,54 @@ class SmtpActionConnector:
     async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
         if request.operation != "email.send":
             raise ValidationError(f"unsupported SMTP operation {request.operation!r}")
-        result = await asyncio.to_thread(_send_email, request)
-        _store_outbound_email(
-            request,
-            message_id=str(result.output_json["message_id"]),
-            from_ref=str(result.output_json["from_ref"]),
-            accepted=result.output_json.get("accepted_recipients") or [],
-            rejected=result.output_json.get("rejected_recipients") or {},
+        from stackos_connectors import ConnectorClient
+        from stackos_connectors.catalog import load_registry
+
+        from stackos.actions.package_bridge import PackageActionConnector
+
+        settings = _smtp_settings(request)
+        prepared = {
+            key: value
+            for key, value in request.input_json.items()
+            if key not in {"from_ref", "source_agent_request_id"}
+        }
+        prepared["from_email"] = _from_email(request.input_json.get("from_ref"), settings)
+        prepared["from_name"] = settings["from_name"]
+        reply_to = _reply_to(request.input_json.get("reply_to"), settings)
+        if reply_to:
+            prepared["reply_to"] = reply_to
+        recipients = sum(
+            len(_email_list(prepared.get(key), key)) for key in ("recipients", "cc", "bcc")
         )
+        if recipients > _MAX_RECIPIENTS:
+            raise ValidationError(f"SMTP email can target at most {_MAX_RECIPIENTS} recipients")
+        if self._client is None:
+            self._client = ConnectorClient(registry=load_registry("connectors/smtp/catalog.json"))
+        result = await PackageActionConnector(
+            "smtp", client=self._client, options=self._options
+        ).execute(replace(request, input_json=prepared))
+        output = result.output_json
+        output["message_ref"] = f"smtp-message:{output['message_id']}"
+        output["from_ref"] = f"smtp-from:{output.pop('from_email')}"
+        try:
+            _store_outbound_email(
+                request,
+                message_id=str(output["message_id"]),
+                from_ref=str(output["from_ref"]),
+                accepted=output.get("accepted_recipients") or [],
+                rejected=output.get("rejected_recipients") or {},
+            )
+        except Exception as exc:
+            raise ActionConnectorError(
+                "SMTP submission completed but outbound history could not be stored",
+                output_json=output,
+                metadata_json={
+                    **(result.metadata_json or {}),
+                    "provider_executed": True,
+                    "retry_safe": False,
+                },
+            ) from exc
         return result
-
-
-def _send_email(request: ActionConnectorRequest) -> ActionConnectorResult:
-    settings = _smtp_settings(request)
-    message, recipients, safe_from = _build_message(request, settings)
-
-    # SMTP AUTH and mail transaction:
-    # https://www.rfc-editor.org/rfc/rfc4954
-    # https://www.rfc-editor.org/rfc/rfc5321.html#section-4.1
-    refused: dict[str, tuple[int, bytes]] = {}
-    client: Any | None = None
-    try:
-        client = _smtp_client(settings)
-        if settings["tls_mode"] == "starttls":
-            client.ehlo()
-            client.starttls()
-            client.ehlo()
-        client.login(settings["username"], settings["password"])
-        refused = client.send_message(
-            message,
-            from_addr=settings["from_email"],
-            to_addrs=recipients,
-        )
-    finally:
-        if client is not None:
-            with suppress(Exception):
-                client.quit()
-            with suppress(Exception):
-                client.close()
-
-    rejected = {
-        address: {"smtp_code": code, "smtp_message": _decode_smtp_message(text)}
-        for address, (code, text) in refused.items()
-    }
-    accepted = [address for address in recipients if address not in refused]
-    status = "accepted" if not rejected else ("rejected" if not accepted else "partial")
-    message_id = str(message["Message-ID"])
-    return ActionConnectorResult(
-        output_json={
-            "provider": "smtp",
-            "operation": request.operation,
-            "status": status,
-            "message_ref": f"smtp-message:{message_id}",
-            "message_id": message_id,
-            "from_ref": safe_from,
-            "recipient_count": len(recipients),
-            "accepted_recipient_count": len(accepted),
-            "rejected_recipient_count": len(rejected),
-            "accepted_recipients": accepted,
-            "rejected_recipients": rejected,
-        },
-        metadata_json={
-            "vendor": "smtp",
-            "operation": request.operation,
-            "tls_mode": settings["tls_mode"],
-            "host": settings["host"],
-            "port": settings["port"],
-        },
-    )
 
 
 def _smtp_settings(request: ActionConnectorRequest) -> dict[str, Any]:
@@ -175,63 +157,6 @@ def _smtp_settings(request: ActionConnectorRequest) -> dict[str, Any]:
         "from_refs": _mapping(config.get("from_refs")),
         "allowed_reply_to": _string_set(config.get("allowed_reply_to")),
     }
-
-
-def _smtp_client(settings: Mapping[str, Any]) -> Any:
-    host = str(settings["host"])
-    port = int(settings["port"])
-    timeout = float(settings["timeout_s"])
-    try:
-        if settings["tls_mode"] == "ssl":
-            return smtplib.SMTP_SSL(host, port, timeout=timeout)
-        return smtplib.SMTP(host, port, timeout=timeout)
-    except TypeError:
-        if settings["tls_mode"] == "ssl":
-            return smtplib.SMTP_SSL(host, port)
-        return smtplib.SMTP(host, port)
-
-
-def _build_message(
-    request: ActionConnectorRequest,
-    settings: Mapping[str, Any],
-) -> tuple[EmailMessage, list[str], str]:
-    payload = request.input_json
-    recipients = _email_list(payload.get("recipients"), "$.recipients")
-    cc = _email_list(payload.get("cc"), "$.cc")
-    bcc = _email_list(payload.get("bcc"), "$.bcc")
-    all_recipients = [*recipients, *cc, *bcc]
-    if len(all_recipients) > _MAX_RECIPIENTS:
-        raise ValidationError(f"SMTP email can target at most {_MAX_RECIPIENTS} recipients")
-
-    from_email = _from_email(payload.get("from_ref"), settings)
-    reply_to = _reply_to(payload.get("reply_to"), settings)
-    subject = str(payload["subject"]).strip()
-    if _has_crlf(subject):
-        raise ValidationError("SMTP subject cannot contain CR/LF")
-
-    message = EmailMessage()
-    message["Message-ID"] = make_msgid()
-    message["From"] = formataddr((str(settings.get("from_name") or ""), from_email))
-    message["To"] = ", ".join(recipients)
-    if cc:
-        message["Cc"] = ", ".join(cc)
-    message["Subject"] = subject
-    if reply_to:
-        message["Reply-To"] = reply_to
-    for name, value in _clean_headers(payload.get("headers")).items():
-        message[name] = value
-
-    text = str(payload.get("text") or "")
-    html = str(payload.get("html") or "")
-    if text and html:
-        message.set_content(text)
-        message.add_alternative(html, subtype="html")
-    elif html:
-        message.set_content(html, subtype="html")
-    else:
-        message.set_content(text)
-    safe_from = f"smtp-from:{from_email}"
-    return message, all_recipients, safe_from
 
 
 def _store_outbound_email(
@@ -477,10 +402,6 @@ def _has_nonempty_text(value: Any) -> bool:
 
 def _has_crlf(value: str) -> bool:
     return "\r" in value or "\n" in value
-
-
-def _decode_smtp_message(value: bytes) -> str:
-    return value.decode("utf-8", errors="replace")[:500]
 
 
 __all__ = ["SmtpActionConnector"]

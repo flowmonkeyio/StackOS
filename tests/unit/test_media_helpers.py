@@ -6,9 +6,8 @@ import asyncio
 
 import httpx
 import pytest
-
-from stackos.integrations._media import download_generated_media, validate_generated_media_url
-from stackos.mcp.errors import IntegrationDownError
+from stackos_connectors.errors import IntegrationDownError
+from stackos_connectors.shared.media import download_generated_media, validate_generated_media_url
 
 
 @pytest.mark.parametrize(

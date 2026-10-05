@@ -6,7 +6,6 @@ https://github.com/tdlib/td/blob/d1085f9cebc5a62379991ae1652673954f229c1f/td/gen
 
 from __future__ import annotations
 
-import math
 import mimetypes
 import re
 import shutil
@@ -17,6 +16,15 @@ from typing import Any, Protocol, cast
 
 from pydantic import ValidationError as ModelValidationError
 from sqlmodel import Session, col, select
+from stackos_connectors import CallOptions, ConnectorAuth, ConnectorClient
+from stackos_connectors.catalog import load_registry
+from stackos_connectors.connectors.telegram.schema import METHOD_ACTIONS
+from stackos_connectors.connectors.telegram.tdlib.native import (
+    TelegramTdlibClosedError,
+    TelegramTdlibNativeError,
+    TelegramTdlibRequestError,
+)
+from stackos_connectors.errors import ConnectorError as NativeConnectorError
 
 from stackos.actions.connectors import (
     ActionConnectorError,
@@ -58,12 +66,6 @@ from stackos.communications import (
 )
 from stackos.communications.target_policy import target_policy_allowed
 from stackos.db.models import Artifact
-from stackos.integrations.telegram_tdlib.native import (
-    TelegramTdlibClosedError,
-    TelegramTdlibNativeError,
-    TelegramTdlibRequestError,
-    safe_error_metadata,
-)
 from stackos.integrations.telegram_tdlib.service import TelegramTdlibServiceError
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.base import ValidationError
@@ -106,23 +108,187 @@ _MUTATIONS = _SEND_OPERATIONS | {
 
 
 class TelegramRuntime(Protocol):
-    def files_directory(self, account_ref: str) -> Path: ...
+    def active_generation(self, *, account_ref: str) -> int | None: ...
+
+    def files_directory(self, account_ref: str, *, generation: int) -> Path: ...
 
     async def request(
-        self, account_ref: str, request: dict[str, Any], *, correlation_id: str | None = None
+        self,
+        account_ref: str,
+        request: dict[str, Any],
+        *,
+        generation: int,
+        correlation_id: str | None = None,
+        timeout_seconds: float = 30.0,
     ) -> dict[str, Any]: ...
 
     async def wait_message(
-        self, account_ref: str, chat_id: int, temporary_message_id: int, *, timeout_seconds: float
+        self,
+        account_ref: str,
+        chat_id: int,
+        temporary_message_id: int,
+        *,
+        generation: int,
+        timeout_seconds: float,
     ) -> dict[str, Any]: ...
 
 
+class _BoundNativeSession:
+    """One immutable authority binding for exactly one package invocation."""
+
+    def __init__(self, client: _AccountClient, correlation_id: str | None) -> None:
+        self.runtime = client.runtime
+        self.account_ref = client.account_ref
+        self.generation = client.generation
+        self.correlation_id = correlation_id
+
+    @property
+    def files_directory(self) -> Path:
+        return self.runtime.files_directory(self.account_ref, generation=self.generation)
+
+    async def request(self, payload: dict[str, Any], *, timeout: float = 30.0) -> dict[str, Any]:
+        try:
+            return await self.runtime.request(
+                self.account_ref,
+                payload,
+                generation=self.generation,
+                correlation_id=self.correlation_id,
+                timeout_seconds=timeout,
+            )
+        except TelegramTdlibServiceError as exc:
+            if str(exc) in {"TDLib session is not configured", "TDLib session generation is stale"}:
+                raise TelegramTdlibClosedError(
+                    "TDLib session is not available", request_dispatched=False
+                ) from None
+            raise TelegramTdlibNativeError("TDLib request did not return a result") from None
+
+    async def wait_message(
+        self, chat_id: int, temporary_id: int, *, timeout: float = 60.0
+    ) -> dict[str, Any]:
+        return await self.runtime.wait_message(
+            self.account_ref,
+            chat_id,
+            temporary_id,
+            generation=self.generation,
+            timeout_seconds=timeout,
+        )
+
+
 class _AccountClient:
-    def __init__(self, runtime: TelegramRuntime, account_ref: str) -> None:
-        self.runtime, self.account_ref = runtime, account_ref
+    def __init__(
+        self,
+        runtime: TelegramRuntime,
+        account_ref: str,
+        *,
+        generation: int,
+        request: ActionConnectorRequest,
+    ) -> None:
+        self.runtime, self.account_ref, self.generation = runtime, account_ref, generation
+        self.host_request = request
 
     async def _request(self, request: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
-        return await self.runtime.request(self.account_ref, request, **kwargs)
+        kind = request["@type"]
+        action = METHOD_ACTIONS[kind]
+        host_request = kwargs.get("host_request", self.host_request)
+        selected = host_request.credential.credential.auth_method_key
+        progress: dict[str, Any] = {
+            "phase": "provider_accepted",
+            "chat_id": request.get("chat_id"),
+            "temporary_message_ids": [],
+            "confirmed_message_refs": [],
+            "provider_receipts": {},
+        }
+
+        def receive_progress(event: dict[str, Any]) -> None:
+            phase = event["phase"]
+            if phase == "provider_accepted":
+                progress["temporary_message_ids"] = event["temporary_message_ids"]
+            elif phase == "message_confirmed":
+                message = event["message"]
+                message_ref = f"telegram-message:{event['chat_id']}:{message['id']}"
+                progress["confirmed_message_refs"].append(message_ref)
+                temporary = event.get("temporary_message_id")
+                if temporary is not None:
+                    progress["provider_receipts"][str(temporary)] = {
+                        "status": "sent",
+                        "message_ref": message_ref,
+                    }
+                store_sent_messages(host_request, [message])
+            elif phase == "message_failed":
+                failure = event["failure"]
+                progress["provider_receipts"][str(failure["temporary_message_id"])] = {
+                    "status": "failed",
+                    **{
+                        key: value
+                        for key, value in failure.items()
+                        if key != "temporary_message_id"
+                    },
+                }
+            if host_request.progress_callback:
+                host_request.progress_callback(progress)
+
+        try:
+            result = await ConnectorClient(
+                registry=load_registry("connectors/telegram/catalog.json")
+            ).execute(
+                "telegram",
+                action,
+                {key: value for key, value in request.items() if key != "@type"},
+                ConnectorAuth(selected, {}),
+                CallOptions(
+                    native_session=_BoundNativeSession(self, kwargs.get("correlation_id")),
+                    timeout=kwargs.get("timeout_seconds"),
+                    progress_callback=receive_progress,
+                    correlation_id=kwargs.get("correlation_id"),
+                ),
+            )
+        except NativeConnectorError as exc:
+            metadata = exc.metadata_json
+            if metadata.get("native_error_type") == "request_rejected":
+                raise TelegramTdlibRequestError(
+                    code=exc.provider_status_code,
+                    phase=metadata.get("phase", "request"),
+                    error_name=exc.provider_error,
+                    retry_after_seconds=metadata.get("retry_after_seconds"),
+                ) from None
+            if metadata.get("native_error_type") == "closed":
+                raise TelegramTdlibClosedError(
+                    "TDLib session is not available", request_dispatched=False
+                ) from None
+            if metadata.get("native_error_type") == "closed_after_dispatch":
+                raise TelegramTdlibNativeError(
+                    "TDLib closed before returning the request result"
+                ) from None
+            if metadata.get("native_error_type") == "timeout":
+                raise TelegramTdlibNativeError(
+                    "TDLib request timed out awaiting a response."
+                ) from None
+            if metadata.get("native_error_type") == "request_failed":
+                raise TelegramTdlibNativeError("TDLib request did not return a result") from None
+            if exc.output_json.get("@type") == "messages":
+                return exc.output_json
+            if metadata.get("receipt_processing_failed"):
+                confirmed = metadata.get("confirmed_messages", [])
+                raise ActionConnectorError(
+                    str(exc),
+                    output_json={
+                        "status": "send_receipt_unknown",
+                        **metadata,
+                        "surface_ref": f"telegram-chat:{request['chat_id']}",
+                        "message_refs": [
+                            f"telegram-message:{item['chat_id']}:{item['message_id']}"
+                            for item in confirmed
+                        ],
+                        "provider_receipts": progress["provider_receipts"],
+                    },
+                ) from None
+            raise ActionConnectorError(
+                str(exc),
+                provider_status_code=exc.provider_status_code,
+                output_json=exc.output_json,
+                metadata_json=metadata,
+            ) from None
+        return result.output_json
 
 
 class TelegramActionConnector:
@@ -468,7 +634,14 @@ class TelegramActionConnector:
                 },
             )
         credential = self._credential(request)
-        return _AccountClient(self.runtime, credential.credential_ref)
+        generation = self.runtime.active_generation(account_ref=credential.credential_ref)
+        if not isinstance(generation, int) or isinstance(generation, bool) or generation <= 0:
+            raise TelegramTdlibClosedError(
+                "TDLib session is not available", request_dispatched=False
+            )
+        return _AccountClient(
+            self.runtime, credential.credential_ref, generation=generation, request=request
+        )
 
     @staticmethod
     def _session(request: ActionConnectorRequest) -> Session:
@@ -1062,7 +1235,7 @@ class TelegramActionConnector:
             )
         correlation = getattr(request, "correlation_ref", None)
         try:
-            result = await client._request(query, correlation_id=correlation)
+            result = await client._request(query, correlation_id=correlation, host_request=request)
         except TelegramTdlibRequestError as exc:
             if not sender_selection_changed:
                 raise
@@ -1084,6 +1257,12 @@ class TelegramActionConnector:
                 },
             ) from exc
         except (TelegramTdlibServiceError, TelegramTdlibNativeError) as exc:
+            if (
+                isinstance(exc, TelegramTdlibClosedError)
+                and exc.request_dispatched is False
+                and not sender_selection_changed
+            ):
+                raise self._not_connected_error(request) from exc
             raise ActionConnectorError(
                 "Telegram did not confirm whether the message was submitted",
                 output_json={
@@ -1093,6 +1272,8 @@ class TelegramActionConnector:
                     "sender_selection_changed": sender_selection_changed,
                     "provider_executed": True,
                     "provider_result_known": False,
+                    "outcome_unknown": True,
+                    "correlation_ref": correlation,
                     "retry_safe": False,
                 },
             ) from exc
@@ -1379,76 +1560,13 @@ class TelegramActionConnector:
         sender_selection_changed: bool = False,
     ) -> dict[str, Any]:
         messages = result.get("messages", []) if result.get("@type") == "messages" else [result]
-        temporary_ids = [
-            message["id"] for message in messages if message and message.get("sending_state")
-        ]
-        progress: dict[str, Any] = {
-            "phase": "provider_accepted",
-            "chat_id": chat_id,
-            "temporary_message_ids": temporary_ids,
-            "confirmed_message_refs": [],
-            "provider_receipts": {},
-        }
-
-        def report_progress() -> None:
-            if request.progress_callback:
-                request.progress_callback(progress)
-
-        report_progress()
+        temporary_ids = list(result.get("temporary_message_ids", []))
         final_messages: list[dict[str, Any]] = []
-        failures: list[dict[str, Any]] = []
+        failures: list[dict[str, Any]] = list(result.get("send_failures", []))
         for message in messages:
             if message is None:
                 failures.append({"reason": "message_not_forwardable"})
                 continue
-            temporary_message_id: int | None = None
-            if message.get("sending_state"):
-                temporary_message_id = message["id"]
-                update = await client.runtime.wait_message(
-                    client.account_ref, chat_id, message["id"], timeout_seconds=60.0
-                )
-                if update.get("@type") == "updateMessageSendFailed":
-                    failed_state = (update.get("message") or {}).get("sending_state") or {}
-                    error = update.get("error") or failed_state.get("error") or {}
-                    error_code = error.get("code")
-                    error_code = (
-                        error_code
-                        if isinstance(error_code, int) and not isinstance(error_code, bool)
-                        else None
-                    )
-                    error_name, parsed_retry_after = safe_error_metadata(error.get("message"))
-                    state_retry_after = failed_state.get("retry_after")
-                    retry_after: int | float | None
-                    if (
-                        isinstance(state_retry_after, (int, float))
-                        and not isinstance(state_retry_after, bool)
-                        and math.isfinite(state_retry_after)
-                        and 0 < state_retry_after <= 7 * 24 * 60 * 60
-                    ):
-                        retry_after = max(parsed_retry_after or 0, state_retry_after)
-                    else:
-                        retry_after = parsed_retry_after
-                    failure = {
-                        "temporary_message_id": message["id"],
-                        "error_code": error_code,
-                        "provider_error": error_name,
-                        "retry_after_seconds": retry_after,
-                        "tdlib_can_retry": failed_state.get("can_retry") is True,
-                        "tdlib_need_another_sender": (
-                            failed_state.get("need_another_sender") is True
-                        ),
-                    }
-                    failures.append(failure)
-                    progress["provider_receipts"][str(temporary_message_id)] = {
-                        "status": "failed",
-                        "error_code": error_code,
-                        "provider_error": error_name,
-                        "retry_after_seconds": retry_after,
-                        "tdlib_can_retry": failure["tdlib_can_retry"],
-                    }
-                    report_progress()
-                    continue
-                message = update["message"]
             final_messages.append(message)
             message_ref = f"telegram-message:{chat_id}:{message['id']}"
             actual_sender_ref = _sender_ref(message.get("sender_id"))
@@ -1461,14 +1579,6 @@ class TelegramActionConnector:
                         "actual_sender_ref": actual_sender_ref,
                     }
                 )
-            progress["confirmed_message_refs"].append(message_ref)
-            if temporary_message_id is not None:
-                progress["provider_receipts"][str(temporary_message_id)] = {
-                    "status": "sent",
-                    "message_ref": message_ref,
-                }
-            store_sent_messages(request, [message])
-            report_progress()
         refs = [f"telegram-message:{chat_id}:{message['id']}" for message in final_messages]
         output: dict[str, Any] = {
             "status": "partial" if failures and refs else "failed" if failures else "sent",
@@ -1564,7 +1674,9 @@ class TelegramActionConnector:
             raise ValidationError("Telegram file downloads require generated asset storage")
         session = self._session(request)
         source = Path(str((file.get("local") or {}).get("path") or "")).resolve()
-        owned_root = client.runtime.files_directory(client.account_ref).resolve()
+        owned_root = client.runtime.files_directory(
+            client.account_ref, generation=client.generation
+        ).resolve()
         if not source.is_relative_to(owned_root) or not source.is_file():
             raise ActionConnectorError("Telegram returned a file outside this Account's storage")
         suffix = source.suffix if re.fullmatch(r"\.[a-zA-Z0-9]{1,10}", source.suffix) else ".bin"

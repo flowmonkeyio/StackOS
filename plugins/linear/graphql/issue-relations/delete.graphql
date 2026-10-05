@@ -1,6 +1,0 @@
-mutation LinearIssueRelationDelete($id: String!) {
-  issueRelationDelete(id: $id) {
-    success
-    entityId
-  }
-}

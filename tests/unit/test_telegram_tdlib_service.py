@@ -6,17 +6,17 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from stackos_connectors.connectors.telegram.tdlib.sessions import (
+    TelegramApplicationCredentials,
+    TelegramTdlibSessionConfig,
+    TelegramTdlibSessionReceipt,
+)
 
 from stackos.integrations.telegram_tdlib.service import (
     TelegramTdlibService,
     TelegramTdlibServiceError,
 )
-from stackos.integrations.telegram_tdlib.sessions import (
-    TelegramApplicationCredentials,
-    TelegramTdlibSessionConfig,
-    TelegramTdlibSessionReceipt,
-    TelegramTdlibSessionRegistration,
-)
+from stackos.integrations.telegram_tdlib.sessions import TelegramTdlibSessionRegistration
 
 
 class _Session:
@@ -75,6 +75,15 @@ class _Registry:
 
 def _config(tmp_path: Path) -> TelegramTdlibSessionConfig:
     return TelegramTdlibSessionConfig(
+        system_language_code="en",
+        device_model="StackOS",
+        system_version="macOS",
+        application_version="StackOS",
+        use_test_dc=False,
+        use_file_database=True,
+        use_chat_info_database=True,
+        use_message_database=True,
+        use_secret_chats=False,
         account_kind="user",
         application=TelegramApplicationCredentials(api_id=12345, api_hash="application-secret"),
         database_directory=tmp_path / "database",
@@ -225,7 +234,19 @@ async def test_service_wait_message_handles_live_and_previously_received_final_r
     tmp_path: Path,
 ) -> None:
     session = _Session()
-    service = TelegramTdlibService(session_registry=_Registry(deque([session])))
+    sink_started = asyncio.Event()
+    persist_allowed = asyncio.Event()
+    persisted = []
+
+    async def persist(_account_ref, _generation, update):
+        sink_started.set()
+        await persist_allowed.wait()
+        persisted.append(update)
+
+    service = TelegramTdlibService(
+        session_registry=_Registry(deque([session])),
+        message_receipt_sink=persist,
+    )
     configured = asyncio.create_task(
         service.configure(account_ref="cred_telegram", generation=4, config=_config(tmp_path))
     )
@@ -253,7 +274,12 @@ async def test_service_wait_message_handles_live_and_previously_received_final_r
         "message": {"id": 20, "chat_id": 44},
     }
     await session.updates.put(update)
+    await sink_started.wait()
+    assert not waiting.done()
+    assert persisted == []
+    persist_allowed.set()
     assert await waiting == update
+    assert persisted == [update]
 
     cached = {
         "@type": "updateMessageSendFailed",

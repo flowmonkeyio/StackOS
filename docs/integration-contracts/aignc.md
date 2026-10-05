@@ -53,10 +53,10 @@ the bound StackOS project. Agents resolve a safe execution target with
 no direct MCP tools, separate agent, prompt rewriting, model selection, fallback
 routing, workflow, or model conversation store.
 
-The reusable wrapper in `stackos/integrations/aignc.py` owns transport, safe
-response parsing, and generated image bytes. Static provider IDs and local
-request caps live in `stackos/integrations/aignc_contract.py`; the manifest and
-connector share that inventory. `stackos/actions/aignc.py` validates explicit
+The native package's `connectors/aignc/` directory owns transport, provider model
+IDs, response parsing and generated image bytes. Local host request caps remain
+in `stackos/integrations/aignc_contract.py`; native model facts come from the
+package. `stackos/actions/aignc.py` validates explicit
 inputs, resolves project-scoped audio artifacts, and uses existing generic
 image artifact registration. The shared executor owns credentials, grants,
 action-call audit, idempotency, and response files.

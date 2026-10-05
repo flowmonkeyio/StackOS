@@ -12,9 +12,10 @@ from unittest.mock import Mock
 import httpx
 import pytest
 from pytest_httpx import HTTPXMock
+from stackos_connectors.connectors.aignc.integration import AigncIntegration
+from stackos_connectors.errors import IntegrationDownError, RateLimitedError, ValidationError
 
-from stackos.integrations.aignc import AigncIntegration
-from stackos.mcp.errors import IntegrationDownError, RateLimitedError, ValidationError
+from stackos.repositories.base import ConflictError
 
 API = "https://cli-api.f2nd.com/v1"
 KEY = "fixture-aignc-credential"
@@ -77,18 +78,65 @@ def run_call(
     **options: Any,
 ) -> Any:
     async def go() -> Any:
+        arguments = (
+            dict(kwargs)
+            if kwargs is not None
+            else {
+                "model": "gemini-3.8-flash",
+                "messages": MESSAGES,
+                "max_tokens": 100,
+            }
+        )
+        audit = options.pop("audit", None)
+        asset_dir = options.pop("asset_dir", None)
+        if audit is not None:
+            data = dict(arguments)
+            if "max_tokens" in data:
+                data["output_limit"] = data.pop("max_tokens")
+            if method == "analyze_audio":
+                from stackos.repositories.resources import ArtifactRepository
+
+                path = data.pop("audio_path")
+                asset_dir = path.parent
+                format = data.pop("format")
+                artifact = (
+                    ArtifactRepository(audit.repository._s)
+                    .create(
+                        project_id=project_id,
+                        plugin_slug="utils",
+                        kind="audio",
+                        uri="/generated-assets/" + path.name,
+                        name=path.name,
+                        mime_type="audio/" + format,
+                        size_bytes=path.stat().st_size,
+                    )
+                    .data
+                )
+                data["audio_artifact_id"] = artifact.id
+            action = {
+                "chat_complete": "chat.complete",
+                "generate_image": "image.generate",
+                "analyze_audio": "audio.analyze",
+                "models": "models.list",
+            }[method]
+            return await audit.execute(
+                "aignc",
+                "aignc." + action,
+                data,
+                secret_payload=KEY.encode(),
+                asset_dir=asset_dir,
+            )
+        if method == "generate_image":
+            arguments.setdefault("max_tokens", 2048)
+        options.setdefault("max_audio_bytes", 20 * 1024 * 1024)
+        options.setdefault("max_image_bytes", 20 * 1024 * 1024)
+        options.setdefault("max_response_bytes", 30 * 1024 * 1024)
         async with httpx.AsyncClient() as client:
             integration = AigncIntegration(
-                payload=KEY.encode(), project_id=project_id, http=client, **options
-            )
-            arguments = (
-                kwargs
-                if kwargs is not None
-                else {
-                    "model": "gemini-3.8-flash",
-                    "messages": MESSAGES,
-                    "max_tokens": 100,
-                }
+                payload=KEY.encode(),
+                http=client,
+                output_dir=asset_dir / "aignc" if asset_dir is not None else None,
+                **options,
             )
             return await getattr(integration, method)(**arguments)
 
@@ -98,6 +146,7 @@ def run_call(
 def test_chat_wire_grounding_usage_and_audit_exclude_prices(
     httpx_mock: HTTPXMock,
     project_id: int,
+    host_audit,
 ) -> None:
     raw = completion()
     raw["grounding_metadata"] = {
@@ -106,7 +155,7 @@ def test_chat_wire_grounding_usage_and_audit_exclude_prices(
         "cost": "discard",
         "extra_base64": "discard",
     }
-    audit = Mock()
+    audit = host_audit
     httpx_mock.add_response(
         method="POST",
         url=f"{API}/chat/completions",
@@ -121,8 +170,7 @@ def test_chat_wire_grounding_usage_and_audit_exclude_prices(
             "max_tokens": 100,
             "google_search": True,
         },
-        run_step_call_repo=audit,
-        run_step_id=1,
+        audit=audit,
     )
     request = httpx_mock.get_requests()[0]
     assert request.headers["authorization"] == f"Bearer {KEY}"
@@ -133,11 +181,11 @@ def test_chat_wire_grounding_usage_and_audit_exclude_prices(
         "stream": False,
         "tools": [{"google_search": {}}],
     }
-    assert result.data["requested_model"] == "gemini-3.8-flash-high"
-    assert result.data["returned_model"] == "gemini-3.8-flash"
-    assert result.data["text"] == "Paris."
-    assert result.data["provider_request_id"] == "log-123"
-    assert result.data["usage"] == {
+    assert result.response_json["requested_model"] == "gemini-3.8-flash-high"
+    assert result.response_json["returned_model"] == "gemini-3.8-flash"
+    assert result.response_json["text"] == "Paris."
+    assert result.response_json["provider_request_id"] == "log-123"
+    assert result.response_json["usage"] == {
         "prompt_count": 15,
         "completion_count": 3,
         "total_count": 18,
@@ -145,13 +193,15 @@ def test_chat_wire_grounding_usage_and_audit_exclude_prices(
         "cached_count": 4,
         "google_searches": 0,
     }
-    assert result.data["grounding_metadata"]["webSearchQueries"] == ["France capital"]
+    assert result.response_json["grounding_metadata"]["webSearchQueries"] == ["France capital"]
     public = (
-        json.dumps(result.data) + repr(result.metadata) + repr(audit.record_call.call_args_list)
+        json.dumps(result.response_json)
+        + repr(result.metadata_json)
+        + repr(audit.record_call.call_args_list)
     )
     for forbidden in ("total_cost", "X-Model-Pricing", "unexpected_blob", "arbitrary", KEY):
         assert forbidden not in public
-    assert result.cost_usd == 0
+    assert result.cost_cents / 100 == 0
     assert audit.record_call.call_count == 1
 
 
@@ -274,11 +324,13 @@ def test_models_discovery_and_probe_do_not_generate(httpx_mock: HTTPXMock, proje
     assert all(request.method == "GET" for request in httpx_mock.get_requests())
 
 
-def test_audio_encoded_only_on_wire(httpx_mock: HTTPXMock, project_id: int, tmp_path: Path) -> None:
+def test_audio_encoded_only_on_wire(
+    httpx_mock: HTTPXMock, project_id: int, tmp_path: Path, host_audit
+) -> None:
     raw_audio = b"RIFF" + (36).to_bytes(4, "little") + b"WAVEfmt " + b"audio-data" * 4
     path = tmp_path / "recording.wav"
     path.write_bytes(raw_audio)
-    audit = Mock()
+    audit = host_audit
     httpx_mock.add_response(
         method="POST", url=f"{API}/chat/completions", json=completion("Speaker 1")
     )
@@ -292,13 +344,12 @@ def test_audio_encoded_only_on_wire(httpx_mock: HTTPXMock, project_id: int, tmp_
             "format": "wav",
             "max_tokens": 500,
         },
-        run_step_call_repo=audit,
-        run_step_id=1,
+        audit=audit,
     )
     body = json.loads(httpx_mock.get_requests()[0].content)
     audio = body["messages"][0]["content"][1]["input_audio"]
     assert audio == {"data": base64.b64encode(raw_audio).decode(), "format": "wav"}
-    assert result.data["text"] == "Speaker 1"
+    assert result.response_json["text"] == "Speaker 1"
     assert audio["data"] not in repr(audit.record_call.call_args_list)
     assert "input_audio" not in repr(audit.record_call.call_args_list)
 
@@ -309,8 +360,9 @@ def test_image_persisted_without_base64_audit(
     project_id: int,
     tmp_path: Path,
     inline: bool,
+    host_audit,
 ) -> None:
-    audit = Mock()
+    audit = host_audit
     raw = image_completion(JPEG_BASE64, inline=inline)
     httpx_mock.add_response(method="POST", url=f"{API}/chat/completions", json=raw)
     result = run_call(
@@ -318,18 +370,21 @@ def test_image_persisted_without_base64_audit(
         "generate_image",
         kwargs={"prompt": "An apple"},
         asset_dir=tmp_path,
-        run_step_call_repo=audit,
-        run_step_id=1,
+        audit=audit,
     )
-    item = result.data["data"][0]
+    item = result.response_json["data"][0]
     assert item["source_model"] == "gemini-3.1-flash-image"
     assert item["file_format"] == "jpg"
     assert (tmp_path / item["url"].removeprefix("/generated-assets/")).read_bytes() == JPEG_BYTES
-    safe = json.dumps(result.data) + repr(result.metadata) + repr(audit.record_call.call_args_list)
+    safe = (
+        json.dumps(result.response_json)
+        + repr(result.metadata_json)
+        + repr(audit.record_call.call_args_list)
+    )
     assert JPEG_BASE64 not in safe
     assert "data:image/" not in safe
-    assert "cost" not in json.dumps(result.data)
-    assert "text" not in result.data
+    assert "cost" not in json.dumps(result.response_json)
+    assert "text" not in result.response_json
     assert len(httpx_mock.get_requests()) == 1
 
 
@@ -345,24 +400,24 @@ def test_malformed_images_fail_without_payload_leak(
     tmp_path: Path,
     raw: str,
     inline: bool,
+    host_audit,
 ) -> None:
-    audit = Mock()
+    audit = host_audit
     httpx_mock.add_response(
         method="POST", url=f"{API}/chat/completions", json=image_completion(raw, inline=inline)
     )
-    with pytest.raises(IntegrationDownError) as caught:
+    with pytest.raises(ConflictError) as caught:
         run_call(
             project_id,
             "generate_image",
             kwargs={"prompt": "An apple"},
             asset_dir=tmp_path,
-            run_step_call_repo=audit,
-            run_step_id=1,
+            audit=audit,
         )
     safe = str(caught.value) + repr(caught.value.data) + repr(audit.record_call.call_args_list)
     if raw:
         assert raw not in safe
-    assert caught.value.data["outcome_unknown"] is True
+    assert audit.record_call.call_args.kwargs["metadata_json"]["outcome_unknown"] is True
     assert list(tmp_path.iterdir()) == []
 
 
@@ -378,7 +433,8 @@ def test_inline_image_allows_empty_text_content(
         project_id, "generate_image", kwargs={"prompt": "An apple"}, asset_dir=tmp_path
     )
     item = result.data["data"][0]
-    assert (tmp_path / item["url"].removeprefix("/generated-assets/")).read_bytes() == JPEG_BYTES
+    assert Path(item["path"]).read_bytes() == JPEG_BYTES
+    assert Path(item["path"]).parent == tmp_path / "aignc"
     assert "text" not in result.data
 
 
@@ -420,19 +476,19 @@ def test_unsupported_image_entries_are_not_fetched_or_persisted(
     project_id: int,
     tmp_path: Path,
     images: Any,
+    host_audit,
 ) -> None:
     raw = image_completion(JPEG_BASE64, inline=True)
     raw["choices"][0]["message"]["images"] = images
-    audit = Mock()
+    audit = host_audit
     httpx_mock.add_response(method="POST", url=f"{API}/chat/completions", json=raw)
-    with pytest.raises(IntegrationDownError) as caught:
+    with pytest.raises(ConflictError) as caught:
         run_call(
             project_id,
             "generate_image",
             kwargs={"prompt": "An apple"},
             asset_dir=tmp_path,
-            run_step_call_repo=audit,
-            run_step_id=1,
+            audit=audit,
         )
     safe = str(caught.value) + repr(caught.value.data) + repr(audit.record_call.call_args_list)
     assert JPEG_BASE64 not in safe
@@ -495,8 +551,9 @@ def test_provider_failure_is_safe_and_never_replayed(
     project_id: int,
     status: int,
     error_type: type[Exception],
+    host_audit,
 ) -> None:
-    audit = Mock()
+    audit = host_audit
     httpx_mock.add_response(
         method="POST",
         url=f"{API}/chat/completions",
@@ -512,12 +569,12 @@ def test_provider_failure_is_safe_and_never_replayed(
             "cost": "ignore",
         },
     )
-    with pytest.raises(error_type) as caught:
-        run_call(project_id, run_step_call_repo=audit, run_step_id=1)
+    with pytest.raises(ConflictError) as caught:
+        run_call(project_id, audit=audit)
     exc = caught.value
-    assert exc.data["status"] == status
-    assert exc.data["automatic_retry_count"] == 0
-    assert exc.data["outcome_unknown"] is (status >= 500)
+    assert exc.data["provider_status_code"] == status
+    assert audit.record_call.call_args.kwargs["metadata_json"]["automatic_retry_count"] == 0
+    assert audit.record_call.call_args.kwargs["metadata_json"]["outcome_unknown"] is (status >= 500)
     assert exc.data["provider_error"]["code"] == "provider_rejected"
     assert exc.data["provider_error"]["provider_request_id"] == "failure-123"
     safe = str(exc) + repr(exc.data) + repr(audit.record_call.call_args_list)
@@ -604,7 +661,7 @@ def test_audio_bound_checked_before_read(project_id: int, tmp_path: Path) -> Non
     path = tmp_path / "recording.wav"
     with path.open("wb") as stream:
         stream.truncate(20 * 1024 * 1024 + 1)
-    with pytest.raises(ValidationError, match="20 MiB"):
+    with pytest.raises(ValidationError, match="caller's byte limit"):
         run_call(
             project_id,
             "analyze_audio",
@@ -622,19 +679,20 @@ def test_audio_echo_in_provider_error_does_not_escape(
     httpx_mock: HTTPXMock,
     project_id: int,
     tmp_path: Path,
+    host_audit,
 ) -> None:
     raw = b"fLaC" + b"audio data" * 500
     encoded = base64.b64encode(raw).decode()
     path = tmp_path / "audio.flac"
     path.write_bytes(raw)
-    audit = Mock()
+    audit = host_audit
     httpx_mock.add_response(
         method="POST",
         url=f"{API}/chat/completions",
         status_code=400,
         json={"error": {"message": f"Cannot parse {encoded}", "code": "invalid_audio"}},
     )
-    with pytest.raises(IntegrationDownError) as caught:
+    with pytest.raises(ConflictError) as caught:
         run_call(
             project_id,
             "analyze_audio",
@@ -645,8 +703,7 @@ def test_audio_echo_in_provider_error_does_not_escape(
                 "format": "flac",
                 "max_tokens": 100,
             },
-            run_step_call_repo=audit,
-            run_step_id=1,
+            audit=audit,
         )
     safe = str(caught.value) + repr(caught.value.data) + repr(audit.record_call.call_args_list)
     assert encoded[:100] not in safe
@@ -659,9 +716,10 @@ def test_large_image_never_becomes_a_raw_audit_preview(
     project_id: int,
     tmp_path: Path,
     inline: bool,
+    host_audit,
 ) -> None:
     encoded = base64.b64encode(b"\xff\xd8\xff" + b"image" * 2000 + b"\xff\xd9").decode()
-    audit = Mock()
+    audit = host_audit
     httpx_mock.add_response(
         method="POST", url=f"{API}/chat/completions", json=image_completion(encoded, inline=inline)
     )
@@ -670,10 +728,9 @@ def test_large_image_never_becomes_a_raw_audit_preview(
         "generate_image",
         kwargs={"prompt": "An apple"},
         asset_dir=tmp_path,
-        run_step_call_repo=audit,
-        run_step_id=1,
+        audit=audit,
     )
-    safe = json.dumps(result.data) + repr(audit.record_call.call_args_list)
+    safe = json.dumps(result.response_json) + repr(audit.record_call.call_args_list)
     assert encoded[:100] not in safe
     assert "preview" not in safe
 
@@ -686,15 +743,20 @@ def test_image_limit_rejects_before_decode(
     monkeypatch: pytest.MonkeyPatch,
     inline: bool,
 ) -> None:
-    monkeypatch.setattr("stackos.integrations.aignc.MAX_IMAGE_BYTES", 8)
     encoded = base64.b64encode(b"\xff\xd8\xff" + b"large-image" + b"\xff\xd9").decode()
     decode = Mock(side_effect=AssertionError("Oversized image must not be decoded"))
-    monkeypatch.setattr("stackos.integrations.aignc.base64.b64decode", decode)
+    monkeypatch.setattr("stackos_connectors.connectors.aignc.integration.base64.b64decode", decode)
     httpx_mock.add_response(
         method="POST", url=f"{API}/chat/completions", json=image_completion(encoded, inline=inline)
     )
-    with pytest.raises(IntegrationDownError, match="20 MiB"):
-        run_call(project_id, "generate_image", kwargs={"prompt": "An apple"}, asset_dir=tmp_path)
+    with pytest.raises(IntegrationDownError, match="caller's byte limit"):
+        run_call(
+            project_id,
+            "generate_image",
+            kwargs={"prompt": "An apple"},
+            asset_dir=tmp_path,
+            max_image_bytes=8,
+        )
     assert list(tmp_path.iterdir()) == []
     decode.assert_not_called()
 
@@ -707,18 +769,23 @@ def test_decoded_image_limit_rejects_same_base64_size_bucket(
     monkeypatch: pytest.MonkeyPatch,
     inline: bool,
 ) -> None:
-    monkeypatch.setattr("stackos.integrations.aignc.MAX_IMAGE_BYTES", 5)
     encoded = base64.b64encode(b"\xff\xd8\xffx\xff\xd9").decode()
     httpx_mock.add_response(
         method="POST", url=f"{API}/chat/completions", json=image_completion(encoded, inline=inline)
     )
-    with pytest.raises(IntegrationDownError, match="invalid JPEG"):
-        run_call(project_id, "generate_image", kwargs={"prompt": "An apple"}, asset_dir=tmp_path)
+    with pytest.raises(IntegrationDownError, match="caller's byte limit"):
+        run_call(
+            project_id,
+            "generate_image",
+            kwargs={"prompt": "An apple"},
+            asset_dir=tmp_path,
+            max_image_bytes=5,
+        )
     assert list(tmp_path.iterdir()) == []
 
 
 def test_unconfigured_asset_storage_fails_before_generation(project_id: int) -> None:
-    with pytest.raises(ValidationError, match="generated-assets"):
+    with pytest.raises(ValidationError, match="output_dir"):
         run_call(project_id, "generate_image", kwargs={"prompt": "An apple"})
 
 
@@ -775,3 +842,24 @@ def test_other_documented_audio_formats_are_encoded(
     body = json.loads(httpx_mock.get_requests()[0].content)
     audio = body["messages"][0]["content"][1]["input_audio"]
     assert audio == {"data": base64.b64encode(raw).decode(), "format": format}
+
+
+def test_host_default_output_limit_and_generated_asset_projection(host_media_projection):
+    from stackos.actions.aignc import AigncActionConnector
+
+    result, native_data = asyncio.run(
+        host_media_projection(
+            AigncActionConnector(),
+            provider="aignc",
+            operation="image.generate",
+            data={"prompt": "fixture"},
+            output_subdir="aignc",
+            expected_context={
+                "max_response_bytes": 30 * 1024 * 1024,
+                "max_image_bytes": 20 * 1024 * 1024,
+                "max_audio_bytes": 20 * 1024 * 1024,
+            },
+        )
+    )
+    assert native_data["max_tokens"] == 2048
+    assert result.cost_cents == 0

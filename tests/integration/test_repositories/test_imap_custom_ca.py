@@ -9,10 +9,11 @@ from pathlib import Path
 
 import httpx
 import pytest
+import stackos_connectors.connectors.imap.actions as imap_actions
+import stackos_connectors.connectors.imap.integration as imap_integration
 from sqlmodel import Session, select
+from stackos_connectors.errors import ValidationError as NativeValidationError
 
-import stackos.actions.imap as imap_actions
-import stackos.integrations.imap as imap_integration
 from stackos.actions import ActionRepository
 from stackos.auth_providers import AuthRepository
 from stackos.auth_providers.repository.schema import AuthFieldOut, AuthMethodOut
@@ -191,14 +192,13 @@ def test_invalid_stored_ca_fails_safely_before_imap_connect(
                 username="synthetic-user",
                 payload=b"synthetic-password",
                 http=http,
-                project_id=0,
                 tls_ca_pem=invalid,
             ).test_credentials()
 
     result = asyncio.run(probe())
     assert result["metadata"] == {"stage": "tls", "reason_code": "tls_configuration_error"}
     assert invalid not in json.dumps(result)
-    with pytest.raises(ValidationError) as error:
+    with pytest.raises(NativeValidationError) as error:
         imap_actions._login({**_fields(tls_ca_pem=invalid), "timeout_s": 5})
     assert error.value.data["field"] == "tls_ca_pem"
     assert invalid not in str(error.value)

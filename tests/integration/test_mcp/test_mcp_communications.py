@@ -12,13 +12,13 @@ import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 from sqlmodel import Session, select
+from stackos_connectors.connectors.telegram.tdlib.native import TelegramTdlibNativeError
 
 from stackos.actions import ActionRepository
 from stackos.actions.telegram import TelegramActionConnector
 from stackos.auth_providers import AuthRepository
 from stackos.auth_providers.repository.telegram_application import TelegramApplicationRepository
 from stackos.db.models import Action, ActionCall, Credential, CredentialAccount, CredentialScope
-from stackos.integrations.telegram_tdlib.native import TelegramTdlibNativeError
 from stackos.integrations.telegram_tdlib.service import TelegramTdlibServiceError
 from stackos.operations import communication_platform
 from stackos.repositories.agent_requests import AgentRequestRepository
@@ -3132,7 +3132,7 @@ def test_telegram_transient_read_repairs_missing_tdlib_runtime_without_storing_r
         },
     )
 
-    class MissingSessionRuntime:
+    class MissingSessionRuntime(FakeTelegram):
         async def request(self, *_args, **_kwargs):
             raise TelegramTdlibServiceError("TDLib session is not configured")
 
@@ -3177,7 +3177,7 @@ def test_telegram_transient_native_timeout_has_safe_retry_without_auditing_body(
         },
     )
 
-    class TimedOutRuntime:
+    class TimedOutRuntime(FakeTelegram):
         async def request(self, *_args, **_kwargs):
             raise TelegramTdlibNativeError("TDLib request timed out awaiting a response.")
 

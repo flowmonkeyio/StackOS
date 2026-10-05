@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from stackos_connectors.errors import IntegrationDownError
+from stackos_connectors.shared.byteplus.ark import BytePlusArkIntegration
 
 from stackos.actions.connectors import (
     ActionConnectorRequest,
@@ -15,11 +17,11 @@ from stackos.actions.connectors import (
 from stackos.actions.media_artifacts import (
     artifact_path,
     cost_usd_to_cents,
+    execute_media_native,
+    media_projection_failure,
     register_generated_media_artifacts,
 )
 from stackos.config import Settings
-from stackos.integrations.byteplus_ark import BytePlusArkIntegration
-from stackos.mcp.errors import IntegrationDownError
 from stackos.repositories.base import ValidationError
 
 
@@ -395,73 +397,72 @@ class BytePlusSeedanceVideoActionConnector:
             else []
         )
         async with httpx.AsyncClient(timeout=180.0) as http:
-            client = BytePlusArkIntegration(
-                payload=request.credential.secret_payload,
-                project_id=request.project_id,
-                http=http,
-                asset_dir=asset_dir,
-            )
-            result = await client.generate_seedance_video(
-                prompt=str(payload["prompt"]) if isinstance(payload.get("prompt"), str) else None,
-                model=str(payload.get("model", BytePlusArkIntegration.DEFAULT_SEEDANCE_MODEL)),
-                mode=str(payload.get("mode", "text-to-video")),
-                region=str(payload.get("region", BytePlusArkIntegration.DEFAULT_REGION)),
-                resolution=str(payload.get("resolution", "720p")),
-                ratio=str(payload.get("ratio", "16:9")),
-                duration=int(payload.get("duration", 5)),
-                input_image_paths=image_paths,
-                reference_video_urls=_url_list(payload.get("reference_video_urls")),
-                reference_audio_urls=_url_list(payload.get("reference_audio_urls")),
-                generate_audio=(
-                    payload["generate_audio"]
+            result = await execute_media_native(
+                request,
+                {
+                    "prompt": str(payload["prompt"])
+                    if isinstance(payload.get("prompt"), str)
+                    else None,
+                    "model": str(
+                        payload.get("model", BytePlusArkIntegration.DEFAULT_SEEDANCE_MODEL)
+                    ),
+                    "mode": str(payload.get("mode", "text-to-video")),
+                    "region": str(payload.get("region", BytePlusArkIntegration.DEFAULT_REGION)),
+                    "resolution": str(payload.get("resolution", "720p")),
+                    "ratio": str(payload.get("ratio", "16:9")),
+                    "duration": int(payload.get("duration", 5)),
+                    "input_image_paths": image_paths,
+                    "reference_video_urls": _url_list(payload.get("reference_video_urls")),
+                    "reference_audio_urls": _url_list(payload.get("reference_audio_urls")),
+                    "generate_audio": payload["generate_audio"]
                     if isinstance(payload.get("generate_audio"), bool)
-                    else None
-                ),
-                watermark=(
-                    payload["watermark"] if isinstance(payload.get("watermark"), bool) else None
-                ),
-                seed=(
-                    int(payload["seed"])
+                    else None,
+                    "watermark": payload["watermark"]
+                    if isinstance(payload.get("watermark"), bool)
+                    else None,
+                    "seed": int(payload["seed"])
                     if isinstance(payload.get("seed"), int)
-                    and not isinstance(payload.get("seed"), bool)
-                    else None
-                ),
-                return_last_frame=(
-                    payload["return_last_frame"]
+                    and (not isinstance(payload.get("seed"), bool))
+                    else None,
+                    "return_last_frame": payload["return_last_frame"]
                     if isinstance(payload.get("return_last_frame"), bool)
-                    else None
-                ),
-                safety_identifier=(
-                    str(payload["safety_identifier"])
+                    else None,
+                    "safety_identifier": str(payload["safety_identifier"])
                     if isinstance(payload.get("safety_identifier"), str)
-                    else None
-                ),
-                priority=(
-                    int(payload["priority"])
+                    else None,
+                    "priority": int(payload["priority"])
                     if isinstance(payload.get("priority"), int)
-                    and not isinstance(payload.get("priority"), bool)
-                    else None
-                ),
-                poll_interval_seconds=float(payload.get("poll_interval_seconds", 10)),
-                poll_timeout_seconds=float(payload.get("poll_timeout_seconds", 1800)),
+                    and (not isinstance(payload.get("priority"), bool))
+                    else None,
+                    "poll_interval_seconds": float(payload.get("poll_interval_seconds", 10)),
+                    "poll_timeout_seconds": float(payload.get("poll_timeout_seconds", 1800)),
+                },
+                http=http,
+                connector=self.key,
+                output_subdir="byteplus-ark",
+                qps=1.0,
+                pricing=None,
             )
-        output_json = result.data if isinstance(result.data, dict) else {"data": result.data}
-        output_json = register_generated_media_artifacts(
-            request,
-            output_json,
-            kind="video",
-            provider_key="byteplus-ark",
-            source="byteplus-seedance-action",
-            metadata_builder=lambda item: {
-                "task_id": item.get("task_id"),
-                "mode": item.get("mode"),
-            },
-        )
-        return ActionConnectorResult(
-            output_json=output_json,
-            metadata_json={"vendor": "byteplus-ark", "model_family": "seedance"},
-            cost_cents=cost_usd_to_cents(result.cost_usd),
-        )
+        try:
+            output_json = result.data if isinstance(result.data, dict) else {"data": result.data}
+            output_json = register_generated_media_artifacts(
+                request,
+                output_json,
+                kind="video",
+                provider_key="byteplus-ark",
+                source="byteplus-seedance-action",
+                metadata_builder=lambda item: {
+                    "task_id": item.get("task_id"),
+                    "mode": item.get("mode"),
+                },
+            )
+            return ActionConnectorResult(
+                output_json=output_json,
+                metadata_json={"vendor": "byteplus-ark", "model_family": "seedance"},
+                cost_cents=cost_usd_to_cents(result.cost_usd),
+            )
+        except Exception as exc:
+            raise media_projection_failure(exc, result) from None
 
 
 def _is_http_url(value: Any) -> bool:

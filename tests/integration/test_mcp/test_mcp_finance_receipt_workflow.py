@@ -159,7 +159,7 @@ def _verify_host_fixture(finance: Path, manifest: dict[str, Any]) -> None:
 
 def _imap_fixture(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """State survives separate connector sessions; STORE verifies real host files."""
-    import stackos.actions.imap as imap_module
+    import stackos_connectors.connectors.imap.actions as imap_module
 
     email = EmailMessage()
     email["Subject"] = "UNTRUSTED receipt workflow fixture subject"

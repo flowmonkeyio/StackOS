@@ -18,8 +18,7 @@ import asyncio
 
 import httpx
 from pytest_httpx import HTTPXMock
-
-from stackos.integrations.sitemap import (
+from stackos_connectors.connectors.sitemap.integration import (
     SitemapEntry,
     fetch_sitemap_entries,
 )

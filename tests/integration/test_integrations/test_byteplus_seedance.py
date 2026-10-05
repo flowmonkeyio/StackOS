@@ -11,9 +11,8 @@ from typing import Any
 import httpx
 import pytest
 from pytest_httpx import HTTPXMock
-
-from stackos.integrations.byteplus_ark import BytePlusArkIntegration
-from stackos.mcp.errors import IntegrationDownError, RateLimitedError
+from stackos_connectors.errors import IntegrationDownError, RateLimitedError
+from stackos_connectors.shared.byteplus.ark import BytePlusArkIntegration
 
 
 def test_seedance_text_to_video_task_polls_and_persists_output(
@@ -57,9 +56,8 @@ def test_seedance_text_to_video_task_polls_and_persists_output(
         async with httpx.AsyncClient() as client:
             integ = BytePlusArkIntegration(
                 payload=b"ark-key",
-                project_id=project_id,
                 http=client,
-                asset_dir=tmp_path,
+                output_dir=tmp_path / "byteplus-ark",
             )
             return await integ.generate_seedance_video(
                 prompt="video prompt",
@@ -68,6 +66,11 @@ def test_seedance_text_to_video_task_polls_and_persists_output(
                 generate_audio=True,
                 watermark=False,
                 poll_interval_seconds=0,
+                model="dreamina-seedance-2-0-260128",
+                mode="text-to-video",
+                region="ap-southeast-1",
+                resolution="720p",
+                poll_timeout_seconds=1800.0,
             )
 
     result = asyncio.run(go())
@@ -85,12 +88,10 @@ def test_seedance_text_to_video_task_polls_and_persists_output(
     }
     item = result.data["data"][0]
     rendered = json.dumps(result.data)
-    assert item["url"].startswith("/generated-assets/byteplus-ark/byteplus-seedance-video-")
+    assert item["path"].startswith(str(tmp_path / "byteplus-ark/byteplus-seedance-video-"))
     assert item["task_id"] == "cgt-123"
     assert "https://ark-output.example/video.mp4" not in rendered
-    assert (tmp_path / item["url"].removeprefix("/generated-assets/")).read_bytes() == (
-        b"seedance-video"
-    )
+    assert (Path(item["path"])).read_bytes() == (b"seedance-video")
 
 
 def test_seedance_first_last_frame_sends_base64_image_roles(
@@ -127,15 +128,20 @@ def test_seedance_first_last_frame_sends_base64_image_roles(
         async with httpx.AsyncClient() as client:
             integ = BytePlusArkIntegration(
                 payload=b"ark-key",
-                project_id=project_id,
                 http=client,
-                asset_dir=tmp_path,
+                output_dir=tmp_path / "byteplus-ark",
             )
             await integ.generate_seedance_video(
                 prompt="use the two frames",
                 mode="first-last-frame",
                 input_image_paths=[first, last],
                 poll_interval_seconds=0,
+                model="dreamina-seedance-2-0-260128",
+                region="ap-southeast-1",
+                resolution="720p",
+                ratio="16:9",
+                duration=5,
+                poll_timeout_seconds=1800.0,
             )
 
     asyncio.run(go())
@@ -172,40 +178,80 @@ def test_seedance_raises_on_failed_status(
         async with httpx.AsyncClient() as client:
             integ = BytePlusArkIntegration(
                 payload=b"ark-key",
-                project_id=project_id,
                 http=client,
             )
             return await integ.generate_seedance_video(
                 prompt="bad",
                 poll_interval_seconds=0,
+                model="dreamina-seedance-2-0-260128",
+                mode="text-to-video",
+                region="ap-southeast-1",
+                resolution="720p",
+                ratio="16:9",
+                duration=5,
+                poll_timeout_seconds=1800.0,
             )
 
     with pytest.raises(IntegrationDownError, match="ended with status failed"):
         asyncio.run(go())
 
 
-def test_seedance_raises_rate_limited_after_retries(
+def test_seedance_rate_limit_does_not_resubmit_mutation(
     httpx_mock: HTTPXMock,
     project_id: int,
 ) -> None:
     submit_url = "https://ark.ap-southeast.bytepluses.com/api/v3/contents/generations/tasks"
-    for _ in range(4):
-        httpx_mock.add_response(
-            method="POST",
-            url=submit_url,
-            status_code=429,
-            headers={"retry-after": "0"},
-            json={"error": {"message": "rate limited"}},
-        )
+    httpx_mock.add_response(
+        method="POST",
+        url=submit_url,
+        status_code=429,
+        headers={"retry-after": "0"},
+        json={"error": {"message": "rate limited"}},
+    )
 
     async def go() -> Any:
         async with httpx.AsyncClient() as client:
             integ = BytePlusArkIntegration(
                 payload=b"ark-key",
-                project_id=project_id,
                 http=client,
             )
-            return await integ.generate_seedance_video(prompt="retry", poll_interval_seconds=0)
+            return await integ.generate_seedance_video(
+                prompt="retry",
+                poll_interval_seconds=0,
+                model="dreamina-seedance-2-0-260128",
+                mode="text-to-video",
+                region="ap-southeast-1",
+                resolution="720p",
+                ratio="16:9",
+                duration=5,
+                poll_timeout_seconds=1800.0,
+            )
 
-    with pytest.raises(RateLimitedError, match="429"):
+    with pytest.raises(RateLimitedError, match="429") as caught:
         asyncio.run(go())
+    assert caught.value.data["status"] == 429
+    assert len(httpx_mock.get_requests()) == 1
+
+
+def test_host_default_choices_and_generated_asset_projection(host_media_projection):
+    from stackos.actions.byteplus_seedance import BytePlusSeedanceVideoActionConnector
+
+    result, native_data = asyncio.run(
+        host_media_projection(
+            BytePlusSeedanceVideoActionConnector(),
+            provider="byteplus-seedance",
+            operation="video.generate",
+            data={"prompt": "fixture"},
+            output_subdir="byteplus-ark",
+        )
+    )
+    assert native_data["model"] == "dreamina-seedance-2-0-260128"
+    assert native_data["mode"] == "text-to-video"
+    assert native_data["region"] == "ap-southeast-1"
+    assert native_data["resolution"] == "720p"
+    assert native_data["ratio"] == "16:9"
+    assert native_data["duration"] == 5
+    assert native_data["poll_interval_seconds"] == 10.0
+    assert native_data["poll_timeout_seconds"] == 1800.0
+    assert result.metadata_json["vendor"] == "byteplus-ark"
+    assert result.metadata_json["model_family"] == "seedance"

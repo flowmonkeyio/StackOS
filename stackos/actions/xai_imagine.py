@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
+from stackos_connectors.connectors.xai_imagine.integration import XAIImagineIntegration
 
 from stackos.actions.connectors import (
     ActionConnectorRequest,
     ActionConnectorResult,
     ActionValidationIssue,
 )
+from stackos.actions.media_artifacts import execute_media_native, media_projection_failure
 from stackos.config import Settings
-from stackos.integrations.xai_imagine import XAIImagineIntegration
 from stackos.repositories.base import ValidationError
 from stackos.repositories.resources import ArtifactRepository
 
@@ -310,7 +311,7 @@ class XAIImagineActionConnector:
             elif isinstance(payload.get("reference_image_refs"), list):
                 input_images = len(payload["reference_image_refs"])
             return _cost_usd_to_cents(
-                XAIImagineIntegration.estimate_video_cost_usd(
+                _MediaPricing.estimate_video_cost_usd(
                     seconds=duration,
                     resolution=str(payload.get("resolution", "480p")),
                     input_images=input_images,
@@ -325,7 +326,7 @@ class XAIImagineActionConnector:
             else 0
         )
         return _cost_usd_to_cents(
-            XAIImagineIntegration.estimate_image_cost_usd(
+            _MediaPricing.estimate_image_cost_usd(
                 n=n,
                 resolution=str(payload.get("resolution", "1k")),
                 input_images=input_images,
@@ -338,67 +339,84 @@ class XAIImagineActionConnector:
         payload = request.input_json
         asset_dir = request.asset_dir or Settings().generated_assets_dir
         async with httpx.AsyncClient(timeout=180.0) as http:
-            client = XAIImagineIntegration(
-                payload=request.credential.secret_payload,
-                project_id=request.project_id,
-                http=http,
-                asset_dir=asset_dir,
-            )
             match request.operation:
                 case "image.edit":
-                    result = await client.edit_image(
-                        prompt=str(payload["prompt"]),
-                        input_image_paths=[
-                            _artifact_path(asset_dir, str(ref))
-                            for ref in payload["input_image_refs"]
-                        ],
-                        aspect_ratio=(
-                            str(payload["aspect_ratio"])
+                    result = await execute_media_native(
+                        request,
+                        {
+                            "prompt": str(payload["prompt"]),
+                            "input_image_paths": [
+                                _artifact_path(asset_dir, str(ref))
+                                for ref in payload["input_image_refs"]
+                            ],
+                            "aspect_ratio": str(payload["aspect_ratio"])
                             if isinstance(payload.get("aspect_ratio"), str)
-                            else None
-                        ),
-                        resolution=str(payload.get("resolution", "1k")),
-                        model=str(payload.get("model", self._IMAGE_MODEL)),
+                            else None,
+                            "resolution": str(payload.get("resolution", "1k")),
+                            "model": str(payload.get("model", self._IMAGE_MODEL)),
+                        },
+                        http=http,
+                        connector=self.key,
+                        output_subdir="xai-imagine",
+                        qps=3.0,
+                        pricing=_host_media_cost,
                     )
                     media_kind = "image"
                 case "video.generate":
-                    result = await client.generate_video(
-                        prompt=str(payload["prompt"]),
-                        duration=int(payload.get("duration", 5)),
-                        aspect_ratio=str(payload.get("aspect_ratio", "16:9")),
-                        resolution=str(payload.get("resolution", "480p")),
-                        model=str(payload.get("model", self._VIDEO_MODEL)),
-                        image_path=(
-                            _artifact_path(asset_dir, str(payload["input_image_ref"]))
+                    result = await execute_media_native(
+                        request,
+                        {
+                            "prompt": str(payload["prompt"]),
+                            "duration": int(payload.get("duration", 5)),
+                            "aspect_ratio": str(payload.get("aspect_ratio", "16:9")),
+                            "resolution": str(payload.get("resolution", "480p")),
+                            "model": str(payload.get("model", self._VIDEO_MODEL)),
+                            "image_path": _artifact_path(asset_dir, str(payload["input_image_ref"]))
                             if isinstance(payload.get("input_image_ref"), str)
-                            else None
-                        ),
-                        reference_image_paths=[
-                            _artifact_path(asset_dir, str(ref))
-                            for ref in payload.get("reference_image_refs", [])
-                        ]
-                        if isinstance(payload.get("reference_image_refs"), list)
-                        else None,
-                        poll_interval_seconds=float(payload.get("poll_interval_seconds", 5)),
-                        poll_timeout_seconds=float(payload.get("poll_timeout_seconds", 900)),
+                            else None,
+                            "reference_image_paths": [
+                                _artifact_path(asset_dir, str(ref))
+                                for ref in payload.get("reference_image_refs", [])
+                            ]
+                            if isinstance(payload.get("reference_image_refs"), list)
+                            else None,
+                            "poll_interval_seconds": float(payload.get("poll_interval_seconds", 5)),
+                            "poll_timeout_seconds": float(payload.get("poll_timeout_seconds", 900)),
+                        },
+                        http=http,
+                        connector=self.key,
+                        output_subdir="xai-imagine",
+                        qps=3.0,
+                        pricing=_host_media_cost,
                     )
                     media_kind = "video"
                 case _:
-                    result = await client.generate_image(
-                        prompt=str(payload["prompt"]),
-                        aspect_ratio=str(payload.get("aspect_ratio", "auto")),
-                        resolution=str(payload.get("resolution", "1k")),
-                        n=int(payload.get("n", 1)),
-                        model=str(payload.get("model", self._IMAGE_MODEL)),
+                    result = await execute_media_native(
+                        request,
+                        {
+                            "prompt": str(payload["prompt"]),
+                            "aspect_ratio": str(payload.get("aspect_ratio", "auto")),
+                            "resolution": str(payload.get("resolution", "1k")),
+                            "n": int(payload.get("n", 1)),
+                            "model": str(payload.get("model", self._IMAGE_MODEL)),
+                        },
+                        http=http,
+                        connector=self.key,
+                        output_subdir="xai-imagine",
+                        qps=3.0,
+                        pricing=_host_media_cost,
                     )
                     media_kind = "image"
-        output_json = result.data if isinstance(result.data, dict) else {"data": result.data}
-        output_json = _register_generated_media_artifacts(request, output_json, kind=media_kind)
-        return ActionConnectorResult(
-            output_json=output_json,
-            metadata_json={"vendor": "xai-imagine"},
-            cost_cents=_cost_usd_to_cents(result.cost_usd),
-        )
+        try:
+            output_json = result.data if isinstance(result.data, dict) else {"data": result.data}
+            output_json = _register_generated_media_artifacts(request, output_json, kind=media_kind)
+            return ActionConnectorResult(
+                output_json=output_json,
+                metadata_json={"vendor": "xai-imagine"},
+                cost_cents=_cost_usd_to_cents(result.cost_usd),
+            )
+        except Exception as exc:
+            raise media_projection_failure(exc, result) from None
 
     @classmethod
     def _default_model(cls, operation: str) -> str:
@@ -496,3 +514,88 @@ def _cost_usd_to_cents(cost_usd: float) -> int:
 
 
 __all__ = ["XAIImagineActionConnector"]
+
+
+class _MediaPricing:
+    VIDEO_MODEL = XAIImagineIntegration.VIDEO_MODEL
+    _IMAGE_INPUT_COST_PER_IMAGE_USD = 0.01
+
+    _IMAGE_OUTPUT_COSTS_USD: ClassVar[dict[str, float]] = {"1k": 0.05, "2k": 0.07}
+
+    _VIDEO_INPUT_IMAGE_COSTS_USD: ClassVar[dict[str, float]] = {
+        VIDEO_MODEL: 0.002,
+    }
+
+    _VIDEO_OUTPUT_COSTS_PER_SECOND_USD: ClassVar[dict[str, dict[str, float]]] = {
+        VIDEO_MODEL: {
+            "480p": 0.05,
+            "720p": 0.07,
+        },
+    }
+
+    @classmethod
+    def estimate_image_cost_usd(
+        cls,
+        *,
+        n: int = 1,
+        resolution: str = "1k",
+        input_images: int = 0,
+    ) -> float:
+        output_cost = cls._IMAGE_OUTPUT_COSTS_USD.get(resolution, cls._IMAGE_OUTPUT_COSTS_USD["1k"])
+        return max(1, n) * output_cost + max(0, input_images) * cls._IMAGE_INPUT_COST_PER_IMAGE_USD
+
+    @classmethod
+    def estimate_video_cost_usd(
+        cls,
+        *,
+        seconds: int = 5,
+        resolution: str = "480p",
+        input_images: int = 0,
+        model: str = VIDEO_MODEL,
+    ) -> float:
+        output_costs = cls._VIDEO_OUTPUT_COSTS_PER_SECOND_USD.get(
+            model,
+            cls._VIDEO_OUTPUT_COSTS_PER_SECOND_USD[cls.VIDEO_MODEL],
+        )
+        output_cost = output_costs.get(resolution, output_costs["480p"])
+        input_cost = cls._VIDEO_INPUT_IMAGE_COSTS_USD.get(
+            model,
+            cls._VIDEO_INPUT_IMAGE_COSTS_USD[cls.VIDEO_MODEL],
+        )
+        return max(1, seconds) * output_cost + max(0, input_images) * input_cost
+
+    def _extract_actual_cost_usd(
+        self,
+        op: str,
+        *,
+        request: Any,
+        response: Any,
+        estimated: float,
+    ) -> float:
+        del request
+        if op == "video.poll":
+            return estimated
+        actual = XAIImagineIntegration._cost_from_usage_usd(response)
+        return estimated if actual is None else actual
+
+
+def _host_media_cost(operation: str, data: dict[str, Any], output: dict[str, Any]) -> float:
+    estimated = (
+        _MediaPricing.estimate_video_cost_usd(
+            seconds=data["duration"],
+            resolution=data["resolution"],
+            input_images=(
+                1 if data.get("image_path") else len(data.get("reference_image_paths") or [])
+            ),
+            model=data["model"],
+        )
+        if operation == "video.generate"
+        else _MediaPricing.estimate_image_cost_usd(
+            n=data.get("n", 1),
+            resolution=data["resolution"],
+            input_images=len(data.get("input_image_paths") or []),
+        )
+    )
+    return _MediaPricing()._extract_actual_cost_usd(
+        operation, request=data, response=output, estimated=estimated
+    )

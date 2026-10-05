@@ -7,8 +7,8 @@ from urllib.parse import parse_qs, urlparse
 
 from fastapi.testclient import TestClient
 from pytest_httpx import HTTPXMock
+from stackos_connectors.connectors.telegram.tdlib.native import TelegramTdlibRequestError
 
-from stackos.integrations.telegram_tdlib import TelegramTdlibRequestError
 from stackos.operations.dispatcher import OperationDispatcher
 from tests.integration.test_repositories.test_telegram_native_authorization import _Runtime
 
@@ -211,6 +211,8 @@ def test_account_edit_test_and_revoke_are_global_admin_actions(
     monkeypatch,
 ) -> None:
     class _Probe:
+        default_qps = 1.0
+
         def __init__(self, *, payload: bytes, **_kwargs: object) -> None:
             assert payload == b"fc-secret"
 
@@ -223,7 +225,7 @@ def test_account_edit_test_and_revoke_are_global_admin_actions(
             }
 
     monkeypatch.setattr(
-        "stackos.auth_providers.repository.integration_class_for",
+        "stackos.auth_providers.repository.testing.integration_class_for",
         lambda _provider_key: _Probe,
     )
     account = _firecrawl_account(api, project_id=project_id)

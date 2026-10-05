@@ -161,6 +161,10 @@ webhook/polling rather than fetching prior chat history.
 
 For repository development:
 
+Keep the matched `StackOSConnectors` checkout beside this repository at
+`../StackOSConnectors`. `uv` uses that local package for development; installed
+StackOS distributions use the separately built `stackos-connectors` dependency.
+
 ```bash
 make install
 make serve

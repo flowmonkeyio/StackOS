@@ -8,8 +8,7 @@ from typing import Any
 
 import httpx
 from pytest_httpx import HTTPXMock
-
-from stackos.integrations.google_tag_manager import GoogleTagManagerIntegration
+from stackos_connectors.connectors.google_tag_manager.integration import GoogleTagManagerIntegration
 
 
 def _payload() -> bytes:
@@ -67,7 +66,6 @@ def test_google_tag_manager_wrapper_maps_read_endpoints(
         async with httpx.AsyncClient() as client:
             integration = GoogleTagManagerIntegration(
                 payload=_payload(),
-                project_id=project_id,
                 http=client,
                 qps_override=1000.0,
             )
@@ -122,7 +120,6 @@ def test_google_tag_manager_test_credentials_returns_sanitized_account_summary(
         async with httpx.AsyncClient() as client:
             integration = GoogleTagManagerIntegration(
                 payload=_payload(),
-                project_id=project_id,
                 http=client,
                 qps_override=1000.0,
             )

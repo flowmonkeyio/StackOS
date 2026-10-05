@@ -16,6 +16,7 @@ from stackos.actions.slack_bot import SlackBotActionConnector
 from stackos.actions.slack_bot.results import _safe_history_message
 from stackos.auth_providers import AuthRepository
 from stackos.communications import communication_surface_binding_external_id
+from stackos.db.models import ActionCall
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.resources import ResourceRepository
@@ -23,6 +24,78 @@ from stackos.repositories.resources import ResourceRepository
 _TOKEN = "xoxb-1234567890-safe-test-token"
 _SIGNING_SECRET = "slack-signing-secret"
 _BASE = "https://slack.com/api"
+
+
+def test_slack_storage_failure_after_send_retains_remote_receipt(
+    session: Session, project_id: int, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import stackos.actions.slack_bot.connector as host_slack
+
+    credential_ref = _slack_credential_ref(session, project_id)
+    _slack_communication_profile(session, project_id)
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{_BASE}/chat.postMessage",
+        json={"ok": True, "channel": "C123", "ts": "177.123"},
+    )
+
+    def fail_store(*args, **kwargs):
+        raise RuntimeError("injected history failure")
+
+    monkeypatch.setattr(host_slack, "_store_outbound_message", fail_store)
+    with pytest.raises(ConflictError) as failed:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="communications.slack-bot.message.send",
+                input_json={
+                    "profile_ref": "communication-profile:support-agent",
+                    "channel_ref": "slack-channel:C123",
+                    "text": "hello",
+                },
+                credential_ref=credential_ref,
+            )
+        )
+    call = session.get(ActionCall, failed.value.data["action_call_id"])
+    assert call.response_json["message_ref"] == "slack-message:C123:177.123"
+    assert call.response_json["provider_message_ts"] == "177.123"
+    assert call.metadata_json["provider_executed"] is True
+    assert call.metadata_json["retry_safe"] is False
+    assert len(httpx_mock.get_requests()) == 1
+
+
+@pytest.mark.parametrize("alias", [False, True])
+def test_slack_cannot_upload_private_imap_evidence(
+    session: Session, project_id: int, httpx_mock: HTTPXMock, tmp_path, alias: bool
+) -> None:
+    credential_ref = _slack_credential_ref(session, project_id)
+    _slack_communication_profile(session, project_id)
+    private = tmp_path / "imap-transfers" / "project-1" / "transfer" / "original.eml"
+    private.parent.mkdir(parents=True)
+    private.write_bytes(b"private MIME")
+    if alias:
+        public = tmp_path / "communication-media"
+        public.mkdir()
+        (public / "original.eml").symlink_to(private)
+        artifact_ref = "/generated-assets/communication-media/original.eml"
+    else:
+        artifact_ref = "/generated-assets/imap-transfers/project-1/transfer/original.eml"
+    with pytest.raises(ConflictError) as failed:
+        asyncio.run(
+            ActionRepository(session, asset_dir=tmp_path).execute(
+                project_id=project_id,
+                action_ref="communications.slack-bot.file.upload",
+                input_json={
+                    "profile_ref": "communication-profile:support-agent",
+                    "channel_ref": "slack-channel:C123",
+                    "file": {"artifact_ref": artifact_ref},
+                },
+                credential_ref=credential_ref,
+            )
+        )
+    assert "private IMAP" in failed.value.data["error"]
+    assert httpx_mock.get_requests() == []
+    assert private.read_bytes() == b"private MIME"
 
 
 def _slack_credential_ref(

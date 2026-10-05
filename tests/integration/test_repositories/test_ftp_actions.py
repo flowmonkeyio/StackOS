@@ -19,8 +19,8 @@ from stackos.actions import (
     ActionConnectorRequest,
     ActionExecutionOut,
     ActionRepository,
-    FtpActionConnector,
 )
+from stackos.actions.package_bridge import PackageActionConnector
 from stackos.auth_providers import AuthRepository
 from stackos.db.models import ActionCallStatus
 from stackos.repositories.base import ConflictError
@@ -438,7 +438,7 @@ def _credential_ref(
 
 
 def _patch_ftps(monkeypatch: pytest.MonkeyPatch) -> None:
-    import stackos.actions.ftp as ftp_module
+    import stackos_connectors.connectors.ftp.actions as ftp_module
 
     _FakeFTPTLS.reset()
     monkeypatch.setattr(ftp_module.ftplib, "FTP_TLS", _FakeFTPTLS)
@@ -534,7 +534,7 @@ def test_ftp_upload_progress_waits_for_final_server_reply(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.ftp as ftp_module
+    import stackos_connectors.connectors.ftp.actions as ftp_module
 
     class _FinalReplyFTPTLS(_FakeFTPTLS):
         instances: ClassVar[list[_FinalReplyFTPTLS]] = []
@@ -580,7 +580,7 @@ def test_ftp_upload_progress_waits_for_final_server_reply(
     )
 
     async def execute() -> tuple[bool, list[dict[str, Any]], dict[str, Any]]:
-        task = asyncio.create_task(FtpActionConnector().execute(request))
+        task = asyncio.create_task(PackageActionConnector("ftp").execute(request))
         await asyncio.to_thread(_FinalReplyFTPTLS.bytes_sent.wait)
         done_before_final_reply = task.done()
         progress_before_final_reply = list(snapshots)
@@ -627,7 +627,7 @@ def test_ftp_download_reports_sanitized_monotonic_progress_and_keeps_atomic_plac
         progress_callback=snapshots.append,
     )
 
-    result = asyncio.run(FtpActionConnector().execute(request))
+    result = asyncio.run(PackageActionConnector("ftp").execute(request))
 
     _assert_transfer_progress(
         snapshots,
@@ -649,7 +649,7 @@ def test_ftp_upload_full_bytes_then_final_error_remains_outcome_unknown(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.ftp as ftp_module
+    import stackos_connectors.connectors.ftp.actions as ftp_module
 
     class _FinalErrorFTPTLS(_FakeFTPTLS):
         instances: ClassVar[list[_FinalErrorFTPTLS]] = []
@@ -688,7 +688,7 @@ def test_ftp_upload_full_bytes_then_final_error_remains_outcome_unknown(
     )
 
     with pytest.raises(ActionConnectorError) as excinfo:
-        asyncio.run(FtpActionConnector().execute(request))
+        asyncio.run(PackageActionConnector("ftp").execute(request))
 
     failure = excinfo.value.output_json["failed"][0]
     assert failure["attempted_bytes"] == len(payload)
@@ -1015,7 +1015,7 @@ def test_ftp_recursive_delete_fails_before_mutation_without_mlsx_types(
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.ftp as ftp_module
+    import stackos_connectors.connectors.ftp.actions as ftp_module
 
     _FallbackFTPTLS.reset()
     _FallbackFTPTLS.server_dirs = {"/", "/tree"}
@@ -1044,7 +1044,7 @@ def test_ftp_recursive_delete_uses_nlst_with_mlst_types_when_mlsd_is_unavailable
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.ftp as ftp_module
+    import stackos_connectors.connectors.ftp.actions as ftp_module
 
     _MlstFallbackFTPTLS.reset()
     _MlstFallbackFTPTLS.server_dirs = {"/", "/tree", "/tree/nested"}
@@ -1078,7 +1078,7 @@ def test_ftp_recursive_delete_rejects_directory_alias_outside_selected_root(
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.ftp as ftp_module
+    import stackos_connectors.connectors.ftp.actions as ftp_module
 
     class _EscapingDirectoryFTPTLS(_FakeFTPTLS):
         instances: ClassVar[list[_EscapingDirectoryFTPTLS]] = []
@@ -1131,7 +1131,7 @@ def test_ftp_relative_mutation_fails_if_pwd_is_unavailable(
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.ftp as ftp_module
+    import stackos_connectors.connectors.ftp.actions as ftp_module
 
     class _NoPwdFTPTLS(_FakeFTPTLS):
         instances: ClassVar[list[_NoPwdFTPTLS]] = []
@@ -1165,7 +1165,7 @@ def test_ftp_recursive_delete_fails_if_directory_identity_pwd_is_unavailable(
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.ftp as ftp_module
+    import stackos_connectors.connectors.ftp.actions as ftp_module
 
     class _NoIdentityPwdFTPTLS(_FakeFTPTLS):
         instances: ClassVar[list[_NoIdentityPwdFTPTLS]] = []
@@ -1205,7 +1205,7 @@ def test_ftp_recursive_delete_reports_confirmed_partial_effects_and_unknown_outc
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.ftp as ftp_module
+    import stackos_connectors.connectors.ftp.actions as ftp_module
 
     class _PartialDeleteFTPTLS(_FakeFTPTLS):
         instances: ClassVar[list[_PartialDeleteFTPTLS]] = []
@@ -1311,7 +1311,7 @@ def test_ftp_plain_mode_and_conflict_policies_are_agent_selected(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.ftp as ftp_module
+    import stackos_connectors.connectors.ftp.actions as ftp_module
 
     _FakeFTP.reset()
     monkeypatch.setattr(ftp_module.ftplib, "FTP", _FakeFTP)
@@ -1683,7 +1683,7 @@ def test_ftp_browse_falls_back_to_nlst_cwd_and_size_without_list(
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.ftp as ftp_module
+    import stackos_connectors.connectors.ftp.actions as ftp_module
 
     _FallbackFTPTLS.reset()
     monkeypatch.setattr(ftp_module.ftplib, "FTP_TLS", _FallbackFTPTLS)
@@ -1717,7 +1717,7 @@ def test_ftp_fallback_download_stops_remote_directory_cycle(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.ftp as ftp_module
+    import stackos_connectors.connectors.ftp.actions as ftp_module
 
     _FallbackCycleFTPTLS.reset()
     _FallbackCycleFTPTLS.server_dirs = {"/", "/cycle"}
@@ -1752,7 +1752,7 @@ def test_ftp_failed_download_removes_partial_file_and_preserves_existing_target(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.ftp as ftp_module
+    import stackos_connectors.connectors.ftp.actions as ftp_module
 
     _FailingDownloadFTPTLS.reset()
     monkeypatch.setattr(ftp_module.ftplib, "FTP_TLS", _FailingDownloadFTPTLS)
@@ -1806,7 +1806,7 @@ def test_ftp_rejects_recursive_command_injection_names_and_redacts_auth_secrets(
     assert "cannot contain NUL, CR, or LF" in json.dumps(failed.output_json["provider_error"])
     assert all(call[0] != "storbinary" for call in _FakeFTPTLS.instances[0].calls)
 
-    import stackos.actions.ftp as ftp_module
+    import stackos_connectors.connectors.ftp.actions as ftp_module
 
     class _LeakyLoginFTPTLS(_FakeFTPTLS):
         instances: ClassVar[list[_LeakyLoginFTPTLS]] = []
@@ -1863,7 +1863,7 @@ def test_ftp_interrupted_upload_reports_unknown_partial_outcome_and_redacts_secr
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.ftp as ftp_module
+    import stackos_connectors.connectors.ftp.actions as ftp_module
 
     class _InterruptedUploadFTPTLS(_FakeFTPTLS):
         instances: ClassVar[list[_InterruptedUploadFTPTLS]] = []
@@ -1916,7 +1916,7 @@ def test_ftp_never_reuses_server_pwd_with_command_control_characters(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.ftp as ftp_module
+    import stackos_connectors.connectors.ftp.actions as ftp_module
 
     class _UnsafePwdFTPTLS(_FallbackFTPTLS):
         instances: ClassVar[list[_UnsafePwdFTPTLS]] = []

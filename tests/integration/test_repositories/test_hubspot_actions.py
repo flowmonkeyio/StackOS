@@ -23,6 +23,47 @@ from stackos.repositories.resources import ArtifactRepository, ResourceRepositor
 from tests.integration.account_test_support import seed_test_account
 
 
+def test_hubspot_remote_receipt_survives_host_projection_failure(
+    session, project_id, httpx_mock, monkeypatch
+):
+    credential_ref = _hubspot_credential(
+        session, project_id=project_id, scopes={"marketing.campaigns.write"}
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.hubapi.com/marketing/campaigns/2026-03",
+        headers={"x-hubspot-correlation-id": "hub-receipt-1"},
+        json={
+            "id": "campaign-receipt-1",
+            "properties": {"hs_name": "private customer text"},
+            "echo": "hubspot-secret",
+        },
+    )
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("private persistence failure")
+
+    monkeypatch.setattr(ProviderObjectReferenceRepository, "upsert", fail)
+    with pytest.raises(ConflictError) as failure:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="gtm.hubspot.marketing.campaigns.create",
+                input_json={"name": "Native"},
+                credential_ref=credential_ref,
+            )
+        )
+    error = failure.value.data["provider_error"]
+    assert error["provider_receipt"] == {
+        "object_id": "campaign-receipt-1",
+        "request_id": "hub-receipt-1",
+    }
+    assert error["provider_executed"] is True and error["retry_safe"] is False
+    assert "private customer text" not in json.dumps(error)
+    assert "hubspot-secret" not in json.dumps(error)
+    assert httpx_mock.get_requests()[0].headers["Authorization"] == "Bearer hubspot-secret"
+
+
 def _hubspot_credential(
     session: Session,
     *,
@@ -4368,7 +4409,7 @@ def test_hubspot_bulk_export_result_downloads_to_managed_artifact_without_signed
             "export_name": "Completed export",
         },
     )
-    signed_url = "https://exports.hubspotusercontent.example/download/private-token-9004"
+    signed_url = "https://exports.hubspotusercontent.example/download/private-token-9004?signature=private-signature"
     httpx_mock.add_response(
         method="GET",
         url=("https://api.hubapi.com/crm/exports/2026-03/export/async/tasks/9004/status"),

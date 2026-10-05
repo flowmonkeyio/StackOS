@@ -48,7 +48,7 @@ canonical in the
 
 ## Connector Boundary
 
-Connectors implement the tiny adapter contract in
+StackOS action adapters implement the contract in
 `stackos/actions/connectors.py`:
 
 - `validate(request)`: payload checks without provider side effects.
@@ -58,6 +58,28 @@ Connectors implement the tiny adapter contract in
 Connectors receive plaintext secrets only inside the daemon process through
 `ResolvedCredential`. That object is not a Pydantic response model and must not
 be serialized into MCP, REST, run plans, resources, artifacts, or audit rows.
+
+The separate `stackos-connectors` package owns native provider implementations.
+`stackos/actions/package_bridge.py` passes the connector key, named action,
+prepared data and `ConnectorAuth` containing only the selected method's resolved
+execution fields and configuration. Provider declarations fix the operation,
+route and schemas; input data cannot replace them. The package receives no
+StackOS ORM objects, credential references, grant state or workflow context.
+
+The package returns provider facts and plain file descriptors. Host adapters
+resolve and project account-bound references, apply admission and budget rules,
+register artifacts or private transfers, redact public output and preserve
+receipts when a provider effect succeeds but local persistence fails. Account
+probes use the same native auth projection after host permission checks.
+Credential acquisition, renewal and storage remain in StackOS.
+
+Native catalogs, action mappings, schemas, provider notes and icons live together
+under `StackOSConnectors/src/stackos_connectors/connectors/<provider>/`. The
+package's `list_connectors` and `describe` expose names, descriptions, setup,
+execution auth schemas and packaged icon references. StackOS plugin manifests
+retain their public action contracts, host references, permissions and workflow
+metadata. A host composition can call multiple native actions without becoming
+a workflow in the connector library.
 
 Before constructing `ResolvedCredential`, the shared action runtime asks the
 auth repository for a fresh usable credential and passes the manifest's
@@ -86,8 +108,8 @@ not infer the method from decrypted field presence or token shape.
 GraphQL providers follow the same connector boundary. The Linear connector is
 the reference fixed-document pattern: the manifest names a reviewed document,
 root, and scope; a hard-coded connector table must match those values exactly;
-the integration loads only repository-owned documents below the provider's
-plugin directory; and callers can never supply a query, root, selection set, or
+the package loads only reviewed documents below the provider's bundled
+`assets/graphql/` directory; and callers can never supply a query, root, selection set, or
 provider-native filter tree. Pinned-schema tests validate every variable,
 argument, enum value, and projection and prove manifest/connector/document
 parity. Mutations use zero automatic transport retries, and ambiguous
@@ -426,8 +448,8 @@ started run plan, exactly one active claimed step, an explicit
 `action_refs`, so both the workflow step contract and the frozen grant snapshot
 must agree before the connector is invoked.
 
-Registered first-party connectors are one provider per connector file and now
-cover the migrated clean path for:
+Registered first-party action adapters call provider implementations grouped in
+the connector package. The StackOS public action surface includes:
 
 - `aignc`: `utils.aignc.models.list`, `utils.aignc.chat.complete`,
   `utils.aignc.image.generate`, and `utils.aignc.audio.analyze`

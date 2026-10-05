@@ -939,7 +939,7 @@ def test_operation_rest_smtp_notification_uses_run_plan_action_execute(
     project_id: int,
     monkeypatch,
 ) -> None:  # type: ignore[no-untyped-def]
-    import stackos.actions.smtp as smtp_module
+    import stackos_connectors.connectors.smtp.actions as smtp_module
 
     _RouteSMTP.sent_messages.clear()
     monkeypatch.setattr(smtp_module.smtplib, "SMTP", _RouteSMTP)

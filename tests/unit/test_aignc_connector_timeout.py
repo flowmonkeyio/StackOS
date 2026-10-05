@@ -36,11 +36,54 @@ INPUTS = {
 }
 
 
+@pytest.mark.parametrize("failure_phase", ["artifact", "progress"])
+def test_post_provider_projection_failure_retains_receipt(
+    tmp_path, httpx_mock, monkeypatch, failure_phase
+):
+    from stackos.actions.connectors import ActionConnectorError
+
+    encoded = base64.b64encode(b"\xff\xd8\xffsynthetic\xff\xd9").decode()
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{API}/chat/completions",
+        headers={"cf-aig-log-id": "completed-request"},
+        json={
+            "id": "completed-image",
+            "model": "gemini-3.1-flash-image",
+            "choices": [{"finish_reason": "stop", "message": {"content": encoded}}],
+        },
+    )
+
+    def fail(*args, **kwargs):
+        raise OSError("synthetic host projection failure")
+
+    request = _request("image.generate", {"prompt": "image"}, tmp_path, [])
+    if failure_phase == "artifact":
+        monkeypatch.setattr("stackos.actions.aignc.register_generated_media_artifacts", fail)
+    else:
+        from dataclasses import replace
+
+        def progress(event):
+            if event["phase"] == "persisting":
+                fail()
+
+        request = replace(request, progress_callback=progress)
+    with pytest.raises(ActionConnectorError) as error:
+        asyncio.run(AigncActionConnector().execute(request))
+    assert len(httpx_mock.get_requests()) == 1
+    assert error.value.metadata_json["provider_executed"] is True
+    assert error.value.metadata_json["retry_safe"] is False
+    assert error.value.metadata_json["provider_request_id"] == "completed-request"
+    assert error.value.output_json["id"] == "completed-image"
+
+
 def _request(
     operation: str, payload: dict, tmp_path: Path, progress: list
 ) -> ActionConnectorRequest:
     credential = Mock(spec=ResolvedCredential)
     credential.secret_payload = b"fixture-aignc-key"
+    credential.credential = Mock(auth_method_key="api_key")
+    credential.config_json = {}
     return ActionConnectorRequest(
         project_id=1,
         plugin_slug="utils",

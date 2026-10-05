@@ -12,11 +12,13 @@ stored StackOS credential for that provider. Never ask for or echo the key.
 
 Every concrete media tool uses the same StackOS split:
 
-- `stackos/integrations/<provider>.py`: reusable first-party API wrapper.
-  It owns vendor endpoint paths, request/response parsing, provider job ids,
-  provider error mapping, and generated-asset persistence helpers.
-- `stackos/actions/<provider>.py`: thin action connector. It validates the
-  static action payload, estimates budget, calls the wrapper, and returns safe
+- `StackOSConnectors/src/stackos_connectors/connectors/<provider>/`: native
+  provider requests, catalog, schemas, docs and icons. The library owns endpoint
+  paths, request/response parsing, provider job ids and error facts. It writes
+  plain files only into a caller-supplied output directory.
+- `stackos/actions/<provider>.py`: host action adapter. It validates the
+  public action payload, resolves host asset inputs, estimates budget, calls the
+  package, registers generated files as artifacts, and returns safe
   action output. It must not choose strategy, rewrite workflow intent, or
   silently downgrade unsupported features.
 - Agent-visible output must avoid raw provider blobs and secret-looking key
@@ -25,9 +27,9 @@ Every concrete media tool uses the same StackOS split:
   those as sensitive by design.
 - `stackos/plugins/manifest.py`: provider metadata, auth method, independent
   action rows, schemas, budget kind, and `capability_metadata`.
-- `stackos/actions/__init__.py` and `stackos/integrations/__init__.py`:
-  explicit registration only after the wrapper, connector, tests, docs, and
-  changelog are delivered together.
+- The package's catalog index and StackOS action/probe registries:
+  explicit registration only after native implementation, host adapter, tests,
+  docs and changelog are delivered together.
 
 Use provider-specific providers and action refs when schemas differ. Keep the
 neutral `video-generation` provider only as a deferred planning placeholder
@@ -164,10 +166,10 @@ one path explicitly:
 - leave the whole action/mode deferred with `execution_mode` and
   `deferred_reason`.
 
-If a provider returns temporary or signed media URLs, the wrapper must download
-them immediately, persist local generated-assets refs, strip the provider URLs
-from returned output and action-call audit, and test that no signed URL or query
-signature reaches agent-visible payloads.
+If a provider returns temporary or signed media URLs, the package downloads
+them into the caller's output directory. The StackOS adapter registers local
+generated-assets refs and strips provider URLs from public output and audit.
+Test that no signed URL or query signature reaches agent-visible payloads.
 
 Never omit a known provider feature silently. Recent misses to guard against:
 mask uploads, URL/file-id image references, streaming partial images,

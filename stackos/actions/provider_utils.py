@@ -7,8 +7,6 @@ from collections.abc import Mapping
 from typing import Any
 from urllib.parse import quote
 
-import httpx
-
 from stackos.actions.connectors import (
     ActionConnectorError,
     ActionConnectorRequest,
@@ -18,7 +16,6 @@ from stackos.actions.connectors import (
 from stackos.artifacts import redact_secret_text, redact_secrets
 from stackos.mcp.errors import IntegrationDownError, RateLimitedError
 from stackos.repositories.base import ValidationError
-from stackos.secret_refs import redact_secret_values
 
 JsonObject = dict[str, Any]
 
@@ -137,30 +134,6 @@ def bearer_headers(request: ActionConnectorRequest, *keys: str) -> dict[str, str
     }
 
 
-def header_token_headers(
-    request: ActionConnectorRequest,
-    *,
-    header_name: str,
-    keys: tuple[str, ...] = ("api_key", "token", "value"),
-) -> dict[str, str]:
-    return {
-        header_name: credential_value(request, *keys),
-        "Content-Type": "application/json",
-    }
-
-
-def basic_auth(request: ActionConnectorRequest) -> httpx.BasicAuth:
-    payload = credential_payload(request)
-    username = str(payload.get("username") or payload.get("user") or "")
-    password = str(payload.get("password") or payload.get("secret") or "")
-    raw = payload.get("value")
-    if (not username or not password) and isinstance(raw, str) and ":" in raw:
-        username, password = raw.split(":", 1)
-    if not username or not password:
-        raise ValidationError("basic credential missing username/password")
-    return httpx.BasicAuth(username, password)
-
-
 def connector_error_from_integration(
     exc: IntegrationDownError | RateLimitedError,
     *,
@@ -243,76 +216,6 @@ def q(value: Any) -> str:
     return quote(str(value), safe="")
 
 
-async def send_json(
-    *,
-    method: str,
-    url: str,
-    headers: Mapping[str, str] | None = None,
-    params: Mapping[str, Any] | None = None,
-    json_body: Any = None,
-    data: Mapping[str, Any] | None = None,
-    auth: httpx.Auth | None = None,
-    timeout_s: float = 60.0,
-    redact_values: tuple[str, ...] = (),
-) -> tuple[int, Any, httpx.Headers]:
-    kwargs: dict[str, Any] = {
-        "method": method,
-        "url": url,
-        "headers": dict(headers or {}),
-        "params": dict(params or {}),
-        "auth": auth,
-    }
-    if json_body is not None:
-        kwargs["json"] = json_body
-    if data is not None:
-        kwargs["data"] = data
-    async with httpx.AsyncClient(timeout=timeout_s) as http:
-        response = await http.request(**kwargs)
-    if response.status_code >= 400:
-        try:
-            provider_error: Any = response.json()
-        except ValueError:
-            provider_error = {"message": response.text[:500]}
-        header_secrets: list[str] = []
-        for header_name, header_value in (headers or {}).items():
-            normalized_name = str(header_name).lower().replace("-", "_")
-            if any(
-                part in normalized_name for part in ("authorization", "api_key", "secret", "token")
-            ):
-                value = str(header_value).strip()
-                if value.lower().startswith("bearer "):
-                    value = value[7:].strip()
-                if value:
-                    header_secrets.append(value)
-        provider_error = redact_secret_values(
-            provider_error,
-            tuple(header_secrets) + tuple(value for value in redact_values if value),
-        )
-        metadata: JsonObject = {"status_code": response.status_code}
-        request_id = (
-            response.headers.get("x-hubspot-correlation-id")
-            or response.headers.get("request-id")
-            or response.headers.get("google-ads-request-id")
-            or response.headers.get("x-request-id")
-        )
-        if request_id:
-            metadata["request_id"] = request_id
-        retry_after = response.headers.get("retry-after")
-        if retry_after:
-            metadata["retry_after"] = retry_after
-        raise ActionConnectorError(
-            f"provider action returned status {response.status_code}",
-            provider_status_code=response.status_code,
-            provider_error=redact_secrets(provider_error),
-            metadata_json=metadata,
-        )
-    try:
-        body: Any = response.json()
-    except ValueError:
-        body = response.text
-    return response.status_code, body, response.headers
-
-
 def result(
     *,
     provider: str,
@@ -348,7 +251,6 @@ def result(
 
 __all__ = [
     "JsonObject",
-    "basic_auth",
     "bearer_headers",
     "clean_customer_id",
     "config_str",
@@ -356,7 +258,6 @@ __all__ = [
     "credential_payload",
     "credential_value",
     "dict_field",
-    "header_token_headers",
     "int_range",
     "issue",
     "list_field",
@@ -366,6 +267,5 @@ __all__ = [
     "required_str",
     "resolve_ref",
     "result",
-    "send_json",
     "unknown_operation",
 ]

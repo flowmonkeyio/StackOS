@@ -51,7 +51,7 @@ def test_imap_output_completeness_mcp_file_audit_and_grants(
         def logout(self) -> tuple[str, list[Any]]:
             return "BYE", []
 
-    monkeypatch.setattr("stackos.actions.imap.imaplib.IMAP4_SSL", Mailbox)
+    monkeypatch.setattr("stackos_connectors.connectors.imap.actions.imaplib.IMAP4_SSL", Mailbox)
     created = mcp_client.test_client.post(
         "/api/v1/auth/accounts/imap",
         json={

@@ -16,16 +16,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from stackos.integrations.telegram_tdlib.native import (
+from stackos_connectors.connectors.telegram.tdlib.native import (
     TelegramTdlibClosedError,
     TelegramTdlibRequestError,
 )
-from stackos.integrations.telegram_tdlib.sessions import (
+from stackos_connectors.connectors.telegram.tdlib.sessions import (
     TelegramTdlibSession,
     TelegramTdlibSessionConfig,
     TelegramTdlibSessionReceipt,
-    TelegramTdlibSessionRegistration,
 )
+
+from stackos.integrations.telegram_tdlib.sessions import TelegramTdlibSessionRegistration
 
 AuthorizationSink = Callable[[str, int, dict[str, Any]], Awaitable[None]]
 AuthorizationSettledSink = Callable[[str, int, dict[str, Any]], Awaitable[None]]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from types import SimpleNamespace
 
 import pytest
 from pytest_httpx import HTTPXMock
@@ -15,6 +16,7 @@ from stackos.actions import (
 from stackos.actions import (
     TrackboothActionConnector as RegisteredTrackboothActionConnector,
 )
+from stackos.actions.connectors import ActionConnectorError, ActionConnectorRequest
 from stackos.actions.trackbooth import (
     TrackboothActionConnector,
     TrackboothAssets,
@@ -27,6 +29,7 @@ from stackos.db.models import (
 )
 from stackos.repositories.base import (
     ConflictError,
+    ValidationError,
 )
 from stackos.repositories.secrets import PayloadSecretRepository
 from tests.integration.test_repositories.trackbooth_test_support import (
@@ -47,6 +50,133 @@ def test_trackbooth_public_module_preserves_connector_and_lifecycle_imports() ->
     assert TrackboothAssets.__module__ == "stackos.actions.trackbooth_assets"
     assert callable(retire_removed_trackbooth_actions)
     assert callable(retire_superseded_trackbooth_inventory_scopes)
+
+
+@pytest.mark.parametrize("action", ["catalog.search", "operation.describe"])
+def test_trackbooth_blocked_endpoints_remain_marked_in_discovery(
+    session: Session, project_id: int, httpx_mock: HTTPXMock, action: str
+) -> None:
+    credential_ref = _trackbooth_credential_ref(session, project_id)
+    detail = _trackbooth_api_key_reveal_detail()
+    httpx_mock.add_response(json={"data": [detail] if action == "catalog.search" else detail})
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="trackbooth." + action,
+            input_json={}
+            if action == "catalog.search"
+            else {"operation_id": detail["operation_id"]},
+            credential_ref=credential_ref,
+        )
+    ).data
+    data = out.output_json["data"]
+    row = data[0] if isinstance(data, list) else data
+    assert row["operation_id"] == "AccountApiKeyController.revealApiKey"
+    assert row["execution_blocked"] is True
+    assert len(httpx_mock.get_requests()) == 1
+
+
+def test_trackbooth_catalog_store_failure_retains_provider_receipt(
+    session: Session, project_id: int, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import stackos.actions.trackbooth as host_trackbooth
+
+    credential_ref = _trackbooth_credential_ref(session, project_id)
+    detail = _trackbooth_links_create_detail()
+    _add_trackbooth_sync_responses(httpx_mock, detail, catalog_hash="catalog-fixture")
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("private-store-error")
+
+    monkeypatch.setattr(host_trackbooth, "_upsert_runtime_actions", fail)
+    with pytest.raises(ConflictError) as failed:
+        _sync_trackbooth_catalog(session, project_id, credential_ref)
+    call = session.get(ActionCall, failed.value.data["action_call_id"])
+    assert call.response_json["catalog_hash"] == "catalog-fixture"
+    assert call.response_json["source_endpoint"] == "/api/agent-api/catalog/export"
+    assert call.response_json["inventory_sync_confirmed"] is False
+    assert call.metadata_json["provider_executed"] is True
+    assert call.metadata_json["retry_safe"] is False
+    assert "private-store-error" not in json.dumps(call.response_json)
+    assert len(httpx_mock.get_requests()) == 1
+
+
+def _diagnostic_request(operation: str, operation_id: str) -> ActionConnectorRequest:
+    return ActionConnectorRequest(
+        project_id=1,
+        plugin_slug="trackbooth",
+        action_key="diagnostic",
+        action_ref="trackbooth.diagnostic",
+        provider_key="trackbooth",
+        operation=operation,
+        input_json={"operation_id": operation_id, "path_params": {"id": "one"}},
+        config_json={"connector": "trackbooth"},
+        credential=SimpleNamespace(
+            credential=SimpleNamespace(auth_method_key="api-key"),
+            credential_ref="fixture-account",
+            config_json={"api_base_url": "https://diagnostic.example.test"},
+            secret_payload=b'{"api_key":"synthetic-only"}',
+        ),
+    )
+
+
+@pytest.mark.parametrize("method,operation", [("GET", "rest.read"), ("POST", "rest.write")])
+def test_trackbooth_generic_rest_keeps_live_detail_preflight(
+    httpx_mock: HTTPXMock, method: str, operation: str
+) -> None:
+    descriptor = {
+        "operation_id": "Fixture.native",
+        "method": method,
+        "path": "/api/native/{id}",
+        "path_params": [{"name": "id"}],
+    }
+    httpx_mock.add_response(
+        method="GET",
+        url="https://diagnostic.example.test/api/agent-api/catalog/Fixture.native",
+        json={"data": descriptor},
+    )
+    httpx_mock.add_response(
+        method=method,
+        url="https://diagnostic.example.test/api/native/one",
+        json={"id": "remote-one"},
+    )
+    out = asyncio.run(
+        TrackboothActionConnector().execute(_diagnostic_request(operation, "Fixture.native"))
+    )
+    assert out.output_json["data"] == {"id": "remote-one"}
+    assert out.output_json["method"] == method
+    assert [r.method for r in httpx_mock.get_requests()] == ["GET", method]
+    assert len(httpx_mock.get_requests()) == 2
+
+
+def test_trackbooth_generic_rest_blocks_live_secret_path_after_one_preflight(
+    httpx_mock: HTTPXMock,
+) -> None:
+    descriptor = {
+        "operation_id": "Fixture.native",
+        "method": "POST",
+        "path": "/api/accounts/api-key/reveal",
+    }
+    httpx_mock.add_response(json={"data": descriptor})
+    with pytest.raises(ActionConnectorError) as failed:
+        asyncio.run(
+            TrackboothActionConnector().execute(_diagnostic_request("rest.write", "Fixture.native"))
+        )
+    assert len(httpx_mock.get_requests()) == 1
+    assert failed.value.metadata_json["provider_executed"] is True
+    assert failed.value.metadata_json["primary_request_executed"] is False
+
+
+def test_trackbooth_generic_rest_blocks_known_secret_operation_without_request(
+    httpx_mock: HTTPXMock,
+) -> None:
+    with pytest.raises(ValidationError, match="not executable"):
+        asyncio.run(
+            TrackboothActionConnector().execute(
+                _diagnostic_request("rest.write", "AccountApiKeyController.generateApiKey")
+            )
+        )
+    assert httpx_mock.get_requests() == []
 
 
 def test_trackbooth_generated_read_action_calls_endpoint_without_catalog_preflight(

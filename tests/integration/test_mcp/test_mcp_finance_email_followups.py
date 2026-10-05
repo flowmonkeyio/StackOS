@@ -61,7 +61,7 @@ def test_actual_finance_followup_smtp_step_grant_and_submission_result(
         def close(self) -> None:
             pass
 
-    monkeypatch.setattr("stackos.actions.smtp.smtplib.SMTP", SMTP)
+    monkeypatch.setattr("stackos_connectors.connectors.smtp.actions.smtplib.SMTP", SMTP)
     _seed_stripe_credential(mcp_client, project)
     account = mcp_client.test_client.post(
         "/api/v1/auth/accounts/smtp",

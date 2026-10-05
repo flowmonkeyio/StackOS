@@ -8,8 +8,7 @@ from typing import Any
 
 import httpx
 from pytest_httpx import HTTPXMock
-
-from stackos.integrations.reddit import RedditIntegration
+from stackos_connectors.connectors.reddit.integration import RedditIntegration
 
 
 def _payload() -> bytes:
@@ -36,7 +35,7 @@ def test_search_subreddit_uses_resolved_access_token(
 
     async def go() -> Any:
         async with httpx.AsyncClient() as client:
-            integ = RedditIntegration(payload=_payload(), project_id=project_id, http=client)
+            integ = RedditIntegration(payload=_payload(), http=client)
             return await integ.search_subreddit(subreddit="python", query="async")
 
     result = asyncio.run(go())
@@ -52,7 +51,7 @@ def test_test_credentials_uses_resolved_token_without_grant(
 ) -> None:
     async def go() -> Any:
         async with httpx.AsyncClient() as client:
-            integ = RedditIntegration(payload=_payload(), project_id=project_id, http=client)
+            integ = RedditIntegration(payload=_payload(), http=client)
             return await integ.test_credentials()
 
     out = asyncio.run(go())

@@ -4,19 +4,18 @@ from typing import Any
 
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
+from stackos_connectors.connectors.telegram.tdlib.native import (
+    TelegramTdlibClient,
+    safe_request_error_details,
+)
 
 from stackos.actions import ActionRepository
 from stackos.auth_providers import AuthRepository
 from stackos.config import Settings
 from stackos.db.models import Credential
 from stackos.integrations.telegram_tdlib.holds import telegram_native_auth_hold_reason
-from stackos.integrations.telegram_tdlib.native import (
-    TelegramTdlibClient,
-    load_managed_tdlib,
-    safe_request_error_details,
-)
 from stackos.integrations.telegram_tdlib.receipts import reconcile_telegram_receipt
-from stackos.integrations.telegram_tdlib.runtime import tdlib_runtime_root
+from stackos.integrations.telegram_tdlib.runtime import load_managed_tdlib, tdlib_runtime_root
 from stackos.integrations.telegram_tdlib.service import TelegramTdlibService
 from stackos.integrations.telegram_tdlib.sessions import TelegramTdlibSessionRegistry
 from stackos.integrations.telegram_tdlib.updates import process_telegram_update

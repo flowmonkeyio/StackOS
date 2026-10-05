@@ -3,18 +3,19 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
+from stackos_connectors.connectors.ideogram.integration import IdeogramImagesIntegration
+from stackos_connectors.errors import IntegrationDownError
 
 from stackos.actions.connectors import (
     ActionConnectorRequest,
     ActionConnectorResult,
     ActionValidationIssue,
 )
+from stackos.actions.media_artifacts import execute_media_native, media_projection_failure
 from stackos.config import Settings
-from stackos.integrations.ideogram_images import IdeogramImagesIntegration
-from stackos.mcp.errors import IntegrationDownError
 from stackos.repositories.base import ValidationError
 from stackos.repositories.resources import ArtifactRepository
 
@@ -147,7 +148,7 @@ class IdeogramImagesActionConnector:
     def estimate_cost_cents(self, request: ActionConnectorRequest) -> int:
         payload = request.input_json
         rendering_speed = str(payload.get("rendering_speed") or "DEFAULT")
-        estimated = IdeogramImagesIntegration.estimate_cost_usd(rendering_speed=rendering_speed)
+        estimated = _MediaPricing.estimate_cost_usd(rendering_speed=rendering_speed)
         if estimated <= 0:
             return 0
         return max(1, round(estimated * 100))
@@ -159,56 +160,59 @@ class IdeogramImagesActionConnector:
         asset_dir = request.asset_dir or Settings().generated_assets_dir
         rendering_speed = str(payload.get("rendering_speed") or "DEFAULT")
         async with httpx.AsyncClient(timeout=180.0) as http:
-            client = IdeogramImagesIntegration(
-                payload=request.credential.secret_payload,
-                project_id=request.project_id,
-                http=http,
-                asset_dir=asset_dir,
-            )
             if request.operation == "image.remix":
-                result = await client.remix_image(
-                    text_prompt=str(payload["text_prompt"]),
-                    image_path=_artifact_path(asset_dir, str(payload["input_image_ref"])),
-                    image_weight=(
-                        int(payload["image_weight"])
+                result = await execute_media_native(
+                    request,
+                    {
+                        "text_prompt": str(payload["text_prompt"]),
+                        "image_path": _artifact_path(asset_dir, str(payload["input_image_ref"])),
+                        "image_weight": int(payload["image_weight"])
                         if isinstance(payload.get("image_weight"), int)
-                        and not isinstance(payload.get("image_weight"), bool)
-                        else None
-                    ),
-                    resolution=(
-                        str(payload["resolution"])
+                        and (not isinstance(payload.get("image_weight"), bool))
+                        else None,
+                        "resolution": str(payload["resolution"])
                         if isinstance(payload.get("resolution"), str)
-                        else None
-                    ),
-                    rendering_speed=rendering_speed,
-                    enable_copyright_detection=(
-                        payload["enable_copyright_detection"]
+                        else None,
+                        "rendering_speed": rendering_speed,
+                        "enable_copyright_detection": payload["enable_copyright_detection"]
                         if isinstance(payload.get("enable_copyright_detection"), bool)
-                        else None
-                    ),
+                        else None,
+                    },
+                    http=http,
+                    connector=self.key,
+                    output_subdir="ideogram",
+                    qps=1.0,
+                    pricing=_host_media_cost,
                 )
             else:
-                result = await client.generate_image(
-                    text_prompt=str(payload["text_prompt"]),
-                    resolution=(
-                        str(payload["resolution"])
+                result = await execute_media_native(
+                    request,
+                    {
+                        "text_prompt": str(payload["text_prompt"]),
+                        "resolution": str(payload["resolution"])
                         if isinstance(payload.get("resolution"), str)
-                        else None
-                    ),
-                    rendering_speed=rendering_speed,
-                    enable_copyright_detection=(
-                        payload["enable_copyright_detection"]
+                        else None,
+                        "rendering_speed": rendering_speed,
+                        "enable_copyright_detection": payload["enable_copyright_detection"]
                         if isinstance(payload.get("enable_copyright_detection"), bool)
-                        else None
-                    ),
+                        else None,
+                    },
+                    http=http,
+                    connector=self.key,
+                    output_subdir="ideogram",
+                    qps=1.0,
+                    pricing=_host_media_cost,
                 )
-        output_json = result.data if isinstance(result.data, dict) else {"data": result.data}
-        output_json = _register_generated_image_artifacts(request, output_json)
-        return ActionConnectorResult(
-            output_json=output_json,
-            metadata_json={"vendor": "ideogram"},
-            cost_cents=_cost_usd_to_cents(result.cost_usd),
-        )
+        try:
+            output_json = result.data if isinstance(result.data, dict) else {"data": result.data}
+            output_json = _register_generated_image_artifacts(request, output_json)
+            return ActionConnectorResult(
+                output_json=output_json,
+                metadata_json={"vendor": "ideogram"},
+                cost_cents=_cost_usd_to_cents(result.cost_usd),
+            )
+        except Exception as exc:
+            raise media_projection_failure(exc, result) from None
 
 
 def _artifact_path(asset_dir: Path, artifact_ref: str) -> Path:
@@ -300,3 +304,41 @@ def _cost_usd_to_cents(cost_usd: float) -> int:
 
 
 __all__ = ["IdeogramImagesActionConnector"]
+
+
+class _MediaPricing:
+    _COSTS_USD: ClassVar[dict[str, float]] = {
+        "TURBO": 0.03,
+        "DEFAULT": 0.06,
+        "QUALITY": 0.10,
+    }
+
+    @classmethod
+    def estimate_cost_usd(cls, *, rendering_speed: str = "DEFAULT") -> float:
+        return cls._COSTS_USD.get(rendering_speed, cls._COSTS_USD["DEFAULT"])
+
+    def _extract_actual_cost_usd(
+        self,
+        op: str,
+        *,
+        request: Any,
+        response: Any,
+        estimated: float,
+    ) -> float:
+        del op
+        if not isinstance(response, dict):
+            return estimated
+        items = response.get("data")
+        if not isinstance(items, list) or not items:
+            return estimated
+        rendering_speed = "DEFAULT"
+        if isinstance(request, dict):
+            rendering_speed = str(request.get("rendering_speed") or "DEFAULT")
+        return self.estimate_cost_usd(rendering_speed=rendering_speed) * len(items)
+
+
+def _host_media_cost(operation: str, data: dict[str, Any], output: dict[str, Any]) -> float:
+    estimated = _MediaPricing.estimate_cost_usd(rendering_speed=data["rendering_speed"])
+    return _MediaPricing()._extract_actual_cost_usd(
+        operation, request=data, response=output, estimated=estimated
+    )

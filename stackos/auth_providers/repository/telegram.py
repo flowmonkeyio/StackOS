@@ -23,17 +23,13 @@ from typing import Any, Literal, Protocol
 
 from sqlalchemy import delete
 from sqlmodel import col, select
+from stackos_connectors.connectors.telegram.tdlib.native import safe_request_error_details
+from stackos_connectors.connectors.telegram.tdlib.sessions import TelegramTdlibSessionConfig
 
 from stackos.config import Settings
 from stackos.db.models import Credential, CredentialAccount, IntegrationCredential
 from stackos.integrations.telegram_tdlib.account_config import account_proxy
-from stackos.integrations.telegram_tdlib.native import (
-    safe_request_error_details,
-    saved_authorization_rejected,
-)
-from stackos.integrations.telegram_tdlib.sessions import (
-    TelegramTdlibSessionConfig,
-)
+from stackos.integrations.telegram_tdlib.native import saved_authorization_rejected
 from stackos.repositories.base import ConflictError, Envelope, ValidationError
 from stackos.repositories.projects import IntegrationCredentialRepository
 
@@ -1296,6 +1292,15 @@ class TelegramAuthorizationMixin:
         if not isinstance(persisted_proxy_id, int) or isinstance(persisted_proxy_id, bool):
             persisted_proxy_id = None
         return TelegramTdlibSessionConfig(
+            system_language_code="en",
+            device_model="StackOS",
+            system_version="macOS",
+            application_version="StackOS",
+            use_test_dc=False,
+            use_file_database=True,
+            use_chat_info_database=True,
+            use_message_database=True,
+            use_secret_chats=False,
             account_kind=account_kind,
             application=application,
             database_directory=root / "database",

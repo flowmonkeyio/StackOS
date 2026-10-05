@@ -1747,6 +1747,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "s3transfer" },
     { name = "sqlmodel" },
+    { name = "stackos-connectors" },
     { name = "structlog" },
     { name = "typer" },
     { name = "uvicorn", extra = ["standard"] },
@@ -1781,6 +1782,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "s3transfer", specifier = ">=0.19.1,<0.20" },
     { name = "sqlmodel", specifier = ">=0.0.22" },
+    { name = "stackos-connectors", editable = "../StackOSConnectors" },
     { name = "structlog", specifier = ">=24.4" },
     { name = "typer", specifier = ">=0.13" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
@@ -1792,6 +1794,40 @@ dev = [
     { name = "freezegun", specifier = ">=1.5" },
     { name = "graphql-core", specifier = ">=3.2,<3.4" },
     { name = "mypy", specifier = ">=1.13" },
+    { name = "pytest", specifier = ">=8" },
+    { name = "pytest-asyncio", specifier = ">=0.24" },
+    { name = "pytest-httpx", specifier = ">=0.34" },
+    { name = "ruff", specifier = ">=0.8" },
+]
+
+[[package]]
+name = "stackos-connectors"
+version = "0.1.0"
+source = { editable = "../StackOSConnectors" }
+dependencies = [
+    { name = "boto3" },
+    { name = "botocore" },
+    { name = "cryptography" },
+    { name = "httpx" },
+    { name = "jsonschema" },
+    { name = "pydantic" },
+    { name = "s3transfer" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "boto3", specifier = ">=1.43.51,<1.44" },
+    { name = "botocore", specifier = ">=1.43.51,<1.44" },
+    { name = "cryptography", specifier = ">=43" },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "jsonschema", specifier = ">=4.23" },
+    { name = "pydantic", specifier = ">=2.6" },
+    { name = "s3transfer", specifier = ">=0.19.1,<0.20" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "build", specifier = ">=1.2" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
     { name = "pytest-httpx", specifier = ">=0.34" },

@@ -163,9 +163,10 @@ tool grant.
 Provider operations are modeled as plugin actions. Agents use
 `toolbox.call` for `action.describe`, `action.validate`, and `action.run` on
 one explicit action, or for step-granted `action.execute` during workflow
-steps. Vendor wrappers remain inside daemon-side integrations where auth,
-budget checks, retries, and output normalization can be enforced; they are not
-registered as provider-specific MCP tools.
+steps. The daemon calls the separate `stackos-connectors` Python package for
+provider transport and protocol handling. StackOS owns credential resolution,
+permissions, budgets, references, artifacts and audit around those calls.
+Provider implementations are not registered as provider-specific MCP tools.
 
 ## Auth Flow
 

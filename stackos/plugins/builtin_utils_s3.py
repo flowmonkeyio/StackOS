@@ -5,7 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from stackos.s3_contract import AWS_S3_REGIONS
+from stackos_connectors.connectors.aws_s3.contract import AWS_S3_REGIONS
 
 _S3_CONFLICT_POLICY = {
     "type": "string",

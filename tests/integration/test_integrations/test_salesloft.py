@@ -9,27 +9,19 @@ from typing import Any
 import httpx
 import pytest
 from pytest_httpx import HTTPXMock
+from stackos_connectors.connectors.salesloft.integration import SalesloftIntegration
+from stackos_connectors.probe import AuthMethodProbeContext
 
-from stackos.actions.connectors import ActionConnectorRequest
-from stackos.actions.salesloft import SalesloftActionConnector
+from stackos.actions.connectors import ActionConnectorError, ActionConnectorRequest
+from stackos.actions.package_bridge import PackageActionConnector
 from stackos.auth_providers.repository.schema import (
-    AuthMethodProbeContext,
-    PermissionVerificationOut,
     ResolvedCredential,
 )
 from stackos.db.models import Credential, IntegrationCredential
-from stackos.integrations.salesloft import SalesloftIntegration
-from stackos.repositories.base import ValidationError
 
 
-def _context(method: str, *, evidence_source: str, enforcement: str) -> AuthMethodProbeContext:
-    return AuthMethodProbeContext(
-        auth_method_key=method,
-        permission_verification=PermissionVerificationOut(
-            evidence_source=evidence_source,
-            enforcement=enforcement,
-        ),
-    )
+def _context(method: str) -> AuthMethodProbeContext:
+    return AuthMethodProbeContext(auth_method_key=method)
 
 
 def _action_request(
@@ -40,7 +32,11 @@ def _action_request(
 ) -> ActionConnectorRequest:
     config = {"auth_method_key": auth_method_key} if auth_method_key is not None else {}
     credential = ResolvedCredential(
-        credential=Credential(credential_ref="cred_salesloft", provider_key="salesloft"),
+        credential=Credential(
+            credential_ref="cred_salesloft",
+            provider_key="salesloft",
+            auth_method_key=config.get("auth_method_key"),
+        ),
         integration=IntegrationCredential(
             encrypted_payload=b"not-used",
             nonce=b"0" * 12,
@@ -76,12 +72,9 @@ def test_salesloft_api_key_probe_uses_bearer_without_local_grant_evidence(
         async with httpx.AsyncClient() as client:
             integration = SalesloftIntegration(
                 payload=json.dumps({"api_key": token}).encode(),
-                project_id=project_id,
                 http=client,
                 probe_context=_context(
                     "api_key",
-                    evidence_source="unavailable",
-                    enforcement="provider_enforced",
                 ),
                 qps_override=1000.0,
             )
@@ -117,25 +110,15 @@ def test_salesloft_api_key_probe_uses_bearer_without_local_grant_evidence(
 
 
 def test_salesloft_manual_oauth_fails_closed_without_oauth_response_evidence(
-    httpx_mock: HTTPXMock,
-    project_id: int,
-) -> None:
-    async def go() -> dict[str, Any]:
-        async with httpx.AsyncClient() as client:
-            integration = SalesloftIntegration(
-                payload=b'{"access_token":"salesloft-oauth-token-canary"}',
-                project_id=project_id,
-                http=client,
-                probe_context=_context(
-                    "oauth2_token",
-                    evidence_source="unavailable",
-                    enforcement="local_required",
-                ),
-                qps_override=1000.0,
-            )
-            return await integration.test_credentials()
-
-    assert asyncio.run(go()) == {
+    httpx_mock, host_probe_preflight
+):
+    result = host_probe_preflight(
+        "salesloft",
+        "oauth2_token",
+        evidence_source="unavailable",
+        enforcement="local_required",
+    )
+    assert result == {
         "ok": False,
         "vendor": "salesloft",
         "status": "permission_evidence_unavailable",
@@ -154,12 +137,9 @@ def test_salesloft_rejects_unknown_saved_method_without_calling_the_provider(
         async with httpx.AsyncClient() as client:
             integration = SalesloftIntegration(
                 payload=b'{"access_token":"salesloft-token-canary"}',
-                project_id=project_id,
                 http=client,
                 probe_context=_context(
                     "unknown_method",
-                    evidence_source="unavailable",
-                    enforcement="provider_enforced",
                 ),
                 qps_override=1000.0,
             )
@@ -185,7 +165,7 @@ def test_salesloft_action_uses_the_saved_method_to_select_the_bearer_value(
         project_id=project_id,
     )
 
-    asyncio.run(SalesloftActionConnector().execute(request))
+    asyncio.run(PackageActionConnector("salesloft").execute(request))
     sent = httpx_mock.get_requests()[0]
 
     assert sent.headers["Authorization"] == "Bearer salesloft-api-key-canary"
@@ -202,7 +182,7 @@ def test_salesloft_action_rejects_an_unknown_saved_method_before_http(
         project_id=project_id,
     )
 
-    with pytest.raises(ValidationError, match="saved auth method"):
-        asyncio.run(SalesloftActionConnector().execute(request))
+    with pytest.raises(ActionConnectorError, match="saved auth method"):
+        asyncio.run(PackageActionConnector("salesloft").execute(request))
 
     assert httpx_mock.get_requests() == []

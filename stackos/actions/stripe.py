@@ -27,11 +27,17 @@ import hashlib
 import json
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 from urllib.parse import urlsplit
 
-import httpx
+from stackos_connectors import CallOptions, ConnectorClient
+from stackos_connectors.catalog import load_registry
+from stackos_connectors.connectors.stripe.contract import STRIPE_ACTION_SPECS as _NATIVE_SPECS
+from stackos_connectors.connectors.stripe.integration import (
+    STRIPE_API_VERSION,
+    parse_stripe_api_key_payload,
+)
 
 from stackos.actions.connectors import (
     ActionConnectorError,
@@ -39,14 +45,9 @@ from stackos.actions.connectors import (
     ActionConnectorResult,
     ActionValidationIssue,
 )
+from stackos.actions.package_bridge import PackageActionConnector
 from stackos.actions.vendor_utils import issue, unknown_operation
 from stackos.artifacts import redact_secret_text, redact_secrets
-from stackos.integrations.stripe import (
-    STRIPE_API_VERSION,
-    StripeIntegration,
-    parse_stripe_api_key_payload,
-)
-from stackos.mcp.errors import IntegrationDownError, RateLimitedError
 from stackos.repositories.base import ValidationError
 from stackos.repositories.provider_refs import ProviderObjectReferenceRepository
 from stackos.secret_refs import SECRET_REF_SENTINEL, redact_secret_values
@@ -101,91 +102,18 @@ class StripeActionSpec:
         return self.method == "POST"
 
 
-STRIPE_ACTION_SPECS: dict[str, StripeActionSpec] = {
-    "stripe.invoices.pdf.download": StripeActionSpec("GET", "/invoices/{invoice_ref}"),
-    "stripe.invoices.pdf.cleanup": StripeActionSpec("LOCAL", "private-invoice-pdf-transfer"),
-    "stripe.products.list": StripeActionSpec("GET", "/products", list_item_type="stripe.product"),
-    "stripe.products.retrieve": StripeActionSpec(
-        "GET", "/products/{product_ref}", "stripe.product"
-    ),
-    "stripe.prices.list": StripeActionSpec("GET", "/prices", list_item_type="stripe.price"),
-    "stripe.prices.retrieve": StripeActionSpec("GET", "/prices/{price_ref}", "stripe.price"),
-    "stripe.customers.create": StripeActionSpec("POST", "/customers", "stripe.customer"),
-    "stripe.customers.update": StripeActionSpec(
-        "POST", "/customers/{customer_ref}", "stripe.customer"
-    ),
-    "stripe.customers.retrieve": StripeActionSpec(
-        "GET", "/customers/{customer_ref}", "stripe.customer"
-    ),
-    "stripe.customers.list": StripeActionSpec(
-        "GET", "/customers", list_item_type="stripe.customer"
-    ),
-    "stripe.customers.tax-ids.list": StripeActionSpec(
-        "GET", "/customers/{customer_ref}/tax_ids", list_item_type="stripe.tax-id"
-    ),
-    "stripe.customers.tax-ids.create": StripeActionSpec(
-        "POST", "/customers/{customer_ref}/tax_ids", "stripe.tax-id"
-    ),
-    "stripe.customers.tax-ids.retrieve": StripeActionSpec(
-        "GET", "/customers/{customer_ref}/tax_ids/{tax_id_ref}", "stripe.tax-id"
-    ),
-    "stripe.invoices.create": StripeActionSpec("POST", "/invoices", "stripe.invoice"),
-    "stripe.invoices.update": StripeActionSpec("POST", "/invoices/{invoice_ref}", "stripe.invoice"),
-    "stripe.invoice-items.create": StripeActionSpec("POST", "/invoiceitems", "stripe.invoice-item"),
-    "stripe.invoice-items.list": StripeActionSpec(
-        "GET", "/invoiceitems", list_item_type="stripe.invoice-item"
-    ),
-    "stripe.invoices.finalize": StripeActionSpec(
-        "POST", "/invoices/{invoice_ref}/finalize", "stripe.invoice"
-    ),
-    "stripe.invoices.send": StripeActionSpec(
-        "POST", "/invoices/{invoice_ref}/send", "stripe.invoice"
-    ),
-    "stripe.invoices.mark-paid-out-of-band": StripeActionSpec(
-        "POST", "/invoices/{invoice_ref}/pay", "stripe.invoice"
-    ),
-    "stripe.invoices.attach-payment": StripeActionSpec(
-        "POST", "/invoices/{invoice_ref}/attach_payment", "stripe.invoice"
-    ),
-    "stripe.invoices.retrieve": StripeActionSpec(
-        "GET", "/invoices/{invoice_ref}", "stripe.invoice"
-    ),
-    "stripe.invoices.list": StripeActionSpec("GET", "/invoices", list_item_type="stripe.invoice"),
-    "stripe.invoice-payments.list": StripeActionSpec(
-        "GET",
-        "/invoice_payments",
-        list_item_type="stripe.invoice-payment",
-    ),
-    "stripe.payment-intents.retrieve": StripeActionSpec(
-        "GET", "/payment_intents/{payment_intent_ref}", "stripe.payment-intent"
-    ),
-    "stripe.payment-records.report": StripeActionSpec(
-        "POST", "/payment_records/report_payment", "stripe.payment-record"
-    ),
-    "stripe.payment-records.retrieve": StripeActionSpec(
-        "GET", "/payment_records/{payment_record_ref}", "stripe.payment-record"
-    ),
-    "stripe.payment-records.list": StripeActionSpec(
-        "GET", "/payment_records", list_item_type="stripe.payment-record"
-    ),
-    "stripe.charges.retrieve": StripeActionSpec("GET", "/charges/{charge_ref}", "stripe.charge"),
-    "stripe.charges.list": StripeActionSpec("GET", "/charges", list_item_type="stripe.charge"),
-    "stripe.disputes.list": StripeActionSpec("GET", "/disputes", list_item_type="stripe.dispute"),
-    "stripe.disputes.retrieve": StripeActionSpec(
-        "GET", "/disputes/{dispute_ref}", "stripe.dispute"
-    ),
-    "stripe.balance-transactions.retrieve": StripeActionSpec(
-        "GET", "/balance_transactions/{balance_transaction_ref}", "stripe.balance-transaction"
-    ),
-    "stripe.balance-transactions.list": StripeActionSpec(
-        "GET",
-        "/balance_transactions",
-        list_item_type="stripe.balance-transaction",
-    ),
-    "stripe.refunds.retrieve": StripeActionSpec("GET", "/refunds/{refund_ref}", "stripe.refund"),
-    "stripe.refunds.list": StripeActionSpec("GET", "/refunds", list_item_type="stripe.refund"),
-    "stripe.balance.retrieve": StripeActionSpec("GET", "/balance"),
+STRIPE_ACTION_SPECS = {
+    key: StripeActionSpec(
+        spec.method, spec.path.replace("_id}", "_ref}"), spec.object_type, spec.list_item_type
+    )
+    for key, spec in _NATIVE_SPECS.items()
 }
+STRIPE_ACTION_SPECS.update(
+    {
+        "stripe.invoices.pdf.download": StripeActionSpec("GET", "/invoices/{invoice_ref}"),
+        "stripe.invoices.pdf.cleanup": StripeActionSpec("LOCAL", "private-invoice-pdf-transfer"),
+    }
+)
 
 
 class StripeActionConnector:
@@ -287,31 +215,18 @@ class StripeActionConnector:
             raise ValidationError("Stripe action requires a repository session")
 
         refs = ProviderObjectReferenceRepository(request.session, project_id=request.project_id)
-        path = _path_for(request, spec, refs)
-        params = _params_for(request, spec, refs)
-        form = _form_for(request, spec, refs)
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as http:
-                integration = StripeIntegration(
-                    payload=request.credential.secret_payload,
-                    project_id=request.project_id,
-                    http=http,
-                    auth_method_key=request.credential.credential.auth_method_key,
-                )
-                result = await integration.request(
-                    method=spec.method,
-                    path=path,
-                    op=request.action_key,
-                    params=params or None,
-                    form=form or None,
-                    idempotency_key=request.idempotency_key if spec.write else None,
-                )
-        except (IntegrationDownError, RateLimitedError) as exc:
-            raise _connector_error(exc) from exc
+        native_data = _native_input(request, spec, refs)
+        result = await _native_adapter(request).execute_native(
+            replace(request, input_json=native_data)
+        )
 
-        body = result.data
+        body = result.output_json["body"]
         if not isinstance(body, Mapping):
-            raise _malformed_response_error(write=spec.write, action_key=request.action_key)
+            raise _malformed_response_error(
+                write=spec.write,
+                action_key=request.action_key,
+                receipt=_projection_receipt(body, result.metadata_json),
+            )
         try:
             safe = _safe_response(
                 body,
@@ -340,7 +255,9 @@ class StripeActionConnector:
                     )
         except ValidationError as exc:
             raise _malformed_response_error(
-                write=spec.write, action_key=request.action_key
+                write=spec.write,
+                action_key=request.action_key,
+                receipt=_projection_receipt(body, result.metadata_json),
             ) from exc
         except Exception as exc:
             # HTTP has already completed. Reference persistence/projection failure
@@ -349,10 +266,11 @@ class StripeActionConnector:
                 write=spec.write,
                 action_key=request.action_key,
                 reason_code="response_normalization_failed",
+                receipt=_projection_receipt(body, result.metadata_json),
             ) from exc
         metadata = {"vendor": "stripe", "operation": request.action_key}
-        if result.metadata:
-            metadata.update(redact_secrets(result.metadata))
+        if result.metadata_json:
+            metadata.update(redact_secrets(result.metadata_json))
         return ActionConnectorResult(
             output_json={"provider": "stripe", "operation": request.action_key, "data": safe},
             metadata_json=metadata,
@@ -839,228 +757,6 @@ def _validate_custom_fields(
                 )
 
 
-def _path_for(
-    request: ActionConnectorRequest,
-    spec: StripeActionSpec,
-    refs: ProviderObjectReferenceRepository,
-) -> str:
-    path = spec.path
-    replacement_types = {
-        "{product_ref}": ("product_ref", "stripe.product"),
-        "{price_ref}": ("price_ref", "stripe.price"),
-        "{customer_ref}": ("customer_ref", "stripe.customer"),
-        "{tax_id_ref}": ("tax_id_ref", "stripe.tax-id"),
-        "{invoice_ref}": ("invoice_ref", "stripe.invoice"),
-        "{charge_ref}": ("charge_ref", "stripe.charge"),
-        "{payment_intent_ref}": ("payment_intent_ref", "stripe.payment-intent"),
-        "{payment_record_ref}": ("payment_record_ref", "stripe.payment-record"),
-        "{balance_transaction_ref}": ("balance_transaction_ref", "stripe.balance-transaction"),
-        "{refund_ref}": ("refund_ref", "stripe.refund"),
-        "{dispute_ref}": ("dispute_ref", "stripe.dispute"),
-    }
-    for token, (key, object_type) in replacement_types.items():
-        if token not in path:
-            continue
-        value = _resolve_ref(request, refs, key, object_type)
-        path = path.replace(token, value)
-    return path
-
-
-def _params_for(
-    request: ActionConnectorRequest,
-    spec: StripeActionSpec,
-    refs: ProviderObjectReferenceRepository,
-) -> dict[str, Any]:
-    if spec.write:
-        return {}
-    payload = request.input_json
-    params: dict[str, Any] = {}
-    if request.action_key == "stripe.prices.retrieve":
-        params["expand[]"] = ["tiers", "currency_options"]
-    if request.action_key == "stripe.invoices.retrieve":
-        # Invoice.customer_email freezes at finalization. Expand the current
-        # customer too so an agent can detect a changed primary email.
-        # https://docs.stripe.com/api/invoices/object#invoice_object-customer_email
-        params["expand[]"] = "customer"
-    if request.action_key == "stripe.balance-transactions.retrieve":
-        params["expand[]"] = "source"
-    elif request.action_key == "stripe.balance-transactions.list":
-        params["expand[]"] = "data.source"
-    if spec.list_item_type:
-        params["limit"] = payload.get("limit", STRIPE_DEFAULT_LIMIT)
-        if "page_cursor" in payload:
-            params["starting_after"] = _resolve_ref(
-                request, refs, "page_cursor", spec.list_item_type
-            )
-        if request.action_key in {"stripe.products.list", "stripe.prices.list"}:
-            if "active" in payload:
-                params["active"] = "true" if payload["active"] else "false"
-            if request.action_key == "stripe.prices.list":
-                if "product_ref" in payload:
-                    params["product"] = _resolve_ref(request, refs, "product_ref", "stripe.product")
-                params.update(_copy_fields(payload, "currency", "type"))
-        if request.action_key == "stripe.invoices.list" and "status" in payload:
-            params["status"] = payload["status"]
-        if request.action_key == "stripe.invoices.list":
-            if "customer_ref" in payload:
-                params["customer"] = _resolve_ref(request, refs, "customer_ref", "stripe.customer")
-            for bound in ("gte", "lte"):
-                if f"created_{bound}" in payload:
-                    params[f"created[{bound}]"] = payload[f"created_{bound}"]
-        if request.action_key == "stripe.invoice-items.list":
-            for field, kind in (("invoice", "stripe.invoice"), ("customer", "stripe.customer")):
-                if f"{field}_ref" in payload:
-                    params[field] = _resolve_ref(request, refs, f"{field}_ref", kind)
-        if request.action_key == "stripe.disputes.list":
-            for field, kind in (
-                ("charge", "stripe.charge"),
-                ("payment_intent", "stripe.payment-intent"),
-            ):
-                if f"{field}_ref" in payload:
-                    params[field] = _resolve_ref(request, refs, f"{field}_ref", kind)
-        if request.action_key == "stripe.customers.list":
-            params["email"] = payload["email"]
-        if request.action_key == "stripe.invoice-payments.list":
-            params["invoice"] = _resolve_ref(request, refs, "invoice_ref", "stripe.invoice")
-        if request.action_key == "stripe.charges.list" and "customer_ref" in payload:
-            params["customer"] = _resolve_ref(request, refs, "customer_ref", "stripe.customer")
-        if request.action_key == "stripe.charges.list" and "payment_intent_ref" in payload:
-            params["payment_intent"] = _resolve_ref(
-                request,
-                refs,
-                "payment_intent_ref",
-                "stripe.payment-intent",
-            )
-        if request.action_key == "stripe.refunds.list" and "charge_ref" in payload:
-            params["charge"] = _resolve_ref(request, refs, "charge_ref", "stripe.charge")
-    return params
-
-
-def _form_for(
-    request: ActionConnectorRequest,
-    spec: StripeActionSpec,
-    refs: ProviderObjectReferenceRepository,
-) -> dict[str, Any]:
-    if not spec.write:
-        return {}
-    payload = request.input_json
-    if request.action_key == "stripe.customers.create":
-        return _copy_fields(payload, "email", "name", "description")
-    if request.action_key == "stripe.customers.update":
-        form = _copy_fields(payload, "name", "email", "phone")
-        address = payload.get("address")
-        if isinstance(address, Mapping):
-            form.update(
-                {
-                    f"address[{key}]": address[key]
-                    for key in _CUSTOMER_ADDRESS_FIELDS
-                    if key in address
-                }
-            )
-        if "invoice_settings" in payload:
-            form.update(
-                _custom_fields_form(
-                    payload["invoice_settings"]["custom_fields"], "invoice_settings[custom_fields]"
-                )
-            )
-        return form
-    if request.action_key == "stripe.customers.tax-ids.create":
-        return _copy_fields(payload, "type", "value")
-    if request.action_key == "stripe.invoices.create":
-        return {
-            "customer": _resolve_ref(request, refs, "customer_ref", "stripe.customer"),
-            "collection_method": "send_invoice",
-            "currency": payload["currency"],
-            "days_until_due": payload["days_until_due"],
-            # The initial action always produces a draft; a workflow decides
-            # whether/when the separate finalize and send actions are allowed.
-            "auto_advance": "false",
-            **_copy_fields(payload, "effective_at"),
-            **(
-                {"metadata[stackos_correlation]": payload["correlation_key"]}
-                if "correlation_key" in payload
-                else {}
-            ),
-            **_copy_fields(payload, "description"),
-        }
-    if request.action_key == "stripe.invoices.update":
-        form = _copy_fields(payload, "footer", "description")
-        if "custom_fields" in payload:
-            form.update(_custom_fields_form(payload["custom_fields"], "custom_fields"))
-        if "payment_method_types" in payload:
-            form["payment_settings[payment_method_types][]"] = payload["payment_method_types"]
-        return form
-    if request.action_key == "stripe.invoices.finalize":
-        # https://docs.stripe.com/api/invoices/finalize: retain explicit-only
-        # advancement even when a draft was changed outside this connector.
-        return {"auto_advance": "false"}
-    if request.action_key == "stripe.invoices.mark-paid-out-of-band":
-        # https://docs.stripe.com/api/invoices/pay#pay_invoice-paid_out_of_band
-        # Never forward charge, source, mandate, or forgiveness controls. The
-        # workflow owns the verified full-settlement decision.
-        return {"paid_out_of_band": "true"}
-    if request.action_key == "stripe.invoices.attach-payment":
-        if "payment_intent_ref" in payload:
-            return {
-                "payment_intent": _resolve_ref(
-                    request, refs, "payment_intent_ref", "stripe.payment-intent"
-                )
-            }
-        return {
-            "payment_record": _resolve_ref(
-                request, refs, "payment_record_ref", "stripe.payment-record"
-            )
-        }
-    if request.action_key == "stripe.payment-records.report":
-        return {
-            "amount_requested[currency]": payload["currency"],
-            "amount_requested[value]": payload["amount"],
-            "initiated_at": payload["initiated_at"],
-            "outcome": "guaranteed",
-            "guaranteed[guaranteed_at]": payload["guaranteed_at"],
-            "payment_method_details[type]": "custom",
-            "payment_method_details[custom][display_name]": "Bank transfer",
-            "processor_details[type]": "custom",
-            "processor_details[custom][payment_reference]": payload["payment_reference"],
-            "customer_details[customer]": _resolve_ref(
-                request, refs, "customer_ref", "stripe.customer"
-            ),
-        }
-    if request.action_key == "stripe.invoice-items.create":
-        form = {
-            "customer": _resolve_ref(request, refs, "customer_ref", "stripe.customer"),
-            "invoice": _resolve_ref(request, refs, "invoice_ref", "stripe.invoice"),
-        }
-        if "price_ref" in payload:
-            form.update(
-                {
-                    "pricing[price]": _resolve_ref(request, refs, "price_ref", "stripe.price"),
-                    "quantity": payload["quantity"],
-                    **_copy_fields(payload, "currency", "description"),
-                }
-            )
-        else:
-            form.update(_copy_fields(payload, "amount", "currency", "description"))
-        return form
-    return {}
-
-
-def _copy_fields(payload: Mapping[str, Any], *keys: str) -> dict[str, Any]:
-    return {key: value for key in keys if (value := payload.get(key)) is not None}
-
-
-def _custom_fields_form(fields: list[Mapping[str, str]], prefix: str) -> dict[str, Any]:
-    # Stripe replaces this entire list. The caller supplies all retained fields;
-    # the transport never reads/merges business facts or invents a partial patch.
-    if not fields:
-        return {prefix: ""}
-    return {
-        f"{prefix}[{index}][{key}]": entry[key]
-        for index, entry in enumerate(fields)
-        for key in ("name", "value")
-    }
-
-
 def _resolve_ref(
     request: ActionConnectorRequest,
     refs: ProviderObjectReferenceRepository,
@@ -1177,12 +873,18 @@ def _safe_response(
 
 
 def _malformed_response_error(
-    *, write: bool, action_key: str | None = None, reason_code: str = "malformed_response"
+    *,
+    write: bool,
+    action_key: str | None = None,
+    reason_code: str = "malformed_response",
+    receipt: dict[str, str] | None = None,
 ) -> ActionConnectorError:
     """Make an unusable post-success response explicit about side-effect risk."""
 
     provider_error: dict[str, Any] = {
         "reason_code": reason_code,
+        "provider_executed": True,
+        **({"provider_receipt": receipt} if receipt else {}),
         "outcome_unknown": write,
         "retry_safe": False,
     }
@@ -1221,6 +923,7 @@ def _malformed_response_error(
         message,
         provider_error=provider_error,
         output_json=output_json,
+        metadata_json={"provider_executed": True, "retry_safe": False},
     )
 
 
@@ -1330,7 +1033,10 @@ def _safe_business_details(
             if not _valid_business_link(item):
                 result[key] = None
                 result[f"{key}_state"] = "invalid"
-            elif redact_secret_text(redact_secret_values(item, secret_values)) != item:
+            elif (
+                "[redacted]" in item
+                or redact_secret_text(redact_secret_values(item, secret_values)) != item
+            ):
                 result[key] = None
                 result[f"{key}_state"] = "redacted"
             else:
@@ -1396,7 +1102,10 @@ def _invoice_link_state(
         return "draft_unavailable" if invoice.get("status") == "draft" else "unavailable"
     if not _valid_business_link(value):
         return "invalid"
-    if redact_secret_text(redact_secret_values(value, secret_values)) != value:
+    if (
+        "[redacted]" in value
+        or redact_secret_text(redact_secret_values(value, secret_values)) != value
+    ):
         return "redacted"
     return "available"
 
@@ -2584,39 +2293,6 @@ def _object_ref_for_type(value: Mapping[str, Any], object_type: str) -> str:
     return ref
 
 
-def _connector_error(exc: IntegrationDownError | RateLimitedError) -> ActionConnectorError:
-    data = exc.data if isinstance(exc.data, Mapping) else {}
-    status = data.get("status")
-    provider_status_code = status if isinstance(status, int) else None
-    provider_error = data.get("provider_error")
-    safe_error = dict(provider_error) if isinstance(provider_error, Mapping) else {}
-    safe_error.setdefault(
-        "reason_code",
-        "rate_limited" if isinstance(exc, RateLimitedError) else "provider_failure",
-    )
-    safe_error["outcome_unknown"] = bool(data.get("outcome_unknown"))
-    safe_error["retry_safe"] = bool(data.get("retry_safe"))
-    if isinstance(data.get("retry_after"), int | float):
-        safe_error["retry_after"] = data["retry_after"]
-    if isinstance(data.get("recovery"), str):
-        safe_error["recovery"] = data["recovery"][:500]
-    output_json = {
-        "status": "failed",
-        "outcome_unknown": bool(data.get("outcome_unknown")),
-        "retry_safe": bool(data.get("retry_safe")),
-    }
-    if provider_status_code is not None:
-        output_json["provider_status_code"] = provider_status_code
-    if safe_error:
-        output_json["provider_error"] = redact_secrets(safe_error)
-    return ActionConnectorError(
-        "Stripe action failed",
-        provider_status_code=provider_status_code,
-        provider_error=redact_secrets(safe_error),
-        output_json=output_json,
-    )
-
-
 __all__ = [
     "STRIPE_ACTION_SPECS",
     "STRIPE_DEFAULT_LIMIT",
@@ -2624,3 +2300,87 @@ __all__ = [
     "STRIPE_OPERATION",
     "StripeActionConnector",
 ]
+
+
+def _native_input(request, spec, refs):
+    payload = {
+        key: value
+        for key, value in request.input_json.items()
+        if key not in {"include_business_details", "correlation_key"}
+    }
+    types = {
+        "product": "stripe.product",
+        "price": "stripe.price",
+        "customer": "stripe.customer",
+        "tax_id": "stripe.tax-id",
+        "invoice": "stripe.invoice",
+        "charge": "stripe.charge",
+        "payment_intent": "stripe.payment-intent",
+        "payment_record": "stripe.payment-record",
+        "balance_transaction": "stripe.balance-transaction",
+        "refund": "stripe.refund",
+        "dispute": "stripe.dispute",
+    }
+    for name, kind in types.items():
+        if name + "_ref" in payload:
+            payload[name + "_id"] = _resolve_ref(request, refs, name + "_ref", kind)
+            del payload[name + "_ref"]
+    if "page_cursor" in payload:
+        payload["starting_after"] = _resolve_ref(request, refs, "page_cursor", spec.list_item_type)
+        del payload["page_cursor"]
+    if request.action_key == "stripe.invoices.create":
+        payload.update(collection_method="send_invoice", auto_advance=False)
+        if "correlation_key" in request.input_json:
+            payload["metadata"] = {"stackos_correlation": request.input_json["correlation_key"]}
+    if request.action_key == "stripe.invoices.finalize":
+        payload["auto_advance"] = False
+    if request.action_key == "stripe.payment-records.report":
+        payload.update(
+            outcome="guaranteed",
+            payment_method_type="custom",
+            payment_method_display_name="Bank transfer",
+            processor_type="custom",
+        )
+    expansions = {
+        "stripe.prices.retrieve": ["tiers", "currency_options"],
+        "stripe.invoices.retrieve": "customer",
+        "stripe.balance-transactions.retrieve": "source",
+        "stripe.balance-transactions.list": "data.source",
+    }
+    if request.action_key in expansions:
+        payload["expand"] = expansions[request.action_key]
+    return payload
+
+
+def _native_adapter(request):
+    from stackos_connectors.connectors.stripe.integration import StripeIntegration
+
+    from stackos.integrations._rate_limit import get_bucket
+
+    return PackageActionConnector(
+        "stripe",
+        client=ConnectorClient(registry=load_registry("connectors/stripe/catalog.json")),
+        options=CallOptions(
+            rate_limiter=get_bucket(
+                project_id=request.project_id, kind="stripe", qps=StripeIntegration.default_qps
+            )
+        ),
+    )
+
+
+def _projection_receipt(body, metadata):
+    # Only transport request identity and the returned root object ID cross this failure boundary.
+    receipt = {}
+    if (
+        isinstance(body, dict)
+        and isinstance(body.get("id"), str)
+        and re.fullmatch(r"[A-Za-z0-9_-]{1,200}", body["id"])
+    ):
+        receipt["object_id"] = body["id"]
+    if (
+        isinstance(metadata, dict)
+        and isinstance(metadata.get("request_id"), str)
+        and re.fullmatch(r"[A-Za-z0-9_-]{1,200}", metadata["request_id"])
+    ):
+        receipt["request_id"] = metadata["request_id"]
+    return redact_secrets(receipt)

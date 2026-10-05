@@ -95,11 +95,13 @@ Normal agent flow:
    on-behalf authority. If the connected account cannot call the endpoint, the
    server error is preserved for repair.
 
-The copied source bundle lives in `plugins/trackbooth/agent-api/` and contains
-the prior bootstrap manifest, generated OpenAPI spec, generated catalog, schema
-audit, and source docs. These files are reference fixtures for development and
-tests; the production inventory source is the live server catalog fetched by
-`trackbooth.catalog.sync`.
+The connector package bundles the native bootstrap manifest, generated OpenAPI
+spec and catalog under `connectors/trackbooth/assets/agent-api/`. Portable
+provider notes live alongside them in `connectors/trackbooth/docs/`. These are
+reference fixtures; the production inventory source is the live server catalog
+fetched by `trackbooth.catalog.sync`. StackOS retains inventory persistence,
+scope isolation, retirement and endpoint policy. Server-development notes and
+historical schema audits are not runtime assets.
 
 ## Safety Boundaries
 

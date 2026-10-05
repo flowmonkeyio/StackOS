@@ -15,15 +15,21 @@ Official docs verified:
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import replace
+
+import httpx
+
 from stackos.actions.connectors import (
+    ActionConnectorError,
     ActionConnectorRequest,
     ActionConnectorResult,
     ActionValidationIssue,
 )
+from stackos.artifacts import redact_secrets
 from stackos.repositories.base import ValidationError
 
 from .files import _upload_files
-from .http import _slack_api
 from .payloads import (
     _conversation_history_params,
     _conversation_info_params,
@@ -58,128 +64,109 @@ from .validation import history_content_option_issues, validate_slack_request
 
 
 class SlackBotActionConnector:
-    """Decision-free adapter for explicit Slack Web API calls."""
+    """Resolve host references and project native Slack receipts into communication state."""
 
     key = "slack-bot"
+
+    def __init__(self, *, client=None, options=None):
+        self._client = client
+        self._options = options
 
     def validate(self, request: ActionConnectorRequest) -> list[ActionValidationIssue]:
         return validate_slack_request(request)
 
-    def estimate_cost_cents(self, _request: ActionConnectorRequest) -> int:
+    def estimate_cost_cents(self, request: ActionConnectorRequest) -> int:
         return 0
+
+    async def _native(self, request, prepared):
+        from stackos_connectors import ConnectorClient
+        from stackos_connectors.catalog import load_registry
+
+        from stackos.actions.package_bridge import PackageActionConnector
+
+        if self._client is None:
+            self._client = ConnectorClient(
+                registry=load_registry("connectors/slack_bot/catalog.json")
+            )
+        return await PackageActionConnector(
+            "slack-bot", client=self._client, options=self._options
+        ).execute_native(replace(request, input_json=prepared))
 
     async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
         if option_issues := history_content_option_issues(request):
             raise ValidationError(option_issues[0].message)
-        match request.operation:
-            case "identity.get":
-                # Slack auth.test:
-                # https://docs.slack.dev/reference/methods/auth.test/
-                status, body, headers = await _slack_api(request, "POST", "auth.test")
-                return _identity_result(request, status, body, headers)
-            case "message.send":
-                _communication_profile_key(request)
-                body_json = _message_payload(request)
-                # Slack chat.postMessage:
-                # https://docs.slack.dev/reference/methods/chat.postMessage/
-                status, body, headers = await _slack_api(
-                    request,
-                    "POST",
-                    "chat.postMessage",
-                    json_body=body_json,
-                )
-                _store_outbound_message(request, body, body_json)
-                return _message_result(request, status, body, headers, body_json)
-            case "file.upload":
-                _communication_profile_key(request)
-                # Slack external file upload:
-                # https://docs.slack.dev/reference/methods/files.getUploadURLExternal/
-                # https://docs.slack.dev/reference/methods/files.completeUploadExternal/
-                return await _upload_files(request)
-            case "reaction.add":
-                _communication_profile_key(request)
-                body_json = _reaction_add_payload(request)
-                # Slack reactions.add:
-                # https://docs.slack.dev/reference/methods/reactions.add/
-                status, body, headers = await _slack_api(
-                    request,
-                    "POST",
-                    "reactions.add",
-                    json_body=body_json,
-                )
-                _store_reaction_add(request, body_json)
-                return _reaction_add_result(request, status, body, headers, body_json)
-            case "message.delete":
-                _communication_profile_key(request)
-                body_json = _message_delete_payload(request)
-                # Slack chat.delete:
-                # https://docs.slack.dev/reference/methods/chat.delete/
-                status, body, headers = await _slack_api(
-                    request,
-                    "POST",
-                    "chat.delete",
-                    json_body=body_json,
-                )
-                _mark_message_deleted(request, body_json)
-                return _message_delete_result(request, status, body, headers, body_json)
-            case "conversation.open":
-                _communication_profile_key(request)
-                # Slack conversations.open:
-                # https://docs.slack.dev/reference/methods/conversations.open/
-                status, body, headers = await _slack_api(
-                    request,
-                    "POST",
-                    "conversations.open",
-                    json_body=_conversation_open_payload(request),
-                )
-                _store_conversation_from_body(request, body)
-                return _conversation_open_result(request, status, body, headers)
-            case "conversation.info":
-                _communication_profile_key(request)
-                # Slack conversations.info:
-                # https://docs.slack.dev/reference/methods/conversations.info/
-                status, body, headers = await _slack_api(
-                    request,
-                    "GET",
-                    "conversations.info",
-                    params=_conversation_info_params(request),
-                )
-                _store_conversation_from_body(request, body)
-                return _conversation_info_result(request, status, body, headers)
-            case "conversation.list":
-                _communication_profile_key(request)
-                # Slack conversations.list:
-                # https://docs.slack.dev/reference/methods/conversations.list/
-                status, body, headers = await _slack_api(
-                    request,
-                    "GET",
-                    "conversations.list",
-                    params=_conversation_list_params(request),
-                )
-                _store_conversation_list(request, body)
-                return _conversation_list_result(request, status, body, headers)
-            case "conversation.members":
-                _communication_profile_key(request)
-                # Slack conversations.members:
-                # https://docs.slack.dev/reference/methods/conversations.members/
-                status, body, headers = await _slack_api(
-                    request,
-                    "GET",
-                    "conversations.members",
-                    params=_conversation_members_params(request),
-                )
-                _store_memberships_from_body(request, body)
-                return _conversation_members_result(request, status, body, headers)
-            case "conversation.history":
-                _communication_profile_key(request)
-                # Slack conversations.history:
-                # https://docs.slack.dev/reference/methods/conversations.history/
-                status, body, headers = await _slack_api(
-                    request,
-                    "GET",
-                    "conversations.history",
-                    params=_conversation_history_params(request),
-                )
-                return _conversation_history_result(request, status, body, headers)
-            case _:
-                raise ValidationError(f"unsupported Slack operation {request.operation!r}")
+        if request.operation != "identity.get":
+            _communication_profile_key(request)
+        if request.operation == "file.upload":
+            return await _upload_files(request, self)
+        builders = {
+            "identity.get": lambda request: {},
+            "message.send": _message_payload,
+            "reaction.add": _reaction_add_payload,
+            "message.delete": _message_delete_payload,
+            "conversation.open": _conversation_open_payload,
+            "conversation.info": _conversation_info_params,
+            "conversation.list": _conversation_list_params,
+            "conversation.members": _conversation_members_params,
+            "conversation.history": _conversation_history_params,
+        }
+        if request.operation not in builders:
+            raise ValidationError(f"unsupported Slack operation {request.operation!r}")
+        prepared = builders[request.operation](request)
+        native = await self._native(request, prepared)
+        output = native.output_json
+        status, body, headers = (
+            output["status_code"],
+            output["data"],
+            httpx.Headers(output["headers"]),
+        )
+        projectors: dict[str, Callable[..., ActionConnectorResult]] = {
+            "identity.get": _identity_result,
+            "message.send": _message_result,
+            "reaction.add": _reaction_add_result,
+            "message.delete": _message_delete_result,
+            "conversation.open": _conversation_open_result,
+            "conversation.info": _conversation_info_result,
+            "conversation.list": _conversation_list_result,
+            "conversation.members": _conversation_members_result,
+            "conversation.history": _conversation_history_result,
+        }
+        result = projectors[request.operation](
+            request,
+            status,
+            body,
+            headers,
+            *(
+                [prepared]
+                if request.operation in {"message.send", "reaction.add", "message.delete"}
+                else []
+            ),
+        )
+        result.metadata_json = {**(result.metadata_json or {}), **(native.metadata_json or {})}
+        result.output_json = redact_secrets(result.output_json)
+        result.metadata_json = redact_secrets(result.metadata_json)
+        try:
+            match request.operation:
+                case "message.send":
+                    _store_outbound_message(request, body, prepared)
+                case "reaction.add":
+                    _store_reaction_add(request, prepared)
+                case "message.delete":
+                    _mark_message_deleted(request, prepared)
+                case "conversation.open" | "conversation.info":
+                    _store_conversation_from_body(request, body)
+                case "conversation.list":
+                    _store_conversation_list(request, body)
+                case "conversation.members":
+                    _store_memberships_from_body(request, body)
+        except Exception as exc:
+            raise ActionConnectorError(
+                "Slack operation completed but communication state could not be stored",
+                output_json=result.output_json,
+                metadata_json={
+                    **(result.metadata_json or {}),
+                    "provider_executed": True,
+                    "retry_safe": False,
+                },
+            ) from exc
+        return result

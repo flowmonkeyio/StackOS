@@ -5,7 +5,6 @@ import yaml
 
 CONTRACT_PATH = Path("docs/integration-contracts/hubspot.md")
 RUNBOOK_PATH = Path("docs/oauth-provider-setup.md")
-CURRENT_CONNECTORS_PATH = Path("docs/integration-contracts/current-connectors.md")
 GTM_MANIFEST_PATH = Path("plugins/gtm/plugin.yaml")
 
 EXECUTABLE_ACTION_REFS = {
@@ -254,7 +253,7 @@ def test_hubspot_operator_runbook_matches_manifest_oauth_scope_bundles() -> None
 def test_hubspot_docs_remove_stale_manual_only_classification() -> None:
     runbook = RUNBOOK_PATH.read_text(encoding="utf-8")
     auth_docs = Path("docs/auth-providers.md").read_text(encoding="utf-8")
-    current_connectors = CURRENT_CONNECTORS_PATH.read_text(encoding="utf-8")
+    contract = _contract_text()
 
     stale_claims = (
         "HubSpot is intentionally outside this runbook",
@@ -262,12 +261,13 @@ def test_hubspot_docs_remove_stale_manual_only_classification() -> None:
         "Existing manual OAuth token only; excluded from this delivery",
         "HubSpot | Manual OAuth token only",
     )
-    combined = "\n".join((runbook, auth_docs, current_connectors))
+    combined = "\n".join((runbook, auth_docs, contract))
     for claim in stale_claims:
         assert claim not in combined
 
     assert "| HubSpot | Authorization code with capability-scoped optional consent" in runbook
-    assert "| `hubspot` | Provider-specific `gtm.hubspot.*`" in current_connectors
+    assert "private_app_token" in contract
+    assert "gtm.hubspot." in contract
 
 
 def test_hubspot_contract_maps_only_focused_gtm_workflows() -> None:

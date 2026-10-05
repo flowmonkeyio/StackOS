@@ -11,9 +11,10 @@ from typing import Any
 import httpx
 import pytest
 from pytest_httpx import HTTPXMock
+from stackos_connectors.connectors.reve.integration import ReveImagesIntegration
+from stackos_connectors.errors import IntegrationDownError
 
-from stackos.integrations.reve_images import ReveImagesIntegration
-from stackos.mcp.errors import IntegrationDownError
+from stackos.actions.reve_images import _host_media_cost
 
 
 def _png_header(width: int, height: int) -> bytes:
@@ -51,9 +52,8 @@ def test_create_image_requests_json_and_persists_base64_output(
         async with httpx.AsyncClient() as client:
             integ = ReveImagesIntegration(
                 payload=b"reve-key",
-                project_id=project_id,
                 http=client,
-                asset_dir=tmp_path,
+                output_dir=tmp_path / "reve",
             )
             return await integ.create_image(
                 prompt="image prompt",
@@ -74,14 +74,23 @@ def test_create_image_requests_json_and_persists_base64_output(
         "version": "reve-create@20250915",
         "test_time_scaling": 1,
     }
-    assert item["url"].startswith("/generated-assets/reve/reve-image-")
+    assert item["path"].startswith(str(tmp_path / "reve/reve-image-"))
     assert item["source_model"] == "reve-create@20250915"
     assert item["request_id"] == "rsid-create"
     assert item["credits_used"] == 18
     assert "image" not in result.data
-    path = tmp_path / item["url"].removeprefix("/generated-assets/")
+    path = Path(item["path"])
     assert path.read_bytes() == image_bytes
-    assert result.cost_usd == 18 * (10 / 7500)
+    assert _host_media_cost(
+        "image.create",
+        {
+            "prompt": "image prompt",
+            "aspect_ratio": "16:9",
+            "version": "reve-create@20250915",
+            "test_time_scaling": 1,
+        },
+        result.data,
+    ) == 18 * (10 / 7500)
 
 
 def test_edit_image_sends_reference_base64_and_sanitizes_request_log(
@@ -108,14 +117,15 @@ def test_edit_image_sends_reference_base64_and_sanitizes_request_log(
         async with httpx.AsyncClient() as client:
             integ = ReveImagesIntegration(
                 payload=b"reve-key",
-                project_id=project_id,
                 http=client,
-                asset_dir=tmp_path,
+                output_dir=tmp_path / "reve",
             )
             return await integ.edit_image(
                 edit_instruction="make it cinematic",
                 reference_image_path=source,
                 aspect_ratio="auto",
+                version="latest",
+                test_time_scaling=1,
             )
 
     result = asyncio.run(go())
@@ -124,7 +134,7 @@ def test_edit_image_sends_reference_base64_and_sanitizes_request_log(
     assert body["reference_image"] == base64.b64encode(b"source-png").decode("ascii")
     assert body["edit_instruction"] == "make it cinematic"
     assert body["aspect_ratio"] == "auto"
-    assert result.data["data"][0]["url"].startswith("/generated-assets/reve/reve-image-")
+    assert result.data["data"][0]["path"].startswith(str(tmp_path / "reve/reve-image-"))
 
 
 def test_remix_image_sends_multiple_references_and_uses_fast_credit_cost(
@@ -155,14 +165,14 @@ def test_remix_image_sends_multiple_references_and_uses_fast_credit_cost(
         async with httpx.AsyncClient() as client:
             integ = ReveImagesIntegration(
                 payload=b"reve-key",
-                project_id=project_id,
                 http=client,
-                asset_dir=tmp_path,
+                output_dir=tmp_path / "reve",
             )
             return await integ.remix_image(
                 prompt="combine <img>0</img> and <img>1</img>",
                 reference_image_paths=[first, second],
                 version="reve-remix-fast@20251030",
+                test_time_scaling=1,
             )
 
     result = asyncio.run(go())
@@ -173,7 +183,16 @@ def test_remix_image_sends_multiple_references_and_uses_fast_credit_cost(
         base64.b64encode(second_bytes).decode("ascii"),
     ]
     assert "aspect_ratio" not in body
-    assert result.cost_usd == 5 * (10 / 7500)
+    assert _host_media_cost(
+        "image.remix",
+        {
+            "prompt": "combine <img>0</img> and <img>1</img>",
+            "reference_image_paths": [first, second],
+            "version": "reve-remix-fast@20251030",
+            "test_time_scaling": 1,
+        },
+        result.data,
+    ) == 5 * (10 / 7500)
 
 
 def test_remix_rejects_over_pixel_reference_set_before_provider_call(
@@ -188,13 +207,14 @@ def test_remix_rejects_over_pixel_reference_set_before_provider_call(
         async with httpx.AsyncClient() as client:
             integ = ReveImagesIntegration(
                 payload=b"reve-key",
-                project_id=project_id,
                 http=client,
-                asset_dir=tmp_path,
+                output_dir=tmp_path / "reve",
             )
             return await integ.remix_image(
                 prompt="use the oversized reference",
                 reference_image_paths=[source],
+                version="latest",
+                test_time_scaling=1,
             )
 
     with pytest.raises(IntegrationDownError) as exc_info:
@@ -208,10 +228,28 @@ def test_remix_rejects_over_pixel_reference_set_before_provider_call(
 def test_test_credentials_is_explicitly_non_billable_format_only(project_id: int) -> None:
     async def go() -> Any:
         async with httpx.AsyncClient() as client:
-            integ = ReveImagesIntegration(payload=b"reve-key", project_id=project_id, http=client)
+            integ = ReveImagesIntegration(payload=b"reve-key", http=client)
             return await integ.test_credentials()
 
     result = asyncio.run(go())
     assert result["ok"] is True
     assert result["status"] == "format-only"
     assert result["probe_mode"] == "non_billable_format_only"
+
+
+def test_host_default_choices_and_generated_asset_projection(host_media_projection):
+    from stackos.actions.reve_images import ReveImagesActionConnector
+
+    result, native_data = asyncio.run(
+        host_media_projection(
+            ReveImagesActionConnector(),
+            provider="reve",
+            operation="image.create",
+            data={"prompt": "fixture"},
+            output_subdir="reve",
+        )
+    )
+    assert native_data["aspect_ratio"] == "3:2"
+    assert native_data["version"] == "latest"
+    assert native_data["test_time_scaling"] == 1
+    assert result.metadata_json["vendor"] == "reve"

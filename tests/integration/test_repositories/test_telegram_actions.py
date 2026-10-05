@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import json
+from collections import deque
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from sqlmodel import Session, select
+from stackos_connectors.connectors.telegram.tdlib.native import (
+    TelegramTdlibNativeError,
+    TelegramTdlibRequestError,
+)
 
 from stackos.actions import ActionRepository
 from stackos.actions.connectors import (
@@ -16,16 +22,11 @@ from stackos.actions.connectors import (
 )
 from stackos.actions.telegram import (
     TelegramActionConnector,
-    _AccountClient,
     _safe_native_with_file_refs,
 )
 from stackos.actions.telegram_schema import TelegramButton
 from stackos.auth_providers import AuthRepository
 from stackos.db.models import ActionCall, Artifact, Credential, DurableActionJob, ResourceRecord
-from stackos.integrations.telegram_tdlib.native import (
-    TelegramTdlibNativeError,
-    TelegramTdlibRequestError,
-)
 from stackos.integrations.telegram_tdlib.service import TelegramTdlibServiceError
 from stackos.repositories.base import ValidationError
 from stackos.repositories.projects import ProjectRepository
@@ -33,6 +34,9 @@ from stackos.repositories.resources import ArtifactRepository, ResourceRepositor
 
 
 class FakeTelegram:
+    def active_generation(self, *, account_ref: str) -> int:
+        return 1
+
     def __init__(self, files: Path | None = None) -> None:
         self.calls: list[dict] = []
         self.files = files
@@ -88,12 +92,99 @@ class FakeTelegram:
             },
         }
 
-    def files_directory(self, _account_ref: str) -> Path:
+    def files_directory(self, _account_ref: str, *, generation: int | None = None) -> Path:
         assert self.files
         return self.files
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("started", [False, True])
+async def test_native_close_keeps_dispatch_truth_in_actual_host_projection(
+    session: Session,
+    project_id: int,
+    started: bool,
+) -> None:
+    from stackos_connectors.connectors.telegram.tdlib.native import TelegramTdlibClient
+
+    class ClosingABI:
+        def __init__(self):
+            self.requests, self.updates = [], deque()
+
+        def create_client(self):
+            return 1
+
+        def send(self, handle, payload):
+            self.requests.append(json.loads(payload))
+            self.updates.append(
+                json.dumps(
+                    {
+                        "@type": "updateAuthorizationState",
+                        "authorization_state": {"@type": "authorizationStateClosed"},
+                    }
+                ).encode()
+            )
+
+        def receive(self, handle, timeout):
+            return self.updates.popleft() if self.updates else None
+
+        def destroy_client(self, handle):
+            pass
+
+    abi = ClosingABI()
+    native = TelegramTdlibClient(abi, receive_timeout_seconds=0.001)
+    if started:
+        await native.start()
+
+    class NativeRuntime(FakeTelegram):
+        async def request(self, account_ref, request, **kwargs):
+            assert kwargs["generation"] == 1
+            if request["@type"] == "sendMessage":
+                return await native._request(
+                    request,
+                    correlation_id=kwargs["correlation_id"],
+                    timeout_seconds=kwargs["timeout_seconds"],
+                )
+            assert kwargs["correlation_id"] is None
+            return await super().request(account_ref, request, **kwargs)
+
+    request = await _sender_send_request(
+        session, project_id, _account(session, project_id), sender_ref=None
+    )
+    request = replace(request, correlation_ref="persisted-close-fixture")
+    request.input_json["surface_ref"] = "telegram-chat:1"
+    with pytest.raises(ActionConnectorError) as failure:
+        await TelegramActionConnector(NativeRuntime()).execute(request)
+    output = failure.value.output_json
+    assert output["provider_executed"] is started
+    assert output["status"] == ("send_outcome_unknown" if started else "not_connected")
+    assert len(abi.requests) == int(started)
+    if started:
+        assert output["retry_safe"] is False
+        assert output["outcome_unknown"] is True
+        assert output["correlation_ref"] == "persisted-close-fixture"
+        assert abi.requests[0]["@extra"] == "persisted-close-fixture"
+        native._receiver.join(1)
+        assert not native._receiver.is_alive()
+
+
 class AlbumTimeoutTelegram(FakeTelegram):
+    async def request(self, account_ref: str, request: dict, **kwargs: object) -> dict:
+        if request["@type"] == "sendMessageAlbum":
+            self.calls.append({**request, "account_ref": account_ref, **kwargs})
+            return {
+                "@type": "messages",
+                "messages": [
+                    {
+                        "@type": "message",
+                        "id": message_id,
+                        "chat_id": request["chat_id"],
+                        "sending_state": {"@type": "messageSendingStatePending"},
+                    }
+                    for message_id in (-101, -102)
+                ],
+            }
+        return await super().request(account_ref, request, **kwargs)
+
     async def wait_message(
         self, account_ref: str, chat_id: int, temporary_message_id: int, **kwargs: object
     ) -> dict:
@@ -485,27 +576,34 @@ def test_native_button_link_style_requires_callback() -> None:
     ],
 )
 async def test_channel_post_rights_come_from_current_account_group_status(
-    status: dict, can_post: bool
+    session: Session, project_id: int, status: dict, can_post: bool
 ) -> None:
     runtime = SenderTelegram(status=status, channel=True)
     connector = TelegramActionConnector(runtime)
-    inspected = await connector._inspect(_AccountClient(runtime, "cred_test"), -901)
+    request = await _sender_send_request(
+        session, project_id, _account(session, project_id), sender_ref=None
+    )
+    inspected = await connector._inspect(connector._client(request), -901)
     assert inspected["can_post_messages"] is can_post
     assert inspected["is_member"] is (status.get("is_member", True))
     if not can_post:
         with pytest.raises(ValidationError, match="cannot send"):
-            await connector._inspect(_AccountClient(runtime, "cred_test"), -901, require_write=True)
+            await connector._inspect(connector._client(request), -901, require_write=True)
     assert "getChatMember" not in {call["@type"] for call in runtime.calls}
     assert "getSupergroup" in {call["@type"] for call in runtime.calls}
     assert "sendMessage" not in {call["@type"] for call in runtime.calls}
 
 
 @pytest.mark.asyncio
-async def test_basic_group_uses_current_account_status_without_member_lookup() -> None:
+async def test_basic_group_uses_current_account_status_without_member_lookup(
+    session: Session, project_id: int
+) -> None:
     runtime = SenderTelegram(basic_group=True)
-    inspected = await TelegramActionConnector(runtime)._inspect(
-        _AccountClient(runtime, "cred_test"), -901, require_write=True
+    connector = TelegramActionConnector(runtime)
+    request = await _sender_send_request(
+        session, project_id, _account(session, project_id), sender_ref=None
     )
+    inspected = await connector._inspect(connector._client(request), -901, require_write=True)
     assert inspected["can_post_messages"] is True
     assert [call["@type"] for call in runtime.calls] == ["getChat", "getBasicGroup"]
 
@@ -856,7 +954,26 @@ async def test_tdlib_send_is_sealed_before_effect_and_returns_final_native_ids(
     assert result.output_json["message_ref"] == "telegram-message:1:1048576"
     send = next(call for call in runtime.calls if call["@type"] == "sendMessage")
     assert send["options"]["sending_id"] == item.id
+    assert send["options"] == {
+        "@type": "messageSendOptions",
+        "sending_id": item.id,
+        "suggested_post_info": None,
+        "disable_notification": False,
+        "protect_content": False,
+        "effect_id": 0,
+        "from_background": True,
+        "update_order_of_installed_sticker_sets": False,
+        "scheduling_state": None,
+        "only_preview": False,
+    }
     assert send["correlation_id"] == item.correlation_ref
+    assert send["generation"] == 1
+    assert all(
+        call.get("correlation_id") is None
+        for call in runtime.calls
+        if call["@type"] != "sendMessage"
+    )
+    assert all("@extra" not in call for call in runtime.calls)
     assert send["reply_markup"]["rows"][0][0]["type"]["data"] == "b3Blbi0x"
     assert "test-private" not in str(result.model_dump())
     assert progress[-1] == {
@@ -904,19 +1021,26 @@ async def test_album_receipt_keeps_each_confirmed_message_before_a_later_timeout
         },
         progress_callback=progress.append,
     )
-    with pytest.raises(TimeoutError, match="receipt wait"):
-        await connector._send_receipt(
-            connector._client(request),
-            request,
-            1,
+    with pytest.raises(ActionConnectorError) as failure:
+        await connector._client(request)._request(
             {
-                "@type": "messages",
-                "messages": [
-                    {"@type": "message", "id": -101, "sending_state": {"@type": "pending"}},
-                    {"@type": "message", "id": -102, "sending_state": {"@type": "pending"}},
+                "@type": "sendMessageAlbum",
+                "chat_id": 1,
+                "topic_id": None,
+                "reply_to": None,
+                "options": {"@type": "messageSendOptions"},
+                "input_message_contents": [
+                    {"@type": "inputMessagePhoto", "photo": {"@type": "inputFileId", "id": 1}},
+                    {"@type": "inputMessagePhoto", "photo": {"@type": "inputFileId", "id": 2}},
                 ],
-            },
+            }
         )
+    assert failure.value.output_json["message_refs"] == ["telegram-message:1:1001"]
+    assert len([call for call in runtime.calls if call["@type"] == "sendMessageAlbum"]) == 1
+    stored = session.exec(
+        select(ResourceRecord).where(ResourceRecord.external_id == "telegram-message:ops:1:1001")
+    ).one()
+    assert stored.data_json["transport_status"] == "sent"
     assert progress[-1] == {
         "phase": "provider_accepted",
         "chat_id": 1,
@@ -924,6 +1048,65 @@ async def test_album_receipt_keeps_each_confirmed_message_before_a_later_timeout
         "confirmed_message_refs": ["telegram-message:1:1001"],
         "provider_receipts": {"-101": {"status": "sent", "message_ref": "telegram-message:1:1001"}},
     }
+
+
+@pytest.mark.asyncio
+async def test_host_storage_failure_retains_confirmed_native_receipt(
+    session: Session, project_id: int, monkeypatch
+) -> None:
+    from stackos.actions import telegram
+
+    def reject_storage(_request, _messages):
+        raise RuntimeError("private database details and message content")
+
+    monkeypatch.setattr(telegram, "store_sent_messages", reject_storage)
+    runtime = FakeTelegram()
+    request = await _sender_send_request(
+        session, project_id, _account(session, project_id), sender_ref=None
+    )
+    request.input_json["surface_ref"] = "telegram-chat:1"
+    with pytest.raises(ActionConnectorError) as failure:
+        await TelegramActionConnector(runtime).execute(request)
+    output = failure.value.output_json
+    assert output["message_refs"] == ["telegram-message:1:1048576"]
+    assert output["provider_executed"] is True
+    assert output["retry_safe"] is False
+    assert output["provider_result_known"] is True
+    assert output["outcome_unknown"] is False
+    assert "private" not in str(output)
+    assert len([call for call in runtime.calls if call["@type"] == "sendMessage"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_bound_call_cannot_move_to_replacement_account_generation(
+    session: Session, project_id: int
+) -> None:
+    from stackos_connectors.connectors.telegram.tdlib.native import TelegramTdlibClosedError
+
+    class GenerationRuntime(FakeTelegram):
+        current = 7
+
+        def active_generation(self, *, account_ref):
+            return self.current
+
+        async def request(self, account_ref, request, **kwargs):
+            if kwargs["generation"] != self.current:
+                raise TelegramTdlibServiceError("TDLib session generation is stale")
+            return await super().request(account_ref, request, **kwargs)
+
+    runtime = GenerationRuntime()
+    request = await _sender_send_request(
+        session, project_id, _account(session, project_id), sender_ref=None
+    )
+    connector = TelegramActionConnector(runtime)
+    old_client = connector._client(request)
+    await old_client._request({"@type": "getMe"})
+    runtime.current = 8
+    with pytest.raises(TelegramTdlibClosedError):
+        await old_client._request({"@type": "getMe"})
+    await connector._client(request)._request({"@type": "getMe"})
+    assert [call["generation"] for call in runtime.calls] == [7, 8]
+    assert all(call["correlation_id"] is None for call in runtime.calls)
 
 
 @pytest.mark.asyncio
@@ -974,16 +1157,23 @@ async def test_final_failed_send_receipt_exposes_only_safe_provider_feedback(
     )
     request = await _sender_send_request(session, project_id, account_ref, sender_ref=None)
     with pytest.raises(ActionConnectorError) as failure:
+        client = connector._client(request)
+        native = await client._request(
+            {
+                "@type": "sendMessage",
+                "chat_id": 1,
+                "topic_id": None,
+                "reply_to": None,
+                "options": {"@type": "messageSendOptions"},
+                "reply_markup": None,
+                "input_message_content": {"@type": "inputMessageText"},
+            }
+        )
         await connector._send_receipt(
-            connector._client(request),
+            client,
             request,
             1,
-            {
-                "@type": "message",
-                "id": -100,
-                "chat_id": 1,
-                "sending_state": {"@type": "messageSendingStatePending"},
-            },
+            native,
         )
     result = failure.value.output_json
     assert result["provider_error"] == provider_error

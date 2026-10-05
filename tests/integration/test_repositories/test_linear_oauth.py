@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import timedelta
-from pathlib import Path
+from importlib.resources import files
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -19,9 +19,8 @@ from stackos.repositories.projects import IntegrationCredentialRepository
 from tests.integration.account_test_support import seed_test_account
 
 AUTH_DOCUMENT = (
-    Path(__file__).parents[3]
-    / "plugins"
-    / "linear"
+    files("stackos_connectors.connectors.linear")
+    / "assets"
     / "graphql"
     / "auth"
     / "viewer-organization.graphql"
@@ -523,6 +522,12 @@ def test_linear_local_revoke_makes_no_provider_request_while_remote_revoke_is_de
     repo = AuthRepository(session)
     credential_ref = _store_linear(repo, project_id)
 
+    original = session.exec(
+        select(Credential).where(Credential.credential_ref == credential_ref)
+    ).one()
+    encrypted_row_id = original.integration_credential_id
+    assert encrypted_row_id is not None
+
     repo.detach_account(project_id=project_id, credential_ref=credential_ref)
     revoked = repo.revoke(credential_ref=credential_ref).data
 
@@ -531,4 +536,11 @@ def test_linear_local_revoke_makes_no_provider_request_while_remote_revoke_is_de
     credential = session.exec(
         select(Credential).where(Credential.credential_ref == credential_ref)
     ).first()
-    assert credential is None
+    assert credential is not None
+    assert credential.status == "revoked"
+    assert credential.revoked_at is not None
+    assert credential.integration_credential_id is None
+    assert credential.config_json["audit_tombstone"] is True
+    # Canonical config redaction masks secret-named fields; verify deletion below.
+    assert credential.config_json["secret_material_removed"] == "[redacted]"
+    assert session.get(IntegrationCredential, encrypted_row_id) is None

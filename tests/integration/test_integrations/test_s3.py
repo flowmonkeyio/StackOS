@@ -10,14 +10,13 @@ import httpx
 import pytest
 from botocore.exceptions import ClientError
 from botocore.session import get_session
-
-from stackos.integrations.s3 import (
+from stackos_connectors.connectors.aws_s3.integration import (
     AWS_S3_REGIONS,
     S3Integration,
     normalize_s3_prefix,
     validate_s3_credential_config,
 )
-from stackos.mcp.errors import IntegrationDownError
+from stackos_connectors.errors import IntegrationDownError
 
 
 class _S3Client:
@@ -164,7 +163,7 @@ def test_s3_auth_probe_lists_configured_prefix_with_only_explicit_credentials(
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.integrations.s3 as s3_module
+    import stackos_connectors.connectors.aws_s3.integration as s3_module
 
     _reset_fakes()
     monkeypatch.setattr(s3_module.boto3.session, "Session", _Session)
@@ -173,7 +172,6 @@ def test_s3_auth_probe_lists_configured_prefix_with_only_explicit_credentials(
         async with httpx.AsyncClient() as client:
             integration = S3Integration(
                 payload=_payload(),
-                project_id=project_id,
                 http=client,
                 bucket="stackos-fixture",
                 region="us-west-2",
@@ -225,7 +223,7 @@ def test_s3_auth_probe_keeps_legacy_bucket_root_as_empty_prefix(
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.integrations.s3 as s3_module
+    import stackos_connectors.connectors.aws_s3.integration as s3_module
 
     _reset_fakes()
     monkeypatch.setattr(s3_module.boto3.session, "Session", _Session)
@@ -234,7 +232,6 @@ def test_s3_auth_probe_keeps_legacy_bucket_root_as_empty_prefix(
         async with httpx.AsyncClient() as client:
             integration = S3Integration(
                 payload=_payload(),
-                project_id=project_id,
                 http=client,
                 bucket="stackos-fixture",
                 region="us-west-2",
@@ -270,7 +267,7 @@ def test_s3_auth_probe_returns_sanitized_provider_guidance(
     status: int,
     reason_code: str,
 ) -> None:
-    import stackos.integrations.s3 as s3_module
+    import stackos_connectors.connectors.aws_s3.integration as s3_module
 
     _reset_fakes()
     monkeypatch.setattr(s3_module.boto3.session, "Session", _Session)
@@ -296,7 +293,6 @@ def test_s3_auth_probe_returns_sanitized_provider_guidance(
         async with httpx.AsyncClient() as client:
             integration = S3Integration(
                 payload=_payload(),
-                project_id=project_id,
                 http=client,
                 bucket="stackos-fixture",
                 region="us-west-2",
@@ -309,7 +305,7 @@ def test_s3_auth_probe_returns_sanitized_provider_guidance(
             assert excinfo.value.data["aws_error_code"] == code
             assert excinfo.value.data["request_id"] == "request-error"
             assert excinfo.value.data["actual_region"] == "eu-west-1"
-            serialized = json.dumps(excinfo.value.to_dict())
+            serialized = json.dumps({"detail": excinfo.value.detail, "data": excinfo.value.data})
             assert "AKIAEXPLICIT12345678" not in serialized
             assert "explicit-secret" not in serialized
             assert "temporary-session-token" not in serialized
@@ -321,7 +317,7 @@ def test_s3_auth_probe_rejects_invalid_payload_without_creating_session(
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.integrations.s3 as s3_module
+    import stackos_connectors.connectors.aws_s3.integration as s3_module
 
     _reset_fakes()
     monkeypatch.setattr(s3_module.boto3.session, "Session", _Session)
@@ -336,13 +332,14 @@ def test_s3_auth_probe_rejects_invalid_payload_without_creating_session(
                             "secret_access_key": "not-returned",
                         }
                     ).encode(),
-                    project_id=project_id,
                     http=client,
                     bucket="stackos-fixture",
                     region="us-west-2",
                 )
             assert excinfo.value.data["reason_code"] == "invalid_access_key_id"
-            assert "not-returned" not in json.dumps(excinfo.value.to_dict())
+            assert "not-returned" not in json.dumps(
+                {"detail": excinfo.value.detail, "data": excinfo.value.data}
+            )
 
     asyncio.run(go())
     assert _Session.init_calls == []

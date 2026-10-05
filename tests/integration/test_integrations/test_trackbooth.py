@@ -8,9 +8,8 @@ from typing import Any
 import httpx
 import pytest
 from pytest_httpx import HTTPXMock
-
-from stackos.integrations.trackbooth import TrackboothIntegration
-from stackos.mcp.errors import IntegrationDownError
+from stackos_connectors.connectors.trackbooth.integration import TrackboothIntegration
+from stackos_connectors.errors import IntegrationDownError
 
 
 def test_trackbooth_test_credentials_uses_production_default_api_url(
@@ -27,7 +26,6 @@ def test_trackbooth_test_credentials_uses_production_default_api_url(
         async with httpx.AsyncClient() as client:
             integration = TrackboothIntegration(
                 payload=b'{"api_key":"tb-secret"}',
-                project_id=project_id,
                 http=client,
             )
             return await integration.test_credentials()
@@ -56,7 +54,6 @@ def test_trackbooth_test_credentials_supports_custom_localhost_url(
         async with httpx.AsyncClient() as client:
             integration = TrackboothIntegration(
                 payload=b"tb-secret",
-                project_id=project_id,
                 http=client,
                 api_base_url="http://localhost:3030",
             )
@@ -76,7 +73,6 @@ def test_trackbooth_test_credentials_rejects_unsafe_custom_url_without_request(
         async with httpx.AsyncClient() as client:
             integration = TrackboothIntegration(
                 payload=b"tb-secret",
-                project_id=project_id,
                 http=client,
                 api_base_url="http://10.0.0.1",
             )

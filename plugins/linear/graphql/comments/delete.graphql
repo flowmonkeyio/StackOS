@@ -1,6 +1,0 @@
-mutation LinearCommentDelete($id: String!) {
-  commentDelete(id: $id) {
-    success
-    entityId
-  }
-}

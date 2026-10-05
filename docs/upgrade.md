@@ -6,7 +6,7 @@ end state after ten.
 
 ## pipx mode
 
-Once published to PyPI:
+Once StackOS and its matched `stackos-connectors` dependency are published to PyPI:
 
 ```bash
 pipx upgrade stackos
@@ -21,6 +21,11 @@ runtime cache copy, repairs MCP registrations, and runs `doctor`. Use
 daemon is already running.
 
 ## Clone mode
+
+Update the matched sibling `../StackOSConnectors` checkout along with StackOS.
+`make install` uses the local uv source override and checks the pinned connector
+version. For unpublished wheel upgrades, supply both wheels through the local
+wheel directory described in [package setup](setup.md#package-or-operator-setup).
 
 ```bash
 git pull

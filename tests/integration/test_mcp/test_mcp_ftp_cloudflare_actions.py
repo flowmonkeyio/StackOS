@@ -219,7 +219,7 @@ def test_ftp_directory_list_executes_with_step_grant_and_audit_linkage(
     seeded_project: dict,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.ftp as ftp_module
+    import stackos_connectors.connectors.ftp.actions as ftp_module
 
     monkeypatch.setattr(ftp_module.ftplib, "FTP", _FakeFTP)
     project_id = seeded_project["data"]["id"]
@@ -269,7 +269,7 @@ def test_ftp_file_delete_executes_with_step_grant_and_audit_linkage(
     seeded_project: dict,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.ftp as ftp_module
+    import stackos_connectors.connectors.ftp.actions as ftp_module
 
     _FakeFTP.deleted_paths = []
     monkeypatch.setattr(ftp_module.ftplib, "FTP", _FakeFTP)

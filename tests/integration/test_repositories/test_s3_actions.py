@@ -12,14 +12,15 @@ from typing import Any
 import pytest
 from botocore.exceptions import ClientError, EndpointConnectionError
 from sqlmodel import Session
+from stackos_connectors.connectors.aws_s3.actions import _multipart_part_size, _ScopedS3Client
+from stackos_connectors.errors import ValidationError as NativeValidationError
 
 from stackos.actions.connectors import (
     ActionConnectorError,
     ActionConnectorRequest,
 )
-from stackos.actions.s3 import S3ActionConnector, _multipart_part_size, _ScopedS3Client
+from stackos.actions.package_bridge import PackageActionConnector
 from stackos.auth_providers import AuthRepository
-from stackos.repositories.base import ValidationError
 
 
 class _Body(io.BytesIO):
@@ -65,7 +66,7 @@ def test_s3_multipart_part_sizes_expand_before_the_provider_part_limit() -> None
         )
         == 5 * 1024**3
     )
-    with pytest.raises(ValidationError, match=r"48\.8 TiB"):
+    with pytest.raises(NativeValidationError, match=r"48\.8 TiB"):
         _multipart_part_size(provider_maximum + 1, minimum=8 * mebibyte)
 
 
@@ -348,7 +349,7 @@ def _patch_client(
     monkeypatch: pytest.MonkeyPatch,
     client: _FakeS3,
 ) -> list[dict[str, Any]]:
-    import stackos.actions.s3 as s3_module
+    import stackos_connectors.connectors.aws_s3.actions as s3_module
 
     factory_calls: list[dict[str, Any]] = []
 
@@ -421,7 +422,7 @@ def test_s3_scoped_client_fails_closed_on_result_outside_configured_prefix() -> 
         prefix="data/",
     )
 
-    with pytest.raises(ValidationError, match="outside the configured prefix"):
+    with pytest.raises(NativeValidationError, match="outside the configured prefix"):
         scoped.list_objects_v2(
             Bucket="stackos-fixture",
             Prefix="reports/",
@@ -501,13 +502,13 @@ def test_s3_scoped_client_bounds_every_allowed_object_request_shape() -> None:
     assert calls["complete_multipart_upload"]["Key"] == "data/large.bin"
     assert calls["abort_multipart_upload"]["Key"] == "data/large.bin"
 
-    with pytest.raises(ValidationError, match="bound bucket"):
+    with pytest.raises(NativeValidationError, match="bound bucket"):
         scoped.copy_object(
             Bucket="stackos-fixture",
             Key="archive/blocked.csv",
             CopySource={"Bucket": "other-bucket", "Key": "incoming.csv"},
         )
-    with pytest.raises(ValidationError, match="1024 UTF-8 bytes"):
+    with pytest.raises(NativeValidationError, match="1024 UTF-8 bytes"):
         scoped.put_object(
             Bucket="stackos-fixture",
             Key="x" * 1021,
@@ -541,7 +542,7 @@ def test_s3_connector_uses_account_prefix_as_logical_listing_root(
         prefix="data",
     )
 
-    result = asyncio.run(S3ActionConnector().execute(request))
+    result = asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert client.calls[0] == (
         "list_objects_v2",
@@ -558,7 +559,7 @@ def test_s3_connector_uses_account_prefix_as_logical_listing_root(
 
 
 def test_s3_connector_validation_is_provider_specific() -> None:
-    connector = S3ActionConnector()
+    connector = PackageActionConnector("aws-s3")
     request = ActionConnectorRequest(
         project_id=1,
         plugin_slug="utils",
@@ -615,7 +616,7 @@ def test_s3_connector_validation_is_provider_specific() -> None:
 
 
 def test_s3_exact_soap_object_key_is_rejected_but_list_prefix_is_allowed() -> None:
-    connector = S3ActionConnector()
+    connector = PackageActionConnector("aws-s3")
     delete = ActionConnectorRequest(
         project_id=1,
         plugin_slug="utils",
@@ -658,7 +659,7 @@ def test_s3_list_marks_exact_soap_object_key_unsafe(
         input_json={"prefix": "", "delimiter": "/", "page_size": 1000},
     )
 
-    result = asyncio.run(S3ActionConnector().execute(request))
+    result = asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert result.output_json["objects"][0]["safe_to_use"] is False
     assert result.output_json["objects"][0]["unsafe_reason"] == "unsupported"
@@ -687,7 +688,7 @@ def test_s3_upload_rejects_exact_soap_key_before_provider_call(
     )
 
     with pytest.raises(ActionConnectorError) as excinfo:
-        asyncio.run(S3ActionConnector().execute(request))
+        asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert client.calls == []
     assert excinfo.value.output_json["failed"][0]["reason_code"] == "validation_error"
@@ -731,7 +732,7 @@ def test_s3_list_returns_one_bounded_page_and_opaque_cursor(
         },
     )
 
-    result = asyncio.run(S3ActionConnector().execute(request))
+    result = asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert client.calls == [
         (
@@ -798,7 +799,7 @@ def test_s3_list_preserves_empty_page_without_inventing_directory_state(
         },
     )
 
-    result = asyncio.run(S3ActionConnector().execute(request))
+    result = asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert result.output_json["objects"] == []
     assert result.output_json["common_prefixes"] == []
@@ -838,7 +839,7 @@ def test_s3_small_and_directory_uploads_use_conditional_puts_and_markers(
         },
     )
 
-    result = asyncio.run(S3ActionConnector().execute(request))
+    result = asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert factory_calls[0]["total_max_attempts"] == 1
     put_calls = [kwargs for name, kwargs in client.calls if name == "put_object"]
@@ -886,7 +887,7 @@ def test_s3_upload_continue_records_missing_mapping_and_uploads_later_item(
         },
     )
 
-    result = asyncio.run(S3ActionConnector().execute(request))
+    result = asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert [name for name, _kwargs in client.calls] == ["put_object"]
     assert client.calls[0][1]["Key"] == "uploads/valid.txt"
@@ -903,7 +904,7 @@ def test_s3_upload_global_object_bound_fails_before_any_provider_mutation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    import stackos.actions.s3 as s3_module
+    import stackos_connectors.connectors.aws_s3.actions as s3_module
 
     client = _FakeS3()
     _patch_client(monkeypatch, client)
@@ -928,7 +929,7 @@ def test_s3_upload_global_object_bound_fails_before_any_provider_mutation(
     )
 
     with pytest.raises(ActionConnectorError) as excinfo:
-        asyncio.run(S3ActionConnector().execute(request))
+        asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert client.calls == []
     assert excinfo.value.output_json["failed_count"] == 1
@@ -959,7 +960,7 @@ def test_s3_upload_followed_symlink_cycle_fails_before_provider_mutation(
     )
 
     with pytest.raises(ActionConnectorError) as excinfo:
-        asyncio.run(S3ActionConnector().execute(request))
+        asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert client.calls == []
     assert excinfo.value.output_json["failed"][0]["reason_code"] == "validation_error"
@@ -995,7 +996,7 @@ def test_s3_upload_rejects_an_oversized_derived_key_before_mutation(
     )
 
     with pytest.raises(ActionConnectorError) as excinfo:
-        asyncio.run(S3ActionConnector().execute(request))
+        asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert client.calls == []
     assert excinfo.value.output_json["failed"][0]["reason_code"] == "validation_error"
@@ -1007,7 +1008,7 @@ def test_s3_multipart_upload_conditions_completion_and_reports_parts(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    import stackos.actions.s3 as s3_module
+    import stackos_connectors.connectors.aws_s3.actions as s3_module
 
     client = _FakeS3()
     _patch_client(monkeypatch, client)
@@ -1032,7 +1033,7 @@ def test_s3_multipart_upload_conditions_completion_and_reports_parts(
         },
     )
 
-    result = asyncio.run(S3ActionConnector().execute(request))
+    result = asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     names = [name for name, _kwargs in client.calls]
     assert names == [
@@ -1068,7 +1069,7 @@ def test_s3_multipart_upload_skip_aborts_after_destination_race(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    import stackos.actions.s3 as s3_module
+    import stackos_connectors.connectors.aws_s3.actions as s3_module
 
     client = _FakeS3()
     client.operation_outcomes["complete_multipart_upload"] = [
@@ -1108,7 +1109,7 @@ def test_s3_multipart_upload_skip_aborts_after_destination_race(
         },
     )
 
-    result = asyncio.run(S3ActionConnector().execute(request))
+    result = asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert [name for name, _kwargs in client.calls] == [
         "create_multipart_upload",
@@ -1169,7 +1170,7 @@ def test_s3_single_put_skip_is_race_safe_without_preflight(
         },
     )
 
-    result = asyncio.run(S3ActionConnector().execute(request))
+    result = asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert [name for name, _kwargs in client.calls] == ["put_object"]
     assert client.calls[0][1]["IfNoneMatch"] == "*"
@@ -1185,7 +1186,7 @@ def test_s3_known_multipart_failure_aborts_and_reports_cleanup(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    import stackos.actions.s3 as s3_module
+    import stackos_connectors.connectors.aws_s3.actions as s3_module
 
     client = _FakeS3()
     client.operation_outcomes["upload_part"] = [
@@ -1226,7 +1227,7 @@ def test_s3_known_multipart_failure_aborts_and_reports_cleanup(
     )
 
     with pytest.raises(ActionConnectorError) as excinfo:
-        asyncio.run(S3ActionConnector().execute(request))
+        asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert [name for name, _kwargs in client.calls] == [
         "create_multipart_upload",
@@ -1251,7 +1252,7 @@ def test_s3_multipart_upload_part_transport_failure_keeps_cleanup_unverified(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    import stackos.actions.s3 as s3_module
+    import stackos_connectors.connectors.aws_s3.actions as s3_module
 
     client = _FakeS3()
     client.operation_outcomes["upload_part"] = [
@@ -1275,7 +1276,7 @@ def test_s3_multipart_upload_part_transport_failure_keeps_cleanup_unverified(
     )
 
     with pytest.raises(ActionConnectorError) as excinfo:
-        asyncio.run(S3ActionConnector().execute(request))
+        asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert [name for name, _kwargs in client.calls] == [
         "create_multipart_upload",
@@ -1300,7 +1301,7 @@ def test_s3_ambiguous_multipart_completion_is_not_aborted_or_retried(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    import stackos.actions.s3 as s3_module
+    import stackos_connectors.connectors.aws_s3.actions as s3_module
 
     client = _FakeS3()
     client.operation_outcomes["complete_multipart_upload"] = [
@@ -1329,7 +1330,7 @@ def test_s3_ambiguous_multipart_completion_is_not_aborted_or_retried(
     )
 
     with pytest.raises(ActionConnectorError) as excinfo:
-        asyncio.run(S3ActionConnector().execute(request))
+        asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     names = [name for name, _kwargs in client.calls]
     assert names == [
@@ -1361,7 +1362,7 @@ def test_s3_file_delete_heads_then_conditionally_deletes_current_object(
         input_json={"key": "reports/current.csv"},
     )
 
-    result = asyncio.run(S3ActionConnector().execute(request))
+    result = asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert [item["total_max_attempts"] for item in factory_calls] == [3, 1]
     assert client.calls == [
@@ -1403,7 +1404,7 @@ def test_s3_file_delete_rejects_missing_or_changed_identity_before_mutation(
     )
 
     with pytest.raises(ActionConnectorError) as excinfo:
-        asyncio.run(S3ActionConnector().execute(request))
+        asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert [name for name, _kwargs in client.calls] == ["head_object"]
     assert excinfo.value.output_json["reason_code"] == "etag_mismatch"
@@ -1437,7 +1438,7 @@ def test_s3_file_delete_reports_missing_current_object_without_mutation(
     )
 
     with pytest.raises(ActionConnectorError) as excinfo:
-        asyncio.run(S3ActionConnector().execute(request))
+        asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert [name for name, _kwargs in client.calls] == ["head_object"]
     output = excinfo.value.output_json
@@ -1463,7 +1464,7 @@ def test_s3_directory_create_writes_only_a_conditional_empty_marker(
         input_json={"prefix": "reports"},
     )
 
-    result = asyncio.run(S3ActionConnector().execute(request))
+    result = asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert factory_calls[0]["total_max_attempts"] == 1
     assert client.calls == [
@@ -1505,7 +1506,7 @@ def test_s3_nonrecursive_directory_delete_rejects_children_before_mutation(
     )
 
     with pytest.raises(ActionConnectorError) as excinfo:
-        asyncio.run(S3ActionConnector().execute(request))
+        asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert [name for name, _kwargs in client.calls] == ["list_objects_v2"]
     assert excinfo.value.output_json["reason_code"] == "prefix_not_empty"
@@ -1529,7 +1530,7 @@ def test_s3_nonrecursive_directory_delete_conditionally_removes_only_marker(
         input_json={"prefix": "reports", "recursive": False, "max_objects": 10},
     )
 
-    result = asyncio.run(S3ActionConnector().execute(request))
+    result = asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert [name for name, _kwargs in client.calls] == [
         "list_objects_v2",
@@ -1576,7 +1577,7 @@ def test_s3_recursive_directory_delete_uses_conditional_batches_and_reconciles(
         progress_callback=snapshots.append,
     )
 
-    result = asyncio.run(S3ActionConnector().execute(request))
+    result = asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert [item["total_max_attempts"] for item in factory_calls] == [3, 1]
     assert [name for name, _kwargs in client.calls] == [
@@ -1629,7 +1630,7 @@ def test_s3_recursive_directory_delete_enforces_bound_before_mutation(
     )
 
     with pytest.raises(ActionConnectorError) as excinfo:
-        asyncio.run(S3ActionConnector().execute(request))
+        asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert [name for name, _kwargs in client.calls] == ["list_objects_v2"]
     assert excinfo.value.output_json["reason_code"] == "object_bound_exceeded"
@@ -1682,7 +1683,7 @@ def test_s3_recursive_directory_delete_preserves_partial_errors_and_remaining_ke
     )
 
     with pytest.raises(ActionConnectorError) as excinfo:
-        asyncio.run(S3ActionConnector().execute(request))
+        asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     output = excinfo.value.output_json
     assert output["status"] == "partial"
@@ -1713,7 +1714,7 @@ def test_s3_move_rejects_prefixes_and_same_key_during_validation() -> None:
         config_json={},
     )
 
-    issues = S3ActionConnector().validate(request)
+    issues = PackageActionConnector("aws-s3").validate(request)
 
     assert {item.code for item in issues} == {"unsupported", "conflict"}
     assert {item.path for item in issues} == {
@@ -1740,7 +1741,7 @@ def test_s3_single_object_move_conditions_copy_and_source_delete(
         },
     )
 
-    result = asyncio.run(S3ActionConnector().execute(request))
+    result = asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert [item["total_max_attempts"] for item in factory_calls] == [3, 1]
     assert [name for name, _kwargs in client.calls] == [
@@ -1804,7 +1805,7 @@ def test_s3_move_skip_keeps_source_when_destination_condition_fails(
         },
     )
 
-    result = asyncio.run(S3ActionConnector().execute(request))
+    result = asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert [name for name, _kwargs in client.calls] == ["head_object", "copy_object"]
     assert result.output_json["status"] == "skipped"
@@ -1848,7 +1849,7 @@ def test_s3_move_copy_success_delete_failure_is_explicit_partial_without_rollbac
     )
 
     with pytest.raises(ActionConnectorError) as excinfo:
-        asyncio.run(S3ActionConnector().execute(request))
+        asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert [name for name, _kwargs in client.calls] == [
         "head_object",
@@ -1870,7 +1871,7 @@ def test_s3_multipart_move_uses_conditional_part_copy_and_completion(
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.s3 as s3_module
+    import stackos_connectors.connectors.aws_s3.actions as s3_module
 
     client = _FakeS3()
     client.operation_outcomes["head_object"] = [
@@ -1900,7 +1901,7 @@ def test_s3_multipart_move_uses_conditional_part_copy_and_completion(
         progress_callback=snapshots.append,
     )
 
-    result = asyncio.run(S3ActionConnector().execute(request))
+    result = asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert [name for name, _kwargs in client.calls] == [
         "head_object",
@@ -1939,7 +1940,7 @@ def test_s3_move_uses_multipart_copy_immediately_above_five_decimal_gigabytes(
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.s3 as s3_module
+    import stackos_connectors.connectors.aws_s3.actions as s3_module
 
     client = _FakeS3()
     client.operation_outcomes["head_object"] = [
@@ -1965,7 +1966,7 @@ def test_s3_move_uses_multipart_copy_immediately_above_five_decimal_gigabytes(
         },
     )
 
-    result = asyncio.run(S3ActionConnector().execute(request))
+    result = asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert "copy_object" not in [name for name, _kwargs in client.calls]
     assert [name for name, _kwargs in client.calls] == [
@@ -2007,7 +2008,7 @@ def test_s3_move_uses_single_copy_at_five_decimal_gigabytes(
         },
     )
 
-    result = asyncio.run(S3ActionConnector().execute(request))
+    result = asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert [name for name, _kwargs in client.calls] == [
         "head_object",
@@ -2022,7 +2023,7 @@ def test_s3_multipart_copy_part_transport_failure_preserves_abort_provider_recei
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.s3 as s3_module
+    import stackos_connectors.connectors.aws_s3.actions as s3_module
 
     client = _FakeS3()
     client.operation_outcomes["head_object"] = [
@@ -2069,7 +2070,7 @@ def test_s3_multipart_copy_part_transport_failure_preserves_abort_provider_recei
     )
 
     with pytest.raises(ActionConnectorError) as excinfo:
-        asyncio.run(S3ActionConnector().execute(request))
+        asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert [name for name, _kwargs in client.calls] == [
         "head_object",
@@ -2092,7 +2093,7 @@ def test_s3_ambiguous_multipart_copy_completion_does_not_abort_or_delete_source(
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.s3 as s3_module
+    import stackos_connectors.connectors.aws_s3.actions as s3_module
 
     client = _FakeS3()
     client.operation_outcomes["head_object"] = [
@@ -2124,7 +2125,7 @@ def test_s3_ambiguous_multipart_copy_completion_does_not_abort_or_delete_source(
     )
 
     with pytest.raises(ActionConnectorError) as excinfo:
-        asyncio.run(S3ActionConnector().execute(request))
+        asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     names = [name for name, _kwargs in client.calls]
     assert names == [
@@ -2190,7 +2191,7 @@ def test_s3_prefix_download_fully_pages_markers_and_places_files_atomically(
         progress_callback=snapshots.append,
     )
 
-    result = asyncio.run(S3ActionConnector().execute(request))
+    result = asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert (destination / "a.txt").read_bytes() == b"a"
     assert (destination / "empty").is_dir()
@@ -2239,7 +2240,7 @@ def test_s3_prefix_download_rejects_server_key_traversal_before_local_write(
     )
 
     with pytest.raises(ActionConnectorError) as excinfo:
-        asyncio.run(S3ActionConnector().execute(request))
+        asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert not (tmp_path / "escape.txt").exists()
     assert excinfo.value.output_json["status"] == "failed"
@@ -2296,7 +2297,7 @@ def test_s3_download_continue_preserves_skip_and_safe_provider_failure(
         },
     )
 
-    result = asyncio.run(S3ActionConnector().execute(request))
+    result = asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert existing.read_bytes() == b"old"
     assert not (tmp_path / "denied.txt").exists()
@@ -2339,7 +2340,7 @@ def test_s3_failed_download_keeps_existing_file_and_removes_temporary_file(
     )
 
     with pytest.raises(ActionConnectorError) as excinfo:
-        asyncio.run(S3ActionConnector().execute(request))
+        asyncio.run(PackageActionConnector("aws-s3").execute(request))
 
     assert target.read_bytes() == b"original"
     assert not list(tmp_path.glob("*.part"))

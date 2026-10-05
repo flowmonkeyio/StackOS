@@ -219,6 +219,57 @@ class ProviderMetadataMixin:
         # they opt into an explicit permission-verification posture.
         return method.auth_type in {"oauth", "oauth-client-credentials"}
 
+    def _account_probe_preflight(
+        self, *, provider: AuthProvider, method: AuthMethodOut
+    ) -> dict[str, Any] | None:
+        """Keep saved-method permission policy outside native identity probes."""
+        posture = method.permission_verification
+        local_gate = self._method_requires_local_scope_gate(method)
+        if provider.key == "hubspot":
+            if method.key not in {"private_app_token", "oauth2_authorization_code"}:
+                return {
+                    "ok": False,
+                    "vendor": "hubspot",
+                    "status": "unsupported_auth_method",
+                    "summary": "HubSpot credential test requires a recognized saved auth method.",
+                }
+            expected = "provider_probe" if method.key == "private_app_token" else "oauth_response"
+            if posture is None or posture.evidence_source != expected or not local_gate:
+                return {
+                    "ok": False,
+                    "vendor": "hubspot",
+                    "status": "unsupported_permission_verification",
+                    "summary": (
+                        "HubSpot private-app scope evidence requires the reviewed provider probe "
+                        "posture."
+                        if method.key == "private_app_token"
+                        else "HubSpot OAuth scope evidence must come from the OAuth response."
+                    ),
+                }
+            return None
+        is_oauth = method.auth_type == "oauth"
+        expected_source = "oauth_response" if is_oauth and method.interactive else "unavailable"
+        if posture is None or posture.evidence_source != expected_source or local_gate != is_oauth:
+            return {
+                "ok": False,
+                "vendor": provider.key,
+                "status": "unsupported_permission_verification",
+                "summary": (
+                    f"{provider.name} credential test requires the saved method's reviewed posture."
+                ),
+            }
+        if is_oauth and not method.interactive:
+            return {
+                "ok": False,
+                "vendor": provider.key,
+                "status": "permission_evidence_unavailable",
+                "summary": (
+                    f"{provider.name} manual OAuth tokens have no verified scope evidence; "
+                    "reconnect with OAuth."
+                ),
+            }
+        return None
+
     def _provider_out(self, row: AuthProvider, plugin: Plugin | None) -> AuthProviderOut:
         assert row.id is not None
         return AuthProviderOut(

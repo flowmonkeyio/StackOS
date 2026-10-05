@@ -10,9 +10,10 @@ from typing import Any
 import httpx
 import pytest
 from pytest_httpx import HTTPXMock
+from stackos_connectors.connectors.ideogram.integration import IdeogramImagesIntegration
+from stackos_connectors.errors import IntegrationDownError
 
-from stackos.integrations.ideogram_images import IdeogramImagesIntegration
-from stackos.mcp.errors import IntegrationDownError
+from stackos.actions.ideogram_images import _host_media_cost
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\nideogram-png"
 WEBP_BYTES = b"RIFF\x10\x00\x00\x00WEBPideogram-webp"
@@ -66,9 +67,8 @@ def test_generate_image_uses_multipart_and_persists_temporary_url(
         async with httpx.AsyncClient() as client:
             integ = IdeogramImagesIntegration(
                 payload=b"ideo-key",
-                project_id=project_id,
                 http=client,
-                asset_dir=tmp_path,
+                output_dir=tmp_path / "ideogram",
             )
             return await integ.generate_image(
                 text_prompt="A storefront poster",
@@ -89,17 +89,29 @@ def test_generate_image_uses_multipart_and_persists_temporary_url(
     assert b'name="resolution"\r\n\r\n2048x2048' in post_request.content
     assert b'name="rendering_speed"\r\n\r\nTURBO' in post_request.content
     assert b'name="enable_copyright_detection"\r\n\r\ntrue' in post_request.content
-    assert item["url"].startswith("/generated-assets/ideogram/ideogram-")
+    assert item["path"].startswith(str(tmp_path / "ideogram/ideogram-"))
     assert item["file_format"] == "png"
     assert item["source_model"] == "ideogram-v4"
     assert item["provider_url_persisted"] is True
     assert provider_url not in rendered
     assert provider_url_2 not in rendered
-    path = tmp_path / item["url"].removeprefix("/generated-assets/")
-    path_2 = tmp_path / item_2["url"].removeprefix("/generated-assets/")
+    path = Path(item["path"])
+    path_2 = Path(item_2["path"])
     assert path.read_bytes() == PNG_BYTES
     assert path_2.read_bytes() == PNG_BYTES + b"-second"
-    assert result.cost_usd == 0.06
+    assert (
+        _host_media_cost(
+            "image.generate",
+            {
+                "text_prompt": "A storefront poster",
+                "resolution": "2048x2048",
+                "rendering_speed": "TURBO",
+                "enable_copyright_detection": True,
+            },
+            result.data,
+        )
+        == 0.06
+    )
 
 
 def test_remix_image_uploads_reference_and_persists_temporary_url(
@@ -138,9 +150,8 @@ def test_remix_image_uploads_reference_and_persists_temporary_url(
         async with httpx.AsyncClient() as client:
             integ = IdeogramImagesIntegration(
                 payload=b"ideo-key",
-                project_id=project_id,
                 http=client,
-                asset_dir=tmp_path,
+                output_dir=tmp_path / "ideogram",
             )
             return await integ.remix_image(
                 text_prompt="Keep the object, change the background",
@@ -158,9 +169,22 @@ def test_remix_image_uploads_reference_and_persists_temporary_url(
     assert (
         b'name="image"; filename="source.webp"\r\nContent-Type: image/webp' in post_request.content
     )
-    assert item["url"].startswith("/generated-assets/ideogram/ideogram-")
+    assert item["path"].startswith(str(tmp_path / "ideogram/ideogram-"))
     assert item["file_format"] == "webp"
-    assert result.cost_usd == 0.10
+    assert (
+        _host_media_cost(
+            "image.remix",
+            {
+                "text_prompt": "Keep the object, change the background",
+                "image_path": source,
+                "image_weight": 75,
+                "resolution": "3072x1024",
+                "rendering_speed": "QUALITY",
+            },
+            result.data,
+        )
+        == 0.10
+    )
 
 
 def test_generated_urls_require_asset_dir_to_prevent_temporary_url_leak(
@@ -186,15 +210,14 @@ def test_generated_urls_require_asset_dir_to_prevent_temporary_url_leak(
         async with httpx.AsyncClient() as client:
             integ = IdeogramImagesIntegration(
                 payload=b"ideo-key",
-                project_id=project_id,
                 http=client,
             )
-            await integ.generate_image(text_prompt="poster")
+            await integ.generate_image(text_prompt="poster", rendering_speed="DEFAULT")
 
     with pytest.raises(IntegrationDownError) as exc:
         asyncio.run(go())
 
-    assert "generated-assets persistence" in exc.value.detail
+    assert "require output_dir" in exc.value.detail
     assert len(httpx_mock.get_requests()) == 1
 
 
@@ -223,7 +246,6 @@ def test_test_credentials_is_explicitly_non_billable_format_only(project_id: int
         async with httpx.AsyncClient() as client:
             integ = IdeogramImagesIntegration(
                 payload=b"ideo-key",
-                project_id=project_id,
                 http=client,
             )
             return await integ.test_credentials()
@@ -232,3 +254,19 @@ def test_test_credentials_is_explicitly_non_billable_format_only(project_id: int
     assert result["ok"] is True
     assert result["status"] == "format-only"
     assert result["probe_mode"] == "non_billable_format_only"
+
+
+def test_host_default_choices_and_generated_asset_projection(host_media_projection):
+    from stackos.actions.ideogram_images import IdeogramImagesActionConnector
+
+    result, native_data = asyncio.run(
+        host_media_projection(
+            IdeogramImagesActionConnector(),
+            provider="ideogram",
+            operation="image.generate",
+            data={"text_prompt": "fixture"},
+            output_subdir="ideogram",
+        )
+    )
+    assert native_data["rendering_speed"] == "DEFAULT"
+    assert result.metadata_json["vendor"] == "ideogram"

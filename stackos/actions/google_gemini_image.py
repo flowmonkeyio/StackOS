@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
+from stackos_connectors.connectors.google_gemini_image.integration import (
+    GoogleGeminiImageIntegration,
+)
+from stackos_connectors.errors import IntegrationDownError
 
 from stackos.actions.connectors import (
     ActionConnectorRequest,
     ActionConnectorResult,
     ActionValidationIssue,
 )
+from stackos.actions.media_artifacts import execute_media_native, media_projection_failure
 from stackos.config import Settings
-from stackos.integrations.google_gemini_image import GoogleGeminiImageIntegration
-from stackos.mcp.errors import IntegrationDownError
 from stackos.repositories.base import ValidationError
 from stackos.repositories.resources import ArtifactRepository
 
@@ -164,7 +167,7 @@ class GoogleGeminiImageActionConnector:
         )
         input_refs = payload.get("input_image_refs")
         input_images = len(input_refs) if isinstance(input_refs, list) else 0
-        estimated = GoogleGeminiImageIntegration.estimate_image_cost_usd(
+        estimated = _MediaPricing.estimate_image_cost_usd(
             model=model,
             image_size=image_size,
             input_images=input_images,
@@ -185,44 +188,54 @@ class GoogleGeminiImageActionConnector:
             else None
         )
         async with httpx.AsyncClient(timeout=180.0) as http:
-            client = GoogleGeminiImageIntegration(
-                payload=request.credential.secret_payload,
-                project_id=request.project_id,
-                http=http,
-                asset_dir=asset_dir,
-            )
             if request.operation == "image.edit":
-                result = await client.edit_image(
-                    prompt=str(payload["prompt"]),
-                    input_image_paths=[
-                        _artifact_path(asset_dir, str(ref)) for ref in payload["input_image_refs"]
-                    ],
-                    model=model,
-                    aspect_ratio=(
-                        str(payload["aspect_ratio"])
+                result = await execute_media_native(
+                    request,
+                    {
+                        "prompt": str(payload["prompt"]),
+                        "input_image_paths": [
+                            _artifact_path(asset_dir, str(ref))
+                            for ref in payload["input_image_refs"]
+                        ],
+                        "model": model,
+                        "aspect_ratio": str(payload["aspect_ratio"])
                         if isinstance(payload.get("aspect_ratio"), str)
-                        else None
-                    ),
-                    image_size=image_size,
+                        else None,
+                        "image_size": image_size,
+                    },
+                    http=http,
+                    connector=self.key,
+                    output_subdir="google-gemini-image",
+                    qps=2.0,
+                    pricing=_host_media_cost,
                 )
             else:
-                result = await client.generate_image(
-                    prompt=str(payload["prompt"]),
-                    model=model,
-                    aspect_ratio=(
-                        str(payload["aspect_ratio"])
+                result = await execute_media_native(
+                    request,
+                    {
+                        "prompt": str(payload["prompt"]),
+                        "model": model,
+                        "aspect_ratio": str(payload["aspect_ratio"])
                         if isinstance(payload.get("aspect_ratio"), str)
-                        else "1:1"
-                    ),
-                    image_size=image_size,
+                        else "1:1",
+                        "image_size": image_size,
+                    },
+                    http=http,
+                    connector=self.key,
+                    output_subdir="google-gemini-image",
+                    qps=2.0,
+                    pricing=_host_media_cost,
                 )
-        output_json = result.data if isinstance(result.data, dict) else {"data": result.data}
-        output_json = _register_generated_image_artifacts(request, output_json)
-        return ActionConnectorResult(
-            output_json=output_json,
-            metadata_json={"vendor": "google-gemini-image"},
-            cost_cents=_cost_usd_to_cents(result.cost_usd),
-        )
+        try:
+            output_json = result.data if isinstance(result.data, dict) else {"data": result.data}
+            output_json = _register_generated_image_artifacts(request, output_json)
+            return ActionConnectorResult(
+                output_json=output_json,
+                metadata_json={"vendor": "google-gemini-image"},
+                cost_cents=_cost_usd_to_cents(result.cost_usd),
+            )
+        except Exception as exc:
+            raise media_projection_failure(exc, result) from None
 
     @staticmethod
     def _model(payload: dict[str, Any]) -> str:
@@ -323,3 +336,51 @@ def _stable_image_sizes(values: frozenset[str]) -> list[str]:
 
 
 __all__ = ["GoogleGeminiImageActionConnector"]
+
+
+class _MediaPricing:
+    DEFAULT_MODEL = GoogleGeminiImageIntegration.DEFAULT_MODEL
+    _OUTPUT_COSTS_USD: ClassVar[dict[str, dict[str, float]]] = {
+        "gemini-3.1-flash-image": {
+            "512": 0.045,
+            "1K": 0.067,
+            "2K": 0.101,
+            "4K": 0.151,
+        },
+        "gemini-3-pro-image": {
+            "1K": 0.134,
+            "2K": 0.134,
+            "4K": 0.24,
+        },
+        "gemini-2.5-flash-image": {
+            "": 0.039,
+        },
+    }
+
+    _INPUT_IMAGE_COSTS_USD: ClassVar[dict[str, float]] = {
+        "gemini-3-pro-image": 0.0011,
+    }
+
+    @classmethod
+    def estimate_image_cost_usd(
+        cls,
+        *,
+        model: str = DEFAULT_MODEL,
+        image_size: str = "1K",
+        input_images: int = 0,
+    ) -> float:
+        output_costs = cls._OUTPUT_COSTS_USD.get(model, cls._OUTPUT_COSTS_USD[cls.DEFAULT_MODEL])
+        output_cost = (
+            output_costs.get(image_size) or output_costs.get("1K") or output_costs.get("", 0)
+        )
+        input_cost = max(0, input_images) * cls._INPUT_IMAGE_COSTS_USD.get(model, 0.0)
+        return output_cost + input_cost
+
+
+def _host_media_cost(operation: str, data: dict[str, Any], output: dict[str, Any]) -> float:
+    estimated = _MediaPricing.estimate_image_cost_usd(
+        model=data["model"],
+        image_size=data.get("image_size") or "1K",
+        input_images=len(data.get("input_image_paths") or []),
+    )
+    return estimated

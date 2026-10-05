@@ -44,13 +44,21 @@ Build machines need:
 | Dependency | Purpose | Required for |
 | --- | --- | --- |
 | Node.js + pnpm | Electron build scripts and dependencies | all desktop builds |
-| `uv` | Build the StackOS wheel and Python payload | all desktop builds |
+| `uv` | Build the StackOS and StackOSConnectors wheels and Python payload | all desktop builds |
 | `bash` + `rsync` | Build/copy the standalone Python runtime | all desktop builds |
 | `file`, `lipo`, `otool`, `codesign`, `security` | Inspect/thin/sign bundled Mach-O runtime files | all desktop builds |
 | Pinned TDLib proof artifact, or `git` + CMake + static OpenSSL | Stage the exact ARM64 `libtdjson` asset and prove its source/build identity | all desktop payload builds |
 | `xcrun notarytool` + `xcrun stapler` | Submit, staple, and validate notarization | public release |
 | Developer ID Application certificate | Sign the app and DMG | signed/release builds |
 | Apple notarization credentials | Apple malware/trust ticket for non-App-Store distribution | public release |
+
+The payload builder reads the matched connector checkout from
+`../StackOSConnectors`, or `STACKOS_CONNECTORS_SOURCE` when explicitly supplied.
+It builds both wheels, exports only third-party locked requirements, installs
+both wheels and runs `pip check`. Provider schemas, documents and icons ship
+inside the connector wheel. The payload contains neither editable installs nor
+references to either checkout; the existing packaged CLI verification runs
+outside the repository with hostile ambient Python settings.
 
 Run the preflight before public release packaging:
 

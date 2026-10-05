@@ -11,9 +11,8 @@ from typing import Any
 import httpx
 import pytest
 from pytest_httpx import HTTPXMock
-
-from stackos.integrations.kling_video import KlingVideoIntegration
-from stackos.mcp.errors import IntegrationDownError
+from stackos_connectors.connectors.kling_video.integration import KlingVideoIntegration
+from stackos_connectors.errors import IntegrationDownError
 
 _CREDENTIAL = b'{"access_key":"ak-test","secret_key":"sk-test"}'
 
@@ -74,15 +73,19 @@ def test_generate_video_submits_text_task_polls_and_persists_video(
         async with httpx.AsyncClient() as client:
             integ = KlingVideoIntegration(
                 payload=_CREDENTIAL,
-                project_id=project_id,
                 http=client,
-                asset_dir=tmp_path,
+                output_dir=tmp_path / "kling",
             )
             return await integ.generate_video(
                 prompt="cinematic food ad",
                 duration=5,
                 aspect_ratio="1:1",
                 poll_interval_seconds=0,
+                mode="text-to-video",
+                model_name="kling-v3",
+                quality_mode="pro",
+                sound="off",
+                poll_timeout_seconds=1800.0,
             )
 
     result = asyncio.run(go())
@@ -99,8 +102,8 @@ def test_generate_video_submits_text_task_polls_and_persists_video(
     }
     assert result.data["task_id"] == "task-123"
     item = result.data["data"][0]
-    assert item["url"].startswith("/generated-assets/kling/kling-video-")
-    path = tmp_path / item["url"].removeprefix("/generated-assets/")
+    assert item["path"].startswith(str(tmp_path / "kling/kling-video-"))
+    path = Path(item["path"])
     assert path.read_bytes() == b"kling-video"
 
 
@@ -154,9 +157,8 @@ def test_generate_video_sends_raw_base64_for_first_and_last_frame(
         async with httpx.AsyncClient() as client:
             integ = KlingVideoIntegration(
                 payload=_CREDENTIAL,
-                project_id=project_id,
                 http=client,
-                asset_dir=tmp_path,
+                output_dir=tmp_path / "kling",
             )
             await integ.generate_video(
                 prompt="interpolate these frames",
@@ -164,6 +166,12 @@ def test_generate_video_sends_raw_base64_for_first_and_last_frame(
                 input_image_path=first,
                 image_tail_path=tail,
                 poll_interval_seconds=0,
+                model_name="kling-v3",
+                quality_mode="pro",
+                duration=5,
+                aspect_ratio="16:9",
+                sound="off",
+                poll_timeout_seconds=1800.0,
             )
 
     asyncio.run(go())
@@ -205,10 +213,42 @@ def test_generate_video_raises_on_failed_task(
         async with httpx.AsyncClient() as client:
             integ = KlingVideoIntegration(
                 payload=_CREDENTIAL,
-                project_id=project_id,
                 http=client,
             )
-            return await integ.generate_video(prompt="bad", poll_interval_seconds=0)
+            return await integ.generate_video(
+                prompt="bad",
+                poll_interval_seconds=0,
+                mode="text-to-video",
+                model_name="kling-v3",
+                quality_mode="pro",
+                duration=5,
+                aspect_ratio="16:9",
+                sound="off",
+                poll_timeout_seconds=1800.0,
+            )
 
     with pytest.raises(IntegrationDownError, match="failed"):
         asyncio.run(go())
+
+
+def test_host_default_choices_and_generated_asset_projection(host_media_projection):
+    from stackos.actions.kling_video import KlingVideoActionConnector
+
+    result, native_data = asyncio.run(
+        host_media_projection(
+            KlingVideoActionConnector(),
+            provider="kling-video",
+            operation="video.generate",
+            data={"prompt": "fixture"},
+            output_subdir="kling",
+        )
+    )
+    assert native_data["mode"] == "text-to-video"
+    assert native_data["model_name"] == "kling-v3"
+    assert native_data["quality_mode"] == "pro"
+    assert native_data["duration"] == 5
+    assert native_data["aspect_ratio"] == "16:9"
+    assert native_data["sound"] == "off"
+    assert native_data["poll_interval_seconds"] == 10.0
+    assert native_data["poll_timeout_seconds"] == 1800.0
+    assert result.metadata_json["vendor"] == "kling"

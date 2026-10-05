@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
+from stackos_connectors.connectors.kling_video.integration import KlingVideoIntegration
+from stackos_connectors.errors import IntegrationDownError
 
 from stackos.actions.connectors import (
     ActionConnectorRequest,
@@ -14,11 +16,11 @@ from stackos.actions.connectors import (
 from stackos.actions.media_artifacts import (
     artifact_path,
     cost_usd_to_cents,
+    execute_media_native,
+    media_projection_failure,
     register_generated_media_artifacts,
 )
 from stackos.config import Settings
-from stackos.integrations.kling_video import KlingVideoIntegration
-from stackos.mcp.errors import IntegrationDownError
 from stackos.repositories.base import ValidationError
 
 
@@ -305,76 +307,71 @@ class KlingVideoActionConnector:
         asset_dir = request.asset_dir or Settings().generated_assets_dir
         mode = str(payload.get("mode") or "text-to-video")
         async with httpx.AsyncClient(timeout=180.0) as http:
-            client = KlingVideoIntegration(
-                payload=request.credential.secret_payload,
-                project_id=request.project_id,
-                http=http,
-                asset_dir=asset_dir,
-            )
-            result = await client.generate_video(
-                prompt=str(payload["prompt"]),
-                mode=mode,
-                model_name=str(payload.get("model_name", KlingVideoIntegration.DEFAULT_MODEL)),
-                quality_mode=str(payload.get("quality_mode", "pro")),
-                duration=int(payload.get("duration", 5)),
-                aspect_ratio=str(payload.get("aspect_ratio", "16:9")),
-                sound=str(payload.get("sound", "off")),
-                negative_prompt=(
-                    str(payload["negative_prompt"])
+            result = await execute_media_native(
+                request,
+                {
+                    "prompt": str(payload["prompt"]),
+                    "mode": mode,
+                    "model_name": str(
+                        payload.get("model_name", KlingVideoIntegration.DEFAULT_MODEL)
+                    ),
+                    "quality_mode": str(payload.get("quality_mode", "pro")),
+                    "duration": int(payload.get("duration", 5)),
+                    "aspect_ratio": str(payload.get("aspect_ratio", "16:9")),
+                    "sound": str(payload.get("sound", "off")),
+                    "negative_prompt": str(payload["negative_prompt"])
                     if isinstance(payload.get("negative_prompt"), str)
-                    else None
-                ),
-                cfg_scale=(
-                    float(payload["cfg_scale"])
+                    else None,
+                    "cfg_scale": float(payload["cfg_scale"])
                     if isinstance(payload.get("cfg_scale"), int | float)
-                    and not isinstance(payload.get("cfg_scale"), bool)
-                    else None
-                ),
-                input_image_path=(
-                    artifact_path(
-                        asset_dir,
-                        str(payload["input_image_ref"]),
-                        label="input_image_ref",
+                    and (not isinstance(payload.get("cfg_scale"), bool))
+                    else None,
+                    "input_image_path": artifact_path(
+                        asset_dir, str(payload["input_image_ref"]), label="input_image_ref"
                     )
                     if isinstance(payload.get("input_image_ref"), str)
-                    else None
-                ),
-                image_tail_path=(
-                    artifact_path(asset_dir, str(payload["image_tail_ref"]), label="image_tail_ref")
+                    else None,
+                    "image_tail_path": artifact_path(
+                        asset_dir, str(payload["image_tail_ref"]), label="image_tail_ref"
+                    )
                     if isinstance(payload.get("image_tail_ref"), str)
-                    else None
-                ),
-                watermark_enabled=(
-                    payload["watermark_enabled"]
+                    else None,
+                    "watermark_enabled": payload["watermark_enabled"]
                     if isinstance(payload.get("watermark_enabled"), bool)
-                    else None
-                ),
-                external_task_id=(
-                    str(payload["external_task_id"])
+                    else None,
+                    "external_task_id": str(payload["external_task_id"])
                     if isinstance(payload.get("external_task_id"), str)
-                    else None
-                ),
-                poll_interval_seconds=float(payload.get("poll_interval_seconds", 10)),
-                poll_timeout_seconds=float(payload.get("poll_timeout_seconds", 1800)),
+                    else None,
+                    "poll_interval_seconds": float(payload.get("poll_interval_seconds", 10)),
+                    "poll_timeout_seconds": float(payload.get("poll_timeout_seconds", 1800)),
+                },
+                http=http,
+                connector=self.key,
+                output_subdir="kling",
+                qps=1.0,
+                pricing=None,
             )
-        output_json = result.data if isinstance(result.data, dict) else {"data": result.data}
-        output_json = register_generated_media_artifacts(
-            request,
-            output_json,
-            kind="video",
-            provider_key="kling",
-            source="kling-video-action",
-            metadata_builder=lambda item: {
-                "task_id": item.get("task_id"),
-                "mode": item.get("mode"),
-                "sample_index": item.get("sample_index"),
-            },
-        )
-        return ActionConnectorResult(
-            output_json=output_json,
-            metadata_json={"vendor": "kling"},
-            cost_cents=cost_usd_to_cents(result.cost_usd),
-        )
+        try:
+            output_json = result.data if isinstance(result.data, dict) else {"data": result.data}
+            output_json = register_generated_media_artifacts(
+                request,
+                output_json,
+                kind="video",
+                provider_key="kling",
+                source="kling-video-action",
+                metadata_builder=lambda item: {
+                    "task_id": item.get("task_id"),
+                    "mode": item.get("mode"),
+                    "sample_index": item.get("sample_index"),
+                },
+            )
+            return ActionConnectorResult(
+                output_json=output_json,
+                metadata_json={"vendor": "kling"},
+                cost_cents=cost_usd_to_cents(result.cost_usd),
+            )
+        except Exception as exc:
+            raise media_projection_failure(exc, result) from None
 
 
 __all__ = ["KlingVideoActionConnector"]

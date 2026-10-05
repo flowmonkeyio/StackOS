@@ -5,15 +5,15 @@ from collections import deque
 from pathlib import Path
 
 import pytest
-
-from stackos.integrations.telegram_tdlib.proxy import TelegramProxyConfig
-from stackos.integrations.telegram_tdlib.sessions import (
+from stackos_connectors.connectors.telegram.tdlib.proxy import TelegramProxyConfig
+from stackos_connectors.connectors.telegram.tdlib.sessions import (
     TelegramApplicationCredentials,
     TelegramTdlibSession,
     TelegramTdlibSessionConfig,
     TelegramTdlibSessionError,
-    TelegramTdlibSessionRegistry,
 )
+
+from stackos.integrations.telegram_tdlib.sessions import TelegramTdlibSessionRegistry
 
 
 class _Client:
@@ -78,12 +78,30 @@ class _StalledClient(_Client):
 
 
 @pytest.mark.asyncio
+async def test_registry_reports_missing_and_invalid_accounts_without_native_start() -> None:
+    registry = TelegramTdlibSessionRegistry(client_factory=_Client)
+    with pytest.raises(TelegramTdlibSessionError, match="isn't configured"):
+        await registry.get(account_ref="cred_missing")
+    with pytest.raises(TelegramTdlibSessionError, match="account reference"):
+        await registry.get(account_ref="")
+
+
+@pytest.mark.asyncio
 async def test_session_queues_network_pause_and_proxy_before_tdlib_parameters(
     tmp_path: Path,
 ) -> None:
     client = _Client()
     session = TelegramTdlibSession(client_factory=lambda: client)
     config = TelegramTdlibSessionConfig(
+        system_language_code="en",
+        device_model="StackOS",
+        system_version="macOS",
+        application_version="StackOS",
+        use_test_dc=False,
+        use_file_database=True,
+        use_chat_info_database=True,
+        use_message_database=True,
+        use_secret_chats=False,
         account_kind="bot",
         application=TelegramApplicationCredentials(api_id=12345, api_hash="application-secret"),
         database_directory=tmp_path / "database",
@@ -118,6 +136,15 @@ async def test_started_session_forwards_typed_request_with_persisted_correlation
     client = _Client()
     session = TelegramTdlibSession(client_factory=lambda: client)
     config = TelegramTdlibSessionConfig(
+        system_language_code="en",
+        device_model="StackOS",
+        system_version="macOS",
+        application_version="StackOS",
+        use_test_dc=False,
+        use_file_database=True,
+        use_chat_info_database=True,
+        use_message_database=True,
+        use_secret_chats=False,
         account_kind="bot",
         application=TelegramApplicationCredentials(api_id=12345, api_hash="application-secret"),
         database_directory=tmp_path / "database",
@@ -141,6 +168,15 @@ async def test_session_startup_bounds_wait_for_tdlib_parameters(tmp_path: Path) 
     client = _StalledClient()
     session = TelegramTdlibSession(client_factory=lambda: client)
     config = TelegramTdlibSessionConfig(
+        system_language_code="en",
+        device_model="StackOS",
+        system_version="macOS",
+        application_version="StackOS",
+        use_test_dc=False,
+        use_file_database=True,
+        use_chat_info_database=True,
+        use_message_database=True,
+        use_secret_chats=False,
         account_kind="bot",
         application=TelegramApplicationCredentials(api_id=12345, api_hash="application-secret"),
         database_directory=tmp_path / "database",
@@ -162,6 +198,15 @@ async def test_session_registry_serializes_clean_replacement_for_one_account(
     clients = [first_client, second_client]
     registry = TelegramTdlibSessionRegistry(client_factory=lambda: clients.pop(0))
     config = TelegramTdlibSessionConfig(
+        system_language_code="en",
+        device_model="StackOS",
+        system_version="macOS",
+        application_version="StackOS",
+        use_test_dc=False,
+        use_file_database=True,
+        use_chat_info_database=True,
+        use_message_database=True,
+        use_secret_chats=False,
         account_kind="user",
         application=TelegramApplicationCredentials(api_id=12345, api_hash="application-secret"),
         database_directory=tmp_path / "database",

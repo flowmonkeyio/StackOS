@@ -2719,9 +2719,31 @@ def test_action_execute_firecrawl_grant_uses_generic_connector(
     mcp_client: MCPClient,
     seeded_project: dict,
     httpx_mock: HTTPXMock,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from stackos_connectors.connectors.firecrawl.actions import FirecrawlActionConnector
+
+    native_calls = []
+    native_execute = FirecrawlActionConnector.execute
+
+    async def native_spy(self, request):
+        native_calls.append(request)
+        return await native_execute(self, request)
+
+    monkeypatch.setattr(FirecrawlActionConnector, "execute", native_spy)
     project_id = seeded_project["data"]["id"]
     credential_ref = _create_firecrawl_credential(mcp_client, project_id)
+    denied = mcp_client.call_tool_error(
+        "action.execute",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.web.scrape",
+            "input_json": {"url": "https://example.com"},
+            "credential_ref": credential_ref,
+        },
+    )
+    assert denied["data"]["tool"] == "action.execute"
+    assert native_calls == []
     budget_resp = mcp_client.test_client.post(
         f"/api/v1/projects/{project_id}/budgets",
         json={"kind": "firecrawl", "monthly_budget_usd": 10.0},
@@ -2770,6 +2792,12 @@ def test_action_execute_firecrawl_grant_uses_generic_connector(
     assert data["action_call"]["connector_key"] == "firecrawl"
     assert "credential_id" not in rendered
     assert "fc-key" not in rendered
+    assert len(native_calls) == 1
+    assert native_calls[0].auth.fields == {"api_key": "fc-key"}
+    assert native_calls[0].auth.config == {}
+    assert not hasattr(native_calls[0], "project_id")
+    assert data["action_call"]["run_plan_id"] == created["data"]["id"]
+    assert data["action_call"]["run_id"] == started["data"]["run_id"]
 
 
 def test_action_execute_sitemap_grant_uses_noauth_utility_connector(

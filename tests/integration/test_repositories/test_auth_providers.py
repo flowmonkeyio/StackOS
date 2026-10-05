@@ -139,6 +139,8 @@ def test_auth_test_uses_saved_method_for_probe_context_and_evidence(
     seen_probe_contexts: list[object] = []
 
     class _ProbeIntegration:
+        default_qps = 1.0
+
         def __init__(self, *, probe_context: object, **_kwargs: object) -> None:
             seen_probe_contexts.append(probe_context)
 
@@ -180,9 +182,34 @@ def test_auth_test_uses_saved_method_for_probe_context_and_evidence(
         fields={"access_token": "identical-token-shape"},
     ).data
     monkeypatch.setattr(
-        "stackos.auth_providers.repository.testing._integration_class_for",
+        "stackos.auth_providers.repository.testing.integration_class_for",
         lambda kind: _ProbeIntegration if kind == "permission-probe-test" else None,
     )
+
+    from stackos_connectors import ConnectorClient, ConnectorRegistry
+
+    native_client = ConnectorClient(
+        registry=ConnectorRegistry(
+            connector_metadata={
+                "permission-probe-test": {
+                    "auth_methods": [
+                        {
+                            "key": key,
+                            "payload_format": "raw",
+                            "payload_field": "access_token",
+                            "fields_schema": {
+                                "type": "object",
+                                "properties": {"access_token": {"type": "string"}},
+                            },
+                            "config_schema": {"type": "object"},
+                        }
+                        for key in ("oauth-import", "static-token")
+                    ]
+                }
+            }
+        )
+    )
+    monkeypatch.setattr("stackos_connectors.get_default_client", lambda: native_client)
 
     oauth_result = asyncio.run(
         repo.test(project_id=project_id, credential_ref=oauth.credential_ref)
@@ -195,8 +222,9 @@ def test_auth_test_uses_saved_method_for_probe_context_and_evidence(
         "oauth-import",
         "static-token",
     ]
-    assert seen_probe_contexts[0].permission_verification.evidence_source == "oauth_response"
-    assert seen_probe_contexts[1].permission_verification.evidence_source == "provider_probe"
+    assert all(context.permission_verification is None for context in seen_probe_contexts)
+    assert methods["oauth-import"].permission_verification.evidence_source == "oauth_response"
+    assert methods["static-token"].permission_verification.evidence_source == "provider_probe"
     assert oauth_result.metadata["evidence"]["grants"] == ["records.read"]
     assert static_result.metadata["evidence"]["grants"] == ["records.read"]
 
@@ -523,6 +551,8 @@ def test_thrown_auth_test_failure_is_sanitized_and_persisted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _FailingIntegration:
+        default_qps = 1.0
+
         def __init__(self, **_kwargs: object) -> None:
             pass
 
@@ -546,7 +576,7 @@ def test_thrown_auth_test_failure_is_sanitized_and_persisted(
         fields={"api_key": "do-not-store"},
     ).data
     monkeypatch.setattr(
-        "stackos.auth_providers.repository.testing._integration_class_for",
+        "stackos.auth_providers.repository.testing.integration_class_for",
         lambda kind: _FailingIntegration if kind == "firecrawl" else None,
     )
 
@@ -1018,6 +1048,8 @@ def test_auth_test_redacts_vendor_controlled_text_fields(
     monkeypatch,
 ) -> None:
     class _TextLeakIntegration:
+        default_qps = 1.0
+
         def __init__(self, **_kwargs: object) -> None:
             pass
 
@@ -1039,7 +1071,7 @@ def test_auth_test_redacts_vendor_controlled_text_fields(
         attach_project_id=project_id,
     ).data
     monkeypatch.setattr(
-        "stackos.auth_providers.repository.integration_class_for",
+        "stackos.auth_providers.repository.testing.integration_class_for",
         lambda kind: _TextLeakIntegration if kind == "firecrawl" else None,
     )
     out = asyncio.run(

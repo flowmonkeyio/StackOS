@@ -23,6 +23,7 @@ classifiers = [
 ]
 
 dependencies = [
+    "stackos-connectors==0.1.0",
     "fastapi[standard]>=0.115",
     "uvicorn[standard]>=0.32",
     "sqlmodel>=0.0.22",
@@ -46,6 +47,9 @@ dependencies = [
 [project.scripts]
 stackos = "stackos.cli:app"
 "stackos.browser" = "stackos.browser_cli:main"
+
+[tool.uv.sources]
+stackos-connectors = { path = "../StackOSConnectors", editable = true }
 
 [project.urls]
 Homepage = "https://github.com/flowmonkeyio/stackos"

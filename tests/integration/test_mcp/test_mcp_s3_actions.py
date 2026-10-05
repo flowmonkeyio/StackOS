@@ -97,7 +97,7 @@ def _patch_client(
     monkeypatch: pytest.MonkeyPatch,
     client: _FakeS3,
 ) -> list[dict[str, Any]]:
-    import stackos.actions.s3 as s3_module
+    import stackos_connectors.connectors.aws_s3.actions as s3_module
 
     factory_calls: list[dict[str, Any]] = []
 

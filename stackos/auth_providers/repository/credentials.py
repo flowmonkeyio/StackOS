@@ -12,6 +12,7 @@ from typing import Any
 from sqlalchemy import delete
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
+from stackos_connectors.errors import ValidationError as NativeValidationError
 
 from stackos.artifacts import redact_secrets
 from stackos.auth_providers.google_service_account import (
@@ -104,20 +105,23 @@ class CredentialStorageMixin:
                 config=safe_config, secrets=secret_values, supplied_fields=fields
             )
         if provider.key == "ftp":
-            from stackos.integrations.ftp import validate_ftp_credential_config
+            from stackos_connectors.connectors.ftp.integration import validate_ftp_credential_config
 
             try:
                 validate_ftp_credential_config(safe_config)
             except ValueError as exc:
                 raise ValidationError(str(exc), data={"provider_key": "ftp"}) from exc
         elif provider.key == "imap":
-            from stackos.integrations.imap import normalize_imap_ca_pem
+            from stackos_connectors.connectors.imap.integration import normalize_imap_ca_pem
 
-            ca_pem = normalize_imap_ca_pem(safe_config.get("tls_ca_pem"))
+            try:
+                ca_pem = normalize_imap_ca_pem(safe_config.get("tls_ca_pem"))
+            except NativeValidationError as exc:
+                raise ValidationError(str(exc), data=exc.data) from exc
             if ca_pem is not None:
                 safe_config["tls_ca_pem"] = ca_pem
         elif provider.key == "aws-s3":
-            from stackos.integrations.s3 import (
+            from stackos_connectors.connectors.aws_s3.integration import (
                 normalize_s3_prefix,
                 validate_s3_credential_config,
             )
@@ -305,20 +309,23 @@ class CredentialStorageMixin:
                 config=safe_config, secrets=secret_values, supplied_fields=fields
             )
         if provider.key == "ftp":
-            from stackos.integrations.ftp import validate_ftp_credential_config
+            from stackos_connectors.connectors.ftp.integration import validate_ftp_credential_config
 
             try:
                 validate_ftp_credential_config(safe_config)
             except ValueError as exc:
                 raise ValidationError(str(exc), data={"provider_key": "ftp"}) from exc
         elif provider.key == "imap":
-            from stackos.integrations.imap import normalize_imap_ca_pem
+            from stackos_connectors.connectors.imap.integration import normalize_imap_ca_pem
 
-            ca_pem = normalize_imap_ca_pem(safe_config.get("tls_ca_pem"))
+            try:
+                ca_pem = normalize_imap_ca_pem(safe_config.get("tls_ca_pem"))
+            except NativeValidationError as exc:
+                raise ValidationError(str(exc), data=exc.data) from exc
             if ca_pem is not None:
                 safe_config["tls_ca_pem"] = ca_pem
         elif provider.key == "aws-s3":
-            from stackos.integrations.s3 import (
+            from stackos_connectors.connectors.aws_s3.integration import (
                 normalize_s3_prefix,
                 validate_s3_credential_config,
             )

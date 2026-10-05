@@ -3,13 +3,130 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from stackos.actions.connectors import ActionConnectorRequest
+import httpx
+from stackos_connectors import CallOptions, ConnectorClient
+from stackos_connectors.catalog import load_registry
+from stackos_connectors.shared.base import IntegrationCallResult
+
+from stackos.actions.connectors import ActionConnectorError, ActionConnectorRequest
+from stackos.actions.package_bridge import PackageActionConnector
 from stackos.config import Settings
+from stackos.integrations._rate_limit import get_bucket
 from stackos.repositories.base import ValidationError
 from stackos.repositories.resources import ArtifactRepository
+
+
+async def execute_media_native(
+    request: ActionConnectorRequest,
+    data: dict[str, Any],
+    *,
+    http: httpx.AsyncClient,
+    connector: str,
+    output_subdir: str,
+    qps: float,
+    pricing: Callable[[str, dict[str, Any], dict[str, Any]], float] | None = None,
+    caller_limits: dict[str, int] | None = None,
+) -> IntegrationCallResult:
+    """Resolve host choices, execute one named package action, and project files."""
+
+    def plain(value: Any) -> Any:
+        if isinstance(value, Path):
+            return str(value)
+        if isinstance(value, list):
+            return [plain(item) for item in value]
+        return value
+
+    prepared = {key: plain(value) for key, value in data.items() if value is not None}
+    package_directory = connector.replace("-", "_")
+    asset_root = (request.asset_dir or Settings().generated_assets_dir).resolve()
+    output_dir = asset_root / output_subdir
+    client = ConnectorClient(registry=load_registry(f"connectors/{package_directory}/catalog.json"))
+    bridge = PackageActionConnector(
+        connector,
+        client=client,
+        options=CallOptions(
+            http=http,
+            rate_limiter=get_bucket(project_id=request.project_id, kind=output_subdir, qps=qps),
+        ),
+    )
+    neutral_request = replace(
+        request,
+        input_json=prepared,
+        asset_dir=output_dir,
+        provider_context_json={**request.provider_context_json, **(caller_limits or {})},
+    )
+    try:
+        result = await bridge.execute_native(neutral_request)
+    except ActionConnectorError as exc:
+        if connector == "aignc":
+            for key in (
+                "automatic_retry_count",
+                "outcome_unknown",
+                "retry_safe",
+                "repair_guidance",
+            ):
+                if key in exc.metadata_json:
+                    exc.output_json[key] = exc.metadata_json[key]
+        raise
+    try:
+        by_path = {}
+        for descriptor in result.files:
+            path = Path(descriptor.path).resolve()
+            if not path.is_relative_to(output_dir.resolve()) or not path.is_file():
+                raise ValueError("connector file is outside its output directory or missing")
+            by_path[descriptor.path] = (
+                "/generated-assets/" + path.relative_to(asset_root).as_posix()
+            )
+        output = dict(result.output_json)
+        if isinstance(output.get("data"), list):
+            output["data"] = [
+                {
+                    **{key: value for key, value in item.items() if key != "path"},
+                    "url": by_path[item["path"]],
+                }
+                if isinstance(item, dict) and item.get("path") in by_path
+                else item
+                for item in output["data"]
+            ]
+        cost_usd = (
+            pricing(request.operation, data, output)
+            if pricing is not None
+            else result.cost_cents / 100
+        )
+        return IntegrationCallResult(
+            data=output, cost_usd=cost_usd, duration_ms=0, metadata=result.metadata_json
+        )
+    except Exception:
+        raise ActionConnectorError(
+            "generated media host projection failed",
+            output_json=result.output_json,
+            metadata_json={
+                **(result.metadata_json or {}),
+                "provider_executed": True,
+                "retry_safe": False,
+                "outcome_unknown": False,
+            },
+        ) from None
+
+
+def media_projection_failure(exc: Exception, result: IntegrationCallResult) -> ActionConnectorError:
+    """A successful native call stays recorded when host artifact/progress work fails."""
+    if isinstance(exc, ActionConnectorError):
+        return exc
+    return ActionConnectorError(
+        "generated media artifact projection failed",
+        output_json=result.data if isinstance(result.data, dict) else {"data": result.data},
+        metadata_json={
+            **(result.metadata or {}),
+            "provider_executed": True,
+            "retry_safe": False,
+            "outcome_unknown": False,
+        },
+    )
 
 
 def artifact_path(asset_dir: Path, artifact_ref: str, *, label: str = "media ref") -> Path:

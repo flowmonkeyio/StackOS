@@ -16,12 +16,12 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import quote_plus
 
-from stackos.integrations._base import BaseIntegration, IntegrationCallResult
-from stackos.integrations.firecrawl import FirecrawlIntegration
-from stackos.mcp.errors import IntegrationDownError
+from stackos_connectors.connectors.firecrawl.integration import FirecrawlIntegration
+from stackos_connectors.errors import IntegrationDownError as NativeIntegrationDownError
+from stackos_connectors.errors import RateLimitedError as NativeRateLimitedError
 
 
-class GooglePaaIntegration(BaseIntegration):
+class GooglePaaIntegration:
     """No-key wrapper that orchestrates a Firecrawl scrape of Google SERP."""
 
     kind = "google-paa"
@@ -32,16 +32,14 @@ class GooglePaaIntegration(BaseIntegration):
         self,
         *,
         firecrawl: FirecrawlIntegration | None = None,
-        **kwargs: Any,
     ) -> None:
-        super().__init__(**kwargs)
         # ``firecrawl`` is injected by the dispatcher (so we share the
         # budget + rate-limit context). If not passed, the wrapper
         # raises a typed error rather than instantiating its own —
         # cost-tracking would otherwise leak out of the budget cap.
         self._firecrawl = firecrawl
 
-    async def call(self, **kwargs: Any) -> IntegrationCallResult:
+    async def call(self, **kwargs: Any) -> Any:
         """Disabled — use ``extract`` instead."""
         raise NotImplementedError(
             "GooglePaaIntegration delegates to Firecrawl; use extract(query=...)"
@@ -54,13 +52,20 @@ class GooglePaaIntegration(BaseIntegration):
         for the "People also ask" block which Firecrawl renders as a
         list of headings. Returns ``{"questions": [...]}``.
         """
+        from stackos.mcp.errors import IntegrationDownError, RateLimitedError
+
         if self._firecrawl is None:
             raise IntegrationDownError(
                 "GooglePaaIntegration requires a FirecrawlIntegration instance",
                 data={"vendor": "google-paa", "hint": "wire firecrawl=... at construct"},
             )
         url = f"https://www.google.com/search?q={quote_plus(query)}"
-        result = await self._firecrawl.scrape(url=url, only_main_content=False)
+        try:
+            result = await self._firecrawl.scrape(url=url, only_main_content=False)
+        except NativeRateLimitedError as exc:
+            raise RateLimitedError(exc.detail, data=exc.data) from None
+        except NativeIntegrationDownError as exc:
+            raise IntegrationDownError(exc.detail, data=exc.data) from None
         data = result.data
         # Firecrawl returns either ``{data: {markdown: ...}}`` or just
         # the markdown string; we accept both for robustness.

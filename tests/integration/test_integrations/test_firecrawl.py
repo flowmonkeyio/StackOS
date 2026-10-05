@@ -9,9 +9,8 @@ from typing import Any
 import httpx
 import pytest
 from pytest_httpx import HTTPXMock
-
-from stackos.integrations.firecrawl import FirecrawlIntegration
-from stackos.mcp.errors import IntegrationDownError
+from stackos_connectors.connectors.firecrawl.integration import FirecrawlIntegration
+from stackos_connectors.errors import IntegrationDownError
 
 
 def _json_body(request: httpx.Request) -> Any:
@@ -30,7 +29,6 @@ def test_scrape_returns_markdown(httpx_mock: HTTPXMock, project_id: int) -> None
         async with httpx.AsyncClient() as client:
             integ = FirecrawlIntegration(
                 payload=b"fc-key",
-                project_id=project_id,
                 http=client,
             )
             return await integ.scrape(url="https://example.com")
@@ -57,7 +55,6 @@ def test_5xx_retries_then_raises_integration_down(httpx_mock: HTTPXMock, project
         async with httpx.AsyncClient() as client:
             integ = FirecrawlIntegration(
                 payload=b"fc-key",
-                project_id=project_id,
                 http=client,
             )
             return await integ.scrape(url="https://example.com")
@@ -79,7 +76,6 @@ def test_test_credentials_calls_scrape(httpx_mock: HTTPXMock, project_id: int) -
         async with httpx.AsyncClient() as client:
             integ = FirecrawlIntegration(
                 payload=b"fc-key",
-                project_id=project_id,
                 http=client,
             )
             return await integ.test_credentials()
@@ -102,7 +98,6 @@ def test_4xx_other_than_429_surfaces_immediately(httpx_mock: HTTPXMock, project_
         async with httpx.AsyncClient() as client:
             integ = FirecrawlIntegration(
                 payload=b"fc-key",
-                project_id=project_id,
                 http=client,
             )
             return await integ.scrape(url="https://example.com")
@@ -121,7 +116,7 @@ def test_crawl_uses_v2_discovery_depth(httpx_mock: HTTPXMock, project_id: int) -
 
     async def go() -> object:
         async with httpx.AsyncClient() as client:
-            integ = FirecrawlIntegration(payload=b"fc-key", project_id=project_id, http=client)
+            integ = FirecrawlIntegration(payload=b"fc-key", http=client)
             return await integ.crawl(url="https://example.com", max_depth=3, limit=10)
 
     asyncio.run(go())
@@ -139,7 +134,7 @@ def test_extract_posts_urls_array(httpx_mock: HTTPXMock, project_id: int) -> Non
 
     async def go() -> object:
         async with httpx.AsyncClient() as client:
-            integ = FirecrawlIntegration(payload=b"fc-key", project_id=project_id, http=client)
+            integ = FirecrawlIntegration(payload=b"fc-key", http=client)
             return await integ.extract(
                 url="https://example.com",
                 schema={"type": "object"},

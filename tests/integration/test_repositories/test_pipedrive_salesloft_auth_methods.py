@@ -87,7 +87,22 @@ def test_provider_enforced_static_probe_persists_account_without_inventing_grant
     fields: dict[str, str],
     response: dict[str, object],
     expected_account_id: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from stackos_connectors.connectors.pipedrive.integration import PipedriveIntegration
+    from stackos_connectors.connectors.salesloft.integration import SalesloftIntegration
+
+    native_class = PipedriveIntegration if provider_key == "pipedrive" else SalesloftIntegration
+    original_probe = native_class.test_credentials
+    native_calls = []
+
+    async def check_native_context(instance):
+        native_calls.append(instance)
+        assert instance.probe_context.auth_method_key == method_key
+        assert instance.probe_context.permission_verification is None
+        return await original_probe(instance)
+
+    monkeypatch.setattr(native_class, "test_credentials", check_native_context)
     token_canary = next(iter(fields.values()))
     repo = AuthRepository(session)
     stored = repo.store_credential(
@@ -123,8 +138,100 @@ def test_provider_enforced_static_probe_persists_account_without_inventing_grant
     )
 
     assert tested.ok is True
+    assert len(native_calls) == 1
+    request = httpx_mock.get_requests()[0]
+    assert request.method == "GET" and request.content == b""
+    if provider_key == "pipedrive":
+        assert str(request.url) == "https://acme.pipedrive.com/api/v1/users/me"
+        assert request.headers["x-api-token"] == token_canary
+        assert "authorization" not in request.headers
+    else:
+        assert str(request.url) == "https://api.salesloft.com/v2/me"
+        assert request.headers["authorization"] == f"Bearer {token_canary}"
     assert tested.metadata["evidence"]["account"]["provider_account_id"] == expected_account_id
     assert "grants" not in tested.metadata["evidence"]
     assert account.provider_account_id == expected_account_id
     assert scopes == []
     assert token_canary not in rendered
+
+
+@pytest.mark.parametrize("provider_key", ["pipedrive", "salesloft"])
+@pytest.mark.parametrize("unsupported_posture", [False, True])
+def test_host_probe_policy_denies_before_native_request(
+    session, project_id, httpx_mock, monkeypatch, provider_key, unsupported_posture
+):
+    from stackos.auth_providers.repository.schema import PermissionVerificationOut
+
+    repo = AuthRepository(session)
+    stored = repo.store_credential(
+        attach_project_id=project_id,
+        provider_key=provider_key,
+        auth_method_key="oauth2_token",
+        display_name="manual-token",
+        fields={
+            "access_token": "manual-canary",
+            **({"company_domain": "acme"} if provider_key == "pipedrive" else {}),
+        },
+    ).data
+    if unsupported_posture:
+        get_method = repo._get_auth_method
+
+        def changed_method(*args, **kwargs):
+            method = get_method(*args, **kwargs)
+            return method.model_copy(
+                update={
+                    "permission_verification": PermissionVerificationOut(
+                        evidence_source="provider_probe", enforcement="local_required"
+                    )
+                }
+            )
+
+        monkeypatch.setattr(repo, "_get_auth_method", changed_method)
+    tested = asyncio.run(
+        repo.test(project_id=project_id, credential_ref=stored.credential_ref)
+    ).data
+    assert tested.ok is False
+    title = "Pipedrive" if provider_key == "pipedrive" else "Salesloft"
+    assert tested.status == (
+        "unsupported_permission_verification"
+        if unsupported_posture
+        else "permission_evidence_unavailable"
+    )
+    assert tested.summary == (
+        f"{title} credential test requires the saved method's reviewed posture."
+        if unsupported_posture
+        else f"{title} manual OAuth tokens have no verified scope evidence; reconnect with OAuth."
+    )
+    assert httpx_mock.get_requests() == []
+    assert "manual-canary" not in tested.model_dump_json()
+
+
+@pytest.mark.parametrize("provider_key", ["pipedrive", "salesloft"])
+def test_native_http_failure_uses_existing_repository_diagnostics(
+    session, project_id, httpx_mock, provider_key
+):
+    repo = AuthRepository(session)
+    pipedrive = provider_key == "pipedrive"
+    stored = repo.store_credential(
+        attach_project_id=project_id,
+        provider_key=provider_key,
+        auth_method_key="api_token" if pipedrive else "api_key",
+        display_name="rejected-token",
+        fields=(
+            {"api_token": "auth-canary", "company_domain": "acme"}
+            if pipedrive
+            else {"api_key": "auth-canary"}
+        ),
+    ).data
+    httpx_mock.add_response(
+        status_code=401,
+        json={"error": "Authorization: Bearer auth-canary", "access_token": "auth-canary"},
+    )
+    tested = asyncio.run(
+        repo.test(project_id=project_id, credential_ref=stored.credential_ref)
+    ).data
+    assert tested.ok is False and tested.retryable is False
+    assert tested.metadata["provider_status_code"] == 401
+    assert tested.metadata["reason_code"] == "authentication_failed"
+    assert "auth-canary" not in tested.model_dump_json()
+    assert len(httpx_mock.get_requests()) == 1

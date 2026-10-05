@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import pytest
-
-from stackos.integrations.sitemap import (
+from stackos_connectors.connectors.sitemap.integration import (
     SitemapEntry,
     SitemapFetchError,
     SitemapFetchResult,
@@ -45,7 +44,8 @@ def _stub_sitemap_helper(monkeypatch: pytest.MonkeyPatch) -> None:
             )
         return SitemapFetchResult(entries=entries, errors=errors)
 
-    import stackos.integrations.sitemap as helper_module
+    import stackos_connectors.connectors.sitemap.integration as helper_module
+
     import stackos.mcp.tools.sitemap as tool_module
 
     monkeypatch.setattr(helper_module, "fetch_sitemap_entries", _fake_fetch)

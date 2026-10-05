@@ -3,18 +3,19 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
+from stackos_connectors.connectors.reve.integration import ReveImagesIntegration
+from stackos_connectors.errors import IntegrationDownError
 
 from stackos.actions.connectors import (
     ActionConnectorRequest,
     ActionConnectorResult,
     ActionValidationIssue,
 )
+from stackos.actions.media_artifacts import execute_media_native, media_projection_failure
 from stackos.config import Settings
-from stackos.integrations.reve_images import ReveImagesIntegration
-from stackos.mcp.errors import IntegrationDownError
 from stackos.repositories.base import ValidationError
 from stackos.repositories.resources import ArtifactRepository
 
@@ -217,7 +218,7 @@ class ReveImagesActionConnector:
             raw_scaling if isinstance(raw_scaling, int) and not isinstance(raw_scaling, bool) else 1
         )
         return _cost_usd_to_cents(
-            ReveImagesIntegration.estimate_cost_usd(
+            _MediaPricing.estimate_cost_usd(
                 op=request.operation,
                 version=version,
                 test_time_scaling=test_time_scaling,
@@ -230,57 +231,73 @@ class ReveImagesActionConnector:
         payload = request.input_json
         asset_dir = request.asset_dir or Settings().generated_assets_dir
         async with httpx.AsyncClient(timeout=180.0) as http:
-            client = ReveImagesIntegration(
-                payload=request.credential.secret_payload,
-                project_id=request.project_id,
-                http=http,
-                asset_dir=asset_dir,
-            )
             match request.operation:
                 case "image.edit":
-                    result = await client.edit_image(
-                        edit_instruction=str(payload["edit_instruction"]),
-                        reference_image_path=_artifact_path(
-                            asset_dir,
-                            str(payload["input_image_ref"]),
-                        ),
-                        aspect_ratio=(
-                            str(payload["aspect_ratio"])
+                    result = await execute_media_native(
+                        request,
+                        {
+                            "edit_instruction": str(payload["edit_instruction"]),
+                            "reference_image_path": _artifact_path(
+                                asset_dir, str(payload["input_image_ref"])
+                            ),
+                            "aspect_ratio": str(payload["aspect_ratio"])
                             if isinstance(payload.get("aspect_ratio"), str)
-                            else None
-                        ),
-                        version=str(payload.get("version", "latest")),
-                        test_time_scaling=int(payload.get("test_time_scaling", 1)),
+                            else None,
+                            "version": str(payload.get("version", "latest")),
+                            "test_time_scaling": int(payload.get("test_time_scaling", 1)),
+                        },
+                        http=http,
+                        connector=self.key,
+                        output_subdir="reve",
+                        qps=2.0,
+                        pricing=_host_media_cost,
                     )
                 case "image.remix":
-                    result = await client.remix_image(
-                        prompt=str(payload["prompt"]),
-                        reference_image_paths=[
-                            _artifact_path(asset_dir, str(ref))
-                            for ref in payload["input_image_refs"]
-                        ],
-                        aspect_ratio=(
-                            str(payload["aspect_ratio"])
+                    result = await execute_media_native(
+                        request,
+                        {
+                            "prompt": str(payload["prompt"]),
+                            "reference_image_paths": [
+                                _artifact_path(asset_dir, str(ref))
+                                for ref in payload["input_image_refs"]
+                            ],
+                            "aspect_ratio": str(payload["aspect_ratio"])
                             if isinstance(payload.get("aspect_ratio"), str)
-                            else None
-                        ),
-                        version=str(payload.get("version", "latest")),
-                        test_time_scaling=int(payload.get("test_time_scaling", 1)),
+                            else None,
+                            "version": str(payload.get("version", "latest")),
+                            "test_time_scaling": int(payload.get("test_time_scaling", 1)),
+                        },
+                        http=http,
+                        connector=self.key,
+                        output_subdir="reve",
+                        qps=2.0,
+                        pricing=_host_media_cost,
                     )
                 case _:
-                    result = await client.create_image(
-                        prompt=str(payload["prompt"]),
-                        aspect_ratio=str(payload.get("aspect_ratio", "3:2")),
-                        version=str(payload.get("version", "latest")),
-                        test_time_scaling=int(payload.get("test_time_scaling", 1)),
+                    result = await execute_media_native(
+                        request,
+                        {
+                            "prompt": str(payload["prompt"]),
+                            "aspect_ratio": str(payload.get("aspect_ratio", "3:2")),
+                            "version": str(payload.get("version", "latest")),
+                            "test_time_scaling": int(payload.get("test_time_scaling", 1)),
+                        },
+                        http=http,
+                        connector=self.key,
+                        output_subdir="reve",
+                        qps=2.0,
+                        pricing=_host_media_cost,
                     )
-        output_json = result.data if isinstance(result.data, dict) else {"data": result.data}
-        output_json = _register_generated_image_artifacts(request, output_json)
-        return ActionConnectorResult(
-            output_json=output_json,
-            metadata_json={"vendor": "reve"},
-            cost_cents=_cost_usd_to_cents(result.cost_usd),
-        )
+        try:
+            output_json = result.data if isinstance(result.data, dict) else {"data": result.data}
+            output_json = _register_generated_image_artifacts(request, output_json)
+            return ActionConnectorResult(
+                output_json=output_json,
+                metadata_json={"vendor": "reve"},
+                cost_cents=_cost_usd_to_cents(result.cost_usd),
+            )
+        except Exception as exc:
+            raise media_projection_failure(exc, result) from None
 
 
 def _artifact_path(asset_dir: Path, artifact_ref: str) -> Path:
@@ -372,3 +389,69 @@ def _cost_usd_to_cents(cost_usd: float) -> int:
 
 
 __all__ = ["ReveImagesActionConnector"]
+
+
+class _MediaPricing:
+    _CREDIT_USD = 10.0 / 7500.0
+
+    _BASE_CREDITS: ClassVar[dict[str, dict[str, int]]] = {
+        "image.create": {
+            "latest": 18,
+            "reve-create@20250915": 18,
+        },
+        "image.edit": {
+            "latest": 30,
+            "latest-fast": 5,
+            "reve-edit@20250915": 30,
+            "reve-edit-fast@20251030": 5,
+        },
+        "image.remix": {
+            "latest": 30,
+            "latest-fast": 5,
+            "reve-remix@20250915": 30,
+            "reve-remix-fast@20251030": 5,
+        },
+    }
+
+    @classmethod
+    def estimate_cost_usd(
+        cls,
+        *,
+        op: str,
+        version: str = "latest",
+        test_time_scaling: int = 1,
+    ) -> float:
+        credits = cls._BASE_CREDITS.get(op, {}).get(version, 0)
+        scaling = min(15, max(1, test_time_scaling))
+        return credits * scaling * cls._CREDIT_USD
+
+    def _extract_actual_cost_usd(
+        self,
+        op: str,
+        *,
+        request: Any,
+        response: Any,
+        estimated: float,
+    ) -> float:
+        del op, request
+        if not isinstance(response, dict):
+            return estimated
+        raw_credits = response.get("credits_used")
+        if not isinstance(raw_credits, int | float | str) or isinstance(raw_credits, bool):
+            return estimated
+        try:
+            credits = float(raw_credits)
+        except (TypeError, ValueError):
+            return estimated
+        if credits < 0:
+            return estimated
+        return credits * self._CREDIT_USD
+
+
+def _host_media_cost(operation: str, data: dict[str, Any], output: dict[str, Any]) -> float:
+    estimated = _MediaPricing.estimate_cost_usd(
+        op=operation, version=data["version"], test_time_scaling=data["test_time_scaling"]
+    )
+    return _MediaPricing()._extract_actual_cost_usd(
+        operation, request=data, response=output, estimated=estimated
+    )

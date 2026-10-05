@@ -60,6 +60,56 @@ WRITE_ACTIONS = {
 }
 
 
+def test_linear_remote_receipt_survives_host_projection_failure(
+    session, project_id, httpx_mock, monkeypatch
+):
+    credential_ref = _linear_credential(session, project_id=project_id)
+    team_ref = _safe_ref(
+        session, credential_ref=credential_ref, object_type="team", provider_id="team-1"
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.linear.app/graphql",
+        headers={"x-request-id": "linear-receipt-1"},
+        json={
+            "data": {
+                "issueCreate": {
+                    "success": True,
+                    "issue": {
+                        "id": "issue-receipt-1",
+                        "title": "private customer text",
+                        "description": "linear-secret",
+                    },
+                }
+            }
+        },
+    )
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("private database failure")
+
+    monkeypatch.setattr(ProviderObjectReferenceRepository, "upsert", fail)
+    with pytest.raises(ConflictError) as failure:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="linear.issues.create",
+                input_json={"team_ref": team_ref, "title": "test"},
+                credential_ref=credential_ref,
+            )
+        )
+    assert "provider_error" in failure.value.data, failure.value.data
+    error = failure.value.data["provider_error"]
+    assert error["provider_receipt"] == {
+        "object_id": "issue-receipt-1",
+        "request_id": "linear-receipt-1",
+    }
+    assert error["provider_executed"] is True and error["retry_safe"] is False
+    assert "private customer text" not in json.dumps(error)
+    assert "linear-secret" not in json.dumps(error)
+    assert httpx_mock.get_requests()[0].headers["Authorization"] == "Bearer linear-secret"
+
+
 def _linear_credential(
     session: Session,
     *,

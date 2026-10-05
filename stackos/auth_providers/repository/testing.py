@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
@@ -15,19 +16,11 @@ from sqlmodel import col, select
 
 from stackos.artifacts import redact_secret_text, redact_secrets
 from stackos.db.models import Credential, CredentialAccount, CredentialScope
+from stackos.integrations import integration_class_for
 from stackos.repositories.base import Envelope, RepositoryError, ValidationError
 
-from .schema import AuthMethodOut, AuthMethodProbeContext, AuthProbeEvidence, AuthTestOut
+from .schema import AuthMethodOut, AuthProbeEvidence, AuthTestOut
 from .utils import utcnow
-
-
-def _integration_class_for(kind: str) -> type[Any] | None:
-    """Resolve through package attr so legacy monkeypatch paths keep working."""
-
-    from stackos.auth_providers import repository as repository_package
-
-    return repository_package.integration_class_for(kind)
-
 
 _GOOGLE_PROBE_APIS = {
     "google-search-console": "Google Search Console API",
@@ -201,10 +194,7 @@ class CredentialTestingMixin:
                 required_scopes=[],
                 local_admin=True,
             )
-            credential, secret_payload = (
-                resolved.credential,
-                resolved.secret_payload,
-            )
+            credential = resolved.credential
         else:
             credential, _ = self._resolve_credential(
                 project_id=project_id,
@@ -218,8 +208,7 @@ class CredentialTestingMixin:
                 required_scopes=[],
             )
             credential = resolved.credential
-            secret_payload = resolved.secret_payload
-        integration_cls = _integration_class_for(credential.provider_key)
+        integration_cls = integration_class_for(credential.provider_key)
         acquisition_only = (
             credential.auth_method_key == "service-account"
             and credential.provider_key in {"google-ads", "google-workspace"}
@@ -238,20 +227,21 @@ class CredentialTestingMixin:
             sync=False,
         )
         method: AuthMethodOut | None = None
-        probe_context: AuthMethodProbeContext | None = None
         if provider is not None:
             method = self._get_auth_method(
                 provider,
                 credential.auth_method_key,
             )
             assert method is not None
-            probe_context = AuthMethodProbeContext(
-                auth_method_key=method.key,
-                permission_verification=method.permission_verification,
-            )
         extra = self._integration_extra(credential)
+        preflight = None
+        if credential.provider_key in {"pipedrive", "salesloft", "hubspot"}:
+            assert provider is not None and method is not None
+            preflight = self._account_probe_preflight(provider=provider, method=method)
         try:
-            if acquisition_only:
+            if preflight is not None:
+                raw_result = preflight
+            elif acquisition_only:
                 raw_result = {
                     "ok": True,
                     "status": "connected",
@@ -266,14 +256,64 @@ class CredentialTestingMixin:
             else:
                 assert integration_cls is not None
                 async with httpx.AsyncClient(timeout=30.0) as client:
-                    integration = integration_cls(
-                        payload=secret_payload,
-                        project_id=project_id or 0,
-                        http=client,
-                        probe_context=probe_context,
-                        **extra,
-                    )
-                    raw_result = await integration.test_credentials()
+                    if credential.provider_key != "google-paa":
+                        from stackos_connectors import get_default_client
+                        from stackos_connectors.contracts import thaw
+                        from stackos_connectors.errors import (
+                            IntegrationDownError as NativeProbeError,
+                        )
+                        from stackos_connectors.probe import (
+                            AuthMethodProbeContext as NativeProbeContext,
+                        )
+
+                        from stackos.actions.package_bridge import host_probe_error, resolved_auth
+                        from stackos.integrations._rate_limit import get_bucket
+
+                        assert method is not None
+                        catalog_key = (
+                            "byteplus-seedream"
+                            if credential.provider_key == "byteplus-ark"
+                            else credential.provider_key
+                        )
+                        declarations = (
+                            get_default_client()
+                            .registry.connector_metadata.get(catalog_key, {})
+                            .get("auth_methods", ())
+                        )
+                        declaration = next(
+                            (item for item in declarations if item.get("key") == method.key), None
+                        )
+                        if declaration is None:
+                            raise ValidationError("saved auth method has no native probe contract")
+                        auth = resolved_auth(
+                            resolved,
+                            payload_format=declaration.get("payload_format", "json"),
+                            payload_field=declaration.get("payload_field"),
+                            declaration=declaration,
+                        )
+                        assert auth is not None
+                        if declaration.get("payload_format") == "raw":
+                            native_payload = str(auth.fields[declaration["payload_field"]]).encode()
+                        else:
+                            native_payload = json.dumps(thaw(auth.fields)).encode()
+                        try:
+                            integration = integration_cls(
+                                payload=native_payload,
+                                http=client,
+                                probe_context=NativeProbeContext(auth_method_key=method.key),
+                                rate_limiter=get_bucket(
+                                    project_id=project_id or 0,
+                                    kind=credential.provider_key,
+                                    qps=integration_cls.default_qps,
+                                ),
+                                **extra,
+                            )
+                            raw_result = await integration.test_credentials()
+                        except NativeProbeError as exc:
+                            raise host_probe_error(exc) from None
+                    else:
+                        integration = integration_cls()
+                        raw_result = await integration.test_credentials()
         except RepositoryError as exc:
             raw_result = _failed_test_result(credential.provider_key, exc)
         out = self._normalize_test_result(
@@ -470,7 +510,7 @@ class CredentialTestingMixin:
             if config.get("api_version"):
                 extra["api_version"] = str(config["api_version"])
         elif credential.provider_key == "ftp":
-            from stackos.integrations.ftp import validate_ftp_credential_config
+            from stackos_connectors.connectors.ftp.integration import validate_ftp_credential_config
 
             try:
                 validate_ftp_credential_config(config)
@@ -496,7 +536,9 @@ class CredentialTestingMixin:
                 }
             )
         elif credential.provider_key == "aws-s3":
-            from stackos.integrations.s3 import validate_s3_credential_config
+            from stackos_connectors.connectors.aws_s3.integration import (
+                validate_s3_credential_config,
+            )
 
             try:
                 validate_s3_credential_config(config)

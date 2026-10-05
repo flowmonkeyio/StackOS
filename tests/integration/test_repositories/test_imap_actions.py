@@ -15,6 +15,7 @@ from typing import Any, ClassVar
 import httpx
 import pytest
 from sqlmodel import Session
+from stackos_connectors.errors import ConnectorError as NativeConnectorError
 
 from stackos.actions import ActionRepository
 from stackos.actions.connectors import ActionConnectorError, ActionConnectorRequest
@@ -36,6 +37,101 @@ from tests.helpers.finance_workspace import (
 from tests.helpers.finance_workspace import (
     record as finance_record,
 )
+
+
+def test_imap_storage_failure_after_flag_write_keeps_uid_receipt(
+    session: Session, project_id: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from stackos_connectors.connectors.imap import actions as native_imap
+
+    import stackos.actions.imap as host_imap
+
+    credential_ref = _credential_ref(session, project_id)
+    _FakeIMAPSSL.instances.clear()
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+
+    def fail_store(*args, **kwargs):
+        raise RuntimeError("injected store failure")
+
+    monkeypatch.setattr(host_imap, "_store_message_status", fail_store)
+    with pytest.raises(ConflictError) as failed:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="communications.imap.message.mark_seen",
+                input_json={"mailbox_ref": "support", "uid": 3, "expected_uidvalidity": "777"},
+                credential_ref=credential_ref,
+            )
+        )
+    call = session.get(ActionCall, failed.value.data["action_call_id"])
+    assert call.response_json["uid"] == 3
+    assert call.response_json["uidvalidity"] == "777"
+    assert call.response_json["store_applied"] is True
+    assert call.metadata_json["provider_executed"] is True
+    assert call.metadata_json["retry_safe"] is False
+    assert sum(c[0] == "STORE" for c in _FakeIMAPSSL.instances[0].uid_calls) == 1
+
+
+@pytest.mark.parametrize("seen", [True, False])
+@pytest.mark.parametrize("failure_stage", ["store_response", "readback_missing", "readback_error"])
+def test_imap_uncertain_flag_write_retains_host_receipt(
+    session: Session,
+    project_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+    seen: bool,
+    failure_stage: str,
+) -> None:
+    from stackos_connectors.connectors.imap import actions as native_imap
+
+    import stackos.actions.imap as host_imap
+
+    credential_ref = _credential_ref(session, project_id)
+    _FakeIMAPSSL.instances.clear()
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    original_uid = _FakeIMAPSSL.uid
+    stored = []
+    monkeypatch.setattr(host_imap, "_store_message_status", lambda *args: stored.append(args))
+
+    def fail_uid(self, *args):
+        if args[0] == "STORE" and failure_stage == "store_response":
+            self.uid_calls.append(args)
+            raise OSError("private-server-password not for receipt")
+        if args[0] == "FETCH" and args[2] == "(UID FLAGS)":
+            self.uid_calls.append(args)
+            if failure_stage == "readback_error":
+                raise OSError("private-server-password not for receipt")
+            if failure_stage == "readback_missing":
+                return "OK", []
+        return original_uid(self, *args)
+
+    monkeypatch.setattr(_FakeIMAPSSL, "uid", fail_uid)
+    operation = "mark_seen" if seen else "mark_unseen"
+    with pytest.raises(ConflictError) as failed:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="communications.imap.message." + operation,
+                input_json={"mailbox_ref": "support", "uid": 3},
+                credential_ref=credential_ref,
+            )
+        )
+    call = session.get(ActionCall, failed.value.data["action_call_id"])
+    output = call.response_json
+    assert output["status"] == "failed"
+    assert failed.value.data["provider_error"]["outcome_unknown"] is True
+    assert output["mailbox_ref"] == "imap-mailbox:Support"
+    assert output["uid"] == 3 and output["uidvalidity"] == "777"
+    assert output["requested_attention_status"] == ("read" if seen else "unread")
+    assert output["store_applied"] is None and output["store_confirmed"] is False
+    assert "attention_status" not in output and "mailbox_name" not in output
+    assert "requested_seen" not in output
+    assert call.metadata_json["provider_executed"] is True
+    assert call.metadata_json["outcome_unknown"] is True
+    assert call.metadata_json["retry_safe"] is False
+    assert not call.metadata_json.get("acknowledgement")
+    assert sum(c[0] == "STORE" for c in _FakeIMAPSSL.instances[0].uid_calls) == 1
+    assert not stored
+    assert "private-server-password" not in json.dumps(output)
 
 
 def _raw_message() -> bytes:
@@ -289,10 +385,10 @@ def test_imap_list_search_fetch_and_mark_without_secret_leak(
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.imap as imap_module
+    import stackos_connectors.connectors.imap.actions as native_imap
 
     _FakeIMAPSSL.instances.clear()
-    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
     credential_ref = _credential_ref(session, project_id)
     repo = ActionRepository(session)
 
@@ -397,6 +493,8 @@ def test_imap_list_search_fetch_and_mark_without_secret_leak(
         "vendor": "imap",
         "operation": "messages.search",
         "tls_mode": "ssl",
+        "provider_executed": True,
+        "retry_safe": True,
     }
     search_audit = json.dumps(
         {"response": search_call.response_json, "metadata": search_call.metadata_json},
@@ -412,6 +510,8 @@ def test_imap_list_search_fetch_and_mark_without_secret_leak(
         "operation": "message.mark_seen",
         "tls_mode": "ssl",
         "acknowledgement": True,
+        "provider_executed": True,
+        "retry_safe": False,
     }
     assert set(mark_call.response_json or {}) == {
         "provider",
@@ -452,11 +552,11 @@ def test_imap_evidence_export_stages_exact_mime_without_audit_or_resource_leakag
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.imap as imap_module
+    import stackos_connectors.connectors.imap.actions as native_imap
 
     raw = _raw_multipart_message()
     _FakeIMAPSSL.instances.clear()
-    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
     monkeypatch.setattr(_FakeIMAPSSL, "raw_message", raw)
     monkeypatch.setattr(_FakeIMAPSSL, "reported_size", None)
     credential_ref = _credential_ref(session, project_id)
@@ -551,11 +651,11 @@ def test_imap_finance_host_handoff_stores_and_verifies_before_epoch_qualified_ac
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Exercise the documented host-owned local-json handoff with fake IMAP only."""
-    import stackos.actions.imap as imap_module
+    import stackos_connectors.connectors.imap.actions as native_imap
 
     raw = _raw_multipart_message()
     _FakeIMAPSSL.instances.clear()
-    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
     monkeypatch.setattr(_FakeIMAPSSL, "raw_message", raw)
     credential_ref = _credential_ref(session, project_id)
     asset_root = tmp_path / "generated-assets"
@@ -749,11 +849,11 @@ def test_imap_evidence_export_uses_fixed_paths_for_hostile_duplicate_filenames(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.imap as imap_module
+    import stackos_connectors.connectors.imap.actions as native_imap
 
     raw = _raw_duplicate_filename_message()
     _FakeIMAPSSL.instances.clear()
-    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
     monkeypatch.setattr(_FakeIMAPSSL, "raw_message", raw)
     credential_ref = _credential_ref(session, project_id)
     exported = asyncio.run(
@@ -780,10 +880,10 @@ def test_imap_evidence_export_rejects_tls_none_before_provider_access(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.imap as imap_module
+    import stackos_connectors.connectors.imap.actions as native_imap
 
     _FakeIMAPSSL.instances.clear()
-    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
     credential_ref = _credential_ref(session, project_id, tls_mode="none")
 
     with pytest.raises(ConflictError) as denied:
@@ -808,10 +908,10 @@ def test_imap_evidence_export_uses_verified_ssl_and_starttls_contexts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.imap as imap_module
+    import stackos_connectors.connectors.imap.actions as native_imap
 
     _FakeIMAPSSL.instances.clear()
-    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
     ssl_credential = _credential_ref(session, project_id)
     asyncio.run(
         ActionRepository(session, asset_dir=tmp_path).execute(
@@ -827,7 +927,7 @@ def test_imap_evidence_export_uses_verified_ssl_and_starttls_contexts(
     assert ssl_client.ssl_context.check_hostname is True
 
     _FakeIMAP.instances.clear()
-    monkeypatch.setattr(imap_module.imaplib, "IMAP4", _FakeIMAP)
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4", _FakeIMAP)
     starttls_credential = _credential_ref(
         session,
         project_id,
@@ -855,10 +955,10 @@ def test_imap_evidence_export_fails_when_verified_starttls_cannot_start(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.imap as imap_module
+    import stackos_connectors.connectors.imap.actions as native_imap
 
     _FakeIMAP.instances.clear()
-    monkeypatch.setattr(imap_module.imaplib, "IMAP4", _FakeIMAP)
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4", _FakeIMAP)
     monkeypatch.setattr(_FakeIMAP, "starttls_error", ssl.SSLError("certificate rejected"))
     credential_ref = _credential_ref(
         session,
@@ -896,10 +996,10 @@ def test_imap_evidence_export_preflights_size_and_leaves_oversize_message_unseen
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.imap as imap_module
+    import stackos_connectors.connectors.imap.actions as native_imap
 
     _FakeIMAPSSL.instances.clear()
-    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
     monkeypatch.setattr(_FakeIMAPSSL, "raw_message", b"small")
     monkeypatch.setattr(_FakeIMAPSSL, "reported_size", 10 * 1024 * 1024 + 1)
     credential_ref = _credential_ref(session, project_id)
@@ -933,10 +1033,10 @@ def test_imap_export_requires_numeric_uidvalidity_and_unambiguous_fetch_tuples(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.imap as imap_module
+    import stackos_connectors.connectors.imap.actions as native_imap
 
     _FakeIMAPSSL.instances.clear()
-    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
     monkeypatch.setattr(_FakeIMAPSSL, "uidvalidity", "0")
     credential_ref = _credential_ref(session, project_id)
     with pytest.raises(ConflictError) as invalid_epoch:
@@ -954,21 +1054,21 @@ def test_imap_export_requires_numeric_uidvalidity_and_unambiguous_fetch_tuples(
     assert invalid_call.response_json == {"status": "rejected", "category": "uidvalidity_invalid"}
 
     full = (b"3 (UID 3 RFC822.SIZE 4 BODY[] {4}", b"data")
-    assert imap_module._export_fetch_tuple(
+    assert native_imap._export_fetch_tuple(
         [b"3 (UID 3 RFC822.SIZE 4)"], uid=3, require_literal=False
     ) == (4, None)
-    with pytest.raises(ActionConnectorError) as ambiguous:
-        imap_module._export_fetch_tuple([full, full], uid=3, require_literal=True)
+    with pytest.raises(NativeConnectorError) as ambiguous:
+        native_imap._export_fetch_tuple([full, full], uid=3, require_literal=True)
     assert ambiguous.value.output_json["category"] == "fetch_ambiguous"
-    with pytest.raises(ActionConnectorError) as mismatched:
-        imap_module._export_fetch_tuple(
+    with pytest.raises(NativeConnectorError) as mismatched:
+        native_imap._export_fetch_tuple(
             [(b"4 (UID 4 RFC822.SIZE 4 BODY[] {4}", b"data")],
             uid=3,
             require_literal=True,
         )
     assert mismatched.value.output_json["category"] == "fetch_mismatch"
-    with pytest.raises(ActionConnectorError) as truncated:
-        imap_module._export_fetch_tuple(
+    with pytest.raises(NativeConnectorError) as truncated:
+        native_imap._export_fetch_tuple(
             [(b"3 (UID 3 RFC822.SIZE 4 BODY[] {4}", b"dat")],
             uid=3,
             require_literal=True,
@@ -982,7 +1082,7 @@ def test_imap_evidence_export_rejects_malformed_mime_without_staging_or_acknowle
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.imap as imap_module
+    import stackos_connectors.connectors.imap.actions as native_imap
 
     malformed = (
         b"Content-Type: application/pdf; name=private.pdf\r\n"
@@ -990,7 +1090,7 @@ def test_imap_evidence_export_rejects_malformed_mime_without_staging_or_acknowle
         b"Content-Transfer-Encoding: base64\r\n\r\n%%%%"
     )
     _FakeIMAPSSL.instances.clear()
-    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
     monkeypatch.setattr(_FakeIMAPSSL, "raw_message", malformed)
     monkeypatch.setattr(_FakeIMAPSSL, "reported_size", None)
     credential_ref = _credential_ref(session, project_id)
@@ -1018,10 +1118,10 @@ def test_imap_evidence_export_enforces_attachment_count_before_staging(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.imap as imap_module
+    import stackos_connectors.connectors.imap.actions as native_imap
 
     _FakeIMAPSSL.instances.clear()
-    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
     monkeypatch.setattr(_FakeIMAPSSL, "raw_message", _raw_message_with_attachments(21))
     monkeypatch.setattr(_FakeIMAPSSL, "reported_size", None)
     credential_ref = _credential_ref(session, project_id)
@@ -1050,25 +1150,31 @@ def test_imap_evidence_export_enforces_attachment_count_before_staging(
 
 
 def test_imap_evidence_mime_limits_and_nested_attachment_nodes_are_safe() -> None:
+    import stackos_connectors.connectors.imap.actions as native_imap
+
     import stackos.actions.imap as imap_module
 
-    with pytest.raises(ActionConnectorError) as per_attachment:
-        imap_module._export_attachments(_raw_binary_attachment(b"x" * (8 * 1024 * 1024 + 1)))
+    with pytest.raises(NativeConnectorError) as per_attachment:
+        native_imap._export_attachments(
+            _raw_binary_attachment(b"x" * (8 * 1024 * 1024 + 1)), imap_module._export_limits()
+        )
     assert per_attachment.value.output_json["category"] == "attachment_oversize"
 
     aggregate = _raw_binary_multipart([b"a" * (6 * 1024 * 1024), b"b" * (6 * 1024 * 1024)])
-    with pytest.raises(ActionConnectorError) as aggregate_limit:
-        imap_module._export_attachments(aggregate)
+    with pytest.raises(NativeConnectorError) as aggregate_limit:
+        native_imap._export_attachments(aggregate, imap_module._export_limits())
     assert aggregate_limit.value.output_json["category"] == "attachment_total_oversize"
 
-    with pytest.raises(ActionConnectorError) as depth_limit:
-        imap_module._export_attachments(_raw_nested_multipart(21))
+    with pytest.raises(NativeConnectorError) as depth_limit:
+        native_imap._export_attachments(_raw_nested_multipart(21), imap_module._export_limits())
     assert depth_limit.value.output_json["category"] == "mime_structure_exceeded"
-    with pytest.raises(ActionConnectorError) as parts_limit:
-        imap_module._export_attachments(_raw_many_mime_parts(200))
+    with pytest.raises(NativeConnectorError) as parts_limit:
+        native_imap._export_attachments(_raw_many_mime_parts(200), imap_module._export_limits())
     assert parts_limit.value.output_json["category"] == "mime_structure_exceeded"
-    with pytest.raises(ActionConnectorError) as encoding:
-        imap_module._export_attachments(_raw_binary_attachment(b"data", encoding="x-rot13"))
+    with pytest.raises(NativeConnectorError) as encoding:
+        native_imap._export_attachments(
+            _raw_binary_attachment(b"data", encoding="x-rot13"), imap_module._export_limits()
+        )
     assert encoding.value.output_json["category"] == "unsupported_encoding"
 
     outer = EmailMessage()
@@ -1080,13 +1186,14 @@ def test_imap_evidence_mime_limits_and_nested_attachment_nodes_are_safe() -> Non
     multipart_attachment.make_mixed()
     multipart_attachment["Content-Disposition"] = "attachment; filename=two.eml"
     outer.attach(multipart_attachment)
-    staged = imap_module._export_attachments(outer.as_bytes())
+    staged = native_imap._export_attachments(outer.as_bytes(), imap_module._export_limits())
     assert [media_type for media_type, _payload in staged] == ["message/rfc822", "multipart/mixed"]
     assert all(payload for _media_type, payload in staged)
-    assert imap_module._safe_media_type(f"{'a' * 100}/{'b' * 100}") == "application/octet-stream"
+    assert native_imap._safe_media_type(f"{'a' * 100}/{'b' * 100}") == "application/octet-stream"
 
 
 def test_imap_mailbox_ref_output_is_runtime_bounded() -> None:
+
     import stackos.actions.imap as imap_module
 
     assert imap_module._validated_mailbox_name("x" * 240) == "x" * 240
@@ -1170,6 +1277,7 @@ def test_imap_evidence_cleanup_fails_closed_for_transfer_root_symlink_and_delete
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+
     import stackos.actions.imap as imap_module
 
     transfer_id = "b" * 32
@@ -1246,7 +1354,7 @@ def test_imap_evidence_staging_write_failure_leaves_no_partial_file(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.imap as imap_module
+    import stackos_connectors.connectors.imap.actions as native_imap
 
     staging_dir = tmp_path / "staging"
     staging_dir.mkdir()
@@ -1254,9 +1362,9 @@ def test_imap_evidence_staging_write_failure_leaves_no_partial_file(
     def fail_replace(_source: Path, _target: Path) -> None:
         raise OSError("injected atomic replace failure")
 
-    monkeypatch.setattr(imap_module.os, "replace", fail_replace)
-    with pytest.raises(ActionConnectorError) as failed:
-        imap_module._stage_export_file(staging_dir, "original.eml", b"raw-message")
+    monkeypatch.setattr(native_imap.os, "replace", fail_replace)
+    with pytest.raises(NativeConnectorError) as failed:
+        native_imap._stage_export_file(staging_dir, "original.eml", b"raw-message")
 
     assert failed.value.output_json["category"] == "staging_unavailable"
     assert not (staging_dir / "original.eml").exists()
@@ -1269,12 +1377,14 @@ def test_imap_partial_export_cleanup_failure_returns_recoverable_transfer_id(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    import stackos_connectors.connectors.imap.actions as native_imap
+
     import stackos.actions.imap as imap_module
 
     _FakeIMAPSSL.instances.clear()
-    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
     monkeypatch.setattr(_FakeIMAPSSL, "raw_message", _raw_multipart_message())
-    original_stage = imap_module._stage_export_file
+    original_stage = native_imap._stage_export_file
     staged_files = 0
 
     def fail_second_stage(directory: Path, name: str, payload: bytes) -> dict[str, Any]:
@@ -1284,7 +1394,7 @@ def test_imap_partial_export_cleanup_failure_returns_recoverable_transfer_id(
             raise OSError("injected attachment staging failure")
         return original_stage(directory, name, payload)
 
-    monkeypatch.setattr(imap_module, "_stage_export_file", fail_second_stage)
+    monkeypatch.setattr(native_imap, "_stage_export_file", fail_second_stage)
 
     def fail_rmtree(_path: Path) -> None:
         raise OSError("injected cleanup failure")
@@ -1315,10 +1425,10 @@ def test_imap_mark_seen_requires_matching_uidvalidity(
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import stackos.actions.imap as imap_module
+    import stackos_connectors.connectors.imap.actions as native_imap
 
     _FakeIMAPSSL.instances.clear()
-    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
     monkeypatch.setattr(_FakeIMAPSSL, "uidvalidity", "778")
     credential_ref = _credential_ref(session, project_id)
 
@@ -1343,9 +1453,9 @@ def test_imap_mark_seen_requires_matching_uidvalidity(
 def test_imap_protocol_cleanup_never_expunge_after_flag_write(
     session: Session, project_id: int, monkeypatch: pytest.MonkeyPatch, operation: str
 ) -> None:
-    import stackos.actions.imap as imap_module
+    import stackos_connectors.connectors.imap.actions as native_imap
 
-    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
     credential_ref = _credential_ref(session, project_id)
     asyncio.run(
         ActionRepository(session).execute(
@@ -1428,7 +1538,7 @@ def test_imap_health_failure_returns_safe_actionable_diagnostics(
     retryable: bool,
     tls_mode: str,
 ) -> None:
-    from stackos.integrations.imap import ImapIntegration
+    from stackos_connectors.connectors.imap.integration import ImapIntegration
 
     calls: list[str] = []
 
@@ -1473,14 +1583,15 @@ def test_imap_health_failure_returns_safe_actionable_diagnostics(
         def uid(self, *_args: Any) -> None:
             pytest.fail("Health probe must not fetch messages or change flags")
 
-    monkeypatch.setattr("stackos.integrations.imap.imaplib.IMAP4_SSL", ProbeIMAP)
-    monkeypatch.setattr("stackos.integrations.imap.imaplib.IMAP4", ProbeIMAP)
+    monkeypatch.setattr(
+        "stackos_connectors.connectors.imap.integration.imaplib.IMAP4_SSL", ProbeIMAP
+    )
+    monkeypatch.setattr("stackos_connectors.connectors.imap.integration.imaplib.IMAP4", ProbeIMAP)
 
     async def probe() -> dict[str, Any]:
         async with httpx.AsyncClient() as http:
             return await ImapIntegration(
                 payload=b"private-password",
-                project_id=1,
                 http=http,
                 host="imap.example.test",
                 port=993 if tls_mode == "ssl" else 143,
@@ -1505,8 +1616,8 @@ def test_imap_health_failure_returns_safe_actionable_diagnostics(
 
 
 def test_imap_protocol_health_cleanup_never_close(monkeypatch: pytest.MonkeyPatch) -> None:
-    import stackos.integrations.imap as imap_module
-    from stackos.integrations.imap import ImapIntegration
+    import stackos_connectors.connectors.imap.integration as imap_module
+    from stackos_connectors.connectors.imap.integration import ImapIntegration
 
     monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
 
@@ -1514,7 +1625,6 @@ def test_imap_protocol_health_cleanup_never_close(monkeypatch: pytest.MonkeyPatc
         async with httpx.AsyncClient() as http:
             integration = ImapIntegration(
                 payload=b"synthetic-password",
-                project_id=1,
                 http=http,
                 host="imap.example.test",
                 port=993,
@@ -1536,7 +1646,7 @@ def test_imap_protocol_health_cleanup_never_close(monkeypatch: pytest.MonkeyPatc
 def test_imap_protocol_flag_write_requires_exact_readback(
     session: Session, project_id: int, monkeypatch: pytest.MonkeyPatch, readback: list[bytes] | None
 ) -> None:
-    import stackos.actions.imap as imap_module
+    import stackos_connectors.connectors.imap.actions as native_imap
 
     original_uid = _FakeIMAPSSL.uid
 
@@ -1551,7 +1661,7 @@ def test_imap_protocol_flag_write_requires_exact_readback(
         return original_uid(client, *args)
 
     monkeypatch.setattr(_FakeIMAPSSL, "uid", uid)
-    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
     credential_ref = _credential_ref(session, project_id)
     with pytest.raises(ConflictError) as failed:
         asyncio.run(
@@ -1569,7 +1679,7 @@ def test_imap_protocol_flag_write_requires_exact_readback(
 def test_imap_protocol_fetch_rejects_ambiguous_or_mismatched_literal(
     session: Session, project_id: int, monkeypatch: pytest.MonkeyPatch, extra_meta: bytes
 ) -> None:
-    import stackos.actions.imap as imap_module
+    import stackos_connectors.connectors.imap.actions as native_imap
 
     original_uid = _FakeIMAPSSL.uid
 
@@ -1580,7 +1690,7 @@ def test_imap_protocol_fetch_rejects_ambiguous_or_mismatched_literal(
         return status, data
 
     monkeypatch.setattr(_FakeIMAPSSL, "uid", uid)
-    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
     credential_ref = _credential_ref(session, project_id)
     with pytest.raises(ConflictError):
         asyncio.run(
@@ -1596,7 +1706,7 @@ def test_imap_protocol_fetch_rejects_ambiguous_or_mismatched_literal(
 def test_imap_search_completeness_and_epoch_qualified_continuation(
     session: Session, project_id: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import stackos.actions.imap as imap_module
+    import stackos_connectors.connectors.imap.actions as native_imap
 
     def uid(client: _FakeIMAPSSL, *args: Any) -> tuple[str, list[Any]]:
         client.uid_calls.append(args)
@@ -1607,7 +1717,7 @@ def test_imap_search_completeness_and_epoch_qualified_continuation(
 
     _FakeIMAPSSL.instances.clear()
     monkeypatch.setattr(_FakeIMAPSSL, "uid", uid)
-    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
     credential_ref = _credential_ref(session, project_id)
     repo = ActionRepository(session)
 
@@ -1653,11 +1763,11 @@ def test_imap_search_completeness_and_epoch_qualified_continuation(
 def test_imap_search_continuation_rejects_changed_or_missing_epoch_before_search(
     session: Session, project_id: int, monkeypatch: pytest.MonkeyPatch, actual_epoch: str
 ) -> None:
-    import stackos.actions.imap as imap_module
+    import stackos_connectors.connectors.imap.actions as native_imap
 
     _FakeIMAPSSL.instances.clear()
     monkeypatch.setattr(_FakeIMAPSSL, "uidvalidity", actual_epoch)
-    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
     credential_ref = _credential_ref(session, project_id)
     with pytest.raises(ConflictError):
         asyncio.run(
@@ -1711,9 +1821,9 @@ def test_imap_search_uid_bounds_do_not_accept_reversed_star_endpoint(
     criteria: dict[str, Any],
     expected: list[int],
 ) -> None:
-    import stackos.actions.imap as imap_module
+    import stackos_connectors.connectors.imap.actions as native_imap
 
-    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
     credential_ref = _credential_ref(session, project_id)
     result = asyncio.run(
         ActionRepository(session).execute(
@@ -1745,7 +1855,7 @@ def test_imap_fetch_exposes_truthful_prefix_and_preview_completeness(
     known_size: bool,
     over_return: bool,
 ) -> None:
-    import stackos.actions.imap as imap_module
+    import stackos_connectors.connectors.imap.actions as native_imap
 
     raw = b"Subject: Long email\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n" + b"x" * 900
     literal = raw if over_return else raw[:cap]
@@ -1759,7 +1869,7 @@ def test_imap_fetch_exposes_truthful_prefix_and_preview_completeness(
 
     _FakeIMAPSSL.instances.clear()
     monkeypatch.setattr(_FakeIMAPSSL, "uid", uid)
-    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
     credential_ref = _credential_ref(session, project_id)
     result = asyncio.run(
         ActionRepository(session).execute(
@@ -1824,7 +1934,7 @@ def test_imap_output_completeness_contract_is_discoverable(session: Session) -> 
 def test_imap_empty_search_without_epoch_does_not_claim_continuation(
     session: Session, project_id: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import stackos.actions.imap as imap_module
+    import stackos_connectors.connectors.imap.actions as native_imap
 
     def uid(client: _FakeIMAPSSL, *args: Any) -> tuple[str, list[Any]]:
         client.uid_calls.append(args)
@@ -1832,7 +1942,7 @@ def test_imap_empty_search_without_epoch_does_not_claim_continuation(
 
     monkeypatch.setattr(_FakeIMAPSSL, "uidvalidity", "")
     monkeypatch.setattr(_FakeIMAPSSL, "uid", uid)
-    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
     credential_ref = _credential_ref(session, project_id)
     result = asyncio.run(
         ActionRepository(session).execute(
@@ -1849,10 +1959,10 @@ def test_imap_empty_search_without_epoch_does_not_claim_continuation(
 def test_imap_fetch_complete_raw_does_not_hide_mime_parse_defects(
     session: Session, project_id: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import stackos.actions.imap as imap_module
+    import stackos_connectors.connectors.imap.actions as native_imap
 
     monkeypatch.setattr(_FakeIMAPSSL, "raw_message", b"not a header\r\n\r\nmessage body")
-    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
     credential_ref = _credential_ref(session, project_id)
     result = asyncio.run(
         ActionRepository(session).execute(
@@ -1874,10 +1984,10 @@ def test_imap_fetch_complete_raw_does_not_hide_mime_parse_defects(
 def test_imap_fetch_rejects_inconsistent_provider_size(
     session: Session, project_id: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import stackos.actions.imap as imap_module
+    import stackos_connectors.connectors.imap.actions as native_imap
 
     monkeypatch.setattr(_FakeIMAPSSL, "reported_size", 1)
-    monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
+    monkeypatch.setattr(native_imap.imaplib, "IMAP4_SSL", _FakeIMAPSSL)
     credential_ref = _credential_ref(session, project_id)
     with pytest.raises(ConflictError):
         asyncio.run(

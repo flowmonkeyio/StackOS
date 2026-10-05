@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
+from stackos_connectors.connectors.aws_s3.integration import AWS_S3_REGIONS
 
 import stackos.plugins.manifest as manifest_module
-from stackos.integrations.s3 import AWS_S3_REGIONS
 from stackos.plugins.builtin_utils_ftp import ftp_action_kwargs, ftp_provider_kwargs
 from stackos.plugins.builtin_utils_s3 import s3_action_kwargs, s3_provider_kwargs
 from stackos.plugins.manifest import (

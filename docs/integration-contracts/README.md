@@ -18,7 +18,6 @@ StackOS provider work has three states:
 | Contract | Canonical scope |
 | --- | --- |
 | [Connector Quality Gate](connector-quality.md) | Cross-connector validation, errors, pagination/status, budget, and verification matrix. |
-| [Current Connectors](current-connectors.md) | Connector/action/source inventory, official source ledger, and provider findings without a separate contract. |
 | [GTM CRM](gtm-crm.md) | HubSpot, Salesforce, and Pipedrive CRM/pipeline contracts. |
 | [HubSpot](hubspot.md) | HubSpot auth, actions, safe refs, readiness, ingress, and transactional delivery. |
 | [Linear](linear.md) | OAuth-only issue work through fixed GraphQL documents and account-bound refs. |

@@ -1855,7 +1855,7 @@ def test_stripe_invoice_list_keeps_safe_provider_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
-    monkeypatch.setattr("stackos.integrations._base.asyncio.sleep", AsyncMock())
+    monkeypatch.setattr("stackos_connectors.shared.base.asyncio.sleep", AsyncMock())
     httpx_mock.add_response(
         method="GET",
         url=f"{STRIPE_ROOT}/invoices?limit=25",
@@ -1950,7 +1950,10 @@ def test_stripe_unknown_endpoint_preserves_diagnostic_and_log_in_error_and_audit
     ],
 )
 def test_stripe_error_rejects_unsafe_or_mismatched_log_links(log_url: str) -> None:
-    from stackos.integrations.stripe import StripeIntegration, _safe_provider_error
+    from stackos_connectors.connectors.stripe.integration import (
+        StripeIntegration,
+        _safe_provider_error,
+    )
 
     response = httpx.Response(
         404,
@@ -1975,7 +1978,10 @@ def test_stripe_error_rejects_unsafe_or_mismatched_log_links(log_url: str) -> No
 
 
 def test_stripe_private_error_keeps_correlated_log_but_withholds_message() -> None:
-    from stackos.integrations.stripe import StripeIntegration, _safe_provider_error
+    from stackos_connectors.connectors.stripe.integration import (
+        StripeIntegration,
+        _safe_provider_error,
+    )
 
     log_url = "https://dashboard.stripe.com/test/workbench/logs?object=req_safe"
     response = httpx.Response(
@@ -2188,8 +2194,8 @@ def test_stripe_account_probe_preserves_safe_failure_diagnostics_and_audit(
     retryable: bool,
 ) -> None:
     # Exercise the real retry loop without sleeping or sharing rate-bucket time.
-    monkeypatch.setattr("stackos.integrations._base.asyncio.sleep", AsyncMock())
-    monkeypatch.setattr("stackos.integrations._base.TokenBucket.acquire", AsyncMock())
+    monkeypatch.setattr("stackos_connectors.shared.base.asyncio.sleep", AsyncMock())
+    monkeypatch.setattr("stackos_connectors.shared.base.TokenBucket.acquire", AsyncMock())
     PluginRepository(session).get_plugin("finance")
     repo = AuthRepository(session)
     credential_ref = repo.store_credential(
@@ -2842,7 +2848,13 @@ def test_stripe_post_normalization_failure_preserves_unknown_outcome(
     httpx_mock.add_response(
         method="POST",
         url=f"{STRIPE_ROOT}/customers",
-        json={"id": "cus_created", "object": "customer"},
+        json={
+            "id": "cus_created",
+            "object": "customer",
+            "email": "private-receipt@example.test",
+            "echo": STRIPE_SECRET,
+        },
+        headers={"Request-Id": "req_projection_receipt"},
     )
 
     def fail_normalization(*args, **kwargs):
@@ -2861,6 +2873,13 @@ def test_stripe_post_normalization_failure_preserves_unknown_outcome(
     assert failure.value.data["provider_error"]["outcome_unknown"] is True
     assert failure.value.data["provider_error"]["retry_safe"] is False
     assert "private post-HTTP" not in str(failure.value.data)
+    assert failure.value.data["provider_error"]["provider_executed"] is True
+    assert failure.value.data["provider_error"]["provider_receipt"] == {
+        "object_id": "cus_created",
+        "request_id": "req_projection_receipt",
+    }
+    assert "private-receipt@example.test" not in json.dumps(failure.value.data)
+    assert STRIPE_SECRET not in json.dumps(failure.value.data)
     call = session.exec(
         select(ActionCall).where(ActionCall.idempotency_key == "normalization-unknown")
     ).one()

@@ -1,63 +1,51 @@
-"""Integration clients for the M4 vendor wrappers.
+"""Host account-probe routing to native clients and explicit host compositions."""
 
-Each per-vendor module exposes ``XxxIntegration(BaseIntegration)`` with
-op-specific async methods. ``BaseIntegration`` (``_base.py``) handles the
-cross-cutting work: token-bucket rate limiting (``_rate_limit.py``),
-budget pre-emption + reconciliation, retry/backoff on 429/5xx, run-step
-audit trail, request/response sanitisation.
+from typing import Any
 
-The ``REGISTRY`` dict maps an Account's provider key to its wrapper class so
-the auth-provider boundary and REST admin routes can look up the right vendor
-without an enum-to-class switch on every call.
-"""
+from stackos_connectors.connectors.ahrefs.integration import AhrefsIntegration
+from stackos_connectors.connectors.aignc.integration import AigncIntegration
+from stackos_connectors.connectors.alibaba_wan.integration import AlibabaWanIntegration
+from stackos_connectors.connectors.aws_s3.integration import S3Integration
+from stackos_connectors.connectors.cloudflare.integration import CloudflareIntegration
+from stackos_connectors.connectors.dataforseo.integration import DataForSeoIntegration
+from stackos_connectors.connectors.firecrawl.integration import FirecrawlIntegration
+from stackos_connectors.connectors.ftp.integration import FtpIntegration
+from stackos_connectors.connectors.ghost.integration import GhostIntegration
+from stackos_connectors.connectors.google_analytics.integration import GoogleAnalyticsIntegration
+from stackos_connectors.connectors.google_gemini_image.integration import (
+    GoogleGeminiImageIntegration,
+)
+from stackos_connectors.connectors.google_indexing.integration import GoogleIndexingIntegration
+from stackos_connectors.connectors.google_search_console.integration import (
+    GoogleSearchConsoleIntegration,
+)
+from stackos_connectors.connectors.google_tag_manager.integration import GoogleTagManagerIntegration
+from stackos_connectors.connectors.google_veo.integration import GoogleVeoIntegration
+from stackos_connectors.connectors.hubspot.integration import HubSpotIntegration
+from stackos_connectors.connectors.ideogram.integration import IdeogramImagesIntegration
+from stackos_connectors.connectors.imap.integration import ImapIntegration
+from stackos_connectors.connectors.jina.integration import JinaReaderIntegration
+from stackos_connectors.connectors.kling_video.integration import KlingVideoIntegration
+from stackos_connectors.connectors.linear.integration import LinearIntegration
+from stackos_connectors.connectors.openai_images.integration import OpenAIImagesIntegration
+from stackos_connectors.connectors.openrouter.integration import OpenRouterIntegration
+from stackos_connectors.connectors.pipedrive.integration import PipedriveIntegration
+from stackos_connectors.connectors.reddit.integration import RedditIntegration
+from stackos_connectors.connectors.reve.integration import ReveImagesIntegration
+from stackos_connectors.connectors.salesloft.integration import SalesloftIntegration
+from stackos_connectors.connectors.serper.integration import SerperIntegration
+from stackos_connectors.connectors.shopify.integration import ShopifyIntegration
+from stackos_connectors.connectors.slack_bot.integration import SlackBotIntegration
+from stackos_connectors.connectors.smtp.integration import SmtpIntegration
+from stackos_connectors.connectors.stripe.integration import StripeIntegration
+from stackos_connectors.connectors.trackbooth.integration import TrackboothIntegration
+from stackos_connectors.connectors.wordpress.integration import WordPressIntegration
+from stackos_connectors.connectors.xai_imagine.integration import XAIImagineIntegration
+from stackos_connectors.shared.byteplus.ark import BytePlusArkIntegration
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
-from stackos.integrations._base import BaseIntegration, IntegrationCallResult
-from stackos.integrations.ahrefs import AhrefsIntegration
-from stackos.integrations.aignc import AigncIntegration
-from stackos.integrations.alibaba_wan import AlibabaWanIntegration
-from stackos.integrations.byteplus_ark import BytePlusArkIntegration
-from stackos.integrations.cloudflare import CloudflareIntegration
-from stackos.integrations.dataforseo import DataForSeoIntegration
-from stackos.integrations.firecrawl import FirecrawlIntegration
-from stackos.integrations.ftp import FtpIntegration
-from stackos.integrations.ghost import GhostIntegration
-from stackos.integrations.google_analytics import GoogleAnalyticsIntegration
-from stackos.integrations.google_gemini_image import GoogleGeminiImageIntegration
 from stackos.integrations.google_paa import GooglePaaIntegration
-from stackos.integrations.google_search_console import GoogleSearchConsoleIntegration
-from stackos.integrations.google_tag_manager import GoogleTagManagerIntegration
-from stackos.integrations.google_veo import GoogleVeoIntegration
-from stackos.integrations.hubspot import HubSpotIntegration
-from stackos.integrations.ideogram_images import IdeogramImagesIntegration
-from stackos.integrations.imap import ImapIntegration
-from stackos.integrations.jina_reader import JinaReaderIntegration
-from stackos.integrations.kling_video import KlingVideoIntegration
-from stackos.integrations.linear import LinearIntegration
-from stackos.integrations.openai_images import OpenAIImagesIntegration
-from stackos.integrations.openrouter import OpenRouterIntegration
-from stackos.integrations.pipedrive import PipedriveIntegration
-from stackos.integrations.reddit import RedditIntegration
-from stackos.integrations.reve_images import ReveImagesIntegration
-from stackos.integrations.s3 import S3Integration
-from stackos.integrations.salesloft import SalesloftIntegration
-from stackos.integrations.serper import SerperIntegration
-from stackos.integrations.shopify import ShopifyIntegration
-from stackos.integrations.slack_bot import SlackBotIntegration
-from stackos.integrations.smtp import SmtpIntegration
-from stackos.integrations.stripe import StripeIntegration
-from stackos.integrations.trackbooth import TrackboothIntegration
-from stackos.integrations.wordpress import WordPressIntegration
-from stackos.integrations.xai_imagine import XAIImagineIntegration
 
-if TYPE_CHECKING:
-    pass
-
-
-REGISTRY: dict[str, type[BaseIntegration]] = {
+REGISTRY: dict[str, type[Any]] = {
     "aignc": AigncIntegration,
     "dataforseo": DataForSeoIntegration,
     "alibaba-wan": AlibabaWanIntegration,
@@ -82,6 +70,7 @@ REGISTRY: dict[str, type[BaseIntegration]] = {
     "jina": JinaReaderIntegration,
     "ahrefs": AhrefsIntegration,
     "google-search-console": GoogleSearchConsoleIntegration,
+    "google-indexing": GoogleIndexingIntegration,
     "google-analytics": GoogleAnalyticsIntegration,
     "google-tag-manager": GoogleTagManagerIntegration,
     "hubspot": HubSpotIntegration,
@@ -97,56 +86,9 @@ REGISTRY: dict[str, type[BaseIntegration]] = {
 }
 
 
-def integration_class_for(kind: str) -> type[BaseIntegration] | None:
-    """Resolve the wrapper class for an Account provider key.
-
-    Returns ``None`` if no wrapper is registered. Runtime LLM keys for
-    the current operator agent live outside StackOS; the daemon may register
-    setup probes such as OpenRouter and explicit provider actions such as AIGNC.
-    These do not select models, run agent loops or spawn hidden writer sessions.
-    """
+def integration_class_for(kind: str) -> type[Any] | None:
+    """Return the existing account-probe implementation for a provider key."""
     return REGISTRY.get(kind)
 
 
-__all__ = [
-    "REGISTRY",
-    "AhrefsIntegration",
-    "AigncIntegration",
-    "AlibabaWanIntegration",
-    "BaseIntegration",
-    "BytePlusArkIntegration",
-    "CloudflareIntegration",
-    "DataForSeoIntegration",
-    "FirecrawlIntegration",
-    "FtpIntegration",
-    "GhostIntegration",
-    "GoogleAnalyticsIntegration",
-    "GoogleGeminiImageIntegration",
-    "GooglePaaIntegration",
-    "GoogleSearchConsoleIntegration",
-    "GoogleTagManagerIntegration",
-    "GoogleVeoIntegration",
-    "HubSpotIntegration",
-    "IdeogramImagesIntegration",
-    "ImapIntegration",
-    "IntegrationCallResult",
-    "JinaReaderIntegration",
-    "KlingVideoIntegration",
-    "LinearIntegration",
-    "OpenAIImagesIntegration",
-    "OpenRouterIntegration",
-    "PipedriveIntegration",
-    "RedditIntegration",
-    "ReveImagesIntegration",
-    "S3Integration",
-    "SalesloftIntegration",
-    "SerperIntegration",
-    "ShopifyIntegration",
-    "SlackBotIntegration",
-    "SmtpIntegration",
-    "StripeIntegration",
-    "TrackboothIntegration",
-    "WordPressIntegration",
-    "XAIImagineIntegration",
-    "integration_class_for",
-]
+__all__ = ["REGISTRY", "integration_class_for"]
