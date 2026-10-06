@@ -56,28 +56,12 @@ class OAuthTokenRequestError(ValidationError):
 class OAuthLifecycleMixin:
     """Complete OAuth flows while keeping protocol state inside the daemon."""
 
-    def _oauth_protocol_method(self, credential: Credential) -> str:
-        """Resolve the old migration discriminator before calling the strict package API."""
-        if credential.auth_method_key != "default":
-            return credential.auth_method_key
-        from stackos_connectors import get_default_client
-
-        # Old Accounts used the provider's ordinary OAuth contract before saved
-        # methods existed. Preserve that host compatibility decision without
-        # treating unknown methods or a missing service-account method as OAuth.
-        metadata = get_default_client().registry.connector_metadata.get(credential.provider_key, {})
-        for declaration in metadata.get("auth_methods", ()):
-            grants = declaration.get("protocol", {}).get("grant_types", ())
-            if "authorization_code" in grants or "client_credentials" in grants:
-                return str(declaration["key"])
-        return credential.auth_method_key
-
     def _get_oauth_contract(self, credential: Credential) -> OAuthProviderContract:
         """Adapt package validation into the host's safe repository error contract."""
         try:
             return connector_auth.get_auth_contract(
                 credential.provider_key,
-                method=self._oauth_protocol_method(credential),
+                method=credential.auth_method_key,
                 config=credential.config_json,
             )
         except OAuthTokenError as exc:
@@ -388,7 +372,7 @@ class OAuthLifecycleMixin:
             token_result = await connector_auth.request_token(
                 credential.provider_key,
                 auth=ConnectorAuth(
-                    self._oauth_protocol_method(credential),
+                    credential.auth_method_key,
                     application,
                     credential.config_json or {},
                 ),

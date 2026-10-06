@@ -250,7 +250,7 @@ class CredentialResolutionMixin:
                     token_result = await connector_auth.request_token(
                         credential.provider_key,
                         auth=ConnectorAuth(
-                            self._oauth_protocol_method(credential),
+                            credential.auth_method_key,
                             payload,
                             credential.config_json or {},
                         ),
