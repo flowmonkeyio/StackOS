@@ -8,6 +8,7 @@ import json
 import time
 from urllib.parse import urlencode
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
@@ -17,6 +18,65 @@ from stackos.repositories.resources import ResourceRepository
 
 _TOKEN = "xoxb-1234567890-safe-test-token"
 _SIGNING_SECRET = "slack-signing-secret"
+
+
+@pytest.mark.parametrize(
+    "offset,accepted", [(-300, True), (300, True), (-301, False), (301, False)]
+)
+def test_slack_replay_window_stays_in_host_before_protocol_verification(
+    api: TestClient, project_id: int, monkeypatch, offset: int, accepted: bool
+) -> None:
+    from stackos.api import slack_ingress
+
+    _store_slack_profile(api, project_id)
+    now = 1_800_000_000
+    monkeypatch.setattr(slack_ingress.time, "time", lambda: now)
+    raw = b'{"type":"url_verification","challenge":"synthetic-challenge"}'
+    timestamp = str(now + offset)
+    signature = hmac.new(
+        _SIGNING_SECRET.encode(), b"v0:" + timestamp.encode() + b":" + raw, hashlib.sha256
+    ).hexdigest()
+    calls = []
+    verify = slack_ingress.verify_signature_v0
+
+    def checked(*args):
+        calls.append(args)
+        return verify(*args)
+
+    monkeypatch.setattr(slack_ingress, "verify_signature_v0", checked)
+    response = _post_without_bearer(
+        api,
+        f"/api/v1/ingress/slack/{project_id}/support-agent",
+        raw_body=raw,
+        headers={"X-Slack-Request-Timestamp": timestamp, "X-Slack-Signature": f"v0={signature}"},
+    )
+    assert response.status_code == (200 if accepted else 403)
+    assert len(calls) == int(accepted)
+    if accepted:
+        assert calls[0] == (_SIGNING_SECRET, timestamp, raw, f"v0={signature}")
+    with Session(api.app.state.engine) as session:
+        assert AgentRequestRepository(session).list(project_id=project_id).total_estimate == 0
+
+
+@pytest.mark.parametrize("timestamp", [None, "", "invalid"])
+def test_slack_invalid_timestamp_never_reaches_protocol_helper(
+    api: TestClient, project_id: int, monkeypatch, timestamp: str | None
+) -> None:
+    from stackos.api import slack_ingress
+
+    _store_slack_profile(api, project_id)
+
+    def forbidden(*args):
+        raise AssertionError("invalid timestamp must fail at the host boundary")
+
+    monkeypatch.setattr(slack_ingress, "verify_signature_v0", forbidden)
+    headers = {"X-Slack-Signature": "v0=invalid"}
+    if timestamp is not None:
+        headers["X-Slack-Request-Timestamp"] = timestamp
+    response = _post_without_bearer(
+        api, f"/api/v1/ingress/slack/{project_id}/support-agent", raw_body=b"{}", headers=headers
+    )
+    assert response.status_code == 403
 
 
 def _store_slack_profile(

@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
@@ -13,6 +12,7 @@ import httpx
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import delete
 from sqlmodel import col, select
+from stackos_connectors.shared.google.probe import diagnostic_facts
 
 from stackos.artifacts import redact_secret_text, redact_secrets
 from stackos.db.models import Credential, CredentialAccount, CredentialScope
@@ -22,11 +22,6 @@ from stackos.repositories.base import Envelope, RepositoryError, ValidationError
 from .schema import AuthMethodOut, AuthProbeEvidence, AuthTestOut
 from .utils import utcnow
 
-_GOOGLE_PROBE_APIS = {
-    "google-search-console": "Google Search Console API",
-    "google-analytics": "Google Analytics Admin API",
-    "google-tag-manager": "Google Tag Manager API",
-}
 _ERROR_STAGES = frozenset(
     {
         "test",
@@ -64,42 +59,11 @@ _ERROR_REASONS = frozenset(
         "probe_error",
     }
 )
-_GOOGLE_ERROR_REASONS = frozenset({"SERVICE_DISABLED", "ACCESS_TOKEN_SCOPE_INSUFFICIENT"})
-_GOOGLE_LEGACY_ERROR_REASONS = frozenset(
-    {"accessNotConfigured", "insufficientPermissions", "forbidden", "authError"}
-)
 
 
 def _known_error_value(value: Any, allowed: frozenset[str]) -> str | None:
     # Do not stringify arbitrary values or echo unreviewed text, even after redaction.
     return value if isinstance(value, str) and len(value) <= 64 and value in allowed else None
-
-
-def _google_probe_reason(data: Mapping[str, Any]) -> str | None:
-    """Read only bounded, known Google reason enums; never parse messages or URLs."""
-    payload = data.get("provider_error")
-    error = payload.get("error") if isinstance(payload, dict) else None
-    if not isinstance(error, dict):
-        return None
-    details = error.get("details")
-    if isinstance(details, list):
-        for detail in details[:8]:
-            if (
-                not isinstance(detail, dict)
-                or detail.get("@type") != "type.googleapis.com/google.rpc.ErrorInfo"
-            ):
-                continue
-            reason = _known_error_value(detail.get("reason"), _GOOGLE_ERROR_REASONS)
-            if reason is not None:
-                return reason
-    errors = error.get("errors")
-    if isinstance(errors, list):
-        for item in errors[:8]:
-            if isinstance(item, dict):
-                reason = _known_error_value(item.get("reason"), _GOOGLE_LEGACY_ERROR_REASONS)
-                if reason is not None:
-                    return reason
-    return None
 
 
 def _failed_test_result(provider_key: str, exc: RepositoryError) -> dict[str, Any]:
@@ -115,14 +79,13 @@ def _failed_test_result(provider_key: str, exc: RepositoryError) -> dict[str, An
     if type(status) is int and 400 <= status <= 599:
         metadata["provider_status_code"] = status
         retryable = status == 429 or status >= 500
-        provider_reason = (
-            _google_probe_reason(exc.data) if provider_key in _GOOGLE_PROBE_APIS else None
-        )
+        provider_facts = diagnostic_facts(provider_key, exc.data)
+        provider_reason = provider_facts.get("provider_reason")
         if provider_reason is not None:
             metadata["provider_reason"] = provider_reason
         if status == 403 and provider_reason in {"SERVICE_DISABLED", "accessNotConfigured"}:
             metadata["reason_code"] = "api_disabled"
-            api = _GOOGLE_PROBE_APIS[provider_key]
+            api = provider_facts["provider_api"]
             summary = f"{api} is not enabled for this credential's Google Cloud project."
             next_action = (
                 f"Enable the {api} in the credential's Google Cloud project, "
@@ -213,27 +176,11 @@ class CredentialTestingMixin:
             credential.auth_method_key == "service-account"
             and credential.provider_key in {"google-ads", "google-workspace"}
         )
-        if integration_cls is None and not acquisition_only:
-            raise ValidationError(
-                f"auth provider {credential.provider_key!r} has no test wrapper",
-                data={
-                    "provider_key": credential.provider_key,
-                    "credential_ref": credential.credential_ref,
-                },
-            )
-        provider = self._get_provider(
-            credential.provider_key,
-            required=False,
-            sync=False,
-        )
+        provider = self._get_provider(credential.provider_key, required=False, sync=False)
         method: AuthMethodOut | None = None
         if provider is not None:
-            method = self._get_auth_method(
-                provider,
-                credential.auth_method_key,
-            )
+            method = self._get_auth_method(provider, credential.auth_method_key)
             assert method is not None
-        extra = self._integration_extra(credential)
         preflight = None
         if credential.provider_key in {"pipedrive", "salesloft", "hubspot"}:
             assert provider is not None and method is not None
@@ -242,6 +189,8 @@ class CredentialTestingMixin:
             if preflight is not None:
                 raw_result = preflight
             elif acquisition_only:
+                # The host resolved/acquired the token above; this existing diagnostic
+                # intentionally makes no provider-resource or new-grant claim.
                 raw_result = {
                     "ok": True,
                     "status": "connected",
@@ -253,67 +202,76 @@ class CredentialTestingMixin:
                         "resource_access": "unverified",
                     },
                 }
+            elif credential.provider_key == "google-paa":
+                if integration_cls is None:
+                    raise ValidationError("Google PAA test wrapper is unavailable")
+                raw_result = await integration_cls().test_credentials()
             else:
-                assert integration_cls is not None
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    if credential.provider_key != "google-paa":
-                        from stackos_connectors import get_default_client
-                        from stackos_connectors.contracts import thaw
-                        from stackos_connectors.errors import (
-                            IntegrationDownError as NativeProbeError,
-                        )
-                        from stackos_connectors.probe import (
-                            AuthMethodProbeContext as NativeProbeContext,
-                        )
+                from stackos_connectors import CallOptions, ConnectorAuth, get_default_client
+                from stackos_connectors import probe as native_probe
+                from stackos_connectors.errors import IntegrationDownError as NativeProbeError
+                from stackos_connectors.errors import ValidationError as NativeValidationError
 
-                        from stackos.actions.package_bridge import host_probe_error, resolved_auth
-                        from stackos.integrations._rate_limit import get_bucket
+                from stackos.actions.package_bridge import host_probe_error, resolved_auth
+                from stackos.integrations._rate_limit import get_bucket
 
-                        assert method is not None
-                        catalog_key = (
-                            "byteplus-seedream"
-                            if credential.provider_key == "byteplus-ark"
-                            else credential.provider_key
+                assert method is not None
+                catalog_key = (
+                    "byteplus-seedream"
+                    if credential.provider_key == "byteplus-ark"
+                    else credential.provider_key
+                )
+                declarations = (
+                    get_default_client()
+                    .registry.connector_metadata.get(catalog_key, {})
+                    .get("auth_methods", ())
+                )
+                declaration = next(
+                    (item for item in declarations if item.get("key") == method.key), None
+                )
+                if declaration is None:
+                    raise ValidationError("saved auth method has no native probe contract")
+                try:
+                    auth = resolved_auth(
+                        resolved,
+                        payload_format=declaration.get("payload_format", "json"),
+                        payload_field=declaration.get("payload_field"),
+                        declaration=declaration,
+                    )
+                    assert auth is not None
+                    auth = ConnectorAuth(
+                        method=auth.method,
+                        fields=auth.fields,
+                        config=native_probe.project_probe_config(
+                            catalog_key, resolved.config_json or {}
+                        ),
+                    )
+                    # Mailbox choice is a host preference; only the native mailbox
+                    # crosses the package boundary, never aliases or policy maps.
+                    provider_context = {}
+                    if credential.provider_key == "imap":
+                        provider_context["mailbox"] = str(
+                            (resolved.config_json or {}).get("default_mailbox") or "INBOX"
                         )
-                        declarations = (
-                            get_default_client()
-                            .registry.connector_metadata.get(catalog_key, {})
-                            .get("auth_methods", ())
-                        )
-                        declaration = next(
-                            (item for item in declarations if item.get("key") == method.key), None
-                        )
-                        if declaration is None:
-                            raise ValidationError("saved auth method has no native probe contract")
-                        auth = resolved_auth(
-                            resolved,
-                            payload_format=declaration.get("payload_format", "json"),
-                            payload_field=declaration.get("payload_field"),
-                            declaration=declaration,
-                        )
-                        assert auth is not None
-                        if declaration.get("payload_format") == "raw":
-                            native_payload = str(auth.fields[declaration["payload_field"]]).encode()
-                        else:
-                            native_payload = json.dumps(thaw(auth.fields)).encode()
-                        try:
-                            integration = integration_cls(
-                                payload=native_payload,
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        raw_result = await native_probe.probe_credentials(
+                            catalog_key,
+                            auth=auth,
+                            options=CallOptions(
                                 http=client,
-                                probe_context=NativeProbeContext(auth_method_key=method.key),
                                 rate_limiter=get_bucket(
                                     project_id=project_id or 0,
                                     kind=credential.provider_key,
-                                    qps=integration_cls.default_qps,
+                                    qps=integration_cls.default_qps if integration_cls else 1.0,
                                 ),
-                                **extra,
-                            )
-                            raw_result = await integration.test_credentials()
-                        except NativeProbeError as exc:
-                            raise host_probe_error(exc) from None
-                    else:
-                        integration = integration_cls()
-                        raw_result = await integration.test_credentials()
+                                provider_context=provider_context,
+                            ),
+                            context=native_probe.AuthMethodProbeContext(auth_method_key=method.key),
+                        )
+                except NativeProbeError as exc:
+                    raise host_probe_error(exc) from None
+                except NativeValidationError as exc:
+                    raise ValidationError(exc.detail, data=exc.metadata_json) from None
         except RepositoryError as exc:
             raw_result = _failed_test_result(credential.provider_key, exc)
         out = self._normalize_test_result(
@@ -448,128 +406,6 @@ class CredentialTestingMixin:
         }
         account.updated_at = now
         self._s.add(account)
-
-    def _integration_extra(self, credential: Credential) -> dict[str, Any]:
-        extra: dict[str, Any] = {}
-        config = credential.config_json or {}
-        if credential.provider_key == "dataforseo":
-            login = config.get("login")
-            if not login:
-                raise ValidationError(
-                    "dataforseo credential missing config_json.login",
-                    data={"credential_id": credential.id},
-                )
-            extra["login"] = login
-        elif credential.provider_key == "wordpress":
-            site_url = config.get("wp_url") or config.get("site_url") or config.get("base_url")
-            if not site_url:
-                raise ValidationError(
-                    "wordpress credential missing config_json.wp_url",
-                    data={"credential_id": credential.id},
-                )
-            extra["site_url"] = str(site_url)
-        elif credential.provider_key == "ghost":
-            site_url = config.get("ghost_url") or config.get("site_url") or config.get("base_url")
-            if not site_url:
-                raise ValidationError(
-                    "ghost credential missing config_json.ghost_url",
-                    data={"credential_id": credential.id},
-                )
-            extra["site_url"] = str(site_url)
-            if config.get("api_version"):
-                extra["api_version"] = str(config["api_version"])
-        elif credential.provider_key == "openrouter":
-            for key in ("http_referer", "app_title"):
-                value = config.get(key)
-                if isinstance(value, str) and value.strip():
-                    extra[key] = value.strip()
-        elif credential.provider_key == "pipedrive":
-            api_domain = (
-                config.get("api_domain") or config.get("base_url") or config.get("company_domain")
-            )
-            if not isinstance(api_domain, str) or not api_domain.strip():
-                raise ValidationError(
-                    "pipedrive credential missing a trusted API domain",
-                    data={"credential_id": credential.id},
-                )
-            # The provider wrapper owns strict normalization and the
-            # ``.pipedrive.com`` host allowlist before it performs HTTP.
-            extra["api_domain"] = api_domain.strip()
-        elif credential.provider_key in {"slack-bot", "trackbooth"} and config.get("api_base_url"):
-            extra["api_base_url"] = str(config["api_base_url"])
-        elif credential.provider_key == "shopify":
-            store_domain = (
-                config.get("store_domain") or config.get("shop_domain") or config.get("shop")
-            )
-            if not store_domain:
-                raise ValidationError(
-                    "shopify credential missing config_json.store_domain",
-                    data={"credential_id": credential.id},
-                )
-            extra["store_domain"] = str(store_domain)
-            if config.get("api_version"):
-                extra["api_version"] = str(config["api_version"])
-        elif credential.provider_key == "ftp":
-            from stackos_connectors.connectors.ftp.integration import validate_ftp_credential_config
-
-            try:
-                validate_ftp_credential_config(config)
-            except ValueError as exc:
-                raise ValidationError(
-                    str(exc),
-                    data={"credential_id": credential.id},
-                ) from exc
-            passive_value = config.get("passive_mode", True)
-            extra.update(
-                {
-                    "host": str(config["host"]),
-                    "port": int(config.get("port") or 21),
-                    "tls_mode": str(config.get("tls_mode") or "explicit"),
-                    "username": str(config["username"]),
-                    "passive_mode": (
-                        passive_value
-                        if isinstance(passive_value, bool)
-                        else str(passive_value).lower() in {"true", "1", "yes", "on"}
-                    ),
-                    "timeout_s": float(config.get("timeout_s") or 30),
-                    "encoding": str(config.get("encoding") or "utf-8"),
-                }
-            )
-        elif credential.provider_key == "aws-s3":
-            from stackos_connectors.connectors.aws_s3.integration import (
-                validate_s3_credential_config,
-            )
-
-            try:
-                validate_s3_credential_config(config)
-            except ValueError as exc:
-                raise ValidationError(
-                    str(exc),
-                    data={"credential_id": credential.id},
-                ) from exc
-            extra.update(
-                {
-                    "bucket": str(config["bucket"]),
-                    "region": str(config["region"]),
-                    "prefix": str(config.get("prefix") or ""),
-                }
-            )
-        elif credential.provider_key in {"smtp", "imap"}:
-            for key in ("host", "port", "tls_mode", "username", "timeout_s"):
-                if key in config and config[key] is not None:
-                    extra[key] = config[key]
-            if credential.provider_key == "imap":
-                extra["default_mailbox"] = str(config.get("default_mailbox") or "INBOX")
-                extra["tls_ca_pem"] = config.get("tls_ca_pem")
-            missing = [key for key in ("host", "port", "tls_mode", "username") if key not in extra]
-            if missing:
-                raise ValidationError(
-                    f"{credential.provider_key} credential missing config_json fields",
-                    data={"credential_id": credential.id, "missing": missing},
-                )
-            extra["port"] = int(extra["port"])
-            extra["timeout_s"] = float(extra.get("timeout_s") or 30)
-        return extra
 
     def _normalize_test_result(
         self,

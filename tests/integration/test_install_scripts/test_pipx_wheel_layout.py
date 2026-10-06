@@ -145,5 +145,5 @@ def test_wheel_keeps_s3_host_assets_and_uses_separate_connector_package(
     connector_requirements = [
         value for value in requirements if value.startswith("stackos-connectors")
     ]
-    assert connector_requirements == ["stackos-connectors==0.1.1"]
+    assert connector_requirements == ["stackos-connectors==0.2.0"]
     assert all("file:" not in value and " @ " not in value for value in requirements)

@@ -99,25 +99,24 @@ def test_failed_probe_diagnostics_survive_mcp_and_rest_inventory(
     monkeypatch,
     response_mode: str,
 ) -> None:
-    class Probe:
-        default_qps = 1.0
+    from stackos_connectors.connectors.firecrawl.integration import FirecrawlIntegration
 
-        def __init__(self, **_kwargs: object) -> None:
-            pass
+    calls = []
 
-        async def test_credentials(self) -> dict:
-            return {
-                "ok": False,
-                "status": "failed",
-                "summary": "Provider denied the account probe.",
-                "next_action": "Review the key permissions and test again.",
-                "retryable": False,
-                "metadata": {"provider_status_code": 403, "request_id": "req_fixture"},
-            }
+    async def probe(self: FirecrawlIntegration) -> dict:
+        assert self.payload == b"fc-private-fixture"
+        assert self.probe_context.auth_method_key == "api_key"
+        calls.append(self.probe_context)
+        return {
+            "ok": False,
+            "status": "failed",
+            "summary": "Provider denied the account probe.",
+            "next_action": "Review the key permissions and test again.",
+            "retryable": False,
+            "metadata": {"provider_status_code": 403, "request_id": "req_fixture"},
+        }
 
-    monkeypatch.setattr(
-        "stackos.auth_providers.repository.testing.integration_class_for", lambda _key: Probe
-    )
+    monkeypatch.setattr(FirecrawlIntegration, "test_credentials", probe)
     project_id = seeded_project["data"]["id"]
     _create_integration_credential(
         mcp_client, project_id=project_id, kind="firecrawl", payload=b"fc-private-fixture"
@@ -126,8 +125,11 @@ def test_failed_probe_diagnostics_survive_mcp_and_rest_inventory(
     tested = mcp_client.call_tool_structured(
         "account.test", {"project_id": project_id, "credential_ref": ref, "response_mode": "raw"}
     )["data"]
+    assert len(calls) == 1
     assert tested["ok"] is False
     assert tested["retryable"] is False
+    assert tested["metadata"] == {"provider_status_code": 403, "request_id": "req_fixture"}
+    assert "fc-private-fixture" not in json.dumps(tested)
     for operation in ("account.list", "connection.list"):
         arguments = {"provider_key": "firecrawl", "response_mode": response_mode}
         if operation == "connection.list":
@@ -139,6 +141,7 @@ def test_failed_probe_diagnostics_survive_mcp_and_rest_inventory(
         listed = listed.get("data", listed)
         assert listed["accounts"][0]["last_test"] == tested
         assert listed["accounts"][0]["status"] == "connected"
+        assert "fc-private-fixture" not in json.dumps(listed)
     for path in (
         "/api/v1/auth/accounts?provider_key=firecrawl",
         f"/api/v1/projects/{project_id}/connections/accounts?provider_key=firecrawl",

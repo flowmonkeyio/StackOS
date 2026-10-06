@@ -36,204 +36,127 @@ capabilities:
 providers:
   - key: hubspot
     name: HubSpot
-    description: HubSpot sales and marketing customer-lifecycle provider with capability-scoped OAuth or private-app token readiness.
+    description: HubSpot sales and marketing customer-lifecycle provider with capability-scoped OAuth or private-app
+      token readiness.
+    auth_catalog_ref: hubspot
     auth_type: oauth-or-api-key
     auth_methods:
-      - key: oauth2_authorization_code
-        label: Connect with HubSpot
-        auth_type: oauth
-        description: Connect a multi-account HubSpot OAuth app with the fixed StackOS callback. CRM Core is required; select only the optional feature bundles this connection needs.
-        interactive: true
-        permission_verification:
-          evidence_source: oauth_response
-          enforcement: local_required
-        payload_format: json
-        fields:
-        - key: client_id
-          label: OAuth Client ID
-          type: secret
-          secret: true
-          required: true
-        - key: client_secret
-          label: OAuth Client Secret
-          type: secret
-          secret: true
-          required: true
-        - key: scope_bundles
-          label: Optional capability bundles
-          type: multi-select
-          secret: false
-          required: false
-          description: Reconnect after selecting a bundle that adds OAuth scopes. Scope-free operator checklists such as Webhooks do not require new consent. Actual returned scopes determine scope state.
-          options:
-          - label: Sales
-            value: sales
-          - label: Marketing
-            value: marketing
-          - label: Bulk jobs
-            value: bulk
-          - label: Webhooks
-            value: webhooks
-          - label: Custom workflow automation
-            value: automation
-          - label: Transactional communications
-            value: transactional-communications
-        - key: transactional_email_entitlement_confirmed
-          label: Transactional Email add-on confirmed
-          type: boolean
-          secret: false
-          required: false
-          description: Enable only after verifying that this exact HubSpot portal has the Transactional Email add-on. This is an operator confirmation; provider errors remain authoritative.
-          options:
-          - label: Not confirmed
-            value: "false"
-          - label: Confirmed
-            value: "true"
-        - key: app_id
-          label: HubSpot App ID
-          type: number
-          secret: false
-          required: false
-          description: Required when signed ingress is enabled. Copy the numeric app ID from the HubSpot developer project so incoming events can be bound to the exact app.
-        - key: webhook_enabled
-          label: Signed ingress
-          type: boolean
-          secret: false
-          required: false
-          description: Enable only after the generic StackOS public ingress URL and exact event allowlist are configured.
-          options:
-          - label: Disabled
-            value: "false"
-          - label: Enabled
-            value: "true"
-        - key: webhook_event_allowlist
-          label: Events that may create agent requests
-          type: multi-select
-          secret: false
-          required: false
-          description: Signed events outside this exact allowlist are retained as non-triggering audit context and never start a workflow.
-          options:
-          - {label: Contact created, value: contact.creation}
-          - {label: Contact deleted, value: contact.deletion}
-          - {label: Contact merged, value: contact.merge}
-          - {label: Contact association changed, value: contact.associationChange}
-          - {label: Contact restored, value: contact.restore}
-          - {label: Contact privacy-deleted, value: contact.privacyDeletion}
-          - {label: Contact property changed, value: contact.propertyChange}
-          - {label: Company created, value: company.creation}
-          - {label: Company deleted, value: company.deletion}
-          - {label: Company merged, value: company.merge}
-          - {label: Company association changed, value: company.associationChange}
-          - {label: Company restored, value: company.restore}
-          - {label: Company property changed, value: company.propertyChange}
-          - {label: Deal created, value: deal.creation}
-          - {label: Deal deleted, value: deal.deletion}
-          - {label: Deal merged, value: deal.merge}
-          - {label: Deal association changed, value: deal.associationChange}
-          - {label: Deal restored, value: deal.restore}
-          - {label: Deal property changed, value: deal.propertyChange}
-        - key: workflow_action_allowlist
-          label: Custom workflow action definition IDs
-          type: text
-          secret: false
-          required: false
-          placeholder: comma-separated numeric definition IDs
-          description: Optional exact allowlist for manually registered HubSpot custom workflow actions. Invocations create agent requests only; they never select or start a StackOS workflow.
-        - key: field_mapping_ref
-          label: Field Mapping Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe CRM property mapping reference
-      - key: private_app_token
-        label: Private app access token
-        auth_type: api-key
-        description: Store one single-account HubSpot private-app token. StackOS verifies its returned scopes and account through HubSpot's token-information endpoint before local scope-gated actions run.
-        payload_format: json
-        permission_verification:
-          evidence_source: provider_probe
-          enforcement: local_required
-        fields:
-        - key: access_token
-          label: Private App Access Token
-          type: secret
-          secret: true
-          required: true
+    - key: oauth2_authorization_code
+      fields:
+      - key: transactional_email_entitlement_confirmed
+        label: Transactional Email add-on confirmed
+        type: boolean
+        secret: false
+        required: false
+        description: Enable only after verifying that this exact HubSpot portal has the Transactional Email
+          add-on. This is an operator confirmation; provider errors remain authoritative.
+        options:
+        - label: Not confirmed
+          value: 'false'
+        - label: Confirmed
+          value: 'true'
+      - key: webhook_enabled
+        label: Signed ingress
+        type: boolean
+        secret: false
+        required: false
+        description: Enable only after the generic StackOS public ingress URL and exact event allowlist are
+          configured.
+        options:
+        - label: Disabled
+          value: 'false'
+        - label: Enabled
+          value: 'true'
+      - key: webhook_event_allowlist
+        label: Events that may create agent requests
+        type: multi-select
+        secret: false
+        required: false
+        description: Signed events outside this exact allowlist are retained as non-triggering audit context
+          and never start a workflow.
+        options:
+        - label: Contact created
+          value: contact.creation
+        - label: Contact deleted
+          value: contact.deletion
+        - label: Contact merged
+          value: contact.merge
+        - label: Contact association changed
+          value: contact.associationChange
+        - label: Contact restored
+          value: contact.restore
+        - label: Contact privacy-deleted
+          value: contact.privacyDeletion
+        - label: Contact property changed
+          value: contact.propertyChange
+        - label: Company created
+          value: company.creation
+        - label: Company deleted
+          value: company.deletion
+        - label: Company merged
+          value: company.merge
+        - label: Company association changed
+          value: company.associationChange
+        - label: Company restored
+          value: company.restore
+        - label: Company property changed
+          value: company.propertyChange
+        - label: Deal created
+          value: deal.creation
+        - label: Deal deleted
+          value: deal.deletion
+        - label: Deal merged
+          value: deal.merge
+        - label: Deal association changed
+          value: deal.associationChange
+        - label: Deal restored
+          value: deal.restore
+        - label: Deal property changed
+          value: deal.propertyChange
+      - key: workflow_action_allowlist
+        label: Custom workflow action definition IDs
+        type: text
+        secret: false
+        required: false
+        placeholder: comma-separated numeric definition IDs
+        description: Optional exact allowlist for manually registered HubSpot custom workflow actions. Invocations
+          create agent requests only; they never select or start a StackOS workflow.
+      - key: field_mapping_ref
+        label: Field Mapping Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe CRM property mapping reference
+      permission_verification:
+        enforcement: local_required
+      field_order:
+      - client_id
+      - client_secret
+      - scope_bundles
+      - transactional_email_entitlement_confirmed
+      - app_id
+      - webhook_enabled
+      - webhook_event_allowlist
+      - workflow_action_allowlist
+      - field_mapping_ref
+    - key: private_app_token
+      permission_verification:
+        enforcement: local_required
     config:
-      scopes:
-        - crm.objects.contacts.read
-        - crm.objects.contacts.write
-        - crm.objects.companies.read
-        - crm.objects.companies.write
-        - crm.objects.deals.read
-        - crm.objects.deals.write
-        - crm.objects.owners.read
-        - crm.schemas.contacts.read
-        - crm.schemas.companies.read
-        - crm.schemas.deals.read
-      scope_bundles:
-        sales:
-          label: Sales
-          readiness_group: sales
-          optional_scopes:
-            - crm.objects.leads.read
-            - crm.objects.leads.write
-            - crm.objects.products.read
-            - crm.objects.products.write
-            - crm.objects.line_items.read
-            - crm.objects.line_items.write
-            - crm.objects.quotes.read
-            - crm.objects.goals.read
-        marketing:
-          label: Marketing
-          readiness_group: marketing
-          optional_scopes:
-            - forms
-            - crm.lists.read
-            - crm.lists.write
-            - marketing.campaigns.read
-            - marketing.campaigns.write
-            - marketing-email
-            - subscriptions-definition-read
-            - subscriptions-status-read
-            - subscriptions-status-write
-            - crm.objects.marketing_events.read
-            - crm.objects.marketing_events.write
-            - analytics.behavioral_events.send
-            - behavioral_events.event_definitions.read_write
-        bulk:
-          label: Bulk jobs
-          readiness_group: bulk
-          optional_scopes:
-            - crm.export
-        webhooks:
-          label: Webhooks
-          readiness_group: webhooks
-          optional_scopes: []
-        automation:
-          label: Custom workflow automation
-          readiness_group: automation
-          optional_scopes:
-            - automation
-        transactional-communications:
-          label: Transactional communications
-          readiness_group: transactional-communications
-          optional_scopes:
-            - transactional-email
       readiness_groups:
         crm-core:
           label: CRM Core
           required_scopes:
-            - crm.objects.contacts.read
-            - crm.objects.contacts.write
-            - crm.objects.companies.read
-            - crm.objects.companies.write
-            - crm.objects.deals.read
-            - crm.objects.deals.write
-            - crm.objects.owners.read
-            - crm.schemas.contacts.read
-            - crm.schemas.companies.read
-            - crm.schemas.deals.read
+          - crm.objects.contacts.read
+          - crm.objects.contacts.write
+          - crm.objects.companies.read
+          - crm.objects.companies.write
+          - crm.objects.deals.read
+          - crm.objects.deals.write
+          - crm.objects.owners.read
+          - crm.schemas.contacts.read
+          - crm.schemas.companies.read
+          - crm.schemas.deals.read
         sales:
           label: Sales
           source_bundle: sales
@@ -247,251 +170,108 @@ providers:
           label: Webhooks
           source_bundle: webhooks
           prerequisites:
-            - oauth-app
-            - public-ingress
-            - signature-validation
+          - oauth-app
+          - public-ingress
+          - signature-validation
         automation:
           label: Custom Workflow Automation
           source_bundle: automation
           prerequisites:
-            - oauth-app
-            - public-ingress
-            - signature-validation
-            - workflow-action-registration
+          - oauth-app
+          - public-ingress
+          - signature-validation
+          - workflow-action-registration
         transactional-communications:
           label: Transactional Communications
           source_bundle: transactional-communications
           prerequisites:
-            - transactional-email-addon
-            - communication-profile
-            - communication-target
-            - consent-policy
+          - transactional-email-addon
+          - communication-profile
+          - communication-target
+          - consent-policy
       setup:
-        credential_label: HubSpot OAuth app
-        setup_note: Create a project-based HubSpot OAuth app, register the fixed StackOS callback, configure CRM Core as required scopes and the selected capability bundles as optional scopes, then use Connect with HubSpot. Service keys remain deferred because HubSpot does not document scope introspection for them and they cannot support webhooks.
         local_setup_label: Connect HubSpot in StackOS
-        local_setup_note: Choose optional capability bundles before connecting. Reconnect after adding a bundle; the last working credential remains active if the upgrade fails.
-        homepage_url: https://www.hubspot.com/
-        signup_url: https://app.hubspot.com/signup-hubspot/crm
-        console_url: https://app.hubspot.com/developer-projects
-        credential_url: https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/oauth/working-with-oauth
-        billing_url: https://www.hubspot.com/pricing
-        docs_url: https://developers.hubspot.com/docs/api-reference/latest/overview
-        support_url: https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/scopes
+        local_setup_note: Choose optional capability bundles before connecting. Reconnect after adding a bundle;
+          the last working credential remains active if the upgrade fails. Service keys remain deferred
+          because HubSpot does not document scope introspection for them and they cannot support webhooks.
         callback_url: https://auth.stackos.flowmonkey.io/api/v1/auth/oauth/callback
-        callback_note: The public HTTPS relay forwards the unchanged callback query to http://127.0.0.1:5180/api/v1/auth/oauth/callback and returns the browser to the generic StackOS Connections view.
-        repair_note: Reconnect for missing scopes; verify the selected portal, HubSpot tier or seat, add-on entitlement, public ingress health, and callback URL. Deferred actions remain unavailable by design.
-        fallback_url: https://developers.hubspot.com/docs/apps/developer-platform/build-apps/manage-apps-in-hubspot
-        fallback_reason: HubSpot app screens are account-gated; use the official app-management guide when the direct development console route changes.
-        verified_at: "2026-07-22"
+        callback_note: The public HTTPS relay forwards the unchanged callback query to http://127.0.0.1:5180/api/v1/auth/oauth/callback
+          and returns the browser to the generic StackOS Connections view.
+        repair_note: Reconnect for missing scopes; verify the selected portal, HubSpot tier or seat, add-on
+          entitlement, public ingress health, and callback URL. Deferred actions remain unavailable by design.
         url_confidence:
-          homepage_url: verified
-          signup_url: verified
-          console_url: directional
-          credential_url: verified
-          billing_url: verified
-          docs_url: verified
-          support_url: verified
           callback_url: verified
-          fallback_url: verified
+      scope_bundles:
+        sales:
+          readiness_group: sales
+        marketing:
+          readiness_group: marketing
+        bulk:
+          readiness_group: bulk
+        webhooks:
+          readiness_group: webhooks
+        automation:
+          readiness_group: automation
+        transactional-communications:
+          readiness_group: transactional-communications
   - key: salesforce
     name: Salesforce
-    description: Salesforce provider contract for accounts, leads, contacts, opportunities, notes, tasks, and pipeline reads.
+    description: Salesforce provider contract for accounts, leads, contacts, opportunities, notes, tasks,
+      and pipeline reads.
+    auth_catalog_ref: salesforce
     auth_type: oauth
     auth_methods:
-      - key: oauth2_authorization_code
-        label: Connect with Salesforce
-        auth_type: oauth
-        interactive: true
-        payload_format: json
-        fields:
-        - key: client_id
-          label: Connected App Client ID
-          type: secret
-          secret: true
-          required: true
-        - key: client_secret
-          label: Connected App Client Secret
-          type: secret
-          secret: true
-          required: true
-        - key: environment
-          label: Login Environment
-          type: text
-          secret: false
-          required: false
-          placeholder: production, sandbox, or my-domain
-        - key: login_domain
-          label: Salesforce My Domain
-          type: text
-          secret: false
-          required: false
-          placeholder: company.my.salesforce.com
-        - key: api_version
-          label: REST API Version
-          type: text
-          secret: false
-          required: false
-          placeholder: v61.0
-        - key: external_id_policy_ref
-          label: External ID Policy Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe external ID mapping reference
-      - key: oauth2_token
-        label: OAuth2 access token
-        auth_type: oauth
-        payload_format: json
-        fields:
-        - key: access_token
-          label: Access Token
-          type: secret
-          secret: true
-          required: true
-        - key: instance_url
-          label: Salesforce Instance URL
-          type: text
-          secret: false
-          required: true
-          placeholder: https://company.my.salesforce.com
-        - key: api_version
-          label: REST API Version
-          type: text
-          secret: false
-          required: false
-          placeholder: v61.0
-        - key: external_id_policy_ref
-          label: External ID Policy Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe external ID mapping reference
-    config:
-      scopes:
-        - api
-        - refresh_token
-      setup:
-        credential_label: Salesforce OAuth access token
-        setup_note: Create or use a Salesforce connected app with the fixed StackOS callback, then use Connect with Salesforce. A manually supplied access token remains available for legacy profiles.
-        homepage_url: https://www.salesforce.com/
-        signup_url: https://developer.salesforce.com/signup
-        console_url: https://login.salesforce.com/
-        credential_url: https://help.salesforce.com/s/articleView?id=sf.connected_app_create.htm&type=5
-        billing_url: https://www.salesforce.com/pricing/
-        docs_url: https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/intro_rest.htm
-        fallback_url: https://help.salesforce.com/s/articleView?id=sf.connected_app_create.htm&type=5
-        fallback_reason: Salesforce credential setup is org-specific; connected-app creation is the closest official public setup page.
-        verified_at: "2026-06-11"
-        url_confidence:
-          homepage_url: verified
-          signup_url: verified
-          console_url: directional
-          credential_url: directional
-          billing_url: verified
-          docs_url: verified
-          fallback_url: directional
+    - key: oauth2_authorization_code
+      fields:
+      - key: external_id_policy_ref
+        label: External ID Policy Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe external ID mapping reference
+    - key: oauth2_token
+      fields:
+      - key: external_id_policy_ref
+        label: External ID Policy Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe external ID mapping reference
   - key: pipedrive
     name: Pipedrive
     description: Pipedrive CRM provider contract for organizations, people, deals, activities, and notes.
+    auth_catalog_ref: pipedrive
     auth_type: oauth-or-api-token
     auth_methods:
-      - key: oauth2_authorization_code
-        label: Connect with Pipedrive
-        auth_type: oauth
-        description: Connect a Pipedrive OAuth app; returned OAuth scopes remain the only local grant evidence.
-        interactive: true
-        permission_verification:
-          evidence_source: oauth_response
-          enforcement: local_required
-        payload_format: json
-        fields:
-        - key: client_id
-          label: OAuth Client ID
-          type: secret
-          secret: true
-          required: true
-        - key: client_secret
-          label: OAuth Client Secret
-          type: secret
-          secret: true
-          required: true
-        - key: field_mapping_ref
-          label: Field Mapping Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe custom field mapping reference
-      - key: oauth2_token
-        label: OAuth2 access token
-        auth_type: oauth
-        description: Compatibility-only manual OAuth token. It remains locally scope-gated and fails closed until provider-returned OAuth scope evidence exists.
-        permission_verification:
-          evidence_source: unavailable
-          enforcement: local_required
-        payload_format: json
-        fields:
-        - key: access_token
-          label: Access Token
-          type: secret
-          secret: true
-          required: true
-        - key: company_domain
-          label: Company Domain
-          type: text
-          secret: false
-          required: true
-          placeholder: company-subdomain
-        - key: account_ref
-          label: Account Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe Pipedrive account reference
-        - key: field_mapping_ref
-          label: Field Mapping Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe custom field mapping reference
-      - key: api_token
-        label: Personal API token
-        auth_type: api-token
-        description: Personal Pipedrive API token for a user-owned account. Pipedrive enforces permissions because its documented current-user probe does not return grants.
-        permission_verification:
-          evidence_source: unavailable
-          enforcement: provider_enforced
-        payload_format: json
-        fields:
-        - key: api_token
-          label: Personal API Token
-          type: secret
-          secret: true
-          required: true
-        - key: company_domain
-          label: Company Domain
-          type: text
-          secret: false
-          required: true
-          placeholder: company-subdomain
-    config:
-      setup:
-        credential_label: Pipedrive OAuth credential or personal API token
-        setup_note: Register a Pipedrive app with the fixed StackOS callback and deals:read plus search:read app scopes, then use Connect with Pipedrive. For private personal integrations, the supported personal API token method remains available.
-        homepage_url: https://www.pipedrive.com/
-        signup_url: https://www.pipedrive.com/en/register
-        console_url: https://app.pipedrive.com/
-        credential_url: https://support.pipedrive.com/en/article/how-can-i-find-my-personal-api-key
-        billing_url: https://www.pipedrive.com/en/pricing
-        docs_url: https://developers.pipedrive.com/docs/api/v1
-        verified_at: "2026-06-11"
-        url_confidence:
-          homepage_url: verified
-          signup_url: verified
-          console_url: directional
-          credential_url: verified
-          billing_url: verified
-          docs_url: verified
+    - key: oauth2_authorization_code
+      fields:
+      - key: field_mapping_ref
+        label: Field Mapping Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe custom field mapping reference
+      permission_verification:
+        enforcement: local_required
+    - key: oauth2_token
+      fields:
+      - key: account_ref
+        label: Account Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe Pipedrive account reference
+      - key: field_mapping_ref
+        label: Field Mapping Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe custom field mapping reference
+      permission_verification:
+        enforcement: local_required
+    - key: api_token
+      permission_verification:
+        enforcement: provider_enforced
   - key: apollo
     name: Apollo
     description: Apollo provider contract for people search and endpoint-specific enrichment.
@@ -661,360 +441,161 @@ providers:
   - key: outreach
     name: Outreach
     description: Outreach sequence provider contract.
+    auth_catalog_ref: outreach
     auth_type: oauth
     auth_methods:
-      - key: oauth2_authorization_code
-        label: Connect with Outreach
-        auth_type: oauth
-        interactive: true
-        payload_format: json
-        fields:
-        - key: client_id
-          label: OAuth Client ID
-          type: secret
-          secret: true
-          required: true
-        - key: client_secret
-          label: OAuth Client Secret
-          type: secret
-          secret: true
-          required: true
-        - key: mailbox_policy_ref
-          label: Mailbox Policy Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe mailbox policy reference
-      - key: oauth2_token
-        label: OAuth2 access token
-        auth_type: oauth
-        payload_format: json
-        fields:
-        - key: access_token
-          label: Access Token
-          type: secret
-          secret: true
-          required: true
-        - key: instance_ref
-          label: Instance Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe instance reference
-        - key: oauth_app_ref
-          label: OAuth App Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe OAuth app reference
-        - key: scopes_ref
-          label: Scopes Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe scope set reference
-        - key: mailbox_policy_ref
-          label: Mailbox Policy Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe mailbox policy reference
-    config:
-      scopes:
-        - sequenceStates.write
-      setup:
-        credential_label: Outreach OAuth access token
-        setup_note: Create or use an Outreach OAuth app with the fixed StackOS callback and sequenceStates.write scope, then use Connect with Outreach.
-        homepage_url: https://www.outreach.ai/
-        signup_url: https://www.outreach.ai/request-demo
-        console_url: https://developers.outreach.io/
-        credential_url: https://developers.outreach.io/
-        billing_url: https://www.outreach.ai/pricing
-        docs_url: https://developers.outreach.io/
-        verified_at: "2026-06-11"
-        url_confidence:
-          homepage_url: verified
-          signup_url: verified
-          console_url: verified
-          credential_url: directional
-          billing_url: verified
-          docs_url: verified
+    - key: oauth2_authorization_code
+      fields:
+      - key: mailbox_policy_ref
+        label: Mailbox Policy Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe mailbox policy reference
+    - key: oauth2_token
+      fields:
+      - key: instance_ref
+        label: Instance Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe instance reference
+      - key: oauth_app_ref
+        label: OAuth App Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe OAuth app reference
+      - key: scopes_ref
+        label: Scopes Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe scope set reference
+      - key: mailbox_policy_ref
+        label: Mailbox Policy Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe mailbox policy reference
   - key: salesloft
     name: Salesloft
     description: Salesloft cadence provider contract.
+    auth_catalog_ref: salesloft
     auth_type: oauth-or-api-key
     auth_methods:
-      - key: oauth2_authorization_code
-        label: Connect with Salesloft
-        auth_type: oauth
-        description: Connect a Salesloft OAuth app; returned OAuth scopes remain the only local grant evidence.
-        interactive: true
-        permission_verification:
-          evidence_source: oauth_response
-          enforcement: local_required
-        payload_format: json
-        fields:
-        - key: client_id
-          label: OAuth Client ID
-          type: secret
-          secret: true
-          required: true
-        - key: client_secret
-          label: OAuth Client Secret
-          type: secret
-          secret: true
-          required: true
-        - key: cadence_policy_ref
-          label: Cadence Policy Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe cadence policy reference
-      - key: oauth2_token
-        label: OAuth2 access token
-        auth_type: oauth
-        description: Compatibility-only manual OAuth token. It remains locally scope-gated and fails closed until provider-returned OAuth scope evidence exists.
-        permission_verification:
-          evidence_source: unavailable
-          enforcement: local_required
-        payload_format: json
-        fields:
-        - key: access_token
-          label: Access Token
-          type: secret
-          secret: true
-          required: true
-        - key: instance_ref
-          label: Instance Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe instance reference
-        - key: oauth_app_ref
-          label: OAuth App Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe OAuth app reference
-        - key: scopes_ref
-          label: Scopes Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe scope set reference
-        - key: cadence_policy_ref
-          label: Cadence Policy Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe cadence policy reference
-      - key: api_key
-        label: API key
-        auth_type: api-key
-        description: Customer API key. Salesloft enforces permissions because its documented current-user probe does not return grants.
-        permission_verification:
-          evidence_source: unavailable
-          enforcement: provider_enforced
-        payload_format: json
-        fields:
-        - key: api_key
-          label: API Key
-          type: secret
-          secret: true
-          required: true
-    config:
-      setup:
-        credential_label: Salesloft OAuth credential or API key
-        setup_note: Register a Salesloft OAuth app with the fixed StackOS callback and cadences:write scope, then use Connect with Salesloft. Customer API keys remain an explicit supported alternative.
-        homepage_url: https://www.salesloft.com/
-        signup_url: https://www.salesloft.com/talk-to-sales
-        console_url: https://accounts.salesloft.com/oauth/applications
-        credential_url: https://accounts.salesloft.com/oauth/applications
-        billing_url: https://www.salesloft.com/pricing
-        docs_url: https://developers.salesloft.com/
-        verified_at: "2026-06-11"
-        url_confidence:
-          homepage_url: verified
-          signup_url: verified
-          console_url: verified
-          credential_url: verified
-          billing_url: verified
-          docs_url: verified
+    - key: oauth2_authorization_code
+      fields:
+      - key: cadence_policy_ref
+        label: Cadence Policy Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe cadence policy reference
+      permission_verification:
+        enforcement: local_required
+    - key: oauth2_token
+      fields:
+      - key: instance_ref
+        label: Instance Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe instance reference
+      - key: oauth_app_ref
+        label: OAuth App Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe OAuth app reference
+      - key: scopes_ref
+        label: Scopes Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe scope set reference
+      - key: cadence_policy_ref
+        label: Cadence Policy Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe cadence policy reference
+      permission_verification:
+        enforcement: local_required
+    - key: api_key
+      permission_verification:
+        enforcement: provider_enforced
   - key: google-workspace
     name: Google Workspace
     description: Gmail send and Google Calendar event provider contract.
+    auth_catalog_ref: google-workspace
     auth_type: oauth
     auth_methods:
-      - key: oauth2_authorization_code
-        label: Connect with Google
-        auth_type: oauth
-        interactive: true
-        payload_format: json
-        fields:
-        - key: client_id
-          label: OAuth Client ID
-          type: secret
-          secret: true
-          required: true
-        - key: client_secret
-          label: OAuth Client Secret
-          type: secret
-          secret: true
-          required: true
-        - key: workspace_ref
-          label: Workspace Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe workspace reference
-        - key: send_policy_ref
-          label: Send Policy Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe send policy reference
-      - key: oauth2_token
-        label: OAuth2 access token
-        auth_type: oauth
-        payload_format: json
-        fields:
-        - key: access_token
-          label: Access Token
-          type: secret
-          secret: true
-          required: true
-        - key: workspace_ref
-          label: Workspace Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe workspace reference
-        - key: send_policy_ref
-          label: Send Policy Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe send policy reference
-      - key: service-account
-        label: Service account
-        description: Use a shared calendar directly, or an explicitly delegated Workspace user for Gmail and attendee invitations. No user consent redirect.
-        auth_type: oauth
-        interactive: false
-        payload_format: json
-        permission_verification:
-          evidence_source: oauth_response
-          enforcement: local_required
-        fields:
-        - key: service_account_json
-          label: Service-account JSON key
-          type: secret
-          secret: true
-          required: true
-        - key: delegated_subject
-          label: Delegated Workspace user
-          type: text
-          secret: false
-          required: false
-          placeholder: authorized-user@example.com
-        - key: workspace_ref
-          label: Workspace Ref
-          type: text
-          secret: false
-          required: false
-        - key: send_policy_ref
-          label: Send Policy Ref
-          type: text
-          secret: false
-          required: false
+    - key: oauth2_authorization_code
+      fields:
+      - key: workspace_ref
+        label: Workspace Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe workspace reference
+      - key: send_policy_ref
+        label: Send Policy Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe send policy reference
+    - key: oauth2_token
+      fields:
+      - key: workspace_ref
+        label: Workspace Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe workspace reference
+      - key: send_policy_ref
+        label: Send Policy Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe send policy reference
+    - key: service-account
+      fields:
+      - key: workspace_ref
+        label: Workspace Ref
+        type: text
+        secret: false
+        required: false
+      - key: send_policy_ref
+        label: Send Policy Ref
+        type: text
+        secret: false
+        required: false
+      permission_verification:
+        enforcement: local_required
     config:
       setup:
-        credential_label: Google Workspace credential
-        setup_note: Choose OAuth or a service-account JSON key. Without a delegated user, share a calendar with the service-account email and use its explicit calendar ref; Gmail, primary calendar, and attendee invitations require a Workspace admin to authorize domain-wide delegation and the Delegated Workspace user field. Personal Gmail requires OAuth. Clearing the delegated user returns to shared-calendar-only access.
-        homepage_url: https://workspace.google.com/
-        signup_url: https://workspace.google.com/business/signup/welcome
-        console_url: https://console.cloud.google.com/
-        credential_url: https://console.cloud.google.com/apis/credentials
-        billing_url: https://support.google.com/a/answer/1230658
-        docs_url: https://developers.google.com/workspace
-        verified_at: "2026-06-11"
-        url_confidence:
-          homepage_url: verified
-          signup_url: verified
-          console_url: verified
-          credential_url: verified
-          billing_url: verified
-          docs_url: verified
+        local_setup_note: Clearing the delegated user returns to shared-calendar-only access.
   - key: microsoft-365
     name: Microsoft 365
     description: Microsoft Graph mail send and calendar event provider contract.
+    auth_catalog_ref: microsoft-365
     auth_type: oauth
     auth_methods:
-      - key: oauth2_authorization_code
-        label: Connect with Microsoft
-        auth_type: oauth
-        interactive: true
-        payload_format: json
-        fields:
-        - key: client_id
-          label: Application Client ID
-          type: secret
-          secret: true
-          required: true
-        - key: client_secret
-          label: Application Client Secret
-          type: secret
-          secret: true
-          required: true
-        - key: tenant
-          label: Microsoft Tenant
-          type: text
-          secret: false
-          required: false
-          placeholder: common, tenant id, or verified tenant domain
-      - key: oauth2_token
-        label: OAuth2 access token
-        auth_type: oauth
-        payload_format: json
-        fields:
-        - key: access_token
-          label: Access Token
-          type: secret
-          secret: true
-          required: true
-        - key: tenant_ref
-          label: Tenant Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe tenant reference
-        - key: permission_mode_ref
-          label: Permission Mode Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: delegated or application permission reference
-    config:
-      scopes:
-        - offline_access
-        - https://graph.microsoft.com/Mail.Send
-        - https://graph.microsoft.com/Calendars.ReadWrite
-      setup:
-        credential_label: Microsoft Graph OAuth credential
-        setup_note: Register a confidential web app in Microsoft Entra ID with the fixed StackOS callback and delegated Mail.Send, Calendars.ReadWrite, and offline_access permissions, then use Connect with Microsoft.
-        homepage_url: https://www.microsoft.com/en-us/microsoft-365
-        signup_url: https://www.microsoft.com/en-us/microsoft-365/business
-        console_url: https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade
-        credential_url: https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade
-        billing_url: https://admin.microsoft.com/Adminportal/Home#/BillingAccounts
-        docs_url: https://learn.microsoft.com/en-us/graph/overview
-        verified_at: "2026-06-11"
-        url_confidence:
-          homepage_url: verified
-          signup_url: verified
-          console_url: verified
-          credential_url: verified
-          billing_url: verified
-          docs_url: verified
+    - key: oauth2_token
+      fields:
+      - key: tenant_ref
+        label: Tenant Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe tenant reference
+      - key: permission_mode_ref
+        label: Permission Mode Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: delegated or application permission reference
   - key: custom-gtm-tool
     name: Custom GTM Tool
     description: Placeholder for project-local GTM or RevOps tooling. Install a project plugin with concrete HTTP connector config before execution.

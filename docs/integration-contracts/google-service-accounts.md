@@ -29,10 +29,12 @@ verification. Workspace's optional subject is safe Account configuration. Ads
 also encrypts `developer_token`. Setup uses the existing generic Account panel.
 Create a separate named Account to change methods; attachments remain explicit.
 
-The shared daemon validates the bounded service-account JSON and RSA key, signs
-RS256 with fixed scopes and audience, and exchanges at Google's fixed token
-endpoint without redirects. It does not use ADC, credential-source URLs or an
-ambient identity. Token acquisition, renewal, expiry, concurrent locking,
+The daemon explicitly calls `stackos_connectors.request_token` for the declared
+`jwt_bearer` grant. The package validates bounded service-account JSON and RSA
+keys, signs RS256 with fixed scopes/audience, and exchanges at Google's fixed
+token endpoint without redirects. It does not use ADC, credential-source URLs
+or an ambient identity. The package's provider-local `docs/auth.md` and catalogs
+own portable protocol details. Acquisition decisions, renewal timing, expiry, concurrent locking,
 identity invalidation, local revocation, redaction and usage audit remain under
 the [canonical auth owner](../auth-providers.md).
 
@@ -42,6 +44,11 @@ permits omission when the granted scope equals the request. Only a successful
 reviewed service-account exchange uses this rule. Present empty, malformed or
 insufficient scopes never fall back to the requested set. Existing manual-token
 behavior is unchanged. Google resource ACLs remain independent.
+
+The standalone package's explicit Ads/Workspace probes only confirm that a
+resolved token was supplied; they do not acquire a token or call a resource API.
+StackOS's existing Account Test first resolves/acquires the token, then reports
+that acquisition evidence through the host diagnostic path.
 
 Search Console, GA4 and GTM retain inventory probes; empty inventories do not
 prove access to any selected resource. Ads and Workspace report token acquisition

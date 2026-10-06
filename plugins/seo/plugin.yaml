@@ -143,344 +143,120 @@ providers:
   - key: google-search-console
     name: Google Search Console
     description: Search Console site, sitemap, search analytics, and URL inspection evidence.
+    auth_catalog_ref: google-search-console
     auth_type: oauth
-    auth_methods: &google_oauth_methods
-      - key: oauth2_authorization_code
-        label: Connect with Google
-        auth_type: oauth
-        interactive: true
-        payload_format: json
-        fields:
-        - key: client_id
-          label: OAuth Client ID
-          type: secret
-          secret: true
-          required: true
-        - key: client_secret
-          label: OAuth Client Secret
-          type: secret
-          secret: true
-          required: true
-        - key: default_site_url
-          label: Default Site URL
-          type: text
-          secret: false
-          required: false
-      - key: oauth2_access_token
-        label: OAuth2 access token
-        auth_type: oauth
-        payload_format: json
-        fields:
-        - key: access_token
-          label: Access Token
-          type: secret
-          secret: true
-          required: true
-        - key: default_site_url
-          label: Default Site URL
-          type: text
-          secret: false
-          required: false
-      - key: oauth2_refresh_token
-        label: OAuth2 refresh token
-        auth_type: oauth
-        payload_format: json
-        fields:
-        - key: client_id
-          label: OAuth Client ID
-          type: secret
-          secret: true
-          required: true
-        - key: client_secret
-          label: OAuth Client Secret
-          type: secret
-          secret: true
-          required: true
-        - key: refresh_token
-          label: Refresh Token
-          type: secret
-          secret: true
-          required: true
-        - key: default_site_url
-          label: Default Site URL
-          type: text
-          secret: false
-          required: false
-      - key: service-account
-        label: Service account
-        description: Use a Google service-account JSON key with access to the Search Console property. No user consent redirect.
-        auth_type: oauth
-        interactive: false
-        payload_format: json
-        permission_verification:
-          evidence_source: oauth_response
-          enforcement: local_required
-        fields:
-        - key: service_account_json
-          label: Service-account JSON key
-          type: secret
-          secret: true
-          required: true
-        - key: default_site_url
-          label: Default Site URL
-          type: text
-          secret: false
-          required: false
+    auth_methods:
+    - key: oauth2_authorization_code
+      fields:
+      - key: default_site_url
+        label: Default Site URL
+        type: text
+        secret: false
+        required: false
+    - key: oauth2_access_token
+      fields:
+      - key: default_site_url
+        label: Default Site URL
+        type: text
+        secret: false
+        required: false
+    - key: oauth2_refresh_token
+      fields:
+      - key: default_site_url
+        label: Default Site URL
+        type: text
+        secret: false
+        required: false
+    - key: service-account
+      fields:
+      - key: default_site_url
+        label: Default Site URL
+        type: text
+        secret: false
+        required: false
+      permission_verification:
+        enforcement: local_required
     config:
-      scopes:
-        - https://www.googleapis.com/auth/webmasters.readonly
-      setup_note: Choose Google OAuth or a service-account JSON key with Search Console property access. Both use the read-only Search Console scope.
-      setup:
-        credential_label: Google Search Console credential
-        setup_note: Enable Search Console API. For service-account setup, add the key's client_email as a user of the target Search Console property, then enter the JSON key locally. Restricted property access supports performance reads; Cloud IAM alone does not grant property access. OAuth remains available.
-        homepage_url: https://search.google.com/search-console/about
-        console_url: https://search.google.com/search-console
-        credential_url: https://console.cloud.google.com/apis/credentials
-        docs_url: https://developers.google.com/webmaster-tools/v1/how-tos/authorizing
-        fallback_url: https://developers.google.com/webmaster-tools/v1/how-tos/authorizing
-        fallback_reason: OAuth consent and verified properties are account-specific; the official auth docs are the stable setup reference.
-        verified_at: "2026-06-17"
-        url_confidence:
-          homepage_url: verified
-          console_url: verified
-          credential_url: directional
-          docs_url: verified
-          fallback_url: verified
-      docs:
-        - https://developers.google.com/webmaster-tools/v1/quickstart/quickstart-python
-        - https://support.google.com/webmasters/answer/7687615
-        - https://developers.google.com/webmaster-tools/v1/how-tos/authorizing
-        - https://developers.google.com/webmaster-tools/v1/sites/list
-        - https://developers.google.com/webmaster-tools/v1/searchanalytics/query
-        - https://developers.google.com/webmaster-tools/v1/sitemaps/list
-        - https://developers.google.com/webmaster-tools/v1/urlInspection.index/inspect
+      setup_note: Choose Google OAuth or a service-account JSON key with Search Console property access. Both
+        use the read-only Search Console scope.
   - key: google-analytics
     name: Google Analytics 4
     description: GA4 account discovery, metadata, standard reports, and realtime report reads.
+    auth_catalog_ref: google-analytics
     auth_type: oauth
     auth_methods:
-      - key: oauth2_authorization_code
-        label: Connect with Google
-        auth_type: oauth
-        interactive: true
-        payload_format: json
-        fields:
-        - key: client_id
-          label: OAuth Client ID
-          type: secret
-          secret: true
-          required: true
-        - key: client_secret
-          label: OAuth Client Secret
-          type: secret
-          secret: true
-          required: true
-        - key: default_property_ref
-          label: Default GA4 Property
-          type: text
-          secret: false
-          required: false
-      - key: oauth2_access_token
-        label: OAuth2 access token
-        auth_type: oauth
-        payload_format: json
-        fields:
-        - key: access_token
-          label: Access Token
-          type: secret
-          secret: true
-          required: true
-        - key: default_property_ref
-          label: Default GA4 Property
-          type: text
-          secret: false
-          required: false
-      - key: oauth2_refresh_token
-        label: OAuth2 refresh token
-        auth_type: oauth
-        payload_format: json
-        fields:
-        - key: client_id
-          label: OAuth Client ID
-          type: secret
-          secret: true
-          required: true
-        - key: client_secret
-          label: OAuth Client Secret
-          type: secret
-          secret: true
-          required: true
-        - key: refresh_token
-          label: Refresh Token
-          type: secret
-          secret: true
-          required: true
-        - key: default_property_ref
-          label: Default GA4 Property
-          type: text
-          secret: false
-          required: false
-      - key: service-account
-        label: Service account
-        description: Use a Google service-account JSON key granted access to the GA4 account or property. No user consent redirect.
-        auth_type: oauth
-        interactive: false
-        payload_format: json
-        permission_verification:
-          evidence_source: oauth_response
-          enforcement: local_required
-        fields:
-        - key: service_account_json
-          label: Service-account JSON key
-          type: secret
-          secret: true
-          required: true
-        - key: default_property_ref
-          label: Default GA4 Property
-          type: text
-          secret: false
-          required: false
+    - key: oauth2_authorization_code
+      fields:
+      - key: default_property_ref
+        label: Default GA4 Property
+        type: text
+        secret: false
+        required: false
+    - key: oauth2_access_token
+      fields:
+      - key: default_property_ref
+        label: Default GA4 Property
+        type: text
+        secret: false
+        required: false
+    - key: oauth2_refresh_token
+      fields:
+      - key: default_property_ref
+        label: Default GA4 Property
+        type: text
+        secret: false
+        required: false
+    - key: service-account
+      fields:
+      - key: default_property_ref
+        label: Default GA4 Property
+        type: text
+        secret: false
+        required: false
+      permission_verification:
+        enforcement: local_required
     config:
-      scopes:
-        - https://www.googleapis.com/auth/analytics.readonly
-      setup_note: Choose Google OAuth or a service-account JSON key with Analytics read-only access for GA4 Admin/Data API reporting. Measurement Protocol and write/admin scopes remain deferred.
-      setup:
-        credential_label: Google Analytics credential
-        setup_note: Enable Analytics Admin and Data APIs. For service-account setup, grant the key's client_email Viewer access to the GA4 property or account, then enter the JSON key locally. Cloud IAM alone does not grant Analytics access. OAuth remains available.
-        homepage_url: https://marketingplatform.google.com/about/analytics/
-        console_url: https://analytics.google.com/analytics/web/
-        credential_url: https://console.cloud.google.com/apis/credentials
-        docs_url: https://developers.google.com/analytics/devguides/reporting/data/v1
-        fallback_url: https://developers.google.com/analytics/devguides/reporting/data/v1
-        fallback_reason: OAuth consent, account access, and GA4 property ids are account-specific; the official Data API docs are the stable setup reference.
-        verified_at: "2026-06-17"
-        url_confidence:
-          homepage_url: verified
-          console_url: verified
-          credential_url: directional
-          docs_url: verified
-          fallback_url: verified
-      docs:
-        - https://developers.google.com/analytics/devguides/reporting/data/v1
-        - https://developers.google.com/analytics/devguides/reporting/data/v1/rest/v1beta/properties/runReport
-        - https://developers.google.com/analytics/devguides/reporting/data/v1/rest/v1beta/properties/getMetadata
-        - https://developers.google.com/analytics/devguides/reporting/data/v1/rest/v1beta/properties/runRealtimeReport
-        - https://developers.google.com/analytics/devguides/config/admin/v1/rest/v1beta/accountSummaries/list
+      setup_note: Choose Google OAuth or a service-account JSON key with Analytics read-only access for GA4
+        Admin/Data API reporting. Measurement Protocol and write/admin scopes remain deferred.
   - key: google-tag-manager
     name: Google Tag Manager
     description: Tag Manager account, container, workspace, tag, trigger, and install snippet reads.
+    auth_catalog_ref: google-tag-manager
     auth_type: oauth
     auth_methods:
-      - key: oauth2_authorization_code
-        label: Connect with Google
-        auth_type: oauth
-        interactive: true
-        payload_format: json
-        fields:
-        - key: client_id
-          label: OAuth Client ID
-          type: secret
-          secret: true
-          required: true
-        - key: client_secret
-          label: OAuth Client Secret
-          type: secret
-          secret: true
-          required: true
-        - key: default_account_ref
-          label: Default Account Ref
-          type: text
-          secret: false
-          required: false
-      - key: oauth2_access_token
-        label: OAuth2 access token
-        auth_type: oauth
-        payload_format: json
-        fields:
-        - key: access_token
-          label: Access Token
-          type: secret
-          secret: true
-          required: true
-        - key: default_account_ref
-          label: Default Account Ref
-          type: text
-          secret: false
-          required: false
-      - key: oauth2_refresh_token
-        label: OAuth2 refresh token
-        auth_type: oauth
-        payload_format: json
-        fields:
-        - key: client_id
-          label: OAuth Client ID
-          type: secret
-          secret: true
-          required: true
-        - key: client_secret
-          label: OAuth Client Secret
-          type: secret
-          secret: true
-          required: true
-        - key: refresh_token
-          label: Refresh Token
-          type: secret
-          secret: true
-          required: true
-        - key: default_account_ref
-          label: Default Account Ref
-          type: text
-          secret: false
-          required: false
-      - key: service-account
-        label: Service account
-        description: Use a Google service-account JSON key granted access to the Tag Manager account and containers. No user consent redirect.
-        auth_type: oauth
-        interactive: false
-        payload_format: json
-        permission_verification:
-          evidence_source: oauth_response
-          enforcement: local_required
-        fields:
-        - key: service_account_json
-          label: Service-account JSON key
-          type: secret
-          secret: true
-          required: true
-        - key: default_account_ref
-          label: Default Account Ref
-          type: text
-          secret: false
-          required: false
+    - key: oauth2_authorization_code
+      fields:
+      - key: default_account_ref
+        label: Default Account Ref
+        type: text
+        secret: false
+        required: false
+    - key: oauth2_access_token
+      fields:
+      - key: default_account_ref
+        label: Default Account Ref
+        type: text
+        secret: false
+        required: false
+    - key: oauth2_refresh_token
+      fields:
+      - key: default_account_ref
+        label: Default Account Ref
+        type: text
+        secret: false
+        required: false
+    - key: service-account
+      fields:
+      - key: default_account_ref
+        label: Default Account Ref
+        type: text
+        secret: false
+        required: false
+      permission_verification:
+        enforcement: local_required
     config:
-      scopes:
-        - https://www.googleapis.com/auth/tagmanager.readonly
-      setup_note: Choose Google OAuth or a service-account JSON key with Tag Manager read-only access. Container/workspace mutations, versioning, publish, and permission-management scopes remain deferred.
-      setup:
-        credential_label: Google Tag Manager credential
-        setup_note: Enable Tag Manager API. For service-account setup, add the key's client_email to the Tag Manager account with read access to the relevant containers, then enter the JSON key locally. OAuth remains available.
-        homepage_url: https://tagmanager.google.com/
-        console_url: https://tagmanager.google.com/
-        credential_url: https://console.cloud.google.com/apis/credentials
-        docs_url: https://developers.google.com/tag-platform/tag-manager/api/v2
-        fallback_url: https://developers.google.com/tag-platform/tag-manager/api/v2/authorization
-        fallback_reason: OAuth consent, account access, and container refs are account-specific; the official API docs are the stable setup reference.
-        verified_at: "2026-06-17"
-        url_confidence:
-          homepage_url: verified
-          console_url: verified
-          credential_url: directional
-          docs_url: verified
-          fallback_url: verified
-      docs:
-        - https://developers.google.com/tag-platform/tag-manager/api/v2
-        - https://developers.google.com/tag-platform/tag-manager/api/v2/authorization
-        - https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/list
-        - https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/list
-        - https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/snippet
-        - https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/workspaces/list
-        - https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/workspaces/tags/list
-        - https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/workspaces/triggers/list
+      setup_note: Choose Google OAuth or a service-account JSON key with Tag Manager read-only access. Container/workspace
+        mutations, versioning, publish, and permission-management scopes remain deferred.
 actions:
   - key: keyword.research
     name: Research Keywords

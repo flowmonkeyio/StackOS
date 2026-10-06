@@ -210,23 +210,25 @@ def test_account_edit_test_and_revoke_are_global_admin_actions(
     project_id: int,
     monkeypatch,
 ) -> None:
-    class _Probe:
-        default_qps = 1.0
+    from stackos_connectors.connectors.firecrawl.integration import FirecrawlIntegration
 
-        def __init__(self, *, payload: bytes, **_kwargs: object) -> None:
-            assert payload == b"fc-secret"
+    calls = []
 
-        async def test_credentials(self) -> dict[str, object]:
-            return {
-                "ok": True,
-                "status": "connected",
-                "summary": "Account is ready",
-                "metadata": {"account_id": "safe-id"},
-            }
+    async def probe(self) -> dict[str, object]:
+        assert self.payload == b"fc-secret"
+        assert self.probe_context.auth_method_key == "api_key"
+        calls.append(self.probe_context)
+        return {
+            "ok": True,
+            "status": "connected",
+            "summary": "Account is ready",
+            "metadata": {"account_id": "safe-id"},
+        }
 
     monkeypatch.setattr(
-        "stackos.auth_providers.repository.testing.integration_class_for",
-        lambda _provider_key: _Probe,
+        FirecrawlIntegration,
+        "test_credentials",
+        probe,
     )
     account = _firecrawl_account(api, project_id=project_id)
     ref = account["credential_ref"]
@@ -256,6 +258,7 @@ def test_account_edit_test_and_revoke_are_global_admin_actions(
     assert detached_test.json()["project_id"] is None
     assert revoked.status_code == 200, revoked.text
     assert revoked.json()["data"]["status"] == "revoked"
+    assert len(calls) == 2
 
 
 def _google_account(api: TestClient, *, project_id: int) -> dict:

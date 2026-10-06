@@ -7,17 +7,17 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-import math
 import secrets
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
-from urllib.parse import unquote_plus, urlencode, urlparse
 
 import httpx
 from sqlalchemy import delete, or_, update
 from sqlmodel import col, select
+from stackos_connectors import ConnectorAuth
+from stackos_connectors import auth as connector_auth
+from stackos_connectors.auth import OAuthProviderContract, OAuthTokenError, TokenResult
 
-from stackos.auth_providers.oauth_contracts import OAuthProviderContract, oauth_contract_for
 from stackos.config import Settings
 from stackos.crypto.aes_gcm import encrypt_account
 from stackos.db.models import (
@@ -32,9 +32,6 @@ from stackos.repositories.projects import IntegrationCredentialRepository
 
 from .schema import AuthStartOut, OAuthCallbackOut
 from .utils import utcnow
-
-_MAX_TOKEN_RESPONSE_BYTES = 1_000_000
-_RETRYABLE_OAUTH_ERRORS = {"server_error", "slow_down", "temporarily_unavailable"}
 
 
 class OAuthTokenRequestError(ValidationError):
@@ -58,6 +55,20 @@ class OAuthTokenRequestError(ValidationError):
 
 class OAuthLifecycleMixin:
     """Complete OAuth flows while keeping protocol state inside the daemon."""
+
+    def _get_oauth_contract(self, credential: Credential) -> OAuthProviderContract:
+        """Adapt package validation into the host's safe repository error contract."""
+        try:
+            return connector_auth.get_auth_contract(
+                credential.provider_key,
+                method=credential.auth_method_key,
+                config=credential.config_json,
+            )
+        except OAuthTokenError as exc:
+            raise ValidationError(
+                str(exc),
+                data={"provider_key": credential.provider_key, "fields": list(exc.invalid_fields)},
+            ) from None
 
     def start(
         self,
@@ -156,10 +167,7 @@ class OAuthLifecycleMixin:
                 "interactive provider application id is missing",
                 data={"credential_ref": credential_ref, "provider_key": provider_key},
             )
-        contract = oauth_contract_for(
-            provider_key,
-            safe_config=credential.config_json,
-        )
+        contract = self._get_oauth_contract(credential)
         if contract.flow != "authorization_code" or contract.authorization_endpoint is None:
             raise ValidationError(
                 "auth method is not an authorization-code provider flow",
@@ -172,35 +180,25 @@ class OAuthLifecycleMixin:
         now = utcnow()
         expires_at = now + timedelta(seconds=settings.oauth_state_ttl_seconds)
         verifier: str | None = None
-        query: dict[str, str] = {
-            "client_id": client_id.strip(),
-            "redirect_uri": redirect_uri,
-            "state": raw_state,
-        }
-        if contract.include_response_type:
-            query["response_type"] = "code"
-        scopes = tuple(provider.scopes_json or ()) or contract.scopes
-        if scopes:
-            query["scope"] = contract.scope_separator.join(scopes)
         optional_scopes = self._selected_optional_scopes(
             provider_key=provider_key,
             provider_config=provider.config_json,
             credential_config=credential.config_json,
         )
-        if optional_scopes:
-            if contract.optional_scope_parameter is None:
-                raise ValidationError(
-                    "provider OAuth contract does not support optional scope bundles",
-                    data={"provider_key": provider_key},
-                )
-            query[contract.optional_scope_parameter] = contract.scope_separator.join(
-                optional_scopes
-            )
-        query.update(dict(contract.authorization_params))
         if contract.pkce_mode != "unavailable":
             verifier = secrets.token_urlsafe(64)
-            query["code_challenge"] = self._pkce_challenge(verifier)
-            query["code_challenge_method"] = "S256"
+        try:
+            authorization = connector_auth.build_authorization_request(
+                provider_key,
+                auth=ConnectorAuth(method.key, application, credential.config_json or {}),
+                redirect_uri=redirect_uri,
+                state=raw_state,
+                code_challenge=self._pkce_challenge(verifier) if verifier else None,
+                optional_scopes=optional_scopes,
+            )
+        except OAuthTokenError as exc:
+            raise ValidationError(str(exc), data={"provider_key": provider_key}) from None
+        scopes = authorization.required_scopes
 
         payload["_oauth_pending"] = {
             "code_verifier": verifier,
@@ -251,7 +249,7 @@ class OAuthLifecycleMixin:
             project_id=attach_project_id,
         )
         self._s.commit()
-        authorization_url = f"{contract.authorization_endpoint}?{urlencode(query)}"
+        authorization_url = authorization.url
         return Envelope(
             data=AuthStartOut(
                 attach_project_id=attach_project_id,
@@ -339,10 +337,7 @@ class OAuthLifecycleMixin:
         if not isinstance(pending, dict) or not isinstance(application, dict):
             raise ConflictError("OAuth transaction is stale")
         expected_updated_at = row.updated_at
-        contract = oauth_contract_for(
-            credential.provider_key,
-            safe_config=credential.config_json,
-        )
+        contract = self._get_oauth_contract(credential)
         if provider_error is not None:
             status = self._finish_failed_attempt(
                 row=row,
@@ -374,17 +369,17 @@ class OAuthLifecycleMixin:
                 status=status,
             )
         try:
-            response_body = await self._exchange_authorization_code(
-                contract=contract,
-                application=application,
+            token_result = await connector_auth.request_token(
+                credential.provider_key,
+                auth=ConnectorAuth(
+                    credential.auth_method_key,
+                    application,
+                    credential.config_json or {},
+                ),
+                grant_type="authorization_code",
                 code=code.strip(),
                 redirect_uri=state_row.redirect_uri or "",
                 code_verifier=pending.get("code_verifier"),
-            )
-            self._validate_token_response(
-                contract=contract,
-                response_body=response_body,
-                grant_type="authorization_code",
             )
         except (httpx.HTTPError, ValueError, ValidationError):
             status = self._finish_failed_attempt(
@@ -408,270 +403,9 @@ class OAuthLifecycleMixin:
             payload=payload,
             application=application,
             contract=contract,
-            response_body=response_body,
+            token_result=token_result,
             expected_updated_at=expected_updated_at,
         )
-
-    async def _exchange_authorization_code(
-        self,
-        *,
-        contract: OAuthProviderContract,
-        application: dict[str, Any],
-        code: str,
-        redirect_uri: str,
-        code_verifier: object,
-    ) -> dict[str, Any]:
-        data: dict[str, str] = {
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": redirect_uri,
-        }
-        data.update(dict(contract.token_params))
-        if isinstance(code_verifier, str) and code_verifier:
-            data["code_verifier"] = code_verifier
-        response_body = await self._post_oauth_token_request(
-            contract=contract,
-            application=application,
-            data=data,
-        )
-        if contract.hook == "meta-long-lived":
-            return await self._exchange_meta_long_lived_token(
-                contract=contract,
-                application=application,
-                short_lived_token=str(response_body["access_token"]),
-            )
-        return response_body
-
-    async def _exchange_meta_long_lived_token(
-        self,
-        *,
-        contract: OAuthProviderContract,
-        application: dict[str, Any],
-        short_lived_token: str,
-    ) -> dict[str, Any]:
-        """Apply Meta's documented server-side short-to-long token exchange."""
-
-        client_id = application.get("client_id")
-        client_secret = application.get("client_secret")
-        if not isinstance(client_id, str) or not client_id:
-            raise ValidationError("OAuth application id is missing")
-        if not isinstance(client_secret, str) or not client_secret:
-            raise ValidationError("OAuth application private value is missing")
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(
-                contract.token_endpoint,
-                params={
-                    "grant_type": "fb_exchange_token",
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                    "fb_exchange_token": short_lived_token,
-                },
-            )
-        return self._oauth_token_response(response=response, contract=contract)
-
-    async def _post_oauth_token_request(
-        self,
-        *,
-        contract: OAuthProviderContract,
-        application: dict[str, Any],
-        data: dict[str, str],
-    ) -> dict[str, Any]:
-        """Post one trusted token request for any core-owned OAuth grant."""
-
-        client_id = application.get("client_id")
-        client_secret = application.get("client_secret")
-        signed_grant = contract.flow == "jwt_bearer"
-        if not signed_grant and (not isinstance(client_id, str) or not client_id):
-            raise ValidationError("OAuth application id is missing")
-        if not signed_grant and (not isinstance(client_secret, str) or not client_secret):
-            raise ValidationError("OAuth application private value is missing")
-        request_data = dict(data)
-        if not signed_grant and contract.client_auth_style != "basic":
-            assert isinstance(client_id, str) and isinstance(client_secret, str)
-            request_data.update({"client_id": client_id, "client_secret": client_secret})
-        headers = None
-        user_agent = application.get("user_agent")
-        if isinstance(user_agent, str) and user_agent.strip():
-            headers = {"User-Agent": user_agent.strip()}
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
-            if contract.client_auth_style == "basic":
-                assert isinstance(client_id, str) and isinstance(client_secret, str)
-                response = await client.post(
-                    contract.token_endpoint,
-                    data=request_data,
-                    auth=httpx.BasicAuth(client_id, client_secret),
-                    headers=headers,
-                )
-            else:
-                response = await client.post(
-                    contract.token_endpoint,
-                    data=request_data,
-                    headers=headers,
-                )
-        return self._oauth_token_response(response=response, contract=contract)
-
-    def _oauth_token_response(
-        self,
-        *,
-        response: httpx.Response,
-        contract: OAuthProviderContract,
-    ) -> dict[str, Any]:
-        if len(response.content) > _MAX_TOKEN_RESPONSE_BYTES:
-            raise OAuthTokenRequestError(
-                "provider authorization response is too large",
-                provider_key=contract.provider_key,
-                retryable=True,
-                repair_required=False,
-                status_code=response.status_code,
-            )
-        if response.status_code >= 300:
-            error_code = ""
-            try:
-                error_body = response.json()
-            except ValueError:
-                error_body = None
-            if isinstance(error_body, dict) and isinstance(error_body.get("error"), str):
-                error_code = str(error_body["error"]).strip().lower()
-            retryable = (
-                response.status_code in {408, 425, 429}
-                or response.status_code >= 500
-                or error_code in _RETRYABLE_OAUTH_ERRORS
-            )
-            raise OAuthTokenRequestError(
-                "provider authorization exchange failed",
-                provider_key=contract.provider_key,
-                retryable=retryable,
-                repair_required=not retryable,
-                status_code=response.status_code,
-            )
-        try:
-            body = response.json()
-        except ValueError as exc:
-            raise OAuthTokenRequestError(
-                "provider authorization response is not JSON",
-                provider_key=contract.provider_key,
-                retryable=True,
-                repair_required=False,
-                status_code=response.status_code,
-            ) from exc
-        if not isinstance(body, dict):
-            raise OAuthTokenRequestError(
-                "provider authorization response must be an object",
-                provider_key=contract.provider_key,
-                retryable=True,
-                repair_required=False,
-                status_code=response.status_code,
-            )
-        access_value = body.get("access_token")
-        if not isinstance(access_value, str) or not access_value.strip():
-            raise OAuthTokenRequestError(
-                "provider authorization response is missing access material",
-                provider_key=contract.provider_key,
-                retryable=True,
-                repair_required=False,
-                status_code=response.status_code,
-            )
-        try:
-            self._provider_response_config(contract=contract, response_body=body)
-        except ValidationError as exc:
-            raise OAuthTokenRequestError(
-                "provider authorization response metadata is invalid",
-                provider_key=contract.provider_key,
-                retryable=True,
-                repair_required=False,
-                status_code=response.status_code,
-            ) from exc
-        return body
-
-    def _validate_token_response(
-        self,
-        *,
-        contract: OAuthProviderContract,
-        response_body: dict[str, Any],
-        grant_type: str,
-    ) -> None:
-        """Enforce provider-declared lifecycle evidence before credential mutation."""
-
-        if grant_type == "authorization_code":
-            self._require_response_account_identity(
-                contract=contract,
-                response_body=response_body,
-            )
-            requirements = contract.authorization_code_response_requirements
-        elif grant_type == "refresh_token":
-            requirements = contract.refresh_token_response_requirements
-        elif contract.flow == "jwt_bearer":
-            requirements = ("expires_in",)
-        else:
-            requirements = ()
-
-        invalid_fields: list[str] = []
-        for requirement in requirements:
-            if requirement == "refresh_token":
-                value = response_body.get("refresh_token")
-                if not isinstance(value, str) or not value.strip():
-                    invalid_fields.append(requirement)
-            elif requirement == "expires_in":
-                value = response_body.get("expires_in")
-                if (
-                    not isinstance(value, (int, float))
-                    or isinstance(value, bool)
-                    or not math.isfinite(value)
-                    or value <= 0
-                    or value > (datetime.max - utcnow()).total_seconds()
-                ):
-                    invalid_fields.append(requirement)
-            elif requirement == "scope_evidence":
-                if not self._response_scopes(
-                    contract=contract,
-                    response_body=response_body,
-                ):
-                    invalid_fields.append(requirement)
-            else:
-                raise ValidationError(
-                    "OAuth provider contract has an unsupported token response requirement",
-                    data={
-                        "provider_key": contract.provider_key,
-                        "grant_type": grant_type,
-                        "requirement": requirement,
-                    },
-                )
-        if contract.required_token_type is not None:
-            token_type = response_body.get("token_type")
-            if (
-                not isinstance(token_type, str)
-                or token_type.strip().casefold() != contract.required_token_type.casefold()
-            ):
-                invalid_fields.append("token_type")
-        if contract.flow == "jwt_bearer" and "scope" in response_body:
-            raw_scope = response_body["scope"]
-            # Omission is the documented signed-request fallback; malformed or empty
-            # present scope is never treated as omission or as the requested grants.
-            if (
-                not isinstance(raw_scope, str)
-                or not raw_scope.strip()
-                or any(ord(char) < 32 or ord(char) > 126 for char in raw_scope)
-            ):
-                invalid_fields.append("scope")
-        if contract.required_scope_subset:
-            returned_scopes = set(
-                self._response_scopes(
-                    contract=contract,
-                    response_body=response_body,
-                )
-                or ()
-            )
-            if not set(contract.required_scope_subset).issubset(returned_scopes):
-                invalid_fields.append("scope")
-        if invalid_fields:
-            raise ValidationError(
-                "provider token response violates its OAuth lifecycle contract",
-                data={
-                    "provider_key": contract.provider_key,
-                    "grant_type": grant_type,
-                    "fields": invalid_fields,
-                },
-            )
 
     def _finish_successful_exchange(
         self,
@@ -682,7 +416,7 @@ class OAuthLifecycleMixin:
         payload: dict[str, Any],
         application: dict[str, Any],
         contract: OAuthProviderContract,
-        response_body: dict[str, Any],
+        token_result: TokenResult,
         expected_updated_at: Any,
     ) -> OAuthCallbackOut:
         new_payload = {
@@ -701,19 +435,17 @@ class OAuthLifecycleMixin:
             }
         }
         new_payload.update(application)
-        new_payload["access_token"] = str(response_body["access_token"]).strip()
-        refresh_value = response_body.get("refresh_token")
+        new_payload["access_token"] = token_result.access_token
+        refresh_value = token_result.refresh_token
         if isinstance(refresh_value, str) and refresh_value.strip():
             new_payload["refresh_token"] = refresh_value.strip()
         safe_config = dict(credential.config_json or {})
         safe_config.pop("oauth_pending", None)
         safe_config["oauth_connection_status"] = "connected"
         safe_config["scope_status"] = "known"
-        safe_config.update(
-            self._provider_response_config(contract=contract, response_body=response_body)
-        )
+        safe_config.update(token_result.config_updates)
         expires_at = None
-        raw_expires_in = response_body.get("expires_in")
+        raw_expires_in = token_result.expires_in
         if isinstance(raw_expires_in, (int, float)) and raw_expires_in > 0:
             expires_at = utcnow() + timedelta(seconds=float(raw_expires_in))
         if not self._cas_profile_update(
@@ -739,7 +471,7 @@ class OAuthLifecycleMixin:
         self._s.add(credential)
         self._replace_scopes(
             credential=credential,
-            response_body=response_body,
+            token_result=token_result,
             fallback_scopes=self._required_scopes_from_pending(
                 payload=payload,
                 default=contract.scopes,
@@ -748,7 +480,7 @@ class OAuthLifecycleMixin:
         )
         self._replace_account_metadata(
             credential=credential,
-            response_body=response_body,
+            token_result=token_result,
             contract=contract,
         )
         self.record_usage_event(
@@ -901,45 +633,21 @@ class OAuthLifecycleMixin:
         self,
         *,
         credential: Credential,
-        response_body: dict[str, Any],
+        token_result: TokenResult,
         fallback_scopes: tuple[str, ...] | None,
         contract: OAuthProviderContract,
     ) -> None:
         assert credential.id is not None
-        scopes = self._response_scopes(
-            contract=contract,
-            response_body=response_body,
-        )
+        scopes = token_result.scopes
         if scopes is None:
             if fallback_scopes is None:
                 return
-            scopes = list(fallback_scopes)
+            scopes = fallback_scopes
         self._s.exec(
             delete(CredentialScope).where(col(CredentialScope.credential_id) == credential.id)
         )
         for scope in sorted(set(scopes)):
             self._s.add(CredentialScope(credential_id=credential.id, scope=scope))
-
-    @staticmethod
-    def _response_scopes(
-        *,
-        contract: OAuthProviderContract,
-        response_body: dict[str, Any],
-    ) -> list[str] | None:
-        raw_scopes = next(
-            (
-                response_body[field]
-                for field in contract.response_scope_fields
-                if field in response_body
-            ),
-            None,
-        )
-        if isinstance(raw_scopes, str):
-            decoded_scopes = unquote_plus(raw_scopes.replace(",", " "))
-            return [scope for scope in decoded_scopes.split() if scope]
-        if isinstance(raw_scopes, list):
-            return [str(scope).strip() for scope in raw_scopes if str(scope).strip()]
-        return None
 
     @staticmethod
     def _required_scopes_from_pending(
@@ -953,105 +661,21 @@ class OAuthLifecycleMixin:
             return tuple(scope for scope in raw if scope)
         return default
 
-    def _provider_response_config(
-        self,
-        *,
-        contract: OAuthProviderContract,
-        response_body: dict[str, Any],
-    ) -> dict[str, str]:
-        """Normalize only provider-returned execution bases used by connectors."""
-
-        if contract.provider_key == "salesforce" and response_body.get("instance_url"):
-            return {
-                "instance_url": self._trusted_provider_base_url(
-                    response_body["instance_url"],
-                    provider_key="salesforce",
-                    hostname_suffix=".salesforce.com",
-                )
-            }
-        if contract.provider_key == "pipedrive" and response_body.get("api_domain"):
-            return {
-                "base_url": self._trusted_provider_base_url(
-                    response_body["api_domain"],
-                    provider_key="pipedrive",
-                    hostname_suffix=".pipedrive.com",
-                )
-            }
-        return {}
-
-    @staticmethod
-    def _require_response_account_identity(
-        *,
-        contract: OAuthProviderContract,
-        response_body: dict[str, Any],
-    ) -> None:
-        """Require the account identity a provider contract promises at authorization."""
-
-        field = contract.response_account_id_field
-        if field is None or field not in contract.response_metadata_fields:
-            return
-        value = response_body.get(field)
-        if (isinstance(value, str) and value.strip()) or (
-            isinstance(value, int) and not isinstance(value, bool)
-        ):
-            return
-        raise ValidationError(
-            "provider authorization response is missing account identity",
-            data={"provider_key": contract.provider_key, "field": field},
-        )
-
-    @staticmethod
-    def _trusted_provider_base_url(
-        value: object,
-        *,
-        provider_key: str,
-        hostname_suffix: str,
-    ) -> str:
-        if not isinstance(value, str) or not value.strip():
-            raise ValidationError(
-                "provider authorization response has an invalid execution base",
-                data={"provider_key": provider_key},
-            )
-        parsed = urlparse(value.strip())
-        hostname = (parsed.hostname or "").lower()
-        if (
-            parsed.scheme != "https"
-            or not hostname.endswith(hostname_suffix)
-            or parsed.username is not None
-            or parsed.password is not None
-            or parsed.query
-            or parsed.fragment
-            or parsed.path not in {"", "/"}
-        ):
-            raise ValidationError(
-                "provider authorization response has an untrusted execution base",
-                data={"provider_key": provider_key},
-            )
-        return f"https://{parsed.netloc}"
-
     def _replace_account_metadata(
         self,
         *,
         credential: Credential,
-        response_body: dict[str, Any],
+        token_result: TokenResult,
         contract: OAuthProviderContract,
     ) -> None:
         assert credential.id is not None
-        metadata = {
-            field: response_body[field]
-            for field in contract.response_metadata_fields
-            if field in response_body and isinstance(response_body[field], (str, int, float, bool))
-        }
+        metadata = dict(token_result.metadata)
         if not metadata:
             return
         self._s.exec(
             delete(CredentialAccount).where(col(CredentialAccount.credential_id) == credential.id)
         )
-        provider_account_id = (
-            metadata.get(contract.response_account_id_field)
-            if contract.response_account_id_field is not None
-            else None
-        )
+        provider_account_id = token_result.account_id
         self._s.add(
             CredentialAccount(
                 credential_id=credential.id,
