@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: branding.content-production
 name: Branding Content Production
-version: 0.6.1
+version: 0.6.2
 description: End-to-end journalist-led branding workflow that turns a topic, evidence, research, or current work into a voice-consistent canonical piece, optional generated image set, executable channel publication jobs, automated publishing, and durable content memory.
 domain: branding
 owner:
@@ -388,6 +388,7 @@ steps:
       - Carry synchronization-only scope through every phase by reusing current schema-compatible outputs and retained artifact refs with explicit no-op reasons. Do not start a fresh interview, angle, draft, image or channel production merely to update memory. Retrieve missing required prior receipts from their actual owners; never fabricate phase outputs or treat missing receipts as current review. Record publication skipped and reuse existing packet/job refs without scheduling or executing them.
       - Respect interview_mode. In auto mode, require an interview when experience, judgment, surprise, stakes, or tradeoffs are central and not already captured in cleared evidence.
       - When interviewing, ask bounded journalist-style follow-up questions before treating the operator's first statement as publishable evidence.
+      - Preserve useful original wording with attribution, source refs, and surrounding context alongside summaries. Distinguish explicit operator endorsement, operator opinion, reviewer advice, and a correction request; supplied material does not imply approval of every sentence.
       - When skipping, record the reason, evidence used instead, and any perspective the piece cannot claim.
       - Preserve receipts that may matter later as evidence-item refs or named content-piece memory-plan entries.
     input_refs:
@@ -419,6 +420,7 @@ steps:
     instructions:
       - Use only project-designated sources from the overlay, supplied artifacts, local context, or explicit operator direction.
       - Classify facts, inferences, conflicts, and unsupported claims separately.
+      - Retain the source and research limits needed to interpret each claim. Separate observed experience from a proposed solution or general advice, and name evidence gaps before promising an outcome.
       - Store durable evidence-items for facts that may support public claims.
     depends_on:
       - interview-capture
@@ -449,6 +451,7 @@ steps:
     purpose: Propose one to three piece ideas, select the structure, name target channels, and decide whether images are needed.
     instructions:
       - Propose a small set of angles with thesis, audience, evidence basis, follow-up potential, and risk.
+      - Read the whole source before choosing its structure. State the reader's problem and the useful explanation, decision, or action the piece can support; carry useful original wording and context into the writer's handoff.
       - Compare the nearest prior pieces to distinguish a genuinely new topic from an existing position that should be strengthened, refreshed, or held; do not select an angle from keyword research alone.
       - Let the evidence and selected thesis determine the form. In a sequential batch, compare completed earlier articles across topic ownership, macro structure, rhetorical frame, caveat placement, cadence, opening, and ending; do not reuse their chassis merely because the pieces share a workflow.
       - Record claim risks and evidence limits as semantic constraints, not ready-to-copy disclaimer sentences, headings, or conclusions, unless an exact source or legal phrase is required.
@@ -486,6 +489,9 @@ steps:
     purpose: Write the canonical piece in the adapted operator voice from the selected angle and evidence pack.
     instructions:
       - Draft only from the selected angle, cleared evidence, selected authoritative foundation, and channel-independent canonical structure. Reuse a current reviewed applied candidate unchanged for synchronization-only work; do not turn owner reconciliation into a new article.
+      - When expanded guidance is needed and authorized host file access is available, read branding-plugin:references/natural-writing.md using ../references/natural-writing.md relative to this template's origin_path. Otherwise use the inline method and authorized context excerpts; report a material source gap without claiming to have read an inaccessible reference.
+      - Read the whole piece before sentence polish; check its point, reasoning, and usefulness alongside the evidence behind experience claims.
+      - Preserve useful original wording and necessary source or research limits. Treat recurring words and structures as contextual signals; do not impose banned-word lists, detector scores, or artificial roughness.
       - Treat angle risks and evidence limits as meaning constraints rather than mandatory wording; do not copy planning-language caveats into public prose by default.
       - Compare the actual draft with named representative work and completed earlier sequential articles for repeated opening moves, caveat or contrast syntax, transition and sentence cadence, section logic, and conclusion moves; repair avoidable clusters before review.
       - Mark position changes explicitly instead of silently contradicting prior positions.
@@ -515,6 +521,8 @@ steps:
     purpose: Run one compact review pass for factual support, prior-position consistency, voice, and channel form.
     instructions:
       - Review factual support, prior-position consistency, voice fit, and channel form as separate findings.
+      - Read the whole piece before line edits. Assess whether its explanation or proposed solution is useful and understandable, while claim review checks the evidence behind experience and outcome claims. A grounded anecdote alone does not establish a useful recommendation.
+      - Use the inline natural-writing method, actual prose, and any authorized reference excerpts to explain contextual problems, without automatic phrase bans. Preserve necessary source and research limits and useful original wording; distinguish operator endorsement from opinion, reviewer preference, or correction requests.
       - Compare the actual prose with named representative prior work and, for a later item in a sequential batch, with every completed earlier article supplied for that invocation.
       - Name the closest prior comparison and inspect repeated opening moves, caveat or disclaimer machinery, contrast syntax, transition and sentence cadence, section logic, conclusion moves, and prior-work overlap; different outlines or artifact types alone do not prove distinction.
       - Treat individually accurate caveats as a voice repair when their cumulative rhetoric creates a repeated generated chassis.

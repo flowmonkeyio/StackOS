@@ -19,7 +19,7 @@
     "Select the smallest set of ready connected sources that materially improves the audit; use paid providers only within operator or project budget and record why any source was unavailable, skipped, or failed.",
     "Inspect provider response files before repeating calls, preserve durable action-call receipts and file checksums when present, and promote only claim-supporting raw output that must remain readable to artifacts.",
     "Reconcile public observations, first-party provider evidence, third-party evidence, and operator context into normalized findings.",
-    "Submit draft findings to the required independent reviewer, adjudicate the review, and keep one canonical register containing only accepted or revised findings.",
+    "Return draft findings to the main agent for required independent review dispatch and adjudication; incorporate its dispositions into one canonical register containing only accepted or revised findings.",
     "Store a final report for every successful closeout, completeness-appropriate inventory/register artifacts, and one compact website-seo-analysis resource as the future query index."
   ],
   "must_do": [
@@ -31,7 +31,9 @@
     "Treat URL Inspection as Google's indexed-version evidence, GTM inventory as configuration evidence rather than firing proof, and third-party estimates as third-party evidence.",
     "Cover crawl/indexability, robots/sitemaps, canonicals/redirects, internal linking, structured data, available performance evidence, on-page metadata/headings, content quality/gaps, international/local signals when relevant, measurement, and optional authority/competitive context.",
     "Use specific recommendations and validation paths instead of a generic numeric health score.",
-    "Treat public_site_map as discovery coverage and site_inventory as the sole canonical URL ledger."
+    "Treat public_site_map as discovery coverage and site_inventory as the sole canonical URL ledger.",
+    "Assess query intent, existing page overlap and useful contextual links against the inventory, including pages missing from Search Console; rank-based triage is a hypothesis, not a diagnosis.",
+    "Qualify conversion conclusions by source/property, cohort, dates, filters, URL reconciliation, denominators, attribution delay and coverage. Missing is not zero; low samples or incompatible windows are inconclusive."
   ],
   "must_not_do": [
     "Do not invent rankings, impressions, clicks, traffic, sessions, conversions, Core Web Vitals, index state, backlinks, authority, crawl completeness, or keyword coverage.",

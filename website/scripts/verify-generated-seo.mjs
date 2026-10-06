@@ -415,11 +415,53 @@ const guideSource = await readIfExists(join(websiteRoot, 'content', 'guides', 'g
 const guideUpdatedAt = frontmatterValue(guideSource, 'updatedAt')
 if (guideUpdatedAt) expectedLastmod.set('/getting-started/', guideUpdatedAt)
 const articleRoot = join(websiteRoot, 'content', 'articles')
+const evidenceArticleRows = new Map([
+  ['how-to-do-keyword-research-for-ai-search', 4],
+  ['how-ai-orchestrators-triage-feedback', 5],
+  ['how-to-refine-ai-agent-workflow', 5],
+])
 for (const path of (await walkFiles(articleRoot)).filter((item) => item.endsWith('.md'))) {
   const source = await readFile(path, 'utf8')
   const updatedAt = frontmatterValue(source, 'updatedAt')
   const slug = relative(articleRoot, path).split(sep).join('/').replace(/\.md$/, '')
   if (updatedAt) expectedLastmod.set(`/library/articles/${slug}/`, updatedAt)
+  const articleHtml = htmlByRoute.get(`/library/articles/${slug}/`) || ''
+  const renderedHrefs = new Set(tags(articleHtml, 'a').map((tag) => attributes(tag).href))
+  for (const [, href] of source.matchAll(/\]\((\/(?!\/)[^)\s]+)\)/g)) {
+    const url = new URL(href, siteOrigin)
+    if (!extname(url.pathname) || url.pathname.startsWith('/StackOS/')) continue
+    const publicFile = join(publicRoot, url.pathname)
+    const generatedFile = join(outputRoot, url.pathname)
+    if (!renderedHrefs.has(href)) {
+      addViolation('SEO_ARTICLE_DOWNLOAD_LINK', `${slug}: file href changed or missing: ${href}`)
+    }
+    if (!existsSync(publicFile) || !existsSync(generatedFile)
+      || sha256(await readFile(publicFile)) !== sha256(await readFile(generatedFile))) {
+      addViolation('SEO_ARTICLE_DOWNLOAD_BYTES', `${slug}: public file missing or changed: ${url.pathname}`)
+    }
+  }
+  if (evidenceArticleRows.has(slug)) {
+    const sourceRows = [...source.matchAll(/::article-evidence-row\{([^\n]+)\}\n#evidence\n([\s\S]*?)\n\n#decision\n([\s\S]*?)\n::/g)]
+    const html = htmlByRoute.get(`/library/articles/${slug}/`) || ''
+    const renderedRows = [...html.matchAll(/<dl\b[^>]*class="article-evidence-row"[^>]*>([\s\S]*?)<\/dl>/g)]
+    if (sourceRows.length !== evidenceArticleRows.get(slug) || renderedRows.length !== sourceRows.length) {
+      addViolation('SEO_ARTICLE_EVIDENCE_SSR', `${slug}: expected ${evidenceArticleRows.get(slug)} records; source=${sourceRows.length} rendered=${renderedRows.length}`)
+    }
+    sourceRows.forEach((row, index) => {
+      const labels = attributes(row[1])
+      const rendered = renderedRows[index]?.[1] || ''
+      const term = rendered.match(/<dt\b[^>]*>([\s\S]*?)<\/dt>/)?.[1] || ''
+      const explanation = rendered.match(/<dd\b[^>]*>([\s\S]*?)<\/dd>/)?.[1] || ''
+      if (!normalizeText(term).includes(labels.label || '') || !normalizeText(term).includes(labels['record-heading'] || '')) {
+        addViolation('SEO_ARTICLE_EVIDENCE_SSR', `${slug}: record ${index + 1} label missing from semantic term`)
+      }
+      for (const value of [labels['evidence-label'], labels['decision-label'], row[2], row[3]]) {
+        if (!value || !normalizeText(explanation).includes(normalizeText(value))) {
+          addViolation('SEO_ARTICLE_EVIDENCE_SSR', `${slug}: record ${index + 1} evidence or decision missing from semantic description`)
+        }
+      }
+    })
+  }
 }
 
 for (const entry of sitemapEntries) {

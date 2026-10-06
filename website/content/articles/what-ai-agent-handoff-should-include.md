@@ -1,15 +1,15 @@
 ---
 title: 'What should an AI agent handoff include?'
-description: A practical handoff packet for AI agents, covering objective, state, evidence, context, tools, output, recovery, ownership, and stopping rules.
+description: Build an AI agent handoff with the objective, evidence, context, tools, expected result, and stopping rule. See how to continue after an interrupted update.
 publishedAt: '2026-07-12'
-updatedAt: '2026-07-12'
+updatedAt: '2026-09-30'
 author: StackOS team
 category: AI operations
 topics:
   - AI agent handoffs
   - agent context
   - multi-agent workflows
-readingTime: 10 min read
+readingTime: 9 min read
 featured: true
 visual: workflow
 searchIntent: Learn what an AI agent handoff packet should contain
@@ -26,208 +26,143 @@ relatedArticles:
   - how-ai-orchestrators-triage-feedback
 ---
 
-An AI agent handoff should include the next objective, the accepted state and supporting evidence, only the context that changes the next decision, the agent’s authority and tools, the required output and acceptance criteria, recovery guidance, the next destination, and a stopping rule.
+Suppose an agent prepares a new version of a shared file, sends the update, and loses the connection before the response arrives. Another agent takes over.
 
-That is the minimum useful packet. A role prompt, a conversation transcript, or a message such as “review the draft” may be part of the handoff, but none of them makes the next step executable by itself.
+The local file is ready. The remote file may already have changed. The next agent needs to know both before deciding what to do.
 
-## A handoff message is not an execution packet
+An AI agent handoff should carry the objective, accepted state and evidence, relevant context, authority and tools, required output, acceptance criteria, recovery guidance, and a destination and stopping rule. Together, these tell the receiver what finished, what remains uncertain, and which action it can take next.
 
-Handoffs are often described as transfers between agents. One agent decides that another specialist should take over, calls a handoff tool, and passes some context.
+## Eight fields for a useful handoff
 
-That description covers the routing event. It does not answer the receiving agent’s operating questions:
+This is the practical packet structure used in this guide. Stable instructions can stay in referenced project records; the handoff needs to resolve the parts that matter to the current task.
 
-- Which output is authoritative?
-- What has already been accepted?
-- Which evidence and policies apply?
-- What may this agent read or change?
-- What result must it return?
-- Who decides what happens after the result?
-- When should it stop?
-
-A capable agent can investigate these questions. That is not always a failure. Research, diagnosis, and discovery may be the work. The avoidable friction is different: forcing the agent to rediscover workflow state the system already knows.
-
-We encountered this distinction while testing our own workflow setup. Fresh agents could work around incomplete context by reading more files and reconstructing prior decisions. They still reached the goal. But broad role-level investigation added latency, while a targeted step packet let the agent move directly to the relevant action. The useful goal was not zero friction. It was to remove system-created guessing.
-
-This is the narrow focus of a handoff packet. The broader [agent experience](/library/articles/ai-agent-experience) includes tool design, recovery, authority, and orchestration across the whole run. The packet is the local execution surface one agent receives now.
-
-## Include eight operating fields
-
-The following structure is a practical synthesis from our workflow work, not a standard imposed by one agent framework. The fields can be assembled from durable state, defaults, and prior outputs; they do not need to become eight paragraphs in every prompt.
-
-| Field | Question it answers |
+| Field | What the receiver needs to know |
 | --- | --- |
-| Objective and ownership | What must happen now, and who owns the next decision? |
-| Accepted state and evidence | What is already true, and which refs prove it? |
-| Bounded context and policies | Which prior decisions and rules affect this step? |
-| Authority and tools | What may the agent inspect, change, or execute? |
-| Output contract | What exact result, fields, or artifact must be returned? |
-| Acceptance criteria | How can the agent tell that its responsibility is complete? |
-| Recovery path | What should happen when an expected input, tool, or criterion fails? |
-| Destination and stopping rule | Where does the result go, and when must the agent return control? |
+| Objective and ownership | The task to perform now and who owns the next decision. |
+| Accepted state and evidence | The current inputs, settled decisions, completed work, unresolved results, and supporting records. |
+| Context and policies | The relevant history and rules that affect this step. |
+| Authority and tools | The operations the agent may use, their targets, and the changes it may make. |
+| Required output | The result, fields, or artifact it must return, including evidence. |
+| Acceptance criteria | What must be true for this responsibility to be complete. |
+| Recovery guidance | What to do when a necessary input or operation is missing, fails, or returns an uncertain result. |
+| Destination and stopping rule | Where to return the result and when to stop working. |
 
-Each field removes a different ambiguity. Combining them into a long prose brief often hides those distinctions, so a structured packet is usually easier to inspect.
+## Say who owns the next decision
 
-## Name the objective and ownership
+“Act as an editor” names a role. “Review the supplied article for unsupported material claims and return findings to the coordinating agent” gives the editor a task and a destination.
 
-“Act as an editor” is a role. “Review the supplied article for unsupported material claims and return findings to the orchestrator” is an objective.
+Add the boundary that matters: may the editor repair the article, or should it return findings for someone else to resolve? Having access to an editing tool does not answer that question.
 
-The packet should also state whether control transfers or returns. This varies across architectures. Microsoft’s [handoff orchestration](https://learn.microsoft.com/en-us/agent-framework/workflows/orchestrations/handoff) transfers task ownership to the receiving agent. In a manager or agent-as-tool pattern, the primary agent retains overall responsibility and receives a bounded specialist result.
+The meaning of a handoff also varies across architectures. Microsoft's [handoff orchestration](https://learn.microsoft.com/en-us/agent-framework/workflows/orchestrations/handoff) transfers control and task ownership to the receiving agent. Its agents-as-tools pattern leaves responsibility with the primary agent, which receives the specialist's result.
 
-The receiver should not need to infer which model applies. A useful packet might say:
+Name the arrangement in your packet. In the shared-file example, the receiving agent will inspect the interrupted update and return what it can verify. The coordinating agent still owns the file-update task and any decision to try again.
 
-> You own the claim review only. Return findings to the orchestrator. Do not revise the article or expand its scope.
+## Record completed work and unresolved outcomes
 
-That sentence defines both responsibility and its boundary.
+Give the receiver a specific version of the input. “Use the latest file” leaves it to work out which file was approved and whether someone has changed it since. A stable reference, revision, or content fingerprint gives it something to check.
 
-## Pass accepted state, not a scavenger hunt
+For the interrupted update, three facts belong in the handoff:
 
-A handoff should identify the current authoritative inputs directly. It should name the accepted brief, current draft, relevant predecessor output, and evidence refs. “Use the latest version in the project” moves state resolution back to the receiving agent.
+- The local file passed its checks and was approved. Include the exact file and those records.
+- An update request was sent to a named remote target. Include the request record and any identifier available for looking it up.
+- The response was not received. The external result remains unconfirmed.
 
-Accepted state is more than a summary of what happened. It separates settled facts from open questions:
+A timeout tells you that the caller stopped waiting. It does not establish whether the remote service applied the change. Keep that uncertainty visible instead of reducing the whole task to “failed.” Repeating the request could cause another change, depending on the operation and provider.
 
-- the angle was accepted;
-- the draft at a specific ref is current;
-- two claims are intentionally marked unresolved;
-- the publication intent is packet only;
-- no image generation was selected.
+Use evidence references for the conclusions the next agent must rely on. A note saying “checks passed” should point to the check result for this file version. An approval should identify what was approved. A request record should identify the target and attempted change.
 
-This lets the agent preserve prior decisions instead of accidentally reopening them.
+Keep settled decisions with that evidence. If the approved file is the intended output, the receiving agent should not rewrite it while investigating whether the update arrived. If new evidence calls an earlier decision into question, it can return that finding to the decision owner.
 
-Evidence refs matter for the same reason. A reviewer should receive the claim map or source ledger it must evaluate, not a claim that “research was completed.” A downstream agent can then inspect the receipt when necessary without replaying the entire research phase.
+## Choose context the receiver can use
 
-## Select context that changes the next decision
+Include context when it changes the receiver's action or judgment. In this example, the approved file, target, request history, and rules for checking the remote result matter. The discussion that led to an earlier, discarded draft can remain retrievable without filling the packet.
 
-Conversation history is useful, but it is not automatically the right handoff payload.
+The [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/handoffs/) separates model-generated handoff arguments from local application context. Those arguments do not replace the receiving agent's main input, and input filters can change the history it sees. Deciding which information belongs in each place is part of designing the handoff.
 
-The [OpenAI Agents SDK handoff guide](https://openai.github.io/openai-agents-python/handoffs/) separates small model-generated handoff metadata from application state and from the receiving agent’s main input. It also provides input filters that change which history items the next agent sees. Microsoft’s [orchestration guidance](https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/ai-agent-design-patterns) recommends deciding whether the next agent needs full raw context, a compacted version, or only a new instruction set.
+Microsoft's [agent design guidance](https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/ai-agent-design-patterns) likewise describes choosing full context, compacted context, or new instructions according to the next agent's needs. It recommends durable external state for work that spans interruptions.
 
-The practical rule is to include context when it changes a valid action or judgment. Keep the rest as durable references.
+Full history may be necessary when the task depends on nuance across a conversation. A shorter packet is useful only if it preserves what the receiver needs and points to anything it may have to recover.
 
-For an editorial review, the current voice guide and disclosure policy change the decision. A long transcript about earlier keyword research may not. For a debugging step, the failing test output and accepted requirement matter; unrelated implementation discussion does not.
+In StackOS, a claimed step includes its instructions, expected outputs, allowed tools, and bounded results from direct predecessor steps. When one of those predecessor results is too large for the handoff, the response provides a targeted read for the complete result. That gives the agent a place to retrieve missing detail without searching the whole project. The broader [agent-experience guide](/library/articles/ai-agent-experience/) covers context, tools, and recovery across the workflow.
 
-Full history can still be correct when nuance across the whole conversation is the task. Bounded context is a selection rule, not a blanket instruction to summarize everything.
+## Make the tools and return value specific
 
-## Resolve tools and authority together
+Put each permitted operation beside its purpose and target. A reader checking one shared file needs the operations for inspecting that file and its request record. A catalog of every available tool adds little if the agent still has to discover which operation fits.
 
-A tool name without an authority boundary leaves the agent guessing.
+Also state the limits of the assignment. The agent in this example may read the request status and remote file. It may not issue another update, change the approved local file, or broaden the investigation to other files. The original agent's permission to write does not automatically authorize every action by its successor.
 
-The packet should say which operations are available, what they are for, and which side effects are outside the step. If a reviewer can read files and run checks but cannot edit or publish, that boundary belongs beside the tools.
+Define the returned result precisely enough for its consumer to use. For this check, ask for the request's observed status, the remote file's observed version, the comparison with the approved content, the supporting records, and any unresolved question.
 
-Resolved tools are better than broad discovery when the workflow already knows the target. “Run the website content sync in this directory” is more executable than “use the repository tools to verify the article.” A tool description should still expose important limits and likely failure modes, but the agent should not have to inspect an entire toolbox to locate the intended operation.
+Acceptance criteria then explain what those fields must establish. A response with every field filled in can still confuse a request being accepted with a file being updated. To report the update complete, the agent needs evidence of the required external result.
 
-Authority should also end with the active responsibility. A review step does not inherit publication rights merely because publication exists later in the workflow.
+Recovery guidance should cover the expected gaps. Name the read that retrieves an omitted predecessor result. Say how to report an unavailable source. For an uncertain external write, identify the permitted status checks and the point at which the agent should return its unresolved finding. “Retry if needed” leaves the consequential decision unspecified.
 
-## Define the output and acceptance contract
+## Worked example: an interrupted shared-file update
 
-The receiving agent needs to know what a valid result looks like.
+Here is the full hypothetical case. A local document has passed its checks and been approved. Its update request timed out. The file service in this example supports looking up that request by its saved identifier and reading the remote file's current version and contents. The receiving agent has permission to perform those reads.
 
-For a claim review, “provide feedback” is weak. A useful output contract could require:
-
-- finding;
-- affected claim or section;
-- evidence basis;
-- classification;
-- repair status;
-- unresolved question.
-
-Acceptance criteria then define completion: all material claims were checked, unsupported claims were removed or marked unresolved, and findings were returned in the expected shape.
-
-The distinction matters. An output schema can prove that required fields exist. Acceptance criteria evaluate whether the responsibility was actually fulfilled. A packet should carry both when the result feeds another agent.
-
-## Include targeted recovery and a stopping rule
-
-“Retry if needed” is not recovery guidance.
-
-Targeted recovery names the next safe action for failures the workflow can anticipate. If a predecessor handoff was truncated, the packet can provide the exact read needed to recover it. If a source is unavailable, it can tell the reviewer to return an unresolved finding instead of inventing support. If an external action lacks authority, it can require the agent to stop with a structured blocker.
-
-The stopping rule is equally important. It prevents a specialist from turning one responsibility into a broader improvement project.
-
-A reviewer should stop when its checks are complete and return findings. It should not implement every preference. A writer should stop when the accepted repair is made and the required evidence is attached. It should not redesign the workflow.
-
-The [orchestrator then triages feedback](/library/articles/how-ai-orchestrators-triage-feedback) against the accepted plan.
-
-## A worked handoff packet
-
-The packet below is deliberately compact. Stable project rules and tool schemas can remain durable references; this payload resolves what the next agent needs for one article review.
+The YAML is a human-readable illustration with placeholder references, not a StackOS API payload. Replace the operations and references with ones your actual tools support.
 
 ```yaml
-step: editorial-review
-
 objective:
-  task: Review the current article for unsupported material claims.
-  ownership: Return findings to the orchestrator; do not edit or publish.
+  task: Determine the outcome of the interrupted file update.
+  ownership: Return evidence to the coordinating agent, which owns the task.
 
 accepted_state:
-  draft_ref: website/content/articles/example.md
-  angle_status: accepted
-  publication_intent: packet_only
-  evidence_refs:
-    - evidence-item:research-basis
-    - source-ledger:example
+  approved_file_ref: LOCAL_FILE_VERSION
+  content_fingerprint_ref: APPROVED_CONTENT_FINGERPRINT
+  checks_ref: LOCAL_CHECK_RESULT
+  approval_ref: FILE_APPROVAL_RECORD
+  target_ref: SHARED_FILE_REF
+  attempted_request_ref: UPDATE_REQUEST_RECORD
+  request_lookup_id: REQUEST_IDENTIFIER
+  local_result: Timed out before receiving the response.
+  external_result: Unconfirmed.
 
 context:
-  voice_guide_ref: artifact:current-voice-guide
-  disclosure_policy_ref: resource:public-disclosure
+  file_requirements_ref: ACCEPTED_FILE_REQUIREMENTS
+  provider_read_instructions_ref: REQUEST_AND_FILE_READ_GUIDE
+  decision: The approved local content remains the intended update.
 
 authority:
   allowed:
-    - read the draft and named evidence
-    - inspect public primary sources
+    - Read the named local inputs and records.
+    - Look up the saved request identifier.
+    - Read the named remote file's version and contents.
   prohibited:
-    - modify the draft
-    - create publication jobs
-    - add work outside claim review
+    - Send or retry a file update.
+    - Edit the approved content or act on another file.
 
 output:
-  required_fields:
-    - claim
-    - evidence_basis
-    - classification
-    - repair_needed
-  acceptance:
-    - every material claim was checked
-    - unsupported claims are identified
-    - preferences are separated from blockers
+  required:
+    - Request status and its supporting record.
+    - Remote file version and content comparison, with readback evidence.
+    - Conclusion: applied, confirmed_no_effect, or unresolved.
+    - Any missing evidence or decision needed from the coordinating agent.
+
+acceptance:
+  - Each conclusion is supported by the retrieved records.
+  - Applied means the request completed and the target matches the approved content.
+  - Confirmed_no_effect requires a terminal record proving no change occurred.
+  - Missing, pending, partial, or conflicting evidence remains explicit.
+  - No new write was attempted.
 
 recovery:
-  missing_evidence: Return an unresolved finding with the missing ref.
-  truncated_handoff: Read the named predecessor result once.
+  unavailable_input: Return the missing reference and the check it prevents.
+  failed_read: Return the failed read and keep its conclusion unresolved.
+  pending_request: Report the pending state for a later check.
+  conflicting_results: Return both records and the exact conflict.
 
-destination: orchestrator
-stop_when: The claim report is complete or a blocking input is unavailable.
+destination: Coordinating agent.
+stop_when: The permitted checks are complete or a required check is blocked.
 ```
 
-The exact keys can change. The operating questions should not disappear.
+You can inspect this packet by giving it to a fresh agent and asking what it would do first. It should be able to identify the local evidence and permitted request lookup. If it proposes uploading the file again, check whether it missed the authority boundary or whether the packet left the external result ambiguous.
 
-## Watch for common handoff failures
+The returned evidence determines what happens next:
 
-Several packets look informative but still force reconstruction:
+- **The request completed and the target matches the approved content.** Return the completion record and file comparison. The coordinating agent can record the update as complete without another write.
+- **A terminal request record proves that no change occurred.** Return that record and the observed file state. The coordinating agent can decide whether a retry is appropriate under the provider's behavior and current authorization.
+- **The evidence is incomplete or conflicts.** Return the precise unresolved result. A matching remote file can establish that the desired content is present, but a missing request record may still leave the attempted operation unaccounted for. A pending request, partial change, or different file version also needs its own next decision.
 
-- **Summary only:** explains what happened but does not identify authoritative state.
-- **Role only:** describes expertise but not the current objective or boundary.
-- **History dump:** passes everything and makes the receiver search for what matters.
-- **Tool catalog:** exposes operations without resolving which one applies or what authority is active.
-- **Output without evidence:** asks for a result but not the receipts its consumer needs.
-- **Criteria without recovery:** defines success but gives no valid response to missing inputs.
-- **No destination:** leaves the agent unsure whether to act, delegate, or return.
-- **No stopping rule:** lets a bounded task expand into open-ended improvement.
-
-These are packet problems even when the model is capable enough to work around them.
-
-## Use the first-valid-action test
-
-Give the packet to a fresh agent with a short instruction such as “continue this step.” Then observe what it must do before taking a valid action.
-
-The packet is probably sufficient when the agent can answer:
-
-- What am I responsible for?
-- Which input is authoritative?
-- Which decisions are already settled?
-- Which tools and side effects are allowed?
-- What must I return, and where?
-- What should I do if the expected path fails?
-- When must I stop?
-
-Some investigation will remain. That is part of agent work. The warning sign is workflow archaeology: searching for the current draft, guessing which policy applies, discovering tool authority by failure, or reconstructing the terminal condition from conversation history.
-
-A good handoff does not eliminate reasoning. It reserves reasoning for the task instead of spending it on avoidable ambiguity.
+In the last case, the receiving agent has finished its check while the file-update task remains open. Its return tells the coordinating agent which evidence is still missing, so the next attempt to continue can start there.

@@ -2,32 +2,32 @@
   "schemaVersion": "stackos.sitemap-lastmod.v1",
   "routes": {
     "/": {
-      "updatedAt": "2026-07-28",
-      "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 updated the homepage source"
+      "updatedAt": "2026-09-29",
+      "evidence": "Indexed-page refresh C05 clarified local project/tool behavior and added client-guide and workflow links."
     },
     "/library/": {
-      "updatedAt": "2026-09-13",
-      "evidence": "git:0ff6c04 updated the featured finance workflow and agent catalog copy"
+      "updatedAt": "2026-09-29",
+      "evidence": "Indexed-page refresh C03 added task-oriented starting paths to the client guide, Search Console and workflow library. September 29 integration catalog catch-up also updates the released provider and action totals."
     },
     "/library/articles/": {
       "updatedAt": "2026-07-28",
       "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 updated the article index source"
     },
     "/library/workflows/": {
-      "updatedAt": "2026-09-13",
-      "evidence": "git:0ff6c04 updated the payment-request and follow-up workflow catalog copy"
+      "updatedAt": "2026-10-05",
+      "evidence": "Existing content-refresh and website-analysis previews now show the reviewed concrete requests and minimum inputs from their public workflow owners."
     },
     "/library/agents/": {
-      "updatedAt": "2026-09-13",
-      "evidence": "git:0ff6c04 updated the finance billing and collections agent description"
+      "updatedAt": "2026-09-28",
+      "evidence": "git:3121f4af370fbad273d08a9469d8961de2278534 (2026-09-28) updated the source-owned agent descriptions displayed by this index; current owners match the published 2.1.30 package."
     },
     "/library/orchestrators/": {
-      "updatedAt": "2026-07-28",
-      "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 updated the orchestrator index source"
+      "updatedAt": "2026-09-28",
+      "evidence": "git:3121f4af370fbad273d08a9469d8961de2278534 (2026-09-28) updated the source-owned orchestrator descriptions displayed by this index; current owners match the published 2.1.30 package."
     },
     "/library/integrations/": {
-      "updatedAt": "2026-09-13",
-      "evidence": "git:0ff6c04 added AIGNC and updated Stripe, IMAP, Slack and Google Ads public action contracts"
+      "updatedAt": "2026-09-29",
+      "evidence": "Public StackOS 2.1.31 release on September 29 added Google Indexing API and three Search Console actions; the integration index now reflects that released inventory."
     }
   },
   "catalogFamilies": {
@@ -37,6 +37,18 @@
         "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 materially updated the workflow detail template and catalog"
       },
       "items": {
+        "seo-website-analysis": {
+          "updatedAt": "2026-10-05",
+          "evidence": "Added a concrete analysis request, minimum inputs and an illustrative broken-link finding with priority, proposed fix and verification."
+        },
+        "seo-content-refresh": {
+          "updatedAt": "2026-10-05",
+          "evidence": "Added a concrete refresh request and example edit, clarified inputs and verification, and shortened the outcome so the public summary is complete."
+        },
+        "engineering-tracked-delivery": {
+          "updatedAt": "2026-09-29",
+          "evidence": "Clarified the public engineering outcome and broad steps for understanding, implementing, checking and recording release status; execution behavior unchanged."
+        },
         "finance-payment-request": {
           "updatedAt": "2026-09-13",
           "evidence": "git:0ff6c04 added existing catalog choices and explicit no-send settlement handoffs to the public workflow contract"
@@ -44,6 +56,14 @@
         "finance-payment-request-followups": {
           "updatedAt": "2026-09-13",
           "evidence": "git:0ff6c04 updated the public Stripe resend and SMTP email follow-up contract"
+        },
+        "marketing-campaign-production": {
+          "updatedAt": "2026-09-28",
+          "evidence": "git:3121f4af370fbad273d08a9469d8961de2278534 (2026-09-28) updated the public marketing-campaign-production contract; current owner is byte-identical to the published 2.1.30 package."
+        },
+        "seo-keyword-research": {
+          "updatedAt": "2026-10-05",
+          "evidence": "Added a concrete research request, minimum inputs and illustrative refresh, new-page and defer decisions in the owning public workflow contract."
         }
       }
     },
@@ -54,8 +74,8 @@
       },
       "items": {
         "seo-workflow-website-analysis": {
-          "updatedAt": "2026-09-13",
-          "evidence": "git:f81ae70 added native gstack session selection and host-terminal browser operation to the public agent contract"
+          "updatedAt": "2026-09-28",
+          "evidence": "git:3121f4af370fbad273d08a9469d8961de2278534 (2026-09-28) updated the public seo-workflow-website-analysis contract; current owner is byte-identical to the published 2.1.30 package."
         },
         "stackos-finance-billing-collections-operator": {
           "updatedAt": "2026-09-13",
@@ -72,6 +92,58 @@
         "stackos-finance-receipt-operator": {
           "updatedAt": "2026-09-21",
           "evidence": "git:bea3f58 added original-byte custody, multiple-association reuse and disposed-history guidance"
+        },
+        "branding-channel-strategist": {
+          "updatedAt": "2026-09-28",
+          "evidence": "Published StackOS 2.1.30 generic natural-writing contract; source owner matches the 2026-09-28 release package."
+        },
+        "branding-evidence-curator": {
+          "updatedAt": "2026-09-28",
+          "evidence": "Published StackOS 2.1.30 generic natural-writing contract; source owner matches the 2026-09-28 release package."
+        },
+        "branding-narrative-writer": {
+          "updatedAt": "2026-09-28",
+          "evidence": "Published StackOS 2.1.30 generic natural-writing contract; source owner matches the 2026-09-28 release package."
+        },
+        "branding-voice-reviewer": {
+          "updatedAt": "2026-09-28",
+          "evidence": "Published StackOS 2.1.30 generic natural-writing contract; source owner matches the 2026-09-28 release package."
+        },
+        "seo-workflow-content-refresh": {
+          "updatedAt": "2026-09-28",
+          "evidence": "git:3121f4af370fbad273d08a9469d8961de2278534 (2026-09-28) updated the public seo-workflow-content-refresh contract; current owner is byte-identical to the published 2.1.30 package."
+        },
+        "seo-workflow-keyword-research": {
+          "updatedAt": "2026-09-28",
+          "evidence": "git:3121f4af370fbad273d08a9469d8961de2278534 (2026-09-28) updated the public seo-workflow-keyword-research contract; current owner is byte-identical to the published 2.1.30 package."
+        },
+        "stackos-sdlc-architecture": {
+          "updatedAt": "2026-09-28",
+          "evidence": "git:3121f4af370fbad273d08a9469d8961de2278534 (2026-09-28) updated the public stackos-sdlc-architecture contract; current owner is byte-identical to the published 2.1.30 package."
+        },
+        "stackos-sdlc-codebase-explorer": {
+          "updatedAt": "2026-09-28",
+          "evidence": "git:3121f4af370fbad273d08a9469d8961de2278534 (2026-09-28) updated the public stackos-sdlc-codebase-explorer contract; current owner is byte-identical to the published 2.1.30 package."
+        },
+        "stackos-sdlc-delivery": {
+          "updatedAt": "2026-09-28",
+          "evidence": "git:3121f4af370fbad273d08a9469d8961de2278534 (2026-09-28) updated the public stackos-sdlc-delivery contract; current owner is byte-identical to the published 2.1.30 package."
+        },
+        "stackos-sdlc-delivery-reviewer": {
+          "updatedAt": "2026-09-28",
+          "evidence": "git:3121f4af370fbad273d08a9469d8961de2278534 (2026-09-28) updated the public stackos-sdlc-delivery-reviewer contract; current owner is byte-identical to the published 2.1.30 package."
+        },
+        "stackos-sdlc-planning": {
+          "updatedAt": "2026-09-28",
+          "evidence": "git:3121f4af370fbad273d08a9469d8961de2278534 (2026-09-28) updated the public stackos-sdlc-planning contract; current owner is byte-identical to the published 2.1.30 package."
+        },
+        "stackos-sdlc-requirements-flow-definer": {
+          "updatedAt": "2026-09-28",
+          "evidence": "git:3121f4af370fbad273d08a9469d8961de2278534 (2026-09-28) updated the public stackos-sdlc-requirements-flow-definer contract; current owner is byte-identical to the published 2.1.30 package."
+        },
+        "stackos-sdlc-test-designer": {
+          "updatedAt": "2026-09-28",
+          "evidence": "git:3121f4af370fbad273d08a9469d8961de2278534 (2026-09-28) updated the public stackos-sdlc-test-designer contract; current owner is byte-identical to the published 2.1.30 package."
         }
       }
     },
@@ -80,7 +152,12 @@
         "updatedAt": "2026-07-28",
         "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 materially updated the orchestrator detail template and catalog"
       },
-      "items": {}
+      "items": {
+        "stackos-sdlc-delivery-orchestrator": {
+          "updatedAt": "2026-09-28",
+          "evidence": "git:3121f4af370fbad273d08a9469d8961de2278534 (2026-09-28) updated the public stackos-sdlc-delivery-orchestrator contract; current owner is byte-identical to the published 2.1.30 package."
+        }
+      }
     },
     "integrationProviders": {
       "default": {
@@ -88,13 +165,17 @@
         "evidence": "git:2c9bef4b63a859fd67a211d39f9db3561ae1bfd4 materially updated the provider detail template and catalog"
       },
       "items": {
+        "google-search-console": {
+          "updatedAt": "2026-09-29",
+          "evidence": "Reviewed September 29 guide update explains released StackOS 2.1.31 sitemap submission, HTTP batching and result checks; generated action list now matches that release."
+        },
         "aignc": {
           "updatedAt": "2026-09-13",
           "evidence": "git:0ff6c04 added the AIGNC provider and four public action contracts"
         },
         "google-ads": {
-          "updatedAt": "2026-09-13",
-          "evidence": "git:0ff6c04 clarified the public Google Ads report pagination contract"
+          "updatedAt": "2026-09-29",
+          "evidence": "Public StackOS 2.1.31 release on September 29 updated this provider's Google access setup guidance; generated catalog now reflects the verified released manifest."
         },
         "imap": {
           "updatedAt": "2026-09-13",
@@ -105,12 +186,40 @@
           "evidence": "website Linear provider/plugin canonical consolidation"
         },
         "slack-bot": {
-          "updatedAt": "2026-09-13",
-          "evidence": "git:0ff6c04 clarified the public Slack history content and thread boundary"
+          "updatedAt": "2026-09-29",
+          "evidence": "September 29 shared integration template correction displays the existing destructive-action count and label, including the Slack delete action, instead of a neutral fallback."
         },
         "stripe": {
           "updatedAt": "2026-09-13",
           "evidence": "git:0ff6c04 added existing Stripe Product/Price discovery actions and applicable setup guidance"
+        },
+        "ghost": {
+          "updatedAt": "2026-09-29",
+          "evidence": "Reviewed September 29 guide update adds a draft-creation example, returned ID/status checks, Ghost Admin review and uncertain-result recovery guidance."
+        },
+        "google-indexing": {
+          "updatedAt": "2026-09-29",
+          "evidence": "Public StackOS 2.1.31 release on September 29 added the separate Google Indexing API provider and four actions; generated catalog now reflects that released source."
+        },
+        "google-analytics": {
+          "updatedAt": "2026-09-29",
+          "evidence": "Public StackOS 2.1.31 release on September 29 updated this provider's Google access setup guidance; generated catalog now reflects the verified released manifest."
+        },
+        "google-tag-manager": {
+          "updatedAt": "2026-09-29",
+          "evidence": "Public StackOS 2.1.31 release on September 29 updated this provider's Google access setup guidance; generated catalog now reflects the verified released manifest."
+        },
+        "google-workspace": {
+          "updatedAt": "2026-09-29",
+          "evidence": "Public StackOS 2.1.31 release on September 29 updated this provider's Google access setup guidance; generated catalog now reflects the verified released manifest."
+        },
+        "ahrefs": {
+          "updatedAt": "2026-09-29",
+          "evidence": "September 29 released SEO catalog catch-up changes this page's derived related-integration navigation to include Google Indexing API."
+        },
+        "dataforseo": {
+          "updatedAt": "2026-09-29",
+          "evidence": "September 29 released SEO catalog catch-up changes this page's derived related-integration navigation to include Google Indexing API."
         }
       }
     },
@@ -131,6 +240,10 @@
         "utils": {
           "updatedAt": "2026-09-13",
           "evidence": "git:0ff6c04 added the AIGNC provider and supported action inventory"
+        },
+        "seo": {
+          "updatedAt": "2026-09-29",
+          "evidence": "Public StackOS 2.1.31 release on September 29 added the Google Indexing API provider and three Search Console actions; the SEO plugin catalog now reflects those released counts and provider links."
         }
       }
     }

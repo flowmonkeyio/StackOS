@@ -47,8 +47,8 @@ function displayDate(date: string) {
         </div>
       </header>
 
-      <div class="article-body">
-        <div class="article-prose">
+      <div class="article-body article-body--reading">
+        <div class="article-prose article-prose--reading">
           <ContentRenderer :value="article" />
 
           <section v-if="relatedWorkflows.length || relatedAgents.length" class="article-related" aria-labelledby="related-product">

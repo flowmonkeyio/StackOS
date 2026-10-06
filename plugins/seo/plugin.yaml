@@ -180,6 +180,17 @@ providers:
       setup_note: Choose Google OAuth or a service-account JSON key with Search Console property access.
         Access defaults to read only. Select Read and submit sitemaps to request the write scope;
         changing access requires a new token or renewed OAuth consent.
+  - key: google-indexing
+    name: Google Indexing API
+    description: Submit eligible job posting or livestream URL notifications and read notification history. Acceptance does not prove indexing.
+    auth_catalog_ref: google-indexing
+    auth_type: oauth
+    auth_methods:
+    - key: service-account
+      permission_verification:
+        enforcement: local_required
+    config:
+      setup_note: Enable Indexing API and add the service account as a delegated site owner in Search Console. FullUser access is insufficient. Account test acquires a token; API and site access remain unverified. Only JobPosting or BroadcastEvent inside VideoObject is eligible; ordinary articles are unsupported.
   - key: google-analytics
     name: Google Analytics 4
     description: GA4 account discovery, metadata, standard reports, and realtime report reads.
@@ -814,7 +825,7 @@ actions:
     provider: google-search-console
     capability: seo-measurement
     risk_level: read
-    input_schema:
+    input_schema: &gsc_sites_input
       type: object
       additionalProperties: false
       properties: {}
@@ -834,7 +845,7 @@ actions:
     provider: google-search-console
     capability: seo-measurement
     risk_level: read
-    input_schema:
+    input_schema: &gsc_analytics_input
       type: object
       additionalProperties: false
       required:
@@ -903,7 +914,7 @@ actions:
     provider: google-search-console
     capability: seo-measurement
     risk_level: read
-    input_schema:
+    input_schema: &gsc_sitemaps_input
       type: object
       additionalProperties: false
       required:
@@ -923,13 +934,35 @@ actions:
         - https://www.googleapis.com/auth/webmasters.readonly
       budget_kind: google-search-console
       enforce_budget: false
+  - key: search-console.sitemaps.submit
+    name: Submit Search Console Sitemap
+    description: Submit or resubmit one existing sitemap URL to Google. This registers the URL; it does not edit the sitemap or guarantee crawling or indexing.
+    provider: google-search-console
+    capability: seo-measurement
+    risk_level: write
+    input_schema: &gsc_submit_input
+      type: object
+      additionalProperties: false
+      required: [site_url, sitemap_url]
+      properties:
+        site_url: {type: string}
+        sitemap_url: {type: string}
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: google-search-console
+      operation: sitemaps.submit
+      requires_credential: true
+      required_scopes: [https://www.googleapis.com/auth/webmasters]
+      budget_kind: google-search-console
+      enforce_budget: false
   - key: search-console.url.inspect
     name: Inspect Search Console URL
     description: Read Google's indexed-version URL Inspection result for a URL under a verified property.
     provider: google-search-console
     capability: seo-measurement
     risk_level: read
-    input_schema:
+    input_schema: &gsc_inspection_input
       type: object
       additionalProperties: false
       required:
@@ -951,6 +984,167 @@ actions:
       required_scopes:
         - https://www.googleapis.com/auth/webmasters.readonly
       budget_kind: google-search-console
+      enforce_budget: false
+  - key: search-console.batch.read
+    name: Read Search Console Batch
+    description: Execute 1 to 1000 typed Search Console reads with one Account. Each item consumes quota; execution order is not guaranteed. Partial and unknown outcomes require inspection before retrying.
+    provider: google-search-console
+    capability: seo-measurement
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [requests]
+      properties:
+        requests:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          items:
+            oneOf:
+              - type: object
+                additionalProperties: false
+                required: [operation, input]
+                properties:
+                  operation: {const: sites.list}
+                  input: *gsc_sites_input
+              - type: object
+                additionalProperties: false
+                required: [operation, input]
+                properties:
+                  operation: {const: search_analytics.query}
+                  input: *gsc_analytics_input
+              - type: object
+                additionalProperties: false
+                required: [operation, input]
+                properties:
+                  operation: {const: sitemaps.list}
+                  input: *gsc_sitemaps_input
+              - type: object
+                additionalProperties: false
+                required: [operation, input]
+                properties:
+                  operation: {const: url.inspect}
+                  input: *gsc_inspection_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: google-search-console
+      operation: batch.read
+      requires_credential: true
+      required_scopes: [https://www.googleapis.com/auth/webmasters.readonly]
+      budget_kind: google-search-console
+      enforce_budget: false
+  - key: search-console.sitemaps.submit.batch
+    name: Submit Search Console Sitemap Batch
+    description: Submit or resubmit 1 to 1000 existing sitemap URLs with one Account. The batch is not atomic or ordered; inspect every item and reconcile partial or unknown writes before repeating a request.
+    provider: google-search-console
+    capability: seo-measurement
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [requests]
+      properties:
+        requests:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          items: *gsc_submit_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: google-search-console
+      operation: sitemaps.submit.batch
+      requires_credential: true
+      required_scopes: [https://www.googleapis.com/auth/webmasters]
+      budget_kind: google-search-console
+      enforce_budget: false
+  - key: indexing.url-notifications.publish
+    name: Publish Google Indexing Notification
+    description: Notify Google about URL_UPDATED or URL_DELETED for an eligible JobPosting or livestream BroadcastEvent inside VideoObject. Delete only after 404, 410, or noindex. Acceptance does not certify crawling, indexing, or removal.
+    provider: google-indexing
+    capability: seo-measurement
+    risk_level: destructive
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [url, type]
+      properties:
+        url: {type: string}
+        type: {type: string, enum: [URL_UPDATED, URL_DELETED]}
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: google-indexing
+      operation: url_notifications.publish
+      requires_credential: true
+      required_scopes: [https://www.googleapis.com/auth/indexing]
+      budget_kind: google-indexing
+      enforce_budget: false
+  - key: indexing.url-notifications.metadata.get
+    name: Read Google Indexing Notification History
+    description: Read the latest notifications Google received for one URL. This does not report current indexing status.
+    provider: google-indexing
+    capability: seo-measurement
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url: {type: string}
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: google-indexing
+      operation: url_notifications.metadata.get
+      requires_credential: true
+      required_scopes: [https://www.googleapis.com/auth/indexing]
+      budget_kind: google-indexing
+      enforce_budget: false
+  - key: indexing.batch.publish
+    name: Publish Google Indexing Notifications in a Batch
+    description: Send one notification type for 1–100 eligible URLs. Each encoded inner request is at most 1 MB. Per-URL quota applies. Processing order and atomicity are not guaranteed; notification receipt does not certify indexing or removal. Inspect partial outcomes before choosing to retry.
+    provider: google-indexing
+    capability: seo-measurement
+    risk_level: destructive
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [urls, type]
+      properties:
+        urls: {type: array, minItems: 1, maxItems: 100, items: {type: string}}
+        type: {type: string, enum: [URL_UPDATED, URL_DELETED]}
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: google-indexing
+      operation: batch.publish
+      requires_credential: true
+      required_scopes: [https://www.googleapis.com/auth/indexing]
+      budget_kind: google-indexing
+      enforce_budget: false
+  - key: indexing.batch.metadata.get
+    name: Read Google Indexing Notification History in a Batch
+    description: Read notification history for 1–100 URLs using one Account. Each encoded inner request is at most 1 MB. Returns complete per-item outcomes in input order; actual indexing status remains unverified. Each item consumes quota; no automatic retry or chunking.
+    provider: google-indexing
+    capability: seo-measurement
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [urls]
+      properties:
+        urls: {type: array, minItems: 1, maxItems: 100, items: {type: string}}
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: google-indexing
+      operation: batch.metadata.get
+      requires_credential: true
+      required_scopes: [https://www.googleapis.com/auth/indexing]
+      budget_kind: google-indexing
       enforce_budget: false
   - key: ga4.account_summaries.list
     name: List GA4 Account Summaries

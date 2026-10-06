@@ -6,7 +6,7 @@ import asyncio
 import base64
 import json
 from datetime import timedelta
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
@@ -150,6 +150,134 @@ async def resolve(repo, ref, project_id, scopes=(SCOPE,), provider="google-searc
         operation="test",
         required_scopes=scopes,
     )
+
+
+@pytest.mark.asyncio
+async def test_search_console_mode_change_reacquires_scope_without_fabricated_grants(
+    session, project_id, service_key, httpx_mock
+):
+    repo = AuthRepository(session)
+    full_scope = "https://www.googleapis.com/auth/webmasters"
+    ref = create(repo, service_key, project_id)
+    httpx_mock.add_response(url=TOKEN_URL, json=TOKEN)
+    await resolve(repo, ref, project_id)
+    with pytest.raises(ConflictError, match="access mode"):
+        await resolve(repo, ref, project_id, scopes=(full_scope,))
+    repo.update_credential(
+        credential_ref=ref, fields={"access_mode": "sitemap_write"}, display_name=None
+    )
+    credential, row = repo._global_credential(ref)
+    assert credential.expires_at is None
+    assert credential.config_json["scope_status"] == "unknown"
+    assert not session.exec(select(CredentialScope)).all()
+    assert "access_token" not in json.loads(
+        IntegrationCredentialRepository(session).get_decrypted(row.id)
+    )
+    httpx_mock.add_response(url=TOKEN_URL, json={**TOKEN, "access_token": "write-access"})
+    await resolve(repo, ref, project_id, scopes=(full_scope,))
+    await resolve(repo, ref, project_id)  # Full scope also permits existing reads.
+    assert {s.scope for s in session.exec(select(CredentialScope)).all()} == {full_scope}
+    assertion = parse_qs(httpx_mock.get_requests()[-1].content.decode())["assertion"][0]
+    claims = json.loads(base64.urlsafe_b64decode(assertion.split(".")[1] + "=="))
+    assert claims["scope"] == full_scope
+    repo.update_credential(credential_ref=ref, fields={}, display_name="Same access")
+    await resolve(repo, ref, project_id)
+    assert len(httpx_mock.get_requests()) == 2
+    repo.update_credential(
+        credential_ref=ref, fields={"access_mode": "readonly"}, display_name=None
+    )
+    httpx_mock.add_response(url=TOKEN_URL, json=TOKEN)
+    await resolve(repo, ref, project_id)
+    assert {s.scope for s in session.exec(select(CredentialScope)).all()} == {SCOPE}
+
+
+@pytest.mark.asyncio
+async def test_search_console_full_scope_read_compatibility_does_not_enable_old_account_writes(
+    session, project_id, service_key, httpx_mock
+):
+    repo = AuthRepository(session)
+    full_scope = "https://www.googleapis.com/auth/webmasters"
+    ref = create(repo, service_key, project_id)
+    httpx_mock.add_response(url=TOKEN_URL, json={**TOKEN, "scope": full_scope})
+    await resolve(repo, ref, project_id)
+    assert {s.scope for s in session.exec(select(CredentialScope)).all()} == {full_scope}
+    with pytest.raises(ConflictError, match="access mode"):
+        await resolve(repo, ref, project_id, scopes=(full_scope,))
+    credential, _ = repo._global_credential(ref)
+    credential.config_json = {**credential.config_json, "scope_status": "unknown"}
+    session.add(credential)
+    session.commit()
+    with pytest.raises(ConflictError, match="unknown"):
+        await resolve(repo, ref, project_id)
+    assert len(httpx_mock.get_requests()) == 1
+
+
+@pytest.mark.asyncio
+async def test_search_console_write_mode_still_requires_google_write_scope(
+    session, project_id, service_key, httpx_mock
+):
+    repo = AuthRepository(session)
+    ref = create(repo, service_key, project_id, access_mode="sitemap_write")
+    httpx_mock.add_response(url=TOKEN_URL, json={**TOKEN, "scope": SCOPE})
+    with pytest.raises(ConflictError, match="missing required scopes"):
+        await resolve(repo, ref, project_id, scopes=("https://www.googleapis.com/auth/webmasters",))
+    assert {s.scope for s in session.exec(select(CredentialScope)).all()} == {SCOPE}
+
+
+@pytest.mark.asyncio
+async def test_search_console_oauth_mode_change_requires_fresh_consent(
+    session, project_id, settings, httpx_mock
+):
+    repo = AuthRepository(session)
+    ref = repo.store_credential(
+        provider_key="google-search-console",
+        auth_method_key="oauth2_authorization_code",
+        display_name="Interactive sitemap writer",
+        attach_project_id=project_id,
+        fields={"client_id": "synthetic-client", "client_secret": "synthetic-secret"},
+    ).data.credential_ref
+
+    def start():
+        flow = repo.start(
+            provider_key="google-search-console",
+            auth_method_key="oauth2_authorization_code",
+            credential_ref=ref,
+            settings=settings,
+        ).data
+        return parse_qs(urlparse(flow.authorization_url).query)
+
+    initial = start()
+    assert initial["scope"] == [SCOPE]
+    httpx_mock.add_response(
+        url=TOKEN_URL, json={**TOKEN, "scope": SCOPE, "refresh_token": "old-refresh"}
+    )
+    await repo.complete_oauth_callback(
+        state=initial["state"][0], code="read-code", settings=settings
+    )
+    stale = start()
+    repo.update_credential(
+        credential_ref=ref, fields={"access_mode": "sitemap_write"}, display_name=None
+    )
+    credential, row = repo._global_credential(ref)
+    assert credential.status == "pending"
+    assert not session.exec(select(CredentialScope)).all()
+    payload = json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id))
+    assert not {"access_token", "refresh_token", "_oauth_pending"} & payload.keys()
+    with pytest.raises(ConflictError, match="stale"):
+        await repo.complete_oauth_callback(
+            state=stale["state"][0], code="stale-code", settings=settings
+        )
+    with pytest.raises(ConflictError, match="not connected"):
+        await resolve(repo, ref, project_id)
+    writable = start()
+    assert writable["scope"] == ["https://www.googleapis.com/auth/webmasters"]
+    assert writable["prompt"] == ["consent"]
+    httpx_mock.add_response(url=TOKEN_URL, json={**TOKEN, "scope": writable["scope"][0]})
+    await repo.complete_oauth_callback(
+        state=writable["state"][0], code="write-code", settings=settings
+    )
+    await resolve(repo, ref, project_id, scopes=tuple(writable["scope"]))
+    await resolve(repo, ref, project_id)
 
 
 @pytest.mark.asyncio

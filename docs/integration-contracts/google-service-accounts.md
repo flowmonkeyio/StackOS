@@ -1,15 +1,16 @@
 # Google Service-Account Contract
 
-Reviewed 2026-09-25. Seven existing providers expose 29 actions. Five add an
-explicit `service-account` Account method; existing OAuth and media API-key
-methods, action refs, risk levels, grants, outputs and audit owners remain.
+Reviewed 2026-09-28. Eight Google providers expose 36 actions. Six offer an
+explicit `service-account` Account method; Indexing uses that method exclusively.
+Existing OAuth and media API-key methods, grants, outputs and audit owners remain.
 There is no new operation, credential store or connector-local token lifecycle.
 
 ## Provider Matrix And Official Sources
 
 | Provider / actions | Authentication and resource permission | Official evidence |
 | --- | --- | --- |
-| `google-search-console` / 4 reads | JSON service account with `webmasters.readonly`; add its email to the Search Console property. Restricted property access supports performance reads; Indexing API ownership is a separate contract. | [Authorization](https://developers.google.com/webmaster-tools/v1/how-tos/authorizing), [service-account quickstart](https://developers.google.com/webmaster-tools/v1/quickstart/quickstart-python), [property permissions](https://support.google.com/webmasters/answer/7687615) |
+| `google-search-console` / 4 reads, sitemap submission, 2 HTTP batches | JSON service account defaults to `webmasters.readonly`; explicit Account `access_mode=sitemap_write` selects `webmasters` and invalidates acquired token/scope state on a mode change. Add its email to the Search Console property with suitable permissions. | [Search Console contract](google-search-console.md), [authorization](https://developers.google.com/webmaster-tools/v1/how-tos/authorizing), [property permissions](https://support.google.com/webmasters/answer/7687615) |
+| `google-indexing` / publish and metadata, singly or in homogeneous batches | Service-account-only with `indexing`; enable the API, verify the site and add the service account as delegated owner. No delegated subject. Test acquires a token only. | [Indexing contract](google-indexing.md), [prerequisites](https://developers.google.com/search/apis/indexing-api/v3/prereqs) |
 | `google-analytics` / 4 reads | JSON service account with `analytics.readonly`; enable Admin and Data APIs and grant account/property access, such as Viewer for reports. | [Data quickstart](https://developers.google.com/analytics/devguides/reporting/data/v1/quickstart), [Admin quickstart](https://developers.google.com/analytics/devguides/config/admin/v1/quickstart) |
 | `google-tag-manager` / 6 reads | JSON service account with `tagmanager.readonly`; grant Tag Manager account/container access. | [Authorization](https://developers.google.com/tag-platform/tag-manager/api/v2/authorization) |
 | `google-ads` / 10 reads/writes | JSON service account with `adwords`; add its email in Ads access settings. No delegated subject. Developer token remains required; existing `manager_account_ref` supplies `login-customer-id`. | [Service accounts](https://developers.google.com/google-ads/api/docs/oauth/service-accounts), [REST authentication](https://developers.google.com/google-ads/api/rest/auth) |
@@ -51,8 +52,9 @@ StackOS's existing Account Test first resolves/acquires the token, then reports
 that acquisition evidence through the host diagnostic path.
 
 Search Console, GA4 and GTM retain inventory probes; empty inventories do not
-prove access to any selected resource. Ads and Workspace report token acquisition
-only and resource access unverified. An exact action can still fail with resource
+prove access to any selected resource. Ads, Workspace and Indexing report token
+acquisition only and resource access unverified. Indexing also explicitly reports
+API and site access unverified. An exact action can still fail with resource
 permission errors after token success. Delegation never comes from a Gmail
 `user_ref`; the saved Account must specify it. Calendar restrictions are checked
 after resolving the calendar ref and before action HTTP.

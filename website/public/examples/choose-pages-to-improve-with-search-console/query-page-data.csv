@@ -1,0 +1,13 @@
+row_id,query,page,clicks,impressions,ctr,position
+Q01,how to prioritize failed automated tasks,https://example.com/guides/review-workflow-errors/,8,320,0.025,11.8
+Q02,which workflow failures should i fix first,https://example.com/guides/review-workflow-errors/,3,120,0.025,9.6
+Q03,workflow error triage checklist,https://example.com/guides/review-workflow-errors/,4,80,0.05,7.3
+Q04,python task queue,https://example.com/guides/task-queue/,21,4200,0.005,8.4
+Q05,task queue,https://example.com/guides/task-queue/,18,1800,0.01,9.1
+Q06,workflow exception handoff template,https://example.com/guides/task-queue/,3,150,0.02,12.6
+Q07,why are approval requests delayed,https://example.com/guides/approval-delays/,1,12,0.083333333333,14.2
+Q08,find approval bottlenecks,https://example.com/guides/approval-delays/,0,8,0,18.1
+Q09,workflow approval wait time report,https://example.com/guides/approval-delays/,1,4,0.25,6.2
+Q10,export workflow audit log csv,https://example.com/guides/export-audit-log/,24,240,0.1,4.1
+Q11,audit log csv timezone,https://example.com/guides/export-audit-log/,6,100,0.06,6.7
+Q12,audit log export includes failed tasks,https://example.com/guides/export-audit-log/,3,60,0.05,8.6

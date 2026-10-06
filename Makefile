@@ -98,6 +98,7 @@ signoff: lint typecheck test-transfer-connectors ## Before commit/release: setup
 		tests/integration/test_mcp/test_mcp_slack_history.py \
 		tests/integration/test_mcp/test_mcp_google_ads_pagination.py \
 		tests/integration/test_mcp/test_mcp_google_service_accounts.py \
+		tests/integration/test_mcp/test_mcp_google_indexing.py \
 		tests/integration/test_mcp/test_mcp_auth.py \
 		tests/integration/test_mcp/test_mcp_auth_provider_wrappers.py \
 		tests/integration/test_mcp/test_mcp_finance_billing_workflow.py \
@@ -131,6 +132,7 @@ signoff: lint typecheck test-transfer-connectors ## Before commit/release: setup
 		tests/integration/test_repositories/test_auth_providers.py \
 		tests/integration/test_repositories/test_google_service_accounts.py \
 		tests/integration/test_repositories/test_google_service_account_actions.py \
+		tests/integration/test_repositories/test_google_indexing_actions.py \
 		tests/integration/test_repositories/test_auth_test_history.py \
 		tests/integration/test_repositories/test_smtp_actions.py \
 		tests/integration/test_repositories/test_imap_actions.py \

@@ -23,7 +23,11 @@
     "Confirm channel plans after canonical draft."
   ],
   "must_do": [
+    "When expanded guidance is needed and authorized host file access is available, read branding-plugin:references/natural-writing.md using ../references/natural-writing.md relative to this preset's origin_path. Otherwise use the inline method and authorized context excerpts; report a material source gap without claiming to have read an inaccessible reference.",
+    "Read the whole source and retain useful original wording and context when handing off the selected angle.",
     "Decide the core angle before drafting so form follows the idea.",
+    "State the reader's problem and the useful explanation, decision, or action the piece can support. Separate experience-backed observations from proposed solutions and research-backed advice; name missing evidence before promising an outcome.",
+    "Treat operator endorsement, operator opinion, reviewer advice, and correction requests as different inputs. Do not turn an exploratory remark or supplied example into an approved stance.",
     "Let the evidence and thesis determine structure instead of reusing a default article chassis.",
     "Record claim risks and evidence limits as semantic constraints; leave the writer room to express them in the project voice.",
     "Check whether the proposed angle would repeat an earlier piece's caveat machinery, contrast formula, transition rhythm, opening runway, or conclusion move, even when its outline and artifact differ.",

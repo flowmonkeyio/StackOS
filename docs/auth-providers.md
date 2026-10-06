@@ -634,7 +634,8 @@ that an imported token bypasses the known-scope gate.
 | --- | --- | --- | --- |
 | Google Ads | Interactive authorization code; manual refresh-token compatible | Shared Google endpoints; PKCE supported; offline consent | `adwords` |
 | Google Workspace | Interactive authorization code; manual token compatible | Shared Google endpoints; PKCE supported; offline consent | Gmail send and Calendar events |
-| Google Search Console | Interactive authorization code; manual access/refresh-token compatible | Shared Google endpoints; PKCE supported; offline consent | `webmasters.readonly` |
+| Google Search Console | Interactive authorization code, explicit service account; manual access/refresh-token compatible | Shared Google endpoints; PKCE supported; offline consent; per-Account `access_mode` defaults to `readonly` | `webmasters.readonly`, or explicitly selected `sitemap_write` requesting `webmasters` |
+| Google Indexing | Service account only; no delegated subject | Shared Google JWT bearer exchange; `account.test` acquires a token only and leaves API/site/resource access unverified. [Setup and eligibility](integration-contracts/google-indexing.md). | Fixed `https://www.googleapis.com/auth/indexing` |
 | Google Analytics | Interactive authorization code; manual access/refresh-token compatible | Shared Google endpoints; PKCE supported; offline consent | `analytics.readonly` |
 | Google Tag Manager | Interactive authorization code; manual access/refresh-token compatible | Shared Google endpoints; PKCE supported; offline consent | `tagmanager.readonly` |
 | Meta Ads | Interactive authorization code; existing user/system-user token compatible | Meta login exchange plus the required short-to-long-lived token exchange; imported-token permission evidence is unavailable | Interactive OAuth uses returned grants; imported tokens fail closed for scoped actions |

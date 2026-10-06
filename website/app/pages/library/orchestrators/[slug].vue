@@ -53,8 +53,9 @@ useSchemaOrg([defineWebPage({ name: item.name, description: item.description }),
 
 <style scoped>
 .detail-space { margin-top: 80px; }
-.coordinator-agents { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 28px; }
-.coordinator-agents a { display: flex; justify-content: space-between; gap: 12px; padding: 15px; color: var(--ink); font-size: 13px; font-weight: 650; text-decoration: none; background: #eceae2; border: 1px solid var(--paper-border); border-radius: 10px; }
+.coordinator-agents { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 32px; margin-top: 28px; }
+.coordinator-agents a { display: flex; justify-content: space-between; gap: 12px; padding: 20px 0; color: var(--ink); font-size: 15px; font-weight: 650; text-decoration: none; border-top: 1px solid var(--paper-border); }
+.coordinator-agents a:hover { color: var(--cobalt); }
 .coordinator-agents span { color: var(--cobalt); }
 .orchestrator-workflows { margin-top: 95px; }
 @media (max-width: 620px) { .coordinator-agents { grid-template-columns: 1fr; } }

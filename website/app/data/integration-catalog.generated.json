@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-09-23T21:22:23.627Z",
+  "generatedAt": "2026-09-30T06:30:27.494Z",
   "source": "StackOS catalog.list after provider catalog synchronization",
   "counts": {
-    "providers": 58,
+    "providers": 59,
     "plugins": 12,
-    "actions": 733,
+    "actions": 740,
     "trackboothActions": 337
   },
   "plugins": [
@@ -164,13 +164,14 @@
       "name": "SEO",
       "description": "Research demand and measure search performance with specialist SEO data sources.",
       "color": "#79dfff",
-      "providerCount": 6,
-      "actionCount": 20,
+      "providerCount": 7,
+      "actionCount": 27,
       "capabilityCount": 3,
       "providerSlugs": [
         "ahrefs",
         "dataforseo",
         "google-analytics",
+        "google-indexing",
         "google-search-console",
         "google-tag-manager",
         "serper"
@@ -179,6 +180,7 @@
         "Ahrefs",
         "DataForSEO",
         "Google Analytics 4",
+        "Google Indexing API",
         "Google Search Console",
         "Google Tag Manager",
         "Serper.dev"
@@ -1705,7 +1707,7 @@
       ],
       "primaryUrl": "https://ads.google.com/home/",
       "docsUrl": "https://developers.google.com/google-ads/api/docs/start",
-      "setupNote": "Enable Google Ads API access, create OAuth client credentials, collect a refresh token, and store all four required secret fields in StackOS."
+      "setupNote": "Enable Google Ads API and obtain a developer token. Choose OAuth or grant a service account access in Google Ads and enter its JSON key locally. Service accounts do not need a delegated user. Use Manager Account Ref for the login-customer-id header when accessing customers through a manager."
     },
     {
       "key": "seo.google-analytics",
@@ -1786,7 +1788,7 @@
       ],
       "primaryUrl": "https://marketingplatform.google.com/about/analytics/",
       "docsUrl": "https://developers.google.com/analytics/devguides/reporting/data/v1",
-      "setupNote": "Create a Google Cloud OAuth client with Analytics Admin/Data APIs enabled, grant https://www.googleapis.com/auth/analytics.readonly, and store either an access token or refresh-token credential in StackOS."
+      "setupNote": "Enable Analytics Admin and Data APIs. For service-account setup, grant the key's client_email Viewer access to the GA4 property or account, then enter the JSON key locally. Cloud IAM alone does not grant Analytics access. OAuth remains available."
     },
     {
       "key": "utils.google-gemini-image",
@@ -1852,6 +1854,84 @@
       "setupNote": "Create or sign in to Google AI Studio, create a Gemini API key, attach billing in Google Cloud if required, and store the key in StackOS."
     },
     {
+      "key": "seo.google-indexing",
+      "slug": "google-indexing",
+      "providerKey": "google-indexing",
+      "name": "Google Indexing API",
+      "description": "Submit eligible job posting or livestream URL notifications and read notification history. Acceptance does not prove indexing.",
+      "authType": "oauth",
+      "pluginSlug": "seo",
+      "pluginName": "SEO",
+      "pluginDescription": "Research demand and measure search performance with specialist SEO data sources.",
+      "color": "#79dfff",
+      "logo": null,
+      "actionCount": 4,
+      "capabilities": [
+        "SEO Measurement"
+      ],
+      "actions": [
+        {
+          "key": "seo.indexing.url-notifications.publish",
+          "name": "Publish Google Indexing Notification",
+          "description": "Notify Google about URL_UPDATED or URL_DELETED for an eligible JobPosting or livestream BroadcastEvent inside VideoObject. Delete only after 404, 410, or noindex. Acceptance does not certify crawling, indexing, or removal.",
+          "keywords": "Notify Google about URL_UPDATED or URL_DELETED for an eligible JobPosting or livestream BroadcastEvent inside VideoObject. Delete only after 404, 410, or noindex. Acceptance does not certify crawling, indexing, or removal.",
+          "capability": "seo-measurement",
+          "capabilityName": "SEO Measurement",
+          "risk": "destructive"
+        },
+        {
+          "key": "seo.indexing.batch.publish",
+          "name": "Publish Google Indexing Notifications in a Batch",
+          "description": "Send one notification type for 1–100 eligible URLs. Each encoded inner request is at most 1 MB. Per-URL quota applies. Processing order and atomicity are not guaranteed; notification receipt does not certify indexing or removal. Inspect partial outcomes before choosing to retry.",
+          "keywords": "Send one notification type for 1–100 eligible URLs. Each encoded inner request is at most 1 MB. Per-URL quota applies. Processing order and atomicity are not guaranteed; notification receipt does not certify indexing or removal. Inspect partial outcomes before choosing to retry.",
+          "capability": "seo-measurement",
+          "capabilityName": "SEO Measurement",
+          "risk": "destructive"
+        },
+        {
+          "key": "seo.indexing.url-notifications.metadata.get",
+          "name": "Read Google Indexing Notification History",
+          "description": "Read the latest notifications Google received for one URL. This does not report current indexing status.",
+          "keywords": "Read the latest notifications Google received for one URL. This does not report current indexing status.",
+          "capability": "seo-measurement",
+          "capabilityName": "SEO Measurement",
+          "risk": "read"
+        },
+        {
+          "key": "seo.indexing.batch.metadata.get",
+          "name": "Read Google Indexing Notification History in a Batch",
+          "description": "Read notification history for 1–100 URLs using one Account. Each encoded inner request is at most 1 MB. Returns complete per-item outcomes in input order; actual indexing status remains unverified. Each item consumes quota; no automatic retry or chunking.",
+          "keywords": "Read notification history for 1–100 URLs using one Account. Each encoded inner request is at most 1 MB. Returns complete per-item outcomes in input order; actual indexing status remains unverified. Each item consumes quota; no automatic retry or chunking.",
+          "capability": "seo-measurement",
+          "capabilityName": "SEO Measurement",
+          "risk": "read"
+        }
+      ],
+      "links": [
+        {
+          "key": "homepage_url",
+          "label": "Visit tool",
+          "url": "https://developers.google.com/search/apis/indexing-api/v3/quickstart",
+          "confidence": "verified"
+        },
+        {
+          "key": "docs_url",
+          "label": "Documentation",
+          "url": "https://developers.google.com/search/apis/indexing-api/v3/prereqs",
+          "confidence": "verified"
+        },
+        {
+          "key": "console_url",
+          "label": "Open console",
+          "url": "https://console.cloud.google.com/apis/library/indexing.googleapis.com",
+          "confidence": "directional"
+        }
+      ],
+      "primaryUrl": "https://developers.google.com/search/apis/indexing-api/v3/quickstart",
+      "docsUrl": "https://developers.google.com/search/apis/indexing-api/v3/prereqs",
+      "setupNote": "Verify site ownership, enable Indexing API, and add the service-account email as a delegated owner. Enter the JSON key locally. Only JobPosting or BroadcastEvent inside VideoObject is eligible; ordinary articles are unsupported. Google approval and quota apply."
+    },
+    {
       "key": "seo.google-search-console",
       "slug": "google-search-console",
       "providerKey": "google-search-console",
@@ -1866,7 +1946,7 @@
         "src": "/images/integrations/google-search-console.png",
         "kind": "icon"
       },
-      "actionCount": 4,
+      "actionCount": 7,
       "capabilities": [
         "SEO Measurement"
       ],
@@ -1906,6 +1986,33 @@
           "capability": "seo-measurement",
           "capabilityName": "SEO Measurement",
           "risk": "read"
+        },
+        {
+          "key": "seo.search-console.batch.read",
+          "name": "Read Search Console Batch",
+          "description": "Execute 1 to 1000 typed Search Console reads with one Account. Each item consumes quota; execution order is not guaranteed. Partial and unknown outcomes require inspection before retrying.",
+          "keywords": "Execute 1 to 1000 typed Search Console reads with one Account. Each item consumes quota; execution order is not guaranteed. Partial and unknown outcomes require inspection before retrying.",
+          "capability": "seo-measurement",
+          "capabilityName": "SEO Measurement",
+          "risk": "read"
+        },
+        {
+          "key": "seo.search-console.sitemaps.submit",
+          "name": "Submit Search Console Sitemap",
+          "description": "Submit or resubmit one existing sitemap URL to Google. This registers the URL; it does not edit the sitemap or guarantee crawling or indexing.",
+          "keywords": "Submit or resubmit one existing sitemap URL to Google. This registers the URL; it does not edit the sitemap or guarantee crawling or indexing.",
+          "capability": "seo-measurement",
+          "capabilityName": "SEO Measurement",
+          "risk": "write"
+        },
+        {
+          "key": "seo.search-console.sitemaps.submit.batch",
+          "name": "Submit Search Console Sitemap Batch",
+          "description": "Submit or resubmit 1 to 1000 existing sitemap URLs with one Account. The batch is not atomic or ordered; inspect every item and reconcile partial or unknown writes before repeating a request.",
+          "keywords": "Submit or resubmit 1 to 1000 existing sitemap URLs with one Account. The batch is not atomic or ordered; inspect every item and reconcile partial or unknown writes before repeating a request.",
+          "capability": "seo-measurement",
+          "capabilityName": "SEO Measurement",
+          "risk": "write"
         }
       ],
       "links": [
@@ -1930,7 +2037,7 @@
       ],
       "primaryUrl": "https://search.google.com/search-console/about",
       "docsUrl": "https://developers.google.com/webmaster-tools/v1/how-tos/authorizing",
-      "setupNote": "Create a Google Cloud OAuth client with Search Console API enabled, grant https://www.googleapis.com/auth/webmasters.readonly, and store either an access token or refresh-token credential in StackOS."
+      "setupNote": "Enable Search Console API. For service-account setup, add the key's client_email as a user of the target Search Console property, then enter the JSON key locally. Restricted property access supports performance reads; Cloud IAM alone does not grant property access. OAuth remains available."
     },
     {
       "key": "seo.google-tag-manager",
@@ -2023,7 +2130,7 @@
       ],
       "primaryUrl": "https://tagmanager.google.com/",
       "docsUrl": "https://developers.google.com/tag-platform/tag-manager/api/v2",
-      "setupNote": "Create a Google Cloud OAuth client with Tag Manager API enabled, grant https://www.googleapis.com/auth/tagmanager.readonly, and store either an access token or refresh-token credential in StackOS."
+      "setupNote": "Enable Tag Manager API. For service-account setup, add the key's client_email to the Tag Manager account with read access to the relevant containers, then enter the JSON key locally. OAuth remains available."
     },
     {
       "key": "utils.google-veo",
@@ -2146,7 +2253,7 @@
       ],
       "primaryUrl": "https://workspace.google.com/",
       "docsUrl": "https://developers.google.com/workspace",
-      "setupNote": "Create OAuth credentials in Google Cloud for Gmail/Calendar scopes, complete user consent, then store the token in StackOS."
+      "setupNote": "Choose OAuth or a service-account JSON key. Without a delegated user, share a calendar with the service-account email and use its explicit calendar ref; Gmail, primary calendar, and attendee invitations require a Workspace admin to authorize domain-wide delegation and the Delegated Workspace user field. Personal Gmail requires OAuth. Clearing the delegated user returns to shared-calendar-only access."
     },
     {
       "key": "gtm.hubspot",

@@ -2,13 +2,13 @@
   "key": "engineering.tracked-delivery",
   "slug": "engineering-tracked-delivery",
   "name": "Engineering Tracked Delivery",
-  "description": "A delivered change with an explicit flow, truthful tracker state, proportionate verification, independent review, and release evidence.",
+  "description": "A change checked against the original request, with test results, independent review and a recorded release status. The record shows what was completed and what still needs attention.",
   "domain": "engineering",
   "audience": "Product and engineering teams delivering repository changes",
   "color": "#7892ff",
   "featured": true,
   "problem": "Engineering requests fail when requirements, dependencies, verification, and review live only in chat or are compressed into implementation.",
-  "outcome": "A delivered change with an explicit flow, truthful tracker state, proportionate verification, independent review, and release evidence.",
+  "outcome": "A change checked against the original request, with test results, independent review and a recorded release status. The record shows what was completed and what still needs attention.",
   "whyAi": "AI can coordinate discovery, implementation, testing, and review across a long-running change while StackOS preserves dependencies and proof.",
   "operatorPath": [
     "Describe the desired outcome, constraints, and authority boundary.",
@@ -16,24 +16,25 @@
     "Inspect verification, review findings, and residual risk before release."
   ],
   "agentPath": [
-    "Define requirements and affected flows before planning tickets.",
-    "Discover the real code and system boundaries, then design the approach and proof plan.",
-    "Deliver through dependency-linked tickets, run the planned verification, and adjudicate independent review.",
-    "Audit tracker truth and close only when evidence matches the result."
+    "Clarify the request, affected users and systems, constraints, and what will count as a successful result.",
+    "Inspect the existing code, choose an approach and checks, then plan tasks in dependency order. Review the plan before implementation.",
+    "Implement authorized tasks, running independent work in parallel when useful. Test and independently review each result before starting dependent work, then check that the pieces work together.",
+    "Compare the finished change with the original request, record test and review results, and state whether it was released or what remains. Close the work only when the evidence supports that status."
   ],
   "progressSignals": [
     "Requirements defined",
     "Impact discovered",
-    "Design reviewed",
-    "Test plan verified",
-    "Delivery in progress",
+    "Design and proof plan defined",
+    "Ticket delivery readiness reviewed",
+    "Ticket delivery and review in progress",
     "Verification complete",
     "Independent review adjudicated",
     "Release truth recorded"
   ],
   "recovery": [
     "Record blockers in the run and tracker instead of hiding them in chat.",
-    "Use run consistency and recovery operations to resume a blocked step without losing prior handoffs."
+    "Use run consistency and recovery operations to resume a blocked step without losing prior handoffs.",
+    "Before reopening an earlier gate, stop active assignments and their processes, preserve evidence, and reconcile affected child tickets explicitly. Existing runs retain their frozen step order."
   ],
   "safeStoppingPoints": [
     "Stop after a reviewed design or diagnosis when implementation authority was not granted."
@@ -77,19 +78,9 @@
       "summary": "Map affected scopes, real execution paths, ownership boundaries, downstream readers, tests, docs, and signoff fallout."
     },
     {
-      "id": "plan-tickets",
-      "title": "Plan Tracker Tickets",
-      "summary": "Create or update tracker tasks/tickets with dependencies, sequencing, blockers, owned scopes, and definition of done."
-    },
-    {
       "id": "design-approach",
       "title": "Design Approach",
       "summary": "Identify canonical ownership, shared operations, data invariants, adapter surfaces, grants, docs, tests, rollout, and rollback implications."
-    },
-    {
-      "id": "review-design",
-      "title": "Review Design",
-      "summary": "Challenge the requirements, impact map, ticket plan, and design before implementation."
     },
     {
       "id": "design-tests",
@@ -97,19 +88,29 @@
       "summary": "Own the full proof plan before delivery: TDD/red-first automated tests, verification commands, agent-executed E2E/manual flow scenarios, expected…"
     },
     {
+      "id": "plan-tickets",
+      "title": "Plan Tracker Tickets",
+      "summary": "Turn the completed design and proof plan into executable assignments with dependencies, exclusive ownership, acceptance criteria, review instructions,…"
+    },
+    {
+      "id": "review-design",
+      "title": "Delivery Readiness Review",
+      "summary": "Review the complete requirements, design, proof plan, executable tickets, dependencies, and resources before implementation."
+    },
+    {
       "id": "deliver-tickets",
       "title": "Deliver Tickets",
-      "summary": "Claim ready tracker tickets, implement one by one, update status, and record focused verification evidence."
+      "summary": "Delegate ready tickets, independently verify each candidate immediately, and accept integrated results before completing tickets and releasing dependents."
     },
     {
       "id": "verify-delivery",
       "title": "Verify Delivery",
-      "summary": "Run and report the mandatory verification stack for the actual diff and risk profile."
+      "summary": "Prove the assembled outcome, cross-ticket interactions, remaining requirements, and mandatory project checks using current ticket receipts plus the…"
     },
     {
       "id": "review-delivery",
       "title": "Review Delivery",
-      "summary": "Review completed delivery across behavior, QA, integration contracts, security boundaries, docs, tracker evidence, and release risk."
+      "summary": "Independently review the assembled outcome and remaining integration risks across behavior, contracts, security, docs, evidence, and release authority."
     },
     {
       "id": "audit-tracker",

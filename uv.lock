@@ -1729,7 +1729,7 @@ wheels = [
 
 [[package]]
 name = "stackos"
-version = "2.1.34"
+version = "2.1.35"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -1782,7 +1782,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "s3transfer", specifier = ">=0.19.1,<0.20" },
     { name = "sqlmodel", specifier = ">=0.0.22" },
-    { name = "stackos-connectors", specifier = "==0.2.1" },
+    { name = "stackos-connectors", specifier = "==0.2.3" },
     { name = "structlog", specifier = ">=24.4" },
     { name = "typer", specifier = ">=0.13" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
@@ -1802,7 +1802,7 @@ dev = [
 
 [[package]]
 name = "stackos-connectors"
-version = "0.2.1"
+version = "0.2.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "boto3" },
@@ -1813,9 +1813,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "s3transfer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4e/11/aef46092544a87bf9bd97c042d3d719a747e6ff45e5a5d598979dcbb0ef1/stackos_connectors-0.2.1.tar.gz", hash = "sha256:d1e899079e1013d98c3b27de2103301fbab56588ae69d98401cddf9337f1f710", size = 2337738, upload-time = "2026-10-06T17:50:33.607Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ca/89/01545cc86449820af6393ae38aad94505e35ac0ade6143a39a289cb0314e/stackos_connectors-0.2.3.tar.gz", hash = "sha256:3e8438fe52b9acdf766ea118476db42ecefc38f8cb04ea87c10fa32ee44d6d2d", size = 2353550, upload-time = "2026-10-06T21:54:20.112Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/15/e8/cea91c64a1d7aae5ada60ff2985d2e608abde4c0334bc179f90ad8658a92/stackos_connectors-0.2.1-py3-none-any.whl", hash = "sha256:37a0f9ccced5043f7a480257c7d28704795c161cd9d75ae9e664c444d5ba4ac8", size = 2366392, upload-time = "2026-10-06T17:50:31.638Z" },
+    { url = "https://files.pythonhosted.org/packages/a7/4c/2b554753c8889a5c3905aabdea82a3e3d4166cccebf08ccbcb85b33eae58/stackos_connectors-0.2.3-py3-none-any.whl", hash = "sha256:750fd5216da623d5337678329817e669beaf6f01b0272fc3cbb366d8d9da6164", size = 2379812, upload-time = "2026-10-06T21:54:18.277Z" },
 ]
 
 [[package]]

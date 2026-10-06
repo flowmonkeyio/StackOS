@@ -47,6 +47,15 @@ while the local-admin REST setup can test a global Account.
 `test_mcp_auth_provider_wrappers.py` covers provider checks and safe failure
 diagnostics through that same project-scoped MCP path.
 
+Google Indexing coverage includes `test_google_indexing_actions.py` and
+`test_mcp_google_indexing.py`, plus the single and batch transport suites in
+`test_integrations`. Synthetic keys and mocked HTTP cover token-only setup,
+publish/metadata actions, batch limits and correlation, direct/granted execution,
+successful replay, complete response files and partial-error audit. Shared Google
+MIME regressions preserve Search Console behavior, including sitemap submission
+and safe Retry-After advice. These checks do not establish live Google site
+permissions, quota approval, indexing or removal.
+
 Telegram restoration coverage includes the native authorization, Account session
 operation, and app lifespan suites. These exercise failed startup restoration,
 saved-session tests, disconnect and generation fencing, and the original

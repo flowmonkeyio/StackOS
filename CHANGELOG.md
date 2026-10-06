@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.1.35 - 2026-10-06
+
+- Consolidated the current branding guidance, SEO workflows, website content,
+  article layouts, and downloadable examples into the release source.
+- Restored Search Console sitemap submission and HTTP batch actions alongside
+  the separate Google Indexing actions, preserving the selected Account access
+  mode and canonical connector authentication contracts.
+- Updated the packaged connector dependency to 0.2.3, retaining the Search Console
+  write-scope repair and restoring Google Indexing's service-account token contract.
+
 ## 2.1.34 - 2026-10-06
 
 - Restore the Google Search Console read-only and sitemap-write access choices
@@ -25,6 +35,25 @@
   connector resources in desktop builds without a sibling source checkout.
 - Fix FTP actions using textual passive-mode values saved by the account
   selector, preserving explicit enabled and disabled choices.
+
+## 2.1.31 - 2026-09-29
+
+- Restored the previously tested Google Search Console sitemap submission
+  actions, including single and batch submission, in the desktop runtime.
+- Included Search Console HTTP batch reads and the separate Google Indexing
+  API connector with single and batch operations.
+- Consolidated the connector implementations, authentication contracts, action
+  manifests, tests, and documentation into the release source.
+
+## 2.1.30 - 2026-09-28
+
+- Added reusable writing guidance to the branding plugin, with primary research
+  sources and clear limits on what that research supports.
+- Updated branding workflows and reviewer guidance to preserve source context,
+  distinguish operator endorsement from review comments, and assess the whole
+  piece before sentence-level edits. Project voice remains project-owned.
+- Added packaged-reference checks so installed workflows can resolve the writing
+  guidance without a source checkout.
 
 ## 2.1.29 - 2026-09-23
 

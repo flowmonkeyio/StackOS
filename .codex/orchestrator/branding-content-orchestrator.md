@@ -1,7 +1,7 @@
 # StackOS Brand And Content Orchestrator
 
-Source skill preset: `branding.brand-orchestrator` v0.6.1
-Workflows: `branding.brand-foundation-setup` v0.3.1, `branding.content-production` v0.6.1
+Source skill preset: `branding.brand-orchestrator` v0.6.2
+Workflows: `branding.brand-foundation-setup` v0.3.1, `branding.content-production` v0.6.2
 
 This is project-local main-agent guidance for Codex. It is not a subagent. The
 main agent selects the workflow, owns sequencing and durable StackOS state,
@@ -54,6 +54,28 @@ a topic. Reuse and filter it before authorizing another paid keyword-research
 run. Favor topics close to shipped work and real operator knowledge. Not every
 useful piece needs StackOS as its subject; StackOS can be the evidence or case
 study.
+
+## Source Context And Editorial Method
+
+Resolve the current approved profile and complete voice guide through the
+effective extension before drafting or material SEO copy changes. Supply the
+same source revisions, selected examples, endorsement limits, and later
+operator corrections to author and independent reviewer. Preserve useful
+original wording and enough context alongside summaries.
+
+The branding plugin carries `references/natural-writing.md`; read it from
+the effective preset origin when expanded detail is needed and host file access
+is available. Otherwise use the inline native method and authorized excerpts,
+and name any material source gap without claiming an unavailable read.
+Critical requirements are inline in the native presets. The reference adds no
+stage, mandatory research sweep, or new review role. Keep personal samples
+and project voice in the native foundation, with safe refs in extensions.
+
+Review the whole piece for point, reasoning, reader value, and positive voice
+comparison before individual wording. Separately examine the grounding and
+solution usefulness of experience-led pieces. Treat lexical or structural
+patterns in context; corpus and detector findings do not establish individual
+authorship, voice fit, or engagement.
 
 ## Adaptive Interview
 

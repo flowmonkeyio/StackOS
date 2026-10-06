@@ -2,23 +2,25 @@
   "key": "seo.content-refresh",
   "slug": "seo-content-refresh",
   "name": "SEO Content Refresh",
-  "description": "A focused page refresh with traceable changes, preserved useful content, and a verification plan.",
+  "description": "A reviewed page-edit plan, verified changes when authorized, or a later performance check. Each change keeps its source, review and verification record.",
   "domain": "seo",
   "audience": "SEO and content teams improving existing pages",
   "color": "#79dfff",
   "featured": false,
   "problem": "Content refreshes turn into broad rewrites when search intent, current performance, technical issues, and conversion purpose are not diagnosed first.",
-  "outcome": "A focused page refresh with traceable changes, preserved useful content, and a verification plan.",
+  "outcome": "A reviewed page-edit plan, verified changes when authorized, or a later performance check. Each change keeps its source, review and verification record.",
   "whyAi": "AI can compare search evidence, page structure, project context, and editorial constraints while keeping the final judgment and publication boundary explicit.",
   "operatorPath": [
-    "Choose the page, business goal, search intent, and performance window.",
-    "Provide approved analytics, query, and content sources.",
-    "Review the proposed changes before publication."
+    "Example request: “Use SEO Content Refresh on [page URLs]. Readers should be able to try each method. Keep the URLs and useful links. Show the proposed edits and checks before changing the site.”",
+    "Choose the job: prepare a plan, apply reviewed edits, or assess an earlier refresh. Preparation is the default; applying changes needs permission and a usable editing route.",
+    "Provide current page content, the reader or business goal, and available search or analytics evidence. For an assessment, include the earlier change record and baseline.",
+    "Check the actual edits and the later performance result separately. A page can be successfully updated while its search impact is still unknown."
   ],
   "agentPath": [
-    "Diagnose intent, performance, technical, content, and conversion gaps before editing.",
-    "Map each proposed change to evidence and preserve what already works.",
-    "Prepare or apply the bounded refresh, then verify content and technical acceptance criteria."
+    "Confirm the pages, business goal and whether the job is to prepare edits, apply them or assess an earlier refresh. Review existing content and comparable search data.",
+    "Find the reader or technical problem before proposing exact page and link edits. Have the proposal independently reviewed and resolve the findings before applying it.",
+    "Apply only authorized changes, check each result, and keep records of completed, failed or uncertain edits. Inspect an uncertain result before retrying. Preparation stops with the reviewed plan.",
+    "When assessing an earlier refresh, compare later data with the saved baseline and explain the measurement limits. Record inconclusive results when the data cannot support a conclusion, and leave the content unchanged."
   ],
   "progressSignals": [
     "Page and intent scoped",
@@ -28,53 +30,91 @@
     "Verification complete"
   ],
   "recovery": [
-    "If query or performance evidence is missing, return a bounded diagnostic and data request.",
-    "If publication is not authorized, stop with a review-ready patch or content packet."
+    "Preserve applied and unknown change receipts; inspect actual current state before retrying an uncertain action.",
+    "If inputs, authorization or destination checks are missing, retain a prepared/blocked packet and exact repair steps.",
+    "Resume delayed measurement from the prior refresh ref in assess mode, preserving original implementation evidence.",
+    "If no changes are confirmed applied, route follow-up to apply or a blocked implementation handoff; schedule assess only after actual implementation exists."
   ],
   "safeStoppingPoints": [
-    "Stop with a review-ready refresh plan or patch when publication was not authorized."
+    "Prepare closes with the reviewed exact proposal and explicit next_mode apply implementation prerequisite; no implementation means no scheduled outcome assessment.",
+    "Apply closes with verified or explicit partial implementation and outcome pending when no valid later window exists.",
+    "Assess closes with observed or inconclusive outcome and never reapplies changes."
   ],
-  "handoffs": [],
+  "handoffs": [
+    {
+      "workflowKey": "engineering.tracked-delivery",
+      "relationship": "conditional",
+      "when": "Repository changes need engineering delivery or a shared-template/technical change exceeds the bounded refresh."
+    }
+  ],
   "setup": "mixed",
   "prerequisites": [
-    "A page, business goal, and target search intent",
-    "Approved performance and query evidence",
-    "Editorial, technical, and publication boundaries"
+    "Existing page URLs and the reader or business problem to solve",
+    "Current page content and available search or analytics evidence, from connected tools or approved exports",
+    "To apply changes: an accepted edit plan, permission and a supported editing route. To assess changes: the earlier record, baseline and a comparable later data window."
   ],
   "proof": [
-    "Evidence-linked diagnosis",
-    "Change map",
-    "Content and technical verification",
-    "Publication receipt only when authorized"
+    "A reviewed proposal with the exact old and new wording, the reason for each edit, useful links to preserve and the checks to run.",
+    "Illustrative edit: a workflow guide says “write clear requirements” but gives no usable brief. Add the task, inputs, acceptance checks and a saved handoff while preserving the page's purpose and URL.",
+    "For applied work, a record of each completed, failed or uncertain edit and a check of the actual page. A successful build alone does not establish what readers can see.",
+    "A separate performance assessment using the saved baseline and a comparable later window. If the sample is too small or the data incomplete, the result stays pending or inconclusive.",
+    "One saved refresh record that connects the proposal, review, actual changes, verification and next measurement step."
   ],
   "whenToUse": [
-    "Existing content needs a refresh diagnosis, evidence gathering, and recorded follow-through."
+    "Existing pages or their internal connections need bounded evidence-led improvement.",
+    "A prior refresh needs outcome assessment without reapplying changes."
   ],
   "stages": [
     {
       "id": "read_history",
-      "title": "Read History",
-      "summary": "Complete the read history stage."
+      "title": "Recover Scope And Mode",
+      "summary": "Normalize one bounded page set and recover prior proposals/receipts before new work."
+    },
+    {
+      "id": "collect_evidence",
+      "title": "Collect Baseline Or Follow-Up Evidence",
+      "summary": "Capture the smallest useful native/source-export evidence set with comparable metadata."
     },
     {
       "id": "diagnose",
-      "title": "Diagnose Refresh Need",
-      "summary": "Complete the diagnose stage."
+      "title": "Diagnose Before Editing",
+      "summary": "Separate intent, technical, content, internal-link and measurement issues."
     },
     {
-      "id": "execute_change",
-      "title": "Execute Change",
-      "summary": "Agent performs the chosen external or repository work using tools available in the current environment."
+      "id": "propose_changes",
+      "title": "Prepare Exact Multi-Page Changes",
+      "summary": "Make each edit reviewable against current source content and destination evidence."
+    },
+    {
+      "id": "review_changes",
+      "title": "Review And Adjudicate The Proposal",
+      "summary": "Independently review before applying and preserve one canonical reviewed version."
+    },
+    {
+      "id": "apply_or_prepare",
+      "title": "Apply Authorized Changes Or Preserve Preparation",
+      "summary": "Perform only current accepted edits inside the explicitly authorized boundary."
+    },
+    {
+      "id": "verify_changes",
+      "title": "Verify Each Changed Page",
+      "summary": "Prove implementation independently of delayed performance effects."
+    },
+    {
+      "id": "assess_outcome",
+      "title": "Assess Outcomes Or Schedule Follow-Up",
+      "summary": "Compare only sufficiently observed, comparable windows and state uncertainty honestly."
     },
     {
       "id": "record_outcome",
-      "title": "Record Outcome",
-      "summary": "Complete the record outcome stage."
+      "title": "Store The Canonical Refresh And Follow-Up",
+      "summary": "Make future recovery and delayed measurement possible without replaying edits."
     }
   ],
   "agentNames": [
     "SEO Content Refresh Agent",
-    "Review Agent"
+    "Review Agent",
+    "Branding Voice Reviewer"
   ],
   "agentRefs": [
     {
@@ -86,9 +126,18 @@
       "key": "stackos.sdlc.delivery-reviewer",
       "slug": "stackos-sdlc-delivery-reviewer",
       "name": "Review Agent"
+    },
+    {
+      "key": "branding.voice-reviewer",
+      "slug": "branding-voice-reviewer",
+      "name": "Branding Voice Reviewer"
     }
   ],
   "integrations": [
-    "Dataforseo"
+    "Dataforseo",
+    "Utils Web Read",
+    "Utils Sitemap Fetch",
+    "Google Search Console",
+    "Google Analytics"
   ]
 }

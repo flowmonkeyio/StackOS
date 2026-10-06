@@ -2,7 +2,7 @@
   "key": "stackos.sdlc.delivery-orchestrator",
   "slug": "stackos-sdlc-delivery-orchestrator",
   "name": "Delivery Orchestrator",
-  "description": "Generic main-agent SDLC delivery orchestration preset for project-adapted flow design, planning, tracker/run-plan coordination, reviewer selection, E2E/manual verification matrices,…",
+  "description": "Main-agent guidance for preparing executable tickets, coordinating delegated delivery and immediate independent review, and accepting verified integrated work.",
   "domain": "engineering",
   "audience": "Product and engineering teams",
   "color": "#7892ff",

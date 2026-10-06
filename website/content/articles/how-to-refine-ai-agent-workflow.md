@@ -1,15 +1,15 @@
 ---
 title: 'How to refine an AI agent workflow: best practices after the first working version'
-description: A practical method for using agents, independent workflow runs, and post-run debriefs to refine AI workflows without scope drift.
+description: Refine a working AI agent workflow with fresh agent trials, post-run debriefs, trace checks, and bounded repairs. Includes a prompt and questions to use.
 publishedAt: '2026-07-12'
-updatedAt: '2026-07-12'
+updatedAt: '2026-09-30'
 author: StackOS team
 category: AI operations
 topics:
   - AI agent workflows
   - workflow refinement
   - agent evaluation
-readingTime: 12 min read
+readingTime: 8 min read
 featured: true
 visual: workflow
 searchIntent: Learn how to test, refine, and polish an AI agent workflow after the first version works
@@ -26,77 +26,52 @@ relatedArticles:
   - how-ai-orchestrators-triage-feedback
 ---
 
-To refine an AI agent workflow, I do not start by personally reviewing every step. I ask an agent to manage the refinement. That agent sends subagents through the workflow as first-time operators, collects their firsthand feedback, and questions them after each run about friction, decisions, missing context, and workarounds.
+After the first successful run, I want to know what the next agent will have to figure out for itself.
 
-The orchestrator then gates that feedback. It separates consequential defects from normal agent friction, traces accepted findings to the correct layer, and proposes the smallest reusable fix. After the change, fresh agents run the workflow again. We stop when they can reach the accepted outcome reliably—not when nobody can imagine another improvement.
+I ask an agent to manage that refinement. It sends fresh subagents through the workflow, collects their feedback, and questions them after they finish. Where did they hesitate? What did they have to infer? Which workaround affected the result?
 
-This combines two kinds of evidence: what the workflow produced and what the agents experienced while producing it. The second is easy to miss when the operator becomes the only reviewer.
+The coordinating agent compares those accounts with what actually happened and decides which findings deserve a change. That gives me a practical way to investigate the workflow without personally reviewing every step or accepting every suggestion an agent produces.
 
-## Refinement starts after the workflow works
+## Keep the result you're trying to preserve
 
-Design and refinement solve different problems.
+Refinement starts with a workflow that has completed a representative task. If you're still deciding what it should do, start with [defining the workflow](/library/articles/how-to-build-ai-agent-workflow/).
 
-When we [define an AI agent workflow](/library/articles/how-to-build-ai-agent-workflow), we start with the problem, the desired outcome, the orchestration model, the specialist responsibilities, and the terminal condition. The first useful milestone is a workflow that can complete a representative task.
+Save the successful task and its evidence alongside the goal, scope, constraints, acceptance criteria, and stopping condition. The next run needs a stable comparison. Otherwise, a reviewer can quietly replace the agreed result with whatever it would prefer to see.
 
-Refinement begins after that milestone. The question is no longer, “What workflow should we build?” It is, “What did agents actually experience when they used it, and which changes would make the accepted outcome more reliable?”
+Make completion observable. For an article workflow, that might mean the draft is saved, its material claims have support, blocking review findings are resolved, and disclosure review has passed. “The article is good” leaves too much for each runner to invent.
 
-Keeping that boundary explicit prevents a common mistake: redesigning the workflow before understanding the failure. A weak result may come from an ambiguous acceptance criterion, missing context, a poor tool interface, a stale runtime contract, a specialist mistake, or a temporary environment problem. Those causes do not call for the same fix.
+Keep those conditions steady during the trial. If the goal changes, record that decision and establish a new baseline before comparing results.
 
-More agents can generate more evidence, but more agents, review rounds, and instructions are not themselves proof of a better workflow. Their value is in giving the refinement orchestrator independent runs to compare.
+## Give fresh agents a normal task
 
-## Preserve the accepted baseline
+The refinement agent coordinates the trials. Each runner gets the task, normal project context, available tools, and permission boundaries. It should be able to work from what the workflow supplies.
 
-Before changing anything, write down the state you are trying to preserve. At minimum, keep:
+Keep the suspected defect and private debugging history out of the runner's brief. You want to see where the ordinary path takes it. An instruction that tells it exactly which failure to look for changes that test.
 
-- the operator’s problem and intended outcome;
-- the current scope and hard constraints;
-- the acceptance criteria;
-- the terminal condition;
-- one representative task the workflow has already completed;
-- the evidence that showed it completed successfully.
-
-This baseline is the control for the next run. Without it, “improvement” becomes whatever the latest reviewer prefers.
-
-The terminal condition should describe observable state. “The article is good” is not enough. “The draft exists, required sections are present, material claims have supporting evidence or an explicit unresolved status, blocking review findings are repaired, and sanitization checks pass” gives the orchestrator something concrete to evaluate.
-
-It also makes the stopping rule visible. A reviewer can always imagine another improvement. The workflow should not remain open merely because more polish is possible.
-
-## Let agents test the workflow as first-time operators
-
-My preferred setup has one refinement agent coordinating several independent workflow runs. The coordinating agent is not there to perform all the work itself. It gives subagents a realistic task, lets them use the workflow, and preserves what happened.
-
-The runners should not be told which failure you expect them to find. That primes them to confirm the diagnosis. Give them the kind of instruction a real user would give, with only the context a normal run would have.
-
-A test instruction can be this small:
+For a content workflow, put a concrete article request above a prompt like this:
 
 ```text
 Use the project workflow to produce the requested article.
 Work as if this is your first time using it.
 Use the context and tools the workflow provides.
 Do not change the workflow while running it.
-Stop when its completion conditions are met or when you are genuinely blocked.
+Stop when its completion conditions are met or when you are blocked.
+Return the result, its supporting records, and any unresolved work.
 ```
 
-The actual topic or task belongs above that instruction. The important part is what is absent: no hint about the suspected defect, no private debugging history, and no checklist that tells the runner what feedback to return.
+A trial still has to respect the limits on real work. Use fixtures or an isolated environment when a run would otherwise change real records. Reset the relevant state between trials so one runner doesn't inherit another's finished work.
 
-For an inexpensive workflow, I usually want more than one run. Two or three subagents are often enough to expose whether a finding repeats. They can receive different representative tasks, or the same task when consistency is the concern. For higher-cost work, one runner plus a targeted replay may be sufficient.
+Ask the coordinator to retain the instruction, workflow version, starting state, final result, and supporting records for each run. Keep the trace of tool calls and results, including retries, workarounds, and any incorrect state change. Those records let it check a runner's account later.
 
-The refinement agent should collect a compact receipt from every run:
+Choose trials according to the question. Repeating a task tests consistency; using different representative tasks tests whether the workflow handles those variations. Scale the effort to the cost of a run and the consequence of failure. A successful attempt gives you one observed success; it doesn't establish how often the workflow will succeed.
 
-- the user-like instruction the runner received;
-- the workflow and version it used;
-- the final outcome and whether the terminal condition passed;
-- important tool calls, retries, and recovery actions;
-- any point where state advanced incorrectly;
-- the runner’s post-run feedback.
+Anthropic's [guide to agent evaluations](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents) separates the task, each trial, the agent's trace, and the resulting environment state. It also recommends isolating trials and building early evaluations from real failures and existing manual checks. Those distinctions help keep a convincing completion message from standing in for the result you're meant to verify.
 
-This is not the operator watching every tool call. The operator delegates the observation work and receives a synthesized decision packet.
+## Ask what happened while the run is still in context
 
-## Interview the agents after they finish
+After a run, I ask the agent about the decisions and friction it encountered. The trace gives us the actions to inspect; the debrief gives us leads about why the agent took them.
 
-The run trace shows what the agent did. It does not always show where the agent hesitated, which assumption it made, or what it wished the workflow had supplied. I ask those questions after the run, while the agent still has the experience in context.
-
-Useful questions are concrete:
+These are the questions I want answered:
 
 1. Where did you hesitate or have to investigate before you could continue?
 2. Which decision did you make that the workflow did not clearly resolve?
@@ -107,141 +82,96 @@ Useful questions are concrete:
 7. What part of the workflow was clearer than expected?
 8. If you changed one generic thing for the next agent, what would it be? What would you leave alone?
 
-The last question matters. Agents can identify useful friction without concluding that every friction needs a fix.
+Keep each runner's answers independent until they are recorded. The coordinator can conduct the debriefs itself or delegate those conversations to another agent. The agent collecting answers returns the evidence; the coordinator owns the decision about changes.
 
-The coordinator can run these as separate debrief sessions. Keeping the runners independent until after their answers are recorded avoids early consensus. One agent may report missing context while another finds the context immediately but struggles with the tool contract. That difference is part of the signal.
+Then check the answers against the run. Suppose a runner reports that a required source was missing. Inspect the context it received, the source references it could retrieve, and the calls it made. Was the source absent? Was the reference broken? Did the agent overlook a usable reference? The same complaint can lead to different repairs.
 
-If there are several runners, the coordinating agent can spawn a debrief subagent to hold a short feedback session with each one and normalize the answers into the same fields. That subagent collects evidence; it does not decide what the workflow should change. The coordinator keeps the gate.
+Ask for the consequence too. If the agent guessed a material fact, inspect that fact and the result that depended on it. If it spent time finding the right document and still met the criteria, decide whether that delay matters enough to change the workflow. A runner's explanation is useful evidence to investigate, but it cannot prove the cause by itself.
 
-A feedback record does not need to be long:
+The coordinator can sort the findings with a small table:
 
-```yaml
-run: workflow-refinement-trial-02
-outcome: passed
-friction: "I had to inspect several broad documents before finding the step contract"
-decision_made: "Used the targeted step packet as the source of truth"
-workaround: "Recovered with a scoped lookup"
-consequence: latency_only
-suggested_change: "Make the targeted packet easier to discover"
-runner_confidence: medium
-```
+::article-evidence-row{label="Blocking defect" record-heading="Finding" evidence-label="What makes it actionable?" decision-label="Decision"}
+#evidence
+An accepted criterion fails, a hard constraint is violated, or state advances incorrectly.
 
-The refinement agent can now compare the reported experience with the trace and final state. This is more useful than asking a reviewer to critique the workflow in the abstract.
+#decision
+Repair before accepting the run.
+::
 
-Anthropic’s [guide to agent evaluations](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents) provides useful language for separating a task, trial, trajectory, and outcome. I use that distinction as supporting structure. The practical method is still to let agents perform realistic work and then ask them what the trace does not reveal.
+::article-evidence-row{label="Bounded repair" record-heading="Finding" evidence-label="What makes it actionable?" decision-label="Decision"}
+#evidence
+A specific correction within the agreed scope would restore the required result.
 
-One successful replay shows that the path is possible, not that it is consistent. Use more trials when consistency matters, scaled to the risk and cost of failure.
+#decision
+Assign it to the responsible owner with a verification check.
+::
 
-## Synthesize the feedback without accepting all of it
+::article-evidence-row{label="Normal friction" record-heading="Finding" evidence-label="What makes it actionable?" decision-label="Decision"}
+#evidence
+Investigation or recovery added effort, while the result and constraints still passed.
 
-After the runs and debriefs, the refinement agent has more feedback than should enter delivery. Its job is to compare accounts, connect them to receipts, and classify the findings before suggesting a change.
+#decision
+Record the consequence; change it only if that consequence warrants the work.
+::
 
-| Finding | Meaning | What to do |
-| --- | --- | --- |
-| Blocking defect | The workflow cannot meet an accepted criterion, violates a hard constraint, or advances state incorrectly. | Fix before accepting the run. |
-| Bounded repair | A specific correction inside the accepted scope would restore the outcome. | Route the smallest repair to the responsible layer. |
-| Normal friction | The agent needed reasonable investigation or recovery but still reached the outcome safely. | Record only if useful; do not change the workflow by default. |
-| Preference | A different approach may be nicer, but the accepted outcome still passes. | Keep out of delivery unless the operator changes the plan. |
-| Scope change | The suggestion changes the goal, audience, capability, or delivery boundary. | Treat it as a separate decision, not refinement of the current run. |
+::article-evidence-row{label="Preference" record-heading="Finding" evidence-label="What makes it actionable?" decision-label="Decision"}
+#evidence
+A reviewer favors another approach without identifying a failed criterion.
 
-The synthesis can be a simple table:
+#decision
+Leave it out of the current repair.
+::
 
-| Observation | Seen in | Outcome effect | Likely layer | Gate decision |
-| --- | --- | --- | --- | --- |
-| Required context was absent at the point of use | 3 of 3 runs | One blocked, two guessed | Context and handoff | Admit as a blocker |
-| Runner read more broadly than expected | 1 of 3 runs | Added latency; outcome passed | Normal task friction | Record, do not change |
-| Reviewer preferred a different article structure | 1 review | No accepted criterion failed | Preference | Keep out of delivery |
+::article-evidence-row{label="Scope change" record-heading="Finding" evidence-label="What makes it actionable?" decision-label="Decision"}
+#evidence
+The suggestion changes the goal, audience, capability, or delivery boundary.
 
-This is where the orchestrator acts as a gatekeeper. Runners and reviewers should report what they find, but [feedback is not automatically delivery scope](/library/articles/how-ai-orchestrators-triage-feedback). The orchestrator admits findings only when they protect the outcome that was already agreed.
+#decision
+Return it for a separate scope decision.
+::
 
-We saw this distinction during a cold-start replay of one of our own workflows. The agent did some broad reading that added latency. It also found the relevant path, recovered with targeted inspection, and reached the terminal condition. The friction was real, but it did not block the goal or make the result unsafe. Rewriting the workflow around that single inconvenience would have been a weak use of the evidence.
+Repeated findings help the coordinator see a pattern. A single invalid state transition can already be enough to require a repair. Count and consequence answer different questions.
 
-Friction will always exist in work performed by agents. The useful question is whether it exposes a repeatable failure with a meaningful consequence.
+The broader [feedback-triage guide](/library/articles/how-ai-orchestrators-triage-feedback/) covers that decision boundary. Here, keep each admitted finding tied to the observed failure, the criterion it threatens, and the evidence needed to check a correction.
 
-## Trace the issue to the correct layer
+## Follow the failure to the layer that owns it
 
-A symptom appears where the agent encounters it. The cause may sit somewhere else.
+In a July 2026 StackOS content run, the runtime allowed mixed generations of contracts: a current workflow could coexist with cached older plugin and resource schemas. It also accepted successful step results without checking them against the output schema frozen for that step.
 
-| Layer | Typical signal | Appropriate refinement |
-| --- | --- | --- |
-| Intent and acceptance | Different agents cannot agree on what done means. | Clarify the outcome, constraint, or terminal condition. |
-| Workflow contract | Steps overlap, dependencies are unclear, or outputs do not hand off cleanly. | Repair step boundaries, dependencies, or output contracts. |
-| Context and handoff | A specialist must rediscover facts the prior step already knew. | Pass a smaller, explicit context packet with source refs and expectations. |
-| Tool surface | The right operation exists but is hard to find or poorly described. | Improve tool selection, names, schemas, or usage guidance. |
-| Runtime enforcement | Invalid output advances state, stale contracts remain active, or grants do not match the step. | Fix validation, synchronization, permissions, or state transitions in code. |
-| Specialist behavior | The inputs and tools are sufficient, but the agent applies weak judgment or produces poor work. | Refine the role, examples, evaluation criteria, or model choice. |
-| Environment | A provider, credential, network, or local service is temporarily unavailable. | Repair the environment or define bounded recovery; do not rewrite the workflow first. |
+That gave the repair a specific target. We made contract synchronization account for generation changes and added result validation before the state transition. In the subsequent live check, a malformed result was rejected while the step stayed open. A corrected result then completed it.
 
-This layer map prevents prompt-shaped fixes for code-shaped problems.
+Telling the agent to be more careful would have left both runtime faults in place. The useful change was in how contracts were refreshed and results were checked.
 
-In one content workflow run, a step returned output that did not match its declared result schema. At first glance, that could look like an agent-quality problem. Investigation showed two runtime causes: an updated workflow definition had not refreshed a cached generated contract, and the result schema existed but was not enforced before state mutation.
+Use the same reasoning when the symptom is less obvious:
 
-We fixed the reusable layer. Contract generation became version-aware, and result validation moved in front of the state transition. In the next verification, malformed output was rejected without advancing the workflow; corrected output completed the step. The important improvement was not a new instruction telling one agent to “be more careful.” It was enforcement of an invariant that every agent should be able to rely on.
+| What the evidence shows | Where to investigate |
+| --- | --- |
+| Runners disagree about what completion requires. | The goal, acceptance criteria, or stopping condition. |
+| One step's output doesn't supply what the next step needs. | Step boundaries, dependencies, and output contracts. |
+| A specialist has to guess a fact already established earlier. | The context and source references passed to that specialist. |
+| The right operation exists, but the agent cannot find or call it correctly. | Tool selection, descriptions, schemas, and usage guidance. |
+| Invalid output changes state, or cached contracts conflict. | Runtime validation and contract synchronization. |
+| Sufficient inputs and tools are present, but the agent makes a poor decision. | The role guidance, examples, and evaluation criteria. |
+| A necessary provider or local service is unavailable. | The environment and permitted recovery steps. |
 
-## Repair the generic cause, one change at a time
+For each proposed repair, ask what replay would distinguish a fix from another lucky pass. If the problem is a missing source handoff, the next runner should receive and use the source without the old workaround. If malformed output was accepted, deliberately submitting malformed output should leave the step incomplete.
 
-Once the layer is clear, make the smallest change that explains the evidence.
+Change one cause at a time where practical. Editing the prompt, tool interface, and runtime together makes it harder to tell which correction mattered. Keep the original failure as a regression case so later changes can be checked against it.
 
-A good refinement should answer four questions:
+## Check the repair with another fresh run
 
-1. What observed failure are we correcting?
-2. Which accepted criterion did it threaten?
-3. Why does the cause belong to this layer?
-4. What replay would distinguish a real fix from a one-off success?
+Give a fresh agent the normal task and the revised workflow. Keep the original acceptance criteria and ask the same debrief questions. The runner should be able to complete the task without needing the private explanation from the investigation.
 
-Avoid hard-coding the example that exposed the problem. If one research query fails because the workflow cannot carry source context between steps, do not add that query to a prompt. Repair the handoff contract. If one malformed result advances state, do not describe the correct JSON more forcefully. Validate the result mechanically.
+Compare the evidence before and after:
 
-Change one layer when possible, then rerun. Simultaneous edits to the prompt, tools, step structure, and runtime may produce a passing result, but they make it difficult to know which change mattered or which one introduced a regression.
+- Did the required result appear in the intended environment?
+- Did the specific failure that prompted the repair recur?
+- Where applicable, was invalid output rejected before state changed?
+- Did the agent still need the consequential guess or workaround?
+- Did the workflow stop when the agreed result was ready?
 
-## Rerun with fresh agents
+If the output passes but the runner still makes the same unsupported guess, inspect what happened. The passing output alone doesn't establish that the diagnosed problem is gone.
 
-A refinement is not verified only by the agent that already knows the investigation.
+Set a limit on the refinement loop and decide what happens when it is reached. Microsoft's [agent orchestration guidance](https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/ai-agent-design-patterns) recommends explicit acceptance criteria, an iteration cap, and a fallback for maker-checker loops. For this method, that fallback can be a return to the operator with the failed criterion, attempts made, and unresolved decision.
 
-Start fresh subagents with the kind of request the workflow is meant to receive. They should rely on the workflow’s own context, tools, handoffs, and success criteria. They should not receive the private explanation used to diagnose the previous failure.
-
-Check both the result and the path:
-
-- Did the workflow reach the required environment state?
-- Did invalid intermediate output fail safely?
-- Did each specialist receive enough context to act without avoidable investigation?
-- Did the orchestrator keep preferences and scope changes out of delivery?
-- Did recovery preserve the accepted outcome?
-- Did the run stop when the terminal condition became true?
-
-Then repeat the debrief. Ask the same questions so the before-and-after feedback is comparable. If the agents still report the same consequential guess or workaround, the change did not repair the operating experience even if the output happened to pass once.
-
-For repeatable failure modes, turn the observed case into a regression task. Anthropic recommends starting eval sets from the manual checks and real failures teams already use. That keeps evaluation close to actual behavior instead of inventing abstract tests that are easy to pass and hard to trust.
-
-## AI agent workflow best practices for refinement
-
-The following practices are the ones I would carry into another workflow:
-
-1. **Delegate the refinement process to an agent.** The operator defines the goal and decision boundary; the refinement agent coordinates trials, debriefs, synthesis, and verification.
-2. **Send independent subagents through the workflow.** Give them realistic, minimally primed instructions and let them work from the workflow’s own context.
-3. **Ask questions after each run.** Collect friction, hidden decisions, missing context, tool confusion, workarounds, and what the runner would leave unchanged.
-4. **Preserve both receipts and firsthand accounts.** The trace explains what happened; the debrief explains how the operating experience felt to the agent.
-5. **Compare runs before diagnosing.** Repeated findings are stronger signals than one agent’s preference, but a single safety or state-integrity failure can still be blocking.
-6. **Freeze the accepted outcome.** Keep the goal, constraints, acceptance criteria, and terminal condition stable during the refinement cycle.
-7. **Classify every finding.** Distinguish blockers, repairs, normal friction, preferences, and scope changes before admitting work.
-8. **Diagnose the layer before choosing the fix.** Do not solve runtime failures with longer prompts or specialist failures with more orchestration.
-9. **Repair reusable causes.** Prefer contracts, validation, clearer context, and better tool interfaces over examples hard-coded for one run.
-10. **Rerun with fresh agents and the same debrief.** Verification should succeed without hidden knowledge from the debugging session, and the reported friction should materially improve.
-11. **Set a stopping rule.** Microsoft’s [maker-checker guidance](https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/ai-agent-design-patterns) calls for clear acceptance criteria and an iteration cap so refinement loops do not run indefinitely.
-12. **Accept normal friction.** Change the workflow when evidence shows a meaningful, repeatable consequence—not simply because another improvement is imaginable.
-
-## Stop at reliable, not frictionless
-
-The goal of workflow refinement is not to remove judgment, variability, or every moment of investigation. It is to make the accepted outcome reachable, inspectable, and recoverable under realistic conditions.
-
-That gives the refinement orchestrator a bounded loop:
-
-1. preserve the baseline;
-2. send subagents through representative tasks;
-3. preserve each trajectory and outcome;
-4. debrief the runners;
-5. compare and classify the findings;
-6. repair the smallest reusable cause;
-7. rerun with fresh agents and repeat the questions;
-8. stop when the terminal condition is reliably true.
-
-If a workflow still reaches the goal safely and a fresh agent can work around minor friction, that may be enough. Polish should improve delivery. It should not become a reason to keep the workflow open forever.
+When the chosen trials satisfy the criteria, retain the tested version, tasks, results, and remaining limits. Close the repair on that evidence. Another agent may still have a suggestion; it needs its own reason to become work.

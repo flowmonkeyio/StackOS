@@ -58,7 +58,8 @@ def test_google_action_inventory_and_scope_gates_remain_unchanged():
                 if action.provider not in {"google-gemini-image", "google-veo"}:
                     assert action.config["required_scopes"]
     assert counts == {
-        "google-search-console": 4,
+        "google-indexing": 4,
+        "google-search-console": 7,
         "google-analytics": 4,
         "google-tag-manager": 6,
         "google-ads": 10,
@@ -66,3 +67,15 @@ def test_google_action_inventory_and_scope_gates_remain_unchanged():
         "google-gemini-image": 2,
         "google-veo": 1,
     }
+
+
+def test_indexing_declares_only_nondelegated_service_account_method():
+    provider = PROVIDERS["google-indexing"]
+    assert [method.key for method in provider.auth_methods] == ["service-account"]
+    method = provider.auth_methods[0]
+    assert not method.interactive
+    assert method.permission_verification.evidence_source == "oauth_response"
+    assert method.permission_verification.enforcement == "local_required"
+    assert [field.key for field in method.fields] == ["service_account_json"]
+    assert method.fields[0].secret and method.fields[0].required
+    assert provider.config["scopes"] == ["https://www.googleapis.com/auth/indexing"]

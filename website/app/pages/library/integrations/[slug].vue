@@ -41,7 +41,9 @@ const authLabels: Record<string, string> = {
   local: 'Local StackOS service',
   tdlib: 'Telegram application credentials and bot token or user sign-in',
 }
-const authLabel = authLabels[provider.authType] || provider.authType.replaceAll('_', ' ')
+const authLabel = provider.slug === 'google-search-console'
+  ? 'Google OAuth or service account'
+  : authLabels[provider.authType] || provider.authType.replaceAll('_', ' ')
 const actionRiskCounts = computed(() => provider.actions.reduce((counts, action) => {
   counts[action.risk] = (counts[action.risk] || 0) + 1
   return counts
@@ -60,6 +62,7 @@ const integrationFaq = [
 function riskLabel(risk: string) {
   if (risk === 'read') return 'Reads data'
   if (risk === 'write') return 'Can make changes'
+  if (risk === 'destructive') return 'Destructive action'
   if (risk === 'cost') return 'Uses a paid service'
   return 'Listed action'
 }
@@ -140,6 +143,7 @@ useHead({ script: [
             <dd>
               <span v-if="actionRiskCounts.read">{{ countLabel(actionRiskCounts.read, 'read action') }}</span>
               <span v-if="actionRiskCounts.write">{{ countLabel(actionRiskCounts.write, 'write action') }}</span>
+              <span v-if="actionRiskCounts.destructive">{{ countLabel(actionRiskCounts.destructive, 'destructive action') }}</span>
               <span v-if="actionRiskCounts.cost">{{ countLabel(actionRiskCounts.cost, 'cost-bearing action') }}</span>
               <span v-if="!provider.actions.length">No callable actions published yet.</span>
             </dd>
@@ -147,6 +151,9 @@ useHead({ script: [
         </dl>
       </div>
     </section>
+
+    <GscReportGuide v-if="provider.slug === 'google-search-console'" />
+    <GhostDraftGuide v-if="provider.slug === 'ghost'" />
 
     <section class="integration-actions">
       <div class="shell">
@@ -166,8 +173,8 @@ useHead({ script: [
 
         <div v-if="visibleActions.length" class="integration-action-grid">
           <article v-for="action in visibleActions" :key="action.key">
-            <div><span>{{ action.capabilityName }}</span><b :class="`is-${action.risk}`">{{ riskLabel(action.risk) }}</b></div>
             <h3>{{ action.name }}</h3>
+            <div><span>{{ action.capabilityName }}</span><b :class="`is-${action.risk}`">{{ riskLabel(action.risk) }}</b></div>
             <p>{{ action.description }}</p>
           </article>
         </div>
@@ -226,10 +233,13 @@ useHead({ script: [
 .integration-detail-hero aside a { padding: 8px 10px; color: var(--paper); font-size: 12px; font-weight: 700; text-decoration: none; background: rgb(255 255 255 / 5%); border: 1px solid rgb(255 255 255 / 9%); border-radius: 8px; }
 .integration-actions { padding: 95px 0 110px; background: var(--paper); }
 .integration-facts { padding: 92px 0; color: var(--paper); background: #0d1017; }
-.integration-facts__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 44px 0 0; }
-.integration-facts__grid > div { padding: 22px; background: #151a24; border: 1px solid rgb(255 255 255 / 9%); border-radius: 14px; }
-.integration-facts dt { color: color-mix(in srgb, var(--integration-color) 72%, white); font-family: var(--font-mono); font-size: 10px; letter-spacing: .07em; text-transform: uppercase; }
-.integration-facts dd { margin: 12px 0 0; color: var(--ink-soft); font-size: 15px; line-height: 1.65; }
+.integration-facts .library-section__heading .eyebrow { color: var(--signal); }
+.integration-facts .library-section__heading > p { color: var(--ink-soft); }
+.integration-facts__grid { margin: 44px 0 0; }
+.integration-facts__grid > div { display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 1fr); gap: 32px; padding: 25px 0; border-top: 1px solid rgb(255 255 255 / 12%); }
+.integration-facts__grid > div:last-child { border-bottom: 1px solid rgb(255 255 255 / 12%); }
+.integration-facts dt { color: var(--signal); font-family: var(--font-mono); font-size: 11px; line-height: 1.65; letter-spacing: .07em; text-transform: uppercase; }
+.integration-facts dd { min-width: 0; margin: 0; color: var(--ink-soft); font-size: 16px; line-height: 1.65; overflow-wrap: anywhere; }
 .integration-facts dd span { display: block; }
 .integration-action-tools { display: grid; grid-template-columns: minmax(280px, .65fr) minmax(0, 1fr) auto; gap: 15px; align-items: center; margin: 50px 0 22px; padding: 13px; background: #e8e6dc; border: 1px solid var(--paper-border); border-radius: 15px; }
 .integration-action-tools label > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
@@ -239,15 +249,17 @@ useHead({ script: [
 .integration-action-tools__filters button.is-active { color: #fff; background: var(--cobalt); border-color: var(--cobalt); }
 .integration-action-tools__filters span { opacity: .65; }
 .integration-action-tools > p { margin: 0; color: #6c6b65; font-size: 12px; white-space: nowrap; }
-.integration-action-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
-.integration-action-grid article { min-height: 154px; padding: 17px; background: #eceae2; border: 1px solid var(--paper-border); border-radius: 12px; }
-.integration-action-grid article > div { display: flex; align-items: center; justify-content: space-between; gap: 15px; }
+.integration-action-grid { display: grid; }
+.integration-action-grid article { display: grid; grid-template-columns: minmax(0, .38fr) minmax(0, 1fr); gap: 9px 40px; padding: 26px 0; border-top: 1px solid var(--paper-border); }
+.integration-action-grid article:last-child { border-bottom: 1px solid var(--paper-border); }
+.integration-action-grid article > div { display: flex; flex-wrap: wrap; grid-column: 2; align-items: center; gap: 8px 18px; }
 .integration-action-grid article > div > span { color: var(--cobalt); font-family: var(--font-mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
 .integration-action-grid article > div > b { color: #64645d; font-size: 11px; font-weight: 650; }
-.integration-action-grid article > div > b.is-write { color: #a04434; }
+.integration-action-grid article > div > b.is-write,
+.integration-action-grid article > div > b.is-destructive { color: #a04434; }
 .integration-action-grid article > div > b.is-cost { color: #8b5e00; }
-.integration-action-grid h3 { margin: 21px 0 7px; font-size: 18px; line-height: 1.18; letter-spacing: -.035em; }
-.integration-action-grid p { display: -webkit-box; margin: 0; overflow: hidden; color: #555650; font-size: 13.5px; line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.integration-action-grid h3 { grid-row: 1 / 3; margin: 0; color: var(--ink); font-size: 20px; line-height: 1.3; letter-spacing: -.035em; overflow-wrap: anywhere; }
+.integration-action-grid p { grid-column: 2; min-width: 0; margin: 0; color: #555650; font-size: 16px; line-height: 1.65; overflow-wrap: anywhere; }
 .integration-action-empty { padding: 60px 20px; color: #5f605a; text-align: center; background: #eceae2; border-radius: 13px; }
 .integration-load-more { display: block; min-height: 48px; margin: 25px auto 0; padding: 0 18px; color: #fff; font-size: 13px; font-weight: 750; background: var(--cobalt); border: 0; border-radius: 9px; cursor: pointer; }
 .integration-load-more span { opacity: .72; }
@@ -261,7 +273,6 @@ useHead({ script: [
 .integration-faq details:last-child { border-bottom: 1px solid var(--paper-border); }
 .integration-faq summary { padding: 20px 0; font-size: 18px; font-weight: 720; cursor: pointer; }
 .integration-faq details p { margin: -4px 0 22px; color: var(--muted-on-paper); font-size: 16px; line-height: 1.7; }
-@media (max-width: 1050px) { .integration-action-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 900px) { .integration-detail-hero__grid { grid-template-columns: 1fr; gap: 36px; } .integration-action-tools { grid-template-columns: 1fr; } .integration-action-tools > p { white-space: normal; } .integration-related-grid { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 640px) { .integration-detail-hero { padding-top: 60px; } .integration-detail-hero__identity { align-items: start; } .integration-detail-hero h1 { font-size: clamp(43px, 12vw, 62px); } .integration-facts__grid { grid-template-columns: 1fr; } .integration-action-grid { grid-template-columns: 1fr; } .integration-action-grid article { min-height: 154px; } .integration-related-grid { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .integration-detail-hero { padding-top: 60px; } .integration-detail-hero__identity { align-items: start; } .integration-detail-hero h1 { font-size: clamp(43px, 12vw, 62px); } .integration-facts__grid > div { grid-template-columns: 1fr; gap: 10px; } .integration-action-grid article { grid-template-columns: 1fr; gap: 12px; } .integration-action-grid h3 { grid-row: auto; } .integration-action-grid article > div, .integration-action-grid p { grid-column: 1; } .integration-related-grid { grid-template-columns: 1fr; } }
 </style>

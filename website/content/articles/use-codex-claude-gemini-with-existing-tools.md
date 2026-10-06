@@ -2,7 +2,7 @@
 title: How to use Codex, Claude Code, or Gemini CLI with the tools you already have
 description: Keep your preferred AI client and existing business apps. Connect each client to the same durable project so plans, tool access, credentials, and receipts do not disappear with the chat.
 publishedAt: '2026-07-09'
-updatedAt: '2026-07-12'
+updatedAt: '2026-09-29'
 author: StackOS team
 category: Getting started
 topics:
@@ -11,7 +11,7 @@ topics:
   - Gemini CLI
   - MCP
   - AI tools
-readingTime: 7 min read
+readingTime: 5 min read
 featured: true
 visual: connections
 searchIntent: Learn how to connect an existing AI client to existing business tools
@@ -24,65 +24,76 @@ relatedArticles:
   - how-ai-agents-use-accounts-safely
 ---
 
-You do not need to rebuild your operating setup around whichever AI client you use today. Keep Codex, Claude Code, or Gemini CLI as the place where you direct the work. Connect that client to StackOS through MCP, then let StackOS connect the work to the business systems it actually touches.
+You ask your AI client to look at search traffic for your website. Before it reads a row, it needs to know which project you mean, which account it can use, and which Search Console property to query.
 
-The AI chooses the next step. StackOS stores the plan, scopes the tool call, and records what happened. Credentials stay inside the StackOS daemon; the client receives safe references and the result it needs, not your login secrets.
+You can do that from Codex, Claude Code, or Gemini CLI. Connect the client to StackOS through MCP so it can call StackOS tools. Then connect Google Search Console to the project and ask for a report you can check.
+
+Start with the [getting-started guide](/getting-started/) for installation and client setup. The walkthrough below uses one read-only report to check the connection, save a useful result, and pick up the work in another client.
+
+## Connect the client to the right project
+
+StackOS install and repair register its local MCP bridge with supported clients found on your Mac. Each client keeps its own settings and needs a fresh session after registration.
+
+Open Codex CLI, Claude Code, or Gemini CLI from the real folder for the site you want to work on. Ask it to use StackOS and confirm the project name and project link. StackOS uses the folder's project binding; it does not choose whichever project someone used last. If you use a client without a project folder, such as Claude Desktop, explicitly select the intended project.
+
+The AI chooses the next step. StackOS stores the plan, scopes the tool call, and records what happened. Provider credentials stay inside the StackOS daemon; the client receives safe references and action results. The [account-access guide](/library/articles/how-ai-agents-use-accounts-safely/) explains that boundary in detail.
 
 ::article-concept-visual{mode="connections" title="Keep the AI client. Keep the apps." caption="Each supported client can reach the same durable project state and the tools available to complete the work."}
 ::
 
-## Why keep the AI client separate?
+## Confirm access to your Search Console property
 
-AI clients improve quickly, and people have different preferences. One person may work in Codex, another in Claude Code, and another in Gemini CLI. Locking the operating process to one chat interface makes switching expensive and fragments the work.
+Open the project's Connections page and add Google Search Console if it is missing. Follow the [Search Console integration guide](/library/integrations/google-search-console/) for provider setup and permissions. Keep credentials in StackOS.
 
-A shared work layer does not make the clients identical or copy private chat history between them. It gives each compatible client access to the same project record: workflows, run plans, dependencies, evidence, connected tools, and audit history.
+A connected Google account still needs access to the particular Search Console property. Ask the agent to list the properties it can read, then use the exact property identifier from that result.
 
-## What does the connection look like?
+## Ask for one dated report
 
-MCP is the connection layer. StackOS install and repair register a local MCP bridge with the supported clients found on your Mac. Codex, Claude Code, and Gemini CLI still keep their own MCP settings; those settings point to the same local StackOS runtime.
+Replace `[SEARCH_CONSOLE_PROPERTY]` with your property. The dates below are an example of a completed reporting period; replace them with the dates you want to inspect.
 
-From there, the path is concrete:
+```text
+Use StackOS for this project. Confirm the project name and that you can
+read the Search Console property [SEARCH_CONSOLE_PROPERTY].
 
-1. The client starts a StackOS session from the directory where you are working.
-2. StackOS resolves that directory to its bound project instead of guessing from the last project someone used.
-3. The AI inspects the relevant workflow or current run and chooses the next step.
-4. That step receives only the context and tools its contract allows.
-5. StackOS validates the call, performs the specific action, and records the result.
+Read web search performance from 2026-08-29 through 2026-09-25, inclusive,
+using final data. Show the top 10 pages by clicks with clicks, impressions,
+CTR, and average position.
 
-Human approval is not a default stage in this path. A client may still apply its own tool-confirmation settings, but StackOS does not add a blanket human checkpoint. The agent should ask when the request leaves intent, authority, a disclosure boundary, or a consequential choice unresolved.
+Choose one existing page from that table for a closer look. Say why you
+selected it, then show the queries returned for that exact page using
+the same dates, search type, and data state. Explain any missing data
+or limits that affect the interpretation.
 
-This works because all three clients support MCP, although their configuration differs. See the official setup references for [Codex](https://learn.chatgpt.com/docs/extend/mcp#connect-codex-to-an-mcp-server), [Claude Code](https://code.claude.com/docs/en/mcp), and [Gemini CLI](https://github.com/google-gemini/gemini-cli/blob/main/docs/tools/mcp-server.md).
+Save the report, its source references, and one proposed next step in
+this StackOS project. Give me the saved report or task reference.
+Keep this read-only: do not edit the site or submit anything to Google.
+```
 
-## Does StackOS replace automation tools?
+The report should name the property, dates, search type, and data state, then show the page table and the selected page's query table. You should also have a reference you can use to retrieve the report later.
 
-Your existing app remains the system of record. A content team can keep WordPress, a commerce team can keep Shopify, and an engineering team can keep GitHub.
+Check that the selected page belongs to the site you intended. Read it alongside the returned queries, then decide whether the proposed next step would help answer those searches.
 
-StackOS keeps the execution context between the request and those tools: which project and workflow apply, which step is running, what that step may do, which dependencies are unresolved, what evidence supports the result, and what action was recorded.
+Google's [Search Analytics API](https://developers.google.com/webmaster-tools/v1/searchanalytics/query) returns top rows and doesn't guarantee every row. Some queries are omitted. An absent query is not evidence of zero traffic, and a page with only a few impressions gives little basis for deciding what to change.
 
-## What happens when you change models?
+If the report supports an edit, the [workflow library](/library/workflows/) includes content refresh and website analysis. Ask the agent to choose the appropriate workflow and carry the report's source references into that work. Reading a report does not itself start an editing or publishing workflow.
 
-Another client does not inherit the private conversation from the old one. It connects from the same workspace, resolves the same StackOS project, and recovers the durable state: the current plan, completed steps, decisions, evidence, and next actions.
+## Continue from the saved result
 
-Each client still needs its own MCP registration. StackOS install and repair handle that registration for supported hosts, while the project state and business-tool connections remain in one place.
+On the same Mac, open another supported client with its own working StackOS connection. Use the same project folder, confirm the project, and give it the reference returned by the first client:
 
-## A simple example
+```text
+Use the same StackOS project for this workspace. Read the saved report
+or task at [SAVED_REPORT_OR_TASK_REF]. Confirm its property and reporting
+dates, summarize what was completed and what remains, and show me the
+proposed next step before making changes.
+```
 
-Suppose you ask Codex to investigate customer feedback and prepare a fix.
+StackOS keeps the project records the agent saved: reports and evidence, plans and completed steps, decisions, and action history. Private chat transcripts and unsaved conversation context don't transfer between clients. Include any extra instruction or decision that was left only in the previous chat.
 
-1. Codex starts StackOS from the project workspace and opens the relevant [customer feedback workflow](/library/workflows/communications-customer-feedback-intake).
-2. StackOS creates a run plan and gives the intake step its bounded communication context and tools.
-3. Codex investigates the feedback and records the findings with their evidence.
-4. If delivery is in scope and the handoff criteria are met, Codex hands the result to a tracked delivery workflow with its dependencies intact.
-5. If you later continue in Claude Code, it resolves the same project and can see what finished, what remains, and why.
+## If the result is missing or wrong
 
-The same pattern works when the starting client is Claude Code or Gemini CLI. The interface changes; the durable work contract does not.
-
-## What do you need to get started?
-
-Install StackOS on your Mac, then open a supported client from the real project directory. Confirm that the StackOS MCP connection is healthy and make one bounded request, for example:
-
-> Use StackOS for this workspace. Show me the relevant workflow and the first executable step.
-
-Connect the one outside app that request needs. Do not start by wiring every tool your company owns. One real workflow will expose the missing context, permissions, and handoffs much faster.
-
-Browse the [workflow library](/library/workflows) to choose a starting point, or [download StackOS for Mac](/#install) and connect the client you already use.
+- **The client cannot see StackOS.** Start a fresh client session. If registration is missing, use the repair steps in the [getting-started guide](/getting-started/).
+- **The project is wrong.** Reopen the client from the correct folder or explicitly select the intended project before continuing.
+- **The property is missing or access is denied.** Check the exact property and the connected account's Search Console permissions. Reconnecting the same account won't grant it access to a property it cannot read.
+- **The report has no rows.** Check the property, dates, search type, and filters before interpreting the result. Ask the agent to distinguish an empty response from a failed request.
+- **The next client cannot find the work.** Confirm the project and saved reference. If the result existed only in chat, return to that session and have the agent save the report and any decisions needed to continue.

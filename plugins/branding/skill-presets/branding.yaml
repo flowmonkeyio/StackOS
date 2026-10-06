@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: branding.brand-orchestrator
     name: Brand Orchestrator
-    version: 0.6.1
+    version: 0.6.2
     description: Main-agent operating loop for evidence-led brand-foundation setup and voice-consistent content production, review, and optional publication.
     domain: branding
     skill_type: main-agent-orchestration
@@ -59,6 +59,9 @@ presets:
         - ref: project-local docs and skills
           purpose: Repository docs, local skills, and operator-specific guidance when present.
       conditional_context_refs:
+        - ref: branding-plugin:references/natural-writing.md
+          purpose: Expanded source handling, whole-piece review, and natural writing examples. Resolve ../references/natural-writing.md relative to this effective preset's origin_path; carry relevant guidance into specialist handoffs without treating it as project voice.
+          when: Expanded guidance is needed and authorized host file access is available. Otherwise use the inline method and authorized context excerpts; report a material source gap without claiming to have read an inaccessible reference.
         - ref: Level 2 branding overlay
           purpose: Sources of record, voice profile, disclosure policy, concrete channel instances, handles, charters, routing policy values, and canonical site settings.
           when: Content production is in scope; absence is expected during first-time brand-foundation setup.
@@ -101,6 +104,9 @@ presets:
         - Treat material operator feedback as evidence about the earliest affected decision, then re-enter the workflow there instead of limiting repair to the latest draft.
       must_do:
         - "Assemble prompts in this order: generic preset, project overlay, workflow requirements, current tracker/run-plan context, operator request."
+        - Preserve useful original wording, attribution, and context through handoffs alongside summaries. Distinguish explicit operator endorsement, operator opinion, reviewer advice, and correction requests before changing an angle, stance, or voice rule.
+        - Read the whole piece before accepting sentence-level polish. Check both the evidence behind experience claims and the usefulness of the explanation or proposed solution; retain necessary source and research limits.
+        - Treat recurring wording, caveats, and structural patterns as contextual signals for agent judgment, not banned phrases, detector scores, or a demand for artificial roughness.
         - Pass each specialist an occurrence-specific packet assembled in that order; do not assume its host-local agent file contains the effective workflow, project state, completed earlier article context, or operator feedback.
         - Rehydrate the effective guidance stack and durable state after resume, handoff, or context compaction before dispatching or continuing work.
         - For a multi-piece request, create one manual tracker task for the batch and one article ticket per requested piece. Order the article tickets with dependencies so only one is ready at a time.

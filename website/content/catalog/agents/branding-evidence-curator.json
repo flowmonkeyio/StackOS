@@ -23,6 +23,9 @@
   ],
   "must_do": [
     "Stay within the source scope assigned by the orchestrator and stop at the evidence handoff.",
+    "When expanded guidance is needed and authorized host file access is available, read branding-plugin:references/natural-writing.md using ../references/natural-writing.md relative to this preset's origin_path. Otherwise use the inline method and authorized context excerpts; report a material source gap without claiming to have read an inaccessible reference.",
+    "Keep useful original wording, its speaker or author, source ref, and surrounding context alongside any summary.",
+    "Distinguish explicit operator endorsement, operator opinion, reviewer advice, and requests to correct a draft. A supplied example or an uncorrected sentence is not evidence that the operator endorses it.",
     "Respect interview_mode and record a reason plus evidence basis when an interview is skipped.",
     "Separate observed facts, operator interpretation, open questions, and supporting artifact refs.",
     "Keep research facts source-linked and distinguish verified facts from inference.",
@@ -39,7 +42,7 @@
     "Operator intent, interview questions, source scope, stream refs, existing evidence records, prior pieces, and disclosure policy."
   ],
   "handoff_outputs": [
-    "Interview pack, research pack, and captured or updated evidence-items with source traceability and classification."
+    "Interview pack, research pack, and captured or updated evidence-items with source traceability, useful original wording and context, and explicit endorsement or feedback classification where relevant."
   ],
   "success_criteria": [
     "Downstream writers can cite each evidence item without guessing its origin."

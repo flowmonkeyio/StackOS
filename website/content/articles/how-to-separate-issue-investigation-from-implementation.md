@@ -1,8 +1,8 @@
 ---
 title: How to separate issue investigation from implementation
-description: A record-based way to keep a persuasive issue diagnosis from silently becoming an unapproved engineering change.
+description: Turn a software issue report into a supported conclusion, an authorized change, and acceptance checks. Follow a worked CSV export example.
 publishedAt: '2026-07-28'
-updatedAt: '2026-07-28'
+updatedAt: '2026-09-30'
 author: StackOS team
 category: AI operations
 topics:
@@ -28,50 +28,79 @@ relatedArticles:
   - how-to-build-ai-agent-workflow
 ---
 
-An investigation conclusion can be persuasive enough to make the next move feel obvious. The evidence points to a likely cause. Some alternatives have been eliminated. A fix direction even seems to suggest itself.
+A task titled “Fix CSV export” leaves engineering to guess what should change. Even a convincing diagnosis can leave the scope and the test for success undecided.
 
-That still does not answer the delivery question: should this change be made, by whom, with what scope, and against which acceptance and verification conditions?
+Separate issue investigation from implementation by saving what the evidence establishes, identifying the work already authorized, and giving engineering observable acceptance criteria. Carry the unresolved parts into the task so the next agent can check them before choosing a fix.
 
-For the current StackOS support-to-delivery contract, those are different records with different decision rights. The investigation records what the evidence supports. An operator instruction authorizes delivery work. Engineering takes ownership after that handoff has created delivery-ready state. When evidence remains incomplete, the investigation can close as `bounded_uncertainty` only with its limit and next diagnostic named. That conclusion still leaves the delivery choice with the operator.
+## Follow one report far enough to know its limits
 
-The distinction is small in prose and consequential in the record. Without it, a diagnosis can quietly acquire scope, authority, and implementation commitments that nobody explicitly chose.
+Here is a hypothetical software issue. The report, records, and instructions below are invented to show the method.
 
-## Let the investigation stop at what it knows
+A user filters a table to show open items, then downloads a CSV. The file includes closed items too. For this example, the agreed behavior is that the export contains every record matching the selected status, across all table pages.
 
-In the current StackOS method, an investigation record carries the reported and expected behavior, gathered evidence, reproduction work, affected scope, facts, inferences, eliminated hypotheses, and residual uncertainty. Its purpose is to establish the condition under investigation and the limit of the evidence.
+The investigator uses a test fixture with five records: A1, A2, and A3 are open; B1 and B2 are closed. The table shows two records per page. With the Open filter selected, its first page shows A1 and A2, and its second shows A3. The downloaded CSV contains all five records.
 
-The current StackOS investigation workflow makes that boundary explicit. It can conclude with a verified cause, `bounded_uncertainty`, or no issue. A `bounded_uncertainty` conclusion names the unresolved limit and the next diagnostic step; the workflow then returns the decision about delivery rather than creating a task or changing production behavior itself.
+That is enough to reproduce a specific mismatch. Keep the fixture, application version, reproduction steps, and resulting CSV together. They give another person or agent a way to repeat the check.
 
-That produces a useful conclusion without converting a likelihood into a plan. “The evidence supports this likely failing path; this observation remains unconfirmed” belongs in the investigation record. “Implement this correction” requires a new decision.
+Next, the investigator compares the requests. The table request includes the selected status. The export request omits it. The CSV has the expected columns, and an unfiltered export returns the five expected records.
 
-Verified root cause is one conclusion state, not a prerequisite for closing an investigation. `Bounded_uncertainty` can lead to more diagnostics, a decision to leave delivery unopened, or a later operator decision to create narrowly scoped work. The conclusion carries the uncertainty forward; it does not choose among those responses.
+The missing status is a useful lead. The investigator has not yet traced how the server handles the export request, so the exact cause remains unverified. A change to the client might be sufficient; the server might also ignore a supplied status. Those possibilities affect the implementation.
 
-## Authorization changes the kind of work being done
+An investigation conclusion for this case could read:
 
-The next record states that an accountable operator has decided to create delivery work from the conclusion. In the current StackOS handoff contract, task creation requires both a completed conclusion and a current instruction in the same canonical thread. The instruction supplies authority for a different action; it adds no new evidence about the cause.
+> The filtered export failure is reproduced in the named test version. Selecting Open yields a CSV containing A1, A2, A3, B1, and B2; the expected set is A1, A2, and A3. The export request omits the status sent by the table request. The server's handling of that parameter has not been checked. Trace that handling before selecting the correction. Production impact and the version that introduced the issue remain unknown.
 
-The operator can request another diagnostic, leave product work unopened, or authorize a delivery task that preserves uncertainty in its context. The investigation record supports those choices; it does not select one by sounding compelling.
+Link that conclusion to the fixture, request captures, export, and relevant source references. Keep observations separate from the suspected cause. Correct columns make a column-format defect less relevant to this report; they do not establish that every part of CSV generation works.
 
-The handoff changes the active question from “What do we know?” to “What work is authorized now?” It preserves the evidence trail and the operator’s decision for the record that follows.
+If the investigator cannot reproduce the failure, record the conditions tried and the missing evidence. A report that only fails with a particular saved filter may need that filter's configuration next. “Could not reproduce” is a useful result when its limits are clear; it does not establish that the reported issue is resolved.
 
-## Delivery begins when implementation can be evaluated
+## Use the authorization you already have
 
-Within the current StackOS delivery contract, engineering begins from a record that carries the conclusion and its limits alongside affected surfaces, an authorized direction, scope, acceptance criteria, verification expectations, dependencies, and residual risk. Those fields let engineering evaluate an implementation decision instead of reconstructing one from a support conclusion.
+The conclusion helps an operator decide what to do. A likely cause does not itself say whether the agent may create a task, change code, or deploy a result.
 
-Its delivery-handoff workflow preserves the conclusion and safe thread references, creates tracker work after the same-thread instruction, and then hands implementation to `engineering.tracked-delivery`. That is current StackOS contract evidence: it establishes this system’s boundary without supplying adoption or outcome evidence.
+Check the current instruction and the project's rules. If they already authorize the necessary work, carry that instruction forward and proceed within its scope. A change of phase is not a reason to ask for the same permission again. If the request only authorized investigation, return the conclusion and recommended next action for the operator's decision.
 
-The FDA-published [MDSAP nonconformity and corrective-action procedure](https://www.fda.gov/medical-devices/medical-device-single-audit-program-mdsap/mdsap-qms-p0009-nonconformity-and-corrective-action-procedure) shows a similar record boundary in a medical-device quality-system context. Cause investigation precedes the development and implementation of corrective action, while action planning records roles, resources, acceptance criteria, and verification or validation. It is a domain-specific example, not general operating or legal guidance; its value here is to show that a finding about cause and a planned corrective action carry different obligations.
+For the export example, assume the operator has now given this instruction:
 
-## Urgent containment is a separate lane
+> Create the delivery task and correct status filtering in CSV export. Keep the columns and other export behavior unchanged. Return a reviewed change with checks for filtered and unfiltered exports. Do not deploy it.
 
-A cause-first sequence cannot cover every response that may be required while evidence is still developing.
+This gives engineering room to trace the server behavior and choose the correction. It does not commit the team to the investigator's first suspected code path. If that path turns out to be wrong, update the explanation and supporting evidence while pursuing the authorized behavior.
 
-[NIST CSF 2.0](https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=957258) treats incident analysis, mitigation, and recovery as distinct outcomes while allowing related functions to occur concurrently. WHO’s complaints-handling guidance for manufacturers of prequalified in vitro diagnostics likewise describes circumstances in which corrective action may be needed before definitive root-cause identification. Together, those examples show that a response record can run alongside investigation without turning an unverified hypothesis into a corrective plan.
+A broader change needs its own scope decision. Replacing the reporting system would go beyond this instruction. So would silently changing the export to include only the current table page.
 
-When containment is warranted, its authority, scope, and verification belong in a separate record. It can run concurrently with investigation. A root-cause corrective implementation makes a different claim: that the selected change addresses the cause and can be evaluated against its acceptance conditions.
+## Give engineering a behavior it can test
 
-The current StackOS evidence used here establishes the normal boundary between investigation, same-thread operator authorization, and later engineering delivery. It contains no emergency-containment contract, so that remains an open design question rather than a current capability.
+The delivery task should carry the investigation conclusion, its evidence links, the applicable instruction, the affected export path, and the remaining uncertainty. Add any dependencies and a named owner for the work. Engineering should be able to retrieve the original report without searching a chat history for it.
 
-## Inspect the authority boundary, not the confidence of the conclusion
+For this case, write the desired behavior explicitly: **CSV export uses the selected status and includes matching records from every page.** Keep the current columns and their order. The task can require checking the server's handling of the status before deciding where to change the code.
 
-The next useful test is a future one: can a reviewer find a distinct investigation conclusion, authorization, and delivery record—and, when urgent containment occurs, identify its separate authority without backfilling root-cause certainty into the plan?
+Use the same fixture to make acceptance concrete:
+
+| Check | Expected exported records |
+| --- | --- |
+| Open is selected while the first table page is visible | A1, A2, and A3, including the record on the second page |
+| Closed is selected | B1 and B2 |
+| No status filter is selected | All five records |
+| A status with no matching records is selected | The agreed CSV headers, with no data rows |
+
+In this example, a header-only file is the chosen behavior for an empty result. A real project should use its existing export contract or settle that question before treating it as a test expectation.
+
+Compare record identifiers as well as counts. A three-row export can still contain the wrong three records. Check the column names and order alongside the records so a filtering fix does not quietly change the file format.
+
+The verification plan should also name where the checks will run and what will be saved. Here, engineering can reproduce the failure against the original version in a local test environment, add a regression check that exposes it, then run that check against the changed version. Exercise the export through its normal entry point so the result covers the request and server behavior together. Retain the fixture, version identifiers, command or test procedure, results, and sample CSVs.
+
+Those checks cover the stated export behavior. They do not answer the investigation's separate question about which production users were affected. Keep that question visible if someone still needs to investigate it.
+
+## How StackOS separates these responsibilities
+
+StackOS's [Issue Investigation workflow](/library/workflows/support-issue-investigation/) instructs the agent to read the full support thread, distinguish facts from inferences and eliminated hypotheses, and return a conclusion with evidence and remaining uncertainty. It allows a verified cause, bounded uncertainty with a next diagnostic, or no issue. Its assignment ends with the conclusion; creating delivery tasks and implementing production fixes belong to later work.
+
+The [Delivery Task Handoff workflow](/library/workflows/support-delivery-task-handoff/) checks for a completed conclusion and a current operator instruction in the same support thread. It carries the evidence, scope, acceptance criteria, verification expectations, and residual risk into tracker work, then hands implementation to [engineering delivery](/library/workflows/engineering-tracked-delivery/).
+
+The same-thread requirement belongs to this support method. It tells the handoff agent where to establish the instruction for that issue. The agent still has to interpret the instruction and judge what the evidence supports; a saved reference alone cannot make a diagnosis correct.
+
+## Review the fix against the report
+
+Before accepting the export change, open the original report, the authorized scope, and the verification results together. Confirm that the test actually failed for the reported reason on the original version, then check the output produced by the changed version. Review the neighboring cases as well as the Open filter that first exposed the problem.
+
+A note saying “all tests pass” leaves the reviewer to reconstruct that connection. A record showing the original five-row export, the corrected A1/A2/A3 export, and the unchanged columns makes the result inspectable. It gives the reviewer enough evidence to accept the correction against the behavior the operator asked for.

@@ -9,18 +9,24 @@ owner: {team: StackOS}
 experience:
   problem: Content refreshes turn into broad rewrites when search intent, current performance, technical issues,
     and conversion purpose are not diagnosed first.
-  outcome: One reviewed refresh record distinguishing proposed or applied changes, per-change verification and later
-    measured outcomes; preparation and assessment never imply publication.
+  outcome: A reviewed page-edit plan, verified changes when authorized, or a later performance check. Each change
+    keeps its source, review and verification record.
   why_ai: AI can compare search evidence, page structure, project context, and editorial constraints while keeping
     the final judgment and publication boundary explicit.
-  operator_path: ['Choose the bounded page set, business goal and prepare/apply/assess mode; preparation is the
-      default.', Supply available page/search/analytics evidence or approved exports and existing review/implementation
-      refs., Review exact edits when needed; existing explicit authorization carries forward only for the same reviewed
-      scope., 'Inspect implementation receipts and a later assessment, including inconclusive outcomes.']
-  agent_path: ['Recover existing state and fix scope, evidence routes and measurement semantics.', Diagnose before
-      proposing exact page/link edits; independently review and adjudicate one proposal version., 'Apply only authorized
-      current changes, preserve partial/unknown receipts, verify, and retain a future assessment hook.', In assess
-      mode inspect earlier implementation and comparable later evidence without editing or reapplying.]
+  operator_path:
+  - 'Example request: “Use SEO Content Refresh on [page URLs]. Readers should be able to try each method. Keep the
+    URLs and useful links. Show the proposed edits and checks before changing the site.”'
+  - 'Choose the job: prepare a plan, apply reviewed edits, or assess an earlier refresh. Preparation is the default;
+    applying changes needs permission and a usable editing route.'
+  - Provide current page content, the reader or business goal, and available search or analytics evidence. For an
+    assessment, include the earlier change record and baseline.
+  - Check the actual edits and the later performance result separately. A page can be successfully updated while its
+    search impact is still unknown.
+  agent_path:
+    - "Confirm the pages, business goal and whether the job is to prepare edits, apply them or assess an earlier refresh. Review existing content and comparable search data."
+    - "Find the reader or technical problem before proposing exact page and link edits. Have the proposal independently reviewed and resolve the findings before applying it."
+    - "Apply only authorized changes, check each result, and keep records of completed, failed or uncertain edits. Inspect an uncertain result before retrying. Preparation stops with the reviewed plan."
+    - "When assessing an earlier refresh, compare later data with the saved baseline and explain the measurement limits. Record inconclusive results when the data cannot support a conclusion, and leave the content unchanged."
   progress_signals: [Page and intent scoped, Diagnosis complete, Refresh plan reviewed, Changes applied, Verification
       complete]
   recovery: [Preserve applied and unknown change receipts; inspect actual current state before retrying an uncertain
@@ -38,12 +44,22 @@ experience:
 public:
   audience: SEO and content teams improving existing pages
   setup: mixed
-  prerequisites: [A bounded page set and business goal, 'Approved page content and search/analytics evidence, connected
-      or exported', Review and exact execution authorization only for apply; an earlier implementation record for
-      assess]
-  proof: [Current reviewed exact change proposal, Per-change implementation and verification receipts or review-ready
-      handoff, Versioned baseline/follow-up measurements with comparability limits, One durable refresh record and
-      delayed assess hook]
+  prerequisites:
+  - Existing page URLs and the reader or business problem to solve
+  - Current page content and available search or analytics evidence, from connected tools or approved exports
+  - 'To apply changes: an accepted edit plan, permission and a supported editing route. To assess changes: the earlier
+    record, baseline and a comparable later data window.'
+  proof:
+  - A reviewed proposal with the exact old and new wording, the reason for each edit, useful links to preserve and
+    the checks to run.
+  - 'Illustrative edit: a workflow guide says “write clear requirements” but gives no usable brief. Add the task,
+    inputs, acceptance checks and a saved handoff while preserving the page''s purpose and URL.'
+  - For applied work, a record of each completed, failed or uncertain edit and a check of the actual page. A successful
+    build alone does not establish what readers can see.
+  - A separate performance assessment using the saved baseline and a comparable later window. If the sample is too
+    small or the data incomplete, the result stays pending or inconclusive.
+  - One saved refresh record that connects the proposal, review, actual changes, verification and next measurement
+    step.
   featured: false
 when_to_use: [Existing pages or their internal connections need bounded evidence-led improvement., A prior refresh
     needs outcome assessment without reapplying changes.]

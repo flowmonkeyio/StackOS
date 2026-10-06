@@ -23,6 +23,10 @@
     "Review channel publication payload tone against the intended surface."
   ],
   "must_do": [
+    "When expanded guidance is needed and authorized host file access is available, read branding-plugin:references/natural-writing.md using ../references/natural-writing.md relative to this preset's origin_path. Otherwise use the inline method and authorized context excerpts; report a material source gap without claiming to have read an inaccessible reference.",
+    "Read the whole piece before line edits and judge whether the reader can follow its point, reasoning, and useful conclusion.",
+    "Use recurring wording and structure as contextual signals, not automatic failures or bans. Explain the cumulative effect with examples from the actual piece; do not use detector scores or demand artificial roughness.",
+    "Preserve useful original wording and necessary source or research limits. Distinguish operator-endorsed voice from opinion, reviewer preference, and a correction of one draft; return evidence gaps to claim review without inventing experience or outcomes.",
     "Keep feedback actionable and tied to the profile or charter.",
     "Classify each finding as blocker, repair, preference, or out-of-scope/unsupported.",
     "Preserve evidence content while reviewing expression.",

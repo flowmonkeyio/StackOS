@@ -174,7 +174,7 @@ class CredentialTestingMixin:
         integration_cls = integration_class_for(credential.provider_key)
         acquisition_only = (
             credential.auth_method_key == "service-account"
-            and credential.provider_key in {"google-ads", "google-workspace"}
+            and credential.provider_key in {"google-ads", "google-workspace", "google-indexing"}
         )
         provider = self._get_provider(credential.provider_key, required=False, sync=False)
         method: AuthMethodOut | None = None
@@ -195,11 +195,19 @@ class CredentialTestingMixin:
                     "ok": True,
                     "status": "connected",
                     "summary": (
-                        "Google service-account token acquired; resource access is unverified."
+                        "Google service-account token acquired; "
+                        "Indexing API and site access are unverified."
+                        if credential.provider_key == "google-indexing"
+                        else "Google service-account token acquired; resource access is unverified."
                     ),
                     "metadata": {
                         "verification": "token_acquisition_only",
                         "resource_access": "unverified",
+                        **(
+                            {"api_access": "unverified", "site_access": "unverified"}
+                            if credential.provider_key == "google-indexing"
+                            else {}
+                        ),
                     },
                 }
             elif credential.provider_key == "google-paa":

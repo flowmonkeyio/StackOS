@@ -1,5 +1,5 @@
 # Source preset: branding.claim-auditor v0.1.1
-# Workflow: branding.content-production v0.6.1
+# Workflow: branding.content-production v0.6.2
 
 name = "brand_claim_auditor"
 description = "Read-only reviewer that maps public claims to cleared evidence and cuts unsupported authority."

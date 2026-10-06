@@ -487,7 +487,22 @@ the connector package. The StackOS public action surface includes:
 - `ahrefs`: `seo.competitor.keywords`, `seo.backlink.research`
 - `google-search-console`: `seo.search-console.sites.list`,
   `seo.search-console.search-analytics.query`,
-  `seo.search-console.sitemaps.list`, `seo.search-console.url.inspect`
+  `seo.search-console.sitemaps.list`, `seo.search-console.sitemaps.submit`,
+  `seo.search-console.url.inspect`, `seo.search-console.batch.read`, and
+  `seo.search-console.sitemaps.submit.batch`. Batches accept 1–1000 typed items
+  with one Account and preserve every correlated result or failure. Partial
+  batches fail with a complete structured summary; no batch retries automatically.
+  Sitemap submission requires explicit Account
+  write access and returns a submission receipt; it does not edit XML or certify indexing.
+- `google-indexing`: `seo.indexing.url-notifications.publish` and
+  `seo.indexing.url-notifications.metadata.get`, plus `seo.indexing.batch.publish`
+  and `seo.indexing.batch.metadata.get`. Batches accept 1–100 URLs, validate each
+  encoded inner request against 1 MB, and preserve every item's outcome. Publish
+  uses one type per batch. No batch retries automatically. Publish has static destructive
+  risk for both URL_UPDATED and URL_DELETED, and returns notification receipt
+  only. Metadata returns notification history; neither action establishes
+  indexing status. Service-account-only setup and eligibility are covered by the
+  [Indexing contract](integration-contracts/google-indexing.md).
 - `google-analytics`: `seo.ga4.account_summaries.list`,
   `seo.ga4.properties.metadata.get`, `seo.ga4.properties.run_report`, and
   `seo.ga4.properties.run_realtime_report`

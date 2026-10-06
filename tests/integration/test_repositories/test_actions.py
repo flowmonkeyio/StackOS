@@ -1196,7 +1196,10 @@ def test_builtin_action_connectors_describe_availability(session: Session) -> No
             "unknown",
         ),
         "seo.search-console.sitemaps.list": ("google-search-console", True, "unknown"),
+        "seo.search-console.sitemaps.submit": ("google-search-console", True, "unknown"),
         "seo.search-console.url.inspect": ("google-search-console", True, "unknown"),
+        "seo.search-console.batch.read": ("google-search-console", True, "unknown"),
+        "seo.search-console.sitemaps.submit.batch": ("google-search-console", True, "unknown"),
         "seo.ga4.account_summaries.list": ("google-analytics", True, "unknown"),
         "seo.ga4.properties.metadata.get": ("google-analytics", True, "unknown"),
         "seo.ga4.properties.run_report": ("google-analytics", True, "unknown"),
@@ -4560,6 +4563,15 @@ def test_google_search_console_validation_rejects_malformed_google_requests(
         credential_ref=credential_ref,
     )
 
+    submit_validation = repo.validate(
+        project_id=project_id,
+        action_ref="seo.search-console.sitemaps.submit",
+        input_json={"site_url": "https://example.com", "sitemap_url": "not-a-url"},
+        credential_ref=credential_ref,
+    )
+    assert not submit_validation.valid
+    assert {"$.site_url", "$.sitemap_url"} <= {issue.path for issue in submit_validation.issues}
+
     search_paths = {issue.path for issue in search_validation.issues}
     assert search_validation.valid is False
     assert "$.site_url" in search_paths
@@ -4575,6 +4587,36 @@ def test_google_search_console_validation_rejects_malformed_google_requests(
     assert sitemap_validation.valid is False
     assert "$.site_url" in sitemap_paths
     assert "$.sitemap_index" in sitemap_paths
+
+
+@pytest.mark.parametrize("write", [False, True])
+@pytest.mark.parametrize("count,valid", [(0, False), (1000, True), (1001, False)])
+def test_google_search_console_batch_validation_bounds(
+    session, project_id, httpx_mock, write, count, valid
+):
+    seed_test_account(
+        session,
+        project_id=project_id,
+        provider_key="google-search-console",
+        secret_payload=json.dumps({"access_token": "gsc-token"}).encode(),
+    )
+    ref = _provider_credential_ref(session, project_id, "google-search-console")
+    item = (
+        {"site_url": "sc-domain:example.com", "sitemap_url": "https://example.com/sitemap.xml"}
+        if write
+        else {"operation": "sites.list", "input": {}}
+    )
+    action = (
+        "seo.search-console.sitemaps.submit.batch" if write else "seo.search-console.batch.read"
+    )
+    validation = ActionRepository(session).validate(
+        project_id=project_id,
+        action_ref=action,
+        credential_ref=ref,
+        input_json={"requests": [item] * count},
+    )
+    assert validation.valid is valid
+    assert not httpx_mock.get_requests()
 
 
 def test_google_search_console_validation_keeps_legacy_gsc_surfaces_out(

@@ -1,8 +1,8 @@
 ---
 title: How can AI agents use business accounts without seeing the login?
-description: The model does not need the password. It needs a safe account reference, a bounded action, and a trusted execution layer that keeps credentials outside its context.
+description: See how StackOS keeps credentials in its runtime, checks a Search Console action against separate permissions, and distinguishes three ways to remove account access.
 publishedAt: '2026-07-09'
-updatedAt: '2026-08-14'
+updatedAt: '2026-10-04'
 author: StackOS team
 category: Security
 topics:
@@ -11,7 +11,7 @@ topics:
   - local software
 readingTime: 6 min read
 featured: false
-visual: security
+visual: none
 searchIntent: Understand how AI agents can use connected accounts without receiving credentials
 relatedWorkflows:
   - engineering-tracked-delivery
@@ -23,70 +23,58 @@ relatedArticles:
   - what-is-an-agentic-workflow
 ---
 
-An AI agent does not need a password or API key to use a business account. It needs three things: a safe reference to the account, authority to request a named action, and the result of that action.
+An AI agent can use a business account through an action runtime that holds the credential. The agent receives an account reference and requests a particular operation. The runtime checks the request, uses the credential, and returns the result.
 
-The credential can stay inside a trusted action layer. The agent chooses what to request. The action layer validates the request, uses the credential, and returns a sanitized result.
+In StackOS, that runtime is the local daemon. Shared authentication code resolves the credential, and the provider connector uses it to carry out the action. Both handle credential material inside the daemon; the agent-facing interface supplies safe references and account information.
 
-This is the boundary we use in StackOS. It lets the agent work without turning its prompt, workflow state, or logs into a credential store.
+Keeping the login there answers one question. The next is which actions this agent is allowed to request through that account.
 
-::article-concept-visual{mode="security" title="The agent requests. The action layer executes." caption="StackOS keeps the credential inside its local daemon, checks the requested action, and returns a sanitized result."}
-::
+## A stored account and a project's connection have different jobs
 
-## What should the model receive?
+An **Account** is the reusable identity StackOS stores for a provider. A **Connection** attaches that Account to a particular project. The attachment does not make another copy of its credential.
 
-The model needs enough information to choose the right connection and action:
+The agent can receive the provider and account name, authentication method, saved connection status, known scopes, and an opaque credential reference. That reference lets StackOS find the credential for an authorized action. It is not the password or token itself.
 
-- A provider and account profile name, or another safe reference
-- Whether the connection is ready
-- The capabilities and scopes available to it
-- The contract for the action it wants to request
+Credentials belong in account setup. Putting them in a prompt, project resource, workflow file, or article would create another place that can be copied or shared. The agent only needs enough information to select the intended account and action.
 
-It does not need the raw token, password, private key, or OAuth refresh token. In StackOS, an opaque credential reference identifies the connection without functioning as the credential itself.
+A connection marked ready tells the agent about its saved setup. Access to a particular provider endpoint or property still depends on the credential's permissions. A successful account test does not establish every permission the next task might need.
 
-## Where does the secret stay?
+## A report step cannot borrow the account's permission to write
 
-StackOS runs locally on the user’s Mac. The operator enters credentials through the local admin surface, and the daemon owns their storage. When an action runs, StackOS decrypts the credential inside the provider connector. The plaintext value is not serialized into the agent-facing request or response.
+Consider a hypothetical Search Console workflow. An operator connects a Google Account and attaches it to a project. The active step may read Search Analytics for an authorized website property. Its grant excludes sitemap submission, even if the Google Account has permission to submit one.
 
-That gives us a practical rule: credentials do not belong in prompts, workflow files, project resources, content artifacts, or repository configuration. All of those can be copied, logged, or shared long after the action finishes.
+The agent requests the report with the property and date range, using the safe account reference. Several separate checks matter:
 
-## What prevents an agent from doing anything it wants?
+- **Project attachment:** this project must be allowed to use that Account.
+- **Step authority:** the running workflow step must name and permit the report action.
+- **Provider access:** the credential must have the required scope, and Google must permit access to the requested property.
 
-The useful question is not whether the account is connected. It is whether this agent, in this step, can request this action through this account.
+StackOS validates the named action and its inputs, checks the workflow authority, and resolves usable credentials inside the daemon before the connector performs the business request. Google applies its own permissions to that request.
 
-In StackOS, a call passes through a concrete sequence:
+Now suppose the same reporting step asks to submit a sitemap. Its action grant does not allow that operation, so StackOS rejects the request before dispatching the sitemap action. The agent should report the missing authority. It should not broaden the step's grant just because the connected Account could perform the write.
 
-1. StackOS resolves one provider profile instead of handing the agent a collection of credentials.
-2. The agent names a registered action and supplies a payload that must pass that action’s contract.
-3. Inside a workflow, the current step must have an explicit tool grant and a matching action reference. A research step cannot become a publishing step simply because both use the same connected account.
-4. The daemon resolves the credential and calls the provider. Only the connector sees the plaintext secret.
-5. Writes use idempotency protection, and the result is stored as a redacted action receipt with status, timing, and error context.
+An authorized submission step would also need the Account's sitemap write access, the required Google OAuth scope, and permission for the property. Google's [sitemap submission endpoint](https://developers.google.com/webmaster-tools/v1/sitemaps/submit) requires the `webmasters` scope and registers a sitemap URL; it does not edit the sitemap file. Google treats [sitemap submission as a hint](https://developers.google.com/search/docs/crawling-indexing/sitemaps/build-sitemap), with no guarantee that it will download or crawl it.
 
-For a one-off write outside a workflow, the caller must explicitly confirm the named action and state its intent. That is an execution check, not a rule that a human must approve every agent step.
+This is a practical application of [NIST's least-privilege principle](https://csrc.nist.gov/glossary/term/least_privilege): give a process the resources and authority needed for its task. The reporting step can use the account for its assigned read while remaining unable to submit the sitemap. The [workflow library](/library/workflows/) shows the broader jobs in which these action boundaries sit.
 
-Human approval can still be added when a genuinely consequential action or missing authority calls for it. It is not the main security boundary. A broad token behind an approval click is still a broad token.
+One-off writes outside a workflow have their own execution contract. The caller must explicitly confirm the action and state its intent; dry runs are exempt. Authority already supplied by the operator can satisfy that contract without asking the person to approve the same action again.
 
-## Is local software enough by itself?
+The authorization boundary also matters when an agent connects to a remote tool server. The [MCP authorization specification](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization) describes its HTTP flow with scopes for the intended operations and tokens bound to the intended MCP server. Stdio connections are treated differently. The official [MCP security guidance](https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/security_best_practices) prohibits token passthrough: a server accepting a token without checking that it was intended for that server, then forwarding it to a downstream API.
 
-No. Running locally reduces how far secrets travel, but location is only one part of the design. Safe account access also needs narrow permissions, typed actions, grant enforcement, input validation, idempotency, redaction, revocation, and an audit trail.
+## What comes back from the action
 
-The general principle is least privilege: give the agent only the resources and authority it needs for the current work. That is the same boundary described by [NIST’s definition of least privilege](https://csrc.nist.gov/glossary/term/least_privilege).
+A permitted action can return private business data. Keeping the credential out of the response does not make that data public. The agent still needs to follow the project's rules for who may receive the report and which details may be shared.
 
-If the action layer is remote, the same boundary has to survive the network. The current [MCP authorization specification](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization) uses resource-bound authorization and scope minimization, while the official [MCP security guidance](https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices) forbids token passthrough. A server should not accept a broad token intended for something else and simply forward it downstream.
+Execution receipts help inspect what was requested and what result was returned. For an action that changes an external system, an error after the request may leave its effect uncertain. Check the provider's state or request status before deciding whether to repeat it. Idempotency provides retry protection, but it is not a universal guarantee that every provider will apply an operation exactly once.
 
-An agent can still make a bad decision. These controls limit what it can reach, leave a receipt, and give the operator a place to revoke access or recover.
+## Choose which access you want to remove
 
-## What should teams ask before connecting an account?
+“Disconnect the account” can mean removing one project's access, deleting the credential from StackOS, or invalidating it at Google. Choose the operation that matches the intended effect.
 
-Ask these questions:
+| What you want to do | Operation and effect |
+| --- | --- |
+| Stop this project using the Account | Detach its Connection. The reusable Account and attachments to other projects remain. Active execution contexts or enabled communication profiles using the Account may need to be rebound or disabled first. |
+| Remove the credential stored by StackOS | Detach the Account from every project, then revoke it locally. StackOS removes the encrypted credential backing and retains a non-executable audit record. |
+| Revoke or rotate the credential at its provider | Use the provider's controls or an explicitly supported provider operation. Local account removal does not generally invalidate the credential at the provider. |
 
-1. Where is the credential entered, stored, and decrypted?
-2. Can the model, a tool response, or a log ever receive the raw value?
-3. Which exact account, scopes, and actions does the connection allow?
-4. Which workflow steps can request each action?
-5. What prevents a retry from creating a duplicate external change?
-6. What receipt is recorded, and which fields are redacted?
-7. How is access tested, rotated, and revoked?
-
-If those answers are vague, the connection is too broad.
-
-We built StackOS around this boundary because hiding a password in the interface is not enough. The important line is where the credential becomes usable, who can ask for which action, and what trace remains afterward. The [workflow library](/library/workflows) shows how those account actions fit into visible work rather than appearing as isolated tool calls.
+Removing access does not undo completed actions or guarantee that every request already in flight is cancelled. For the Search Console example, detaching the reporting project's Connection leaves the Account available to other attached projects. If the goal is to invalidate the Google credential itself, use Google's revocation or rotation controls and check that result separately.

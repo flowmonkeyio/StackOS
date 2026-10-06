@@ -1,17 +1,17 @@
 ---
 title: 'How should an AI orchestrator triage feedback?'
-description: A practical way for AI orchestrators to separate blocking findings from repairs, preferences, and scope drift without weakening review.
+description: Work through a mixed review queue to decide which findings need a repair, who should make it, and what to check before calling the work complete.
 publishedAt: '2026-07-12'
-updatedAt: '2026-07-12'
+updatedAt: '2026-10-03'
 author: StackOS team
 category: AI operations
 topics:
   - AI orchestrators
   - feedback triage
   - agent orchestration
-readingTime: 8 min read
+readingTime: 6 min read
 featured: true
-visual: roles
+visual: none
 searchIntent: Learn how an AI orchestrator should evaluate reviewer feedback without allowing scope drift
 relatedWorkflows:
   - branding-content-production
@@ -26,116 +26,106 @@ relatedArticles:
   - ai-workflow-automation
 ---
 
-An AI orchestrator should treat reviewer feedback as evidence, not as an instruction. Its job is to test each finding against the accepted goal, evidence, constraints, and terminal condition, then classify it as a blocker, a repair, a preference, or out of scope. Only findings that protect the agreed outcome should enter delivery.
+An unsupported claim and a request for a more dramatic introduction can arrive in the same review. Only one may need to stop the article.
 
-That gate does not weaken review. It gives review a boundary. Without one, a capable reviewer can always imagine another improvement, and a workflow that accepts every suggestion can keep moving without getting closer to done.
+The AI orchestrator has to inspect each finding against the current draft, the original request, and the evidence. Then it can tell the writer what to change, what to leave alone, and what still needs a decision.
 
-## Why reviewer output is not automatically work
+## Which comments become work?
 
-A reviewer has a deliberately narrow responsibility. A claim auditor looks for unsupported claims. A security reviewer looks for unsafe behavior. An editor looks for structural and voice problems. That narrowness makes the review useful, but it does not give the reviewer ownership of the whole plan.
+Consider a hypothetical article explaining a team's proposed content-review process. The brief asks for a usable explanation and an example. Material claims need support, required links must work, the writing must follow the project's voice, and private details must stay out of the public copy.
 
-The orchestrator has the wider view. It knows what the operator asked for, which constraints were accepted, what evidence is available, which changes have already been made, and what state counts as complete. It should consider a reviewer’s finding from that position.
+The orchestrator has the brief, the current draft, the source notes, and these comments:
 
-We learned this while refining our own workflows. Independent reviews surfaced plausible improvements, and it was tempting to treat each one as a new requirement. The result was scope drift: work expanded beyond the plan we had agreed to finish. The individual suggestions were not necessarily bad. The failure was allowing the act of suggesting something to redefine delivery.
+::article-evidence-row{label="“Every claim is checked before publication” has no supporting evidence." record-heading="Reviewer finding" evidence-label="What the orchestrator checks" decision-label="Decision for this draft"}
+#evidence
+The source notes assign a separate reviewer to check material claims. They do not show that every claim was checked.
 
-The correction was not to remove reviewers or make their instructions weaker. It was to make one responsibility explicit: reviewers report findings; the orchestrator decides which findings belong in the current delivery.
+#decision
+Admit the finding. The unsupported statement blocks acceptance until it is supported, narrowed, or removed.
+::
 
-[Anthropic’s evaluator-optimizer pattern](https://www.anthropic.com/engineering/building-effective-agents) makes evaluation criteria a condition for a useful review loop. Microsoft’s [maker-checker guidance](https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/ai-agent-design-patterns) similarly calls for clear acceptance criteria, an iteration cap, and defined fallback behavior. A review loop is controlled by criteria and a stopping rule, not by the mere existence of more feedback.
+::article-evidence-row{label="A required source link points to the wrong page." record-heading="Reviewer finding" evidence-label="What the orchestrator checks" decision-label="Decision for this draft"}
+#evidence
+Open the destination and compare it with the intended source.
 
-## Start with an accepted plan
+#decision
+Assign a local link repair and check the corrected destination.
+::
 
-Feedback cannot be triaged against a vague intention such as “make it better.” The orchestrator needs a small accepted plan that remains stable while the work is underway.
+::article-evidence-row{label="The introduction would be more dramatic as a personal story." record-heading="Reviewer finding" evidence-label="What the orchestrator checks" decision-label="Decision for this draft"}
+#evidence
+Does the current opening leave the reader confused, break the brief, or conflict with the approved voice? In this example, it does none of those.
 
-At minimum, that plan should name:
+#decision
+Keep this as a preference. The writer does not need to invent a story or reopen the introduction.
+::
 
-- the problem being solved;
-- the requested output and its scope;
-- the evidence and constraints that apply;
-- the acceptance criteria;
-- the terminal condition;
-- any decisions reserved for the operator.
+::article-evidence-row{label="Add a downloadable checklist." record-heading="Reviewer finding" evidence-label="What the orchestrator checks" decision-label="Decision for this draft"}
+#evidence
+Does the article need a separate file to deliver the explanation and example the operator requested? Here, it does not.
 
-This is not a demand for a long specification. A compact plan is often better because the orchestrator can apply it consistently. The important part is that a reviewer finding must point to something in that plan if it is going to change delivery.
+#decision
+Leave it outside this delivery. A useful additional deliverable still needs its own scope decision.
+::
 
-Suppose the accepted outcome is a public article with supported material claims, the required sections, the current brand voice, and no sensitive internal details. “A material claim has no source” threatens an acceptance criterion. “The introduction would be more dramatic as a personal story” may be a reasonable editorial preference, but it does not necessarily threaten the outcome.
+::article-evidence-row{label="The draft contains a customer name." record-heading="Reviewer finding" evidence-label="What the orchestrator checks" decision-label="Decision for this draft"}
+#evidence
+Search the current candidate and inspect the quoted passage. The reviewer used an earlier version; the name is already gone.
 
-The orchestrator should not pretend those findings have equal weight.
+#decision
+Reject the finding as stale, with the version and passage checked. Keep the current disclosure review.
+::
 
-## Use four feedback classes
+These decisions use four practical terms: a **blocker** prevents acceptance, a **repair** is work to correct a defect, a **preference** is an optional choice, and **out of scope** describes work beyond the agreed delivery. A blocker can need a small repair. Calling it a blocker does not justify rewriting the whole article.
 
-The following classification is a practical operating model, not an industry standard. Its value is that every category has a different consequence.
+The labels are part of the method used here. What matters is the reason attached to each decision. “Critical” in a review report gives the orchestrator something to investigate; it does not settle whether the finding is valid.
 
-| Class | What it means | Orchestrator action |
-| --- | --- | --- |
-| Blocker | The output cannot meet an accepted criterion, is materially false or unsafe, or violates a hard constraint. | Admit it into delivery and prevent completion until it is resolved or explicitly marked unresolved. |
-| Repair | A bounded correction is needed inside the agreed scope. | Route it to the responsible agent with the failed criterion and expected evidence. |
-| Preference | The suggestion is defensible, but the current output can meet the accepted outcome without it. | Record it if useful; do not reopen delivery by default. |
-| Out of scope | The suggestion changes the goal, adds a new capability, or introduces work not required by the accepted plan. | Reject it for this run or return it as a separate proposal. Do not create follow-up work automatically. |
+Keep the original request beside the plan during that check. Suppose the plan omitted the example the operator asked for. A reviewer who points out the missing example has found a defect in the plan too. Correct the acceptance criteria and the article. A plan cannot make an unmet request disappear.
 
-The distinction between a blocker and a repair is useful. A blocker describes the state of the output. A repair describes bounded work that may remove the blocker. Keeping them separate prevents a reviewer from prescribing a large solution when a smaller correction would satisfy the criterion.
+New evidence can also change the decision. A newly identified disclosure risk needs investigation even if nobody anticipated it when writing the brief.
 
-Preferences also deserve an explicit category. Otherwise they tend to masquerade as defects. A preference can still be valuable, but “valuable” is not the same as “required now.”
+## Follow the unsupported claim through a repair
 
-## Make the triage decision inspectable
+The first finding in the queue has enough evidence to act on. Give it to the writer with the exact passage, the source mismatch, and a defined check for the return.
 
-The orchestrator does not need a complicated scoring system. It needs a repeatable sequence that exposes why a finding was accepted or rejected.
-
-1. **Restate the finding as a testable claim.** Replace “this section is weak” with the specific condition the reviewer believes has failed.
-2. **Identify the affected criterion.** Ask which accepted requirement, constraint, or terminal condition is threatened.
-3. **Check the evidence.** Confirm that the finding refers to the current output and has enough evidence to justify action.
-4. **Classify the finding.** Choose blocker, repair, preference, or out of scope.
-5. **Choose the smallest valid action.** Admit a blocker, route a repair, record a preference, or reject scope expansion.
-6. **Re-evaluate completion.** Decide whether the terminal condition is still unmet after the admitted findings are considered.
-
-A useful finding record can stay compact:
+For this example, the record could be:
 
 ```yaml
-finding: "Two factual claims have no source"
-criterion: "Material claims are supported or marked unresolved"
-evidence: ["paragraph-6", "paragraph-9"]
-classification: blocker
-action: "Return to the writer for a bounded evidence repair"
-status: admitted
+candidate: draft-v3
+passage: "Every claim is checked before publication."
+failed_criterion: "Material claims have support."
+evidence: "Source notes specify a review task; no completed review is recorded."
+decision: "Admit; this statement blocks acceptance."
+repair_owner: writer
+repair: "Describe the required review without claiming it has happened."
+verification: "Independent claim reviewer compares the revision with the notes."
+status: open
 ```
 
-The important field is not a severity score. It is the connection between the finding and the accepted plan.
+That request gives the writer room to solve the wording while keeping the factual boundary clear. A suitable replacement would be:
 
-## Keep judgment with the orchestrator and invariants in code
+> Assign a separate reviewer to compare material claims with their sources before publication.
 
-Feedback triage contains both mechanical and judgment-dependent work.
+The sentence now gives the instruction the notes support. It makes no claim that the team has carried it out. The writer should also read the surrounding paragraph: removing one sentence would be insufficient if the next still promised that the process catches every error.
 
-Code can require every finding to contain a criterion, evidence reference, classification, and status. It can prevent a dependent step from starting while an admitted blocker remains open. It can enforce an iteration limit and preserve the decision record.
+The claim reviewer checks the revised passage and its context against the notes. The orchestrator then records the version reviewed, the verification result, and whether the finding is resolved. The writer's report that it made the change starts that check; it does not finish it.
 
-Code cannot reliably decide whether a new suggestion protects the operator’s goal or quietly replaces it. That depends on the current evidence, tradeoffs, and intent. The orchestrator should make that judgment.
+Keep the original finding in the record. If the repair fails, the next attempt needs to know which condition remains unmet. Replacing the finding with a vague “improve accuracy” comment would discard the useful part of the review.
 
-This follows the same boundary described in [AI workflow automation](/library/articles/ai-workflow-automation): enforce stable rules mechanically, but leave evidence-dependent choices with the agent responsible for the plan.
+## When another round needs a decision
 
-The reviewers should also remain independent. The writer should not silently grade its own claims, and the orchestrator should not rewrite findings to make them easier to dismiss. Specialists report what they observe. The orchestrator owns admission into delivery.
+Choose an iteration limit and a fallback before the review loop keeps going. [Anthropic's evaluator-optimizer guidance](https://www.anthropic.com/engineering/building-effective-agents) depends on clear evaluation criteria. Microsoft's [maker-checker guidance](https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/ai-agent-design-patterns) calls for acceptance criteria, an iteration cap, and fallback behavior. Set that limit for the task and the consequence of leaving a defect unresolved.
 
-## Do not turn every disagreement into human approval
+If the chosen limit is reached with an unsupported material claim still present, preserve the latest draft, attempted repairs, evidence, and unresolved criterion. Report that acceptance is still blocked. Writing “unresolved” beside the claim makes its status visible; it does not satisfy the requirement for supported copy.
 
-Human input is useful when the workflow lacks something only the operator can supply: intent, authority, a disclosure decision, acceptance of consequential risk, or a real change in scope.
+Bring the operator a decision when the existing instructions cannot resolve it. That might be permission to disclose a detail, a missing fact only they can supply, or agreement to expand the deliverable. Explain [what is blocked and which input is needed](/library/articles/how-ai-agents-should-explain-blockers-to-humans/). If two reviewers merely prefer different introductions and the current one meets the brief, the orchestrator already has enough to proceed.
 
-It is not necessary merely because two agents disagree. If the accepted plan already resolves the disagreement, the orchestrator should apply it. Requiring a person to approve every classification would move the gate without improving the decision.
+This is the judgment involved in [AI workflow automation](/library/articles/ai-workflow-automation/). A system can preserve a decision record and control which actions are permitted. The orchestrator still needs to decide whether the evidence warrants the change.
 
-Microsoft’s orchestration guidance distinguishes feedback that loops work back for refinement from approval that advances a workflow. That distinction matters. A content preference is not an authorization decision. A sensitive external action may be.
+## Close against the revised draft
 
-When a finding would materially change the accepted plan, the orchestrator should stop and present the choice rather than assume permission. That is not routine review. It is a new operator decision.
+To finish the hypothetical queue, suppose the claim reviewer confirms that the revised instruction matches the notes and the surrounding paragraph contains no remaining outcome promise. The corrected link opens the intended source. The current candidate also passes the required voice and disclosure checks and contains the usable explanation and example the operator requested.
 
-## Stop when the accepted outcome is reached
+Record those checks against that candidate and close the two admitted repairs. The stale finding has its rejection reason. The more dramatic opening remains a preference, and the separate checklist remains outside the delivery.
 
-A workflow should finish when its terminal condition is true and no admitted blocker remains open. It should not wait until reviewers have no further ideas.
-
-This gives the orchestrator a concrete stopping test:
-
-- required output exists;
-- acceptance criteria pass;
-- material claims have evidence or an explicit unresolved status;
-- admitted blockers are repaired or deliberately escalated;
-- required safety and sanitization checks pass;
-- preferences and out-of-scope suggestions are not blocking delivery;
-- the iteration limit has not been exceeded.
-
-If the iteration limit is reached with a blocker still open, the workflow should return the best preserved state, the failed criterion, and the next safe action. It should not hide the problem behind another review round.
-
-The broader lesson is simple: feedback improves a workflow only when someone owns the decision to use it. In an [AI agent workflow](/library/articles/how-to-build-ai-agent-workflow), that owner is the orchestrator. Reviewers protect specific quality boundaries. The orchestrator protects the agreed outcome.
+The article is ready under the agreed criteria. The review record still contains ideas that were not used.

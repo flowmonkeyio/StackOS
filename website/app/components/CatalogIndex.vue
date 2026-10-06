@@ -76,6 +76,8 @@ function meta(item: CatalogItem) {
     </div>
   </section>
 
+  <slot name="before-list" />
+
   <section class="catalog-list">
     <div class="shell">
       <div v-if="items.length" class="catalog-filter" aria-label="Filter by area">

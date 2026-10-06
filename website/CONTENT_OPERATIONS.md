@@ -34,6 +34,17 @@ packet writes one Markdown file to `content/articles/` with these required field
 - `visual`
 - `relatedWorkflows`, `relatedAgents`, and `relatedArticles`
 
+Material page copy and SEO refreshes use the same current foundation as articles.
+Resolve the profile and complete guide from native selected-context refs; include
+their current revisions, relevant original wording, selected examples, and each
+example's endorsement limits in both author and independent reviewer handoffs.
+Project voice and personal examples stay in the native foundation rather than
+host instructions. The packaged
+[natural-writing reference](../plugins/branding/references/natural-writing.md)
+explains the reusable method and research limits; it adds no publication stage or
+mandatory research task. Website purpose, source-backed product claims, and
+search intent still govern each page's content.
+
 Orient the reader quickly and make the article's answer discoverable, but do not
 force every opening into a direct-answer template. The selected angle, evidence,
 and active voice guide decide whether the piece should open with the answer, a
