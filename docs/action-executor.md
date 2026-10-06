@@ -84,6 +84,14 @@ retain their public action contracts, host references, permissions and workflow
 metadata. A host composition can call multiple native actions without becoming
 a workflow in the connector library.
 
+The Finance plugin's QuickBooks slice uses `PackageActionConnector` for exactly
+`finance.quickbooks-online.company-info.get` and
+`finance.quickbooks-online.invoices.list`. Both are reads with daemon-held
+Accounts, project attachment, normal grants/files/audit and no invented local
+scope requirement. Invoice `raw_json` retains exact source fragments. See the
+[QuickBooks contract](integration-contracts/quickbooks-online.md) for company
+binding, pagination and evidence limits.
+
 Before constructing `ResolvedCredential`, the shared action runtime asks the
 auth repository for a fresh usable credential and passes the manifest's
 `required_scopes`. For authorization-code credentials, the repository refreshes

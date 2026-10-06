@@ -1,10 +1,14 @@
 slug: finance
 name: Finance Operations
-version: 0.8.4
+version: 0.8.5
 description: Backend-neutral finance workflows and provider transport for a solo US business. StackOS never becomes the finance system of record.
 display_order: 18
 source: builtin
 capabilities:
+  - key: quickbooks-read
+    name: QuickBooks company and invoice evidence
+    description: Read the configured QuickBooks company and one bounded invoice page.
+    kind: provider
   - key: stripe-invoicing
     name: Stripe invoicing
     description: Create and deliver a reviewed Stripe invoice through explicit provider actions.
@@ -14,6 +18,12 @@ capabilities:
     description: Read safe Stripe payment, fee, refund, and balance evidence for an external finance backend.
     kind: provider
 providers:
+  - key: quickbooks-online
+    name: QuickBooks Online
+    description: Read company information and invoice source records from an explicitly configured company and environment.
+    auth_catalog_ref: quickbooks-online
+    config:
+      setup_note: Connect with an Intuit app and select the intended environment and company realm ID, or store an externally managed access token. Interactive authorization verifies the returned realm before replacing tokens.
   - key: stripe
     name: Stripe
     description: Stripe API transport for customers, invoices, payment lifecycle evidence, and balances. It contains no bookkeeping, collections, tax, or approval policy.
@@ -61,6 +71,71 @@ providers:
         - https://docs.stripe.com/api/authentication
         - https://docs.stripe.com/api/idempotent_requests
 actions:
+  - key: quickbooks-online.company-info.get
+    name: Read QuickBooks Company Info
+    description: Read CompanyInfo for the configured company. The returned realm ID is request context, not independent provider identity evidence.
+    provider: quickbooks-online
+    capability: quickbooks-read
+    risk_level: read
+    input_schema: {type: object, properties: {}, additionalProperties: false}
+    output_schema:
+      type: object
+      additionalProperties: false
+      required: [realm_id, company_id]
+      properties:
+        realm_id: {type: string, minLength: 1}
+        company_id: {type: string, minLength: 1}
+        company_name: {type: string, minLength: 1}
+    config:
+      schema_version: stackos.action.v1
+      connector: quickbooks-online
+      operation: company-info.get
+      requires_credential: true
+      enforce_budget: false
+      docs: [docs/integration-contracts/quickbooks-online.md]
+  - key: quickbooks-online.invoices.list
+    name: Read QuickBooks Invoice Page
+    description: Read one bounded invoice page by inclusive transaction dates, retaining exact JSON source fragments. The caller owns pagination and completeness checks; this is not a historical snapshot.
+    provider: quickbooks-online
+    capability: quickbooks-read
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [txn_date_from, txn_date_to, start_position, max_results]
+      properties:
+        txn_date_from: {type: string, pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'}
+        txn_date_to: {type: string, pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'}
+        start_position: {type: integer, minimum: 1, maximum: 2147483647}
+        max_results: {type: integer, minimum: 1, maximum: 100}
+    output_schema:
+      type: object
+      additionalProperties: false
+      required: [invoices, start_position, max_results, count]
+      properties:
+        invoices:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [native_id, raw_json]
+            properties:
+              native_id: {type: string, minLength: 1}
+              raw_json: {type: string, minLength: 1}
+              source_revision: {type: string, minLength: 1}
+              source_updated_at: {type: string, minLength: 1}
+        start_position: {type: integer, minimum: 1}
+        max_results: {type: integer, minimum: 0, maximum: 100}
+        count: {type: integer, minimum: 0, maximum: 100}
+        total_count: {type: integer, minimum: 0}
+    config:
+      schema_version: stackos.action.v1
+      connector: quickbooks-online
+      operation: invoices.list
+      requires_credential: true
+      enforce_budget: false
+      docs: [docs/integration-contracts/quickbooks-online.md]
   - key: stripe.customers.create
     name: Create Stripe Customer
     description: Create one Stripe customer from explicit approved details and return an account-bound customer reference.

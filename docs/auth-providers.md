@@ -611,6 +611,18 @@ failure, rate limit, or provider 5xx during renewal leaves the stored credential
 retryable; only a terminal authorization failure such as `invalid_grant` moves
 it to `repair-required`.
 
+A successful fresh authorization-code exchange replaces scope evidence: an
+omitted scope result records `scope_status=unknown` and clears any old grants;
+an explicit returned scope tuple records only those grants. Requested scopes
+are not a fallback for a fresh grant. Ordinary renewal keeps its existing
+provider-declared scope rules.
+
+QuickBooks binds the intended numeric `realm_id` and `environment` inside the
+encrypted pending transaction. Its callback requires one matching `realmId`
+and unchanged Account configuration before token exchange. The public relay
+must be deployed with bounded `realmId` forwarding. See the
+[QuickBooks host contract](integration-contracts/quickbooks-online.md).
+
 Provider-declared manual OAuth-token methods use the same lifecycle. A manual Account
 with a refresh token uses the same core renewal path when the provider contract
 supports it. Replacing manual token material clears any grants recorded for the
@@ -649,6 +661,7 @@ that an imported token bypasses the known-scope gate.
 | HubSpot | Interactive authorization code with capability-scoped optional consent; single-account private-app token | OAuth response owns OAuth grants; the documented private-app token-information probe returns authoritative scopes and account evidence | Both methods use the same per-action CRM Core, Sales, Marketing, Bulk, Automation, and Transactional local scope gates |
 | Linear | Interactive authorization code; personal API-key alternative | OAuth requires PKCE `S256`, fixed `actor=user`, renewal evidence, and returned `read,write`; both methods use the same safe viewer/organization probe | OAuth is locally gated by returned grants; personal-key permissions are provider-enforced |
 | X API | Manual OAuth token only | Provider actions are explicitly deferred | Not executable |
+| QuickBooks Online | Interactive authorization code; externally managed access-token alternative | Required explicit environment and company realm; callback binds the intended company before exchange; Account Test reads CompanyInfo without inferring grants | The two read actions have no declared local scope gate; provider-enforced |
 | LinkedIn | Manual OAuth token only | Provider actions are explicitly deferred | Not executable |
 
 Do not add a provider subclass merely to repeat the generic flow. Add a trusted

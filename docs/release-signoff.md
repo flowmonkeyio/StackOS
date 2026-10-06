@@ -167,6 +167,16 @@ pnpm --dir ui exec vitest run src/views/AccountsView.spec.ts src/views/Connectio
 npm --prefix workers/oauth-callback-relay test
 ```
 
+For the QuickBooks host slice, add the focused
+`test_repositories/test_quickbooks_oauth.py`,
+`test_routes/test_quickbooks_callback.py` and
+`test_mcp/test_mcp_quickbooks.py` files under `tests/integration/`. These cover
+company-bound consent, scope evidence, both methods and read execution through
+the normal host boundaries. Verify the published connector wheel and deployed
+public relay match the reviewed candidate; source-only relay changes do not
+establish interactive readiness. Synthetic checks do not establish live Intuit
+consent or financial-record completeness.
+
 For provider connector changes, `make signoff` includes the integration wrapper
 tests and provider action execution tests. Amazon S3 and FTP share an explicit
 focused gate:

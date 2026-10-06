@@ -204,6 +204,10 @@ class OAuthLifecycleMixin:
             "code_verifier": verifier,
             "required_scopes": list(scopes),
         }
+        if credential.provider_key == "quickbooks-online":
+            # Bind the intended company before leaving for Intuit consent.
+            payload["_oauth_pending"]["realm_id"] = credential.config_json.get("realm_id")
+            payload["_oauth_pending"]["environment"] = credential.config_json.get("environment")
         safe_config = dict(credential.config_json or {})
         safe_config["oauth_pending"] = True
         if safe_config.get("oauth_connection_status") != "connected":
@@ -320,6 +324,7 @@ class OAuthLifecycleMixin:
         settings: Settings,
         code: str | None = None,
         provider_error: str | None = None,
+        realm_ids: list[str] | None = None,
     ) -> OAuthCallbackOut:
         del settings  # The redirect was frozen into the transaction at start.
         state_row = self.consume_oauth_state(state=state)
@@ -353,7 +358,24 @@ class OAuthLifecycleMixin:
                 credential_ref=credential.credential_ref,
                 status=status,
             )
-        if code is None or not code.strip():
+        invalid_company = False
+        if credential.provider_key == "quickbooks-online":
+            intended_realm = pending.get("realm_id")
+            intended_environment = pending.get("environment")
+            config = credential.config_json or {}
+            invalid_company = (
+                realm_ids is None
+                or len(realm_ids) != 1
+                or not isinstance(realm_ids[0], str)
+                or not 1 <= len(realm_ids[0]) <= 32
+                or not realm_ids[0].isascii()
+                or not realm_ids[0].isdigit()
+                or realm_ids[0] != intended_realm
+                or config.get("realm_id") != intended_realm
+                or intended_environment not in {"sandbox", "production"}
+                or config.get("environment") != intended_environment
+            )
+        if code is None or not code.strip() or invalid_company:
             status = self._finish_failed_attempt(
                 row=row,
                 credential=credential,
@@ -442,8 +464,8 @@ class OAuthLifecycleMixin:
         safe_config = dict(credential.config_json or {})
         safe_config.pop("oauth_pending", None)
         safe_config["oauth_connection_status"] = "connected"
-        safe_config["scope_status"] = "known"
         safe_config.update(token_result.config_updates)
+        safe_config["scope_status"] = "unknown" if token_result.scopes is None else "known"
         expires_at = None
         raw_expires_in = token_result.expires_in
         if isinstance(raw_expires_in, (int, float)) and raw_expires_in > 0:
@@ -472,10 +494,8 @@ class OAuthLifecycleMixin:
         self._replace_scopes(
             credential=credential,
             token_result=token_result,
-            fallback_scopes=self._required_scopes_from_pending(
-                payload=payload,
-                default=contract.scopes,
-            ),
+            # A fresh grant replaces the previous grant; requested scopes are not evidence.
+            fallback_scopes=(),
             contract=contract,
         )
         self._replace_account_metadata(
@@ -648,18 +668,6 @@ class OAuthLifecycleMixin:
         )
         for scope in sorted(set(scopes)):
             self._s.add(CredentialScope(credential_id=credential.id, scope=scope))
-
-    @staticmethod
-    def _required_scopes_from_pending(
-        *,
-        payload: dict[str, Any],
-        default: tuple[str, ...],
-    ) -> tuple[str, ...]:
-        pending = payload.get("_oauth_pending")
-        raw = pending.get("required_scopes") if isinstance(pending, dict) else None
-        if isinstance(raw, list) and all(isinstance(scope, str) for scope in raw):
-            return tuple(scope for scope in raw if scope)
-        return default
 
     def _replace_account_metadata(
         self,

@@ -145,8 +145,8 @@ The upload must:
 - reject every other origin or path in browser code without navigating to
   loopback;
 - require one bounded `state` value and exactly one success or failure outcome;
-- forward only the bounded fields StackOS consumes: `state`, `code`, and
-  `error`;
+- forward only the bounded fields StackOS consumes: `state`, `code`, `error`,
+  and an optional success-only `realmId` of 1–32 ASCII digits for QuickBooks;
 - ignore other provider-added query fields while ensuring they cannot affect
   the reconstructed local destination;
 - construct the destination from the constant loopback origin, port, and path;

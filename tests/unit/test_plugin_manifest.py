@@ -982,8 +982,8 @@ def test_builtin_plugin_manifests_validate() -> None:
 def test_finance_stripe_manifest_is_transport_only_and_complete() -> None:
     finance = next(manifest for manifest in BUILTIN_PLUGIN_MANIFESTS if manifest.slug == "finance")
     assert finance.resources == []
-    assert {provider.key for provider in finance.providers} == {"stripe"}
-    stripe = finance.providers[0]
+    assert {provider.key for provider in finance.providers} == {"stripe", "quickbooks-online"}
+    stripe = next(provider for provider in finance.providers if provider.key == "stripe")
     assert stripe.auth_type == "api-key"
     assert [method.key for method in stripe.auth_methods] == ["api_key"]
     assert _auth_field_keys(stripe, "api_key") == ["api_key"]
@@ -991,7 +991,7 @@ def test_finance_stripe_manifest_is_transport_only_and_complete() -> None:
     assert stripe.auth_methods[0].permission_verification.evidence_source == "unavailable"
     assert stripe.auth_methods[0].permission_verification.enforcement == "provider_enforced"
 
-    actions = {action.key: action for action in finance.actions}
+    actions = {action.key: action for action in finance.actions if action.provider == "stripe"}
     assert set(actions) == {
         "stripe.products.list",
         "stripe.products.retrieve",
@@ -1090,7 +1090,7 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
         for provider in plugin.providers
     ]
 
-    assert len(providers) == 59
+    assert len(providers) == 60
     google_seo_providers = {
         "google-search-console",
         "google-analytics",
@@ -1104,8 +1104,8 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
             f"{plugin_slug}:{provider.key} missing setup note"
         )
         expected_verified_at = (
-            "2026-09-28"
-            if plugin_slug == "seo" and provider.key == "google-indexing"
+            None
+            if provider.key in {"quickbooks-online", "google-indexing"}
             else "2026-09-22"
             if plugin_slug == "communications" and provider.key == "telegram"
             else "2026-09-12"
@@ -1128,7 +1128,11 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
         )
         assert setup.get("verified_at") == expected_verified_at
         if provider.auth_type not in {"none", "local"}:
-            assert setup.get("credential_label"), (
+            assert setup.get("credential_label") or (
+                provider.key == "quickbooks-online"
+                and [method.label for method in provider.auth_methods]
+                == ["Connect with QuickBooks", "OAuth2 access token"]
+            ), (
                 f"{plugin_slug}:{provider.key} missing credential label"
             )
             assert any(

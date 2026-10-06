@@ -7,8 +7,11 @@
 - Restored Search Console sitemap submission and HTTP batch actions alongside
   the separate Google Indexing actions, preserving the selected Account access
   mode and canonical connector authentication contracts.
-- Updated the packaged connector dependency to 0.2.3, retaining the Search Console
+- Updated the packaged connector dependency to 0.2.4, retaining the Search Console
   write-scope repair and restoring Google Indexing's service-account token contract.
+- Added QuickBooks Online company and invoice reads, generic Account setup and
+  testing, and company-bound OAuth callbacks. Fresh authorization now records
+  only returned permission evidence and clears stale grants when scopes are unknown.
 
 ## 2.1.34 - 2026-10-06
 

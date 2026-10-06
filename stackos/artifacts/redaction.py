@@ -22,8 +22,8 @@ _SECRET_KEY_PARTS = (
     "token",
 )
 _SECRET_TEXT_RE = re.compile(
-    r"(?i)([\"']?(?:access[_-]?token|api[_-]?key|apikey|authorization|client[_-]?secret|"
-    r"service[_-]?account[_-]?json|assertion|credential|password|private[_-]?key|refresh[_-]?token|secret|token)[\"']?\s*[:=]\s*"
+    r"(?i)((?<![\w-])[\"']?([\w-]*(?:access[_-]?token|api[_-]?key|apikey|authorization|client[_-]?secret|"
+    r"service[_-]?account[_-]?json|assertion|credential|password|private[_-]?key|refresh[_-]?token|secret|token))[\"']?\s*[:=]\s*"
     r"[\"']?)(?!bearer\b)([^\"'\s,;}&]+)"
 )
 _AUTH_BEARER_TEXT_RE = re.compile(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s,;}&]+")
@@ -74,7 +74,16 @@ def redact_secret_text(value: str) -> str:
     redacted = _PEM_PRIVATE_KEY_RE.sub("[redacted private key]", value)
     redacted = _AUTH_BEARER_TEXT_RE.sub(lambda match: f"{match.group(1)}[redacted]", redacted)
     redacted = _SIGNED_URL_PARAM_RE.sub(lambda match: f"{match.group(1)}[redacted]", redacted)
-    redacted = _SECRET_TEXT_RE.sub(lambda match: f"{match.group(1)}[redacted]", redacted)
+    redacted = _SECRET_TEXT_RE.sub(
+        lambda match: (
+            # Intuit's exact public revision field is not credential material.
+            # Complete-key matching keeps prefixed secret names protected.
+            match.group(0)
+            if match.group(2) == "SyncToken"
+            else f"{match.group(1)}[redacted]"
+        ),
+        redacted,
+    )
     redacted = _TELEGRAM_BOT_URL_RE.sub(lambda match: f"{match.group(1)}[redacted]", redacted)
     return _BEARER_TEXT_RE.sub(lambda match: f"{match.group(1)}[redacted]", redacted)
 

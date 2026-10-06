@@ -6,6 +6,15 @@ invoicing, collections follow-up, cashflow planning, and tax-estimate packet
 preparation. It deliberately does **not** make StackOS the finance system of
 record.
 
+QuickBooks Online adds two bounded reads: company information and one invoice
+page for explicit transaction dates. Connect through the generic Accounts form
+with Intuit OAuth or an externally managed access token, choosing the intended
+environment and company realm ID. Attach the Account to the project before
+agent use. The callback verifies the intended company; Account Test reads
+CompanyInfo without inventing permission grants. Invoice source fragments retain
+exact decimal text, while agents own scan completeness and accounting judgment.
+See the [host contract](../../docs/integration-contracts/quickbooks-online.md).
+
 Financial records, original evidence, approval records, invoice details,
 forecast contents, and tax calculations stay in the selected external backend.
 The first backend is the host-managed local JSON workspace described in

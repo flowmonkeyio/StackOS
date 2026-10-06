@@ -6444,6 +6444,7 @@ export interface operations {
                 state?: string | null;
                 code?: string | null;
                 error?: string | null;
+                realmId?: string[] | null;
                 error_description?: string | null;
             };
             header?: never;

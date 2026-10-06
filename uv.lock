@@ -1782,7 +1782,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "s3transfer", specifier = ">=0.19.1,<0.20" },
     { name = "sqlmodel", specifier = ">=0.0.22" },
-    { name = "stackos-connectors", specifier = "==0.2.3" },
+    { name = "stackos-connectors", specifier = "==0.2.4" },
     { name = "structlog", specifier = ">=24.4" },
     { name = "typer", specifier = ">=0.13" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
@@ -1802,7 +1802,7 @@ dev = [
 
 [[package]]
 name = "stackos-connectors"
-version = "0.2.3"
+version = "0.2.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "boto3" },
@@ -1813,9 +1813,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "s3transfer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ca/89/01545cc86449820af6393ae38aad94505e35ac0ade6143a39a289cb0314e/stackos_connectors-0.2.3.tar.gz", hash = "sha256:3e8438fe52b9acdf766ea118476db42ecefc38f8cb04ea87c10fa32ee44d6d2d", size = 2353550, upload-time = "2026-10-06T21:54:20.112Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/08/c9/fe0af3493788de2a2882fcbf95e9c31e304cd44368283d3a0a3c0e08b046/stackos_connectors-0.2.4.tar.gz", hash = "sha256:d0069d9c231b18bf1d8a4accc84493752059af71d85f15463fa5330a55bc7b12", size = 2356831, upload-time = "2026-10-06T22:12:45.771Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a7/4c/2b554753c8889a5c3905aabdea82a3e3d4166cccebf08ccbcb85b33eae58/stackos_connectors-0.2.3-py3-none-any.whl", hash = "sha256:750fd5216da623d5337678329817e669beaf6f01b0272fc3cbb366d8d9da6164", size = 2379812, upload-time = "2026-10-06T21:54:18.277Z" },
+    { url = "https://files.pythonhosted.org/packages/26/e4/55adb80e3807e655e345556a0bf1342acc9733a2196572f62e0e1dde263e/stackos_connectors-0.2.4-py3-none-any.whl", hash = "sha256:f1eebe5cee8de6af40fe447e60fb365ef6e8d4e0bc76d2a500740fc54dc755c7", size = 2381799, upload-time = "2026-10-06T22:12:44.159Z" },
 ]
 
 [[package]]

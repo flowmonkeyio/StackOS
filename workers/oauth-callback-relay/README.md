@@ -48,6 +48,8 @@ correctly.
   its static single-page fallback. The page itself rejects every other origin
   or path.
 - The page forwards only one bounded `state` plus one bounded `code` or `error`.
+  A successful QuickBooks callback may also carry one ASCII numeric `realmId`
+  of 1–32 digits. Duplicate, empty or malformed realm fields fail locally.
   It ignores all other query fields.
 - The local destination, port, and path are constants. Callback input cannot
   change them.
