@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Delegate explicit provider OAuth/JWT grants, credential probes, Telegram auth
+  translation and Slack v0/HubSpot v3 signature mechanics to
+  `stackos-connectors==0.2.0`. StackOS retains Account custody, callback state,
+  refresh decisions and concurrency, permissions, ingress policy and audit.
+- Keep existing API-key execution and explicit OAuth/manual-token methods under
+  the same Account attachment, permission and audit boundaries. Authentication
+  uses declared method keys without legacy-method inference or migration.
+
 ## 2.1.32 - 2026-10-05
 
 - Consume the published `stackos-connectors==0.1.1` package from PyPI, including

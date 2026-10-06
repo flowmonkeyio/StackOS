@@ -9,6 +9,15 @@ The rows below retain host validation, admission and proof facts. Native paths
 are relative to the installed `stackos_connectors` package; each provider catalog
 and adjacent `docs/` directory owns portable request, auth and source details.
 
+The `stackos-connectors` auth surface implements only explicit protocol calls.
+Provider catalogs own acquisition contracts and fixed probe bindings; the host
+owns Account lifecycle, probe admission, permission enforcement and persisted
+evidence. Synthetic package and host fixtures cover the protocol/consumer
+boundary, including explicit-method renewal, redaction and no implicit acquisition.
+Those fixtures do not certify live provider access. Telegram session lifecycle
+and ingress replay/project routing remain host concerns; only stateless auth
+translation and Slack v0/HubSpot v3 signature mechanics live in the package.
+
 Every registered action connector is held to the same review dimensions before
 it can be treated as production-ready. Equal depth does not mean every provider
 has the same features; it means every connector explicitly documents the same

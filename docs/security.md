@@ -8,8 +8,9 @@ explains *what* is loosened, *why*, and *what* still defends the surface.
 
 Google service-account JSON keys use the existing encrypted Account backing.
 Only the explicit saved `service-account` method on the five reviewed providers
-can select signing. The daemon validates service-account identity and RSA keys,
-signs in memory, and exchanges only at `https://oauth2.googleapis.com/token`
+can select signing. The daemon explicitly calls the installed connector package
+to validate service-account identity and RSA keys, sign in memory, and exchange
+only at `https://oauth2.googleapis.com/token`
 without redirects or ambient credentials. Key-provided certificate URLs and
 credential-source configuration never select network destinations.
 
@@ -59,7 +60,7 @@ exact-path exception so no sibling route inherits it. Currently:
 | `/api/v1/auth/ui-token` | The Vue SPA cannot read the on-disk daemon token file from the browser, so it fetches a derived console bearer token at app boot via this endpoint. | **See below.** |
 | `GET /api/v1/auth/oauth/callback` (exact route) | OAuth providers cannot carry the daemon bearer token when redirecting the browser. The short-lived, one-time state transaction authorizes only this callback. | The request host must equal the configured callback host; state is digested, bound, expiring, and atomically consumed. The response is an immediate sanitized 303 redirect. |
 | `/api/v1/ingress/slack/*` | Slack Events API and Interactivity requests cannot carry the daemon bearer token. The route verifies `X-Slack-Signature` against the encrypted Slack signing secret using the raw body and timestamp before writing communication resources or agent requests. | A caller with the Slack signing secret can submit Slack-shaped events for that profile. This path also bypasses loopback-only Host checks so deployed/tunnel hosts work; all non-ingress API paths remain loopback-host guarded. |
-| `/api/v1/ingress/hubspot/*` | HubSpot webhook and custom workflow-action requests cannot carry the daemon bearer token. The route verifies the provider-documented v3 timestamped HMAC for webhook batches or v2 digest for workflow actions against the daemon-held app client secret and configured public HTTPS URI before parsing or writing. | A caller with the app client secret can submit HubSpot-shaped events for the one configured app/account profile. Exact portal/app checks and event/definition allowlists gate agent-request creation. This path bypasses loopback-only Host checks; the signed URI is derived from the configured ingress endpoint, never the incoming `Host` header. |
+| `/api/v1/ingress/hubspot/*` | HubSpot webhook and custom workflow-action requests cannot carry the daemon bearer token. The route verifies the provider-documented v3 timestamped HMAC against the daemon-held app client secret and configured public HTTPS URI before parsing or writing. v2 verification is unsupported. | A caller with the app client secret can submit HubSpot-shaped events for the one configured app/account profile. Exact portal/app checks and event/definition allowlists gate agent-request creation. This path bypasses loopback-only Host checks; the signed URI is derived from the configured ingress endpoint, never the incoming `Host` header. |
 
 ## Generated asset and IMAP staging boundary
 
@@ -85,6 +86,15 @@ storage service, finance evidence store, resource, or artifact path.
 Provider credentials are daemon-owned. Agents may inspect sanitized auth status
 and run daemon-side health probes, but they do not receive raw API keys, OAuth
 tokens, refresh tokens, encrypted payloads, or local setup secrets.
+
+The installed connector package performs explicit stateless provider protocol
+calls inside this boundary. StackOS retains secret/state/PKCE custody, renewal
+timing and locks, scope/readiness enforcement, persistence and audit. Package
+token results are sensitive in-process values even when their representations
+hide secrets. Pure Slack v0 and HubSpot v3 signature helpers receive exact raw
+bytes; StackOS validates timestamp windows, replay, app/account/project matching
+and trusted ingress routes before storage. Telegram translation helpers never
+open sessions or own challenge expiry/disclosure.
 
 `credentials` are global reusable Account records with opaque refs and safe
 lifecycle state. `project_credentials` authorizes an Account for a project.

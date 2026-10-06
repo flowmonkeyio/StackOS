@@ -7,6 +7,31 @@ credential references into granted tools. They must never
 receive API keys, OAuth tokens, refresh tokens, encrypted payloads, or local
 setup secrets.
 
+## Protocol And Lifecycle Owners
+
+The installed `stackos-connectors` package owns provider auth facts and explicit
+protocol calls: authorization URL construction, code exchange, refresh and
+client-credentials requests, Google service-account JWT validation/signing,
+probe adaptation, Telegram auth translation and Slack v0/HubSpot v3 signature
+mechanics. Provider catalogs and adjacent `docs/auth.md` files are the portable
+source of truth. Discovery, probes and actions never trigger library-managed
+authorization, refresh, storage or readiness decisions.
+
+StackOS decides when those calls happen. It owns encrypted Accounts, callback
+routing, one-use state and PKCE custody, expiry, refresh locks/CAS, project
+attachments, scope enforcement, readiness, local revocation and audit. Explicit
+grant calls receive application/key fields in-process; actions and probes receive
+only the selected method's resolved execution fields. Token results never cross
+the agent boundary.
+
+Affected provider manifests use `auth_catalog_ref` to expand canonical package
+methods/setup/protocol facts. Host additions retain local fields, callbacks,
+readiness groups and enforcement; they cannot override provider protocol facts.
+Both file-backed and Python-built manifests use the same normalization path.
+Authentication requires an explicitly declared saved method. This extraction
+adds no legacy-method inference or Account migration; existing API-key execution
+and supported explicit manual-token methods keep their shared host boundaries.
+
 ## Model
 
 The auth-provider layer uses:
@@ -626,7 +651,8 @@ that an imported token bypasses the known-scope gate.
 | LinkedIn | Manual OAuth token only | Provider actions are explicitly deferred | Not executable |
 
 Do not add a provider subclass merely to repeat the generic flow. Add a trusted
-contract row for protocol data, and add dedicated code only for a real variant
+package catalog contract for protocol data, and add provider-local package code
+only for a real variant
 such as Meta's second exchange or trusted provider-specific response metadata.
 
 Linear personal keys use the same Account and action catalog as OAuth but

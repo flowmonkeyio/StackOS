@@ -70,8 +70,11 @@ The package returns provider facts and plain file descriptors. Host adapters
 resolve and project account-bound references, apply admission and budget rules,
 register artifacts or private transfers, redact public output and preserve
 receipts when a provider effect succeeds but local persistence fails. Account
-probes use the same native auth projection after host permission checks.
-Credential acquisition, renewal and storage remain in StackOS.
+probes use the same native auth projection after host permission checks. The
+host chooses when acquisition or renewal is needed and calls the package's
+explicit grant API; credential storage, callback/state custody, concurrency and
+permission decisions remain in StackOS. Probe construction and provider reason
+parsing are package-owned; test-history and repair wording remain host-owned.
 
 Native catalogs, action mappings, schemas, provider notes and icons live together
 under `StackOSConnectors/src/stackos_connectors/connectors/<provider>/`. The
@@ -86,8 +89,9 @@ auth repository for a fresh usable credential and passes the manifest's
 `required_scopes`. For authorization-code credentials, the repository refreshes
 an expired access token when a refresh token is available. For declared
 client-credentials providers, it acquires an access token when one is absent or
-expired. This lifecycle belongs to core auth code, not to the provider
-connector.
+expired. Core auth owns this lifecycle and explicitly invokes the package's
+stateless token request. Action execution itself never acquires or refreshes
+credentials inside the package.
 
 Read actions without a caller-supplied replay key fetch current state on every
 direct or workflow execution. Automatically derived workflow keys do not replay
