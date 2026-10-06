@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.1.33 - 2026-10-05
 
 - Delegate explicit provider OAuth/JWT grants, credential probes, Telegram auth
   translation and Slack v0/HubSpot v3 signature mechanics to
