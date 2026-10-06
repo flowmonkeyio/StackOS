@@ -181,10 +181,11 @@ def test_auth_test_uses_saved_method_for_probe_context_and_evidence(
         display_name="static",
         fields={"access_token": "identical-token-shape"},
     ).data
-    monkeypatch.setattr(
-        "stackos.auth_providers.repository.testing.integration_class_for",
-        lambda kind: _ProbeIntegration if kind == "permission-probe-test" else None,
-    )
+
+    async def probe(_connector, *, context, **kwargs):
+        return await _ProbeIntegration(probe_context=context).test_credentials()
+
+    monkeypatch.setattr("stackos_connectors.probe.probe_credentials", probe)
 
     from stackos_connectors import ConnectorClient, ConnectorRegistry
 
@@ -192,6 +193,9 @@ def test_auth_test_uses_saved_method_for_probe_context_and_evidence(
         registry=ConnectorRegistry(
             connector_metadata={
                 "permission-probe-test": {
+                    "probe_implementation": (
+                        "stackos_connectors.connectors.serper.integration:SerperIntegration"
+                    ),
                     "auth_methods": [
                         {
                             "key": key,
@@ -204,7 +208,7 @@ def test_auth_test_uses_saved_method_for_probe_context_and_evidence(
                             "config_schema": {"type": "object"},
                         }
                         for key in ("oauth-import", "static-token")
-                    ]
+                    ],
                 }
             }
         )
@@ -575,10 +579,11 @@ def test_thrown_auth_test_failure_is_sanitized_and_persisted(
         display_name="primary",
         fields={"api_key": "do-not-store"},
     ).data
-    monkeypatch.setattr(
-        "stackos.auth_providers.repository.testing.integration_class_for",
-        lambda kind: _FailingIntegration if kind == "firecrawl" else None,
-    )
+
+    async def probe(_connector, **kwargs):
+        return await _FailingIntegration().test_credentials()
+
+    monkeypatch.setattr("stackos_connectors.probe.probe_credentials", probe)
 
     tested = asyncio.run(
         repo.test(project_id=project_id, credential_ref=stored.credential_ref)
@@ -1070,10 +1075,11 @@ def test_auth_test_redacts_vendor_controlled_text_fields(
         fields={"api_key": "fc-secret"},
         attach_project_id=project_id,
     ).data
-    monkeypatch.setattr(
-        "stackos.auth_providers.repository.testing.integration_class_for",
-        lambda kind: _TextLeakIntegration if kind == "firecrawl" else None,
-    )
+
+    async def probe(_connector, **kwargs):
+        return await _TextLeakIntegration().test_credentials()
+
+    monkeypatch.setattr("stackos_connectors.probe.probe_credentials", probe)
     out = asyncio.run(
         repo.test(
             project_id=project_id,
