@@ -1511,7 +1511,11 @@ class TelegramAuthorizationMixin:
         self, current: Mapping[str, Any], *, include_qr_link: bool
     ) -> AccountAuthChallengeOut | None:
         kind = current.get("challenge_kind")
-        if current.get("state") != "challenge" or kind not in telegram_auth.CHALLENGE_FIELDS:
+        if (
+            current.get("state") != "challenge"
+            or not isinstance(kind, str)
+            or kind not in telegram_auth.CHALLENGE_FIELDS
+        ):
             return None
         return AccountAuthChallengeOut(
             generation=current["generation"],
