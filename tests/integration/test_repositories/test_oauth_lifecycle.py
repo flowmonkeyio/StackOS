@@ -916,6 +916,93 @@ def test_expired_google_credential_refreshes_and_persists_rotation(
     assert connection.scopes == ["https://www.googleapis.com/auth/webmasters.readonly"]
 
 
+@pytest.mark.parametrize("status_code", [200, 400, 503])
+def test_legacy_default_saved_method_renews_with_explicit_canonical_method(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+    monkeypatch: pytest.MonkeyPatch,
+    status_code: int,
+) -> None:
+    from stackos_connectors import auth as connector_auth
+
+    repo = AuthRepository(session)
+    stored = repo.store_credential(
+        attach_project_id=project_id,
+        provider_key="google-search-console",
+        auth_method_key="oauth2_refresh_token",
+        display_name="migrated-default",
+        fields={
+            "client_id": "legacy-client",
+            "client_secret": "legacy-secret",
+            "refresh_token": "legacy-refresh",
+        },
+        expires_at=utcnow() - timedelta(minutes=5),
+    ).data
+    credential = session.exec(
+        select(Credential).where(Credential.credential_ref == stored.credential_ref)
+    ).one()
+    # Migrations retain this pre-method-discriminator value on saved Accounts.
+    credential.auth_method_key = "default"
+    credential.config_json = {"auth_method_key": "default", "scope_status": "unknown"}
+    session.add(credential)
+    session.commit()
+    methods = []
+    request_token = connector_auth.request_token
+
+    async def traced_request(*args, **kwargs):
+        methods.append(kwargs["auth"].method)
+        return await request_token(*args, **kwargs)
+
+    monkeypatch.setattr(connector_auth, "request_token", traced_request)
+    httpx_mock.add_response(
+        method="POST",
+        url="https://oauth2.googleapis.com/token",
+        status_code=status_code,
+        json={"access_token": "renewed-legacy-token", "expires_in": 3600}
+        if status_code == 200
+        else {"error": "invalid_grant" if status_code == 400 else "temporarily_unavailable"},
+    )
+
+    async def resolve():
+        return await repo.resolve_for_execution(
+            project_id=project_id,
+            provider_key="google-search-console",
+            credential_ref=stored.credential_ref,
+            operation="test.legacy-default-renewal",
+        )
+
+    if status_code == 200:
+        resolved = asyncio.run(resolve())
+        assert json.loads(resolved.secret_payload)["access_token"] == "renewed-legacy-token"
+    else:
+        with pytest.raises(ConflictError) as failure:
+            asyncio.run(resolve())
+        assert failure.value.data["status"] == (
+            "repair-required" if status_code == 400 else "temporarily-unavailable"
+        )
+        assert failure.value.retryable is (status_code == 503)
+    session.refresh(credential)
+    assert credential.auth_method_key == "default"
+    assert credential.status == ("repair-required" if status_code == 400 else "connected")
+    assert methods == ["oauth2_authorization_code"]
+    requests = httpx_mock.get_requests()
+    assert len(requests) == 1
+    assert parse_qs(requests[0].content.decode())["grant_type"] == ["refresh_token"]
+    events = session.exec(
+        select(CredentialRefreshEvent).where(CredentialRefreshEvent.credential_id == credential.id)
+    ).all()
+    assert len(events) == 1
+    assert (
+        events[0].status
+        == {
+            200: "refreshed",
+            400: "failed",
+            503: "retryable-failure",
+        }[status_code]
+    )
+
+
 def test_manual_refresh_does_not_invent_scopes_when_provider_omits_them(
     session: Session,
     project_id: int,

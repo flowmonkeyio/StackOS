@@ -7,13 +7,14 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import timedelta
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 import httpx
 from sqlmodel import col, select
+from stackos_connectors import ConnectorAuth
+from stackos_connectors import auth as connector_auth
+from stackos_connectors.auth import OAuthProviderContract, OAuthTokenError
 
-from stackos.auth_providers.google_service_account import JWT_GRANT, sign_assertion
-from stackos.auth_providers.oauth_contracts import OAuthProviderContract, oauth_contract_for
 from stackos.db.models import (
     Credential,
     CredentialScope,
@@ -238,21 +239,36 @@ class CredentialResolutionMixin:
             payload = self._json_payload(row)
             expected_updated_at = row.updated_at
             try:
-                response_body = await self._request_renewal(
-                    contract=contract,
-                    payload=payload,
+                grant_type: Literal["client_credentials", "jwt_bearer", "refresh_token"] = (
+                    "client_credentials"
+                    if contract.flow == "client_credentials"
+                    else "jwt_bearer"
+                    if contract.flow == "jwt_bearer"
+                    else "refresh_token"
                 )
-                self._validate_token_response(
-                    contract=contract,
-                    response_body=response_body,
-                    grant_type=(
-                        "client_credentials"
-                        if contract.flow == "client_credentials"
-                        else JWT_GRANT
-                        if contract.flow == "jwt_bearer"
-                        else "refresh_token"
-                    ),
-                )
+                try:
+                    token_result = await connector_auth.request_token(
+                        credential.provider_key,
+                        auth=ConnectorAuth(
+                            self._oauth_protocol_method(credential),
+                            payload,
+                            credential.config_json or {},
+                        ),
+                        grant_type=grant_type,
+                        refresh_token=payload.get("refresh_token")
+                        if grant_type == "refresh_token"
+                        else None,
+                    )
+                except OAuthTokenError as exc:
+                    if exc.category == "invalid_input":
+                        raise ValidationError(str(exc)) from None
+                    raise OAuthTokenRequestError(
+                        str(exc),
+                        provider_key=credential.provider_key,
+                        retryable=exc.retryable,
+                        repair_required=exc.repair_required,
+                        status_code=exc.status_code,
+                    ) from None
             except OAuthTokenRequestError as exc:
                 if not exc.repair_required:
                     self._record_retryable_renewal_failure(
@@ -314,33 +330,27 @@ class CredentialResolutionMixin:
                     },
                 ) from None
             updated_payload = dict(payload)
-            updated_payload["access_token"] = str(response_body["access_token"]).strip()
-            refresh_value = response_body.get("refresh_token")
+            updated_payload["access_token"] = token_result.access_token
+            refresh_value = token_result.refresh_token
             if isinstance(refresh_value, str) and refresh_value.strip():
                 updated_payload["refresh_token"] = refresh_value.strip()
             expires_at = None
-            raw_expires_in = response_body.get("expires_in")
+            raw_expires_in = token_result.expires_in
             if isinstance(raw_expires_in, (int, float)) and raw_expires_in > 0:
                 expires_at = utcnow() + timedelta(seconds=float(raw_expires_in))
             safe_config = dict(credential.config_json or {})
             safe_config["oauth_connection_status"] = "connected"
-            response_declares_scopes = any(
-                isinstance(response_body.get(field), str | list)
-                for field in contract.response_scope_fields
-            )
+            response_declares_scopes = token_result.scopes is not None
             if response_declares_scopes or contract.flow in {"client_credentials", "jwt_bearer"}:
                 safe_config["scope_status"] = "known"
             if contract.flow == "jwt_bearer":
                 safe_config["scope_evidence_source"] = "google_service_account_exchange"
                 safe_config["scope_evidence_basis"] = (
-                    "provider_response" if "scope" in response_body else "accepted_signed_request"
+                    "provider_response"
+                    if token_result.scopes_present
+                    else "accepted_signed_request"
                 )
-            safe_config.update(
-                self._provider_response_config(
-                    contract=contract,
-                    response_body=response_body,
-                )
-            )
+            safe_config.update(token_result.config_updates)
             if not self._cas_profile_update(
                 row=row,
                 credential=credential,
@@ -377,7 +387,7 @@ class CredentialResolutionMixin:
             self._s.add(credential)
             self._replace_scopes(
                 credential=credential,
-                response_body=response_body,
+                token_result=token_result,
                 fallback_scopes=(
                     contract.scopes
                     if contract.flow in {"client_credentials", "jwt_bearer"}
@@ -399,50 +409,6 @@ class CredentialResolutionMixin:
                 credential_ref=credential_ref,
                 local_admin=local_admin,
             )
-
-    async def _request_renewal(
-        self,
-        *,
-        contract: OAuthProviderContract,
-        payload: dict[str, Any],
-    ) -> dict[str, Any]:
-        if contract.flow == "jwt_bearer":
-            return await self._post_oauth_token_request(
-                contract=contract,
-                application={},
-                data={
-                    "grant_type": JWT_GRANT,
-                    "assertion": sign_assertion(
-                        value=payload.get("service_account_json"),
-                        scopes=contract.scopes,
-                        subject=contract.delegated_subject,
-                    ),
-                },
-            )
-        if contract.flow == "client_credentials":
-            request_data = {
-                "grant_type": "client_credentials",
-                **dict(contract.token_params),
-            }
-            if contract.scopes:
-                request_data["scope"] = contract.scope_separator.join(contract.scopes)
-            return await self._post_oauth_token_request(
-                contract=contract,
-                application=payload,
-                data=request_data,
-            )
-        refresh_value = payload.get("refresh_token")
-        if not isinstance(refresh_value, str) or not refresh_value.strip():
-            raise ValidationError("renewable credential is missing renewal material")
-        return await self._post_oauth_token_request(
-            contract=contract,
-            application=payload,
-            data={
-                "grant_type": "refresh_token",
-                "refresh_token": refresh_value.strip(),
-                **dict(contract.token_params),
-            },
-        )
 
     def _mark_renewal_failed(
         self,
@@ -542,11 +508,7 @@ class CredentialResolutionMixin:
                         "next_action": "Restore the provider method or select a supported Account.",
                     },
                 )
-            return oauth_contract_for(
-                credential.provider_key,
-                safe_config=credential.config_json,
-                auth_method_key=credential.auth_method_key,
-            )
+            return self._get_oauth_contract(credential)
         has_refresh_material = bool(
             method is not None and any(field.key == "refresh_token" for field in method.fields)
         )
@@ -557,10 +519,7 @@ class CredentialResolutionMixin:
         ):
             return None
         try:
-            return oauth_contract_for(
-                credential.provider_key,
-                safe_config=credential.config_json,
-            )
+            return self._get_oauth_contract(credential)
         except ValidationError:
             return None
 

@@ -12,14 +12,15 @@ from typing import Any
 from sqlalchemy import delete
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
+from stackos_connectors.auth import OAuthTokenError
 from stackos_connectors.errors import ValidationError as NativeValidationError
-
-from stackos.artifacts import redact_secrets
-from stackos.auth_providers.google_service_account import (
+from stackos_connectors.shared.google.service_account import (
     GOOGLE_SERVICE_ACCOUNT_PROVIDERS,
     delegated_subject,
     validate_service_account,
 )
+
+from stackos.artifacts import redact_secrets
 from stackos.db.models import (
     Credential,
     CredentialScope,
@@ -502,8 +503,11 @@ class CredentialStorageMixin:
     ) -> None:
         if provider_key not in GOOGLE_SERVICE_ACCOUNT_PROVIDERS:
             raise ValidationError("Provider does not support Google service accounts")
-        validate_service_account(secret_values.get("service_account_json"))
-        subject = delegated_subject(provider_key, safe_config.get("delegated_subject"))
+        try:
+            validate_service_account(secret_values.get("service_account_json"))
+            subject = delegated_subject(provider_key, safe_config.get("delegated_subject"))
+        except OAuthTokenError as exc:
+            raise ValidationError(str(exc)) from None
         if subject is not None:
             safe_config["delegated_subject"] = subject
 
