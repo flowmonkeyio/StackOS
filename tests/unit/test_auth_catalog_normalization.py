@@ -630,6 +630,18 @@ def test_released_host_fields_and_policy_are_preserved(provider_key):
     assert set(methods) == set(RELEASED_METHODS[provider_key])
     for key, expected in RELEASED_METHODS[provider_key].items():
         method = methods[key].model_dump()
+        if provider_key == "google-search-console":
+            # 0.2.1 restores the shipped explicit scope choice while preserving
+            # every other field and host policy from the extraction baseline.
+            access = [field for field in method["fields"] if field["key"] == "access_mode"]
+            assert len(access) == 1
+            assert [option["value"] for option in access[0]["options"]] == [
+                "readonly",
+                "sitemap_write",
+            ]
+            method["fields"] = [
+                field for field in method["fields"] if field["key"] != "access_mode"
+            ]
         fields_digest = hashlib.sha256(
             json.dumps(method["fields"], sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()

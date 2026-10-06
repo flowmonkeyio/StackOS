@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.1.34 - 2026-10-06
+
+- Restore the Google Search Console read-only and sitemap-write access choices
+  in the canonical connector package. Preserve the selected scope when renewing
+  service-account tokens and keep read actions available with write access.
+- Clear cached authorization when the selected access scope changes, so the
+  next authorization uses the updated setting.
+- Pin `stackos-connectors==0.2.1` and publish a signed, notarized macOS build.
+
 ## 2.1.33 - 2026-10-05
 
 - Delegate explicit provider OAuth/JWT grants, credential probes, Telegram auth

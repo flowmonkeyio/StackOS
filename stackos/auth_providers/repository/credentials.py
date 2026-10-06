@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import delete
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
-from stackos_connectors.auth import OAuthTokenError
+from stackos_connectors.auth import OAuthTokenError, get_auth_contract
 from stackos_connectors.errors import ValidationError as NativeValidationError
 from stackos_connectors.shared.google.service_account import (
     GOOGLE_SERVICE_ACCOUNT_PROVIDERS,
@@ -357,6 +357,19 @@ class CredentialStorageMixin:
         existing_config.update(safe_config)
         safe_config = existing_config
         safe_config["auth_method_key"] = method.key
+        previous_contract = self._optional_oauth_contract(credential)
+        scope_config_changed = False
+        if previous_contract is not None:
+            try:
+                next_contract = get_auth_contract(
+                    credential.provider_key, method=method.key, config=safe_config
+                )
+            except OAuthTokenError as exc:
+                raise ValidationError(
+                    str(exc),
+                    data={"provider_key": provider.key, "fields": list(exc.invalid_fields)},
+                ) from None
+            scope_config_changed = set(previous_contract.scopes) != set(next_contract.scopes)
         if display_name is not None:
             name, name_key = self._account_name(display_name)
             duplicate = self._s.exec(
@@ -385,7 +398,7 @@ class CredentialStorageMixin:
             and fields[field.key] != existing_secret_values.get(field.key)
         }
         scope_state_reset = bool(
-            (changed_secret_fields or subject_changed)
+            (changed_secret_fields or subject_changed or scope_config_changed)
             and self._method_requires_local_scope_gate(method)
         )
         resolved_status = credential.status
@@ -415,14 +428,32 @@ class CredentialStorageMixin:
             )
             if telegram_auth_identity_changed:
                 resolved_status = "pending"
-        elif method.key == "service-account" and (changed_secret_fields or subject_changed):
-            # Both the signing key and delegated identity bind the acquired token.
+        elif method.key == "service-account" and (
+            changed_secret_fields or subject_changed or scope_config_changed
+        ):
+            # The signing identity and selected scopes bind the acquired token.
             secret_payload = declared_secret_payload
             credential.expires_at = None
             safe_config["scope_status"] = "unknown"
             safe_config.pop("scope_evidence_source", None)
             safe_config.pop("scope_evidence_basis", None)
+            safe_config.pop("scope_request_scopes", None)
             resolved_status = "connected"
+        elif scope_config_changed:
+            # A changed scope selection requires new grant evidence, even when
+            # the operator leaves the application credentials unchanged.
+            credential.expires_at = None
+            safe_config["scope_status"] = "unknown"
+            safe_config.pop("scope_evidence_source", None)
+            safe_config.pop("scope_evidence_basis", None)
+            safe_config.pop("scope_request_scopes", None)
+            if method.interactive:
+                secret_payload = declared_secret_payload
+                resolved_status = "pending"
+                safe_config["oauth_connection_status"] = "pending"
+                safe_config["oauth_pending"] = True
+            elif not changed_secret_fields:
+                secret_payload = existing_secret_payload
         elif method.payload_format == "json" and not changed_secret_fields:
             # Safe-field and display-name edits must not discard acquired OAuth
             # tokens, pending application state, refresh material, or other

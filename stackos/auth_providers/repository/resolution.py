@@ -150,6 +150,31 @@ class CredentialResolutionMixin:
                     "status": credential.status,
                 },
             )
+        if credential.provider_key == "google-search-console" and required_scopes:
+            # Search Console's explicit write opt-in is an Account policy ceiling,
+            # even when Google retains a broader grant. The package owns the
+            # selected scopes and their compatibility. Other providers may use
+            # optional grants beyond their base contract, so retain their policy.
+            selected_contract = self._get_oauth_contract(credential)
+            outside_selection = sorted(
+                scope
+                for scope in set(required_scopes)
+                if not connector_auth.scope_satisfies(
+                    credential.provider_key, scope, set(selected_contract.scopes)
+                )
+            )
+            if outside_selection:
+                raise ConflictError(
+                    "credential is missing required scopes in its selected access mode",
+                    data={
+                        "credential_ref": credential.credential_ref,
+                        "missing_scopes": outside_selection,
+                        "next_action": (
+                            "Edit this Account's access selection and acquire the required "
+                            "grant before retrying."
+                        ),
+                    },
+                )
         contract = self._optional_oauth_contract(credential)
         if contract is not None and self._needs_renewal(
             credential=credential,
@@ -345,6 +370,7 @@ class CredentialResolutionMixin:
                 safe_config["scope_status"] = "known"
             if contract.flow == "jwt_bearer":
                 safe_config["scope_evidence_source"] = "google_service_account_exchange"
+                safe_config["scope_request_scopes"] = list(contract.scopes)
                 safe_config["scope_evidence_basis"] = (
                     "provider_response"
                     if token_result.scopes_present
@@ -482,7 +508,11 @@ class CredentialResolutionMixin:
                 select(CredentialScope).where(col(CredentialScope.credential_id) == credential.id)
             ).all()
         }
-        missing = sorted(set(normalized_required) - granted)
+        missing = sorted(
+            scope
+            for scope in normalized_required
+            if not connector_auth.scope_satisfies(credential.provider_key, scope, granted)
+        )
         if missing:
             raise ConflictError(
                 "credential is missing required scopes",
@@ -556,6 +586,27 @@ class CredentialResolutionMixin:
             return True
         if contract.flow == "jwt_bearer" and credential.expires_at is None:
             return True
+        if contract.flow == "jwt_bearer":
+            requested = (credential.config_json or {}).get("scope_request_scopes")
+            if isinstance(requested, list):
+                if set(requested) != set(contract.scopes):
+                    return True
+            else:
+                # Older releases did not retain requested scopes. Reacquire
+                # once if the cached grant cannot serve the saved selection.
+                granted = {
+                    scope.scope
+                    for scope in self._s.exec(
+                        select(CredentialScope).where(
+                            col(CredentialScope.credential_id) == credential.id
+                        )
+                    ).all()
+                }
+                if any(
+                    not connector_auth.scope_satisfies(credential.provider_key, scope, granted)
+                    for scope in contract.scopes
+                ):
+                    return True
         if (
             contract.flow == "authorization_code"
             and not payload.get("access_token")

@@ -177,8 +177,9 @@ providers:
       permission_verification:
         enforcement: local_required
     config:
-      setup_note: Choose Google OAuth or a service-account JSON key with Search Console property access. Both
-        use the read-only Search Console scope.
+      setup_note: Choose Google OAuth or a service-account JSON key with Search Console property access.
+        Access defaults to read only. Select Read and submit sitemaps to request the write scope;
+        changing access requires a new token or renewed OAuth consent.
   - key: google-analytics
     name: Google Analytics 4
     description: GA4 account discovery, metadata, standard reports, and realtime report reads.
