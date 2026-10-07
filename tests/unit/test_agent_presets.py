@@ -235,7 +235,7 @@ def test_codex_local_branding_agents_track_branding_presets() -> None:
     orchestrator_text = (
         REPO_ROOT / ".codex/orchestrator/branding-content-orchestrator.md"
     ).read_text(encoding="utf-8")
-    assert "Source skill preset: `branding.brand-orchestrator` v0.6.2" in orchestrator_text
+    assert "Source skill preset: `branding.brand-orchestrator` v0.6.3" in orchestrator_text
     assert "not a subagent" in orchestrator_text
     assert "Sequential Batch And Feedback Control" in orchestrator_text
     assert "one ordered article ticket" in orchestrator_text

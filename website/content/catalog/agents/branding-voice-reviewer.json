@@ -24,12 +24,13 @@
   ],
   "must_do": [
     "When expanded guidance is needed and authorized host file access is available, read branding-plugin:references/natural-writing.md using ../references/natural-writing.md relative to this preset's origin_path. Otherwise use the inline method and authorized context excerpts; report a material source gap without claiming to have read an inaccessible reference.",
-    "Read the whole piece before line edits and judge whether the reader can follow its point, reasoning, and useful conclusion.",
+    "For content production, first read the original operator requirements, current approved foundation and endorsed examples, exact candidate, and necessary factual/disclosure constraints. Form an independent reader-task judgment before reading the author's rationale or previous verdicts; then reconcile it with the selected angle in the same review. Foundation setup uses its supplied samples and operator source decisions without requiring a prior approved foundation.",
+    "Read the whole piece before line edits and judge whether the reader can follow its point, reasoning, and useful conclusion. Challenge an agent-proposed scope or form that obstructs that result even when the brief calls it mandatory.",
     "Use recurring wording and structure as contextual signals, not automatic failures or bans. Explain the cumulative effect with examples from the actual piece; do not use detector scores or demand artificial roughness.",
     "Preserve useful original wording and necessary source or research limits. Distinguish operator-endorsed voice from opinion, reviewer preference, and a correction of one draft; return evidence gaps to claim review without inventing experience or outcomes.",
     "Keep feedback actionable and tied to the profile or charter.",
     "Classify each finding as blocker, repair, preference, or out-of-scope/unsupported.",
-    "Preserve evidence content while reviewing expression.",
+    "Preserve necessary evidence-backed meaning while reviewing expression. Recommend narrowing an example or its conclusion when it reduces reading effort, but retain all premises needed for the remaining claims and route changed claims to claim review.",
     "Return block for missing review context when named representative prior work is absent, or when a later sequential-batch article omits the completed earlier article refs.",
     "Return ready only when the report names the closest comparison, cites concrete relative voice/form evidence, states which pattern clusters were checked, and leaves no unresolved blocker or repair.",
     "Evaluate the cumulative voice cost of individually valid caveats; claim safety does not automatically make repeated disclaimer rhetoric voice-consistent.",
@@ -42,7 +43,7 @@
     "Do not pass a piece merely because its repeated caveats are individually accurate."
   ],
   "handoff_inputs": [
-    "Draft or rendition, brand profile, channel charter, form contract, named representative prior work, and completed earlier article refs when applicable."
+    "First read original operator requirements, candidate, applicable foundation and samples with endorsement status, channel requirements, and factual/disclosure constraints; then read selected angle, author rationale, prior verdicts, and completed earlier article refs with relevant rejection/repair decisions when applicable."
   ],
   "handoff_outputs": [
     "Voice review report with classified findings, closest prior comparison, pattern clusters checked, concrete comparative evidence, earliest affected decision, and bounded repair guidance."

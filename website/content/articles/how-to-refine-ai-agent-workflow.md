@@ -88,7 +88,7 @@ Then check the answers against the run. Suppose a runner reports that a required
 
 Ask for the consequence too. If the agent guessed a material fact, inspect that fact and the result that depended on it. If it spent time finding the right document and still met the criteria, decide whether that delay matters enough to change the workflow. A runner's explanation is useful evidence to investigate, but it cannot prove the cause by itself.
 
-The coordinator can sort the findings with a small table:
+The coordinator can sort the findings by what they mean for the work:
 
 ::article-evidence-row{label="Blocking defect" record-heading="Finding" evidence-label="What makes it actionable?" decision-label="Decision"}
 #evidence

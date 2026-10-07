@@ -456,7 +456,9 @@ for (const path of (await walkFiles(articleRoot)).filter((item) => item.endsWith
         addViolation('SEO_ARTICLE_EVIDENCE_SSR', `${slug}: record ${index + 1} label missing from semantic term`)
       }
       for (const value of [labels['evidence-label'], labels['decision-label'], row[2], row[3]]) {
-        if (!value || !normalizeText(explanation).includes(normalizeText(value))) {
+        // Source evidence can emphasize a finding; SSR renders its text in <strong>.
+        const expectedText = normalizeText(value?.replace(/\*\*([^\n]+?)\*\*/g, '$1'))
+        if (!value || !normalizeText(explanation).includes(expectedText)) {
           addViolation('SEO_ARTICLE_EVIDENCE_SSR', `${slug}: record ${index + 1} evidence or decision missing from semantic description`)
         }
       }

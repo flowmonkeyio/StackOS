@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: branding.content-production
 name: Branding Content Production
-version: 0.6.2
+version: 0.6.3
 description: End-to-end journalist-led branding workflow that turns a topic, evidence, research, or current work into a voice-consistent canonical piece, optional generated image set, executable channel publication jobs, automated publishing, and durable content memory.
 domain: branding
 owner:
@@ -452,6 +452,7 @@ steps:
     instructions:
       - Propose a small set of angles with thesis, audience, evidence basis, follow-up potential, and risk.
       - Read the whole source before choosing its structure. State the reader's problem and the useful explanation, decision, or action the piece can support; carry useful original wording and context into the writer's handoff.
+      - Distinguish original operator requirements, including explicit question-and-answer form, and factual/disclosure constraints from agent-proposed presentation. Structure, example scope, and inline material remain revisable against the reader task. Select necessary inline premises separately from optional reproduction detail; a smaller invented example or narrower conclusion must retain support for every remaining claim.
       - Compare the nearest prior pieces to distinguish a genuinely new topic from an existing position that should be strengthened, refreshed, or held; do not select an angle from keyword research alone.
       - Let the evidence and selected thesis determine the form. In a sequential batch, compare completed earlier articles across topic ownership, macro structure, rhetorical frame, caveat placement, cadence, opening, and ending; do not reuse their chassis merely because the pieces share a workflow.
       - Record claim risks and evidence limits as semantic constraints, not ready-to-copy disclaimer sentences, headings, or conclusions, unless an exact source or legal phrase is required.
@@ -488,7 +489,8 @@ steps:
     title: Draft Canonical
     purpose: Write the canonical piece in the adapted operator voice from the selected angle and evidence pack.
     instructions:
-      - Draft only from the selected angle, cleared evidence, selected authoritative foundation, and channel-independent canonical structure. Reuse a current reviewed applied candidate unchanged for synchronization-only work; do not turn owner reconciliation into a new article.
+      - Draft from the selected angle, cleared evidence, and selected authoritative foundation under the original operator requirements. Flag an agent-proposed form that defeats the reader task rather than treating brief compliance as sufficient. Reuse a current reviewed applied candidate unchanged for synchronization-only work; do not turn owner reconciliation into a new article.
+      - Before expanding a costly repeated example, table, or diagram form, inspect one instance in the existing destination at its actual display width within the draft checks. Ordinary prose does not require an extra render stage.
       - When expanded guidance is needed and authorized host file access is available, read branding-plugin:references/natural-writing.md using ../references/natural-writing.md relative to this template's origin_path. Otherwise use the inline method and authorized context excerpts; report a material source gap without claiming to have read an inaccessible reference.
       - Read the whole piece before sentence polish; check its point, reasoning, and usefulness alongside the evidence behind experience claims.
       - Preserve useful original wording and necessary source or research limits. Treat recurring words and structures as contextual signals; do not impose banned-word lists, detector scores, or artificial roughness.
@@ -512,7 +514,7 @@ steps:
     output_refs:
       - canonical_draft_artifact
     success_criteria:
-      - The draft uses the selected structure and avoids facts absent from the interview pack, research pack, or supporting artifacts.
+      - The draft answers the original reader task, preserves required factual/disclosure constraints, and avoids facts absent from cleared sources. Any necessary revision to an agent-proposed structure or example is explicit and retains the premises for remaining claims.
       - The actual prose preserves necessary evidence limits without reusing an avoidable rhetorical chassis from representative or completed earlier work.
       - Position changes are marked as explicit stance updates, not accidental contradictions.
       - The draft ref or intentionally preserved artifact ref is written back to the content-piece memory index; normal draft iteration stays in project-local working state.
@@ -521,6 +523,7 @@ steps:
     purpose: Run one compact review pass for factual support, prior-position consistency, voice, and channel form.
     instructions:
       - Review factual support, prior-position consistency, voice fit, and channel form as separate findings.
+      - For voice review first provide original operator requirements, current approved foundation and endorsed examples, exact candidate, and necessary factual/disclosure constraints. Form an independent reader-task judgment before reading author rationale or prior verdicts; then reconcile the selected angle in the same review. Challenge presentation choices that obstruct the reader task even when the brief calls them mandatory.
       - Read the whole piece before line edits. Assess whether its explanation or proposed solution is useful and understandable, while claim review checks the evidence behind experience and outcome claims. A grounded anecdote alone does not establish a useful recommendation.
       - Use the inline natural-writing method, actual prose, and any authorized reference excerpts to explain contextual problems, without automatic phrase bans. Preserve necessary source and research limits and useful original wording; distinguish operator endorsement from opinion, reviewer preference, or correction requests.
       - Compare the actual prose with named representative prior work and, for a later item in a sequential batch, with every completed earlier article supplied for that invocation.
@@ -643,12 +646,13 @@ steps:
     title: Finalize Content And Record
     purpose: Finalize the reviewed canonical packet and durable memory, then prepare only the publication jobs permitted by publication_intent.
     instructions:
-      - Adjudicate editorial feedback against the evidence and accepted angle. Resolve supported blockers and repairs; record but do not implement preferences, out-of-scope requests, or unsupported findings.
+      - Adjudicate editorial feedback against the original operator requirements, evidence, actual reading sequence, necessary detail, and applicable render evidence. The selected angle is revisable; brief compliance, individual review passes, and layout reachability alone do not establish quality. Resolve supported blockers and repairs at their earliest cause, preserving a sound angle when the draft departed from it; record but do not implement preferences, out-of-scope requests, or unsupported findings.
       - Resolve sanitization blockers; ask only when missing operator context would materially change the content or disclosure boundary.
       - Treat the current request, publication_intent, target channels, supplied evidence, and recorded operator decisions as the run's authority without another human checkpoint.
       - Upsert the content-piece memory index before any external publication.
       - Recheck selected foundation revisions and exact candidate against current reviews before canonical owner updates. Reuse existing scoped authorization, but do not infer permission from guidance or a resource grant alone. For synchronization-only scope preserve implementation receipts and record the updated owner readback without generating another publication job.
       - Record explicit decisions when positions or brand-profile rules change.
+      - Carry actual rejection and repair decisions with the completed article refs into the next sequential handoff. Publication alone does not endorse a writing exemplar.
     depends_on:
       - render-channel-packets
     resource_refs:

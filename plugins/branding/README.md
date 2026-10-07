@@ -47,6 +47,23 @@ contextual signals for judgment, not bans or detector targets. Project voice,
 identity, examples, and approved positions stay with the selected Level 2
 foundation.
 
+The selected angle distinguishes original operator requirements and factual or
+disclosure constraints from agent-proposed presentation. Structure, example scope,
+and inline detail remain revisable against the reader task. A smaller example
+must retain the premises for its remaining claims. Inspect one costly repeated
+example, table, or diagram in the existing destination before expanding that form
+within draft checks; ordinary prose needs no extra render stage.
+
+Voice review starts with the original request, current approved foundation and
+endorsed examples, exact candidate, and necessary factual/disclosure constraints.
+The reviewer forms its own reader-task judgment before reading author rationale
+or prior verdicts, then reconciles the selected angle in the same review. Main
+acceptance integrates reading flow, necessary detail, review findings and relevant
+render evidence. Repair the earliest wrong decision while preserving sound work.
+Sequential handoffs carry actual rejection and repair decisions; publication alone
+does not endorse a writing exemplar. These are responsibilities within existing
+steps, not additional roles, stages, approvals, or word limits.
+
 The reference ships inside the plugin. When expanded guidance is needed and the
 host provides authorized file access, resolve
 `branding-plugin:references/natural-writing.md` from the effective preset or

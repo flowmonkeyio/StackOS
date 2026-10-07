@@ -31,11 +31,11 @@ Receiving a blocker message does not make you responsible for the repair. It sho
 
 If the agent already has the authority and context to recover, it should use that permitted path and continue. When it needs someone else's action or a decision about authority, a proposed message could read:
 
-> I can't save the evidence record yet: the required write permission is unavailable. If you're authorized to start the research step, please start it. Otherwise, use the established route for this request if one exists, or let me know that ownership is still unresolved. I'll check the active step and write permission before attempting to save the record.
+> I can't save the evidence record yet: the required write permission is unavailable. If you're authorized to start the research step, please start it. If you aren't authorized, use the established route for this request if one exists. If no route is known, let me know that ownership is still unresolved. I'll check the active step and write permission before attempting to save the record.
 
 ## Make the request conditional on authority
 
-If they cannot act, an established route may lead to someone who can. Where no such route is known, leave the ownership question open. Asking the recipient to identify that gap is more precise than assigning them a repair they may have no way to perform.
+If the recipient cannot act, an established route may lead to someone who can. Where no such route is known, leave the ownership question open. Asking the recipient to identify that gap is more precise than assigning them a repair they may have no way to perform.
 
 GOV.UK separates these cases in its [error-message guidance](https://design-system.service.gov.uk/components/error-message/). Validation messages should explain a problem the user can correct. Permission or service problems the user cannot fix need an explanation and useful information about what happens next. This is service-design guidance; applying the distinction here means checking what the recipient can actually do before asking them to do it.
 

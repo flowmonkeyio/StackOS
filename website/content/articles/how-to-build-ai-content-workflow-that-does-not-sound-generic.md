@@ -2,7 +2,7 @@
 title: Why an AI content workflow can still sound generic
 description: Find why an AI-written draft feels generic. Use concrete examples to trace the problem to missing evidence, a vague brief, repeated structure, or wording.
 publishedAt: '2026-07-27'
-updatedAt: '2026-10-01'
+updatedAt: '2026-10-07'
 author: StackOS team
 category: AI operations
 topics:
@@ -29,7 +29,7 @@ relatedArticles:
   - what-ai-agent-handoff-should-include
 ---
 
-In a July 2026 content delivery, current workflow guidance was in place and specialists returned ready reviews. The operator read the article and still found problems with its voice and structure.
+In a July 2026 StackOS article review, the agents marked the draft ready. The operator read it and found problems with its voice and structure, even though the agents had current writing guidance.
 
 The review labels left an editorial decision unresolved: what needed to change in this particular draft?
 

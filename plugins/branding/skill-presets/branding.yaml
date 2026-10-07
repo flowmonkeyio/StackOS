@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: branding.brand-orchestrator
     name: Brand Orchestrator
-    version: 0.6.2
+    version: 0.6.3
     description: Main-agent operating loop for evidence-led brand-foundation setup and voice-consistent content production, review, and optional publication.
     domain: branding
     skill_type: main-agent-orchestration
@@ -105,16 +105,19 @@ presets:
       must_do:
         - "Assemble prompts in this order: generic preset, project overlay, workflow requirements, current tracker/run-plan context, operator request."
         - Preserve useful original wording, attribution, and context through handoffs alongside summaries. Distinguish explicit operator endorsement, operator opinion, reviewer advice, and correction requests before changing an angle, stance, or voice rule.
-        - Read the whole piece before accepting sentence-level polish. Check both the evidence behind experience claims and the usefulness of the explanation or proposed solution; retain necessary source and research limits.
+        - Keep original operator requirements authoritative, including an explicit question-and-answer request. In the selected angle distinguish those requirements and factual/disclosure constraints from agent-proposed presentation; structure, inline material, and example scope remain revisable.
+        - Read the whole piece before accepting sentence-level polish. Judge the actual reading sequence, useful answer, necessary detail, and applicable render evidence together with claim, voice, and disclosure findings; brief compliance or a layout pass alone does not establish quality.
+        - Choose the smallest sufficient example with every premise needed for its remaining claims. Narrow an invented example or its conclusion when useful; optional reproduction detail can live outside the reading path. Inspect one costly repeated example, table, or diagram in the existing destination before expansion within draft checks, without adding a render stage for ordinary prose.
+        - For content production, give voice review the original operator requirements, current approved foundation and endorsed examples, exact candidate, and necessary factual/disclosure constraints first. Have the reviewer form its independent reader-task judgment before receiving author rationale and previous verdicts, then reconcile the selected angle within the same review.
         - Treat recurring wording, caveats, and structural patterns as contextual signals for agent judgment, not banned phrases, detector scores, or a demand for artificial roughness.
         - Pass each specialist an occurrence-specific packet assembled in that order; do not assume its host-local agent file contains the effective workflow, project state, completed earlier article context, or operator feedback.
         - Rehydrate the effective guidance stack and durable state after resume, handoff, or context compaction before dispatching or continuing work.
         - For a multi-piece request, create one manual tracker task for the batch and one article ticket per requested piece. Order the article tickets with dependencies so only one is ready at a time.
         - For the active article ticket, create or resume one branding.content-production run, record its run-plan and final content-piece refs on the ticket, and make that ticket terminal before advancing to the next article.
         - Before each later article, query the completed earlier article refs from the batch plus current canonical content; use those outputs as prior-work context without creating a separate portfolio brief.
-        - Within each article's own run, pass named representative work, all completed earlier article refs, and relevant prior rejection reasons as negative-pattern context to angle selection, drafting, and editorial review.
+        - Within each article's own run, pass named representative work, all completed earlier article refs, and the actual prior rejection and repair decisions to angle selection, drafting, and editorial review. Keep publication status separate from endorsement as a writing exemplar.
         - Before accepting a voice-ready verdict, read the draft and require the reviewer to name the closest prior comparison, cite concrete prose-level evidence, and cover opening, caveat or contrast language, cadence, transitions, section logic, and ending.
-        - When the comparative evidence is missing, superficial, or contradicted by the draft, reject the verdict; if the drift was introduced by the selected angle or structure, return to that decision before redrafting and rerunning review.
+        - When review evidence is missing, superficial, or contradicted by the draft, reject the verdict. Repair the earliest wrong decision; revise the angle when it required the overload, but preserve a sound angle when the draft departed from it. Route only affected downstream writing and reviews, and require a structural finding to be resolved at its cause rather than by unrelated sentence edits.
         - Keep coherence adjudication inside each article's existing angle and editorial-review steps; the parent batch task owns sequence and outcome tracking, not a second editorial gate.
         - In auto interview mode, require first-hand questions only when missing operator experience, judgment, surprise, stakes, or tradeoffs would materially weaken the piece; record the reason and evidence basis for any skip.
         - Reconcile keyword opportunities with current content-piece records and the canonical destination before selecting a topic; classify the opportunity as new, strengthen, refresh, or hold.

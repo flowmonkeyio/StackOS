@@ -2,7 +2,7 @@
 title: 'How to build an AI agent workflow: start with the problem'
 description: Design an AI agent workflow around a useful result. Follow one article-preparation example through inputs, dependencies, review, recovery, and a clear stopping point.
 publishedAt: '2026-07-11'
-updatedAt: '2026-10-04'
+updatedAt: '2026-10-07'
 author: StackOS team
 category: AI operations
 topics:
@@ -34,7 +34,29 @@ Work backward from that result. Define the evidence it needs, the decisions that
 
 Consider a hypothetical request: prepare an article explaining a proposed support-triage process. The reader is a support lead deciding whether the proposal fits their team. They need to understand who suggests a ticket category, who makes the decision, and what happens next.
 
+Our workflow produces the article; the support-triage process is the subject it explains.
+
 The finished result is a reviewed article packet: the canonical text, its supporting sources, and the review decisions for that version. Publication sits outside this example. Nobody needs access to a live support queue to write the explanation.
+
+## Work backward into a small plan
+
+A reviewed packet depends on an accepted candidate and its reviews. Work backward again: reviewers need the draft and its sources, and the writer needs a brief those sources can support.
+
+For this job, use one coordinating agent, a writer, and independent reviewers. The coordinator owns progression and the final result; specialists return bounded work. The distinction between an [agent, workflow, and orchestrator](/library/articles/ai-agent-vs-workflow-vs-orchestrator/) helps keep those responsibilities clear.
+
+The resulting plan is small enough to inspect:
+
+| Stage and owner | What must be available | Return that permits the next stage |
+| --- | --- | --- |
+| Scope and sources — coordinator | The brief, source note, voice guidance, and action boundary | Accepted scope, usable source references, and no missing fact essential to the brief |
+| Draft — writer | Those accepted inputs | Article candidate and a map from material claims to sources; any unresolved questions remain explicit |
+| Review — independent reviewers | The exact candidate and the same accepted inputs | Findings tied to passages, requirements, and evidence, covering claims, voice, and disclosure |
+| Resolve findings — coordinator and writer | Reviews for that candidate | Decisions on the findings, bounded repairs where needed, and review of the affected text |
+| Return the packet — coordinator | The current candidate and completed checks | A ready packet if acceptance is met; otherwise a blocked return with the unfinished condition and recovery information |
+
+StackOS's workflow authoring guidance starts with this same design order: the problem, useful outcome, operator path, and agent path. A reusable [agentic workflow](/library/articles/what-is-an-agentic-workflow/) needs those decisions even when its individual steps involve judgment.
+
+## Supply the inputs and acceptance criteria
 
 Here are the inputs for the exercise. The names are illustrative references; replace them with accessible files or records in your own workflow.
 
@@ -58,26 +80,6 @@ Before assigning work, write down what acceptance requires:
 - The returned packet identifies the exact article version and its reviews, and the next person can retrieve them.
 
 These conditions also give the operator a clear role. They supply the brief, source material, audience, and authority. If the source omits a decision essential to the explanation, the workflow returns that specific gap to them. Ordinary drafting and repair can proceed within the authority already supplied.
-
-## Work backward into a small plan
-
-To return a reviewed packet, the coordinator needs an accepted candidate. To accept the candidate, it needs the relevant reviews. Reviewers need a draft and the sources behind it. The writer needs a brief that the sources can support.
-
-For this job, use one coordinating agent, a writer, and independent reviewers. The coordinator owns progression and the final result; specialists return bounded work. The distinction between an [agent, workflow, and orchestrator](/library/articles/ai-agent-vs-workflow-vs-orchestrator/) helps keep those responsibilities clear.
-
-The resulting plan is small enough to inspect:
-
-| Stage and owner | What must be available | Return that permits the next stage |
-| --- | --- | --- |
-| Scope and sources — coordinator | The brief, source note, voice guidance, and action boundary | Accepted scope, usable source references, and no missing fact essential to the brief |
-| Draft — writer | Those accepted inputs | Article candidate and a map from material claims to sources; any unresolved questions remain explicit |
-| Review — independent reviewers | The exact candidate and the same accepted inputs | Findings tied to passages, requirements, and evidence, covering claims, voice, and disclosure |
-| Resolve findings — coordinator and writer | Reviews for that candidate | Decisions on the findings, bounded repairs where needed, and review of the affected text |
-| Return the packet — coordinator | The current candidate and completed checks | A ready packet if acceptance is met; otherwise a blocked return with the unfinished condition and recovery information |
-
-Dependencies matter more than the number of agents. If a writer returns an unresolved question about who makes the final decision, the coordinator must resolve that question before treating the explanation as ready. Passing the text to another agent does not settle it.
-
-StackOS's workflow authoring guidance starts with this same design order: the problem, useful outcome, operator path, and agent path. A reusable [agentic workflow](/library/articles/what-is-an-agentic-workflow/) needs those decisions even when its individual steps involve judgment.
 
 ## Give each step enough to act on
 
@@ -103,7 +105,7 @@ A missing decision owner is different. If the source note said only that the age
 
 There are two possible returns:
 
-**Ready:** the current article fulfills the brief, its material claims have support, and the required reviews have no unresolved acceptance blockers. Return the text, sources, and review decisions together.
+**Ready:** the candidate meets the acceptance conditions defined above. Return that exact text with its sources and review decisions.
 
 **Blocked:** an essential fact remains unavailable, or an acceptance condition is still unmet when the repair limit is reached. Preserve the latest candidate, attempted repairs, evidence, unresolved condition, and the person or agent who can resolve it. State the smallest missing input or decision.
 
@@ -123,7 +125,7 @@ The operator should be able to inspect the same state: the article is in repair,
 
 A design can look complete while its author is quietly supplying the missing context. Give a fresh agent the brief and the three exercise inputs, with access to the workflow instructions and permitted tools. Ask it to carry out the article-preparation job without additional design hints.
 
-With the complete source note, it should first check that the supplied material covers the brief. The eventual ready packet should contain the explanatory article, an invented ticket example, the claim-to-source map, and reviews bound to that candidate. Inspect the actual text against the acceptance criteria; a “complete” label is only a claim about the result.
+With the complete source note, it should first check that the material covers the brief, then produce the defined packet. Inspect its article, example, source map and candidate-bound reviews against the acceptance criteria; a “complete” label is only a claim about the result.
 
 Then repeat with a source note that omits the decision owner:
 

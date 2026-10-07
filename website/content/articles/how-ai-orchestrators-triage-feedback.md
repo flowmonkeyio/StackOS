@@ -2,7 +2,7 @@
 title: 'How should an AI orchestrator triage feedback?'
 description: Work through a mixed review queue to decide which findings need a repair, who should make it, and what to check before calling the work complete.
 publishedAt: '2026-07-12'
-updatedAt: '2026-10-03'
+updatedAt: '2026-10-07'
 author: StackOS team
 category: AI operations
 topics:
@@ -36,40 +36,50 @@ Consider a hypothetical article explaining a team's proposed content-review proc
 
 The orchestrator has the brief, the current draft, the source notes, and these comments:
 
-::article-evidence-row{label="“Every claim is checked before publication” has no supporting evidence." record-heading="Reviewer finding" evidence-label="What the orchestrator checks" decision-label="Decision for this draft"}
+::article-evidence-row{label="Unsupported claim" record-heading="Reviewer finding" evidence-label="What the orchestrator checks" decision-label="Decision for this draft"}
 #evidence
+**“Every claim is checked before publication” has no supporting evidence.**
+
 The source notes assign a separate reviewer to check material claims. They do not show that every claim was checked.
 
 #decision
 Admit the finding. The unsupported statement blocks acceptance until it is supported, narrowed, or removed.
 ::
 
-::article-evidence-row{label="A required source link points to the wrong page." record-heading="Reviewer finding" evidence-label="What the orchestrator checks" decision-label="Decision for this draft"}
+::article-evidence-row{label="Wrong source link" record-heading="Reviewer finding" evidence-label="What the orchestrator checks" decision-label="Decision for this draft"}
 #evidence
+**A required source link points to the wrong page.**
+
 Open the destination and compare it with the intended source.
 
 #decision
 Assign a local link repair and check the corrected destination.
 ::
 
-::article-evidence-row{label="The introduction would be more dramatic as a personal story." record-heading="Reviewer finding" evidence-label="What the orchestrator checks" decision-label="Decision for this draft"}
+::article-evidence-row{label="Opening preference" record-heading="Reviewer finding" evidence-label="What the orchestrator checks" decision-label="Decision for this draft"}
 #evidence
+**The introduction would be more dramatic as a personal story.**
+
 Does the current opening leave the reader confused, break the brief, or conflict with the approved voice? In this example, it does none of those.
 
 #decision
 Keep this as a preference. The writer does not need to invent a story or reopen the introduction.
 ::
 
-::article-evidence-row{label="Add a downloadable checklist." record-heading="Reviewer finding" evidence-label="What the orchestrator checks" decision-label="Decision for this draft"}
+::article-evidence-row{label="Additional deliverable" record-heading="Reviewer finding" evidence-label="What the orchestrator checks" decision-label="Decision for this draft"}
 #evidence
+**Add a downloadable checklist.**
+
 Does the article need a separate file to deliver the explanation and example the operator requested? Here, it does not.
 
 #decision
 Leave it outside this delivery. A useful additional deliverable still needs its own scope decision.
 ::
 
-::article-evidence-row{label="The draft contains a customer name." record-heading="Reviewer finding" evidence-label="What the orchestrator checks" decision-label="Decision for this draft"}
+::article-evidence-row{label="Stale finding" record-heading="Reviewer finding" evidence-label="What the orchestrator checks" decision-label="Decision for this draft"}
 #evidence
+**The draft contains a customer name.**
+
 Search the current candidate and inspect the quoted passage. The reviewer used an earlier version; the name is already gone.
 
 #decision

@@ -1,7 +1,7 @@
 # StackOS Brand And Content Orchestrator
 
-Source skill preset: `branding.brand-orchestrator` v0.6.2
-Workflows: `branding.brand-foundation-setup` v0.3.1, `branding.content-production` v0.6.2
+Source skill preset: `branding.brand-orchestrator` v0.6.3
+Workflows: `branding.brand-foundation-setup` v0.3.1, `branding.content-production` v0.6.3
 
 This is project-local main-agent guidance for Codex. It is not a subagent. The
 main agent selects the workflow, owns sequencing and durable StackOS state,
@@ -104,6 +104,16 @@ Choose one depth before creating the run:
 Mark unused workflow branches `skipped` with a concise reason. Do not make the
 operator or specialists walk through optional ceremony.
 
+In the selected angle, separate original operator requirements, including explicit
+Q&A form, and factual/disclosure constraints from agent-proposed presentation.
+Structure, inline material, and example scope remain revisable against the reader
+task. Select the smallest sufficient example, retaining every premise needed for
+its remaining claims; narrow an invented example or its conclusion when useful.
+Optional reproduction detail need not occupy the main reading path. Before
+expanding a costly repeated example, table, or diagram, inspect one instance in
+the existing page at its actual display width within draft checks. Ordinary prose
+does not require an extra render stage.
+
 ## Sequential Batch And Feedback Control
 
 For a multi-piece request, create one manual tracker task for the whole batch,
@@ -138,14 +148,16 @@ The parent task owns sequence and outcome tracking only. Relative voice and form
 are evaluated inside each article's existing `angle-and-structure`,
 `draft-canonical`, and `editorial-review` steps. Do not add a second batch-wide
 editorial gate. For every article invocation, pass named live exemplars, all
-completed earlier article refs, and relevant prior rejection reasons as
-negative-pattern context without treating rejected drafts as canonical examples.
+completed earlier article refs, and actual prior rejection and repair decisions.
+Keep publication status separate from endorsement as a writing exemplar; rejected
+drafts provide negative-pattern context, not canonical examples.
 
 Treat material operator feedback as evidence about the earliest affected
 decision. If the operator rejects voice, framing, angle, evidence boundary, or
 form, reopen that decision and rerun only its downstream writing and independent
-reviews. Do not keep a rejected upstream choice and repeatedly patch the latest
-copy.
+reviews. Preserve a sound angle when the draft departed from it. A structural
+finding needs a repair at its cause; unrelated sentence edits do not resolve it.
+Do not keep a rejected upstream choice and repeatedly patch the latest copy.
 
 ## Specialist Boundaries
 
@@ -164,6 +176,12 @@ copy.
   decisions.
 - `brand_sanitization_reviewer`: independent public-use gate; blocked wins ties.
 
+For content production, give voice review the original operator requirements,
+current approved foundation and endorsed examples, exact candidate, channel requirements, and
+necessary factual/disclosure constraints first. Have it form its independent
+reader-task judgment before supplying author rationale or previous verdicts,
+then reconcile the selected angle within the same review.
+
 Do not let one agent both author and independently review the same dimension.
 The main agent classifies reviewer findings as blocker, repair, preference, or
 out-of-scope/unsupported. Apply only evidence-backed blockers and repairs.
@@ -174,7 +192,10 @@ caveat or contrast language, cadence, transitions, section logic, and ending.
 Different outlines or artifact types do not establish voice alignment. If that
 evidence is missing, superficial, or contradicted by the draft, reject the
 verdict. When the selected angle or structure introduced the drift, return there
-before redrafting and rerunning review.
+before redrafting and rerunning review. Main judges the actual reading sequence,
+useful answer, necessary detail, and applicable render evidence together with
+claim, voice, and disclosure findings. Brief compliance or a page that fits and
+scrolls alone does not establish quality.
 
 ## StackOS Truth
 

@@ -25,7 +25,8 @@
   "must_do": [
     "When expanded guidance is needed and authorized host file access is available, read branding-plugin:references/natural-writing.md using ../references/natural-writing.md relative to this preset's origin_path. Otherwise use the inline method and authorized context excerpts; report a material source gap without claiming to have read an inaccessible reference.",
     "Read the whole source and retain useful original wording and context when handing off the selected angle.",
-    "Decide the core angle before drafting so form follows the idea.",
+    "Decide the core angle before drafting so form follows the idea. Separate authoritative operator requirements, including explicit question-and-answer form, and factual/disclosure constraints from agent-proposed structure, example scope, and inline material. Presentation choices remain revisable against the reader task.",
+    "Select the smallest sufficient example and necessary inline premises. Reduce an invented example or its conclusion when useful, preserving support for every remaining claim; distinguish that material from optional reproduction detail.",
     "State the reader's problem and the useful explanation, decision, or action the piece can support. Separate experience-backed observations from proposed solutions and research-backed advice; name missing evidence before promising an outcome.",
     "Treat operator endorsement, operator opinion, reviewer advice, and correction requests as different inputs. Do not turn an exploratory remark or supplied example into an approved stance.",
     "Let the evidence and thesis determine structure instead of reusing a default article chassis.",
@@ -42,10 +43,10 @@
     "Do not silently fan out to every channel."
   ],
   "handoff_inputs": [
-    "Interview pack, prior positions, nearest prior pieces, completed earlier article refs when applicable, stream default plan, channel charters, routing policy, and evidence pack."
+    "Original operator requirements, interview pack, prior positions, nearest prior pieces, completed earlier article refs with relevant rejection/repair decisions when applicable, stream default plan, channel charters, routing policy, and evidence pack."
   ],
   "handoff_outputs": [
-    "Candidate angles, new/strengthen/refresh/hold classification, selected structure, channel plan, publication job plan, semantic claim boundaries, prior-work differentiation across macro and rhetorical form, decision refs, and deviation rationale."
+    "Candidate angles, new/strengthen/refresh/hold classification, selected structure with authoritative constraints distinguished from revisable presentation choices, necessary inline premises, channel plan, publication job plan, semantic claim boundaries, prior-work differentiation across macro and rhetorical form, decision refs, and deviation rationale."
   ],
   "success_criteria": [
     "Every planned channel has a recorded reason and no publication is decided mechanically.",

@@ -40,7 +40,11 @@ The writer may create a compact illustration of these inputs, but must keep the 
 
 Use [the source ledger](source-ledger.md) to cite CL1–CL4. Use [the observation sheet](result-observations.md) only to explain how research changed the assignment. A returned snippet is not evidence that the full page was read.
 
-Link to the relevant primary reference when the reader needs syntax or the official rule. Within the surrounding content-brief article, the existing [fact-checking guide](https://stackos.flowmonkey.io/library/articles/how-to-fact-check-ai-generated-content/) is the appropriate follow-up for claim review. Its path is established project material; no fresh HTTP check of that destination was performed for this demonstration.
+Link to the relevant primary reference when the reader needs syntax or the official rule.
+
+**Internal-link decision for the commissioned lastmod article:** no internal destination is required. The supplied exercise and primary references answer the selected task; this brief does not assign an unvetted internal page.
+
+**Navigation in the surrounding content-brief article:** the existing [fact-checking guide](https://stackos.flowmonkey.io/library/articles/how-to-fact-check-ai-generated-content/) is a follow-up for claim review. That link serves the editor reading about briefs, rather than the commissioned lastmod article. Its path is established project material; no fresh HTTP check of that destination was performed for this demonstration.
 
 Exclude full sitemap creation, submission and resubmission, CMS/plugin recipes, sitemap-index dates, canonical selection, byline dates, news sitemap rules, and search-performance attribution. Do not claim that changing a date guarantees crawling or rankings. Do not turn this exercise into a benchmark of sitemap tools.
 

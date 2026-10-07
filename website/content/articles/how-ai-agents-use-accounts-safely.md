@@ -2,7 +2,7 @@
 title: How can AI agents use business accounts without seeing the login?
 description: See how StackOS keeps credentials in its runtime, checks a Search Console action against separate permissions, and distinguishes three ways to remove account access.
 publishedAt: '2026-07-09'
-updatedAt: '2026-10-04'
+updatedAt: '2026-10-07'
 author: StackOS team
 category: Security
 topics:
@@ -59,13 +59,15 @@ This is a practical application of [NIST's least-privilege principle](https://cs
 
 One-off writes outside a workflow have their own execution contract. The caller must explicitly confirm the action and state its intent; dry runs are exempt. Authority already supplied by the operator can satisfy that contract without asking the person to approve the same action again.
 
-The authorization boundary also matters when an agent connects to a remote tool server. The [MCP authorization specification](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization) describes its HTTP flow with scopes for the intended operations and tokens bound to the intended MCP server. Stdio connections are treated differently. The official [MCP security guidance](https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/security_best_practices) prohibits token passthrough: a server accepting a token without checking that it was intended for that server, then forwarding it to a downstream API.
-
 ## What comes back from the action
 
 A permitted action can return private business data. Keeping the credential out of the response does not make that data public. The agent still needs to follow the project's rules for who may receive the report and which details may be shared.
 
 Execution receipts help inspect what was requested and what result was returned. For an action that changes an external system, an error after the request may leave its effect uncertain. Check the provider's state or request status before deciding whether to repeat it. Idempotency provides retry protection, but it is not a universal guarantee that every provider will apply an operation exactly once.
+
+### When the connection uses MCP
+
+The authorization boundary also matters when an agent connects to a remote tool server. The [MCP authorization specification](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization) describes its HTTP flow with scopes for the intended operations and tokens bound to the intended MCP server. Stdio connections are treated differently. The official [MCP security guidance](https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/security_best_practices) prohibits token passthrough: a server accepting a token without checking that it was intended for that server, then forwarding it to a downstream API.
 
 ## Choose which access you want to remove
 
@@ -73,7 +75,7 @@ Execution receipts help inspect what was requested and what result was returned.
 
 | What you want to do | Operation and effect |
 | --- | --- |
-| Stop this project using the Account | Detach its Connection. The reusable Account and attachments to other projects remain. Active execution contexts or enabled communication profiles using the Account may need to be rebound or disabled first. |
+| Stop this project using the Account | Detach its Connection. The reusable Account and attachments to other projects remain. Running work and enabled communication profiles can still depend on this Account. You may need to assign them another Account or disable them before detaching. |
 | Remove the credential stored by StackOS | Detach the Account from every project, then revoke it locally. StackOS removes the encrypted credential backing and retains a non-executable audit record. |
 | Revoke or rotate the credential at its provider | Use the provider's controls or an explicitly supported provider operation. Local account removal does not generally invalidate the credential at the provider. |
 

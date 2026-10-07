@@ -2,7 +2,7 @@
 title: How to separate issue investigation from implementation
 description: Turn a software issue report into a supported conclusion, an authorized change, and acceptance checks. Follow a worked CSV export example.
 publishedAt: '2026-07-28'
-updatedAt: '2026-09-30'
+updatedAt: '2026-10-07'
 author: StackOS team
 category: AI operations
 topics:
@@ -76,12 +76,10 @@ For this case, write the desired behavior explicitly: **CSV export uses the sele
 
 Use the same fixture to make acceptance concrete:
 
-| Check | Expected exported records |
-| --- | --- |
-| Open is selected while the first table page is visible | A1, A2, and A3, including the record on the second page |
-| Closed is selected | B1 and B2 |
-| No status filter is selected | All five records |
-| A status with no matching records is selected | The agreed CSV headers, with no data rows |
+- **Open is selected while the first table page is visible:** export A1, A2 and A3, including the record on the second page.
+- **Closed is selected:** export B1 and B2.
+- **No status filter is selected:** export all five records.
+- **A status with no matching records is selected:** export the agreed CSV headers with no data rows.
 
 In this example, a header-only file is the chosen behavior for an empty result. A real project should use its existing export contract or settle that question before treating it as a test expectation.
 
