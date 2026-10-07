@@ -1,0 +1,10 @@
+Write a 65–90 word in-app announcement for Draft Pier's new review reminders.
+Address a writer whose article is waiting for a colleague's review. Use the
+current guide named by this tool's instruction file and only the supplied
+product facts. Explain the reminder schedule, the human review decision and
+the action the writer can take. Do not add a headline or a product pitch.
+
+First read the specified guide and facts with a read-only tool. Return the
+announcement, then a separate source note with the relative file paths and
+guide revision you actually used. The source note is outside the word count.
+Do not read files outside this exercise, call MCP or web tools, or change files.
