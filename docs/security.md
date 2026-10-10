@@ -48,6 +48,36 @@ Three middlewares form the request gauntlet, applied in this order
 3. **`BearerTokenMiddleware`** enforces the constant-time bearer check,
    minus an explicit whitelist (see below).
 
+## Agent project scope
+
+An established directory or named-workspace binding fixes the bridge session's
+project. Explicit cross-project calls, rebinding, and global downgrade are
+refused. An explicit `--workspace-root` or `STACKOS_WORKSPACE_ROOT` also protects
+workspace intent before binding, including after failed/malformed resolution.
+`CLAUDE_PROJECT_DIR` and cwd remain ambient hints; runtime names and generated
+paths do not prove intent. Unbound ambient discovery is read-only until the
+agent starts the session with known intent.
+
+A first `workspace.startSession(global_session=true)` accepts global work
+without creating a project or directory binding. The optional startup project
+is validated, but is never a default: every global scoped call requires a
+positive existing `project_id`. This includes direct browser calls and
+run-aware `toolbox.describe`. Nonboolean global intent is rejected before
+dispatch. An explicit project ID in unbound non-global directory startup is
+rejected before writes. Missing targets never use a last-used/name fallback.
+
+Project scope is checked before run authority is refreshed. Run, plan, token,
+and current step must belong together; failed or mismatched refresh discards
+usable cached authority. Ordinary direct read/audit operations retain their
+daemon-owned target checks. Selection supplies no filesystem access, provider
+credentials, or action grant, and provider JSON is not rewritten as scope data.
+
+Migration `0033_project_id_nonreuse` prevents future project-ID reuse after
+deletion. Recurring selections confirmed after migration can safely fail when
+their saved ID is missing. Older numeric-only references require explicit
+reselection/confirmation because an ID may already have been reused; the
+migration cannot reconstruct historical identity or perform automatic cleanup.
+
 ## Public auth exceptions
 
 `WHITELIST_PREFIXES` in `stackos/auth.py` lists paths that bypass

@@ -204,6 +204,7 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "summary",
         "used_usd",
         "auto_bootstrap",
+        "global_session",
         "claimed_by",
         "daemon_reached",
         "check_source",

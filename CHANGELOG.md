@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.1.36 - 2026-10-09
+
+- Let global chats start without creating a project or folder binding. Agents
+  select an existing project explicitly on each project-scoped call, while
+  sessions opened in a chosen workspace retain their existing project scope.
+- Keep startup discovery read-only until the agent declares its session intent,
+  and reject missing or mismatched project scope before resolving run grants.
+- Prevent reuse of project IDs deleted after migration. Reconfirm saved
+  project IDs from before migration before relying on them.
+- Update agent guidance for global startup, named project setup, and explicit
+  project selection in recurring tasks.
+
 ## 2.1.35 - 2026-10-06
 
 - Consolidated the current branding guidance, SEO workflows, website content,

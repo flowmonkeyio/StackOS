@@ -143,15 +143,35 @@ The agent-facing MCP bridge surface is intentionally small:
   artifact writes, memory writes, and run audit tools
 - memory: context, learnings, experiments, decisions
 
-The bridge derives the workspace-bound project from the repository that
-launched it. It injects that `project_id` into project-scoped calls and refuses
-explicit cross-project calls. It also injects current workspace hints and
-refuses calls that try to resolve, bootstrap, or connect another workspace.
-Safe project listing/creation and read-only binding diagnostics are available
-through `toolbox.call` during intentional setup, so an unbound agent can finish
-project bootstrap from MCP alone. Project switching, archiving, and broad admin
-mutations remain daemon/admin capabilities; they are not advertised to normal
-agent bridge clients.
+The bridge supports a protected workspace session or a global session with
+explicit projects per call. Normal `workspace.startSession` creates or reuses
+the chosen directory's binding; the bridge injects its `project_id` and refuses
+scope changes. A first startup with an existing `workspace_alias` establishes
+the same protection for a named workspace. Diagnostic resolve results never
+change established scope.
+
+For unbound ambient hints, initialize/tools-list only resolve read-only. The
+agent declares known global intent on its first successful startup with
+`global_session=true` and an optional selected `project_id`; no project or
+directory binding is created. Every subsequent global project-scoped call
+requires an explicit positive existing ID, including direct browser operations
+and run-aware `toolbox.describe`. Named bootstrap/connect remains available
+for intentional setup, but returned project IDs never become session defaults.
+An explicit StackOS root or existing binding cannot be downgraded to global.
+`CLAUDE_PROJECT_DIR` and cwd are ambient hints, not proof of folder selection.
+
+The bridge verifies project scope before refreshing run authority and discards
+usable cached authority after failed or mismatched refresh. Current controller,
+plan, and step grants govern workflow writes; direct read/audit target IDs keep
+their existing operation semantics. Provider JSON remains opaque. Project
+selection grants no filesystem access, credentials, or action permission.
+Broad admin mutations remain daemon/admin capabilities.
+
+Project IDs use SQLite AUTOINCREMENT from migration
+`0033_project_id_nonreuse`. A selection confirmed after migration cannot point
+to a future replacement after deletion. Older numeric-only references require
+explicit reselection: migration cannot repair an ID already reused before it
+ran. See [the setup path](agent-operating-model.md#setup-path) for agent calls.
 
 Bootstrap/setup calls are intentionally available before a run token exists so
 an agent can set up the current project and create the first run plan. They are

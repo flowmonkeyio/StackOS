@@ -29,6 +29,7 @@ class Project(SQLModel, table=True):
     """
 
     __tablename__ = "projects"
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: int | None = Field(default=None, primary_key=True)
     slug: str = Field(max_length=80, unique=True, index=True)

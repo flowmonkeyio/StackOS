@@ -372,16 +372,30 @@ a Git checkout to identify a workspace. The bridge accepts an explicit
 `--workspace-root` argument or `STACKOS_WORKSPACE_ROOT` environment value,
 prefers Claude Code's `CLAUDE_PROJECT_DIR` when present, and only then falls
 back to process cwd. Git remote detection is optional metadata for an existing
-directory binding. Claude Desktop uses global app config and may launch a server
-without repo context; a process cwd of `/` is treated as missing workspace
-context, not as a StackOS project. In that case the agent must connect an
-explicit project/workspace instead of silently creating or reusing a generic
-root binding.
+directory binding. Only the explicit StackOS flag/environment value establishes
+deliberate workspace selection; `CLAUDE_PROJECT_DIR` and cwd are ambient hints.
+Global hosts can supply generated directories, so neither runtime nor path
+shape identifies a global chat. `/` is treated as missing workspace context.
 
-Agents should first bind the working repository to a StackOS project. After the
-binding exists, the bridge resolves and injects `project_id` from the current
-repo and refuses cross-project StackOS calls. This binding is not a filesystem
-permission grant and does not let StackOS inspect the repo. Use `action.run`
+For a chosen working folder, call `workspace.startSession` normally; it creates
+or reuses the binding and the bridge injects `project_id`. Existing bindings
+and explicit StackOS roots stay protected. For known global intent, such as
+ChatGPT “Choose project / This computer” or Claude “Local / No folder”, make
+the first successful call `workspace.startSession` with
+`{"global_session":true,"project_id":42}` using the chosen existing ID, or
+omit the ID to discover projects. If intent is unclear, clarify before startup.
+Unbound ambient initialize/tools-list is read-only and leaves that choice
+pending; normal folder startup without an ID retains automatic setup.
+
+Global startup creates no project or directory binding. Pass a positive
+existing `project_id` on every scoped call; for `toolbox.call`, it goes inside
+`arguments`. Include it on direct browser calls and run-aware
+`toolbox.describe` too. Returned setup/resolve IDs never become defaults.
+An explicit ID with omitted/false global intent on an unbound directory is
+rejected before writes. Use explicit global intent or bind the intended folder.
+See [setup examples](agent-operating-model.md#setup-path) for named creation
+and saved-ID adoption. This selection is not a filesystem permission grant.
+Use `action.run`
 for one explicit direct action; use workflow templates, run plans, and
 step-granted `action.execute` for multi-step work. Provider-specific actions
 should be added as plugin action contracts, not as one-off MCP tools.
@@ -590,11 +604,11 @@ Claude Desktop registration writes
 restarting Claude Desktop before the app sees the updated MCP server. Legacy
 `~/.claude/mcp.json` entries are cleaned only when they belong to StackOS; they
 are not the primary registration source. Claude Desktop does not provide a
-per-repository workspace root through that global config, so Desktop sessions
-without a real workspace hint return setup/connect guidance before project
-scoped tools can run. When StackOS or an operator chooses a default local
-workspace folder for a global desktop host, registration can pass that folder
-with `stackos mcp-bridge --workspace-root /path/to/workspace`.
+per-repository workspace root through that global config. Such a session can
+start globally and pass explicit project IDs for each task through the same
+connection. When an operator deliberately wants a protected local workspace,
+registration can pass `stackos mcp-bridge --workspace-root /path/to/workspace`.
+That root prevents global startup; it is not needed for global project access.
 
 After token rotation or package upgrades, restart the daemon:
 

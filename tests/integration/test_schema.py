@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import sqlite3
@@ -11,9 +12,13 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+import sqlalchemy as sa
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 
 from stackos.browser.runtime import BROWSER_PROFILE_DIRNAME, browser_profile_dir
 from stackos.communication_surface_bindings import communication_surface_binding_external_id
+from stackos.db.connection import make_engine
 
 EXPECTED_TABLES: frozenset[str] = frozenset(
     {
@@ -587,7 +592,7 @@ def test_global_account_backing_repair_is_a_healthy_noop(
             == before
         )
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0032_shared_telegram_application",
+            "0033_project_id_nonreuse",
         )
     finally:
         conn.close()
@@ -1621,6 +1626,141 @@ def test_alembic_upgrade_creates_expected_stackos_tables(isolated_alembic: Path)
         f"Missing: {EXPECTED_TABLES - tables}; Extra: {tables - EXPECTED_TABLES}"
     )
     assert not (tables & LEGACY_TABLES)
+
+
+def _project_migration_fixture(db_path: Path) -> dict:
+    _run_alembic(["upgrade", "0032_shared_telegram_application"])
+    with sqlite3.connect(db_path) as conn:
+        _insert_legacy_project(conn, project_id=7, now="2026-10-09T00:00:00")
+        conn.execute("UPDATE projects SET niche='retained', schedule_json='{}' WHERE id=7")
+        conn.execute("""INSERT INTO workspace_bindings
+            (id,project_id,repo_fingerprint,last_known_root,created_at,updated_at,content_model_json)
+            VALUES (3,7,'path:retained','/tmp/retained',
+                    '2026-10-09','2026-10-09','{"keep":true}')""")
+        conn.execute("""INSERT INTO agent_sessions
+            (project_id,workspace_binding_id,runtime,created_at,last_seen_at)
+            VALUES (7,3,'test','2026-10-09','2026-10-09')""")
+        conn.execute("""INSERT INTO runs (id,project_id,kind,status,started_at,metadata_json)
+            VALUES (4,7,'maintenance','success','2026-10-09','{"keep":"run"}')""")
+        conn.execute("""INSERT INTO run_steps
+            (run_id,step_index,skill_name,status,cost_cents,input_snapshot_json)
+            VALUES (4,0,'retained','success',0,'{"keep":"nested"}')""")
+        return {
+            "rows": {
+                name: conn.execute(f'SELECT * FROM "{name}"').fetchall()
+                for name in (
+                    "projects",
+                    "workspace_bindings",
+                    "agent_sessions",
+                    "runs",
+                    "run_steps",
+                )
+            },
+            "indexes": conn.execute(
+                "SELECT name,sql FROM sqlite_master WHERE type='index' ORDER BY name"
+            ).fetchall(),
+            "fks": {
+                name: conn.execute(f'PRAGMA foreign_key_list("{name}")').fetchall()
+                for name in ("workspace_bindings", "agent_sessions", "runs", "run_steps")
+            },
+        }
+
+
+def _assert_project_migration_preserved(db_path: Path, before: dict) -> None:
+    with sqlite3.connect(db_path) as conn:
+        for name, rows in before["rows"].items():
+            assert conn.execute(f'SELECT * FROM "{name}"').fetchall() == rows
+        assert (
+            conn.execute(
+                "SELECT name,sql FROM sqlite_master WHERE type='index' ORDER BY name"
+            ).fetchall()
+            == before["indexes"]
+        )
+        for name, fks in before["fks"].items():
+            assert conn.execute(f'PRAGMA foreign_key_list("{name}")').fetchall() == fks
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_project_id_migration_preserves_data_and_never_reuses_ids(isolated_alembic: Path) -> None:
+    before = _project_migration_fixture(isolated_alembic)
+    _run_alembic(["upgrade", "head"])
+    _assert_project_migration_preserved(isolated_alembic, before)
+    with sqlite3.connect(isolated_alembic) as conn:
+        ddl = conn.execute("SELECT sql FROM sqlite_master WHERE name='projects'").fetchone()[0]
+        assert "AUTOINCREMENT" in ddl.upper()
+        assert (
+            conn.execute("SELECT seq FROM sqlite_sequence WHERE name='projects'").fetchone()[0] >= 7
+        )
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("DELETE FROM projects")
+        assert conn.execute(
+            "SELECT project_id,workspace_binding_id FROM agent_sessions"
+        ).fetchall() == [(None, None)]
+    # Reopen the database; the deleted maximum must survive an empty table.
+    with sqlite3.connect(isolated_alembic) as conn:
+        new_id = conn.execute("""INSERT INTO projects
+            (slug,name,domain,locale,is_active,created_at,updated_at)
+            VALUES ('legacy-project-7','New','new.local','en-US',1,
+                    '2026-10-09','2026-10-09')""").lastrowid
+        assert new_id > 7
+        conn.execute("DELETE FROM projects")
+        saved_sequence = conn.execute(
+            "SELECT seq FROM sqlite_sequence WHERE name='projects'"
+        ).fetchone()[0]
+        # Simulate a crash after successful DDL but before the Alembic stamp.
+        conn.execute("UPDATE alembic_version SET version_num='0032_shared_telegram_application'")
+    _run_alembic(["upgrade", "head"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        assert (
+            conn.execute("SELECT seq FROM sqlite_sequence WHERE name='projects'").fetchone()[0]
+            == saved_sequence
+        )
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_project_id_migration_failure_rolls_back_and_restores_foreign_keys(
+    isolated_alembic: Path,
+) -> None:
+    before = _project_migration_fixture(isolated_alembic)
+    migration = importlib.import_module("stackos.db.migrations.versions.0033_project_id_nonreuse")
+    engine = make_engine(isolated_alembic)
+    with engine.connect() as conn:
+
+        def fail_after_parent_drop(_conn, _cursor, statement, _parameters, _context, _many):
+            if statement.strip().upper() == "DROP TABLE PROJECTS":
+                raise RuntimeError("injected after parent drop")
+
+        sa.event.listen(conn, "after_cursor_execute", fail_after_parent_drop)
+        context = MigrationContext.configure(conn, opts={"transaction_per_migration": True})
+        with (
+            context.begin_transaction(_per_migration=True),
+            Operations.context(context),
+            pytest.raises(RuntimeError, match="injected after parent drop"),
+        ):
+            migration.upgrade()
+        sa.event.remove(conn, "after_cursor_execute", fail_after_parent_drop)
+        assert conn.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1
+        assert conn.exec_driver_sql("PRAGMA foreign_key_check").all() == []
+        assert (
+            "AUTOINCREMENT"
+            not in conn.exec_driver_sql("SELECT sql FROM sqlite_master WHERE name='projects'")
+            .scalar_one()
+            .upper()
+        )
+        conn.rollback()
+        context = MigrationContext.configure(conn, opts={"transaction_per_migration": True})
+        with context.begin_transaction(_per_migration=True), Operations.context(context):
+            migration.upgrade()
+        assert conn.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1
+        assert (
+            "AUTOINCREMENT"
+            in conn.exec_driver_sql("SELECT sql FROM sqlite_master WHERE name='projects'")
+            .scalar_one()
+            .upper()
+        )
+    engine.dispose()
+    _assert_project_migration_preserved(isolated_alembic, before)
+    _run_alembic(["upgrade", "head"])
 
 
 def test_alembic_downgrade_then_upgrade_idempotent(isolated_alembic: Path) -> None:

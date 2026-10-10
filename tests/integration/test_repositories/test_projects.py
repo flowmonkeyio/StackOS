@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 from sqlmodel import Session, SQLModel, select
@@ -66,6 +68,51 @@ def test_project_hard_delete_removes_row(session: Session) -> None:
 
     with pytest.raises(NotFoundError):
         repo.get(env.data.id)
+
+
+@pytest.mark.parametrize("replacement_slug", ["saved-target", "other-target"])
+def test_deleted_highest_project_id_is_not_reused(session: Session, replacement_slug: str) -> None:
+    repo = ProjectRepository(session)
+    saved_id = repo.create(
+        slug="saved-target", name="Saved target", domain="saved.example", locale="en-US"
+    ).data.id
+    repo.delete(saved_id, hard=True)
+    replacement = repo.create(
+        slug=replacement_slug, name="Replacement", domain="new.example", locale="en-US"
+    ).data.id
+    assert replacement > saved_id
+    with pytest.raises(NotFoundError):
+        repo.get(saved_id)
+
+
+def test_project_id_nonreuse_after_reopen_and_concurrent_allocations(tmp_path: Path) -> None:
+    db = tmp_path / "projects.db"
+    engine = make_engine(db)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        repo = ProjectRepository(session)
+        saved_id = repo.create(
+            slug="saved", name="Saved", domain="saved.local", locale="en-US"
+        ).data.id
+        repo.delete(saved_id, hard=True)
+    engine.dispose()
+    engine = make_engine(db)
+
+    def create(slug: str) -> int:
+        with Session(engine) as session:
+            return (
+                ProjectRepository(session)
+                .create(slug=slug, name=slug, domain=f"{slug}.local", locale="en-US")
+                .data.id
+            )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        ids = list(pool.map(create, ["saved", "replacement"]))
+    assert len(set(ids)) == 2
+    assert min(ids) > saved_id
+    with Session(engine) as session, pytest.raises(NotFoundError):
+        ProjectRepository(session).get(saved_id)
+    engine.dispose()
 
 
 def test_integration_credential_set_round_trip_and_remove(

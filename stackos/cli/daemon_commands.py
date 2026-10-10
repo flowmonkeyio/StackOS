@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -149,10 +149,9 @@ def _mcp_bridge_workspace_hints(
     cwd: Path,
     *,
     workspace_root: Path | None = None,
-) -> dict[str, str]:
-    # Claude Code supplies the real project root for stdio MCP servers. Claude
-    # Desktop does not, so process cwd is only a fallback hint. The selected
-    # directory is the workspace identity; Git remote is optional metadata.
+) -> dict[str, Any]:
+    # Host hints can name generated scratch directories. Only an explicit
+    # StackOS root establishes deliberate workspace intent.
     env_workspace_root = os.environ.get(WORKSPACE_ROOT_ENV)
     candidate = (
         workspace_root
@@ -169,6 +168,7 @@ def _mcp_bridge_workspace_hints(
     hints = {
         "cwd": str(resolved_root),
         "repo_fingerprint": fingerprint,
+        "deliberate_workspace_root": bool(workspace_root or env_workspace_root),
     }
     if remote:
         hints["git_remote_url"] = remote

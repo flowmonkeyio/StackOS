@@ -247,7 +247,7 @@ def test_payment_record_list_is_deferred_before_auth_or_http(
             "include_unavailable_integrations": True,
         },
     )
-    assert len(full["items"]) == 37
+    assert len(full["items"]) == 39
     deferred = next(item for item in full["items"] if item["action_ref"] == action_ref)
     assert deferred["availability_status"] == "deferred"
     assert deferred["executable"] is False

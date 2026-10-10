@@ -265,6 +265,9 @@ def test_operation_registry_documents_core_operations() -> None:
 
     workspace_session = registry.get("workspace.startSession").describe_out()
     runtime_schema = workspace_session.input_schema["properties"]["runtime"]
+    startup_schema = workspace_session.input_schema["properties"]
+    assert startup_schema["global_session"]["default"] is False
+    assert "project_id" in startup_schema
     assert "runtime" not in workspace_session.input_schema.get("required", [])
     assert "inject" in runtime_schema["description"]
 

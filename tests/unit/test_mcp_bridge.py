@@ -241,12 +241,12 @@ def test_bridge_proxy_adds_modern_metadata_to_internal_scope_calls() -> None:
 
     internal_body, internal_headers = client.calls[0]
     internal_meta = internal_body["params"]["_meta"]
-    assert internal_body["params"]["name"] == "workspace.startSession"
+    assert internal_body["params"]["name"] == "workspace.resolve"
     assert internal_meta["io.modelcontextprotocol/protocolVersion"] == "2026-07-28"
     assert internal_meta["io.modelcontextprotocol/clientInfo"]["name"] == "test"
     assert internal_headers["MCP-Protocol-Version"] == "2026-07-28"
     assert internal_headers["Mcp-Method"] == "tools/call"
-    assert internal_headers["Mcp-Name"] == "workspace.startSession"
+    assert internal_headers["Mcp-Name"] == "workspace.resolve"
 
 
 def test_bridge_proxy_forwards_negotiated_legacy_protocol_version() -> None:
@@ -277,8 +277,9 @@ def test_bridge_proxy_forwards_negotiated_legacy_protocol_version() -> None:
 
 
 class _FakeClient:
-    def __init__(self) -> None:
+    def __init__(self, *, allowed_tools: list[str] | None = None) -> None:
         self.calls: list[dict[str, Any]] = []
+        self.allowed_tools = allowed_tools if allowed_tools is not None else ["resource.upsert"]
 
     def post(self, _url: str, *, content: str, headers: dict[str, str]) -> _Response:
         del headers
@@ -305,6 +306,26 @@ class _FakeClient:
                 }
             )
         tool_name = body["params"]["name"]
+        if tool_name == "run.get":
+            run_id = body["params"]["arguments"]["run_id"]
+            return _Response(
+                {
+                    "jsonrpc": "2.0",
+                    "id": body["id"],
+                    "result": {
+                        "structuredContent": {
+                            "id": run_id,
+                            "project_id": 1,
+                            "status": "running",
+                            "client_session_id": "tok-plan" if run_id == 9 else "tok",
+                            "metadata_json": {
+                                "skill_name": "stackos/run-plan-controller",
+                                "run_plan_id": 3 if run_id == 9 else 17,
+                            },
+                        }
+                    },
+                }
+            )
         if tool_name == "runPlan.get":
             return _Response(
                 {
@@ -314,16 +335,20 @@ class _FakeClient:
                         "structuredContent": {
                             "data": {
                                 "id": body["params"]["arguments"]["run_plan_id"],
-                                "run_id": 9,
+                                "run_id": 9
+                                if body["params"]["arguments"]["run_plan_id"] == 3
+                                else 7,
+                                "project_id": 1,
+                                "status": "started",
                                 "steps": [
                                     {
                                         "step_id": "write",
                                         "status": "running",
-                                        "allowed_tools": ["resource.upsert"],
+                                        "allowed_tools": self.allowed_tools,
                                     }
                                 ],
                             },
-                            "run_id": 9,
+                            "run_id": 9 if body["params"]["arguments"]["run_plan_id"] == 3 else 7,
                         }
                     },
                 }
@@ -451,6 +476,7 @@ class _RunPlanControllerRefreshClient:
                         "structuredContent": {
                             "data": {
                                 "id": 82,
+                                "project_id": 2,
                                 "run_id": 78,
                                 "status": "started",
                                 "steps": [
@@ -516,7 +542,8 @@ class _RunPlanControllerListFallbackClient(_RunPlanControllerRefreshClient):
                             "id": 78,
                             "project_id": 2,
                             "status": "running",
-                            "metadata_json": {"source": "compact-resume"},
+                            "client_session_id": "tok-step",
+                            "metadata_json": {"skill_name": "stackos/run-plan-controller"},
                         }
                     },
                 }
@@ -546,6 +573,7 @@ class _RunPlanControllerListFallbackClient(_RunPlanControllerRefreshClient):
                         "structuredContent": {
                             "data": {
                                 "id": 82,
+                                "project_id": 2,
                                 "run_id": 78,
                                 "run_token": "tok-step",
                                 "status": "started",
@@ -1653,6 +1681,7 @@ def test_operation_discovery_tools_return_operation_spec_guidance() -> None:
 
 def test_bridge_proxy_forwards_step_tool_with_cached_run_token() -> None:
     proxy = AgentBridgeProxy(url="http://daemon/mcp", headers={})
+    proxy.scoped_project_id = 1
     proxy.tokens_by_run[7] = "tok"
     proxy.allowed_by_run[7] = {"resource.upsert"}
     client = _FakeClient()
@@ -1680,7 +1709,11 @@ def test_bridge_proxy_forwards_step_tool_with_cached_run_token() -> None:
 
     assert structured["tool"] == "resource.upsert"
     assert structured["arguments"]["run_token"] == "tok"
-    assert [call["method"] for call in client.calls] == ["tools/list", "tools/call"]
+    assert [call["params"]["name"] for call in client.calls if call["method"] == "tools/call"] == [
+        "run.get",
+        "runPlan.get",
+        "resource.upsert",
+    ]
 
 
 def test_bridge_records_existing_operator_approval_with_bound_project_before_step() -> None:
@@ -1725,9 +1758,10 @@ def test_bridge_records_existing_operator_approval_with_bound_project_before_ste
 
 def test_bridge_proxy_denied_active_step_tool_reports_not_granted_to_step() -> None:
     proxy = AgentBridgeProxy(url="http://daemon/mcp", headers={})
+    proxy.scoped_project_id = 1
     proxy.tokens_by_run[7] = "tok"
     proxy.allowed_by_run[7] = {"action.execute"}
-    client = _FakeClient()
+    client = _FakeClient(allowed_tools=["action.execute"])
     payload = {
         "jsonrpc": "2.0",
         "id": 100,
@@ -1753,11 +1787,14 @@ def test_bridge_proxy_denied_active_step_tool_reports_not_granted_to_step() -> N
 
     assert envelope["result"]["isError"] is True
     assert data["reason"] == "not_granted_to_active_step"
-    assert data["active_step_tool_names"] == ["action.execute"]
+    assert set(data["active_step_tool_names"]) == {"action.execute"} | set(
+        _AGENT_STEP_GATED_TOOL_NAMES
+    )
 
 
 def test_bridge_proxy_denied_admin_tool_keeps_admin_reason_with_active_step() -> None:
     proxy = AgentBridgeProxy(url="http://daemon/mcp", headers={})
+    proxy.scoped_project_id = 1
     proxy.tokens_by_run[7] = "tok"
     proxy.allowed_by_run[7] = {"resource.upsert"}
     client = _FakeClient()
@@ -1781,11 +1818,12 @@ def test_bridge_proxy_denied_admin_tool_keeps_admin_reason_with_active_step() ->
 
     assert envelope["result"]["isError"] is True
     assert data["reason"] == "local_admin_required"
-    assert data["active_step_tool_names"] == ["resource.upsert"]
+    assert "active_step_tool_names" not in data
 
 
 def test_bridge_proxy_does_not_inject_step_token_for_setup_tool() -> None:
     proxy = AgentBridgeProxy(url="http://daemon/mcp", headers={})
+    proxy.scoped_project_id = 1
     client = _FakeClient()
     payload = {
         "jsonrpc": "2.0",
@@ -1818,6 +1856,7 @@ def test_bridge_proxy_does_not_inject_step_token_for_setup_tool() -> None:
 
 def test_bridge_proxy_denied_run_plan_tool_returns_repair_steps() -> None:
     proxy = AgentBridgeProxy(url="http://daemon/mcp", headers={})
+    proxy.scoped_project_id = 1
     client = _FakeClient()
     payload = {
         "jsonrpc": "2.0",
@@ -1842,13 +1881,14 @@ def test_bridge_proxy_denied_run_plan_tool_returns_repair_steps() -> None:
     data = envelope["result"]["structuredContent"]["data"]
 
     assert envelope["result"]["isError"] is True
-    assert data["reason"] == "run_plan_step_grant_required"
+    assert data["reason"] == "run_context_unavailable"
     assert "runPlan.start" in data["repair"]["steps"][1]
     assert "run_id" in data["repair"]["retry_arguments"]
 
 
 def test_bridge_proxy_refreshes_controller_run_with_raw_internal_reads() -> None:
     proxy = AgentBridgeProxy(url="http://daemon/mcp", headers={})
+    proxy.scoped_project_id = 2
     client = _RunPlanControllerRefreshClient()
     describe_payload = {
         "jsonrpc": "2.0",
@@ -1912,6 +1952,7 @@ def test_bridge_proxy_refreshes_controller_run_with_raw_internal_reads() -> None
 
 def test_bridge_proxy_refreshes_step_context_from_raw_list_fallback() -> None:
     proxy = AgentBridgeProxy(url="http://daemon/mcp", headers={})
+    proxy.scoped_project_id = 2
     client = _RunPlanControllerListFallbackClient()
     payload = {
         "jsonrpc": "2.0",
@@ -1976,6 +2017,7 @@ def test_bridge_proxy_refreshes_stale_toolbox_catalog_once() -> None:
 
 def test_bridge_proxy_injects_run_plan_token_for_granted_tool() -> None:
     proxy = AgentBridgeProxy(url="http://daemon/mcp", headers={})
+    proxy.scoped_project_id = 1
     proxy.tokens_by_run[9] = "tok-plan"
     proxy.plans_by_run[9] = 3
     client = _FakeClient()
@@ -2024,3 +2066,21 @@ def test_bridge_proxy_rejects_hidden_direct_tool_calls() -> None:
     assert envelope["result"]["isError"] is True
     assert envelope["result"]["structuredContent"]["code"] == -32007
     assert client.calls == []
+
+
+def test_global_scope_failed_refresh_discards_cached_authority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    proxy = AgentBridgeProxy(url="http://daemon/mcp", headers={})
+    proxy.scoped_project_id = 1
+    proxy.tokens_by_run[9] = "old-token"
+    proxy.allowed_by_run[9] = {"resource.upsert"}
+    proxy.plans_by_run[9] = 3
+
+    def unavailable(*_args, **_kwargs):
+        raise RuntimeError("daemon unavailable")
+
+    monkeypatch.setattr(proxy, "request_daemon", unavailable)
+    proxy._refresh_run_context(object(), 9)
+    assert 9 not in proxy.tokens_by_run
+    assert 9 not in proxy.allowed_by_run

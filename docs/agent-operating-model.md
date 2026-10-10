@@ -368,19 +368,23 @@ other intentionally retained blobs.
 
 ## Project Scope
 
-Normal agent sessions are scoped by the repository they are running from.
+Choose session intent before the first successful startup. A workspace session
+uses one protected directory or named-workspace binding. A global chat or
+recurring task names its project explicitly on each scoped call.
 
 ```text
 stackos mcp-bridge
--> detects git root/current root
+-> reads directory hints and their provenance
 -> builds a stable path fingerprint
 -> reads git remote when available
--> calls workspace.startSession
--> injects the resolved project_id into project-scoped tools
+-> resolves existing binding read-only during discovery
+-> agent calls workspace.startSession with known workspace or global intent
+-> injects a protected workspace project, or requires each global call's project_id
 ```
 
 The agent-facing bridge exposes only `workspace.startSession`,
-`workspace.resolve`, `toolbox.describe`, and `toolbox.call` directly. First-run
+`workspace.resolve`, browser lifecycle tools, `toolbox.describe`, and
+`toolbox.call` directly. First-run directory
 setup uses `workspace.startSession` to create or reuse one workspace binding.
 Ongoing operations use the same call only to confirm the workspace-bound
 project, then move to narrowly scoped `toolbox.describe` / `toolbox.call`
@@ -390,16 +394,25 @@ through `toolbox.call`. If a repo is already bound, the bridge injects
 repeating it. Agents should omit injected fields in toolbox calls unless an
 exact described schema says otherwise outside the bridge path. If a caller
 explicitly passes a different `project_id`, the bridge refuses the call. There
-is no global active project in the agent path; the workspace-bound project is
-the source of truth.
+is no global active project or last-used project fallback.
+
+For an unbound ambient directory, initialize/tools-list does not bootstrap or
+register a session. Discovery stays read-only until startup declares intent.
+`workspace.startSession(global_session=true)` starts globally without creating
+a project or directory binding, even if `auto_bootstrap` is true. An optional
+positive existing `project_id` validates the initial task selection; it does
+not establish a default. Every global scoped call still requires its own ID.
+Use a JSON boolean for `global_session`. Failed startup does not accept a mode;
+after success, repeated startup cannot switch between global and bound scope.
 
 Workspace hints are also scoped. The bridge injects its current
 `cwd`, `repo_fingerprint`, `git_remote_url`, `last_known_root`, runtime, and
-session id where relevant. Calls that try to resolve or connect another
-workspace are refused by the bridge. If the bridge has no host-supplied
-workspace identity, caller-supplied directory/repo anchors are refused too;
-desktop/global sessions must bind by explicit `workspace_alias` or project
-identity.
+session id where relevant in workspace sessions. Bound setup/startup cannot
+switch projects, replace the alias, or create another named project. Repeated
+startup retains the accepted named alias. A read-only alias lookup can return
+another project without changing the session's bound ID. In global sessions,
+ambient launch hints are discarded after startup; agents must not invent
+cwd/repo anchors. Use explicit project IDs and deliberate named setup instead.
 
 These workspace hints are identifiers for StackOS project binding only. They
 help the daemon inject the correct `project_id` and reject cross-project calls.
@@ -414,34 +427,47 @@ container for tasks, tickets, workflows, credentials refs, resources, run
 plans, communications, and audit. A workspace is the daemon-owned binding from
 the local repo/directory where the agent is running to one project.
 
-If a repository or directory is not bound yet, setup should be explicit and
-idempotent:
+For a chosen working folder, call `workspace.startSession({})`. Reliable
+directory identity creates or reuses the project and binding in the daemon DB;
+no setup files are written into the repo. The bridge then injects its project
+ID. A first `workspace.startSession({"workspace_alias":"acme"})` can instead
+reuse an existing named binding. Both forms protect that scope for the session.
 
-1. Call `workspace.startSession` from the current repo/directory. It creates or
-   reuses one project for that workspace root and stores the binding in the
-   daemon DB when reliable directory identity exists. It does not write files
-   into the repo. Desktop/global hosts with no cwd/git signal stay unbound and
-   receive `candidate_workspaces`/project-selection guidance instead.
-2. Read the returned setup state carefully: `workspace_bound` or
-   `project_scoped_tools_usable` means project-scoped tools can run. Missing
-   `framework` or `content_model_json` means the project profile is
-   under-described for adaptation, not that the workspace is unusable.
-3. Continue with project-scoped tools immediately; the bridge injects the
-   resolved `project_id`.
-4. Use `workspace.resolve` when the caller needs a read-only diagnostic before
-   setup.
-5. Use `toolbox.call` for `project.list`, `project.create`,
-   `workspace.bootstrap`, or `workspace.connect` only when the operator or user
-   intent intentionally chooses project identity. For desktop/global sessions
-   with no directory identity, use `workspace.connect` to reuse a selected
-   existing project or named `workspace_alias`; use `workspace.bootstrap` to
-   create a new named workspace from explicit `project_name`, `project_slug`,
-   or `workspace_alias`. Do not call `project.create` and assume the current
-   agent session moved; bind or verify the workspace with `workspace.bootstrap`
-   or `workspace.connect` before project-scoped work. If the current repo
-   fingerprint or alias is already bound to a different project,
-   `workspace.connect` rejects the move unless the caller passes
-   `rebind_existing=true`.
+For a known global chat, use one of these first calls:
+
+```javascript
+workspace.startSession({"global_session": true, "project_id": 42}) // Chosen existing project.
+workspace.startSession({"global_session": true}) // Discover projects before choosing.
+```
+
+Then use narrow discovery and explicit task targets. IDs below are examples;
+select them from current project metadata:
+
+```javascript
+toolbox.call({"tool_name": "project.list", "arguments": {}})
+toolbox.call({"tool_name": "workflowTemplate.list", "arguments": {"project_id": 42}})
+toolbox.call({"tool_name": "workflowTemplate.list", "arguments": {"project_id": 84}})
+toolbox.call({"tool_name": "workflowTemplate.list", "arguments": {"project_id": 42}})
+```
+
+For intentional named setup, call `workspace.connect` through the toolbox with
+the existing `project_id` and optional `workspace_alias`. To create a project,
+call `workspace.bootstrap` with explicit `project_name`, `project_slug`, or
+`workspace_alias`, then use the returned ID explicitly. These global setup
+calls, diagnostic `workspace.resolve`, and repeated selected startup never
+pin a project for later calls. No project binding is required for global work.
+
+An explicit ID on non-global startup of an unbound directory is rejected
+before project, binding, or session writes. Declare `global_session=true` for
+global intent, or establish the intended workspace binding. Normal folder
+startup without an ID retains automatic bootstrap. With no usable directory
+or alias at all, startup is effectively global; explicit global intent makes
+the agent's choice clear. A missing/invalid project ID never selects a fallback.
+
+Read `setup_state` carefully: `workspace_bound` identifies binding, while
+`project_scoped_tools_usable` can also be true for a selected global session
+without binding. Missing framework/content-model profile fields are adaptation
+hints, not blockers. Use `workspace.resolve` for read-only diagnostics.
 
 The bridge sends a path fingerprint by default:
 `path:<sha256(workspace_root)[:24]>`. The `workspace_root` is the directory the
@@ -449,17 +475,27 @@ host or operator supplied, not necessarily a Git repository root. If git is
 unavailable, this path identity is enough for a local directory. If git or a
 remote is added later, bootstrap can attach that metadata to the existing
 binding when the same root is seen. A moved non-git directory without a remote
-looks like a new workspace unless the agent intentionally reconnects or rebinds
-it.
+looks like a new workspace unless intentionally connected to the existing
+project during unbound setup. An established bound bridge cannot rebind itself.
 
-The bridge only creates path fingerprints for usable workspace roots. Host app
-process cwd is a hint, not proof of project context: explicit `--workspace-root`
-or `STACKOS_WORKSPACE_ROOT` values win, Claude Code's `CLAUDE_PROJECT_DIR` is
-preferred when present, and a global desktop host launched at `/` returns
-`needs_workspace_binding` instead of binding to a generic root project.
+The bridge only creates path fingerprints for usable roots; `/` is missing
+workspace context. Explicit `--workspace-root` or `STACKOS_WORKSPACE_ROOT`
+values express deliberate StackOS selection and cannot be downgraded to
+global, even after failed resolution. Existing valid bindings stay protected
+too. `CLAUDE_PROJECT_DIR` remains preferred over cwd, but both are ambient
+hints: global hosts can supply scratch directories through either. Do not infer
+intent from a host name or path pattern. Known ChatGPT “Choose project / This
+computer” and Claude “Local / No folder” intent uses global startup. If intent
+is unknown, clarify before calling startup.
 
-This keeps normal agents focused on the project attached to their workspace and
-still gives them a complete MCP-native path when no binding exists yet.
+For recurring tasks, save the numeric ID only after confirming the intended
+project's current metadata. Migration `0033_project_id_nonreuse` prevents
+future deleted IDs from being allocated to replacement projects. That guarantee
+applies to selections confirmed after migration. Pre-migration numeric-only
+references need explicit reselection/confirmation: migration cannot detect an
+already reused ID or recover unknown deleted maxima. A missing saved ID stops
+the task; names and last-used projects are never replacements. Source support
+and migration tests do not establish that an installed host has been upgraded.
 
 ## Toolbox Repair
 

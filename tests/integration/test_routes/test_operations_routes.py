@@ -16,6 +16,19 @@ from stackos.repositories.run_plans import RunPlanRepository
 from tests.integration.test_repositories.test_telegram_actions import FakeTelegram
 
 
+def test_global_startup_uses_canonical_operation_contract(api: TestClient, project_id: int) -> None:
+    result = api.post(
+        "/api/v1/operations/workspace.startSession/call",
+        json={"arguments": {"global_session": True, "project_id": project_id}},
+    )
+    assert result.status_code == 200, result.text
+    data = result.json()["data"]
+    assert data["global_session"] is True
+    assert data["project_id"] == project_id
+    assert data["workspace_binding_id"] is None
+    assert data["setup_state"]["project_scoped_tools_usable"] is True
+
+
 def _sitemap_action_plan_json() -> dict:
     return {
         "schema_version": "stackos.run-plan.v1",

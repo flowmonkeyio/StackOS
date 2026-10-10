@@ -1132,9 +1132,7 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
                 provider.key == "quickbooks-online"
                 and [method.label for method in provider.auth_methods]
                 == ["Connect with QuickBooks", "OAuth2 access token"]
-            ), (
-                f"{plugin_slug}:{provider.key} missing credential label"
-            )
+            ), f"{plugin_slug}:{provider.key} missing credential label"
             assert any(
                 setup.get(key)
                 for key in (

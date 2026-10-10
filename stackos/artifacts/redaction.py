@@ -78,9 +78,7 @@ def redact_secret_text(value: str) -> str:
         lambda match: (
             # Intuit's exact public revision field is not credential material.
             # Complete-key matching keeps prefixed secret names protected.
-            match.group(0)
-            if match.group(2) == "SyncToken"
-            else f"{match.group(1)}[redacted]"
+            match.group(0) if match.group(2) == "SyncToken" else f"{match.group(1)}[redacted]"
         ),
         redacted,
     )

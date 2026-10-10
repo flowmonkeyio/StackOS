@@ -89,6 +89,32 @@ instead of the full inventory. After that, call `toolbox.describe` with exact
 sessions, omit injected fields such as `project_id`; the bridge supplies the
 current workspace scope and refuses cross-project calls.
 
+In a global session, first call
+`workspace.startSession({"global_session":true,"project_id":42})` for the
+chosen existing project, or omit the ID to discover projects first. Startup
+creates no project/directory binding and never sets a default. Pass an explicit
+positive existing `project_id` on every scoped call, inside `arguments` for
+`toolbox.call`. Direct browser calls use their top-level `project_id`.
+Run-aware discovery also needs the project before the bridge refreshes grants:
+
+```javascript
+toolbox.describe({"project_id": 42, "run_id": 7, "tool_names": ["resource.upsert"]})
+toolbox.call({
+  "tool_name": "runPlan.get",
+  "arguments": {"project_id": 42, "run_plan_id": 3}
+})
+browser.profile.list({"project_id": 42})
+```
+
+Use IDs from the selected project/run, not these example numbers. A run or plan
+from another project, missing project scope, or failed authority refresh cannot
+reuse cached permission. Direct-read and direct-run-audit-write inner IDs remain
+operation targets, so historical `run.get` and ordinary run maintenance do not
+require an active workflow. An outer `toolbox.call.run_id` denotes execution
+context and is validated separately. Provider `*_json` payload IDs are opaque.
+For pending discovery, normal folder startup, named setup, and saved-ID adoption,
+see [the setup path](agent-operating-model.md#setup-path).
+
 For action discovery, `action.list` answers "what can I use now?" and hides
 disconnected, deferred, project-local, missing-connector, and otherwise
 non-executable external-provider actions by default. Pass
@@ -114,7 +140,7 @@ Each description includes:
 - examples
 
 `secret.set` is the narrow exception for write-only action payload ingress. It
-is available only through MCP/toolbox, is scoped to the bound project, and
+is available only through MCP/toolbox, is scoped to the selected project, and
 returns one opaque `secret_ref`. It is intentionally absent from REST and CLI
 and has no plaintext read/list operation. Put the ref into an action string
 field only as the exact marker `{"$secret_ref":"secret_..."}`. This is
@@ -612,8 +638,8 @@ and still require the normal confirmation/idempotency protections.
 
 `action.run` is for one explicit action when no workflow state is needed:
 
-1. The current bridge workspace must resolve to a project, or scripts must pass
-   `project_id`.
+1. A workspace bridge supplies its bound project. Global bridge sessions and
+   scripts pass an explicit `project_id`.
 2. The caller must pass an explicit action ref or plugin/action pair.
 3. Non-read actions require `confirm_direct=true` and `intent_summary`.
    Callers may pass `intent_id` or `idempotency_key` for stable retries; when

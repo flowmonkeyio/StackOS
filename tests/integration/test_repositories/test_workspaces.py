@@ -6,12 +6,161 @@ import hashlib
 from pathlib import Path
 
 import pytest
-from sqlmodel import Session
+from sqlmodel import Session, SQLModel, select
 
-from stackos.db.models import WorkspaceBinding
+from stackos.db.connection import make_engine
+from stackos.db.models import AgentSession, Project, WorkspaceBinding
 from stackos.repositories.base import NotFoundError, ValidationError
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.workspaces import WorkspaceRepository
+
+
+@pytest.mark.parametrize("selected", [True, False])
+@pytest.mark.parametrize("cwd", [None, "/", "/tmp/hi", "/tmp/Claude/scratch-workspaces/hi"])
+def test_global_startup_has_no_workspace_or_incidental_project(
+    session: Session, selected: bool, cwd: str | None
+) -> None:
+    target = _create_project(session)
+    out = WorkspaceRepository(session).start_session(
+        runtime="codex",
+        cwd=cwd,
+        global_session=True,
+        project_id=target if selected else None,
+        auto_bootstrap=True,
+    )
+    assert out.project_id == (target if selected else None)
+    assert out.data.global_session is True
+    assert out.data.workspace_binding_id is None
+    assert out.data.cwd is None and out.data.repo_fingerprint is None
+    assert out.data.git_remote_url is None
+    assert out.data.setup_state["workspace_bound"] is False
+    assert out.data.setup_state["project_scoped_tools_usable"] is selected
+    assert out.data.auto_bootstrap is False
+    assert len(session.exec(select(Project)).all()) == 1
+    assert session.exec(select(WorkspaceBinding)).all() == []
+
+
+@pytest.mark.parametrize("global_value", [None, False])
+def test_unbound_non_global_project_id_refuses_before_writes(
+    session: Session, global_value: bool | None
+) -> None:
+    target = _create_project(session)
+    kwargs = {} if global_value is None else {"global_session": global_value}
+    with pytest.raises(ValidationError, match="declare global_session"):
+        WorkspaceRepository(session).start_session(
+            runtime="codex", cwd="/tmp/hi", project_id=target, **kwargs
+        )
+    assert len(session.exec(select(Project)).all()) == 1
+    assert session.exec(select(WorkspaceBinding)).all() == []
+    assert session.exec(select(AgentSession)).all() == []
+
+
+@pytest.mark.parametrize("cwd", [None, "/", "/Applications/StackOS.app/Contents/Resources"])
+def test_folderless_startup_can_select_project_directly(session: Session, cwd: str | None) -> None:
+    target = _create_project(session)
+    result = WorkspaceRepository(session).start_session(runtime="agent", cwd=cwd, project_id=target)
+    assert result.project_id == target
+    assert result.data.global_session
+    assert result.data.workspace_binding_id is None
+
+
+def test_global_startup_invalid_or_conflicting_selector_has_no_writes(session: Session) -> None:
+    target = _create_project(session)
+    repo = WorkspaceRepository(session)
+    with pytest.raises(NotFoundError):
+        repo.start_session(
+            runtime="codex", cwd="/tmp/hi", global_session=True, project_id=target + 1
+        )
+    with pytest.raises(ValidationError):
+        repo.start_session(
+            runtime="codex", global_session=True, project_id=target, workspace_alias="a"
+        )
+    assert session.exec(select(AgentSession)).all() == []
+    assert session.exec(select(WorkspaceBinding)).all() == []
+
+
+def test_global_startup_keeps_archive_access_and_rejects_deleted_saved_id(session: Session) -> None:
+    projects = ProjectRepository(session)
+    target = _create_project(session)
+    projects.delete(target)
+    repo = WorkspaceRepository(session)
+    assert (
+        repo.start_session(runtime="agent", global_session=True, project_id=target).project_id
+        == target
+    )
+    projects.delete(target, hard=True)
+    replacement = _create_project(session)
+    assert replacement > target
+    before = len(session.exec(select(AgentSession)).all())
+    with pytest.raises(NotFoundError):
+        repo.start_session(runtime="agent", global_session=True, project_id=target)
+    assert len(session.exec(select(AgentSession)).all()) == before
+    assert session.exec(select(WorkspaceBinding)).all() == []
+
+
+def test_bound_startup_project_must_match_and_cannot_downgrade(session: Session) -> None:
+    repo = WorkspaceRepository(session)
+    bound = repo.bootstrap(cwd="/tmp/bound")
+    other = _create_project(session)
+    original = repo.list_bindings()[0].model_dump()
+    for arguments in ({"global_session": True}, {"project_id": other}):
+        with pytest.raises(ValidationError):
+            repo.start_session(runtime="codex", cwd="/tmp/bound", **arguments)
+    assert repo.list_bindings()[0].model_dump() == original
+    assert session.exec(select(AgentSession)).all() == []
+    result = repo.start_session(runtime="codex", cwd="/tmp/bound", project_id=bound.project_id)
+    assert result.project_id == bound.project_id
+    assert not result.data.global_session
+
+
+def test_global_startup_rechecks_binding_after_preflight_with_two_connections(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = make_engine(tmp_path / "race.db")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as reader, Session(engine) as writer:
+        target = _create_project(writer)
+        repo = WorkspaceRepository(reader)
+        resolve = repo.resolve
+        checks = []
+
+        def raced_resolve(**kwargs):
+            result = resolve(**kwargs)
+            checks.append(result.project_id)
+            if len(checks) == 1:
+                WorkspaceRepository(writer).connect(
+                    project_id=target, repo_fingerprint="path:race", last_known_root="/tmp/race"
+                )
+            return result
+
+        monkeypatch.setattr(repo, "resolve", raced_resolve)
+        with pytest.raises(ValidationError, match="already bound"):
+            repo.start_session(runtime="codex", cwd="/tmp/race", global_session=True)
+        assert checks == [None, target]
+        assert reader.exec(select(AgentSession)).all() == []
+        assert len(reader.exec(select(WorkspaceBinding)).all()) == 1
+    engine.dispose()
+
+
+def test_global_startup_lookup_failure_does_not_accept_session(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = WorkspaceRepository(session)
+    resolve = repo.resolve
+    calls = 0
+
+    def failed_recheck(**kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("lookup unavailable")
+        return resolve(**kwargs)
+
+    monkeypatch.setattr(repo, "resolve", failed_recheck)
+    with pytest.raises(RuntimeError, match="lookup unavailable"):
+        repo.start_session(runtime="agent", cwd="/tmp/hi", global_session=True)
+    assert session.exec(select(AgentSession)).all() == []
+    assert session.exec(select(Project)).all() == []
 
 
 def _create_project(session: Session, slug: str = "workspace-site") -> int:
