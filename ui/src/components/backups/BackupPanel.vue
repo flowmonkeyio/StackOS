@@ -160,7 +160,7 @@ onMounted(refresh)
         tone="warning"
         class="mt-3"
       >
-        Last attempt failed: {{ status.last_error.message }} {{ status.last_error.next_action }}
+        Backup needs attention: {{ status.last_error.message }} {{ status.last_error.next_action }}
       </UiCallout>
       <p class="mt-3 text-sm text-fg-muted">
         Automatic backups are {{ status.enabled ? 'enabled' : 'off' }}.
