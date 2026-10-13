@@ -169,8 +169,9 @@ Needed work now:
 - Clean uninstall that explains what will be removed and what will be
   preserved: app bundle, launchd job, agent-client registrations, plugin
   assets, local DB, generated assets, seed, auth token, and credentials.
-- Minimal backup/export before serious upgrades, with full restore treated as a
-  follow-up once the export contract is solid.
+- Encrypted backup before serious upgrades, explicit coverage of external
+  business folders, opt-in scheduling, and verified recovery into an inert
+  folder. Live adoption remains operator-controlled.
 - Doctor output written for both humans and agents, with exact repair steps.
 - Clear release/update expectations for local and GitHub distribution. Signed
   macOS distribution and a release-grade update channel are later hardening
@@ -203,11 +204,11 @@ Lifecycle contract:
   Data: the upgrade path preserves local state, migrations run locally, and
   postflight doctor confirms readiness. A signed update feed is hardening, not
   a dependency for the basic lifecycle.
-- Backup / restore. User: export enough local state before serious upgrades or
-  a machine move to avoid lock-in or silent loss. Data: the first version can
-  be a constrained export with explicit exclusions and verification. Full
-  restore, secret migration, and rollback can come after the export contract is
-  proven.
+- Backup / restore. User: configure a separate recovery key, enroll external
+  business folders, create an encrypted backup and optionally enable automatic
+  execution. Data: one lifecycle service snapshots the database and matching
+  seed/token with every enrolled folder. Restore authenticates and verifies
+  into an inert directory; local adoption and provider sign-in remain explicit.
 - Uninstall. User: choose default uninstall that preserves user-owned state, or
   a separate full cleanup that is clearly destructive. Data: app/service/client
   registrations are removed while DB, seed, token, credentials, and backups are
@@ -243,7 +244,7 @@ sequence without turning the document into a live board.
 | Detailed repair/doctor UX | Later | `phase1-repair-doctor` | Keep deeper doctor grouping and repair UX as hardening after the v0 loop is stable. |
 | Upgrade and desktop update lifecycle | Done | `phase1-upgrade-update` | Desktop install-state now has coverage for app/payload upgrade triggers, idempotent skips, forced reruns, failed first install, and failed upgrade preservation/retry behavior. |
 | Uninstall and state preservation | Done | `phase1-uninstall-preserve` | Default uninstall removes launchd, agent-client registrations, skill mirrors, plugin source/cache artifacts, and preserves DB, seed, and token; destructive full cleanup remains explicit future scope. |
-| Minimal backup/export before risky changes | Done | `phase1-backup-restore` | `stackos backup` now exports a private zip containing the DB, seed, token, and manifest. Automated restore remains future scope. |
+| Backup/export before risky changes | Done | `phase1-backup-restore` | `stackos backup` encrypts DB, seed, token, manifest and explicitly enrolled external folders. Automatic execution is opt-in; recovery verifies into a fresh inert directory. See [backups](./backups.md). |
 | Public signing and managed update hardening | In progress | `workflow-128` / `managed-desktop-updates` | Static HTTPS electron-updater feed, signing/notarization, local env-based update smoke, and release signoff are being planned under the managed desktop update workflow. FTP is a future upload/deploy transport only; the app consumes HTTPS. |
 | Lifecycle smoke verification | Done | `phase1-lifecycle-verification` | Public smoke checklist now covers targeted automation, temp-HOME manual smokes, lifecycle evidence, and closeout expectations. |
 
@@ -523,8 +524,9 @@ The clean framing is local-first with optional continuity.
   migration status, daemon restart, state preservation, and postflight doctor.
 - Polish uninstall: safe default cleanup, preserved-state messaging,
   package-mode parity, and explicit full-cleanup boundaries.
-- Add minimal export before risky lifecycle changes. Full restore, secret
-  migration, scheduled backups, and cloud continuity come later.
+- Preserve encrypted local backup, explicit external-folder coverage, opt-in
+  scheduling and verified inert recovery before risky lifecycle changes.
+  Automated live adoption, secret migration and cloud continuity come later.
 - Add smoke proofs for the delivered lifecycle slices.
 - Keep signed/notarized distribution and a managed update feed as public-release
   hardening unless broad distribution requires them immediately.

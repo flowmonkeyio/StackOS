@@ -81,6 +81,10 @@ desktop-doctor: ## Validate desktop scaffold, updater contracts, and lifecycle s
 
 signoff: lint typecheck test-transfer-connectors ## Before commit/release: setup docs, actions, MCP/REST/CLI, and UI checks
 	$(UV) run pytest tests/unit \
+		tests/integration/test_backup_recovery.py \
+		tests/integration/test_jobs/test_backup_maintenance.py \
+		tests/integration/test_routes/test_backup_operations_routes.py \
+		tests/integration/test_mcp/test_mcp_backups_boundary.py \
 		tests/integration/test_routes/test_operations_routes.py \
 		tests/integration/test_routes/test_actions_routes.py \
 		tests/integration/test_routes/test_auth_provider_routes.py \
@@ -242,11 +246,12 @@ uninstall: ## Remove installed skills/plugins/MCP entries; preserve DB + seed
 	@echo "==> Note: ~/.local/share/stackos/ (DB) and ~/.local/state/stackos/ (seed + token) preserved."
 	@echo "==> uninstall complete"
 
-backup: ## Export minimal local state backup zip (DB + seed + token)
+backup: ## Create encrypted backup of local state and enrolled external folders
 	$(PYTHON) -m stackos backup
 
-restore: ## Reserved restore command
-	@echo "Not yet implemented (backup/restore jobs)"
+restore: ## Verify encrypted archive into fresh folder (ARCHIVE= KEY= OUTPUT=)
+	@test -n "$(ARCHIVE)" -a -n "$(KEY)" -a -n "$(OUTPUT)" || { echo "Usage: make restore ARCHIVE=/path/archive.sbak KEY=/path/private.pem OUTPUT=/new/recovery"; exit 2; }
+	$(PYTHON) -m stackos restore "$(ARCHIVE)" --private-key-file "$(KEY)" --output-dir "$(OUTPUT)"
 
 rotate-seed: ## Re-encrypt all integration_credentials with a new seed
 	$(PYTHON) -m stackos rotate-seed --reencrypt

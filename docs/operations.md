@@ -28,6 +28,23 @@ behavior. Operations define the callable contract around that behavior:
 - enabled surfaces
 - agent guidance, prerequisites, return notes, and examples
 
+## Local backup administration
+
+`backup.status`, `backup.configure` and `backup.create` share the generic
+encrypted local backup service. They are local-admin REST/CLI operations,
+with explicitly browser-safe Home console controls. They are excluded from
+MCP, project/workflow grants and derived agent-token authority. Their exact
+registered REST paths enforce the local-admin boundary.
+
+Configuration stores a public recovery key, explicit external folder targets,
+destination and opt-in schedule. Partial configuration preserves omitted
+fields. Status and creation return safe coverage, time, path, size, checksum
+and failure metadata; no archive bytes, private recovery key, credential or
+financial contents are returned. Creation includes all enrolled targets and
+rejects unsafe destinations. Recovery private key generation and verified
+restore remain host-local CLI operations. See [backup and recovery](./backups.md)
+for setup, finance enrollment and key custody.
+
 ## Agent Documentation
 
 Agents are the primary callers for workflow execution operations. Here, agent

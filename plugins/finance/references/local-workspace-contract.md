@@ -558,3 +558,13 @@ These are source families, not hardcoded reusable tax rules.
 
 The operator owns backup, restore, retention periods, access permissions,
 encryption and secure disposal. Credentials never belong here.
+
+StackOS local backup setup can explicitly enroll the entire external finance
+directory with its persistent `.writer.lock`. It takes a shared lock while
+copying and rejects a busy writer, missing or changing evidence and unsafe
+files. Register the directory through local administration; neither
+`workspace_ref` nor a project binding grants coverage. Manual and opted-in
+automatic backups then include the master, originals, schema, review packets
+and views in the same encrypted archive. Verify recovery into an inert folder
+with the separately stored private key before adopting restored financial
+records. No backup or restore changes posting or reconciliation decisions.

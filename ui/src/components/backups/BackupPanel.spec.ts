@@ -1,0 +1,134 @@
+import { flushPromises, mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { configureBackups, createBackup, loadBackupStatus, type BackupStatus } from '@/lib/backups'
+import BackupPanel from './BackupPanel.vue'
+
+vi.mock('@/lib/backups', () => ({
+  configureBackups: vi.fn(),
+  createBackup: vi.fn(),
+  loadBackupStatus: vi.fn(),
+}))
+function fixture(patch: Partial<BackupStatus> = {}): BackupStatus {
+  return {
+    configured: false,
+    ready: false,
+    enabled: false,
+    interval_hours: 24,
+    keep_last: 30,
+    destination: '/private/backups',
+    targets: [],
+    recipient_fingerprint: null,
+    last_attempt: null,
+    last_success: null,
+    last_error: null,
+    ...patch,
+  }
+}
+beforeEach(() => {
+  vi.mocked(loadBackupStatus).mockReset().mockResolvedValue(fixture())
+  vi.mocked(configureBackups).mockReset().mockResolvedValue(fixture())
+  vi.mocked(createBackup).mockReset().mockResolvedValue()
+})
+
+describe('local backup console', () => {
+  it('rejects a private PEM before any console operation receives it', async () => {
+    const wrapper = mount(BackupPanel)
+    await flushPromises()
+    await wrapper
+      .get('textarea')
+      .setValue('-----BEGIN PRIVATE KEY-----\nsynthetic\n-----END PRIVATE KEY-----')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.get('[role="alert"]').text()).toContain('Use only an X25519 PUBLIC KEY PEM')
+    expect(configureBackups).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+  it('starts with opt-in off, enrollment warning and no implied finance coverage', async () => {
+    const wrapper = mount(BackupPanel)
+    expect(wrapper.find('.ui-skeleton').exists()).toBe(true)
+    await flushPromises()
+    expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(false)
+    expect(wrapper.text()).toContain('Finance bills are included only')
+    expect(wrapper.text()).toContain('None recorded')
+    expect(wrapper.find('input[type="password"]').exists()).toBe(false)
+    expect(wrapper.get('textarea').attributes('placeholder')).toBe('-----BEGIN PUBLIC KEY-----')
+    expect(configureBackups).not.toHaveBeenCalled()
+    expect(
+      wrapper
+        .findAll('button')
+        .find((button) => button.text() === 'Back up now')
+        ?.attributes('disabled'),
+    ).toBeDefined()
+    wrapper.unmount()
+  })
+  it('requires explicit save for enable/disable and preserves external coverage', async () => {
+    const value = fixture({
+      configured: true,
+      ready: true,
+      targets: [
+        {
+          id: 'finance',
+          label: 'Business bills',
+          path: '/private/finance',
+          lock_file: '/private/finance/.writer.lock',
+        },
+      ],
+    })
+    vi.mocked(loadBackupStatus).mockResolvedValue(value)
+    vi.mocked(configureBackups).mockResolvedValue({ ...value, enabled: true })
+    const wrapper = mount(BackupPanel)
+    await flushPromises()
+    await wrapper.get('input[type="checkbox"]').setValue(true)
+    expect(configureBackups).not.toHaveBeenCalled()
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(configureBackups).toHaveBeenCalledWith({
+      enabled: true,
+      interval_hours: 24,
+      keep_last: 30,
+    })
+    expect(wrapper.text()).toContain('Business bills')
+    expect(wrapper.text()).toContain('Backup settings saved.')
+    await wrapper.get('input[type="checkbox"]').setValue(false)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(configureBackups).toHaveBeenLastCalledWith({
+      enabled: false,
+      interval_hours: 24,
+      keep_last: 30,
+    })
+    wrapper.unmount()
+  })
+  it('validates limits and displays repair while retaining previous successful backup', async () => {
+    vi.mocked(loadBackupStatus).mockResolvedValue(
+      fixture({
+        configured: true,
+        ready: true,
+        last_success: { created_at: '2026-10-13T10:00:00Z', path: '/private/backups/good.sobak' },
+        last_error: {
+          code: 'busy',
+          message: 'Finance writer is busy.',
+          next_action: 'Try after it finishes.',
+        },
+      }),
+    )
+    const wrapper = mount(BackupPanel)
+    await flushPromises()
+    expect(wrapper.text()).toContain('Finance writer is busy. Try after it finishes.')
+    expect(wrapper.text()).toContain('good.sobak')
+    await wrapper.get('input[type="number"]').setValue('0')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.get('[role="alert"]').text()).toContain('1–168 hours')
+    expect(configureBackups).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+  it('shows status fetch failure and offers a keyboard reachable refresh', async () => {
+    vi.mocked(loadBackupStatus).mockRejectedValueOnce(new Error('Local console unavailable'))
+    const wrapper = mount(BackupPanel)
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('Local console unavailable')
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Automatic backups are off')
+    wrapper.unmount()
+  })
+})

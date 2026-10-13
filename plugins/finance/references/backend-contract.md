@@ -267,3 +267,10 @@ The host owns local writes. Follow
 [imap-host-handoff-contract.md](imap-host-handoff-contract.md).
 The operator owns backup, restore, retention, access permissions, encryption,
 deletion and disposal. No credentials belong in the workspace.
+
+For the local JSON/files backend, enroll the entire workspace and its existing
+writer lock in StackOS local backup setup; do not infer coverage from the
+workflow's opaque `workspace_ref`. Encrypted manual and opted-in automatic
+backups share that explicit target list. Keep recovery keys separately and
+verify the recovered master and originals before operator-controlled adoption.
+Other external backends retain their own export and recovery contracts.

@@ -152,3 +152,11 @@ JSON updates; there is no automatic import or CSV round-trip service. Correct fa
 sourced additive records/superseding versions, not rewritten history. Resolve
 report conflicts from original/provider evidence. The operator owns backup,
 restore, retention, permissions, encryption and secure disposal.
+
+For StackOS encrypted backups, explicitly enroll this entire workspace folder
+and its existing `.writer.lock` through local backup setup. A workflow
+`workspace_ref` does not register coverage. Include the master, original
+receipts, schemas and reviews together; check backup status and verify recovery
+with the separately stored private recovery key. Automatic backups require
+explicit opt-in. See the installed StackOS backup documentation or
+`stackos backups --help`. Credentials and recovery keys never belong here.
