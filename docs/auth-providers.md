@@ -455,8 +455,8 @@ under the StackOS data directory, not in a portable session string. StackOS
 stores the database encryption key with daemon-held Account secrets and keeps
 only safe connection state in its relational database; it does not retain
 sign-in codes or passwords. An in-place
-upgrade preserves the native database. The current minimal `stackos backup`
-archive excludes it, so restoring that archive on another machine requires a
+upgrade preserves the native database. The [encrypted `stackos backup` archive](backups.md)
+excludes the native database, so restoring that archive on another machine requires a
 user Account to sign in to Telegram again; a bot can authenticate from its
 saved token.
 

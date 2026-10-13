@@ -91,8 +91,13 @@ Restore does not replace a live installation, reconnect providers or enable
 a schedule. Inspect the recovered manifest and finance originals before any
 operator-controlled adoption. Stop the target daemon before replacing its
 database, seed and token together, and retain the existing installation until
-the recovered copy passes health and credential checks. Enroll recovered
-finance folders and opt in again through local setup if moving machines.
+the recovered copy passes health and credential checks. Stop all host finance
+writers before replacing or adopting a recovered finance folder; stopping the
+StackOS daemon does not stop those independent writers. Recovery excludes the
+coordination `.writer.lock`. Create or retain that persistent lock through the
+finance workspace's normal custody setup before enrolling the recovered folder
+or resuming writes. Enroll recovered finance folders and opt in again through
+local setup if moving machines.
 
 Wrong keys, modified or truncated archives, unsafe members and hash failures
 leave no published recovery directory. Test recovery periodically with the
