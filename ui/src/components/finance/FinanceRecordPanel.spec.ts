@@ -186,6 +186,93 @@ describe('reviewed save and private originals', () => {
   })
 })
 describe('sourced finance editor', () => {
+  it('preserves typed facts and a verified preview across equivalent source props and display updates', async () => {
+    vi.mocked(callOperation).mockImplementation(async (name) =>
+      name === 'finance.record.get'
+        ? { data: detail }
+        : {
+            data: {
+              preview_digest: 'b'.repeat(64),
+              source_snapshot: snapshot,
+              diff: { fields: { date: '2026-09-01' } },
+              changed_refs: [],
+              state: 'valid',
+              financial_decision_adopted: false,
+            },
+          },
+    )
+    const panel = mount(FinanceRecordPanel, {
+      props,
+      global: { stubs: { teleport: true } },
+    })
+    await flushPromises()
+    await panel.get('[data-test="edit-record"]').trigger('click')
+    await panel.get('[data-test="date"]').setValue('2026-09-01')
+    await panel.get('[data-test="reason"]').setValue('Keep this sourced draft')
+    await panel.get('form').trigger('submit')
+    await flushPromises()
+    await panel.setProps({
+      access: { ...props.access, modes: [...props.access.modes] },
+      snapshot: { ...snapshot },
+      reporting: {},
+      exponent: 2,
+    })
+    await flushPromises()
+    expect(panel.find('[data-test="save-edit"]').exists()).toBe(true)
+    expect((panel.get('[data-test="date"]').element as HTMLInputElement).value).toBe('2026-09-01')
+    expect((panel.get('[data-test="reason"]').element as HTMLTextAreaElement).value).toBe(
+      'Keep this sourced draft',
+    )
+    expect(vi.mocked(callOperation).mock.calls.map((call) => call[0])).toEqual([
+      'finance.record.get',
+      'finance.record.preview',
+    ])
+    panel.unmount()
+  })
+
+  it.each(['record', 'snapshot'])(
+    'resets stale editing on a changed %s and rejects a late detail response',
+    async (change) => {
+      let finishOld!: (value: unknown) => void
+      vi.mocked(callOperation)
+        .mockResolvedValueOnce({ data: detail })
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              finishOld = resolve
+            }),
+        )
+        .mockResolvedValue({
+          data: { ...detail, record: { ...detail.record, merchant: 'Current source vendor' } },
+        })
+      const panel = mount(FinanceRecordPanel, {
+        props,
+        global: { stubs: { teleport: true } },
+      })
+      await flushPromises()
+      await panel.get('[data-test="edit-record"]').trigger('click')
+      await panel.get('[data-test="date"]').setValue('2026-09-01')
+      await panel.setProps(
+        change === 'record'
+          ? { recordRef: 'receipt:second' }
+          : { snapshot: { ...snapshot, revision: 2 } },
+      )
+      await flushPromises()
+      expect(panel.find('[data-test="date"]').exists()).toBe(false)
+      await panel.setProps({ snapshot: { ...snapshot, revision: 3, sha256: 'c'.repeat(64) } })
+      await flushPromises()
+      finishOld({
+        data: { ...detail, record: { ...detail.record, merchant: 'Stale private vendor' } },
+      })
+      await flushPromises()
+      expect(panel.text()).toContain('Current source vendor')
+      expect(panel.text()).not.toContain('Stale private vendor')
+      expect(vi.mocked(callOperation).mock.calls.at(-1)![1]).toMatchObject({
+        expected_snapshot: { revision: 3, sha256: 'c'.repeat(64) },
+      })
+      panel.unmount()
+    },
+  )
   it('shows source evidence before edit and cancel never previews or commits', async () => {
     vi.mocked(callOperation).mockResolvedValue({ data: detail })
     const panel = mount(FinanceRecordPanel, {
@@ -267,6 +354,46 @@ describe('canonical precision and correction history', () => {
       attachTo: document.body,
       global: { stubs: { teleport: true } },
     })
+
+  it.each([
+    ['[data-test="date"]', '2026-08-01', '2026-07-01'],
+    ['[data-test="amount"]', '21.00', '22.00'],
+    ['input[maxlength="1"]', '3', '4'],
+    ['[data-test="reason"]', 'Changed source reason', 'Latest source reason'],
+  ])(
+    'invalidates verified and pending previews when %s changes',
+    async (selector, first, second) => {
+      let finishPreview!: (value: unknown) => void
+      let previews = 0
+      vi.mocked(callOperation).mockImplementation(async (name) => {
+        if (name === 'finance.record.get') return { data: knownDetail }
+        if (++previews === 1) return previewResult
+        return new Promise((resolve) => {
+          finishPreview = resolve
+        })
+      })
+      const panel = mountPanel()
+      await flushPromises()
+      await panel.get('[data-test="edit-record"]').trigger('click')
+      await panel.get('[data-test="reason"]').setValue('Initial sourced correction')
+      await panel.get('[data-test="date"]').setValue('2026-09-01')
+      await panel.get('form').trigger('submit')
+      await flushPromises()
+      expect(panel.find('[data-test="save-edit"]').exists()).toBe(true)
+      await panel.get(selector).setValue(first)
+      expect(panel.find('[data-test="save-edit"]').exists()).toBe(false)
+      await panel.get('form').trigger('submit')
+      await flushPromises()
+      await panel.get(selector).setValue(second)
+      finishPreview(previewResult)
+      await flushPromises()
+      expect(panel.find('[data-test="save-edit"]').exists()).toBe(false)
+      expect(
+        vi.mocked(callOperation).mock.calls.some((call) => call[0] === 'finance.record.commit'),
+      ).toBe(false)
+      panel.unmount()
+    },
+  )
 
   it.each([
     ['20', '0', '20'],

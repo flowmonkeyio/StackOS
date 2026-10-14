@@ -200,6 +200,70 @@ def test_golden_metrics_and_report_trace_do_not_count_other_representations():
     assert p["breakdowns"]["category"][0]["label"] == "Unknown/unassigned"
 
 
+@pytest.mark.parametrize("category_state", ["proposed", "unresolved", "applied", "reviewed"])
+@pytest.mark.parametrize("category_ref", [None, "category:selected"])
+def test_category_breakdown_uses_supported_state_and_preserves_proposals(
+    category_state, category_ref
+):
+    module = management()
+    d = fixture_document()
+    baseline = module.query(snapshot(d), QUERY)
+    expense = next(x for x in d["bookkeeping"] if x["record_id"] == "book:expense")
+    category = {"state": category_state}
+    if category_ref is not None:
+        category["category_ref"] = category_ref
+    expense["category"] = category
+    # Keep the approved economic treatment bound to this exact schema-valid row.
+    s = next(x for x in d["operating_settings"] if x["record_id"] == "metadata:book:expense")
+    payload = json.loads(s["policy_text"])
+    payload["target_digest_sha256"] = module.workspace.material_record_digest(
+        expense, "bookkeeping"
+    )
+    s["policy_text"] = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    review = next(x for x in d["reviews"] if x["record_id"] == "review:metadata:book:expense")
+    review["target_digest_sha256"] = module.workspace.material_record_digest(
+        s, "operating_settings"
+    )
+    module.workspace.validate(d)
+
+    source = snapshot(d)
+    p = module.query(source, QUERY)
+    assert p["metrics_by_currency"] == baseline["metrics_by_currency"]
+    assert p["trend"] == baseline["trend"]
+    row = next(x for x in p["rows"] if x["record_ref"] == "book:expense")
+    assert row["category_ref"] == category_ref
+    assert row["category_state"] == category_state
+    assert row["needs_review"] == (category_state in {"proposed", "unresolved"})
+    assert module.record_detail(source, "book:expense")["record"]["category"] == category
+
+    groups = p["breakdowns"]["category"]
+    expense_group = next(x for x in groups if "book:expense" in x["included_record_refs"])
+    expected_label = (
+        category_ref
+        if category_ref is not None and category_state in {"applied", "reviewed"}
+        else "Unknown/unassigned"
+    )
+    assert expense_group["label"] == expected_label
+    metrics = p["metrics_by_currency"][0]
+    assert (
+        str(sum(int(x["revenue_minor"]) for x in groups)) == metrics["revenue"]["amount"]["minor"]
+    )
+    assert str(sum(int(x["spend_minor"]) for x in groups)) == metrics["spend"]["amount"]["minor"]
+    assert json.loads(module.render_report(p, "json"))["breakdowns"] == p["breakdowns"]
+
+    if category_ref is not None:
+        filtered = module.query(source, {**QUERY, "category_ref": category_ref})
+        assert filtered["breakdowns"]["category"] == [
+            {
+                "label": expected_label,
+                "currency": "USD",
+                "included_record_refs": ["book:expense"],
+                "revenue_minor": "0",
+                "spend_minor": "10000",
+            }
+        ]
+
+
 @pytest.mark.parametrize(
     "case",
     [

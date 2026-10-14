@@ -72,7 +72,10 @@ async function mounted(query = '') {
   await router.push('/projects/1/finance' + query)
   await router.isReady()
   const wrapper = mount(
-    { template: '<RouterView />' },
+    {
+      template:
+        '<RouterView v-slot="{ Component }"><component :is="Component" :key="$route.params.id" /></RouterView>',
+    },
     {
       attachTo: document.body,
       global: {
@@ -110,6 +113,448 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 describe('Finance management', () => {
+  it('keeps the newer selected request after queue reconciliation and a late original acknowledgement', async () => {
+    const queue = new Map<number, Record<string, unknown>>()
+    const attempts: Record<string, unknown>[] = []
+    let finishOriginal!: () => void
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name === 'agentRequest.list') return { items: [...queue.values()] }
+      if (name === 'agentRequest.get')
+        return { ...queue.get(Number(args.request_id)), status: 'run-created', run_plan_id: 3 }
+      if (name === 'finance.report.render') return { state: 'run-created' }
+      if (name !== 'localAgentChat.createMessage') return basics(name, args)
+      attempts.push(JSON.parse(JSON.stringify(args)))
+      const request = {
+        id: queue.size + 1,
+        request_key: `local-agent-chat:${args.thread_key}:${args.message_key}`,
+        status: 'new',
+        metadata_json: { metadata_json: args.metadata_json },
+      }
+      queue.set(request.id, request)
+      const response = { data: { agent_request: request } }
+      if (request.id === 1)
+        return new Promise((resolve) => {
+          finishOriginal = () => resolve(response)
+        })
+      return response
+    })
+    const { wrapper, router } = await mounted()
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === 'Request agent analysis')!
+      .trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Original analysis request 1 verified in Agent requests')
+    expect(wrapper.text()).toContain('Run prepared — awaiting execution')
+    expect(wrapper.find('a[href="/projects/1/agent-requests?request=1"]').exists()).toBe(true)
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === 'Request new agent analysis')!
+      .trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.analysis).toBe('2')
+    expect(wrapper.find('a[href="/projects/1/agent-requests?request=2"]').exists()).toBe(true)
+    finishOriginal()
+    await flushPromises()
+    expect(router.currentRoute.value.query.analysis).toBe('2')
+    expect(wrapper.find('a[href="/projects/1/agent-requests?request=2"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/projects/1/agent-requests?request=1"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Awaiting agent — a host must claim this request')
+    expect(attempts).toHaveLength(2)
+    expect(attempts[1]!.message_key).not.toBe(attempts[0]!.message_key)
+    expect(queue.size).toBe(2)
+    wrapper.unmount()
+  })
+  it('retries a persisted request after a lost response with the exact same intent and payload', async () => {
+    const queue = new Map<string, Record<string, unknown>>()
+    const attempts: Record<string, unknown>[] = []
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name !== 'localAgentChat.createMessage') return basics(name, args)
+      const payload = JSON.parse(JSON.stringify(args)) as Record<string, unknown>
+      attempts.push(payload)
+      const key = String(args.message_key)
+      if (!queue.has(key))
+        queue.set(key, {
+          id: queue.size + 1,
+          status: 'new',
+          metadata_json: { metadata_json: args.metadata_json },
+        })
+      if (attempts.length === 1) throw new Error('Lost response after persisted queue request')
+      return { data: { agent_request: queue.get(key) } }
+    })
+    const { wrapper } = await mounted()
+    const submit = () =>
+      wrapper
+        .findAll('button')
+        .find((b) =>
+          /^(Request (new )?agent analysis|Retry original analysis request)$/.test(b.text()),
+        )!
+        .trigger('click')
+    await submit()
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('Reviewed analysis · current source')
+    await submit()
+    await flushPromises()
+    expect(attempts).toHaveLength(2)
+    expect(attempts[1]).toEqual(attempts[0])
+    expect(queue.size).toBe(1)
+    expect(wrapper.text()).toContain('Request 1 ·')
+    expect(wrapper.text()).toContain('Awaiting agent — a host must claim this request')
+    await submit()
+    await flushPromises()
+    expect(attempts[2]!.message_key).not.toBe(attempts[0]!.message_key)
+    expect(queue.size).toBe(2)
+    wrapper.unmount()
+  })
+  it.each(['filters', 'source'])(
+    'retains the original safe request when %s changes before retry',
+    async (change) => {
+      const attempts: Record<string, unknown>[] = []
+      let currentSnapshot = snapshot
+      const basics = vi.mocked(callOperation).getMockImplementation()!
+      vi.mocked(callOperation).mockImplementation(async (name, args) => {
+        if (name === 'finance.query')
+          return { data: { ...projection(args), snapshot: currentSnapshot } }
+        if (name !== 'localAgentChat.createMessage') return basics(name, args)
+        attempts.push(JSON.parse(JSON.stringify(args)))
+        if (attempts.length === 1) throw new Error('Lost response after persisted queue request')
+        return {
+          data: {
+            agent_request: {
+              id: 7,
+              status: 'new',
+              metadata_json: { metadata_json: args.metadata_json },
+            },
+          },
+        }
+      })
+      const { wrapper } = await mounted()
+      const submit = () =>
+        wrapper
+          .findAll('button')
+          .find((b) =>
+            /^(Request (new )?agent analysis|Retry original analysis request)$/.test(b.text()),
+          )!
+          .trigger('click')
+      await submit()
+      await flushPromises()
+      if (change === 'filters') {
+        await wrapper.get('[data-test="finance-search"]').setValue('private-current-search')
+        await wrapper.get('[data-test="apply-finance-filters"]').trigger('click')
+        await flushPromises()
+        await wrapper
+          .findAll('[role="combobox"]')
+          .find((c) => c.text().includes('Supported opportunities'))!
+          .trigger('click')
+        await wrapper
+          .findAll('[role="option"]')
+          .find((o) => o.text() === 'Spending review')!
+          .trigger('click')
+      } else {
+        currentSnapshot = { ...snapshot, revision: 2, sha256: 'b'.repeat(64) }
+        await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+      }
+      await flushPromises()
+      await submit()
+      await flushPromises()
+      expect(attempts).toHaveLength(2)
+      expect(attempts[1]).toEqual(attempts[0])
+      expect(wrapper.text()).toContain('Request 7 ·')
+      expect(wrapper.text()).not.toContain('Reviewed analysis · current source')
+      if (change === 'source')
+        expect(wrapper.text()).toContain('Analysis request is historical — source changed')
+      wrapper.unmount()
+    },
+  )
+  it.each(['before', 'during'])(
+    'retains an uncertain submission lost %s project route remounts without sending into another project',
+    async (timing) => {
+      const attempts: Record<string, unknown>[] = []
+      let loseResponse!: () => void
+      const basics = vi.mocked(callOperation).getMockImplementation()!
+      vi.mocked(callOperation).mockImplementation(async (name, args) => {
+        if (name !== 'localAgentChat.createMessage') return basics(name, args)
+        attempts.push(JSON.parse(JSON.stringify(args)))
+        if (attempts.length === 1) {
+          if (timing === 'during')
+            return new Promise((_resolve, reject) => {
+              loseResponse = () => reject(new Error('Lost response after persisted queue request'))
+            })
+          throw new Error('Lost response after persisted queue request')
+        }
+        return {
+          data: {
+            agent_request: {
+              id: 7,
+              status: 'new',
+              metadata_json: { metadata_json: args.metadata_json },
+            },
+          },
+        }
+      })
+      const { wrapper, router } = await mounted()
+      const submit = () =>
+        wrapper
+          .findAll('button')
+          .find((b) =>
+            /^(Request (new )?agent analysis|Retry original analysis request)$/.test(b.text()),
+          )!
+          .trigger('click')
+      await submit()
+      await flushPromises()
+      await router.push('/projects/2/finance')
+      await flushPromises()
+      if (timing === 'during') {
+        loseResponse()
+        await flushPromises()
+      }
+      expect(attempts).toHaveLength(1)
+      expect(wrapper.text()).not.toContain('Analysis request submission is unverified')
+      await router.push('/projects/1/finance')
+      await flushPromises()
+      await submit()
+      await flushPromises()
+      expect(attempts).toHaveLength(2)
+      expect(attempts[1]).toEqual(attempts[0])
+      expect(wrapper.text()).toContain('Request 7 ·')
+      wrapper.unmount()
+    },
+  )
+  it('pauses new submissions in another workspace and retries only the original authorization', async () => {
+    const attempts: Record<string, unknown>[] = []
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name === 'financeWorkspace.status')
+        return {
+          data: {
+            readiness: 'ready',
+            access: [access, { ...access, workspace_ref: 'finance:two', access_id: 'access:two' }],
+          },
+        }
+      if (name !== 'localAgentChat.createMessage') return basics(name, args)
+      attempts.push(JSON.parse(JSON.stringify(args)))
+      if (attempts.length === 1) throw new Error('Lost response after persisted queue request')
+      return {
+        data: {
+          agent_request: {
+            id: 7,
+            status: 'new',
+            metadata_json: { metadata_json: args.metadata_json },
+          },
+        },
+      }
+    })
+    const { wrapper } = await mounted()
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === 'Request agent analysis')!
+      .trigger('click')
+    await flushPromises()
+    async function selectWorkspace(label: string) {
+      await wrapper
+        .findAll('[role="combobox"]')
+        .find((c) => c.text().includes('finance:'))!
+        .trigger('click')
+      await wrapper
+        .findAll('[role="option"]')
+        .find((o) => o.text() === label)!
+        .trigger('click')
+      await flushPromises()
+    }
+    await selectWorkspace('finance:two')
+    for (const label of ['Request agent analysis', 'Retry original analysis request']) {
+      const button = wrapper.findAll('button').find((b) => b.text() === label)!
+      expect(button.attributes('disabled')).toBeDefined()
+      await button.trigger('click')
+    }
+    expect(attempts).toHaveLength(1)
+    expect(wrapper.text()).toContain('Return to the original workspace authorization')
+    await selectWorkspace('finance:one')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === 'Retry original analysis request')!
+      .trigger('click')
+    await flushPromises()
+    expect(attempts[1]).toEqual(attempts[0])
+    wrapper.unmount()
+  })
+  it.each(['exact', 'changed'])(
+    'reconciles only an %s persisted intent and never treats a receipt as reviewed completion',
+    async (metadataMatch) => {
+      const attempts: Record<string, unknown>[] = []
+      let queued: Record<string, unknown> | null = null
+      const basics = vi.mocked(callOperation).getMockImplementation()!
+      vi.mocked(callOperation).mockImplementation(async (name, args) => {
+        if (name === 'localAgentChat.createMessage') {
+          attempts.push(JSON.parse(JSON.stringify(args)))
+          queued = {
+            id: 7,
+            request_key: `local-agent-chat:${args.thread_key}:${args.message_key}`,
+            status: 'resolved',
+            metadata_json: {
+              metadata_json: {
+                ...(args.metadata_json as Record<string, unknown>),
+                ...(metadataMatch === 'changed' && attempts.length === 1
+                  ? { analysis_kind: 'spending' }
+                  : {}),
+              },
+            },
+          }
+          if (attempts.length === 1) throw new Error('Lost response after persisted queue request')
+          return { data: { agent_request: queued } }
+        }
+        if (name === 'agentRequest.list') return { items: queued ? [queued] : [] }
+        if (name === 'agentRequest.get') return queued
+        if (name === 'finance.report.render') return { state: 'result_unavailable' }
+        return basics(name, args)
+      })
+      const { wrapper } = await mounted()
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text() === 'Request agent analysis')!
+        .trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+      await flushPromises()
+      const retry = wrapper
+        .findAll('button')
+        .find((b) => b.text() === 'Retry original analysis request')
+      if (metadataMatch === 'exact') {
+        expect(retry).toBeUndefined()
+        expect(wrapper.text()).toContain('Original analysis request 7 verified in Agent requests')
+        expect(wrapper.text()).toContain('Reviewed result unavailable')
+        expect(attempts).toHaveLength(1)
+      } else {
+        expect(retry).toBeDefined()
+        expect(wrapper.text()).not.toContain('Original analysis request 7 verified')
+        await retry!.trigger('click')
+        await flushPromises()
+        expect(attempts[1]).toEqual(attempts[0])
+      }
+      expect(wrapper.text()).not.toContain('Reviewed analysis · current source')
+      wrapper.unmount()
+    },
+  )
+  it('reconciles a retained submission after authorization changes without replaying a stale generation', async () => {
+    let generation = 1
+    let exposeReceipt = false
+    let queued: Record<string, unknown> | null = null
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name === 'financeWorkspace.status')
+        return { data: { readiness: 'ready', access: [{ ...access, generation }] } }
+      if (name === 'localAgentChat.createMessage') {
+        queued = {
+          id: 7,
+          request_key: `local-agent-chat:${args.thread_key}:${args.message_key}`,
+          status: 'new',
+          metadata_json: { metadata_json: args.metadata_json },
+        }
+        throw new Error('Lost response after persisted queue request')
+      }
+      if (name === 'agentRequest.list') return { items: exposeReceipt && queued ? [queued] : [] }
+      if (name === 'agentRequest.get') return queued
+      if (name === 'finance.report.render') return { state: 'historical_access' }
+      return basics(name, args)
+    })
+    const { wrapper } = await mounted()
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === 'Request agent analysis')!
+      .trigger('click')
+    await flushPromises()
+    generation = 2
+    await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+    await flushPromises()
+    for (const label of ['Request agent analysis', 'Retry original analysis request']) {
+      const button = wrapper.findAll('button').find((b) => b.text() === label)!
+      expect(button.attributes('disabled')).toBeDefined()
+      await button.trigger('click')
+    }
+    exposeReceipt = true
+    await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Original analysis request 7 verified in Agent requests')
+    expect(wrapper.text()).toContain('Historical workspace authorization')
+    expect(wrapper.text()).not.toContain('Reviewed analysis · current source')
+    expect(
+      vi
+        .mocked(callOperation)
+        .mock.calls.filter((call) => call[0] === 'localAgentChat.createMessage'),
+    ).toHaveLength(1)
+    wrapper.unmount()
+  })
+  it.each(['lost', 'saved'])(
+    'handles a %s submission response during source refresh without replacing its intent or leaving loading stuck',
+    async (outcome) => {
+      const attempts: Record<string, unknown>[] = []
+      let currentSnapshot = snapshot
+      let finish!: () => void
+      const basics = vi.mocked(callOperation).getMockImplementation()!
+      vi.mocked(callOperation).mockImplementation(async (name, args) => {
+        if (name === 'finance.query')
+          return { data: { ...projection(args), snapshot: currentSnapshot } }
+        if (name !== 'localAgentChat.createMessage') return basics(name, args)
+        attempts.push(JSON.parse(JSON.stringify(args)))
+        const response = {
+          data: {
+            agent_request: {
+              id: 7,
+              status: 'new',
+              metadata_json: { metadata_json: args.metadata_json },
+            },
+          },
+        }
+        if (attempts.length === 1)
+          return new Promise((resolve, reject) => {
+            finish = () =>
+              outcome === 'lost'
+                ? reject(new Error('Lost response after persisted queue request'))
+                : resolve(response)
+          })
+        return response
+      })
+      const { wrapper } = await mounted()
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text() === 'Request agent analysis')!
+        .trigger('click')
+      await flushPromises()
+      currentSnapshot = { ...snapshot, revision: 2, sha256: 'b'.repeat(64) }
+      await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+      await flushPromises()
+      expect(
+        wrapper
+          .findAll('button')
+          .find((b) => b.text() === 'Retry original analysis request')!
+          .attributes('disabled'),
+      ).toBeDefined()
+      expect(attempts).toHaveLength(1)
+      finish()
+      await flushPromises()
+      if (outcome === 'lost') {
+        await wrapper
+          .findAll('button')
+          .find((b) => b.text() === 'Retry original analysis request')!
+          .trigger('click')
+        await flushPromises()
+        expect(attempts[1]).toEqual(attempts[0])
+      } else expect(attempts).toHaveLength(1)
+      expect(wrapper.text()).toContain('Analysis request is historical — source changed')
+      expect(wrapper.text()).not.toContain('Reviewed analysis · current source')
+      expect(
+        wrapper
+          .findAll('button')
+          .find((b) => b.text() === 'Request new agent analysis')!
+          .attributes('disabled'),
+      ).toBeUndefined()
+      wrapper.unmount()
+    },
+  )
   it.each([
     ['run-created', 'Run prepared — awaiting execution'],
     ['run-started', 'Running in the linked agent run'],

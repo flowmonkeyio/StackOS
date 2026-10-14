@@ -1,5 +1,14 @@
+<script lang="ts">
+import { reactive } from 'vue'
+
+type AnalysisSubmission = { payloadJson: string; inFlight: boolean }
+// Keep only the safe queue payload in memory across project route remounts.
+// An unknown submission must not become a new intent when the selection changes.
+const analysisSubmissions = reactive(new Map<number, AnalysisSubmission>())
+</script>
+
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type {
   SchemaFinanceAccessOut,
@@ -122,7 +131,22 @@ const groups = computed(() =>
   })),
 )
 const reportAllowed = computed(() => access.value?.modes.includes('export') === true)
+const pendingAnalysis = computed(() => analysisSubmissions.get(projectId.value))
+const pendingArguments = computed<Record<string, unknown> | null>(() =>
+  pendingAnalysis.value ? JSON.parse(pendingAnalysis.value.payloadJson) : null,
+)
+const pendingMetadata = computed(() => object(pendingArguments.value?.metadata_json))
+const retryAllowed = computed(
+  () =>
+    reportAllowed.value &&
+    pendingMetadata.value.workspace_ref === access.value?.workspace_ref &&
+    pendingMetadata.value.access_generation === access.value?.generation,
+)
 const statusText = computed(() => {
+  if (pendingAnalysis.value)
+    return pendingAnalysis.value.inFlight
+      ? 'Submitting original analysis request…'
+      : 'Analysis request submission is unverified'
   const state = analysis.value?.state
   if (state === 'current') return 'Reviewed analysis · current source'
   if (state === 'stale') return 'Historical analysis · source changed'
@@ -262,21 +286,11 @@ async function loadQuery(value: FinanceQuery) {
 const { refresh } = useProjectScopedLoader({
   projectId,
   load: loadStatus,
-  immediate: false,
   onScopeExit: () => {
     active = false
     clearScope()
   },
 })
-watch(
-  projectId,
-  () => {
-    clearScope()
-    query.value = initialQuery()
-    void refresh()
-  },
-  { immediate: true, flush: 'sync' },
-)
 function selectWorkspace(value: string | number | null) {
   const next = accessRows.value.find(
     (row) => row.workspace_ref === value && row.readiness === 'ready',
@@ -440,13 +454,29 @@ async function loadRequests() {
       response_mode: 'raw',
     })
     if (!active || sequence !== analysisSequence || identity !== JSON.stringify(base())) return
+    const pending = analysisSubmissions.get(projectId.value)
+    const payload = pending ? JSON.parse(pending.payloadJson) : null
+    const verified = payload
+      ? page.items.find(
+          (row) =>
+            row.request_key === `local-agent-chat:${payload.thread_key}:${payload.message_key}` &&
+            canonicalJson(object(row.metadata_json).metadata_json) ===
+              canonicalJson(payload.metadata_json),
+        )
+      : undefined
+    if (verified) {
+      analysisSubmissions.delete(projectId.value)
+      message.value = `Original analysis request ${verified.id} verified in Agent requests. It retains its original workspace, window and source.`
+    }
     requests.value = page.items.filter(
       (row) =>
         object(object(row.metadata_json).metadata_json).workspace_ref ===
         access.value?.workspace_ref,
     )
     const requestedId = text(route.query.analysis)
-    const requested = requests.value.find((row) => String(row.id) === requestedId)
+    const requested =
+      (verified && requests.value.find((row) => row.id === verified.id)) ||
+      requests.value.find((row) => String(row.id) === requestedId)
     if (requested) {
       selectedRequest.value = requested
       void refreshAnalysis()
@@ -457,26 +487,36 @@ async function loadRequests() {
         'Agent queue unavailable. Existing request links remain inspectable in Agent requests.'
   }
 }
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(value, (_key, child) =>
+    child && typeof child === 'object' && !Array.isArray(child)
+      ? Object.fromEntries(Object.entries(child).sort(([a], [b]) => a.localeCompare(b)))
+      : child,
+  )
+}
 async function requestAnalysis() {
-  if (!access.value || !projection.value || loading.value || !reportAllowed.value) return
-  if (text(projection.value.query.q) !== '') {
-    error.value =
-      'Private search text cannot be included in an agent request. Clear search and apply filters before requesting analysis; your current search and timeframe remain selected.'
-    return
-  }
-  const sequence = ++analysisSequence,
-    identity = JSON.stringify(base())
-  analysisLoading.value = true
-  error.value = ''
-  analysis.value = null
-  const intent = newIntentId(),
-    bound = snapshotRef(projection.value.snapshot),
-    originalQuery = { ...projection.value.query }
-  delete originalQuery.q
-  try {
-    const response = await callOperation<{ data: SchemaLocalAgentChatMessageOut }>(
-      'localAgentChat.createMessage',
-      {
+  const id = projectId.value
+  let submission = analysisSubmissions.get(id)
+  if (submission?.inFlight) return
+  if (submission) {
+    if (!retryAllowed.value) {
+      error.value =
+        'The original submission is still unverified. Inspect Agent requests or return to its original workspace authorization before retrying.'
+      return
+    }
+  } else {
+    if (!access.value || !projection.value || loading.value || !reportAllowed.value) return
+    if (text(projection.value.query.q) !== '') {
+      error.value =
+        'Private search text cannot be included in an agent request. Clear search and apply filters before requesting analysis; your current search and timeframe remain selected.'
+      return
+    }
+    const intent = newIntentId(),
+      originalQuery = { ...projection.value.query }
+    delete originalQuery.q
+    submission = {
+      inFlight: false,
+      payloadJson: JSON.stringify({
         project_id: projectId.value,
         thread_key: 'finance-management',
         message_key: intent,
@@ -488,7 +528,7 @@ async function requestAnalysis() {
         metadata_json: {
           workspace_ref: access.value.workspace_ref,
           access_generation: access.value.generation,
-          source_snapshot: bound,
+          source_snapshot: snapshotRef(projection.value.snapshot),
           query: originalQuery,
           analysis_kind: analysisKind.value,
           record_refs: [],
@@ -496,21 +536,57 @@ async function requestAnalysis() {
           intent_key: intent,
         },
         response_mode: 'raw',
-      },
+      }),
+    }
+    analysisSubmissions.set(id, submission)
+    submission = analysisSubmissions.get(id)!
+  }
+  analysisSequence++
+  const identity = JSON.stringify(base()),
+    payload = JSON.parse(submission.payloadJson) as Record<string, unknown>
+  submission.inFlight = true
+  analysisLoading.value = false
+  error.value = ''
+  message.value = ''
+  analysis.value = null
+  selectedRequest.value = null
+  try {
+    const response = await callOperation<{ data: SchemaLocalAgentChatMessageOut }>(
+      'localAgentChat.createMessage',
+      payload,
     )
-    if (!active || sequence !== analysisSequence || identity !== JSON.stringify(base())) return
     const request = response.data.agent_request
     if (!request) throw new Error('No persisted request')
+    // Queue reconciliation retires this occurrence before another request can start.
+    // Its late acknowledgement must not replace the newer request or its selection.
+    if (analysisSubmissions.get(id) !== submission) return
+    analysisSubmissions.delete(id)
+    if (!active || id !== projectId.value) return
+    if (identity !== JSON.stringify(base())) {
+      message.value = `Original analysis request ${request.id} saved. Inspect Agent requests for its original workspace, window and source.`
+      return
+    }
     selectedRequest.value = request as unknown as Record<string, unknown>
-    requests.value = [selectedRequest.value, ...requests.value]
-    analysis.value = { state: 'awaiting_agent' } as SchemaFinanceContentOut
+    requests.value = [
+      selectedRequest.value,
+      ...requests.value.filter((row) => row.id !== request.id),
+    ]
+    const originalSnapshot = object(object(payload.metadata_json).source_snapshot)
+    const historical =
+      projection.value &&
+      canonicalJson(snapshotRef(projection.value.snapshot)) !== canonicalJson(originalSnapshot)
+    analysis.value = historical
+      ? ({ state: 'historical_source' } as SchemaFinanceContentOut)
+      : ['new', 'pending'].includes(request.status)
+        ? ({ state: 'awaiting_agent' } as SchemaFinanceContentOut)
+        : null
     await router.replace({ query: { ...route.query, analysis: String(request.id) } })
   } catch {
-    if (active && sequence === analysisSequence)
+    if (active && id === projectId.value && analysisSubmissions.get(id) === submission)
       error.value =
-        'Analysis request could not be verified. Inspect Agent requests before retrying.'
+        'Analysis request could not be verified. Retry the retained original request or inspect Agent requests; a new request is paused until this submission is verified.'
   } finally {
-    if (active && sequence === analysisSequence) analysisLoading.value = false
+    submission.inFlight = false
   }
 }
 async function refreshAnalysis() {
@@ -571,6 +647,27 @@ onBeforeUnmount(() => {
     </ProjectPageHeader>
     <UiCallout v-if="error" variant="danger" role="alert">{{ error }}</UiCallout>
     <p v-if="message" role="status" class="text-sm text-fg-muted">{{ message }}</p>
+    <UiCallout v-if="pendingAnalysis" variant="warning" role="status">
+      <p>
+        {{ pendingAnalysis.inFlight ? 'Submitting' : 'Unverified submission for' }}
+        {{ text(pendingMetadata.workspace_ref) }} ·
+        {{ text(object(pendingMetadata.query).start) }} through
+        {{ text(object(pendingMetadata.query).end) }} · {{ text(pendingMetadata.analysis_kind) }} ·
+        source revision {{ object(pendingMetadata.source_snapshot).revision }}. Retry retains this
+        original window, question and source; changes to the current selection apply only to a new
+        request after verification.
+      </p>
+      <UiButton :disabled="pendingAnalysis.inFlight || !retryAllowed" @click="requestAnalysis"
+        >Retry original analysis request</UiButton
+      >
+      <RouterLink :to="`/projects/${projectId}/agent-requests`" class="focus-ring text-fg-link"
+        >Inspect Agent requests</RouterLink
+      >
+      <p v-if="!retryAllowed" class="text-sm">
+        Return to the original workspace authorization to retry, or refresh to reconcile its
+        persisted request in Agent requests.
+      </p>
+    </UiCallout>
     <form
       v-if="configuring || !access"
       class="space-y-3 rounded-md border border-default p-4"
@@ -856,9 +953,11 @@ onBeforeUnmount(() => {
                       { value: 'review-records', label: 'Source quality' },
                     ]" /></UiFormField
                 ><UiButton
-                  :disabled="!reportAllowed || loading || analysisLoading"
+                  :disabled="!reportAllowed || loading || analysisLoading || !!pendingAnalysis"
                   @click="requestAnalysis"
-                  >Request agent analysis</UiButton
+                  >{{
+                    selectedRequest ? 'Request new agent analysis' : 'Request agent analysis'
+                  }}</UiButton
                 >
               </div>
               <p role="status" class="text-sm">{{ statusText }}</p>

@@ -7,6 +7,40 @@ description: A host agent analyzes a bounded external snapshot, obtains independ
 domain: finance
 owner:
   team: StackOS
+experience:
+  problem: A finance analysis request needs an actual host agent, current source evidence and independent review before it can become a useful report.
+  outcome: A reviewed external report bound to the requested snapshot and filters, with supported findings or explicit evidence gaps and no adopted financial decisions.
+  operator_path:
+  - Select the finance timeframe, filters and analysis question, then request agent analysis.
+  - Inspect awaiting-agent, running, blocked or completed status and the source snapshot used.
+  - Read the reviewed report and its evidence; authorize any chosen financial action through separate work.
+  agent_path:
+  - Claim the existing request and verify workspace authority, current source, original query and available host execution.
+  - Prepare evidence-grounded analysis and obtain independent control review of the exact result and report bytes.
+  - Publish and read back the immutable external result, then complete the original request with safe refs and status.
+  progress_signals:
+  - Request scoped
+  - Evidence analyzed
+  - Independent review completed
+  - External result verified
+  recovery:
+  - Keep missing host, authority, source or reviewer prerequisites visible; queueing alone does not run a model.
+  - Reconcile uncertain submission or publication before retry; source changes require current evidence and fresh review.
+  safe_stopping_points:
+  - Return incomplete-data or no-supported-opportunity when the evidence does not support a finding.
+  - Stop after the reviewed report; corrections, payments and adoption require separate authorization.
+public:
+  audience: Operators reviewing sourced business expenses and income
+  setup: mixed
+  prerequisites:
+  - A selected external local-json finance workspace and authorized host access
+  - A persisted finance request with the original snapshot, query and analysis question
+  - An available host agent and a separate control reviewer
+  proof:
+  - An immutable external result and readable report bound to the requested source snapshot
+  - Independent review binding the exact result digest and report bytes
+  - Verified readback and completion of the original request with safe refs
+  featured: false
 agent_requirements:
 - role: bookkeeping-preparer
   requirement: required

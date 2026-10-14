@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { onBeforeUpdate, ref } from 'vue'
 import { UiButton, UiCheckbox, UiFormField, UiInput, UiSelect } from '@/components/ui'
 import { comparisonWindow, timeframe, type FinanceQuery } from '@/lib/finance'
 const props = defineProps<{ query: FinanceQuery; disabled?: boolean }>()
@@ -8,13 +8,14 @@ const draft = ref<FinanceQuery>({ ...props.query })
 const preset = ref('month'),
   compare = ref('none'),
   error = ref('')
-watch(
-  () => props.query,
-  (value) => {
-    draft.value = { ...value }
-  },
-  { deep: true },
-)
+let appliedQuery = JSON.stringify(props.query)
+onBeforeUpdate(() => {
+  const nextQuery = JSON.stringify(props.query)
+  if (nextQuery !== appliedQuery) {
+    appliedQuery = nextQuery
+    draft.value = { ...props.query }
+  }
+})
 function setPreset(value: string | number | null) {
   preset.value = String(value)
   if (preset.value !== 'custom') Object.assign(draft.value, timeframe(preset.value))

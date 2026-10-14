@@ -810,9 +810,10 @@ def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
         }[dimension]
         for row in recognized:
             if row["reporting"]["treatment"] in EFFECTS:
-                groups[(row.get(field) or "Unknown/unassigned", row["amount"]["currency"])].append(
-                    row
-                )
+                value = row.get(field)
+                if dimension == "category" and row["category_state"] not in {"applied", "reviewed"}:
+                    value = None
+                groups[(value or "Unknown/unassigned", row["amount"]["currency"])].append(row)
         breakdowns[dimension] = [
             {
                 "label": label,

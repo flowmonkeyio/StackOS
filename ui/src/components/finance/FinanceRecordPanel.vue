@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onBeforeUpdate, ref } from 'vue'
 import type {
   SchemaFinanceAccessOut,
   SchemaFinanceCommitOut,
@@ -205,42 +205,38 @@ function beginEdit() {
   heldIntent.value = null
   editing.value = true
 }
-watch(
-  draft,
-  () => {
-    editSequence++
-    preview.value = null
-    heldIntent.value = null
-    previewing.value = false
-    uncertain.value = false
-  },
-  { deep: true, flush: 'sync' },
-)
-watch(
-  () => [
+function invalidateDraft() {
+  editSequence++
+  preview.value = null
+  heldIntent.value = null
+  previewing.value = false
+  uncertain.value = false
+}
+let inspectedScope = ''
+function synchronizeScope() {
+  const scope = JSON.stringify([
     props.modelValue,
     props.projectId,
     props.access.workspace_ref,
     props.access.generation,
     props.recordRef,
+    props.snapshot.revision,
     props.snapshot.sha256,
-  ],
-  async () => {
-    loadSequence++
-    cancelEdit()
-    clearOriginal()
-    detail.value = null
-    notice.value = ''
-    loading.value = false
-    if (!props.modelValue) return
-    if (props.recordRef === null) {
-      beginEdit()
-      return
-    }
-    await inspectRecord(props.recordRef)
-  },
-  { immediate: true },
-)
+  ])
+  if (scope === inspectedScope) return
+  inspectedScope = scope
+  loadSequence++
+  cancelEdit()
+  clearOriginal()
+  detail.value = null
+  notice.value = ''
+  loading.value = false
+  if (!props.modelValue) return
+  if (props.recordRef === null) beginEdit()
+  else void inspectRecord(props.recordRef)
+}
+synchronizeScope()
+onBeforeUpdate(synchronizeScope)
 
 async function inspectRecord(recordRef: string, inspectionEvent?: Event) {
   if (!active || !props.modelValue || saving.value || uncertain.value) return
@@ -584,13 +580,14 @@ onBeforeUnmount(() => {
             required
             ><UiInput
               v-model="draft.date"
+              @update:model-value="invalidateDraft"
               data-test="date"
               type="date"
               min="0001-01-01"
               max="9999-12-31"
           /></UiFormField>
           <UiFormField v-if="allowed.includes('merchant')" label="Vendor"
-            ><UiInput v-model="draft.merchant"
+            ><UiInput v-model="draft.merchant" @update:model-value="invalidateDraft"
           /></UiFormField>
           <UiFormField
             v-if="allowed.includes('amount')"
@@ -600,10 +597,14 @@ onBeforeUnmount(() => {
                 ? 'Amount is required. Enter a decimal amount using the selected currency decimal places.'
                 : 'Leave the amount unchanged to preserve the existing fact. Confirm precision before changing it.'
             "
-            ><UiInput v-model="draft.amount" inputmode="decimal" data-test="amount"
+            ><UiInput
+              v-model="draft.amount"
+              @update:model-value="invalidateDraft"
+              inputmode="decimal"
+              data-test="amount"
           /></UiFormField>
           <UiFormField v-if="allowed.includes('amount')" label="Currency"
-            ><UiInput v-model="draft.currency" maxlength="3"
+            ><UiInput v-model="draft.currency" @update:model-value="invalidateDraft" maxlength="3"
           /></UiFormField>
           <UiFormField
             v-if="allowed.includes('amount')"
@@ -613,37 +614,41 @@ onBeforeUnmount(() => {
                 ? 'Explicit precision for this entry; currencies remain separate.'
                 : 'Source precision unavailable. Confirm it to change the amount.'
             "
-            ><UiInput v-model="draft.precision" inputmode="numeric" maxlength="1"
+            ><UiInput
+              v-model="draft.precision"
+              @update:model-value="invalidateDraft"
+              inputmode="numeric"
+              maxlength="1"
           /></UiFormField>
           <UiFormField
             v-if="allowed.includes('category')"
             label="Category reference"
             help="Use an existing configured category; blank remains unresolved."
-            ><UiInput v-model="draft.category"
+            ><UiInput v-model="draft.category" @update:model-value="invalidateDraft"
           /></UiFormField>
           <UiFormField v-if="allowed.includes('account_ref')" label="Account reference"
-            ><UiInput v-model="draft.account"
+            ><UiInput v-model="draft.account" @update:model-value="invalidateDraft"
           /></UiFormField>
           <UiFormField
             v-if="allowed.includes('external_project_ref')"
             label="Project reference"
             help="Leave shared or company-wide costs unassigned."
-            ><UiInput v-model="draft.project"
+            ><UiInput v-model="draft.project" @update:model-value="invalidateDraft"
           /></UiFormField>
         </div>
         <UiFormField v-if="allowed.includes('business_purpose')" label="Business purpose"
-          ><UiTextarea v-model="draft.purpose"
+          ><UiTextarea v-model="draft.purpose" @update:model-value="invalidateDraft"
         /></UiFormField>
         <UiFormField
           label="Supporting source references"
           help="Existing source references, one per line. Corrections require evidence."
-          ><UiTextarea v-model="draft.sources"
+          ><UiTextarea v-model="draft.sources" @update:model-value="invalidateDraft"
         /></UiFormField>
         <UiFormField
           v-if="recordRef === null"
           label="Operator attestation"
           help="Needed if no existing source supports the entry; retained original remains missing."
-          ><UiTextarea v-model="draft.attestation"
+          ><UiTextarea v-model="draft.attestation" @update:model-value="invalidateDraft"
         /></UiFormField>
         <details v-if="allowed.includes('reporting')" class="space-y-3">
           <summary class="focus-ring cursor-pointer text-sm">
@@ -654,6 +659,7 @@ onBeforeUnmount(() => {
             help="Blank leaves the entry outside recognized totals. Sign alone does not establish treatment."
             ><UiSelect
               v-model="draft.treatment"
+              @update:model-value="invalidateDraft"
               :options="[
                 { value: '', label: 'Unclassified' },
                 { value: 'expense', label: 'Expense' },
@@ -670,16 +676,19 @@ onBeforeUnmount(() => {
           <UiFormField
             label="Transaction identity"
             help="Reuse an existing economic event reference only for the same transaction."
-            ><UiInput v-model="draft.event"
+            ><UiInput v-model="draft.event" @update:model-value="invalidateDraft"
           /></UiFormField>
           <UiFormField
             label="Component identity"
             help="Distinguish principal, fees and refunds without counting a representation twice."
-            ><UiInput v-model="draft.component"
+            ><UiInput v-model="draft.component" @update:model-value="invalidateDraft"
           /></UiFormField>
         </details>
         <UiFormField label="Reason" required
-          ><UiTextarea v-model="draft.reason" data-test="reason"
+          ><UiTextarea
+            v-model="draft.reason"
+            @update:model-value="invalidateDraft"
+            data-test="reason"
         /></UiFormField>
       </fieldset>
       <section
