@@ -34,6 +34,7 @@ else:
 
 SCHEMAS = Path(__file__).resolve().parents[1] / "schemas"
 RECORD_SCOPE = "finance-management-record:"
+PRECISION_SCOPE = "finance-management-precision:"
 POLICY_SCOPE = "finance-management-reporting"
 KINDS = {"bookkeeping", "receipts", "billing_versions"}
 EFFECTS = {
@@ -186,7 +187,7 @@ def _method(
     settings: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in current.active("operating_settings"):
         scope = row.get("scope", "")
-        if scope == POLICY_SCOPE or scope.startswith(RECORD_SCOPE):
+        if scope == POLICY_SCOPE or scope.startswith((RECORD_SCOPE, PRECISION_SCOPE)):
             settings[scope].append(row)
     return settings, settings.get(POLICY_SCOPE, [])
 
@@ -197,6 +198,69 @@ def _payload(current: CurrentRecords, setting: dict[str, Any]) -> dict[str, Any]
     if not _approved(current, setting):
         _fail("unapproved_metadata")
     return payload
+
+
+def _precision(
+    current: CurrentRecords,
+    settings: dict[str, list[dict[str, Any]]],
+    record: dict[str, Any],
+    reporting: dict[str, Any] | None,
+) -> tuple[int | None, str | None]:
+    """Resolve independently reviewed display units; never adopt economic treatment."""
+    ref = record["record_id"]
+    candidates = settings.get(PRECISION_SCOPE + ref, [])
+    if not candidates:
+        ancestor = ref
+        while ancestor in current.previous:
+            ancestor = current.previous[ancestor]
+            if settings.get(PRECISION_SCOPE + ancestor):
+                return None, "stale_precision"
+        return (reporting["currency_exponent"] if reporting else None), None
+    if len(candidates) != 1:
+        return None, "precision_conflict"
+    try:
+        setting = candidates[0]
+        payload = _payload(current, setting)
+        if not _approved(current, setting, ("finance-management", "amount-precision")):
+            return None, "unapproved_precision"
+        if (
+            payload.get("kind") != "record-precision"
+            or payload["target_ref"] != ref
+            or payload["target_digest_sha256"]
+            != workspace.material_record_digest(record, current.collections[ref])
+            or payload["currency"] != record.get("amount", {}).get("currency")
+        ):
+            return None, "stale_precision"
+        sources = record.get(
+            "source_refs", [record["source_ref"]] if "source_ref" in record else []
+        )
+        for source in [*sources, *payload["source_refs"]]:
+            if current.collections.get(source) != "sources":
+                return None, "unknown_precision_source"
+            if current.resolve(source) != source or current.records[source]["status"] in {
+                "superseded",
+                "rejected",
+                "withdrawn",
+            }:
+                return None, "stale_precision_source"
+        if reporting and reporting["currency_exponent"] != payload["exponent"]:
+            return None, "currency_precision_conflict"
+        return payload["exponent"], None
+    except (ValueError, KeyError, TypeError):
+        return None, "unsupported_or_unapproved_precision"
+
+
+def _display_amount(
+    current: CurrentRecords,
+    settings: dict[str, list[dict[str, Any]]],
+    record: dict[str, Any],
+    reporting: dict[str, Any] | None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    amount = record.get("amount", record.get("total"))
+    if not amount:
+        return None, None
+    exponent, issue = _precision(current, settings, record, reporting)
+    return _money(amount["amount_minor"], amount["currency"], exponent), issue
 
 
 def normalize_query(filters: dict[str, Any]) -> dict[str, Any]:
@@ -552,6 +616,10 @@ def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
                     reason = "policy_conflict"
                 if is_undated:
                     reason = reason or "undated_or_period_only"
+                display_amount, precision_issue = _display_amount(
+                    current, settings, record, reporting
+                )
+                reason = reason or precision_issue
                 review = bool(
                     reason
                     or record.get("gaps")
@@ -562,13 +630,7 @@ def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
                     "collection": collection,
                     "kind": kind,
                     "date": business_date,
-                    "amount": _money(
-                        amount["amount_minor"],
-                        amount["currency"],
-                        reporting["currency_exponent"] if reporting else None,
-                    )
-                    if amount
-                    else None,
+                    "amount": display_amount,
                     "status": record["status"],
                     "business_purpose": record.get("business_purpose", ""),
                     "counterparty": reporting.get("counterparty_label", "")
@@ -582,7 +644,20 @@ def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
                     "source_refs": source_refs,
                     "evidence_refs": sorted(set(evidence_refs)),
                     "needs_review": review,
-                    "gaps": record.get("gaps", []),
+                    "gaps": [
+                        *copy.deepcopy(record.get("gaps", [])),
+                        *(
+                            [
+                                {
+                                    "field": "amount.exponent",
+                                    "reason": precision_issue,
+                                    "source_refs": source_refs,
+                                }
+                            ]
+                            if precision_issue
+                            else []
+                        ),
+                    ],
                     "reporting": reporting,
                     "metric_exclusion": reason,
                 }
@@ -867,13 +942,51 @@ def record_detail(snapshot: dict[str, Any], ref: str) -> dict[str, Any]:
     for source in sources:
         attachments.update(current.records.get(source, {}).get("attachment_refs", []))
     issues = {x["attachment_ref"]: x["state"] for x in snapshot.get("custody_issues", [])}
+    settings, _policies = _method(current)
+    reporting, _reporting_issue = (
+        _reporting(current, settings, row, {}, check_basis=False)
+        if collection == "bookkeeping"
+        else (None, None)
+    )
+    display_amount, _precision_issue = _display_amount(current, settings, row, reporting)
+    lineage = current.lineage(ref)
+    history = []
+    for edge_ref in lineage:
+        correction = current.records[edge_ref]
+        if current.collections[edge_ref] != "corrections" or correction["status"] != "applied":
+            continue
+        events = [e for e in correction["status_history"] if e["to_status"] == "applied"]
+        event = events[-1] if events else {}
+        history.append(
+            {
+                "correction_ref": edge_ref,
+                "status": "applied",
+                "superseded_ref": correction["superseded_ref"],
+                "replacement_ref": correction["replacement_ref"],
+                "reason": correction["reason"],
+                "actor": event.get("actor"),
+                "at": event.get("at"),
+                "decision_ref": correction.get("decision_ref"),
+                "evidence_refs": copy.deepcopy(event.get("evidence_refs", [])),
+                "source_refs": list(
+                    dict.fromkeys(
+                        p["ref"]
+                        for p in correction["provenance"]
+                        if p["kind"] == "correction-evidence"
+                        and current.collections.get(p["ref"]) == "sources"
+                    )
+                ),
+            }
+        )
     return {
         "requested_ref": ref,
         "current_ref": resolved,
         "collection": collection,
         "record": copy.deepcopy(row),
+        "amount": display_amount,
         "original": copy.deepcopy(current.records[current.root(ref)]),
-        "lineage": current.lineage(ref),
+        "lineage": lineage,
+        "correction_history": history,
         "source_refs": sources,
         "evidence": [
             {
@@ -999,16 +1112,24 @@ def _candidate(
         current.collections.get(x) != "sources" or current.resolve(x) != x for x in sources
     ):
         _fail("unknown_source")
-    if "amount" in fields:
+    amount_supplied = "amount" in fields
+    exponent = None
+    precision_sources = None
+    if amount_supplied:
         a = fields["amount"]
         if (
             not isinstance(a, dict)
-            or set(a) != {"minor", "currency"}
+            or not {"minor", "currency"}.issubset(a)
+            or set(a) - {"minor", "currency", "exponent"}
             or not isinstance(a["minor"], str)
             or not re.fullmatch(r"-?(0|[1-9][0-9]*)", a["minor"])
             or not re.fullmatch(r"[A-Z]{3}", a["currency"])
         ):
             _fail("invalid_money")
+        if "exponent" in a:
+            if type(a["exponent"]) is not int or not 0 <= a["exponent"] <= 6:
+                _fail("invalid_money")
+            exponent = a["exponent"]
         fields["amount"] = {"amount_minor": int(a["minor"]), "currency": a["currency"]}
     if fields.get("external_project_ref") is not None and (
         not isinstance(fields["external_project_ref"], str)
@@ -1074,6 +1195,20 @@ def _candidate(
             _fail("stale_target")
         if not sources:
             _fail("source_required")
+        if not amount_supplied:
+            settings, _policies = _method(current)
+            old_reporting, _issue = (
+                _reporting(current, settings, current.records[old], {}, check_basis=False)
+                if collection == "bookkeeping"
+                else (None, None)
+            )
+            old_exponent, precision_issue = _precision(
+                current, settings, current.records[old], old_reporting
+            )
+            old_settings = settings.get(PRECISION_SCOPE + old, [])
+            if old_settings and precision_issue is None and old_exponent is not None:
+                exponent = old_exponent
+                precision_sources = _payload(current, old_settings[0])["source_refs"]
         row = copy.deepcopy(current.records[old])
         row.update(fields)
         row.update(
@@ -1130,6 +1265,58 @@ def _candidate(
     review["status_history"][-1]["evidence_refs"] = list(sources)
     d["reviews"].append(review)
     changes.append(review["record_id"])
+    if exponent is not None:
+        payload = {
+            "management_schema_version": "finance-management-v1",
+            "kind": "record-precision",
+            "target_ref": row["record_id"],
+            "target_digest_sha256": workspace.material_record_digest(row, collection),
+            "currency": row["amount"]["currency"],
+            "exponent": exponent,
+            "source_refs": precision_sources or sources,
+        }
+        _schema(payload, "management-v1.schema.json")
+        setting = _new_record(
+            prefix + ":precision",
+            "confirmed",
+            actor,
+            at,
+            value["reason"],
+            marker,
+            version=1,
+            scope=PRECISION_SCOPE + row["record_id"],
+            policy_text=_json(payload),
+            decision_refs=[prefix + ":precision-review"],
+        )
+        setting["provenance"].extend(
+            {"kind": "correction-evidence", "ref": ref, "observed_at": at}
+            for ref in payload["source_refs"]
+        )
+        setting["status_history"][-1]["evidence_refs"] = list(payload["source_refs"])
+        precision_review = _new_record(
+            prefix + ":precision-review",
+            "reviewed",
+            actor,
+            at,
+            value["reason"],
+            marker,
+            target_ref=setting["record_id"],
+            target_version=1,
+            target_digest_sha256=workspace.material_record_digest(setting, "operating_settings"),
+            scope=["finance-management", "amount-precision"],
+            authority="operator",
+            verdict="approved",
+            actor=actor,
+            decided_at=at,
+        )
+        precision_review["provenance"].extend(
+            {"kind": "correction-evidence", "ref": ref, "observed_at": at}
+            for ref in payload["source_refs"]
+        )
+        precision_review["status_history"][-1]["evidence_refs"] = list(payload["source_refs"])
+        d["operating_settings"].append(setting)
+        d["reviews"].append(precision_review)
+        changes.extend([setting["record_id"], precision_review["record_id"]])
     if reporting is not None:
         payload = {
             "management_schema_version": "finance-management-v1",

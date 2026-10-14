@@ -433,6 +433,407 @@ def intent(s, **overrides):
     }
 
 
+@pytest.mark.parametrize(
+    "currency,minor,exponent,display",
+    [
+        ("JPY", "123", 0, "JPY 123"),
+        ("USD", "9007199254740993", 2, "USD 90071992547409.93"),
+        ("KWD", "1234", 3, "KWD 1.234"),
+    ],
+)
+def test_precision_unclassified_create_roundtrip(tmp_path, currency, minor, exponent, display):
+    module, path = save_fixture(tmp_path)
+    s = module.read_snapshot(path)
+    i = intent(
+        s,
+        action="create-bookkeeping",
+        record_ref=None,
+        fields={
+            "date": "2026-09-04",
+            "amount": {"minor": minor, "currency": currency, "exponent": exponent},
+            "category": {"state": "unresolved"},
+        },
+    )
+    before = path.read_bytes()
+    preview = module.preview(s, i)
+    assert path.read_bytes() == before
+    receipt = module.commit(path, i, preview["preview_digest"])
+    new = next(r for r in receipt["changed_refs"] if r.endswith(":record"))
+    fresh = module.read_snapshot(path)
+    detail = module.record_detail(fresh, new)
+    assert detail["amount"] == {"minor": minor, "currency": currency, "exponent": exponent}
+    assert detail["record"]["amount"] == {"amount_minor": int(minor), "currency": currency}
+    p = module.query(fresh, QUERY)
+    row = next(r for r in p["rows"] if r["record_ref"] == new)
+    assert row["amount"] == detail["amount"]
+    assert row["reporting"] is None and row["metric_exclusion"] == "missing_metadata"
+    assert all(
+        new not in m[axis]["included_record_refs"]
+        for m in p["metrics_by_currency"]
+        for axis in ("spend", "revenue", "profit")
+    )
+    assert display in module.render_report(p, "markdown").decode()
+    assert (
+        next(
+            r for r in json.loads(module.render_report(p, "json"))["rows"] if r["record_ref"] == new
+        )["amount"]["exponent"]
+        == exponent
+    )
+    import csv
+    import io
+
+    exported = list(csv.DictReader(io.StringIO(module.render_report(p, "csv").decode())))
+    assert next(r for r in exported if r["record_ref"] == new)["exponent"] == str(exponent)
+    assert module.commit(path, i, preview["preview_digest"])["idempotency_replay"] is True
+    with pytest.raises(module.ManagementError, match="intent conflict"):
+        module.commit(
+            path,
+            {
+                **i,
+                "fields": {
+                    **i["fields"],
+                    "amount": {**i["fields"]["amount"], "exponent": (exponent + 1) % 7},
+                },
+            },
+            preview["preview_digest"],
+        )
+
+
+def test_correction_history_reads_full_native_chain_for_current_and_prior(tmp_path):
+    module, path = save_fixture(tmp_path)
+    s = module.read_snapshot(path)
+    a = intent(
+        s, request_id="history-a", fields={"date": "2026-09-02"}, reason="Alpha source correction"
+    )
+    ar = module.commit(path, a, module.preview(s, a)["preview_digest"])
+    anew = next(r for r in ar["changed_refs"] if r.endswith(":record"))
+    s = module.read_snapshot(path)
+    b = intent(
+        s,
+        request_id="history-b",
+        record_ref=anew,
+        fields={"business_purpose": "Supported synthetic purpose"},
+        reason="Beta purpose correction",
+    )
+    br = module.commit(path, b, module.preview(s, b)["preview_digest"])
+    bnew = next(r for r in br["changed_refs"] if r.endswith(":record"))
+    d = module.read_snapshot(path)["document"]
+    # Document/lexical/time order deliberately differ from the canonical chain.
+    d["corrections"].reverse()
+    by_reason = {r["reason"]: r for r in d["corrections"]}
+    by_reason["Alpha source correction"]["status_history"][-1].update(
+        actor="fixture:alpha", at="2026-10-02T00:00:00Z"
+    )
+    by_reason["Beta purpose correction"]["status_history"][-1].update(
+        actor="fixture:beta", at="2026-10-01T00:00:00Z"
+    )
+    before = path.read_bytes()
+    for ref in ["book:expense", anew, bnew]:
+        detail = module.record_detail(snapshot(d), ref)
+        history = detail["correction_history"]
+        assert [r["reason"] for r in history] == [
+            "Alpha source correction",
+            "Beta purpose correction",
+        ]
+        assert [r["actor"] for r in history] == ["fixture:alpha", "fixture:beta"]
+        assert [r["at"] for r in history] == ["2026-10-02T00:00:00Z", "2026-10-01T00:00:00Z"]
+        assert all(
+            r["source_refs"] == ["source:bank"] and r["evidence_refs"] == ["source:bank"]
+            for r in history
+        )
+        assert [r["correction_ref"] for r in history] == detail["lineage"]
+        assert detail["original"]["date"] == "2026-09-03" and detail["current_ref"] == bnew
+    assert path.read_bytes() == before
+
+
+def precision_metadata(document, target, exponent=2, **overrides):
+    module = management()
+    return setting(
+        document,
+        "precision:" + target["record_id"],
+        "finance-management-precision:" + target["record_id"],
+        {
+            "management_schema_version": "finance-management-v1",
+            "kind": "record-precision",
+            "target_ref": target["record_id"],
+            "target_digest_sha256": module.workspace.material_record_digest(target, "bookkeeping"),
+            "currency": target["amount"]["currency"],
+            "exponent": exponent,
+            "source_refs": ["source:bank"],
+            **overrides,
+        },
+        scopes=["finance-management", "amount-precision"],
+    )
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "proposed",
+        "no-review",
+        "wrong-scope",
+        "stale-review",
+        "stale-target",
+        "wrong-currency",
+        "unknown-source",
+        "stale-source",
+        "conflicting",
+        "reporting-conflict",
+    ],
+)
+def test_precision_invalid_material_never_uses_reporting_fallback(case):
+    module = management()
+    d = fixture_document()
+    target = next(r for r in d["bookkeeping"] if r["record_id"] == "book:expense")
+    payload_overrides = (
+        {"currency": "JPY"}
+        if case == "wrong-currency"
+        else {"source_refs": ["source:missing"]}
+        if case == "unknown-source"
+        else {}
+    )
+    precision = precision_metadata(
+        d, target, 3 if case == "reporting-conflict" else 2, **payload_overrides
+    )
+    review = next(r for r in d["reviews"] if r["target_ref"] == precision["record_id"])
+    if case == "proposed":
+        precision["status"] = "proposed"
+    if case == "no-review":
+        precision["decision_refs"] = []
+    if case == "wrong-scope":
+        review["scope"] = ["finance-management"]
+    if case == "stale-review":
+        review["target_digest_sha256"] = "f" * 64
+    if case == "stale-target":
+        target["date"] = "2026-09-04"
+    if case == "stale-source":
+        source = copy.deepcopy(d["sources"][0])
+        source.update(record_id="source:replacement", supersedes_ref="source:bank")
+        d["sources"].append(source)
+    if case == "conflicting":
+        other = copy.deepcopy(precision)
+        other["record_id"] = "precision:conflict"
+        d["operating_settings"].append(other)
+    s = snapshot(d)
+    row = next(r for r in module.query(s, QUERY)["rows"] if r["record_ref"] == target["record_id"])
+    assert row["amount"]["exponent"] is None
+    assert any(g["field"] == "amount.exponent" for g in row["gaps"])
+    assert module.record_detail(s, target["record_id"])["amount"]["exponent"] is None
+    assert (
+        "book:expense"
+        not in module.query(s, QUERY)["metrics_by_currency"][0]["spend"]["included_record_refs"]
+    )
+
+
+@pytest.mark.parametrize("exponent", [True, "2", -1, 7, None])
+def test_precision_input_is_strict_and_bounded(tmp_path, exponent):
+    module, path = save_fixture(tmp_path)
+    s = module.read_snapshot(path)
+    before = path.read_bytes()
+    with pytest.raises(module.ManagementError, match="invalid money"):
+        module.preview(
+            s,
+            intent(
+                s, fields={"amount": {"minor": "2000", "currency": "USD", "exponent": exponent}}
+            ),
+        )
+    assert path.read_bytes() == before
+
+
+def test_precision_legacy_optional_and_nonamount_rebind_only(tmp_path):
+    module, path = save_fixture(tmp_path)
+    s = module.read_snapshot(path)
+    create = intent(
+        s,
+        action="create-bookkeeping",
+        record_ref=None,
+        fields={
+            "date": "2026-09-04",
+            "amount": {"minor": "2000", "currency": "USD", "exponent": 2},
+            "category": {"state": "unresolved"},
+        },
+    )
+    cr = module.commit(path, create, module.preview(s, create)["preview_digest"])
+    current = next(r for r in cr["changed_refs"] if r.endswith(":record"))
+    s = module.read_snapshot(path)
+    edit = intent(
+        s, request_id="precision-nonamount", record_ref=current, fields={"date": "2026-09-05"}
+    )
+    er = module.commit(path, edit, module.preview(s, edit)["preview_digest"])
+    current = next(r for r in er["changed_refs"] if r.endswith(":record"))
+    assert module.record_detail(module.read_snapshot(path), current)["amount"]["exponent"] == 2
+    s = module.read_snapshot(path)
+    edit = intent(
+        s,
+        request_id="precision-legacy-money",
+        record_ref=current,
+        fields={"amount": {"minor": "3000", "currency": "USD"}},
+    )
+    er = module.commit(path, edit, module.preview(s, edit)["preview_digest"])
+    current = next(r for r in er["changed_refs"] if r.endswith(":record"))
+    s = module.read_snapshot(path)
+    assert module.record_detail(s, current)["amount"]["exponent"] is None
+    assert not any(
+        r["scope"] == "finance-management-precision:" + current
+        for r in s["document"]["operating_settings"]
+    )
+    legacy = intent(
+        s,
+        request_id="legacy-create",
+        action="create-bookkeeping",
+        record_ref=None,
+        fields={
+            "date": "2026-09-06",
+            "amount": {"minor": "4000", "currency": "USD"},
+            "category": {"state": "unresolved"},
+        },
+    )
+    lr = module.commit(path, legacy, module.preview(s, legacy)["preview_digest"])
+    legacy_ref = next(r for r in lr["changed_refs"] if r.endswith(":record"))
+    assert (
+        module.record_detail(module.read_snapshot(path), legacy_ref)["amount"]["exponent"] is None
+    )
+
+
+def test_precision_nonamount_correction_does_not_rebind_stale_review(tmp_path):
+    module, path = save_fixture(tmp_path)
+    with module.workspace.writer(path, module.workspace.digest(path)) as session:
+        d = copy.deepcopy(session.document)
+        target = next(r for r in d["bookkeeping"] if r["record_id"] == "book:expense")
+        meta = precision_metadata(d, target)
+        next(r for r in d["reviews"] if r["target_ref"] == meta["record_id"])["scope"] = [
+            "finance-management"
+        ]
+        d["revision"] += 1
+        session.commit(d)
+    s = module.read_snapshot(path)
+    i = intent(s, fields={"date": "2026-09-04"})
+    result = module.commit(path, i, module.preview(s, i)["preview_digest"])
+    new = next(r for r in result["changed_refs"] if r.endswith(":record"))
+    assert module.record_detail(module.read_snapshot(path), new)["amount"]["exponent"] is None
+
+
+def test_precision_receipt_correction_and_attested_create_are_format_only(tmp_path):
+    module, path = save_fixture(tmp_path)
+    with module.workspace.writer(path, module.workspace.digest(path)) as session:
+        d = copy.deepcopy(session.document)
+        retained = session.retain_original(
+            "attachments/2026/09/units.txt", b"synthetic units source"
+        )
+        d["attachments"].append(
+            record(
+                "attachment:units",
+                "retained",
+                source_ref="source:bank",
+                role="original",
+                media_type="text/plain",
+                original_filename="units.txt",
+                **retained,
+            )
+        )
+        d["sources"][0]["attachment_refs"].append("attachment:units")
+        d["receipts"].append(
+            record(
+                "receipt:units",
+                "prepared",
+                business_date="2026-09-02",
+                merchant="Synthetic",
+                amount=money(2000),
+                source_ref="source:bank",
+                attachment_refs=["attachment:units"],
+            )
+        )
+        d["revision"] += 1
+        session.commit(d)
+    s = module.read_snapshot(path)
+    i = intent(
+        s,
+        action="correct-receipt-facts",
+        record_ref="receipt:units",
+        fields={"amount": {"minor": "2000", "currency": "USD", "exponent": 2}},
+    )
+    r = module.commit(path, i, module.preview(s, i)["preview_digest"])
+    new = next(x for x in r["changed_refs"] if x.endswith(":record"))
+    s = module.read_snapshot(path)
+    assert module.record_detail(s, new)["amount"] == {
+        "minor": "2000",
+        "currency": "USD",
+        "exponent": 2,
+    }
+    row = next(r for r in module.query(s, QUERY)["rows"] if r["record_ref"] == new)
+    assert row["reporting"] is None and row["kind"] == "receipt"
+    i = intent(
+        s,
+        request_id="precision-attestation",
+        action="create-bookkeeping",
+        record_ref=None,
+        source_refs=[],
+        attestation="Operator source with explicit units",
+        fields={
+            "date": "2026-09-06",
+            "amount": {"minor": "1234", "currency": "KWD", "exponent": 3},
+            "category": {"state": "unresolved"},
+        },
+    )
+    r = module.commit(path, i, module.preview(s, i)["preview_digest"])
+    new = next(x for x in r["changed_refs"] if x.endswith(":record"))
+    s = module.read_snapshot(path)
+    assert module.record_detail(s, new)["amount"]["exponent"] == 3
+    assert (
+        next(r for r in module.query(s, QUERY)["rows"] if r["record_ref"] == new)[
+            "metric_exclusion"
+        ]
+        == "missing_metadata"
+    )
+
+
+def test_correction_history_keeps_exact_events_and_ignores_nonapplied_or_version_refs():
+    module = management()
+    d = fixture_document()
+    old = d["bookkeeping"][1]
+    new = copy.deepcopy(old)
+    new["record_id"] = "book:next"
+    new["supersedes_ref"] = old["record_id"]
+    d["bookkeeping"].append(new)
+    for ref, state in [
+        ("correction:z", "applied"),
+        ("correction:a", "applied"),
+        ("correction:proposal", "proposed"),
+    ]:
+        c = record(
+            ref,
+            state,
+            superseded_ref=old["record_id"],
+            replacement_ref=new["record_id"],
+            reason=ref,
+            decision_ref="fixture:decision",
+        )
+        c["provenance"].append(
+            {
+                "kind": "correction-evidence",
+                "ref": "source:bank",
+                "observed_at": "2026-09-06T12:00:00Z",
+            }
+        )
+        if ref == "correction:z":
+            c["status_history"] = []
+        d["corrections"].append(c)
+    detail = module.record_detail(snapshot(d), new["record_id"])
+    assert detail["lineage"] == ["correction:z", "correction:a", new["record_id"]]
+    history = detail["correction_history"]
+    assert [r["correction_ref"] for r in history] == ["correction:z", "correction:a"]
+    assert (
+        history[0]["actor"] is None
+        and history[0]["at"] is None
+        and history[0]["evidence_refs"] == []
+    )
+    assert all(
+        r["source_refs"] == ["source:bank"] and r["decision_ref"] == "fixture:decision"
+        for r in history
+    )
+    assert detail["record"] == new and detail["original"] == old
+
+
 def test_preview_cancel_commit_legacy_immediate_and_idempotent(tmp_path):
     module, path = save_fixture(tmp_path)
     before = path.read_bytes()
