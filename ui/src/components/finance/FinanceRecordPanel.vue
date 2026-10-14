@@ -23,7 +23,11 @@ import { ApiError } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
 import {
   contentBlob,
+  canReadDocument,
   decimalToMinor,
+  documentAvailabilityText,
+  documentGroups,
+  documentName,
   formatMoney,
   minorToDecimal,
   newIntentId,
@@ -81,6 +85,12 @@ const evidenceURL = ref(''),
   evidenceType = ref(''),
   evidenceName = ref(''),
   evidenceState = ref('')
+const selectedAttachment = ref(''),
+  selectedOriginalName = ref(''),
+  originalReadFailed = ref(false)
+const originalGroups = computed(() =>
+  documentGroups(detail.value?.evidence, detail.value?.document_summary),
+)
 let active = true,
   loadSequence = 0,
   editSequence = 0,
@@ -137,6 +147,9 @@ function clearOriginal() {
   evidenceType.value = ''
   evidenceName.value = ''
   evidenceState.value = ''
+  selectedAttachment.value = ''
+  selectedOriginalName.value = ''
+  originalReadFailed.value = false
 }
 function cancelEdit() {
   editSequence++
@@ -424,20 +437,33 @@ async function save() {
     if (active) saving.value = false
   }
 }
-async function showOriginal(attachment: string) {
+async function showOriginal(document: Record<string, unknown>) {
+  if (!active || !props.modelValue || !canReadDocument(document)) return
   clearOriginal()
   const sequence = evidenceSequence
-  evidenceState.value = 'Loading original…'
+  const identity = JSON.stringify([base(), props.recordRef, snapshotRef(props.snapshot)])
+  const current = () =>
+    active &&
+    props.modelValue &&
+    sequence === evidenceSequence &&
+    identity === JSON.stringify([base(), props.recordRef, snapshotRef(props.snapshot)])
+  selectedAttachment.value = text(document.attachment_ref)
+  selectedOriginalName.value = documentName(document)
+  evidenceState.value = `Opening ${selectedOriginalName.value}…`
   try {
     const value = await callOperation<SchemaFinanceContentOut>('finance.evidence.read', {
       ...base(),
-      attachment_ref: attachment,
+      attachment_ref: selectedAttachment.value,
       expected_snapshot: snapshotRef(props.snapshot),
       response_mode: 'raw',
     })
-    if (!active || sequence !== evidenceSequence) return
+    if (!current()) return
     if (value.state !== 'available' || !value.content_base64) {
-      evidenceState.value = `Original ${value.state.replaceAll('_', ' ')}.`
+      originalReadFailed.value = true
+      evidenceState.value =
+        value.state === 'too_large'
+          ? `${selectedOriginalName.value} cannot be opened here because it exceeds the reader limit. Ask your finance agent to inspect the original in the authorized finance workflow, then refresh.`
+          : `${selectedOriginalName.value} cannot be opened. The original is unavailable or the source or access changed. Refresh to inspect current custody.`
       return
     }
     evidenceName.value = value.filename || 'original'
@@ -445,10 +471,12 @@ async function showOriginal(attachment: string) {
     evidenceURL.value = URL.createObjectURL(
       contentBlob(value.content_base64, value.content_type || 'application/octet-stream'),
     )
-    evidenceState.value = `Verified original · ${value.sha256 || ''}`
+    evidenceState.value = `Opened ${selectedOriginalName.value} · verified original`
   } catch {
-    if (active && sequence === evidenceSequence)
-      evidenceState.value = 'Original unavailable or source changed. Refresh to inspect custody.'
+    if (current()) {
+      originalReadFailed.value = true
+      evidenceState.value = `${selectedOriginalName.value} cannot be opened. The original is unavailable or the source or access changed. Refresh to inspect current custody.`
+    }
   }
 }
 onBeforeUnmount(() => {
@@ -475,36 +503,124 @@ onBeforeUnmount(() => {
     <UiCallout v-if="notice" variant="success" role="status">{{ notice }}</UiCallout>
     <template v-if="detail">
       <UiDescriptionList :items="facts" />
-      <section class="mt-5 space-y-2">
+      <section class="mt-5 space-y-3" aria-label="Original documents">
         <h3 class="t-h3">Original evidence</h3>
-        <p v-if="!detail.evidence.length" class="text-sm text-fg-muted">
-          No retained original is linked. Source facts and missing custody remain distinct.
+        <p class="text-sm text-fg-muted">
+          Invoice documents the purchase; receipt documents payment. An available file alone does
+          not confirm payment or posted books.
         </p>
-        <UiButton
-          v-for="evidence in detail.evidence"
-          :key="text(evidence.attachment_ref)"
-          size="sm"
-          @click="showOriginal(text(evidence.attachment_ref))"
-          >View {{ text(evidence.attachment_ref) }} · {{ text(evidence.state) }}</UiButton
+        <section
+          v-for="group in originalGroups"
+          :key="group.kind"
+          :aria-label="group.label"
+          class="space-y-2 border-t border-subtle pt-3"
         >
-        <p v-if="evidenceState" role="status" class="break-all text-xs text-fg-muted">
+          <h4 class="font-medium">{{ group.label }} · {{ group.status }}</h4>
+          <p v-if="group.counts" class="text-xs text-fg-muted">{{ group.counts }}</p>
+          <p v-else-if="group.documents.length" class="text-xs text-fg-muted">
+            {{ group.documents.length }} linked original(s) with document kind not identified. Open
+            a named original and check its source details before identifying it.
+          </p>
+          <p v-else class="text-xs text-fg-muted">No unidentified originals listed.</p>
+          <ul v-if="group.documents.length" class="space-y-3">
+            <li
+              v-for="evidence in group.documents"
+              :key="text(evidence.attachment_ref)"
+              class="space-y-1"
+            >
+              <p class="break-words font-medium">{{ documentName(evidence) }}</p>
+              <p class="text-xs text-fg-muted">{{ documentAvailabilityText(evidence) }}</p>
+              <p
+                v-if="evidence.media_type || typeof evidence.bytes === 'number'"
+                class="break-words text-xs text-fg-muted"
+              >
+                {{ text(evidence.media_type)
+                }}<template v-if="typeof evidence.bytes === 'number'">
+                  · {{ evidence.bytes }} bytes</template
+                >
+              </p>
+              <p v-if="evidence.retention_state" class="text-xs text-fg-muted">
+                Retention: {{ text(evidence.retention_state).replaceAll('_', ' ') }}
+              </p>
+              <UiButton
+                size="sm"
+                :disabled="!canReadDocument(evidence)"
+                :aria-label="`${evidence.availability === 'available' ? 'Open' : 'Verify and open'} ${documentName(evidence)}`"
+                :data-document-ref="text(evidence.attachment_ref)"
+                @click="showOriginal(evidence)"
+                >{{
+                  evidence.availability === 'available'
+                    ? 'Open original'
+                    : 'Verify and open original'
+                }}</UiButton
+              >
+              <p
+                v-if="selectedAttachment === evidence.attachment_ref && originalReadFailed"
+                class="text-xs text-fg-muted"
+              >
+                Read outcome: cannot open this original. Snapshot availability and retention above
+                have not changed.
+              </p>
+              <details class="text-xs text-fg-muted">
+                <summary class="focus-ring cursor-pointer">
+                  Source details for {{ documentName(evidence) }}
+                </summary>
+                <p class="break-all">Attachment: {{ text(evidence.attachment_ref) }}</p>
+                <p class="break-all">
+                  Declared sources: {{ refs(evidence.source_refs).join(', ') || 'Not supplied' }}
+                </p>
+                <p
+                  v-for="(context, index) in objects(evidence.source_context)"
+                  :key="`source-${index}`"
+                  class="break-all"
+                >
+                  {{ context.historical ? 'Historical source' : 'Current source' }}:
+                  {{ text(context.source_ref) }} · requested {{ text(context.requested_ref) }} ·
+                  current {{ text(context.current_ref) }}
+                </p>
+                <p
+                  v-for="(context, index) in objects(evidence.receipt_context)"
+                  :key="`receipt-${index}`"
+                  class="break-all"
+                >
+                  {{ context.historical ? 'Historical receipt record' : 'Current receipt record' }}:
+                  {{ text(context.receipt_ref) }} · requested {{ text(context.requested_ref) }} ·
+                  current {{ text(context.current_ref) }}
+                </p>
+                <p v-if="evidence.sha256" class="break-all">SHA-256: {{ text(evidence.sha256) }}</p>
+                <p v-if="evidence.state">
+                  Recorded custody state: {{ text(evidence.state).replaceAll('_', ' ') }}
+                </p>
+              </details>
+            </li>
+          </ul>
+        </section>
+        <p class="text-xs text-fg-muted">
+          To identify or link the correct original, ask your finance agent to use the existing
+          receipt intake or finance workflow, then refresh this workspace. Typed counts cover the
+          explicitly identified originals; other linked files are listed separately.
+        </p>
+        <p v-if="evidenceState" role="status" class="break-words text-sm text-fg-muted">
           {{ evidenceState }}
         </p>
+        <UiButton v-if="originalReadFailed" size="sm" @click="emit('refresh')"
+          >Refresh original availability</UiButton
+        >
         <template v-if="evidenceURL">
           <a :href="evidenceURL" :download="evidenceName" class="focus-ring text-fg-link"
-            >Download verified original</a
+            >Download {{ selectedOriginalName }}</a
           >
           <img
             v-if="evidenceType.startsWith('image/')"
             :src="evidenceURL"
-            alt="Verified original evidence"
+            :alt="`Verified original: ${selectedOriginalName}`"
             class="max-w-full"
           />
           <iframe
             v-else-if="evidenceType === 'application/pdf'"
             :src="evidenceURL"
             sandbox=""
-            title="Verified original evidence"
+            :title="`Verified original: ${selectedOriginalName}`"
             class="h-96 w-full border border-default"
           />
         </template>

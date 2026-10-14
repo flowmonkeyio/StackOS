@@ -13,6 +13,7 @@ import copy
 import hashlib
 import json
 import re
+import unicodedata
 from collections import defaultdict
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
@@ -112,11 +113,12 @@ def read_snapshot(path: Path) -> dict[str, Any]:
         if document.get("schema_version") != "local-json-v1":
             _fail("unsupported_version")
         workspace.validate(document, schema_path=path.parent / "schemas/finance-v1.schema.json")
-        issues = []
+        issues, verified = [], []
         for attachment in document["attachments"]:
             try:
                 checked = workspace.verify_originals({"attachments": [attachment]}, path.parent)
                 issues.extend(checked["unavailable_attachments"])
+                verified.extend(checked["verified_attachment_refs"])
             except (ValueError, OSError):
                 issues.append({"attachment_ref": attachment["record_id"], "state": "unavailable"})
         if workspace.read_regular(path) != raw:
@@ -135,6 +137,7 @@ def read_snapshot(path: Path) -> dict[str, Any]:
         "sha256": hashlib.sha256(raw).hexdigest(),
         "schema_version": document["schema_version"],
         "custody_issues": issues,
+        "verified_attachment_refs": verified,
         "read_at": _now(),
     }
 
@@ -519,6 +522,159 @@ def _money(value: int, currency: str, exponent: int | None) -> dict[str, Any]:
     return {"minor": str(value), "currency": currency, "exponent": exponent}
 
 
+def _document_filename(value: str) -> str:
+    # Display metadata only: never return the original's filesystem locator.
+    basename = value.replace("\\", "/").rsplit("/", 1)[-1]
+    basename = "".join(c for c in basename if not unicodedata.category(c).startswith("C"))
+    basename = basename.strip()[:240]
+    return basename if basename not in {"", ".", ".."} else "Unnamed original"
+
+
+def _document_projection(
+    snapshot: dict[str, Any], current: CurrentRecords, row: dict[str, Any]
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Inspect declared originals without contributing to financial evidence/recognition."""
+    attachments: set[str] = set()
+    source_context: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    receipt_context: dict[str, list[dict[str, Any]]] = defaultdict(list)
+
+    def add_context(target, attachment_ref, context):
+        if context not in target[attachment_ref]:
+            target[attachment_ref].append(context)
+
+    def inspect(record, receipt=None):
+        linked = set(record.get("attachment_refs", []))
+        sources = record.get(
+            "source_refs", [record["source_ref"]] if "source_ref" in record else []
+        )
+        for requested in sources:
+            if current.collections.get(requested) != "sources":
+                continue
+            resolved = current.resolve(requested)
+            for source_ref in dict.fromkeys([requested, resolved]):
+                refs = current.records[source_ref].get("attachment_refs", [])
+                linked.update(refs)
+                for attachment_ref in refs:
+                    add_context(
+                        source_context,
+                        attachment_ref,
+                        {
+                            "requested_ref": requested,
+                            "current_ref": resolved,
+                            "source_ref": source_ref,
+                            "historical": source_ref != resolved,
+                        },
+                    )
+        attachments.update(linked)
+        if receipt:
+            for attachment_ref in linked:
+                add_context(receipt_context, attachment_ref, receipt)
+
+    inspect(row)
+    for requested in row.get("receipt_refs", []):
+        if current.collections.get(requested) != "receipts":
+            continue
+        resolved = current.resolve(requested)
+        for receipt_ref in dict.fromkeys([requested, resolved]):
+            inspect(
+                current.records[receipt_ref],
+                {
+                    "requested_ref": requested,
+                    "current_ref": resolved,
+                    "receipt_ref": receipt_ref,
+                    "historical": receipt_ref != resolved,
+                },
+            )
+
+    # Exact attachment backlinks are declarations. Other sources on the financial
+    # row, newer source kinds and receipt-collection membership cannot type a file.
+    associations: dict[str, set[str]] = defaultdict(set)
+    for source in snapshot["document"]["sources"]:
+        for attachment_ref in source.get("attachment_refs", []):
+            if attachment_ref in attachments:
+                associations[attachment_ref].add(source["record_id"])
+    aliases = {
+        "invoice": "invoice",
+        "purchase-invoice": "invoice",
+        "receipt": "receipt",
+        "payment-receipt": "receipt",
+    }
+    issues = {x["attachment_ref"]: x["state"] for x in snapshot.get("custody_issues", [])}
+    verified = set(snapshot.get("verified_attachment_refs", []))
+    documents = []
+    for attachment_ref in sorted(attachments):
+        attachment = current.records.get(attachment_ref, {})
+        sources = associations[attachment_ref]
+        if current.collections.get(attachment.get("source_ref")) == "sources":
+            sources.add(attachment["source_ref"])
+        kinds = {
+            aliases.get(current.records[source].get("source_kind"), "unidentified")
+            for source in sources
+        }
+        document_type = next(iter(kinds)) if len(kinds) == 1 else "unidentified"
+        for source in sorted(sources):
+            if not any(c["source_ref"] == source for c in source_context[attachment_ref]):
+                resolved = current.resolve(source)
+                add_context(
+                    source_context,
+                    attachment_ref,
+                    {
+                        "requested_ref": source,
+                        "current_ref": resolved,
+                        "source_ref": source,
+                        "historical": source != resolved,
+                    },
+                )
+        retention = attachment.get("status")
+        state = issues.get(attachment_ref, retention or "unavailable")
+        if retention == "disposed":
+            availability, reason = "unavailable", "disposed"
+        elif retention == "quarantined" or attachment.get("quarantine_ref"):
+            availability, reason = "unavailable", "quarantined"
+        elif attachment_ref in issues:
+            availability, reason = "unavailable", "unavailable"
+        elif retention == "retained" and attachment_ref in verified:
+            availability, reason = "available", None
+        else:
+            availability, reason = "not_verified", "not_verified"
+        documents.append(
+            {
+                "attachment_ref": attachment_ref,
+                "source_refs": sorted(sources),
+                "document_type": document_type,
+                "filename": _document_filename(attachment.get("original_filename", "")),
+                "media_type": attachment.get("media_type"),
+                "bytes": attachment.get("bytes"),
+                "sha256": attachment.get("sha256"),
+                "state": state,
+                "availability": availability,
+                "reason": reason,
+                "retention_state": retention,
+                "source_context": source_context[attachment_ref],
+                "receipt_context": receipt_context[attachment_ref],
+            }
+        )
+    summary = {}
+    for kind in ("invoice", "receipt"):
+        group = [item for item in documents if item["document_type"] == kind]
+        counts = {
+            f"{state}_count": sum(item["availability"] == state for item in group)
+            for state in ("available", "unavailable", "not_verified")
+        }
+        states = {item["availability"] for item in group}
+        state = (
+            next(iter(states))
+            if len(states) == 1
+            else "partial"
+            if states
+            else "unidentified"
+            if any(item["document_type"] == "unidentified" for item in documents)
+            else "not_linked"
+        )
+        summary[kind] = {"state": state, **counts, "document_count": len(group)}
+    return documents, summary
+
+
 def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
     """One filtered population supplies rows, totals, groups, trends and reports."""
     q = normalize_query(filters)
@@ -673,6 +829,9 @@ def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
                 ]
                 if q.get("q") and q["q"].casefold() not in _json([row, identities]).casefold():
                     continue
+                row["documents"], row["document_summary"] = _document_projection(
+                    snapshot, current, record
+                )
                 rows.append(row)
                 if is_undated:
                     undated.append(ref)
@@ -939,10 +1098,7 @@ def record_detail(snapshot: dict[str, Any], ref: str) -> dict[str, Any]:
     row = current.records[resolved]
     collection = current.collections[resolved]
     sources = row.get("source_refs", [row["source_ref"]] if "source_ref" in row else [])
-    attachments = set(row.get("attachment_refs", []))
-    for source in sources:
-        attachments.update(current.records.get(source, {}).get("attachment_refs", []))
-    issues = {x["attachment_ref"]: x["state"] for x in snapshot.get("custody_issues", [])}
+    documents, document_summary = _document_projection(snapshot, current, row)
     settings, _policies = _method(current)
     reporting, _reporting_issue = (
         _reporting(current, settings, row, {}, check_basis=False)
@@ -989,14 +1145,8 @@ def record_detail(snapshot: dict[str, Any], ref: str) -> dict[str, Any]:
         "lineage": lineage,
         "correction_history": history,
         "source_refs": sources,
-        "evidence": [
-            {
-                "attachment_ref": a,
-                "state": issues.get(a, current.records.get(a, {}).get("status", "unavailable")),
-                "sha256": current.records.get(a, {}).get("sha256"),
-            }
-            for a in sorted(attachments)
-        ],
+        "evidence": documents,
+        "document_summary": document_summary,
         "editable_fields": [
             "date",
             "amount",

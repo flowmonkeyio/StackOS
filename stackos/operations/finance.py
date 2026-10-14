@@ -244,6 +244,7 @@ class FinanceRecordOut(BaseModel):
     correction_history: list[FinanceCorrectionHistoryItemOut] = Field(default_factory=list)
     source_refs: list[str]
     evidence: list[dict[str, Any]]
+    document_summary: dict[str, Any] | None = None
     editable_fields: list[str]
     provider_fields_editable: Literal[False] = False
 

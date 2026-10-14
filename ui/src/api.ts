@@ -4154,6 +4154,13 @@ export interface components {
             correction_history?: components["schemas"]["FinanceCorrectionHistoryItemOut"][];
             /** Current Ref */
             current_ref: string;
+            /**
+             * Document Summary
+             * @default null
+             */
+            document_summary: {
+                [key: string]: unknown;
+            } | null;
             /** Editable Fields */
             editable_fields: string[];
             /** Evidence */

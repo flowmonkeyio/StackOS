@@ -153,6 +153,140 @@ def test_console_projection_detail_reports_and_no_read_writes(api, finance):
     assert finance["path"].read_bytes() == before
 
 
+def test_document_summary_and_named_originals_survive_registered_output_boundary(api, finance):
+    module = finance["module"]
+    invoice_bytes = b"Synthetic purchase invoice original"
+    receipt_bytes = b"Synthetic payment receipt original"
+    with module.workspace.writer(
+        finance["path"], module.workspace.digest(finance["path"])
+    ) as writer:
+        document = copy.deepcopy(writer.document)
+        invoice_original = writer.retain_original("attachments/2026/09/invoice.pdf", invoice_bytes)
+        document["sources"].append(
+            record(
+                "source:invoice",
+                "verified",
+                source_kind="purchase-invoice",
+                source_identity="synthetic:purchase-invoice",
+                attachment_refs=["attachment:invoice"],
+                coverage_state="partial",
+            )
+        )
+        document["attachments"].append(
+            record(
+                "attachment:invoice",
+                "retained",
+                source_ref="source:invoice",
+                role="original",
+                media_type="application/pdf",
+                original_filename="/private/synthetic/purchase-invoice.pdf",
+                **invoice_original,
+            )
+        )
+        retained = writer.retain_original("attachments/2026/09/receipt.pdf", receipt_bytes)
+        document["sources"].append(
+            record(
+                "source:receipt",
+                "verified",
+                source_kind="payment-receipt",
+                source_identity="synthetic:payment-receipt",
+                attachment_refs=["attachment:receipt"],
+                coverage_state="partial",
+            )
+        )
+        document["attachments"].append(
+            record(
+                "attachment:receipt",
+                "retained",
+                source_ref="source:receipt",
+                role="original",
+                media_type="application/pdf",
+                original_filename="/private/synthetic/payment-receipt.pdf",
+                **retained,
+            )
+        )
+        document["receipts"].append(
+            record(
+                "receipt:payment",
+                "prepared",
+                source_ref="source:receipt",
+                attachment_refs=["attachment:receipt"],
+                amount={"amount_minor": 10000, "currency": "USD"},
+            )
+        )
+        target = next(x for x in document["bookkeeping"] if x["record_id"] == "book:expense")
+        target["source_refs"].append("source:invoice")
+        target["receipt_refs"] = ["receipt:payment"]
+        document["revision"] += 1
+        writer.commit(document)
+    before = finance["path"].read_bytes()
+    expected = module.record_detail(module.read_snapshot(finance["path"]), "book:expense")
+    response = call(
+        api,
+        "finance.record.get",
+        {
+            **finance["common"],
+            "record_ref": "book:expense",
+            "expected_snapshot": snapshot(finance),
+        },
+    )
+    assert response.status_code == 200, response.text
+    detail = body(response)
+    assert detail["document_summary"] == expected["document_summary"]
+    assert all(
+        x["state"] == "available" and x["available_count"] == 1
+        for x in detail["document_summary"].values()
+    )
+    assert {x["filename"] for x in detail["evidence"]} == {
+        "original.html",
+        "purchase-invoice.pdf",
+        "payment-receipt.pdf",
+    }
+    assert "documents" not in detail
+    for item in detail["evidence"]:
+        assert item["state"] == "retained" and item["availability"] == "available"
+        assert "relative_path" not in item and "original_filename" not in item
+        read = call(
+            api,
+            "finance.evidence.read",
+            {
+                **finance["common"],
+                "attachment_ref": item["attachment_ref"],
+                "expected_snapshot": snapshot(finance),
+            },
+        )
+        assert read.status_code == 200, read.text
+        wanted = {
+            "receipt": receipt_bytes,
+            "invoice": invoice_bytes,
+            "unidentified": finance["original"].read_bytes(),
+        }[item["document_type"]]
+        assert base64.b64decode(body(read)["content_base64"]) == wanted
+    query = call(api, "finance.query", {**finance["common"], **QUERY})
+    assert query.status_code == 200, query.text
+    row = next(x for x in body(query)["rows"] if x["record_ref"] == "book:expense")
+    assert row["documents"] == detail["evidence"]
+    assert row["document_summary"] == detail["document_summary"]
+    assert "verified_attachment_refs" not in body(query)["snapshot"]
+    assert finance["path"].read_bytes() == before
+
+
+def test_legacy_record_output_defaults_document_summary_at_real_handler(api, finance, monkeypatch):
+    module = finance["module"]
+    owner = module.record_detail
+
+    def legacy(*args):
+        detail = owner(*args)
+        detail.pop("document_summary")
+        return detail
+
+    monkeypatch.setattr(module, "record_detail", legacy)
+    response = call(api, "finance.record.get", {**finance["common"], "record_ref": "book:expense"})
+    assert response.status_code == 200, response.text
+    assert body(response)["document_summary"] is None
+    assert body(response)["evidence"][0]["document_type"] == "unidentified"
+
+
 def test_undated_legacy_receipt_keeps_ref_and_supported_rows_without_rewriting_master(api, finance):
     module = finance["module"]
     document = module.workspace.read_document(finance["path"])

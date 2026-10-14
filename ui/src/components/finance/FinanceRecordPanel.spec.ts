@@ -171,7 +171,7 @@ describe('reviewed save and private originals', () => {
     await flushPromises()
     await panel
       .findAll('button')
-      .find((button) => button.text().includes('View attachment:one'))!
+      .find((button) => button.attributes('data-document-ref') === 'attachment:one')!
       .trigger('click')
     await flushPromises()
     expect(panel.get('a[download]').attributes('href')).toBe('blob:synthetic-original')
@@ -184,6 +184,333 @@ describe('reviewed save and private originals', () => {
     expect(revoke).toHaveBeenCalledWith('blob:synthetic-original')
     panel.unmount()
   })
+})
+
+describe('invoice and receipt originals', () => {
+  const summary = (state = 'available', available = 1, unavailable = 0, unverified = 0) => ({
+    state,
+    document_count: available + unavailable + unverified,
+    available_count: available,
+    unavailable_count: unavailable,
+    not_verified_count: unverified,
+  })
+  const invoice = {
+    attachment_ref: 'attachment:invoice',
+    document_type: 'invoice',
+    filename: 'Supplier invoice.pdf',
+    availability: 'available',
+    retention_state: 'retained',
+    state: 'retained',
+    reason: null,
+    media_type: 'application/pdf',
+    bytes: 32,
+    sha256: 'c'.repeat(64),
+    source_refs: ['source:old'],
+    source_context: [
+      {
+        requested_ref: 'source:old',
+        current_ref: 'source:current',
+        source_ref: 'source:old',
+        historical: true,
+      },
+    ],
+    receipt_context: [
+      {
+        requested_ref: 'receipt:old',
+        current_ref: 'receipt:current',
+        receipt_ref: 'receipt:current',
+        historical: false,
+      },
+    ],
+  }
+  const receipt = {
+    ...invoice,
+    attachment_ref: 'attachment:receipt',
+    document_type: 'receipt',
+    filename: 'Payment receipt.pdf',
+    source_refs: ['source:payment'],
+    source_context: [],
+    receipt_context: [],
+  }
+  const documentDetail = {
+    ...detail,
+    evidence: [invoice, receipt],
+    document_summary: { invoice: summary(), receipt: summary() },
+  }
+  const content = (filename = 'stored-original.pdf') => ({
+    state: 'available',
+    content_base64: btoa('exact synthetic original bytes'),
+    content_type: 'application/pdf',
+    inline_allowed: true,
+    filename,
+    sha256: 'c'.repeat(64),
+  })
+  const mountPanel = () =>
+    mount(FinanceRecordPanel, {
+      props,
+      attachTo: document.body,
+      global: { stubs: { teleport: true } },
+    })
+  function blobSpies() {
+    const create = vi.fn(() => 'blob:document'),
+      revoke = vi.fn(),
+      OriginalURL = URL
+    vi.stubGlobal(
+      'URL',
+      class extends OriginalURL {
+        static override createObjectURL = create
+        static override revokeObjectURL = revoke
+      },
+    )
+    return { create, revoke }
+  }
+  it('identifies both kinds by original filename and reads each exact scoped ref', async () => {
+    const { create, revoke } = blobSpies()
+    vi.mocked(callOperation).mockImplementation(async (name) =>
+      name === 'finance.record.get' ? { data: documentDetail } : content(),
+    )
+    const panel = mountPanel()
+    await flushPromises()
+    expect(panel.get('section[aria-label="Invoice"]').text()).toContain('Invoice · Available · 1')
+    expect(panel.get('section[aria-label="Receipt"]').text()).toContain('Receipt · Available · 1')
+    expect(panel.text()).toContain('1 linked · 1 available · 0 unavailable · 0 not verified')
+    expect(panel.text()).toContain('32 bytes')
+    expect(panel.text()).toContain(
+      'Historical source: source:old · requested source:old · current source:current',
+    )
+    expect(panel.text()).toContain('Current receipt record: receipt:current')
+    for (const document of [invoice, receipt]) {
+      const button = panel.get(`[data-document-ref="${document.attachment_ref}"]`)
+      expect(button.attributes('aria-label')).toBe(`Open ${document.filename}`)
+      expect(button.element.tagName).toBe('BUTTON')
+      expect(button.classes()).toContain('focus-ring')
+      ;(button.element as HTMLButtonElement).focus()
+      expect(window.document.activeElement).toBe(button.element)
+      await button.trigger('click')
+      await flushPromises()
+      expect(vi.mocked(callOperation).mock.calls.at(-1)).toEqual([
+        'finance.evidence.read',
+        {
+          project_id: 1,
+          workspace_ref: 'finance:one',
+          access_generation: 1,
+          attachment_ref: document.attachment_ref,
+          expected_snapshot: { revision: 1, sha256: snapshot.sha256 },
+          response_mode: 'raw',
+        },
+      ])
+      expect(panel.get('a[download]').text()).toBe(`Download ${document.filename}`)
+      expect(panel.get('a[download]').attributes('download')).toBe('stored-original.pdf')
+      expect(panel.get('iframe').attributes('title')).toBe(
+        `Verified original: ${document.filename}`,
+      )
+    }
+    expect(create).toHaveBeenCalledTimes(2)
+    expect(revoke).toHaveBeenCalledTimes(1)
+    expect(panel.text()).toContain('does not confirm payment or posted books')
+    panel.unmount()
+    expect(revoke).toHaveBeenCalledTimes(2)
+  })
+  it.each(['unavailable', 'stale', 'too_large', 'exception'])(
+    'clears the previous original and names the failed %s read separately from snapshot custody',
+    async (outcome) => {
+      const { revoke } = blobSpies()
+      vi.mocked(callOperation).mockImplementation(async (name, args) => {
+        if (name === 'finance.record.get') return { data: documentDetail }
+        if (args.attachment_ref === invoice.attachment_ref) return content()
+        if (outcome === 'exception') throw new Error('synthetic denied read')
+        return { state: outcome, filename: 'storage-name.pdf' }
+      })
+      const panel = mountPanel()
+      await flushPromises()
+      await panel.get('[data-document-ref="attachment:invoice"]').trigger('click')
+      await flushPromises()
+      expect(panel.find('iframe').exists()).toBe(true)
+      await panel.get('[data-document-ref="attachment:receipt"]').trigger('click')
+      await flushPromises()
+      expect(revoke).toHaveBeenCalledWith('blob:document')
+      expect(panel.find('iframe').exists()).toBe(false)
+      expect(panel.find('a[download]').exists()).toBe(false)
+      expect(panel.get('section[aria-label="Receipt"]').text()).toContain(
+        'Read outcome: cannot open this original',
+      )
+      expect(panel.get('section[aria-label="Receipt"]').text()).toContain(
+        'Available · verified in this snapshot',
+      )
+      expect(panel.text()).toContain('Payment receipt.pdf cannot')
+      expect(panel.text()).not.toContain('storage-name.pdf')
+      expect(panel.text()).not.toContain('Missing')
+      if (outcome === 'too_large') expect(panel.text()).toContain('exceeds the reader limit')
+      const refresh = panel
+        .findAll('button')
+        .find((button) => button.text() === 'Refresh original availability')!
+      await refresh.trigger('click')
+      expect(panel.emitted('refresh')).toHaveLength(1)
+      expect(vi.mocked(callOperation).mock.calls.map(([name]) => name)).toEqual([
+        'finance.record.get',
+        'finance.evidence.read',
+        'finance.evidence.read',
+      ])
+      panel.unmount()
+    },
+  )
+  it('separates mixed custody and unknown files, disables unavailable originals and escapes filenames', async () => {
+    const unsafe = '<img src=x onerror=alert(1)>.pdf'
+    const missing = {
+      ...invoice,
+      attachment_ref: 'attachment:missing',
+      filename: 'Unavailable original.pdf',
+      availability: 'unavailable',
+      reason: 'unavailable',
+    }
+    vi.mocked(callOperation).mockResolvedValue({
+      data: {
+        ...documentDetail,
+        evidence: [
+          invoice,
+          missing,
+          {
+            ...receipt,
+            availability: 'unavailable',
+            reason: 'quarantined',
+            retention_state: 'quarantined',
+          },
+          { attachment_ref: 'attachment:unknown', filename: unsafe, state: 'retained' },
+        ],
+        document_summary: {
+          invoice: summary('partial', 1, 1),
+          receipt: summary('unavailable', 0, 1),
+        },
+      },
+    })
+    const panel = mountPanel()
+    await flushPromises()
+    expect(panel.text()).toContain('Invoice · Partial · 1/2 available')
+    expect(panel.text()).toContain('2 linked · 1 available · 1 unavailable · 0 not verified')
+    expect(panel.get('section[aria-label="Unidentified documents"]').text()).toContain(
+      '1 linked original(s)',
+    )
+    expect(
+      panel.get('[data-document-ref="attachment:missing"]').attributes('disabled'),
+    ).toBeDefined()
+    expect(
+      panel.get('[data-document-ref="attachment:receipt"]').attributes('disabled'),
+    ).toBeDefined()
+    expect(panel.text()).toContain('original is quarantined')
+    const legacy = panel.get('[data-document-ref="attachment:unknown"]')
+    expect(legacy.attributes('disabled')).toBeUndefined()
+    expect(legacy.attributes('aria-label')).toBe(`Verify and open ${unsafe}`)
+    expect(panel.text()).toContain(unsafe)
+    expect(panel.find('img').exists()).toBe(false)
+    expect(panel.text()).toContain('ask your finance agent')
+    panel.unmount()
+  })
+  it.each(['not_linked', 'unidentified', 'legacy'])(
+    'renders %s without claiming a missing or available file',
+    async (state) => {
+      vi.mocked(callOperation).mockResolvedValue({
+        data: {
+          ...detail,
+          evidence:
+            state === 'unidentified'
+              ? [
+                  {
+                    attachment_ref: 'attachment:unknown',
+                    document_type: 'unidentified',
+                    filename: 'Evidence.pdf',
+                    availability: 'not_verified',
+                  },
+                ]
+              : [],
+          document_summary:
+            state === 'legacy' ? null : { invoice: summary(state, 0), receipt: summary(state, 0) },
+        },
+      })
+      const panel = mountPanel()
+      await flushPromises()
+      const invoiceGroup = panel.get('section[aria-label="Invoice"]').text()
+      expect(invoiceGroup).toContain(
+        state === 'legacy'
+          ? 'Not verified'
+          : state === 'not_linked'
+            ? 'Not linked'
+            : 'Needs identification',
+      )
+      expect(invoiceGroup).not.toContain('Available')
+      expect(invoiceGroup).not.toContain('Missing')
+      panel.unmount()
+    },
+  )
+  it('ignores a late original after another document opens', async () => {
+    const { create } = blobSpies()
+    let finish!: (value: unknown) => void
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name === 'finance.record.get') return { data: documentDetail }
+      return args.attachment_ref === invoice.attachment_ref
+        ? new Promise((resolve) => {
+            finish = resolve
+          })
+        : content()
+    })
+    const panel = mountPanel()
+    await flushPromises()
+    await panel.get('[data-document-ref="attachment:invoice"]').trigger('click')
+    await panel.get('[data-document-ref="attachment:receipt"]').trigger('click')
+    await flushPromises()
+    finish(content('late-invoice.pdf'))
+    await flushPromises()
+    expect(create).toHaveBeenCalledTimes(1)
+    expect(panel.get('a[download]').text()).toBe('Download Payment receipt.pdf')
+    expect(panel.text()).not.toContain('late-invoice.pdf')
+    panel.unmount()
+  })
+  it.each(['project', 'workspace', 'generation', 'record', 'revision', 'sha', 'close', 'unmount'])(
+    'cleans private bytes and rejects a late original on %s change',
+    async (change) => {
+      const { create, revoke } = blobSpies()
+      let finish!: (value: unknown) => void
+      vi.mocked(callOperation).mockImplementation(async (name, args) => {
+        if (name === 'finance.record.get') return { data: documentDetail }
+        return args.attachment_ref === invoice.attachment_ref
+          ? content()
+          : new Promise((resolve) => {
+              finish = resolve
+            })
+      })
+      const panel = mountPanel()
+      await flushPromises()
+      await panel.get('[data-document-ref="attachment:invoice"]').trigger('click')
+      await flushPromises()
+      await panel.get('[data-document-ref="attachment:receipt"]').trigger('click')
+      expect(revoke).toHaveBeenCalledWith('blob:document')
+      if (change === 'unmount') panel.unmount()
+      else
+        await panel.setProps(
+          change === 'project'
+            ? { projectId: 2 }
+            : change === 'workspace'
+              ? { access: { ...props.access, workspace_ref: 'finance:two' } }
+              : change === 'generation'
+                ? { access: { ...props.access, generation: 2 } }
+                : change === 'record'
+                  ? { recordRef: 'receipt:two' }
+                  : change === 'revision'
+                    ? { snapshot: { ...snapshot, revision: 2 } }
+                    : change === 'sha'
+                      ? { snapshot: { ...snapshot, sha256: 'b'.repeat(64) } }
+                      : { modelValue: false },
+        )
+      finish(content('late-private.pdf'))
+      await flushPromises()
+      expect(create).toHaveBeenCalledTimes(1)
+      if (change !== 'unmount') {
+        expect(panel.find('iframe').exists()).toBe(false)
+        expect(panel.find('a[download]').exists()).toBe(false)
+        expect(panel.text()).not.toContain('late-private.pdf')
+        panel.unmount()
+      }
+    },
+  )
 })
 describe('sourced finance editor', () => {
   it('preserves typed facts and a verified preview across equivalent source props and display updates', async () => {

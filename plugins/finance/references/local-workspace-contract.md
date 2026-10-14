@@ -477,6 +477,41 @@ Handler-owned retries revalidate current authority and original intent through
 the external writer; generic operation cache replay does not bypass that check.
 An outcome-unknown receipt requires reconciliation of the same request.
 
+Query rows expose `documents` and separate invoice/receipt `document_summary`
+groups. Detail enriches its existing `evidence` items with the same metadata and
+returns an optional summary; legacy detail output may omit it. Only explicit
+`source_kind` declarations `invoice`/`purchase-invoice` and
+`receipt`/`payment-receipt` type each exact attachment. Conflicting or unknown
+declarations remain unidentified. Filenames, attachment roles, receipt membership
+and provider invoice refs never establish document type.
+
+Document inspection follows declared sources and bookkeeping `receipt_refs`,
+including the exact requested and current source/receipt versions. Historical
+originals retain their own kind and identity; a newer source cannot relabel them.
+Exact attachment refs deduplicate. `source_context` and `receipt_context` retain
+requested/current refs, the inspected version and a historical flag. Added
+document inspection does not contribute to economic evidence, recognition,
+exclusions or filtering; document metadata is attached after population selection.
+
+Each original has a bounded, control-free basename from `original_filename`, media
+type, byte size, exact attachment/source refs and independent retention and
+availability states. Only retained originals actually verified in the snapshot
+are available. Quarantine, disposal and concrete custody failures are unavailable;
+collapsed missing/changed/unreadable failures share the safe `unavailable` reason.
+Absent verification remains `not_verified`. No filesystem path is a document
+locator in this projection; opening uses the existing scoped `finance.evidence.read`.
+Its `too_large` outcome means the file cannot be opened here, independently of
+snapshot availability; the projection does not duplicate the reader's size policy.
+
+For each type, unique typed originals partition into available, unavailable and
+not-verified counts. A uniform group uses that availability state; mixed groups
+are `partial`. Zero typed originals with linked unidentified files is
+`unidentified`; otherwise it is `not_linked`. Known typed groups keep their counts
+when unidentified files also exist. These states describe inspectable originals,
+not document completeness, payment or posted books. Identify untyped files from
+their named originals and source details; repair or link sources through the
+existing external finance/receipt-intake workflow, then refresh the console.
+
 ### Display precision
 
 The native edit contract accepts `fields.amount` with required exact `minor`

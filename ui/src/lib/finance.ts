@@ -28,6 +28,73 @@ export function snapshotRef(value: SnapshotRef): SnapshotRef {
   return { revision: value.revision, sha256: value.sha256 }
 }
 
+export type DocumentKind = 'invoice' | 'receipt' | 'unidentified'
+export function documentKind(value: unknown): DocumentKind {
+  return value === 'invoice' || value === 'receipt' ? value : 'unidentified'
+}
+export function documentName(value: Record<string, unknown>): string {
+  return text(value.filename) || 'Unnamed original'
+}
+export function documentSummaryText(value: unknown): string {
+  const summary = object(value)
+  const count = typeof summary.document_count === 'number' ? summary.document_count : 0
+  const labels: Record<string, string> = {
+    available: 'Available',
+    unavailable: 'Unavailable',
+    not_verified: 'Not verified',
+    not_linked: 'Not linked',
+    unidentified: 'Needs identification',
+  }
+  if (summary.state === 'partial') return `Partial · ${summary.available_count}/${count} available`
+  const label = labels[text(summary.state)] || 'Not verified'
+  return count ? `${label} · ${count}` : label
+}
+export function documentCountsText(value: unknown): string {
+  const summary = object(value)
+  if (typeof summary.document_count !== 'number')
+    return 'Document availability has not been verified. Refresh to inspect current originals.'
+  if (!summary.document_count)
+    return summary.state === 'unidentified'
+      ? 'Linked files need identification; inspect the unidentified originals below.'
+      : 'No original of this type is linked.'
+  return `${summary.document_count} linked · ${summary.available_count} available · ${summary.unavailable_count} unavailable · ${summary.not_verified_count} not verified`
+}
+export function documentGroups(evidence: unknown, summary: unknown) {
+  const documents = objects(evidence)
+  const counts = object(summary)
+  return (['invoice', 'receipt', 'unidentified'] as const).map((kind) => ({
+    kind,
+    label:
+      kind === 'invoice' ? 'Invoice' : kind === 'receipt' ? 'Receipt' : 'Unidentified documents',
+    documents: documents.filter((document) => documentKind(document.document_type) === kind),
+    status:
+      kind === 'unidentified'
+        ? documents.some((document) => documentKind(document.document_type) === kind)
+          ? 'Needs identification'
+          : 'None listed'
+        : documentSummaryText(counts[kind]),
+    counts: kind === 'unidentified' ? '' : documentCountsText(counts[kind]),
+  }))
+}
+export function canReadDocument(document: Record<string, unknown>): boolean {
+  return (
+    Boolean(text(document.attachment_ref)) &&
+    document.availability !== 'unavailable' &&
+    ![document.retention_state, document.state].some((state) =>
+      ['unavailable', 'quarantined', 'disposed', 'missing', 'changed', 'unreadable'].includes(
+        text(state),
+      ),
+    )
+  )
+}
+export function documentAvailabilityText(document: Record<string, unknown>): string {
+  if (document.availability === 'available') return 'Available · verified in this snapshot'
+  if (document.availability !== 'unavailable') return 'Not verified · verify before opening'
+  if (document.reason === 'quarantined') return 'Unavailable · original is quarantined'
+  if (document.reason === 'disposed') return 'Unavailable · original was disposed'
+  return 'Unavailable · original could not be verified; refresh to inspect current custody'
+}
+
 function precision(exponent: unknown): exponent is number {
   return (
     typeof exponent === 'number' && Number.isInteger(exponent) && exponent >= 0 && exponent <= 6

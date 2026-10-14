@@ -25,7 +25,9 @@ const access = {
   snapshot,
 }
 function projection(args: Record<string, unknown>, vendor = 'Synthetic vendor') {
-  const { project_id: _id, response_mode: _mode, ...query } = args
+  const query = { ...args }
+  delete query.project_id
+  delete query.response_mode
   return {
     snapshot,
     query,
@@ -113,6 +115,114 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 describe('Finance management', () => {
+  it.each([
+    ['available', 'Available · 2'],
+    ['unavailable', 'Unavailable · 2'],
+    ['partial', 'Partial · 1/2 available'],
+    ['not_verified', 'Not verified · 2'],
+    ['not_linked', 'Not linked'],
+    ['unidentified', 'Needs identification'],
+    ['legacy', 'Not verified'],
+  ])(
+    'shows separate %s document columns and keeps exact sourced money',
+    async (state, expected) => {
+      const basics = vi.mocked(callOperation).getMockImplementation()!
+      const count = ['not_linked', 'unidentified'].includes(state) ? 0 : 2
+      const invoiceSummary = {
+        state,
+        document_count: count,
+        available_count: 1,
+        unavailable_count: 1,
+        not_verified_count: 0,
+      }
+      const receiptSummary = {
+        state: 'available',
+        document_count: 1,
+        available_count: 1,
+        unavailable_count: 0,
+        not_verified_count: 0,
+      }
+      vi.mocked(callOperation).mockImplementation(async (name, args) => {
+        if (name !== 'finance.query') return basics(name, args)
+        const result = projection(args)
+        return {
+          data: {
+            ...result,
+            rows: result.rows.map((row) => ({
+              ...row,
+              ...(state === 'legacy'
+                ? {}
+                : { document_summary: { invoice: invoiceSummary, receipt: receiptSummary } }),
+            })),
+          },
+        }
+      })
+      const { wrapper } = await mounted()
+      await wrapper
+        .findAll('button')
+        .find((button) => button.text() === 'Expenses & income')!
+        .trigger('click')
+      const table = wrapper.get('table[aria-label="Finance records"]')
+      expect(table.findAll('th').map((cell) => cell.text())).toContain('Invoice')
+      expect(table.findAll('th').map((cell) => cell.text())).toContain('Receipt')
+      const cells = table
+        .get('tbody tr')
+        .findAll('td')
+        .map((cell) => cell.text())
+      expect(cells[6]).toBe(expected)
+      expect(cells[7]).toBe(state === 'legacy' ? 'Not verified' : 'Available · 1')
+      expect(cells).toContain('USD 90,071,992,547,409.93')
+      expect(wrapper.text()).toContain('File availability alone does not confirm payment')
+      expect(
+        vi.mocked(callOperation).mock.calls.filter(([name]) => name === 'finance.query'),
+      ).toHaveLength(1)
+      wrapper.unmount()
+    },
+  )
+  it('opens document detail from a keyboard-selected record through the shared table', async () => {
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) =>
+      name === 'finance.record.get'
+        ? {
+            data: {
+              requested_ref: 'receipt:one',
+              current_ref: 'receipt:one',
+              collection: 'receipts',
+              record: { business_date: '2026-10-01' },
+              original: {},
+              source_refs: [],
+              evidence: [],
+              lineage: [],
+              editable_fields: [],
+              provider_fields_editable: false,
+              document_summary: null,
+            },
+          }
+        : basics(name, args),
+    )
+    const { wrapper } = await mounted()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Expenses & income')!
+      .trigger('click')
+    const row = wrapper.get('table[aria-label="Finance records"] tbody tr')
+    expect(row.attributes('tabindex')).toBe('0')
+    await row.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(
+      vi.mocked(callOperation).mock.calls.find(([name]) => name === 'finance.record.get')![1],
+    ).toMatchObject({
+      record_ref: 'receipt:one',
+      project_id: 1,
+      workspace_ref: 'finance:one',
+      access_generation: 1,
+      expected_snapshot: { revision: 1, sha256: snapshot.sha256 },
+    })
+    expect(wrapper.get('section[aria-label="Original documents"]').text()).toContain(
+      'Invoice · Not verified',
+    )
+    wrapper.unmount()
+  })
   it('keeps an explicitly revoked workspace selected and clears private content until project change', async () => {
     let revoked = false
     const revokeBlob = vi.fn()
@@ -1035,7 +1145,10 @@ describe('Finance management', () => {
         .mocked(callOperation)
         .mock.calls.filter((c) => c[0] === 'finance.query')
         .at(-1)![1]
-      const { q: _q, project_id: _id, response_mode: _mode, ...remaining } = selected
+      const remaining = { ...selected }
+      delete remaining.q
+      delete remaining.project_id
+      delete remaining.response_mode
       expect(cleared).toMatchObject(remaining)
       await wrapper
         .findAll('button')

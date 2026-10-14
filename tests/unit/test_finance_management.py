@@ -178,6 +178,310 @@ def snapshot(document):
     }
 
 
+def document_original(document, name, kind, *, filename=None, status="retained"):
+    source_ref, attachment_ref = f"source:{name}", f"attachment:{name}"
+    document["sources"].append(
+        record(
+            source_ref,
+            "verified",
+            source_kind=kind,
+            source_identity=f"synthetic:{name}",
+            attachment_refs=[attachment_ref],
+            coverage_state="partial",
+        )
+    )
+    document["attachments"].append(
+        record(
+            attachment_ref,
+            status,
+            source_ref=source_ref,
+            role="receipt-original",
+            original_filename=filename or f"{name}.pdf",
+            relative_path=f"attachments/2026/09/{name}.pdf",
+            media_type="application/pdf",
+            bytes=25,
+            sha256="a" * 64,
+        )
+    )
+    return source_ref, attachment_ref
+
+
+def document_record(document, name="expense"):
+    return next(row for row in document["bookkeeping"] if row["record_id"] == f"book:{name}")
+
+
+def test_document_pair_uses_each_attachments_source_and_keeps_row_detail_parity():
+    module, d = management(), fixture_document()
+    invoice_source, invoice = document_original(d, "invoice", "purchase-invoice")
+    receipt_source, receipt = document_original(d, "receipt", "payment-receipt")
+    target = document_record(d)
+    target["source_refs"] += [invoice_source, receipt_source]
+    target["attachment_refs"] = [invoice, receipt, invoice]
+    source = snapshot(d)
+    source["verified_attachment_refs"] = [invoice, receipt]
+    before = copy.deepcopy(source)
+    detail = module.record_detail(source, target["record_id"])
+    row = next(
+        x for x in module.query(source, QUERY)["rows"] if x["record_ref"] == target["record_id"]
+    )
+    assert detail["evidence"] == row["documents"]
+    assert detail["document_summary"] == row["document_summary"]
+    assert "documents" not in detail
+    for item, kind, ref in zip(
+        detail["evidence"], ["invoice", "receipt"], [invoice, receipt], strict=True
+    ):
+        assert item["attachment_ref"] == ref and item["document_type"] == kind
+        assert item["filename"] == f"{kind}.pdf"
+        assert item["availability"] == "available" and item["state"] == "retained"
+        assert item["bytes"] == 25 and item["media_type"] == "application/pdf"
+        assert item["source_refs"] == [f"source:{kind}"]
+        assert detail["document_summary"][kind] == {
+            "state": "available",
+            "available_count": 1,
+            "unavailable_count": 0,
+            "not_verified_count": 0,
+            "document_count": 1,
+        }
+        assert "relative_path" not in item and "original_filename" not in item
+    assert source == before
+
+
+def test_document_indirect_receipt_and_source_lineage_keeps_exact_originals():
+    module, d = management(), fixture_document()
+    old_source, old_file = document_original(d, "old", "invoice")
+    new_source, new_file = document_original(d, "new", "receipt")
+    d["sources"][-1]["supersedes_ref"] = old_source
+    d["receipts"] += [
+        record("receipt:old", "prepared", source_ref=old_source, attachment_refs=[old_file]),
+        record(
+            "receipt:new",
+            "prepared",
+            source_ref=new_source,
+            attachment_refs=[new_file],
+            supersedes_ref="receipt:old",
+        ),
+    ]
+    document_record(d)["receipt_refs"] = ["receipt:old", "receipt:old"]
+    source = snapshot(d)
+    source["verified_attachment_refs"] = [old_file, new_file]
+    detail = module.record_detail(source, "book:expense")
+    by_ref = {item["attachment_ref"]: item for item in detail["evidence"]}
+    assert set(by_ref) == {old_file, new_file}
+    assert by_ref[old_file]["document_type"] == "invoice"
+    assert by_ref[new_file]["document_type"] == "receipt"
+    assert by_ref[old_file]["source_context"] == [
+        {
+            "requested_ref": old_source,
+            "current_ref": new_source,
+            "source_ref": old_source,
+            "historical": True,
+        }
+    ]
+    assert by_ref[old_file]["receipt_context"] == [
+        {
+            "requested_ref": "receipt:old",
+            "current_ref": "receipt:new",
+            "receipt_ref": "receipt:old",
+            "historical": True,
+        }
+    ]
+    assert any(c["historical"] is False for c in by_ref[new_file]["source_context"])
+    assert {c["receipt_ref"] for c in by_ref[new_file]["receipt_context"]} == {
+        "receipt:old",
+        "receipt:new",
+    }
+    row = next(x for x in module.query(source, QUERY)["rows"] if x["record_ref"] == "book:expense")
+    assert row["evidence_refs"] == []  # Inspection originals are not recognition evidence.
+
+
+@pytest.mark.parametrize(
+    "kind", ["invoice-pdf", "Invoice", "receipt-original", "bank-export", "unknown"]
+)
+def test_document_unknown_aliases_filename_role_membership_and_provider_refs_do_not_type(kind):
+    module, d = management(), fixture_document()
+    source_ref, attachment_ref = document_original(
+        d, "untyped", kind, filename="invoice-receipt.pdf"
+    )
+    d["receipts"].append(
+        record(
+            "receipt:untyped",
+            "prepared",
+            source_ref=source_ref,
+            attachment_refs=[attachment_ref],
+        )
+    )
+    document_record(d)["receipt_refs"] = ["receipt:untyped"]
+    # Provider invoice refs and narrative are not declarations of original-file type.
+    document_record(d)["invoice_ref"] = "provider:invoice"
+    document_record(d)["business_purpose"] = "Invoice and payment receipt"
+    detail = module.record_detail(snapshot(d), "book:expense")
+    assert detail["evidence"][0]["document_type"] == "unidentified"
+    for summary in detail["document_summary"].values():
+        assert summary["state"] == "unidentified" and summary["document_count"] == 0
+
+
+@pytest.mark.parametrize(
+    "second_kind,expected",
+    [("invoice", "invoice"), ("receipt", "unidentified"), ("unknown", "unidentified")],
+)
+def test_document_exact_shared_attachment_declarations_are_deduplicated(second_kind, expected):
+    module, d = management(), fixture_document()
+    source_ref, attachment_ref = document_original(d, "shared", "purchase-invoice")
+    d["sources"].append(
+        record(
+            "source:also",
+            "verified",
+            source_kind=second_kind,
+            source_identity="synthetic:also",
+            attachment_refs=[attachment_ref],
+            coverage_state="partial",
+        )
+    )
+    document_record(d)["source_refs"].append(source_ref)
+    document_record(d)["attachment_refs"] = [attachment_ref]
+    (item,) = module.record_detail(snapshot(d), "book:expense")["evidence"]
+    assert item["document_type"] == expected
+    assert item["source_refs"] == ["source:also", source_ref]
+
+
+@pytest.mark.parametrize(
+    "status,verified,issue,quarantine,availability,reason",
+    [
+        ("retained", True, None, False, "available", None),
+        ("retained", False, None, False, "not_verified", "not_verified"),
+        ("retained", True, "unavailable", False, "unavailable", "unavailable"),
+        ("quarantined", False, "quarantined", False, "unavailable", "quarantined"),
+        ("retained", True, None, True, "unavailable", "quarantined"),
+        ("disposed", True, None, False, "unavailable", "disposed"),
+    ],
+)
+def test_document_availability_requires_verified_retained_custody(
+    status,
+    verified,
+    issue,
+    quarantine,
+    availability,
+    reason,
+):
+    module, d = management(), fixture_document()
+    source_ref, attachment_ref = document_original(d, "state", "invoice", status=status)
+    document_record(d)["source_refs"].append(source_ref)
+    if quarantine:
+        d["attachments"][-1]["quarantine_ref"] = "exception:quarantine"
+    source = snapshot(d)
+    if verified:
+        source["verified_attachment_refs"] = [attachment_ref]
+    if issue:
+        source["custody_issues"] = [{"attachment_ref": attachment_ref, "state": issue}]
+    detail = module.record_detail(source, "book:expense")
+    (item,) = detail["evidence"]
+    assert item["availability"] == availability and item["reason"] == reason
+    assert item["state"] == (issue or status) and item["retention_state"] == status
+    assert detail["document_summary"]["invoice"]["state"] == availability
+    assert detail["document_summary"]["receipt"]["state"] == "not_linked"
+
+
+def test_document_summaries_distinguish_no_link_unknown_and_mixed_counts():
+    module, d = management(), fixture_document()
+    assert all(
+        x["state"] == "not_linked"
+        for x in module.record_detail(snapshot(d), "book:expense")["document_summary"].values()
+    )
+    refs = []
+    for name, kind in [
+        ("available", "invoice"),
+        ("unavailable", "invoice"),
+        ("unchecked", "invoice"),
+        ("unknown", "unknown"),
+    ]:
+        source_ref, attachment_ref = document_original(d, name, kind)
+        document_record(d)["source_refs"].append(source_ref)
+        refs.append(attachment_ref)
+    source = snapshot(d)
+    source["verified_attachment_refs"] = [refs[0]]
+    source["custody_issues"] = [{"attachment_ref": refs[1], "state": "unavailable"}]
+    summary = module.record_detail(source, "book:expense")["document_summary"]
+    assert summary["invoice"] == {
+        "state": "partial",
+        "document_count": 3,
+        "available_count": 1,
+        "unavailable_count": 1,
+        "not_verified_count": 1,
+    }
+    assert summary["receipt"]["state"] == "unidentified"
+
+
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        ("/private/root/invoice\x00\n.pdf", "invoice.pdf"),
+        ("C:\\private\\receipt\u202e.pdf", "receipt.pdf"),
+        ("..", "Unnamed original"),
+        ("/private/", "Unnamed original"),
+        ("a" * 300 + ".pdf", "a" * 240),
+    ],
+)
+def test_document_original_filename_is_safe_bounded_basename(name, expected):
+    module, d = management(), fixture_document()
+    source_ref, _ = document_original(d, "safe", "invoice", filename=name)
+    document_record(d)["source_refs"].append(source_ref)
+    (item,) = module.record_detail(snapshot(d), "book:expense")["evidence"]
+    assert item["filename"] == expected
+
+
+def test_document_metadata_and_indirect_custody_do_not_change_filtered_financial_population(
+    monkeypatch,
+):
+    module, d = management(), fixture_document()
+    source_ref, attachment_ref = document_original(
+        d, "indirect", "receipt", filename="private-needle.pdf"
+    )
+    d["receipts"].append(
+        record(
+            "receipt:indirect",
+            "prepared",
+            source_ref=source_ref,
+            attachment_refs=[attachment_ref],
+        )
+    )
+    target = document_record(d)
+    target["receipt_refs"] = ["receipt:indirect"]
+    setting_row = next(
+        x for x in d["operating_settings"] if x["record_id"] == "metadata:book:expense"
+    )
+    payload = json.loads(setting_row["policy_text"])
+    payload["target_digest_sha256"] = module.workspace.material_record_digest(target, "bookkeeping")
+    setting_row["policy_text"] = json.dumps(payload)
+    next(x for x in d["reviews"] if x["target_ref"] == setting_row["record_id"])[
+        "target_digest_sha256"
+    ] = module.workspace.material_record_digest(setting_row, "operating_settings")
+    source = snapshot(d)
+    source["custody_issues"] = [{"attachment_ref": attachment_ref, "state": "unavailable"}]
+    projection = module._document_projection
+    for filters in [
+        {},
+        {"q": "private-needle"},
+        {"q": "not_linked"},
+        {"q": "not_verified"},
+        {"kind": "expense", "currency": "USD"},
+        {"needs_review": True},
+    ]:
+        monkeypatch.setattr(module, "_document_projection", lambda *_: ([], {}))
+        before = module.query(source, {**QUERY, **filters})
+        monkeypatch.setattr(module, "_document_projection", projection)
+        after = module.query(source, {**QUERY, **filters})
+        for result in (before, after):
+            for row in result["rows"]:
+                row.pop("documents")
+                row.pop("document_summary")
+        assert before == after
+    actual = module.query(source, QUERY)
+    assert "book:expense" in actual["metrics_by_currency"][0]["spend"]["included_record_refs"]
+    assert "book:expense" not in {
+        x["record_ref"] for x in module.query(source, {**QUERY, "q": "private-needle"})["rows"]
+    }
+
+
 def test_golden_metrics_and_report_trace_do_not_count_other_representations():
     module = management()
     d = fixture_document()
@@ -1297,6 +1601,9 @@ def test_missing_original_is_inspectable_and_master_bytes_unchanged(tmp_path):
     before = path.read_bytes()
     s = module.read_snapshot(path)
     assert s["custody_issues"] == [{"attachment_ref": "attachment:missing", "state": "unavailable"}]
+    assert "attachment:missing" not in s["verified_attachment_refs"]
+    (original,) = module.record_detail(s, "book:expense")["evidence"]
+    assert original["availability"] == "unavailable" and original["reason"] == "unavailable"
     assert module.query(s, QUERY)["metrics_by_currency"][0]["profit"]["amount"] is None
     assert path.read_bytes() == before
 

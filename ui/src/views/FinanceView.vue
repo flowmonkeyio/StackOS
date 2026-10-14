@@ -42,6 +42,7 @@ import { callOperation } from '@/lib/operations'
 import {
   contentBlob,
   contentText,
+  documentSummaryText,
   formatMoney,
   metricText,
   newIntentId,
@@ -108,9 +109,18 @@ const base = () => ({
   workspace_ref: access.value?.workspace_ref,
   access_generation: access.value?.generation,
 })
-type DisplayRow = SchemaFinanceProjectionOut['rows'][number] & { id: string }
+type DisplayRow = SchemaFinanceProjectionOut['rows'][number] & {
+  id: string
+  invoice_status: string
+  receipt_status: string
+}
 const rows = computed<DisplayRow[]>(() =>
-  (projection.value?.rows ?? []).map((row) => ({ ...row, id: text(row.record_ref) })),
+  (projection.value?.rows ?? []).map((row) => ({
+    ...row,
+    id: text(row.record_ref),
+    invoice_status: documentSummaryText(object(row.document_summary).invoice),
+    receipt_status: documentSummaryText(object(row.document_summary).receipt),
+  })),
 )
 const columns: DataTableColumn<(typeof rows.value)[number]>[] = [
   { key: 'date', label: 'Date', sortable: true, format: (value) => text(value) || 'Undated' },
@@ -123,6 +133,8 @@ const columns: DataTableColumn<(typeof rows.value)[number]>[] = [
   { key: 'amount', label: 'Amount', sortable: true, format: formatMoney },
   { key: 'category_ref', label: 'Category', format: (value) => text(value) || 'Unassigned' },
   { key: 'status', label: 'State' },
+  { key: 'invoice_status', label: 'Invoice', cellClass: 'whitespace-nowrap' },
+  { key: 'receipt_status', label: 'Receipt', cellClass: 'whitespace-nowrap' },
   { key: 'needs_review', label: 'Review', format: (value) => (value ? 'Needs review' : 'Sourced') },
 ]
 const groups = computed(() =>
@@ -895,7 +907,12 @@ onBeforeUnmount(() => {
                     >New expense or income</UiButton
                   ></template
                 ></UiSectionHeader
-              ><DataTable
+              >
+              <p class="text-xs text-fg-muted">
+                Invoice documents the purchase; receipt documents payment. File availability alone
+                does not confirm payment. Open a record to identify its linked originals.
+              </p>
+              <DataTable
                 :items="rows"
                 :columns="columns"
                 interactive
