@@ -453,6 +453,10 @@ def test_agency_setup_presets_resolve_without_specialists(
 
 def test_finance_workflow_presets_resolve_end_to_end(mcp_client: MCPClient) -> None:
     expected_roles = {
+        "finance.management-review": (
+            {"stackos.finance.bookkeeping-preparer", "stackos.finance.control-reviewer"},
+            {"stackos.finance.cashflow-preparer"},
+        ),
         "finance.receipt-intake": (
             {"stackos.finance.receipt-operator"},
             {"stackos.finance.control-reviewer"},
@@ -524,6 +528,7 @@ def test_finance_operational_guidance_survives_compact_workflow_resolution(
         "payment-request-followups",
         "cashflow-management",
         "tax-estimates",
+        "management-review",
     ):
         request = {"workflow_key": f"finance.{workflow}", "plugin_slug": "finance"}
         raw = mcp_client.call_tool_structured(
@@ -533,7 +538,7 @@ def test_finance_operational_guidance_survives_compact_workflow_resolution(
         compact = compact.get("data", compact)
         raw_skill = raw["required_skill_presets"][0]
         compact_skill = compact["required_skill_presets"][0]
-        assert compact_skill["preset"]["version"] == "0.7.5"
+        assert compact_skill["preset"]["version"] == "0.8.0"
         assert compact_skill["project_adaptation"] == raw_skill["project_adaptation"]
         assert any("capability preflight" in item for item in compact_skill["preset"]["must_do"])
         conditional = {

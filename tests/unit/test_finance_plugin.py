@@ -21,6 +21,7 @@ EXPECTED_WORKFLOW_KEYS = {
     "finance.payment-request-followups",
     "finance.cashflow-management",
     "finance.tax-estimates",
+    "finance.management-review",
 }
 COMMON_REQUIRED_INPUTS = {
     "workspace_ref",
@@ -86,6 +87,12 @@ def _summary_schema(workflow: dict) -> dict:
 
 def _truthful_preflight_summaries() -> dict[str, dict]:
     return {
+        "finance.management-review": {
+            "status": "scoped",
+            "request_id": 1,
+            "source_snapshot": {"revision": 1, "sha256": "a" * 64},
+            "exception_refs": [],
+        },
         "finance.receipt-intake": {
             "status": "scoped",
             "acknowledgement_state": "pending",
@@ -139,6 +146,28 @@ def _truthful_preflight_summaries() -> dict[str, dict]:
 
 def _terminal_summaries() -> dict[str, tuple[dict, tuple[str, ...]]]:
     return {
+        "finance.management-review": (
+            {
+                "status": "published",
+                "request_id": 1,
+                "source_snapshot": {"revision": 1, "sha256": "a" * 64},
+                "exception_refs": [],
+                "result_digest_sha256": "b" * 64,
+                "report_sha256": "c" * 64,
+                "control_review_ref": "external-review:fixture",
+                "external_result_ref": "finance-analysis:1",
+                "result_sha256": "d" * 64,
+                "outcome": "no-supported-opportunity",
+            },
+            (
+                "result_digest_sha256",
+                "report_sha256",
+                "control_review_ref",
+                "external_result_ref",
+                "result_sha256",
+                "outcome",
+            ),
+        ),
         "finance.receipt-intake": (
             {
                 "status": "cleaned-up",
@@ -275,7 +304,7 @@ def _terminal_summaries() -> dict[str, tuple[dict, tuple[str, ...]]]:
     }
 
 
-def test_finance_package_defines_exactly_the_six_external_backend_workflows() -> None:
+def test_finance_package_defines_exactly_the_seven_external_backend_workflows() -> None:
     workflows = _workflows()
 
     assert set(workflows) == EXPECTED_WORKFLOW_KEYS
@@ -679,6 +708,14 @@ def test_settlement_only_summary_cannot_claim_a_resend_or_financial_contents() -
 def test_finance_output_schemas_accept_truthful_preflight_without_future_refs() -> None:
     workflows = _workflows()
     future_ref_fields = {
+        "finance.management-review": {
+            "external_result_ref",
+            "result_sha256",
+            "result_digest_sha256",
+            "report_sha256",
+            "control_review_ref",
+            "outcome",
+        },
         "finance.receipt-intake": {
             "receipt_record_ref",
             "source_identity_ref",
@@ -1277,3 +1314,32 @@ def test_finance_capabilities_and_technical_approvals_are_fully_bound() -> None:
     assert "receipt-exception-review" not in approval_guidance
     assert "owner-exception-recovery-review" not in approval_guidance
     assert "owner-cashflow-exception-recovery" not in approval_guidance
+
+
+def test_management_navigation_and_method_bind_reviewed_report() -> None:
+    manifest = yaml.safe_load((ROOT / "plugins/finance/plugin.yaml").read_text())
+    assert manifest["ui"]["nav"]["items"] == [{"label": "Finance", "to": "finance"}]
+    workflow = _workflows()["finance.management-review"]
+    assert workflow["action_contracts"] == []
+    assert workflow["auth_requirements"] == []
+    assert workflow["capability_requirements"] == []
+    assert {
+        item["agent_preset_ref"]
+        for item in workflow["agent_requirements"]
+        if item["requirement"] == "required"
+    } == {"stackos.finance.bookkeeping-preparer", "stackos.finance.control-reviewer"}
+    text = " ".join(
+        instruction for step in workflow["steps"] for instruction in step["instructions"]
+    )
+    for contract in (
+        "agentRequest.prepareRunPlan",
+        "report_sha256",
+        "result_digest",
+        "publish_result",
+        "read_result",
+        "agentRequest.complete",
+        "create_request=false",
+        "awaiting-agent",
+        "no-supported-opportunity",
+    ):
+        assert contract in text

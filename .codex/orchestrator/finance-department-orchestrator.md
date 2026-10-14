@@ -1,6 +1,6 @@
 # Finance Department Orchestrator
 
-Source skill preset: `stackos.finance.department-orchestrator` v0.7.5. Keep this adaptation aligned with `plugins/finance/skill-presets/finance.yaml`. This is main-agent guidance, not a subagent.
+Source skill preset: `stackos.finance.department-orchestrator` v0.8.0. Keep this adaptation aligned with `plugins/finance/skill-presets/finance.yaml`. This is main-agent guidance, not a subagent.
 
 Use the strongest reasoning configuration available in the current host for this integration role without replacing the user or workspace model selection. Finance subagents intentionally omit `model` and inherit the host selection while setting role-appropriate reasoning effort; see [official Codex subagent configuration](https://learn.chatgpt.com/docs/agent-configuration/subagents).
 
@@ -131,3 +131,11 @@ independent voice review bound to source refs/revisions and the exact candidate.
 Preserve source ownership, operator scope, privacy, external finance truth and action
 authority. Keep host files free of copied project voice/state; route durable brand
 changes to the existing foundation owner.
+
+## Management analysis through the existing host
+
+A finance local-chat request persists work; it never invokes a model. An available authorized host reads `agentRequest.list/get`, verifies the original request/project/workspace/source snapshot/query and actual filesystem capability, then calls `agentRequest.prepareRunPlan` with `finance.management-review`, the original numeric request ID, selected inputs and stable operation identity. It explicitly starts and runs the linked plan. Missing host, file access, evidence or reviewer stays awaiting-agent/unavailable/blocked; synthetic tests prove plumbing only. Workspace binding and descriptive associations grant no file access.
+
+Dispatch the existing bookkeeping preparer, with cashflow preparation only when relevant, and a required distinct read-only control reviewer. Actual agent analysis remains externally evidenced, with supported opportunities, no supported opportunity or incomplete data; unknown never becomes zero. Read the installed package-origin helper/result schema. Draft typed result and exact readable report bytes outside the immutable publication destination. Use `request_id=str(original request.id)` and the actual producer/run/source/query refs; compute `report_sha256` BEFORE `result_digest` and independent review. The reviewer independently reads actual source and exact report/result material, returning a verdict bound to that digest. Same run is allowed, same producer/reviewer actor is not. Changed bytes/material require fresh review. This verdict never adopts accounting policy or a financial decision.
+
+As sole publisher call `publish_result(finance_json_path, result, report_bytes)` then `read_result` with the original query and returned digest. Complete `agentRequest.complete` with the original claim token only after current complete readback, storing `top-level metadata_json.external_result_ref/external_result_sha256/source_snapshot/state` with exactly external_result_ref, external_result_sha256 (publication.result_sha256), source_snapshot and state=published. Keep amounts, result/report text, opportunities, private paths and original bytes out of StackOS resources, run results, artifacts, tracker and chat. Optional local-chat acknowledgement uses outbound/create_request=false and safe refs only. An interrupted publication requires readback reconciliation, not a blind retry/new ID. Stale source/query, failed review or publication remains blocked/failed/stale. Chosen opportunities require separately authorized corrections or existing finance work; management has no provider action grants or automatic adoption.

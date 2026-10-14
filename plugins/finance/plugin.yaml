@@ -1,6 +1,6 @@
 slug: finance
 name: Finance Operations
-version: 0.8.5
+version: 0.8.6
 description: Backend-neutral finance workflows and provider transport for a solo US business. StackOS never becomes the finance system of record.
 display_order: 18
 source: builtin
@@ -1036,3 +1036,10 @@ actions:
       enforce_budget: false
       stripe: {method: GET, path: /balance, api_version: 2026-08-26.dahlia}
       docs: [docs/integration-contracts/stripe.md, https://docs.stripe.com/api/balance]
+
+ui:
+  nav:
+    label: Finance
+    items:
+      - label: Finance
+        to: finance
