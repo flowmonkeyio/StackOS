@@ -1,0 +1,12 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","title":"Reviewed derived finance analysis result; never authoritative facts",
+  "type":"object","required":["format","request_id","source_snapshot","query","producer_ref","run_ref","created_at","state","opportunities","evidence_refs","gaps","review","report_sha256"],
+  "properties":{
+    "format":{"const":"finance-management-result-v1"},"request_id":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9_-]{0,159}$"},"report_sha256":{"$ref":"#/$defs/hash"},
+    "source_snapshot":{"type":"object","required":["revision","sha256"],"properties":{"revision":{"type":"integer","minimum":0},"sha256":{"$ref":"#/$defs/hash"}},"additionalProperties":false},
+    "query":{"type":"object"},"producer_ref":{"$ref":"#/$defs/ref"},"run_ref":{"$ref":"#/$defs/ref"},"created_at":{"type":"string","format":"date-time"},"state":{"enum":["supported-opportunities","no-supported-opportunity","incomplete-data"]},
+    "evidence_refs":{"type":"array","items":{"$ref":"#/$defs/ref"},"minItems":1},"gaps":{"type":"array","items":{"type":"string","minLength":1}},
+    "opportunities":{"type":"array","maxItems":100,"items":{"type":"object","required":["opportunity_ref","kind","rationale","evidence_refs","uncertainty","assumptions"],"properties":{"opportunity_ref":{"$ref":"#/$defs/ref"},"kind":{"enum":["spending","recurring","duplicate-candidate","collection-timing","cashflow","source-quality"]},"rationale":{"type":"string","minLength":1,"maxLength":10000},"evidence_refs":{"type":"array","items":{"$ref":"#/$defs/ref"},"minItems":1},"uncertainty":{"type":"string","minLength":1},"assumptions":{"type":"array","items":{"type":"string","minLength":1}},"estimated_impact":{"type":"object","required":["minor","currency","exponent"],"properties":{"minor":{"type":"string","pattern":"^-?(0|[1-9][0-9]*)$"},"currency":{"type":"string","pattern":"^[A-Z]{3}$"},"exponent":{"type":"integer","minimum":0,"maximum":6}},"additionalProperties":false}},"additionalProperties":false}},
+    "review":{"type":"object","required":["reviewer_ref","run_ref","verdict","reviewed_at","target_digest_sha256"],"properties":{"reviewer_ref":{"$ref":"#/$defs/ref"},"run_ref":{"$ref":"#/$defs/ref"},"verdict":{"const":"approved"},"reviewed_at":{"type":"string","format":"date-time"},"target_digest_sha256":{"$ref":"#/$defs/hash"}},"additionalProperties":false}
+  },"additionalProperties":false,"$defs":{"ref":{"type":"string","minLength":1,"maxLength":240},"hash":{"type":"string","pattern":"^[a-f0-9]{64}$"}}
+}
