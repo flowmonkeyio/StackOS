@@ -3743,6 +3743,32 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** FinanceCorrectionHistoryItemOut */
+        FinanceCorrectionHistoryItemOut: {
+            /** Actor */
+            actor: string | null;
+            /** At */
+            at: string | null;
+            /** Correction Ref */
+            correction_ref: string;
+            /** Decision Ref */
+            decision_ref: string | null;
+            /** Evidence Refs */
+            evidence_refs: string[];
+            /** Reason */
+            reason: string;
+            /** Replacement Ref */
+            replacement_ref: string;
+            /** Source Refs */
+            source_refs: string[];
+            /**
+             * Status
+             * @constant
+             */
+            status: "applied";
+            /** Superseded Ref */
+            superseded_ref: string;
+        };
         /** FinanceEditFields */
         FinanceEditFields: {
             /**
@@ -3882,6 +3908,20 @@ export interface components {
         FinanceMoneyInput: {
             /** Currency */
             currency: string;
+            /** Exponent */
+            exponent?: number | null;
+            /** Minor */
+            minor: string;
+        };
+        /** FinanceMoneyOut */
+        FinanceMoneyOut: {
+            /** Currency */
+            currency: string;
+            /**
+             * Exponent
+             * @default null
+             */
+            exponent: number | null;
             /** Minor */
             minor: string;
         };
@@ -4106,8 +4146,12 @@ export interface components {
         };
         /** FinanceRecordOut */
         FinanceRecordOut: {
+            /** @default null */
+            amount: components["schemas"]["FinanceMoneyOut"] | null;
             /** Collection */
             collection: string;
+            /** Correction History */
+            correction_history?: components["schemas"]["FinanceCorrectionHistoryItemOut"][];
             /** Current Ref */
             current_ref: string;
             /** Editable Fields */
@@ -4117,7 +4161,7 @@ export interface components {
                 [key: string]: unknown;
             }[];
             /** Lineage */
-            lineage: unknown;
+            lineage: string[];
             /** Original */
             original: {
                 [key: string]: unknown;
@@ -6965,10 +7009,12 @@ export type SchemaFinanceCommitInput = components['schemas']['FinanceCommitInput
 export type SchemaFinanceCommitOut = components['schemas']['FinanceCommitOut'];
 export type SchemaFinanceComparisonInput = components['schemas']['FinanceComparisonInput'];
 export type SchemaFinanceContentOut = components['schemas']['FinanceContentOut'];
+export type SchemaFinanceCorrectionHistoryItemOut = components['schemas']['FinanceCorrectionHistoryItemOut'];
 export type SchemaFinanceEditFields = components['schemas']['FinanceEditFields'];
 export type SchemaFinanceEditIntent = components['schemas']['FinanceEditIntent'];
 export type SchemaFinanceEvidenceReadInput = components['schemas']['FinanceEvidenceReadInput'];
 export type SchemaFinanceMoneyInput = components['schemas']['FinanceMoneyInput'];
+export type SchemaFinanceMoneyOut = components['schemas']['FinanceMoneyOut'];
 export type SchemaFinancePreviewOut = components['schemas']['FinancePreviewOut'];
 export type SchemaFinanceProjectionOut = components['schemas']['FinanceProjectionOut'];
 export type SchemaFinanceQueryInput = components['schemas']['FinanceQueryInput'];

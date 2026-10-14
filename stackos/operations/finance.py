@@ -122,6 +122,8 @@ class FinanceMoneyInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     minor: str = Field(pattern=r"^-?\d+$", max_length=100)
     currency: str = Field(pattern=r"^[A-Z]{3}$")
+    # A factory preserves optional input in generators that require schema defaults.
+    exponent: StrictInt | None = Field(default_factory=lambda: None, ge=0, le=6)
 
 
 class FinanceEditFields(BaseModel):
@@ -217,13 +219,29 @@ class FinanceProjectionOut(BaseModel):
     comparison: dict[str, Any] | None = None
 
 
+class FinanceCorrectionHistoryItemOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    correction_ref: str
+    status: Literal["applied"]
+    superseded_ref: str
+    replacement_ref: str
+    reason: str
+    actor: str | None
+    at: str | None
+    decision_ref: str | None
+    evidence_refs: list[str]
+    source_refs: list[str]
+
+
 class FinanceRecordOut(BaseModel):
     requested_ref: str
     current_ref: str
     collection: str
     record: dict[str, Any]
     original: dict[str, Any]
-    lineage: Any
+    amount: FinanceMoneyOut | None = None
+    lineage: list[str]
+    correction_history: list[FinanceCorrectionHistoryItemOut] = Field(default_factory=list)
     source_refs: list[str]
     evidence: list[dict[str, Any]]
     editable_fields: list[str]

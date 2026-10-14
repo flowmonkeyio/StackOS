@@ -20,8 +20,11 @@ from stackos.operations.finance import (
     FinanceCommitInput,
     FinanceContentOut,
     FinanceEditIntent,
+    FinanceMoneyInput,
+    FinanceMoneyOut,
     FinanceProjectionOut,
     FinanceQueryInput,
+    FinanceRecordOut,
     FinanceWorkspaceSelectInput,
 )
 from stackos.server import create_app
@@ -82,8 +85,65 @@ def test_ui_generation_includes_registry_owned_durable_contracts(
         FinanceCommitInput,
         FinanceProjectionOut,
         FinanceContentOut,
+        FinanceMoneyInput,
+        FinanceMoneyOut,
+        FinanceRecordOut,
     ):
         assert schemas[model.__name__]["properties"].keys() == model.model_fields.keys()
         assert f"Schema{model.__name__}" in generated
     for reference in re.findall(r'"\$ref": "#/components/schemas/([^\"]+)"', target.read_text()):
         assert reference in schemas
+
+
+def test_finance_precision_history_native_schema_and_generated_types() -> None:
+    money = FinanceMoneyInput.model_json_schema()
+    assert set(money["properties"]) == {"minor", "currency", "exponent"}
+    exponent = next(
+        option
+        for option in money["properties"]["exponent"]["anyOf"]
+        if option.get("type") == "integer"
+    )
+    assert exponent["minimum"] == 0 and exponent["maximum"] == 6
+    assert money["required"] == ["minor", "currency"]
+    record = FinanceRecordOut.model_json_schema()
+    assert record["properties"]["lineage"]["items"] == {"type": "string"}
+    assert record["properties"]["correction_history"]["items"]["$ref"].endswith(
+        "/FinanceCorrectionHistoryItemOut"
+    )
+    assert "correction_history" not in record["required"]
+    history = record["$defs"]["FinanceCorrectionHistoryItemOut"]
+    expected = {
+        "correction_ref",
+        "status",
+        "superseded_ref",
+        "replacement_ref",
+        "reason",
+        "actor",
+        "at",
+        "decision_ref",
+        "evidence_refs",
+        "source_refs",
+    }
+    assert set(history["properties"]) == set(history["required"]) == expected
+    for key in ("actor", "at", "decision_ref"):
+        assert {option["type"] for option in history["properties"][key]["anyOf"]} == {
+            "string",
+            "null",
+        }
+    for key in ("evidence_refs", "source_refs"):
+        assert history["properties"][key]["items"] == {"type": "string"}
+    generated = API_TS.read_text()
+    for name in (
+        "FinanceMoneyInput",
+        "FinanceMoneyOut",
+        "FinanceCorrectionHistoryItemOut",
+        "FinanceRecordOut",
+    ):
+        assert f"Schema{name}" in generated
+    assert "lineage: string[];" in generated
+    assert "exponent?: number | null;" in generated
+    assert "actor: string | null;" in generated
+    assert (
+        'correction_history?: components["schemas"]["FinanceCorrectionHistoryItemOut"][];'
+        in generated
+    )

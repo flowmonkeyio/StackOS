@@ -232,6 +232,171 @@ def test_preview_cancel_commit_replay_conflict_and_revocation(api, finance, sett
     assert finance["module"].read_snapshot(finance["path"])["revision"] == 2
 
 
+def precision_create(finance, amount, request_id="synthetic-precision"):
+    return {
+        **finance["common"],
+        "request_id": request_id,
+        "expected_snapshot": snapshot(finance),
+        "action": "create-bookkeeping",
+        "fields": {"date": "2026-09-04", "amount": amount, "category": {"state": "unresolved"}},
+        "source_refs": [],
+        "attestation": "Simulated operator verifies the entered amount/currency/units for isolated proof only.",
+        "reason": "Synthetic unclassified entry; no economic treatment adopted.",
+    }
+
+
+def preview_commit(api, intent):
+    preview = call(api, "finance.record.preview", intent)
+    assert preview.status_code == 200, preview.text
+    arguments = {**intent, "preview_digest": body(preview)["preview_digest"]}
+    committed = call(api, "finance.record.commit", arguments)
+    assert committed.status_code == 200, committed.text
+    assert body(committed)["reread_result"] == "verified"
+    return arguments, body(committed)
+
+
+@pytest.mark.parametrize(
+    ("currency", "exponent", "minor"),
+    [("JPY", 0, "42"), ("USD", 2, "9007199254740993"), ("KWD", 3, "1234")],
+)
+def test_rest_explicit_precision_roundtrip_unclassified_exact_money(
+    api, finance, currency, exponent, minor
+):
+    amount = {"minor": minor, "currency": currency, "exponent": exponent}
+    intent = precision_create(finance, amount)
+    original = finance["original"].read_bytes()
+    arguments, committed = preview_commit(api, intent)
+    s = finance["module"].read_snapshot(finance["path"])
+    ref = s["document"]["bookkeeping"][-1]["record_id"]
+    assert s["document"]["bookkeeping"][-1]["amount"] == {
+        "amount_minor": int(minor),
+        "currency": currency,
+    }
+    before = finance["path"].read_bytes()
+    detail = call(api, "finance.record.get", {**finance["common"], "record_ref": ref})
+    assert detail.status_code == 200, detail.text
+    value = body(detail)
+    assert value["amount"] == amount
+    assert value["record"]["amount"] == {"amount_minor": minor, "currency": currency}
+    assert value["original"] == value["record"]
+    assert value["lineage"] == [] and value["correction_history"] == []
+    projected = body(call(api, "finance.query", {**finance["common"], **QUERY}))
+    row = next(r for r in projected["rows"] if r["record_ref"] == ref)
+    assert row["amount"] == amount and row["needs_review"]
+    assert row["metric_exclusion"] == "missing_metadata"
+    assert all(
+        ref not in m[key]["included_record_refs"]
+        for m in projected["metrics_by_currency"]
+        for key in ("revenue", "spend", "profit")
+    )
+    assert finance["path"].read_bytes() == before and finance["original"].read_bytes() == original
+    replay = call(api, "finance.record.commit", arguments)
+    assert replay.status_code == 200 and body(replay)["idempotency_replay"]
+    changed = call(
+        api,
+        "finance.record.commit",
+        {
+            **arguments,
+            "fields": {**intent["fields"], "amount": {**amount, "exponent": exponent + 1}},
+        },
+    )
+    assert changed.status_code == 409, changed.text
+    assert finance["path"].read_bytes() == before
+    assert committed["snapshot"]["revision"] == intent["expected_snapshot"]["revision"] + 1
+
+
+@pytest.mark.parametrize("exponent", [True, False, "2", 2.0, -1, 7, {}, []])
+def test_rest_precision_rejects_non_strict_or_out_of_range_input(api, finance, exponent):
+    before = finance["path"].read_bytes()
+    intent = precision_create(finance, {"minor": "1", "currency": "USD", "exponent": exponent})
+    rejected = call(api, "finance.record.preview", intent)
+    assert rejected.status_code == 422, rejected.text
+    assert "exponent" in rejected.text
+    assert finance["path"].read_bytes() == before
+
+
+def test_rest_legacy_precision_absence_and_money_correction_stay_unknown(api, finance):
+    _, _ = preview_commit(
+        api, precision_create(finance, {"minor": "123", "currency": "JPY"}, "synthetic-legacy")
+    )
+    initial = finance["module"].read_snapshot(finance["path"])
+    ref = initial["document"]["bookkeeping"][-1]["record_id"]
+    detail = body(call(api, "finance.record.get", {**finance["common"], "record_ref": ref}))
+    assert detail["amount"] == {"minor": "123", "currency": "JPY", "exponent": None}
+    correction = {
+        **precision_create(
+            finance, {"minor": "456", "currency": "KWD"}, "synthetic-legacy-correction"
+        ),
+        "action": "correct-bookkeeping",
+        "record_ref": ref,
+        "source_refs": initial["document"]["bookkeeping"][-1]["source_refs"],
+    }
+    preview_commit(api, correction)
+    detail = body(call(api, "finance.record.get", {**finance["common"], "record_ref": ref}))
+    assert detail["amount"] == {"minor": "456", "currency": "KWD", "exponent": None}
+    assert detail["original"]["amount"] == {"amount_minor": "123", "currency": "JPY"}
+    assert len(detail["correction_history"]) == 1
+
+
+def test_rest_derived_correction_history_and_lineage_preserve_exact_private_chain(api, finance):
+    intent_a = {
+        **edit(finance, "synthetic-history-A"),
+        "reason": "Synthetic prior reason A",
+        "fields": {"business_purpose": "Synthetic source note A"},
+    }
+    preview_commit(api, intent_a)
+    s = finance["module"].read_snapshot(finance["path"])
+    a = s["document"]["bookkeeping"][-1]["record_id"]
+    intent_b = {
+        **edit(finance, "synthetic-history-B"),
+        "record_ref": a,
+        "reason": "Synthetic later reason B",
+        "fields": {"business_purpose": "Synthetic source note A preserved; note B added"},
+    }
+    preview_commit(api, intent_b)
+    current = finance["module"].read_snapshot(finance["path"])
+    expected = finance["module"].record_detail(current, "book:expense")
+    before = finance["path"].read_bytes()
+    originals = finance["original"].read_bytes()
+    for requested in ("book:expense", a, expected["current_ref"]):
+        response = call(
+            api,
+            "finance.record.get",
+            {**finance["common"], "record_ref": requested, "expected_snapshot": snapshot(finance)},
+        )
+        assert response.status_code == 200, response.text
+        detail = body(response)
+        assert detail["amount"] == expected["amount"]
+        assert detail["lineage"] == expected["lineage"] and all(
+            isinstance(ref, str) for ref in detail["lineage"]
+        )
+        assert detail["current_ref"] == expected["current_ref"]
+        history = detail["correction_history"]
+        assert history == expected["correction_history"]
+        assert [item["reason"] for item in history] == [
+            "Synthetic prior reason A",
+            "Synthetic later reason B",
+        ]
+        assert [item["superseded_ref"] for item in history] == ["book:expense", a]
+        assert history[-1]["replacement_ref"] == detail["current_ref"]
+        for item in history:
+            assert set(item) == {
+                "correction_ref",
+                "status",
+                "superseded_ref",
+                "replacement_ref",
+                "reason",
+                "actor",
+                "at",
+                "decision_ref",
+                "evidence_refs",
+                "source_refs",
+            }
+            assert item["status"] == "applied" and item["actor"] == "local-user:operator"
+            assert item["at"] and item["decision_ref"] and item["source_refs"] == ["source:bank"]
+    assert finance["path"].read_bytes() == before and finance["original"].read_bytes() == originals
+
+
 def test_sourced_attestation_creation_and_stale_editor(api, finance):
     prior = snapshot(finance)
     new = {
