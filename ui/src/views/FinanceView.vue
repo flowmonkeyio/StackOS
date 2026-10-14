@@ -24,13 +24,15 @@ import SubNav from '@/components/SubNav.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import FinanceFilters from '@/components/finance/FinanceFilters.vue'
 import FinanceRecordPanel from '@/components/finance/FinanceRecordPanel.vue'
+import FinanceOverview from './finance/FinanceOverview.vue'
+import FinanceOverviewInsights from './finance/FinanceOverviewInsights.vue'
+import { aiCategory, insightsModel } from './finance/insightsViewModel'
 import {
   UiButton,
   UiCallout,
   UiCheckbox,
   UiFormField,
   UiInput,
-  UiMetricCard,
   UiPageShell,
   UiSectionHeader,
   UiSelect,
@@ -44,7 +46,6 @@ import {
   contentText,
   documentSummaryText,
   formatMoney,
-  metricText,
   newIntentId,
   object,
   objects,
@@ -113,13 +114,18 @@ type DisplayRow = SchemaFinanceProjectionOut['rows'][number] & {
   id: string
   invoice_status: string
   receipt_status: string
+  ai_category: string
+  ai_confidence: string
 }
+const insights = computed(() => insightsModel(analysis.value, projection.value))
 const rows = computed<DisplayRow[]>(() =>
   (projection.value?.rows ?? []).map((row) => ({
     ...row,
     id: text(row.record_ref),
     invoice_status: documentSummaryText(object(row.document_summary).invoice),
     receipt_status: documentSummaryText(object(row.document_summary).receipt),
+    ai_category: aiCategory(insights.value, text(row.record_ref)).category,
+    ai_confidence: aiCategory(insights.value, text(row.record_ref)).confidence,
   })),
 )
 const columns: DataTableColumn<(typeof rows.value)[number]>[] = [
@@ -131,18 +137,14 @@ const columns: DataTableColumn<(typeof rows.value)[number]>[] = [
   },
   { key: 'kind', label: 'Type' },
   { key: 'amount', label: 'Amount', sortable: true, format: formatMoney },
-  { key: 'category_ref', label: 'Category', format: (value) => text(value) || 'Unassigned' },
+  { key: 'category_ref', label: 'Source category', format: (value) => text(value) || 'Unassigned' },
   { key: 'status', label: 'State' },
   { key: 'invoice_status', label: 'Invoice', cellClass: 'whitespace-nowrap' },
   { key: 'receipt_status', label: 'Receipt', cellClass: 'whitespace-nowrap' },
   { key: 'needs_review', label: 'Review', format: (value) => (value ? 'Needs review' : 'Sourced') },
+  { key: 'ai_category', label: 'Proposed AI category' },
+  { key: 'ai_confidence', label: 'AI confidence' },
 ]
-const groups = computed(() =>
-  Object.entries(object(projection.value?.breakdowns)).map(([dimension, value]) => ({
-    dimension,
-    rows: objects(value),
-  })),
-)
 const reportAllowed = computed(() => access.value?.modes.includes('export') === true)
 const pendingAnalysis = computed(() => analysisSubmissions.get(projectId.value))
 const pendingArguments = computed<Record<string, unknown> | null>(() =>
@@ -430,24 +432,6 @@ function drill(dimension: string, group: Record<string, unknown>) {
       : { [`${dimension}_ref`]: text(group.label) }
   section.value = 'records'
   void loadQuery({ ...query.value, ...patch, offset: 0 })
-}
-function currencyAmount(group: Record<string, unknown>, field: string) {
-  return formatMoney({
-    minor: group[field],
-    currency: group.currency,
-    exponent: projection.value?.metrics_by_currency.find((m) => m.currency === group.currency)
-      ?.exponent,
-  })
-}
-function amountRows(
-  value: unknown,
-): (Record<string, unknown> & { id: number; spend: string; revenue: string })[] {
-  return objects(value).map((row, index) => ({
-    ...row,
-    id: index,
-    spend: currencyAmount(row, 'spend_minor'),
-    revenue: currencyAmount(row, 'revenue_minor'),
-  }))
 }
 async function loadReport(format: 'markdown' | 'csv' | 'json') {
   if (!access.value || !projection.value || !reportAllowed.value) return
@@ -802,86 +786,24 @@ onBeforeUnmount(() => {
                 >{{ refValue }}</UiButton
               >
             </section>
-            <template v-if="section === 'overview'">
-              <p v-if="!projection.metrics_by_currency.length" class="text-sm text-fg-muted">
-                Metrics unavailable. Records remain inspectable; confirm reporting policy, treatment
-                and source coverage.
-              </p>
-              <section
-                v-for="metric in projection.metrics_by_currency"
-                :key="text(metric.currency)"
-                class="space-y-3"
-              >
-                <h2 class="t-h2">{{ text(metric.currency) }} · supported operating result</h2>
-                <div class="grid grid-cols-3 gap-3">
-                  <div v-for="name in ['spend', 'revenue', 'profit']" :key="name">
-                    <UiMetricCard
-                      :label="
-                        name === 'spend'
-                          ? 'Spend'
-                          : name === 'revenue'
-                            ? 'Revenue'
-                            : 'Operating profit'
-                      "
-                      :value="metricText(metric[name])"
-                      :hint="text(object(metric[name]).state) || 'Unavailable'"
-                    /><UiButton
-                      v-if="refs(object(metric[name]).included_record_refs).length"
-                      size="sm"
-                      variant="ghost"
-                      @click="includedRefs = refs(object(metric[name]).included_record_refs)"
-                      >Inspect included records</UiButton
-                    >
-                    <p v-if="projection.comparison" class="mt-1 text-xs text-fg-muted">
-                      Prior:
-                      {{
-                        metricText(
-                          objects(projection.comparison.metrics_by_currency).find(
-                            (m) => m.currency === metric.currency,
-                          )?.[name],
-                        )
-                      }}
-                    </p>
-                  </div>
-                </div>
-              </section>
-              <p class="text-sm text-fg-muted">
-                Breakdowns and trends show spend and revenue contributions from selected supported
-                records. A zero revenue contribution means no selected supported income
-                contribution; for expense-only records without income coverage, total revenue and
-                operating profit remain unavailable.
-              </p>
-              <section v-for="group in groups" :key="group.dimension" class="space-y-2">
-                <h3 class="t-h3">By {{ group.dimension }}</h3>
-                <DataTable
-                  :items="amountRows(group.rows)"
-                  :columns="[
-                    { key: 'label', label: 'Group' },
-                    { key: 'currency', label: 'Currency' },
-                    { key: 'spend', label: 'Spend contribution' },
-                    { key: 'revenue', label: 'Revenue contribution' },
-                  ]"
-                  interactive
-                  :aria-label="`${group.dimension} breakdown`"
-                  max-height="220px"
-                  @row-click="drill(group.dimension, $event)"
-                />
-              </section>
-              <section>
-                <h3 class="t-h3">Trend by date</h3>
-                <DataTable
-                  :items="amountRows(projection.trend)"
-                  :columns="[
-                    { key: 'date', label: 'Date' },
-                    { key: 'currency', label: 'Currency' },
-                    { key: 'spend', label: 'Spend contribution' },
-                    { key: 'revenue', label: 'Revenue contribution' },
-                  ]"
-                  aria-label="Finance trend"
-                  max-height="220px"
-                />
-              </section>
-            </template>
+            <FinanceOverview
+              v-if="section === 'overview'"
+              :projection="projection"
+              @inspect="includedRefs = $event"
+              @drill="drill"
+            />
+            <FinanceOverviewInsights
+              v-if="section === 'overview'"
+              :model="insights"
+              :status="statusText"
+              :has-request="!!selectedRequest"
+              :request-allowed="reportAllowed && !loading && !analysisLoading && !pendingAnalysis"
+              :refresh-allowed="reportAllowed && !!selectedRequest"
+              :loading="analysisLoading"
+              @request="requestAnalysis"
+              @refresh="refreshAnalysis"
+              @inspect="inspect($event)"
+            />
             <section v-if="includedRefs.length" class="space-y-2">
               <h3 class="t-h3">Included records</h3>
               <UiButton
@@ -988,15 +910,15 @@ onBeforeUnmount(() => {
               aria-label="Agent finance analysis"
             >
               <UiSectionHeader
-                title="Ask for analysis"
-                description="An available host reads the selected source, analyzes it and obtains independent control review. Queueing does not execute a model."
+                title="AI category and concern review"
+                description="An available finance agent proposes descriptive categories and highlights supported concerns, then obtains independent control review. Queueing does not execute a model."
               />
               <div class="flex items-end gap-3">
                 <UiFormField label="Analysis question"
                   ><UiSelect
                     v-model="analysisKind"
                     :options="[
-                      { value: 'opportunities', label: 'Supported opportunities' },
+                      { value: 'opportunities', label: 'Categories and concerns' },
                       { value: 'spending', label: 'Spending review' },
                       { value: 'collections', label: 'Collection timing' },
                       { value: 'cashflow', label: 'Cashflow questions' },
@@ -1006,7 +928,9 @@ onBeforeUnmount(() => {
                   :disabled="!reportAllowed || loading || analysisLoading || !!pendingAnalysis"
                   @click="requestAnalysis"
                   >{{
-                    selectedRequest ? 'Request new agent analysis' : 'Request agent analysis'
+                    selectedRequest
+                      ? 'Request new category and concern review'
+                      : 'Request category and concern review'
                   }}</UiButton
                 >
               </div>

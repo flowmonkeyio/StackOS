@@ -17,7 +17,12 @@ from stackos.plugins.builtin_finance import helpers
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.run_plans import RunPlanRepository
 from tests.helpers.finance_workspace import record
-from tests.unit.test_finance_management import QUERY, analysis_result, fixture_document
+from tests.unit.test_finance_management import (
+    QUERY,
+    analysis_result,
+    categorization_result,
+    fixture_document,
+)
 
 WORKSPACE = "finance:synthetic"
 
@@ -1410,3 +1415,96 @@ def test_dispatcher_config_replay_never_bypasses_current_authority(api, finance)
     assert revoked.status_code == 200
     old = call(api, "financeWorkspace.select", select_args)
     assert old.status_code == 403
+
+
+@pytest.mark.parametrize("selector", ["record_refs", "source_refs"])
+@pytest.mark.parametrize("case", ["broadened", "matched", "legacy", "stale"])
+def test_reviewed_categorization_is_bound_to_original_intake(api, finance, selector, case):
+    module = finance["module"]
+    selection = {"record_refs": [], "source_refs": []}
+    selection[selector] = ["book:expense" if selector == "record_refs" else "source:bank"]
+    query = {**QUERY, "workspace_ref": WORKSPACE, "access_generation": 1}
+    source = snapshot(finance)
+    queued = call(
+        api,
+        "localAgentChat.createMessage",
+        {
+            "project_id": finance["project_id"],
+            "thread_key": "finance-original-selection",
+            "message_key": f"synthetic-{selector}-{case}",
+            "sender_ref": "local-user:operator",
+            "text": "Propose categories for the selected items.",
+            "metadata_json": {
+                "workspace_ref": WORKSPACE,
+                "access_generation": 1,
+                "source_snapshot": source,
+                "query": query,
+                "analysis_kind": "opportunities",
+                **selection,
+            },
+        },
+    )
+    assert queued.status_code == 200, queued.text
+    request_id = body(queued)["agent_request"]["id"]
+    current = module.read_snapshot(finance["path"])
+    if case == "legacy":
+        result = analysis_result(current)
+    else:
+        # Broadened material is internally reviewed and valid for the same query,
+        # but cannot replace the narrower selectors persisted at intake.
+        result = categorization_result(
+            current,
+            target="book:fee" if case == "broadened" else "book:expense",
+            selection={"record_refs": [], "source_refs": []} if case == "broadened" else selection,
+        )
+    result["request_id"] = str(request_id)
+    result["query"] = query
+    result["review"]["target_digest_sha256"] = module.result_digest(result)
+    before = finance["path"].read_bytes()
+    publication = module.publish_result(finance["path"], result, b"Reviewed synthetic report")
+    assert finance["path"].read_bytes() == before
+    with Session(api.app.state.engine) as session:
+        row = session.get(AgentRequest, request_id)
+        row.status = "resolved"
+        row.metadata_json = {
+            **row.metadata_json,
+            "external_result_ref": publication["external_result_ref"],
+            "external_result_sha256": publication["result_sha256"],
+            "source_snapshot": source,
+            "state": "published",
+        }
+        session.add(row)
+        session.commit()
+    if case == "stale":
+        intent = edit(finance, request_id="synthetic-category-target-corrected")
+        preview = call(api, "finance.record.preview", intent)
+        assert preview.status_code == 200, preview.text
+        committed = call(
+            api,
+            "finance.record.commit",
+            {**intent, "preview_digest": body(preview)["preview_digest"]},
+        )
+        assert committed.status_code == 200, committed.text
+    before_read = finance["path"].read_bytes()
+    response = call(
+        api,
+        "finance.report.render",
+        {
+            **finance["common"],
+            **QUERY,
+            "report_kind": "analysis",
+            "analysis_request_id": request_id,
+        },
+    )
+    if case == "broadened":
+        assert response.status_code == 422, response.text
+        assert "result_selection_mismatch" in response.text
+    else:
+        assert response.status_code == 200, response.text
+        assert body(response)["state"] == ("stale" if case == "stale" else "current")
+        if case == "legacy":
+            assert "category_proposals" not in body(response)["result"]
+        else:
+            assert body(response)["result"]["selection"] == selection
+            assert body(response)["result"]["category_proposals"][0]["record_ref"] == "book:expense"
+    assert finance["path"].read_bytes() == before_read

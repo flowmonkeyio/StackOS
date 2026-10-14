@@ -610,6 +610,48 @@ An installed app must contain the matching runtime and UI bundle; source changes
 alone do not activate them. The existing writer/CurrentRecords owners are reused.
 See [the management host/result protocol](workflow-handoffs.md#management-review-request-and-result).
 
+Reviewed management results may carry an optional `taxonomy_proposal`,
+`category_proposals`, `proposal_coverage` and original `selection`. Categorization
+material supplies all four together. Taxonomy categories are result-local proposed
+organizational groups with readable labels, rationale, evidence and uncertainty;
+they do not adopt an external category policy. Every per-record proposal names its
+exact current bookkeeping or receipt target and material digest, proposed category,
+confidence, rationale, evidence and uncertainty. A null category explicitly leaves
+an item unassigned. Low confidence remains tentative; neither result publication
+nor control review changes source categories, recognition or financial treatment.
+
+Original `selection.record_refs` and `selection.source_refs` are bounded reviewed
+material. Nonempty selectors constrain the original filtered population and its
+evidence; empty selectors mean the full filtered population. The helper walks all
+query pages for target validation rather than treating offset/limit as scope.
+Record selector membership and root/opportunity evidence use all selected Finance
+rows, including bills supporting collection-timing concerns. Category targets and
+category evidence use only the selected bookkeeping/receipt subset and its scoped
+source/attachment evidence. A population containing only bills may therefore carry
+a truthful empty categorization bundle alongside supported concerns; bills never
+become category targets or category evidence.
+Unique considered targets partition into assigned or explicitly unassigned refs;
+null-category proposals must agree with that partition. Coverage and assignments
+are bounded to 200 items, and a larger or partially considered population requires
+explicit gaps. Unknown category membership, duplicate IDs/targets, mismatched
+digests, foreign targets/evidence and undeclared partial coverage reject.
+
+The existing guarded reader supplies `read_result(expected_selection=...)` with
+the original persisted selectors and verifies exact equality for new selection
+material. A legacy result without categorization remains compatible. All new
+material participates in `result_digest` and exact independent review; existing
+opportunities may add a bounded readable `title` and `attention_level` of `info`,
+`watch` or `high`. Concerns still use existing opportunity kinds and evidence,
+uncertainty and assumptions, without a separate concern store or automatic rules.
+No-supported-cost-opportunity may coexist with organizational category proposals.
+
+Matching snapshots validate current targets and eligible scope. Stale publications
+retain schema, material digest, independent review, request selectors and original
+file/report integrity checks, without comparing historical target digests to newer
+records or resolving an old proposal onto a replacement. `read_result` returns
+`state=stale` with the intact historical result; consumers must suppress current
+bucketing from it. Period report renderers and exports remain unchanged.
+
 Recovery preserves the external master and originals: refresh/rebase stale
 edits, reconcile unknown outcomes, repair/reselect local file authorization and
 restore only from independently verified operator-owned backups. This finance

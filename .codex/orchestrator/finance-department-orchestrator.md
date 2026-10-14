@@ -1,6 +1,6 @@
 # Finance Department Orchestrator
 
-Source skill preset: `stackos.finance.department-orchestrator` v0.8.0. Keep this adaptation aligned with `plugins/finance/skill-presets/finance.yaml`. This is main-agent guidance, not a subagent.
+Source skill preset: `stackos.finance.department-orchestrator` v0.8.1. Keep this adaptation aligned with `plugins/finance/skill-presets/finance.yaml`. This is main-agent guidance, not a subagent.
 
 Use the strongest reasoning configuration available in the current host for this integration role without replacing the user or workspace model selection. Finance subagents intentionally omit `model` and inherit the host selection while setting role-appropriate reasoning effort; see [official Codex subagent configuration](https://learn.chatgpt.com/docs/agent-configuration/subagents).
 
@@ -138,4 +138,41 @@ A finance local-chat request persists work; it never invokes a model. An availab
 
 Dispatch the existing bookkeeping preparer, with cashflow preparation only when relevant, and a required distinct read-only control reviewer. Actual agent analysis remains externally evidenced, with supported opportunities, no supported opportunity or incomplete data; unknown never becomes zero. Read the installed package-origin helper/result schema. Draft typed result and exact readable report bytes outside the immutable publication destination. Use `request_id=str(original request.id)` and the actual producer/run/source/query refs; compute `report_sha256` BEFORE `result_digest` and independent review. The reviewer independently reads actual source and exact report/result material, returning a verdict bound to that digest. Same run is allowed, same producer/reviewer actor is not. Changed bytes/material require fresh review. This verdict never adopts accounting policy or a financial decision.
 
-As sole publisher call `publish_result(finance_json_path, result, report_bytes)` then `read_result` with the original query and returned digest. Complete `agentRequest.complete` with the original claim token only after current complete readback, storing `top-level metadata_json.external_result_ref/external_result_sha256/source_snapshot/state` with exactly external_result_ref, external_result_sha256 (publication.result_sha256), source_snapshot and state=published. Keep amounts, result/report text, opportunities, private paths and original bytes out of StackOS resources, run results, artifacts, tracker and chat. Optional local-chat acknowledgement uses outbound/create_request=false and safe refs only. An interrupted publication requires readback reconciliation, not a blind retry/new ID. Stale source/query, failed review or publication remains blocked/failed/stale. Chosen opportunities require separately authorized corrections or existing finance work; management has no provider action grants or automatic adoption.
+As sole publisher call `publish_result(finance_json_path, result, report_bytes)` then `read_result` with the original query, returned digest and `expected_selection={record_refs,source_refs}` from original persisted request metadata. Complete `agentRequest.complete` with the original claim token only after current complete readback, storing `top-level metadata_json.external_result_ref/external_result_sha256/source_snapshot/state` with exactly external_result_ref, external_result_sha256 (publication.result_sha256), source_snapshot and state=published. Keep amounts, result/report text, opportunities, private paths and original bytes out of StackOS resources, run results, artifacts, tracker and chat. Optional local-chat acknowledgement uses outbound/create_request=false and safe refs only. An interrupted publication requires readback reconciliation, not a blind retry/new ID. Stale source/query, failed review or publication remains blocked/failed/stale. Chosen opportunities require separately authorized corrections or existing finance work; management has no provider action grants or automatic adoption.
+
+During requested management analysis, automatically include useful descriptive
+taxonomy and per-item bucket proposals from actual selected evidence. An absent
+or insufficient configured list is not a prerequisite: the agent may propose new
+result-local organizational groups. Adopted bookkeeping categories still follow
+approved configured rules and applicable owner decisions. Do not infer business
+purpose, accounting basis, tax treatment or financial adoption from a group label.
+
+Pass original `record_refs`/`source_refs`, exact query and `source_snapshot` to
+the preparer. Empty selectors mean the full original filtered population;
+nonempty selectors restrict both eligible records and evidence. Walk all query
+pages; offset/limit cannot narrow analysis scope implicitly. Use the accepted
+`taxonomy_proposal` / `category_proposals` / `proposal_coverage` / `selection`
+bundle, unique result-local refs and current selected bookkeeping/receipt target
+digests from `workspace.material_record_digest(record, collection)`. Require
+confidence, rationale, scoped evidence and uncertainty. Null categories are
+explicitly unassigned; low-confidence suggestions stay tentative. Consider at
+most 200 targets/proposals, partition considered refs into assigned or unassigned,
+and name partial/larger-population gaps. Unsupported grouping remains explicitly
+empty/unassigned. No-supported-cost-opportunity can coexist with useful proposed
+organization; neither changes canonical amounts, filters or source categories.
+
+Have the actual preparer evaluate supported expense increases against the exact
+requested comparison and investigate repeated costs, possible duplicates and
+source-quality concerns. Use existing `opportunities` with readable `title` and
+`attention_level` `info`/`watch`/`high`, evidence, uncertainty and assumptions.
+Keep currencies, precision, supported economic IDs and incomplete baselines
+explicit. Recurring costs are not automatically duplicate charges. No fixed
+frontend rules, canned finding or model runner substitutes for actual analysis.
+
+The independent reviewer checks source/selector/current-target/category membership,
+coverage, confidence and concern meaning against the exact reviewed bundle and
+report bytes. A historical/stale read retains original refs/digests and file/report
+integrity without comparing old target digests to current replacements; it cannot
+bucket current records. Recheck original selectors at guarded readback and require
+fresh selected analysis for current proposals. Reports period UI/renderers/exports
+remain unchanged; private report bytes remain required review/publication evidence.

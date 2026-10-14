@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: finance.management-review
 name: Finance Management Review
-version: 0.1.0
+version: 0.1.1
 description: A host agent analyzes a bounded external snapshot, obtains independent control review, and publishes
   a source-bound report without adopting financial decisions.
 domain: finance
@@ -338,9 +338,10 @@ policies:
     settled allocation, period close, filing, or remittance.
 - key: no-inferred-accounting-or-tax-policy
   kind: boundary
-  description: The agent may propose evidence-supported categories with confidence and rationale within the configured
-    category set. It must not invent business purpose, accounting basis, tax treatment, payment authority or an
-    unsupported final accounting conclusion.
+  description: Requested management analysis proposes evidence-supported descriptive organizational taxonomy and
+    item buckets, including when no configured list exists or it is insufficient. These result-local groups remain
+    proposed; adopted bookkeeping categories still follow approved configured rules and applicable owner decisions.
+    Do not invent business purpose, accounting basis, tax treatment, payment authority or a final accounting conclusion.
 - key: reviewed-derived-result
   kind: integrity
   description: Derived analysis is not a financial record or adopted decision. Use the accepted finance-management-result-v1
@@ -420,6 +421,30 @@ steps:
     unknown distinct from zero, global duplicate exclusions and prepared/unposted status. Do not infer accounting
     treatment from sign, prose or capture time, invent savings, allocate shared costs, or automatically correct/adopt
     anything.
+  - As part of the requested management analysis, automatically propose a useful descriptive taxonomy and per-item
+    buckets from actual selected evidence; do not require the operator to create a category list first. Reuse useful
+    existing organizational labels or propose new result-local groups when the configured list is absent or insufficient.
+    Source category_ref and adopted category rules remain separate. No proposal adopts policy or changes finance.json.
+  - Preserve selection={record_refs,source_refs} exactly from the original persisted request, using empty arrays only
+    when its selectors are empty. Nonempty selectors restrict the eligible original query population and evidence.
+    Read every query page on the exact source_snapshot; offset/limit are pagination, not analysis scope. Eligible targets
+    are current selected bookkeeping/receipt rows, including visibly excluded rows without treating them as recognized money.
+  - Include the optional categorization bundle together as taxonomy_proposal, category_proposals, proposal_coverage
+    and selection using the installed result schema. Taxonomy and categories are proposed with unique result-local refs,
+    readable labels/descriptions, rationale, evidence and uncertainty. Each unique target proposal has its exact current
+    workspace.material_record_digest(record, collection), taxonomy/category membership, low/medium/high confidence,
+    rationale, scoped evidence and uncertainty. Unknown classification stays explicitly unassigned; category_ref may be
+    null and low confidence remains tentative. Never infer tax or business-purpose facts to make a bucket fit.
+  - Bound considered targets and proposals to 200. proposal_coverage.considered_record_refs partitions exactly into
+    assigned or explicit unassigned_record_refs; a null proposal must agree with the unassigned partition. Larger or
+    partially considered populations require named gaps and truthful coverage, never silent first-page truncation.
+    If no useful taxonomy is supported, return empty categories/proposals and explicit empty/partial coverage with
+    unassigned items/gaps. No-supported-opportunity may coexist with organizational proposals; it claims no cost opportunity.
+  - Evaluate supported expense increases against the exact requested comparison window and investigate repeated
+    costs, possible duplicates and source-quality concerns using actual records and coverage. Use existing opportunities
+    kinds, readable title and attention_level=info/watch/high, evidence, uncertainty and assumptions. Keep currencies,
+    precision and supported economic IDs separate; unknown or incomplete baselines stay gaps. Recurrence is not proof
+    of a duplicate charge, and no fixed rule, canned finding or frontend threshold substitutes for actual AI reasoning.
   - Prepare a finance-management-result-v1 candidate plus UTF-8 report bytes outside the immutable published destination.
     Use request_id=str(the persisted numeric request_id), exact source_snapshot/query, actual producer_ref/run_ref/created_at,
     opportunities/evidence_refs/gaps and a truthful supported-opportunities, no-supported-opportunity or incomplete-data
@@ -443,6 +468,11 @@ steps:
     evidence and the exact candidate result/report bytes, verifies current source_snapshot/query and supporting
     current records, challenges unsupported opportunities and estimates, and checks coverage/duplicate/date/currency/scope/unknown
     semantics. An unavailable reviewer or narrative-only review leaves required review pending.
+  - Review the proposed taxonomy, every considered/assigned/unassigned target, original selectors, full filtered
+    population, exact current target digests, unique IDs/membership, scoped evidence, confidence and partial coverage.
+    Challenge unsupported category meaning or expense-increase/repeat/duplicate claims; verify comparison periods,
+    currencies and uncertainty from actual sources. Current proposal presentation requires a matching source snapshot;
+    stale historical material retains its original refs/digests and cannot bucket current replacement records.
   - The reviewer returns approved or blocking findings bound to result_digest(candidate), which includes report_sha256.
     The main host records review.reviewer_ref, actual review.run_ref, verdict=approved, reviewed_at and target_digest_sha256
     only after an independent approved review. Same workflow run is permitted; same producer actor is not. Changed
@@ -465,8 +495,8 @@ steps:
     review digest and report hash, then writes immutable exports/analysis/<request_id>/result.json and report.md
     with the completion manifest last. This does not change finance.json. Reconcile an unknown/interrupted outcome
     by readback before any retry; no replacement ID or blind write.
-  - Call read_result with external_result_ref, expected_digest=publication.result_sha256 and expected_query=the
-    original query. Require current complete readback before recording status=published with safe request/source/result/report
+  - Call read_result with external_result_ref, expected_digest=publication.result_sha256, expected_query=the
+    original query and expected_selection={record_refs,source_refs} from the original persisted request. Require current complete readback before recording status=published with safe request/source/result/report
     hashes, control_review_ref, external_result_ref and outcome only. Never store amounts, opportunities, report
     text, private paths or original bytes in StackOS resources, artifacts, run results, tracker or chat.
   - Only after verified external publication/readback, call agentRequest.complete with the original project/request/claim_token
@@ -476,6 +506,10 @@ steps:
     proof of publication/currentness. Failure or source change stays failed/blocked/stale; do not claim completed
     analysis or adopt a financial decision. Any chosen opportunity requires a separately authorized correction or
     existing finance workflow.
+  - Historical/stale readback preserves original reviewed material and file/report integrity without comparing old
+    target digests to newer records. Do not rebind old selectors or present historical proposals as current buckets;
+    request fresh selected analysis. Keep Reports period features/exports unchanged; the existing private report bytes
+    remain review/publication evidence, not a request for a Reports redesign.
   - Completion metadata has exactly top-level external_result_ref, external_result_sha256, source_snapshot and state=published;
     map external_result_sha256 from publish_result receipt result_sha256, the full result.json file SHA. review.target_digest_sha256
     is a different digest covering material excluding review. There are no nested completion aliases.

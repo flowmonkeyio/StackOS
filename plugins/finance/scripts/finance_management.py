@@ -1941,11 +1941,125 @@ def result_digest(result: dict[str, Any]) -> str:
     return _hash({k: v for k, v in result.items() if k != "review"})
 
 
+def _validate_categorization(result, snapshot, current, *, is_current):
+    fields = {"taxonomy_proposal", "category_proposals", "proposal_coverage"}
+    if not fields.intersection(result):
+        return []
+    if not (fields | {"selection"}).issubset(result):
+        _fail("incomplete_categorization")
+    taxonomy, proposals, coverage = (
+        result["taxonomy_proposal"],
+        result["category_proposals"],
+        result["proposal_coverage"],
+    )
+    categories = taxonomy["categories"]
+    category_refs = {c["category_ref"] for c in categories}
+    ids = [taxonomy["taxonomy_ref"], *[c["category_ref"] for c in categories]]
+    ids.extend(p["proposal_ref"] for p in proposals)
+    ids.extend(p["opportunity_ref"] for p in result["opportunities"])
+    if len(ids) != len(set(ids)):
+        _fail("duplicate_result_ref")
+    targets = [p["record_ref"] for p in proposals]
+    if len(targets) != len(set(targets)):
+        _fail("duplicate_category_target")
+    for proposal in proposals:
+        if proposal["taxonomy_ref"] != taxonomy["taxonomy_ref"] or (
+            proposal["category_ref"] is not None and proposal["category_ref"] not in category_refs
+        ):
+            _fail("invalid_category_membership")
+    considered, unassigned = (
+        set(coverage["considered_record_refs"]),
+        set(coverage["unassigned_record_refs"]),
+    )
+    assigned = {p["record_ref"] for p in proposals if p["category_ref"] is not None}
+    null_targets = {p["record_ref"] for p in proposals if p["category_ref"] is None}
+    if (
+        considered != assigned | unassigned
+        or assigned.intersection(unassigned)
+        or not null_targets.issubset(unassigned)
+    ):
+        _fail("invalid_proposal_coverage")
+    refs = [ref for item in [*categories, *proposals] for ref in item["evidence_refs"]]
+    # A historical publication has no retained source document to validate against.
+    # Keep its reviewed structure, never resolve old targets onto newer records.
+    if not is_current:
+        return refs
+
+    selection = result["selection"]
+    record_selectors, source_selectors = (
+        set(selection["record_refs"]),
+        set(selection["source_refs"]),
+    )
+    if any(current.collections.get(ref) != "sources" for ref in source_selectors):
+        _fail("unknown_result_selection")
+    # query owns filtering. Walk its full population rather than mistaking the
+    # original offset/limit for analysis scope; do not modify its financial logic.
+    selected_query = {**result["query"], "offset": 0, "limit": 200, "comparison": None}
+    rows = []
+    while True:
+        page = query(snapshot, selected_query)
+        rows.extend(page["rows"])
+        if not page["page"]["has_more"]:
+            break
+        selected_query["offset"] += selected_query["limit"]
+    population = {r["record_ref"] for r in rows}
+    if not record_selectors.issubset(population):
+        _fail("unknown_result_selection")
+    rows = [
+        r
+        for r in rows
+        if (not record_selectors or r["record_ref"] in record_selectors)
+        and (not source_selectors or source_selectors.intersection(r["source_refs"]))
+    ]
+    category_rows = [r for r in rows if r["collection"] in {"bookkeeping", "receipts"}]
+    eligible = {r["record_ref"] for r in category_rows}
+    if not considered.issubset(eligible):
+        _fail("category_target_out_of_scope")
+    if considered != eligible and not coverage["gaps"]:
+        _fail("partial_proposal_coverage")
+    for proposal in proposals:
+        ref = proposal["record_ref"]
+        if current.resolve(ref) != ref:
+            _fail("stale_category_target")
+        if proposal["target_digest_sha256"] != workspace.material_record_digest(
+            current.records[ref], current.collections[ref]
+        ):
+            _fail("category_target_digest_mismatch")
+
+    def evidence_scope(scope_rows, explicit_sources=()):
+        sources = set(explicit_sources)
+        for row in scope_rows:
+            sources.update(row["source_refs"])
+            for document in row["documents"]:
+                sources.update(document["source_refs"])
+        if source_selectors:
+            sources.intersection_update(source_selectors)
+        attachments = {
+            ref for source in sources for ref in current.records[source].get("attachment_refs", [])
+        }
+        return {r["record_ref"] for r in scope_rows} | sources | attachments
+
+    # Concerns use every selected Finance row. Category evidence, like category
+    # targets, must come from the selected bookkeeping/receipt subset.
+    scoped_evidence = evidence_scope(rows, source_selectors)
+    category_evidence = evidence_scope(category_rows)
+    concern_refs = [
+        *result["evidence_refs"],
+        *[ref for item in result["opportunities"] for ref in item["evidence_refs"]],
+    ]
+    if any(ref not in scoped_evidence for ref in concern_refs) or any(
+        ref not in category_evidence for ref in refs
+    ):
+        _fail("result_evidence_out_of_scope")
+    return refs
+
+
 def validate_result(
     result: dict[str, Any],
     snapshot: dict[str, Any],
     *,
     expected_query: dict[str, Any] | None = None,
+    expected_selection: dict[str, Any] | None = None,
     allow_stale: bool = False,
 ) -> None:
     _schema(result, "management-result-v1.schema.json")
@@ -1957,17 +2071,31 @@ def validate_result(
         _fail("unreviewed_result")
     if not allow_stale:
         _matches(snapshot, result["source_snapshot"])
+    is_current = result["source_snapshot"] == {
+        "revision": snapshot["revision"],
+        "sha256": snapshot["sha256"],
+    }
     normalize_query(result["query"])
     if expected_query is not None and normalize_query(expected_query) != normalize_query(
         result["query"]
     ):
         _fail("result_query_mismatch")
+    if (
+        "selection" in result
+        and expected_selection is not None
+        and result["selection"] != expected_selection
+    ):
+        _fail("result_selection_mismatch")
     current = CurrentRecords(snapshot["document"])
     refs = result["evidence_refs"] + [
         ref for opportunity in result["opportunities"] for ref in opportunity["evidence_refs"]
     ]
-    if not refs or any(ref not in current.records for ref in refs):
+    refs.extend(_validate_categorization(result, snapshot, current, is_current=is_current))
+    if is_current and (not refs or any(ref not in current.records for ref in refs)):
         _fail("unknown_result_evidence")
+    opportunity_refs = [item["opportunity_ref"] for item in result["opportunities"]]
+    if len(opportunity_refs) != len(set(opportunity_refs)):
+        _fail("duplicate_result_ref")
     if result["state"] == "no-supported-opportunity" and result["opportunities"]:
         _fail("invalid_result_state")
     for opportunity in result["opportunities"]:
@@ -2033,6 +2161,7 @@ def read_result(
     *,
     expected_digest: str | None = None,
     expected_query: dict[str, Any] | None = None,
+    expected_selection: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     path = _master(path)
     if not isinstance(external_ref, str) or not external_ref.startswith("finance-analysis:"):
@@ -2065,7 +2194,13 @@ def read_result(
             _fail("result_digest_mismatch")
         result = workspace.decode_json(outputs["result.json"])
         s = read_snapshot(path)
-        validate_result(result, s, expected_query=expected_query, allow_stale=True)
+        validate_result(
+            result,
+            s,
+            expected_query=expected_query,
+            expected_selection=expected_selection,
+            allow_stale=True,
+        )
         if result["report_sha256"] != hashlib.sha256(outputs["report.md"]).hexdigest():
             _fail("unreviewed_report")
         if (

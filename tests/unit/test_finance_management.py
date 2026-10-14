@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from tests.helpers.finance_workspace import money, record
+from tests.helpers.finance_workspace import add_billing_fixture, money, record
 
 
 def management():
@@ -1411,6 +1411,423 @@ def analysis_result(s, report_bytes=b"Reviewed synthetic report"):
     }
 
 
+def categorization_result(s, *, target="book:expense", selection=None):
+    module = management()
+    current = module.CurrentRecords(s["document"])
+    result = analysis_result(s)
+    result["evidence_refs"] = [target]
+    result.update(
+        taxonomy_proposal={
+            "taxonomy_ref": "taxonomy:synthetic",
+            "state": "proposed",
+            "categories": [
+                {
+                    "category_ref": "category:tools",
+                    "label": "Operating tools",
+                    "description": "Organizational grouping for source-supported tools",
+                    "rationale": "Synthetic evidence illustrates a proposed grouping",
+                    "evidence_refs": [target],
+                    "uncertainty": "Purpose remains an operator fact",
+                }
+            ],
+        },
+        category_proposals=[
+            {
+                "proposal_ref": "proposal:synthetic",
+                "state": "proposed",
+                "record_ref": target,
+                "target_digest_sha256": module.workspace.material_record_digest(
+                    current.records[target], current.collections[target]
+                ),
+                "taxonomy_ref": "taxonomy:synthetic",
+                "category_ref": "category:tools",
+                "confidence": "low",
+                "rationale": "Tentative source-supported organizational proposal",
+                "evidence_refs": [target],
+                "uncertainty": "Not an adopted category or tax conclusion",
+            }
+        ],
+        proposal_coverage={
+            "considered_record_refs": [target],
+            "unassigned_record_refs": [],
+            "gaps": ["Only the named target was considered in this partial analysis"],
+        },
+        selection=selection or {"record_refs": [], "source_refs": []},
+    )
+    result["review"]["target_digest_sha256"] = module.result_digest(result)
+    return result
+
+
+def test_categorization_is_derived_low_confidence_and_preserves_financial_and_report_truth():
+    module, source = management(), snapshot(fixture_document())
+    before = copy.deepcopy(source)
+    projection = module.query(source, QUERY)
+    reports = {kind: module.render_report(projection, kind) for kind in ["json", "csv", "markdown"]}
+    result = categorization_result(source)
+    module.validate_result(result, source, expected_selection=result["selection"])
+    assert result["state"] == "no-supported-opportunity" and result["opportunities"] == []
+    assert result["category_proposals"][0]["confidence"] == "low"
+    assert source == before and module.query(source, QUERY) == projection
+    assert reports == {kind: module.render_report(projection, kind) for kind in reports}
+    assert all(x["category"]["state"] == "unresolved" for x in source["document"]["bookkeeping"])
+
+
+@pytest.mark.parametrize("with_null_proposal", [False, True])
+def test_categorization_explicit_unassigned_empty_taxonomy_and_coverage(with_null_proposal):
+    module, source = management(), snapshot(fixture_document())
+    result = categorization_result(
+        source, selection={"record_refs": ["book:expense"], "source_refs": []}
+    )
+    result["taxonomy_proposal"]["categories"] = []
+    result["proposal_coverage"].update(unassigned_record_refs=["book:expense"], gaps=[])
+    if with_null_proposal:
+        result["category_proposals"][0]["category_ref"] = None
+    else:
+        result["category_proposals"] = []
+    result["review"]["target_digest_sha256"] = module.result_digest(result)
+    module.validate_result(result, source)
+
+
+def test_categorization_reviewed_empty_is_explicitly_partial_when_population_exists():
+    module, source = management(), snapshot(fixture_document())
+    result = categorization_result(source)
+    result["taxonomy_proposal"]["categories"] = []
+    result["category_proposals"] = []
+    result["proposal_coverage"] = {
+        "considered_record_refs": [],
+        "unassigned_record_refs": [],
+        "gaps": ["No useful grouping identified; source categories remain unresolved"],
+    }
+    result["review"]["target_digest_sha256"] = module.result_digest(result)
+    module.validate_result(result, source)
+
+
+@pytest.mark.parametrize(
+    "case,code",
+    [
+        ("missing_selection", "incomplete_categorization"),
+        ("missing_coverage", "incomplete_categorization"),
+        ("duplicate_category", "duplicate_result_ref"),
+        ("duplicate_proposal_id", "duplicate_result_ref"),
+        ("duplicate_target", "duplicate_category_target"),
+        ("wrong_taxonomy", "invalid_category_membership"),
+        ("unknown_category", "invalid_category_membership"),
+        ("wrong_digest", "category_target_digest_mismatch"),
+        ("unknown_target", "category_target_out_of_scope"),
+        ("wrong_collection", "category_target_out_of_scope"),
+        ("wrong_query", "category_target_out_of_scope"),
+        ("wrong_source_selector", "category_target_out_of_scope"),
+        ("unknown_source_selector", "unknown_result_selection"),
+        ("unknown_record_selector", "unknown_result_selection"),
+        ("foreign_evidence", "result_evidence_out_of_scope"),
+        ("foreign_taxonomy_evidence", "result_evidence_out_of_scope"),
+        ("foreign_source_evidence", "result_evidence_out_of_scope"),
+        ("unknown_evidence", "result_evidence_out_of_scope"),
+        ("uncovered_assignment", "invalid_proposal_coverage"),
+        ("assigned_and_unassigned", "invalid_proposal_coverage"),
+        ("null_not_unassigned", "invalid_proposal_coverage"),
+        ("unmarked_partial", "partial_proposal_coverage"),
+        ("duplicate_selector", "invalid_result"),
+        ("invalid_confidence", "invalid_result"),
+        ("adopted_taxonomy", "invalid_result"),
+    ],
+)
+def test_categorization_rejects_invalid_membership_targets_scope_and_coverage(case, code):
+    module, document = management(), fixture_document()
+    document["sources"].append(
+        record(
+            "source:foreign",
+            "verified",
+            source_kind="bank-export",
+            source_identity="synthetic:foreign",
+            attachment_refs=[],
+            coverage_state="partial",
+        )
+    )
+    source = snapshot(document)
+    result = categorization_result(source)
+    proposal, coverage = result["category_proposals"][0], result["proposal_coverage"]
+    if case == "missing_selection":
+        result.pop("selection")
+    elif case == "missing_coverage":
+        result.pop("proposal_coverage")
+    elif case == "duplicate_category":
+        result["taxonomy_proposal"]["categories"] *= 2
+    elif case in {"duplicate_target", "duplicate_proposal_id"}:
+        other = copy.deepcopy(proposal)
+        if case == "duplicate_target":
+            other["proposal_ref"] = "proposal:other"
+        else:
+            other["record_ref"] = "book:fee"
+        result["category_proposals"].append(other)
+    elif case == "wrong_taxonomy":
+        proposal["taxonomy_ref"] = "taxonomy:foreign"
+    elif case == "unknown_category":
+        proposal["category_ref"] = "category:foreign"
+    elif case == "wrong_digest":
+        proposal["target_digest_sha256"] = "0" * 64
+    elif case in {"unknown_target", "wrong_collection"}:
+        ref = "book:absent" if case == "unknown_target" else "source:bank"
+        proposal["record_ref"] = ref
+        coverage["considered_record_refs"] = [ref]
+    elif case == "wrong_query":
+        result["query"] = {**QUERY, "kind": "income"}
+    elif case == "wrong_source_selector":
+        result["selection"]["source_refs"] = ["source:foreign"]
+    elif case == "unknown_source_selector":
+        result["selection"]["source_refs"] = ["source:absent"]
+    elif case == "unknown_record_selector":
+        result["selection"]["record_refs"] = ["book:absent"]
+    elif case in {"foreign_evidence", "foreign_taxonomy_evidence"}:
+        result["selection"]["record_refs"] = ["book:expense"]
+        item = (
+            proposal if case == "foreign_evidence" else result["taxonomy_proposal"]["categories"][0]
+        )
+        item["evidence_refs"] = ["book:fee"]
+    elif case == "foreign_source_evidence":
+        result["selection"]["source_refs"] = ["source:bank"]
+        proposal["evidence_refs"] = ["source:foreign"]
+    elif case == "unknown_evidence":
+        proposal["evidence_refs"] = ["source:absent"]
+    elif case == "uncovered_assignment":
+        coverage["considered_record_refs"] = []
+    elif case == "assigned_and_unassigned":
+        coverage["unassigned_record_refs"] = ["book:expense"]
+    elif case == "null_not_unassigned":
+        proposal["category_ref"] = None
+    elif case == "unmarked_partial":
+        coverage["gaps"] = []
+    elif case == "duplicate_selector":
+        result["selection"]["record_refs"] = ["book:expense", "book:expense"]
+    elif case == "invalid_confidence":
+        proposal["confidence"] = "certain"
+    elif case == "adopted_taxonomy":
+        result["taxonomy_proposal"]["state"] = "adopted"
+    result["review"]["target_digest_sha256"] = module.result_digest(result)
+    with pytest.raises(module.ManagementError) as caught:
+        module.validate_result(result, source)
+    assert caught.value.code == code
+
+
+def test_categorization_pages_full_population_and_bounds_partial_coverage_at_200():
+    module, document = management(), fixture_document()
+    template = copy.deepcopy(document_record(document))
+    for number in range(205):
+        item = copy.deepcopy(template)
+        item["record_id"] = f"book:extra:{number:03}"
+        document["bookkeeping"].append(item)
+    source = snapshot(document)
+    target = "book:extra:204"
+    result = categorization_result(
+        source, target=target, selection={"record_refs": [target], "source_refs": ["source:bank"]}
+    )
+    result["query"] = {**QUERY, "offset": 999, "limit": 1}
+    result["proposal_coverage"]["gaps"] = []
+    result["review"]["target_digest_sha256"] = module.result_digest(result)
+    assert module.query(source, result["query"])["rows"] == []
+    module.validate_result(result, source, expected_selection=result["selection"])
+    result = categorization_result(source)
+    template_proposal = result["category_proposals"][0]
+    result["category_proposals"] = []
+    for index, item in enumerate(document["bookkeeping"][:200]):
+        result["category_proposals"].append(
+            {
+                **template_proposal,
+                "proposal_ref": f"proposal:{index}",
+                "record_ref": item["record_id"],
+                "evidence_refs": [item["record_id"]],
+                "target_digest_sha256": module.workspace.material_record_digest(
+                    item, "bookkeeping"
+                ),
+            }
+        )
+    result["proposal_coverage"]["considered_record_refs"] = [
+        p["record_ref"] for p in result["category_proposals"]
+    ]
+    result["proposal_coverage"]["gaps"] = ["13 eligible items not yet considered"]
+    result["review"]["target_digest_sha256"] = module.result_digest(result)
+    module.validate_result(result, source)
+    result["category_proposals"].append(copy.deepcopy(template_proposal))
+    result["review"]["target_digest_sha256"] = module.result_digest(result)
+    with pytest.raises(module.ManagementError) as caught:
+        module.validate_result(result, source)
+    assert caught.value.code == "invalid_result"
+
+
+@pytest.mark.parametrize(
+    "field", ["taxonomy_proposal", "category_proposals", "proposal_coverage", "selection"]
+)
+def test_categorization_material_changes_require_fresh_review(field):
+    module, source = management(), snapshot(fixture_document())
+    result = categorization_result(source)
+    if field == "taxonomy_proposal":
+        result[field]["categories"][0]["label"] = "Changed label"
+    elif field == "category_proposals":
+        result[field][0]["confidence"] = "high"
+    elif field == "proposal_coverage":
+        result[field]["gaps"].append("Changed scope")
+    else:
+        result[field]["record_refs"] = ["book:expense"]
+    with pytest.raises(module.ManagementError) as caught:
+        module.validate_result(result, source)
+    assert caught.value.code == "unreviewed_result"
+
+
+@pytest.mark.parametrize("selector", ["record_refs", "source_refs"])
+def test_categorization_broad_declared_scope_cannot_replace_original_request(selector):
+    module, source = management(), snapshot(fixture_document())
+    result = categorization_result(source, target="book:fee")
+    expected = {"record_refs": [], "source_refs": []}
+    expected[selector] = ["book:expense" if selector == "record_refs" else "source:bank"]
+    module.validate_result(result, source)
+    with pytest.raises(module.ManagementError) as caught:
+        module.validate_result(result, source, expected_selection=expected)
+    assert caught.value.code == "result_selection_mismatch"
+
+
+@pytest.mark.parametrize(
+    "field", ["category_proposals", "considered_record_refs", "record_refs", "categories"]
+)
+def test_categorization_arrays_reject_more_than_200(field):
+    module, source = management(), snapshot(fixture_document())
+    result = categorization_result(source)
+    if field == "category_proposals":
+        item = result[field][0]
+        result[field] = [{**item, "proposal_ref": f"proposal:{i}"} for i in range(201)]
+    elif field == "considered_record_refs":
+        result["proposal_coverage"][field] = [f"book:{i}" for i in range(201)]
+    elif field == "record_refs":
+        result["selection"][field] = [f"book:{i}" for i in range(201)]
+    else:
+        item = result["taxonomy_proposal"][field][0]
+        result["taxonomy_proposal"][field] = [
+            {**item, "category_ref": f"category:{i}"} for i in range(201)
+        ]
+    result["review"]["target_digest_sha256"] = module.result_digest(result)
+    with pytest.raises(module.ManagementError) as caught:
+        module.validate_result(result, source)
+    assert caught.value.code == "invalid_result"
+
+
+@pytest.mark.parametrize("level", ["info", "watch", "high"])
+def test_opportunity_display_fields_remain_evidence_grounded_reviewed_material(level):
+    module, source = management(), snapshot(fixture_document())
+    result = analysis_result(source)
+    result["state"] = "supported-opportunities"
+    result["opportunities"] = [
+        {
+            "opportunity_ref": "opportunity:repeat",
+            "kind": "recurring",
+            "title": "Review repeated costs",
+            "attention_level": level,
+            "rationale": "Repeated costs require actual evidence before a duplicate claim",
+            "evidence_refs": ["book:expense"],
+            "uncertainty": "Recurrence is not duplication",
+            "assumptions": [],
+        }
+    ]
+    result["review"]["target_digest_sha256"] = module.result_digest(result)
+    module.validate_result(result, source)
+    result["opportunities"][0]["attention_level"] = "high" if level != "high" else "info"
+    with pytest.raises(module.ManagementError) as caught:
+        module.validate_result(result, source)
+    assert caught.value.code == "unreviewed_result"
+
+
+def test_categorization_publication_selector_guard_stale_corrected_targets_and_immutable_sources(
+    tmp_path,
+):
+    module, path = save_fixture(tmp_path)
+    with module.workspace.writer(path, module.workspace.digest(path)) as writer:
+        document = copy.deepcopy(writer.document)
+        original = writer.retain_original("attachments/2026/09/receipt.txt", b"Synthetic original")
+        document["attachments"].append(
+            record(
+                "attachment:receipt",
+                "retained",
+                source_ref="source:bank",
+                role="original",
+                media_type="text/plain",
+                original_filename="receipt.txt",
+                **original,
+            )
+        )
+        document["sources"][0]["attachment_refs"].append("attachment:receipt")
+        document["receipts"].append(
+            record(
+                "receipt:target",
+                "prepared",
+                source_ref="source:bank",
+                attachment_refs=["attachment:receipt"],
+                amount=money(100),
+                business_date="2026-09-03",
+            )
+        )
+        document["revision"] += 1
+        writer.commit(document)
+    source = module.read_snapshot(path)
+    original_path = path.parent / "attachments/2026/09/receipt.txt"
+    before, original_before = path.read_bytes(), original_path.read_bytes()
+    selection = {"record_refs": ["receipt:target"], "source_refs": ["source:bank"]}
+    result = categorization_result(source, target="receipt:target", selection=selection)
+    receipt = module.publish_result(path, result, b"Reviewed synthetic report")
+    loaded = module.read_result(path, receipt["external_result_ref"], expected_selection=selection)
+    assert loaded["state"] == "current" and loaded["result"] == result
+    assert path.read_bytes() == before and original_path.read_bytes() == original_before
+    with pytest.raises(module.ManagementError) as caught:
+        module.read_result(
+            path,
+            receipt["external_result_ref"],
+            expected_selection={"record_refs": [], "source_refs": []},
+        )
+    assert caught.value.code == "result_selection_mismatch"
+    correction = intent(
+        source,
+        action="correct-receipt-facts",
+        record_ref="receipt:target",
+        fields={"merchant": "Corrected synthetic merchant"},
+    )
+    preview = module.preview(source, correction)
+    module.commit(path, correction, preview["preview_digest"])
+    changed = module.read_snapshot(path)
+    assert module.CurrentRecords(changed["document"]).resolve("receipt:target") != "receipt:target"
+    rebound = copy.deepcopy(result)
+    rebound["source_snapshot"] = {"revision": changed["revision"], "sha256": changed["sha256"]}
+    rebound["review"]["target_digest_sha256"] = module.result_digest(rebound)
+    with pytest.raises(module.ManagementError) as caught:
+        module.validate_result(rebound, changed)
+    assert caught.value.code == "unknown_result_selection"
+    loaded = module.read_result(path, receipt["external_result_ref"], expected_selection=selection)
+    assert loaded["state"] == "stale" and loaded["result"] == result
+    assert original_path.read_bytes() == original_before
+    # Even stale material keeps original request binding and reviewed byte integrity.
+    with pytest.raises(module.ManagementError) as caught:
+        module.read_result(
+            path,
+            receipt["external_result_ref"],
+            expected_selection={"record_refs": [], "source_refs": []},
+        )
+    assert caught.value.code == "result_selection_mismatch"
+    published = path.parent / "exports/analysis/synthetic-analysis-1/result.json"
+    published.write_bytes(published.read_bytes().replace(b"Operating tools", b"Changed tools"))
+    with pytest.raises(module.ManagementError) as caught:
+        module.read_result(path, receipt["external_result_ref"], expected_selection=selection)
+    assert caught.value.code == "publication_integrity"
+
+
+def test_legacy_result_read_stays_compatible_with_original_selectors(tmp_path):
+    module, path = save_fixture(tmp_path)
+    result = analysis_result(module.read_snapshot(path))
+    result["review"]["target_digest_sha256"] = module.result_digest(result)
+    receipt = module.publish_result(path, result, b"Reviewed synthetic report")
+    loaded = module.read_result(
+        path,
+        receipt["external_result_ref"],
+        expected_selection={"record_refs": ["book:expense"], "source_refs": ["source:bank"]},
+    )
+    assert loaded["state"] == "current" and "taxonomy_proposal" not in loaded["result"]
+
+
 def test_external_analysis_publication_review_independence_and_staleness(tmp_path):
     module, path = save_fixture(tmp_path)
     s = module.read_snapshot(path)
@@ -1842,3 +2259,156 @@ def test_reviewed_result_cannot_publish_or_load_unreviewed_report_text(tmp_path)
     (directory / "manifest.json").write_text(json.dumps(manifest))
     with pytest.raises(module.ManagementError, match="unreviewed report"):
         module.read_result(path, receipt["external_result_ref"])
+
+
+def bill_concern_result(source, *, selection=None, with_categories=False):
+    module = management()
+    result = categorization_result(source) if with_categories else analysis_result(source)
+    result["evidence_refs"] = ["billing:fixture:v1"]
+    result["state"] = "supported-opportunities"
+    result["opportunities"] = [
+        {
+            "opportunity_ref": "opportunity:collection",
+            "kind": "collection-timing",
+            "title": "Review the supported bill's collection timing",
+            "attention_level": "watch",
+            "rationale": "Synthetic bill evidence supports operator review",
+            "evidence_refs": ["billing:fixture:v1"],
+            "uncertainty": "No payment status or collection decision is inferred",
+            "assumptions": [],
+        }
+    ]
+    if not with_categories:
+        result.update(
+            taxonomy_proposal={
+                "taxonomy_ref": "taxonomy:synthetic",
+                "state": "proposed",
+                "categories": [],
+            },
+            category_proposals=[],
+            proposal_coverage={
+                "considered_record_refs": [],
+                "unassigned_record_refs": [],
+                "gaps": [],
+            },
+        )
+    result["selection"] = selection or {"record_refs": [], "source_refs": []}
+    result["review"]["target_digest_sha256"] = module.result_digest(result)
+    return result
+
+
+@pytest.mark.parametrize(
+    "selection",
+    [
+        {"record_refs": [], "source_refs": []},
+        {"record_refs": ["billing:fixture:v1"], "source_refs": []},
+        {"record_refs": [], "source_refs": ["source:billing"]},
+        {"record_refs": ["billing:fixture:v1"], "source_refs": ["source:billing"]},
+    ],
+)
+def test_categorization_zero_eligible_keeps_bill_collection_concern_and_selectors(selection):
+    module = management()
+    document = module.workspace.new_document()
+    add_billing_fixture(document)
+    module.workspace.validate(document)
+    source = snapshot(document)
+    before = copy.deepcopy(source)
+    projection = module.query(source, {**QUERY, "kind": "bill"})
+    assert [(row["collection"], row["record_ref"]) for row in projection["rows"]] == [
+        ("billing_versions", "billing:fixture:v1")
+    ]
+    result = bill_concern_result(source, selection=selection)
+    result["query"] = {**QUERY, "kind": "bill"}
+    result["review"]["target_digest_sha256"] = module.result_digest(result)
+    legacy = {
+        k: v
+        for k, v in result.items()
+        if k not in {"taxonomy_proposal", "category_proposals", "proposal_coverage", "selection"}
+    }
+    legacy["review"] = {**legacy["review"], "target_digest_sha256": module.result_digest(legacy)}
+    module.validate_result(legacy, source)
+    module.validate_result(result, source, expected_selection=selection)
+    assert source == before
+    assert module.query(source, {**QUERY, "kind": "bill"}) == projection
+
+
+@pytest.mark.parametrize(
+    "selection",
+    [
+        {"record_refs": [], "source_refs": []},
+        {"record_refs": ["book:expense", "billing:fixture:v1"], "source_refs": []},
+        {"record_refs": [], "source_refs": ["source:bank", "source:billing"]},
+    ],
+)
+def test_categorization_mixed_population_keeps_bill_concern_separate_from_category(selection):
+    module, document = management(), fixture_document()
+    add_billing_fixture(document)
+    source = snapshot(document)
+    before = copy.deepcopy(source)
+    projection = module.query(source, QUERY)
+    result = bill_concern_result(source, selection=selection, with_categories=True)
+    module.validate_result(result, source, expected_selection=selection)
+    assert result["category_proposals"][0]["record_ref"] == "book:expense"
+    assert result["opportunities"][0]["evidence_refs"] == ["billing:fixture:v1"]
+    assert source == before and module.query(source, QUERY) == projection
+
+
+@pytest.mark.parametrize("scope", ["record", "source", "query", "foreign_selector"])
+def test_categorization_bill_concern_cannot_broaden_original_selection(scope):
+    module, document = management(), fixture_document()
+    add_billing_fixture(document)
+    source = snapshot(document)
+    result = bill_concern_result(source, with_categories=True)
+    if scope == "record":
+        result["selection"]["record_refs"] = ["book:expense"]
+    elif scope == "source":
+        result["selection"]["source_refs"] = ["source:bank"]
+    else:
+        result["query"] = {**QUERY, "kind": "expense"}
+        if scope == "foreign_selector":
+            result["selection"]["record_refs"] = ["book:expense", "billing:fixture:v1"]
+    result["review"]["target_digest_sha256"] = module.result_digest(result)
+    code = (
+        "unknown_result_selection"
+        if scope == "foreign_selector"
+        else "result_evidence_out_of_scope"
+    )
+    with pytest.raises(module.ManagementError) as error:
+        module.validate_result(result, source)
+    assert error.value.code == code
+
+
+@pytest.mark.parametrize("material", ["taxonomy", "proposal"])
+@pytest.mark.parametrize("evidence", ["billing:fixture:v1", "source:billing"])
+def test_categorization_bill_evidence_is_not_category_evidence(material, evidence):
+    module, document = management(), fixture_document()
+    add_billing_fixture(document)
+    source = snapshot(document)
+    result = bill_concern_result(source, with_categories=True)
+    item = (
+        result["taxonomy_proposal"]["categories"][0]
+        if material == "taxonomy"
+        else result["category_proposals"][0]
+    )
+    item["evidence_refs"] = [evidence]
+    result["review"]["target_digest_sha256"] = module.result_digest(result)
+    with pytest.raises(module.ManagementError) as error:
+        module.validate_result(result, source)
+    assert error.value.code == "result_evidence_out_of_scope"
+
+
+def test_categorization_bill_is_never_a_category_target_even_when_selected():
+    module = management()
+    document = module.workspace.new_document()
+    add_billing_fixture(document)
+    source = snapshot(document)
+    result = categorization_result(
+        source,
+        target="billing:fixture:v1",
+        selection={"record_refs": ["billing:fixture:v1"], "source_refs": []},
+    )
+    result["query"] = {**QUERY, "kind": "bill"}
+    result["review"]["target_digest_sha256"] = module.result_digest(result)
+    with pytest.raises(module.ManagementError) as error:
+        module.validate_result(result, source)
+    assert error.value.code == "category_target_out_of_scope"

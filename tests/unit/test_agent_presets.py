@@ -383,11 +383,11 @@ def test_codex_local_finance_agents_track_finance_presets_without_model_override
     }
     expected_versions = {
         "finance_receipt_operator": "0.4.4",
-        "finance_bookkeeping_preparer": "0.5.5",
+        "finance_bookkeeping_preparer": "0.5.6",
         "finance_billing_collections_operator": "0.6.6",
         "finance_cashflow_preparer": "0.4.5",
         "finance_tax_preparer": "0.4.4",
-        "finance_control_reviewer": "0.6.6",
+        "finance_control_reviewer": "0.6.7",
     }
     for agent_name, (config_file, preset_ref) in LOCAL_CODEX_FINANCE_AGENT_PRESETS.items():
         assert config["agents"][agent_name]["config_file"] == config_file
@@ -419,7 +419,7 @@ def test_codex_local_finance_agents_track_finance_presets_without_model_override
     orchestrator_text = (
         REPO_ROOT / ".codex/orchestrator/finance-department-orchestrator.md"
     ).read_text(encoding="utf-8")
-    assert "Source skill preset: `stackos.finance.department-orchestrator` v0.8.0" in (
+    assert "Source skill preset: `stackos.finance.department-orchestrator` v0.8.1" in (
         orchestrator_text
     )
     assert "not a subagent" in orchestrator_text

@@ -74,6 +74,38 @@ ref is `finance-analysis:<request_id>`, resolving inside the selected root's
 `exports/analysis/<request_id>/` to `result.json`, `report.md` and `manifest.json`.
 Publication does not mutate `finance.json` or adopt recommendations.
 
+Requested management analysis automatically includes source-grounded descriptive
+taxonomy and per-item proposed buckets, even when a configured organizational
+list is absent or insufficient. Adopted bookkeeping categories remain separate
+and follow approved rules/owner decisions. Use the installed result schema's
+`taxonomy_proposal`, `category_proposals`, `proposal_coverage` and `selection`
+bundle. Result-local category/target IDs are unique, targets are current selected
+bookkeeping/receipt rows with exact material digests, and confidence, rationale,
+scoped evidence and uncertainty remain explicit. Null category refs are unassigned
+and low confidence tentative; unsupported taxonomy can be empty. Consider at
+most 200 items, partition considered refs into assigned/unassigned and name every
+partial/larger-population gap instead of hiding first-page truncation.
+
+Preserve original persisted `record_refs` and `source_refs`: nonempty selectors
+restrict the original filtered population and evidence; empty means the full
+population. The preparer reads every query page on the exact source snapshot.
+The reviewer checks those selectors, target digests/membership and all coverage
+against actual evidence. Concerns use existing `opportunities` with readable
+`title` and `attention_level` `info`/`watch`/`high`, evidence, uncertainty and
+assumptions for supported expense increases, repeated costs, possible duplicates
+and source quality. Compare exact periods/currencies/precision and economic IDs;
+recurrence alone proves no duplicate. Category proposals do not imply a supported
+cost opportunity. Actual host reasoning and distinct control review are required;
+fixed frontend rules, canned findings and fixture plumbing are not AI execution.
+
+At publication readback call `read_result` with `expected_query`, the returned
+`expected_digest` and `expected_selection={record_refs,source_refs}` from original
+persisted request metadata. Require current complete readback before completion.
+Historical/stale material retains original refs/digests and file/report integrity
+without applying old target digests to changed current records; it cannot bucket
+current replacement records. Reports period features/exports remain unchanged;
+private report bytes continue to serve the existing review/publication contract.
+
 Complete the original request with exactly these top-level
 `agentRequest.complete.metadata_json` fields: `external_result_ref`,
 `external_result_sha256`, `source_snapshot`, `state: published`.

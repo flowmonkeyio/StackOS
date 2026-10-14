@@ -627,6 +627,10 @@ class FinanceConsole:
                 ref,
                 expected_digest=digest,
                 expected_query=original_query,
+                expected_selection={
+                    "record_refs": selected.get("record_refs", []),
+                    "source_refs": selected.get("source_refs", []),
+                },
             )
             if result["result"]["source_snapshot"] != requested_source:
                 _error("analysis_source_mismatch")
