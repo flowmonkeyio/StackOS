@@ -1356,12 +1356,241 @@ def render_report(
             rows, columns, projection["snapshot"]["revision"], projection["snapshot"]["sha256"]
         )
     if format == "markdown":
-        return (
-            "# Finance period report\n\nPrepared/unposted; supported operating result.\n\n"
-            + "```json\n"
-            + json.dumps(projection, indent=2, ensure_ascii=False)
-            + "\n```\n"
-        ).encode()
+
+        def cell(value):
+            if value is None or value == "":
+                return "Unavailable"
+            if isinstance(value, list):
+                return "; ".join(cell(item) for item in value) or "None"
+            if isinstance(value, dict):
+                return "; ".join(f"{cell(k)}: {cell(v)}" for k, v in value.items()) or "None"
+            text = str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            text = re.sub(r"([\\`*_{}\[\]()#!|])", r"\\\1", text)
+            return text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "<br>")
+
+        def amount(value):
+            if not value:
+                return "Unavailable"
+            minor, exponent = str(value["minor"]), value.get("exponent")
+            currency = cell(value["currency"])
+            if not isinstance(exponent, int) or not 0 <= exponent <= 6:
+                return f"{currency} {cell(minor)} minor units (precision unavailable)"
+            sign = "-" if minor.startswith("-") else ""
+            digits = minor.removeprefix("-").zfill(exponent + 1)
+            decimal = f"{digits[:-exponent]}.{digits[-exponent:]}" if exponent else digits
+            return f"{currency} {sign}{decimal}"
+
+        lines = [
+            "# Finance period report",
+            "",
+            "Prepared/unposted; supported operating result, not posted books. "
+            "Derived report; corrections belong in the authoritative source.",
+            "",
+        ]
+
+        def table(headers, rows):
+            lines.append("| " + " | ".join(headers) + " |")
+            lines.append("| " + " | ".join("---" for _ in headers) + " |")
+            lines.extend("| " + " | ".join(row) + " |" for row in rows)
+            lines.append("")
+
+        def context(value):
+            q, coverage = value["query"], value["coverage"]
+            lines.extend(
+                [
+                    f"Period: {cell(q['start'])} through {cell(q['end'])}",
+                    "",
+                    f"Scope: {cell(q.get('scope', 'business'))}"
+                    f" · Project: {cell(q.get('external_project_ref'))}",
+                    "",
+                    f"Recognition basis: {cell(q['recognition_basis'])} "
+                    f"· Date basis: {cell(q['date_basis'])} · Timezone: {cell(q['timezone'])}",
+                    "",
+                    f"Coverage: {cell(coverage['state'])}",
+                    "",
+                    f"Coverage issues: {cell(coverage.get('issues', []))}",
+                    "",
+                ]
+            )
+
+        def totals(value):
+            rows = []
+            for currency in value["metrics_by_currency"]:
+                for key, label in [
+                    ("spend", "Spend"),
+                    ("revenue", "Revenue"),
+                    ("profit", "Operating profit"),
+                    ("tax_payments", "Tax payments"),
+                ]:
+                    metric = currency[key]
+                    state = metric.get("state")
+                    displayed = amount(metric.get("amount"))
+                    if state:
+                        displayed += f" ({cell(state)})"
+                    elif key == "tax_payments":
+                        displayed += (
+                            " (recorded separately)" if metric.get("amount") else " (unavailable)"
+                        )
+                    rows.append(
+                        [
+                            cell(currency["currency"]),
+                            label,
+                            displayed,
+                            cell(metric.get("included_record_refs", [])),
+                            cell(metric.get("excluded_record_refs", [])),
+                        ]
+                    )
+            if rows:
+                table(
+                    [
+                        "Currency",
+                        "Metric",
+                        "Amount / state",
+                        "Included current refs",
+                        "Excluded refs",
+                    ],
+                    rows,
+                )
+            else:
+                lines.extend(["Supported totals unavailable; no inferred zero activity.", ""])
+
+        context(projection)
+        source = projection["snapshot"]
+        lines.extend(
+            [
+                f"Source revision: {cell(source['revision'])} · SHA-256: {cell(source['sha256'])}",
+                "",
+                f"Read at: {cell(source.get('read_at'))} "
+                f"· Schema: {cell(source.get('schema_version'))}",
+                "",
+                f"Custody issues: {cell(source.get('custody_issues', []))}",
+                "",
+                "### Selected filters",
+                "",
+            ]
+        )
+        table(
+            ["Filter", "Value"],
+            [[cell(k), cell(v)] for k, v in projection["query"].items() if k != "comparison"],
+        )
+        lines.extend(["## Supported totals", ""])
+        totals(projection)
+        lines.extend(
+            [
+                "Tax payments are separate from the supported operating profit.",
+                "",
+                f"## Records · {len(projection['rows'])} records",
+                "",
+            ]
+        )
+        table(
+            [
+                "Current ref",
+                "Type / status",
+                "Date",
+                "Vendor / counterparty",
+                "Treatment",
+                "Amount",
+                "Category / state",
+                "Account / project",
+                "Purpose",
+                "Source / evidence refs",
+                "Review / gaps",
+            ],
+            [
+                [
+                    cell(r["record_ref"]),
+                    cell([r["kind"], r["status"]]),
+                    cell(r.get("date")),
+                    cell(r.get("counterparty")),
+                    cell((r.get("reporting") or {}).get("treatment")),
+                    amount(r.get("amount")),
+                    cell([r.get("category_ref"), r.get("category_state")]),
+                    cell([r.get("account_ref"), r.get("external_project_ref")]),
+                    cell(r.get("business_purpose")),
+                    cell([*r.get("source_refs", []), *r.get("evidence_refs", [])]),
+                    cell(
+                        [
+                            "Needs review" if r.get("needs_review") else "No recorded review gap",
+                            r.get("metric_exclusion"),
+                            *r.get("gaps", []),
+                        ]
+                    ),
+                ]
+                for r in projection["rows"]
+            ],
+        )
+        lines.extend(["## Review and exclusions", ""])
+        table(
+            ["Current ref", "Reason", "Affected refs", "Next action"],
+            [
+                [
+                    cell(r.get("record_ref")),
+                    cell(r.get("reason")),
+                    cell(r.get("affected_refs", [])),
+                    cell(r.get("next_action")),
+                ]
+                for r in projection["review_items"]
+            ],
+        )
+        table(
+            ["Excluded ref", "Reason"],
+            [[cell(r["record_ref"]), cell(r["reason"])] for r in projection["exclusions"]],
+        )
+        lines.extend(
+            [
+                f"Undated or period-only evidence: {cell(projection['undated_or_period_only'])}",
+                "",
+                f"Warnings: {cell(projection['warnings'])}",
+                "",
+                "## Breakdowns",
+                "",
+            ]
+        )
+        precision = {m["currency"]: m["exponent"] for m in projection["metrics_by_currency"]}
+
+        def group_amount(row, key):
+            return amount(
+                {
+                    "minor": row[key],
+                    "currency": row["currency"],
+                    "exponent": precision.get(row["currency"]),
+                }
+            )
+
+        for dimension, groups in projection["breakdowns"].items():
+            lines.extend([f"### {cell(dimension.title())}", ""])
+            table(
+                ["Group", "Revenue", "Spend", "Included current refs"],
+                [
+                    [
+                        cell(r["label"]),
+                        group_amount(r, "revenue_minor"),
+                        group_amount(r, "spend_minor"),
+                        cell(r["included_record_refs"]),
+                    ]
+                    for r in groups
+                ],
+            )
+        lines.extend(["## Trend", ""])
+        table(
+            ["Date", "Revenue", "Spend", "Included current refs"],
+            [
+                [
+                    cell(r["date"]),
+                    group_amount(r, "revenue_minor"),
+                    group_amount(r, "spend_minor"),
+                    cell(r["included_record_refs"]),
+                ]
+                for r in projection["trend"]
+            ],
+        )
+        if projection.get("comparison"):
+            lines.extend(["## Comparison", ""])
+            context(projection["comparison"])
+            totals(projection["comparison"])
+            lines.extend([f"Comparison window: {cell(projection['query'].get('comparison'))}", ""])
+        return ("\n".join(lines) + "\n").encode()
     _fail("invalid_report_format")
 
 

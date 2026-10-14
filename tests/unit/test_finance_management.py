@@ -727,6 +727,72 @@ def test_paged_export_requires_same_snapshot_and_exports_full_population():
     )
 
 
+def test_markdown_report_is_readable_source_bound_and_full_population():
+    module = management()
+    s = snapshot(fixture_document())
+    p = module.query(s, {**QUERY, "limit": 1})
+    with pytest.raises(module.ManagementError, match="report population incomplete"):
+        module.render_report(p, "markdown")
+    report = module.render_report(p, "markdown", snapshot=s).decode()
+    assert "```json" not in report
+    assert "## Supported totals" in report
+    assert "Operating profit" in report
+    assert "USD 840.00" in report
+    assert "USD 950.00" in report
+    assert "USD 110.00" in report
+    assert "USD 20.00" in report
+    assert s["sha256"] in report
+    assert "2026-09-01 through 2026-09-30" in report
+    assert "Recognition basis: cash" in report
+    assert "Date basis: transaction" in report
+    assert "Timezone: UTC" in report
+    assert "Coverage: complete" in report
+    assert "8 records" in report
+    assert "source:bank" in report
+    assert all(row["record_id"] in report for row in s["document"]["bookkeeping"])
+    assert "## Breakdowns" in report and "## Trend" in report
+    assert "Unknown/unassigned" in report
+    assert s["document"] == fixture_document()
+
+
+def test_markdown_report_exact_precision_unknown_and_escaped_source_text():
+    module = management()
+    p = module.query(snapshot(fixture_document()), QUERY)
+    p["rows"][0]["counterparty"] = "<script>x</script>|[click](https://unsafe)\n# Inject"
+    p["rows"][0]["amount"] = {"minor": "9007199254740993", "currency": "USD", "exponent": 2}
+    p["rows"][1]["amount"] = {"minor": "-1234", "currency": "KWD", "exponent": 3}
+    p["rows"][2]["amount"] = {"minor": "42", "currency": "JPY", "exponent": 0}
+    p["rows"][3]["amount"] = {"minor": "42", "currency": "USD", "exponent": None}
+    p["metrics_by_currency"][0]["revenue"]["amount"] = None
+    p["metrics_by_currency"][0]["revenue"]["state"] = "unavailable"
+    report = module.render_report(p, "markdown").decode()
+    assert "USD 90071992547409.93" in report
+    assert "KWD -1.234" in report and "JPY 42" in report
+    assert "42 minor units (precision unavailable)" in report
+    assert "Unavailable (unavailable)" in report
+    assert "<script>" not in report and "[click](https://unsafe)" not in report
+    assert "&lt;script&gt;" in report and r"\|" in report and r"\[click\]" in report
+    assert "\n# Inject" not in report
+
+
+def test_markdown_report_keeps_comparison_review_exclusion_and_undated_states():
+    module = management()
+    d = fixture_document()
+    d["operating_settings"] = []
+    p = module.query(
+        snapshot(d), {**QUERY, "comparison": {"start": "2026-08-01", "end": "2026-08-31"}}
+    )
+    report = module.render_report(p, "markdown").decode()
+    assert "Coverage: unavailable" in report
+    assert r"missing\_or\_conflicting\_reporting\_policy" in report
+    assert "## Comparison" in report
+    assert "2026-08-01 through 2026-08-31" in report
+    assert "## Review and exclusions" in report
+    assert r"missing\_metadata" in report and r"inspect\_source\_then\_correct" in report
+    assert "Undated or period-only evidence: None" in report
+    assert "prepared/unposted" in report
+
+
 def test_missing_original_is_inspectable_and_master_bytes_unchanged(tmp_path):
     module, path = save_fixture(tmp_path)
     with module.workspace.writer(path, module.workspace.digest(path)) as session:
