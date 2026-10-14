@@ -29,6 +29,7 @@ import {
   newIntentId,
   object,
   objects,
+  refs,
   snapshotRef,
   text,
 } from '@/lib/finance'
@@ -109,6 +110,9 @@ const base = () => ({
   workspace_ref: props.access.workspace_ref,
   access_generation: props.access.generation,
 })
+const currentAmount = computed(
+  () => detail.value?.amount ?? { ...object(detail.value?.record.amount), exponent: null },
+)
 const facts = computed(() => [
   {
     label: 'Date',
@@ -117,7 +121,7 @@ const facts = computed(() => [
   { label: 'Vendor', value: text(detail.value?.record.merchant) || 'Not supplied' },
   {
     label: 'Amount',
-    value: formatMoney({ ...object(detail.value?.record.amount), exponent: props.exponent }),
+    value: formatMoney(currentAmount.value),
   },
   {
     label: 'Business purpose',
@@ -175,15 +179,13 @@ function beginEdit() {
   stale.value = false
   uncertain.value = false
   const record = detail.value?.record ?? {},
-    money = object(record.amount),
+    money = object(currentAmount.value),
     reporting = props.reporting ?? {}
-  const exponent = props.recordRef === null ? 2 : props.exponent
+  const exponent = props.recordRef === null ? 2 : money.exponent
+  const minor = text(money.minor) || text(money.amount_minor)
   draft.value = {
     date: text(record.business_date) || text(record.date),
-    amount:
-      typeof exponent === 'number' && text(money.amount_minor)
-        ? minorToDecimal(text(money.amount_minor), exponent)
-        : '',
+    amount: typeof exponent === 'number' && minor ? minorToDecimal(minor, exponent) : '',
     currency: text(money.currency) || 'USD',
     precision: typeof exponent === 'number' ? String(exponent) : '',
     merchant: text(record.merchant),
@@ -224,7 +226,7 @@ watch(
     props.snapshot.sha256,
   ],
   async () => {
-    const sequence = ++loadSequence
+    loadSequence++
     cancelEdit()
     clearOriginal()
     detail.value = null
@@ -235,42 +237,70 @@ watch(
       beginEdit()
       return
     }
-    loading.value = true
-    try {
-      const result = await callOperation<{ data: SchemaFinanceRecordOut }>('finance.record.get', {
-        ...base(),
-        record_ref: props.recordRef,
-        expected_snapshot: snapshotRef(props.snapshot),
-        response_mode: 'compact',
-      })
-      if (!active || sequence !== loadSequence) return
-      detail.value = result.data
-    } catch {
-      if (active && sequence === loadSequence)
-        error.value = 'Record unavailable or source changed. Refresh the workspace before editing.'
-    } finally {
-      if (active && sequence === loadSequence) loading.value = false
-    }
+    await inspectRecord(props.recordRef)
   },
   { immediate: true },
 )
+
+async function inspectRecord(recordRef: string, inspectionEvent?: Event) {
+  if (!active || !props.modelValue || saving.value || uncertain.value) return
+  const origin = inspectionEvent?.currentTarget
+  if (origin instanceof HTMLElement && document.activeElement === origin) {
+    // Preserve keyboard position before replacing the focused history control.
+    origin.closest('[role="dialog"]')?.querySelector<HTMLElement>('[data-autofocus]')?.focus()
+  }
+  const sequence = ++loadSequence
+  cancelEdit()
+  clearOriginal()
+  detail.value = null
+  notice.value = ''
+  loading.value = true
+  try {
+    const result = await callOperation<{ data: SchemaFinanceRecordOut }>('finance.record.get', {
+      ...base(),
+      record_ref: recordRef,
+      expected_snapshot: snapshotRef(props.snapshot),
+      response_mode: 'compact',
+    })
+    if (!active || sequence !== loadSequence) return
+    detail.value = result.data
+  } catch {
+    if (active && sequence === loadSequence)
+      error.value = 'Record unavailable or source changed. Refresh the workspace before editing.'
+  } finally {
+    if (active && sequence === loadSequence) loading.value = false
+  }
+}
 
 function buildIntent(): Record<string, unknown> {
   const d = draft.value,
     initial = JSON.parse(originalDraft.value) as typeof d
   const fields: Partial<SchemaFinanceEditIntent['fields']> = {}
   const creating = props.recordRef === null
+  const precisionOnly =
+    !creating &&
+    d.precision !== initial.precision &&
+    d.amount === initial.amount &&
+    d.currency === initial.currency
   const has = (key: string) => allowed.value.includes(key)
   if ((has('date') || has('business_date')) && (creating || d.date !== initial.date))
     fields.date = d.date
   if (
     has('amount') &&
-    (creating || d.amount !== initial.amount || d.currency !== initial.currency)
+    (creating ||
+      d.amount !== initial.amount ||
+      d.currency !== initial.currency ||
+      d.precision !== initial.precision)
   ) {
-    const exponent = /^\d$/.test(d.precision) ? Number(d.precision) : null
+    const exponent = /^[0-6]$/.test(d.precision) ? Number(d.precision) : null
+    if (exponent === null) throw new Error('Confirm currency precision before changing an amount.')
+    const money = object(currentAmount.value)
     fields.amount = {
-      minor: decimalToMinor(d.amount, exponent),
+      minor: precisionOnly
+        ? text(money.minor) || text(money.amount_minor)
+        : decimalToMinor(d.amount, exponent),
       currency: d.currency.toUpperCase(),
+      exponent,
     }
   }
   if (has('merchant') && d.merchant !== initial.merchant) fields.merchant = d.merchant
@@ -296,7 +326,11 @@ function buildIntent(): Record<string, unknown> {
     .split(/[\n,]/)
     .map((s) => s.trim())
     .filter(Boolean)
-  if (has('reporting') && d.treatment) {
+  const classificationChanged =
+    d.treatment !== initial.treatment ||
+    d.event !== initial.event ||
+    d.component !== initial.component
+  if (has('reporting') && d.treatment && (!precisionOnly || classificationChanged)) {
     if (!sources.length || !d.event || !d.component || !/^\d$/.test(d.precision))
       throw new Error(
         'Classification needs supporting sources, transaction/component identity and confirmed currency precision.',
@@ -486,9 +520,48 @@ onBeforeUnmount(() => {
           {{ text(detail.original.business_date) || text(detail.original.date) || 'Undated' }}
         </p>
         <p>Sources: {{ detail.source_refs.join(', ') || 'Not supplied' }}</p>
-        <p v-for="item in objects(detail.lineage)" :key="text(item.record_id)">
-          {{ text(item.record_id) }} · {{ text(item.status) }}
+        <ol v-if="detail.correction_history?.length" class="mt-3 space-y-3">
+          <li
+            v-for="item in detail.correction_history"
+            :key="item.correction_ref"
+            data-test="correction-history-item"
+            class="space-y-1 break-words rounded-md border border-default p-3"
+          >
+            <p>{{ item.reason }}</p>
+            <p>
+              {{ item.at || 'Application time unavailable' }} ·
+              {{ item.actor || 'Actor unavailable' }} · {{ item.status }}
+            </p>
+            <p>
+              <UiButton
+                size="sm"
+                variant="ghost"
+                @click="inspectRecord(item.superseded_ref, $event)"
+              >
+                {{ item.superseded_ref }}
+              </UiButton>
+              →
+              <UiButton
+                size="sm"
+                variant="ghost"
+                @click="inspectRecord(item.replacement_ref, $event)"
+              >
+                {{ item.replacement_ref }}
+              </UiButton>
+              <span v-if="item.replacement_ref === detail.current_ref"> · Current record</span>
+            </p>
+            <p>Correction: {{ item.correction_ref }}</p>
+            <p>Decision: {{ item.decision_ref || 'Unavailable' }}</p>
+            <p>Evidence: {{ item.evidence_refs.join(', ') || 'Not supplied' }}</p>
+            <p>Sources: {{ item.source_refs.join(', ') || 'Not supplied' }}</p>
+          </li>
+        </ol>
+        <p class="mt-3 break-words">
+          Lineage references: {{ refs(detail.lineage).join(' → ') || 'Not supplied' }}
         </p>
+        <h4 v-if="objects(detail.record.status_history).length" class="mt-3 font-medium">
+          Current record status history
+        </h4>
         <p v-for="(item, index) in objects(detail.record.status_history)" :key="index">
           {{ text(item.at) }} · {{ text(item.actor) }} · {{ text(item.to_status) }} ·
           {{ text(item.reason) }}
