@@ -461,6 +461,22 @@ def test_expense_only_missing_coverage_and_basis_conflict():
     p = module.query(snapshot(d), QUERY)
     assert p["metrics_by_currency"][0]["revenue"]["amount"] is None
     assert p["metrics_by_currency"][0]["profit"]["amount"] is None
+    before = copy.deepcopy(p)
+    report = module.render_report(p, "markdown").decode()
+    assert "| Revenue | Unavailable (unavailable) |" in report
+    assert "| Operating profit | Unavailable (unavailable) |" in report
+    assert report.count("| Revenue contribution | Spend contribution |") == 5
+    assert "Breakdowns and trends show spend and revenue contributions" in report
+    assert "from selected supported records." in report
+    assert "A zero revenue contribution means no selected supported income contribution" in report
+    assert "for expense-only records without income coverage" in report
+    assert "total revenue and operating profit remain unavailable" in report
+    assert all(
+        group["revenue_minor"] == "0" for groups in p["breakdowns"].values() for group in groups
+    )
+    assert all(row["revenue_minor"] == "0" for row in p["trend"])
+    assert p == before
+    assert json.loads(module.render_report(p, "json")) == before
     d["business_profiles"].append(
         record(
             "business",

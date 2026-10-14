@@ -62,7 +62,8 @@ const section = ref('overview'),
   error = ref(''),
   message = ref('')
 const accessRows = ref<SchemaFinanceStatusOut['access']>([]),
-  access = ref<SchemaFinanceAccessOut | null>(null)
+  access = ref<SchemaFinanceAccessOut | null>(null),
+  selectedWorkspaceRef = ref<string | null>(null)
 const projection = ref<SchemaFinanceProjectionOut | null>(null)
 const query = ref<FinanceQuery>(initialQuery())
 const configuring = ref(false),
@@ -190,6 +191,7 @@ function clearScope() {
   analysisSequence++
   releaseReport()
   access.value = null
+  selectedWorkspaceRef.value = null
   accessRows.value = []
   projection.value = null
   requests.value = []
@@ -223,15 +225,35 @@ async function loadStatus() {
     )
     if (!active || sequence !== scopeSequence || id !== projectId.value) return
     accessRows.value = response.data.access
-    const prior = access.value?.workspace_ref
+    const prior = access.value?.workspace_ref || selectedWorkspaceRef.value
     const chosen =
-      response.data.access.find(
-        (row) => row.workspace_ref === prior && row.readiness === 'ready',
-      ) || response.data.access.find((row) => row.readiness === 'ready')
-    access.value = chosen ? (chosen as SchemaFinanceAccessOut) : null
+      response.data.access.find((row) => row.workspace_ref === prior) ||
+      response.data.access.find((row) => row.readiness === 'ready') ||
+      response.data.access[0]
+    if (chosen) selectedWorkspaceRef.value = text(chosen.workspace_ref)
+    access.value = chosen?.readiness === 'ready' ? (chosen as SchemaFinanceAccessOut) : null
     if (!access.value) {
+      const readiness = text(chosen?.readiness || response.data.readiness)
       error.value =
-        'Finance workspace unavailable. Select an existing external master or repair its authorization and source.'
+        (
+          {
+            not_configured: chosen
+              ? 'The selected finance workspace is missing finance.json. Restore the existing master or deliberately select another existing workspace.'
+              : 'No finance workspace is configured. Select an existing external master.',
+            unreadable:
+              'The selected finance workspace cannot be read. Check local file permissions, then refresh.',
+            corrupt_workspace:
+              'The selected finance workspace is corrupt or invalid. Repair the existing master or restore a verified backup, then refresh. Do not initialize a replacement over it.',
+            unsupported_version:
+              'The selected finance workspace uses an unsupported version. Use a compatible StackOS version or supported master; preserve the existing files.',
+            revoked:
+              'Finance workspace authorization was revoked. Deliberately reselect the existing workspace to authorize access again.',
+            denied:
+              'Finance workspace access was denied. Check local permissions and authorization; deliberately reselect if the folder moved or changed.',
+            root_changed:
+              'The selected finance workspace folder changed. Verify the existing external master, then deliberately reselect it to renew authorization.',
+          } as Record<string, string>
+        )[readiness] || 'Finance workspace is not ready. Refresh or inspect its workspace access.'
       return
     }
     await loadQuery(query.value)
@@ -304,6 +326,7 @@ function selectWorkspace(value: string | number | null) {
   selectedRequest.value = null
   requests.value = []
   access.value = next ? (next as SchemaFinanceAccessOut) : null
+  if (next) selectedWorkspaceRef.value = text(next.workspace_ref)
   if (access.value) {
     void loadQuery(query.value)
     void loadRequests()
@@ -314,7 +337,8 @@ async function authorizeWorkspace() {
     error.value = 'Supply the existing external finance folder and a workspace reference.'
     return
   }
-  const sequence = scopeSequence
+  const sequence = scopeSequence,
+    requestedWorkspace = workspace.value
   error.value = ''
   try {
     const modes: SchemaFinanceWorkspaceSelectInput['modes'] = [
@@ -326,7 +350,7 @@ async function authorizeWorkspace() {
       modes.push('export' as SchemaFinanceWorkspaceSelectInput['modes'][number])
     await callOperation('financeWorkspace.select', {
       project_id: projectId.value,
-      workspace_ref: workspace.value,
+      workspace_ref: requestedWorkspace,
       root: root.value,
       modes,
       authority_ref: 'local-user:operator',
@@ -334,6 +358,8 @@ async function authorizeWorkspace() {
       response_mode: 'compact',
     })
     if (active && sequence === scopeSequence) {
+      selectedWorkspaceRef.value = requestedWorkspace
+      access.value = null
       root.value = ''
       configuring.value = false
       await refresh()
@@ -357,6 +383,7 @@ async function revoke() {
     await callOperation('financeWorkspace.revoke', selected)
     if (active && sequence === scopeSequence) {
       clearScope()
+      selectedWorkspaceRef.value = text(selected.workspace_ref)
       await refresh()
     }
   } catch {
@@ -806,6 +833,12 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
               </section>
+              <p class="text-sm text-fg-muted">
+                Breakdowns and trends show spend and revenue contributions from selected supported
+                records. A zero revenue contribution means no selected supported income
+                contribution; for expense-only records without income coverage, total revenue and
+                operating profit remain unavailable.
+              </p>
               <section v-for="group in groups" :key="group.dimension" class="space-y-2">
                 <h3 class="t-h3">By {{ group.dimension }}</h3>
                 <DataTable
@@ -813,8 +846,8 @@ onBeforeUnmount(() => {
                   :columns="[
                     { key: 'label', label: 'Group' },
                     { key: 'currency', label: 'Currency' },
-                    { key: 'spend', label: 'Spend' },
-                    { key: 'revenue', label: 'Revenue' },
+                    { key: 'spend', label: 'Spend contribution' },
+                    { key: 'revenue', label: 'Revenue contribution' },
                   ]"
                   interactive
                   :aria-label="`${group.dimension} breakdown`"
@@ -829,8 +862,8 @@ onBeforeUnmount(() => {
                   :columns="[
                     { key: 'date', label: 'Date' },
                     { key: 'currency', label: 'Currency' },
-                    { key: 'spend', label: 'Spend' },
-                    { key: 'revenue', label: 'Revenue' },
+                    { key: 'spend', label: 'Spend contribution' },
+                    { key: 'revenue', label: 'Revenue contribution' },
                   ]"
                   aria-label="Finance trend"
                   max-height="220px"

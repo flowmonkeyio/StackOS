@@ -113,6 +113,278 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 describe('Finance management', () => {
+  it('keeps an explicitly revoked workspace selected and clears private content until project change', async () => {
+    let revoked = false
+    const revokeBlob = vi.fn()
+    const OriginalURL = URL
+    vi.stubGlobal(
+      'URL',
+      class extends OriginalURL {
+        static override createObjectURL = vi.fn(() => 'blob:revoked-report')
+        static override revokeObjectURL = revokeBlob
+      },
+    )
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name === 'financeWorkspace.status') {
+        const other = {
+          ...access,
+          project_id: args.project_id,
+          workspace_ref: 'finance:other',
+          readiness: 'ready',
+        }
+        return {
+          data: {
+            project_id: args.project_id,
+            readiness: args.project_id === 1 ? 'select_workspace' : 'ready',
+            access:
+              args.project_id === 1
+                ? [
+                    {
+                      ...access,
+                      readiness: revoked ? 'revoked' : 'ready',
+                      generation: revoked ? 2 : 1,
+                      revoked_at: revoked ? '2026-10-14T08:00:00Z' : null,
+                    },
+                    other,
+                  ]
+                : [other],
+          },
+        }
+      }
+      if (name === 'financeWorkspace.revoke') {
+        revoked = true
+        return { data: { ...access, readiness: 'revoked', generation: 2 } }
+      }
+      if (name === 'finance.report.render')
+        return {
+          state: 'current',
+          snapshot,
+          content_base64: btoa('Private report from revoked workspace'),
+          content_type: 'text/markdown',
+          filename: 'revoked.md',
+        }
+      return basics(name, args)
+    })
+    const { wrapper, router } = await mounted()
+    expect(wrapper.text()).toContain('USD 90,071,992,547,409.93')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Reports')!
+      .trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'View period report')!
+      .trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Private report from revoked workspace')
+    expect(wrapper.find('a[download="revoked.md"]').exists()).toBe(true)
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Workspace access')!
+      .trigger('click')
+    const priorQueries = vi
+      .mocked(callOperation)
+      .mock.calls.filter(([name]) => name === 'finance.query').length
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Revoke current access')!
+      .trigger('click')
+    await flushPromises()
+    expect(
+      vi.mocked(callOperation).mock.calls.filter(([name]) => name === 'finance.query'),
+    ).toHaveLength(priorQueries)
+    expect(wrapper.get('[role="alert"]').text()).toContain(
+      'Finance workspace authorization was revoked.',
+    )
+    expect(wrapper.text()).not.toContain('Private report from revoked workspace')
+    expect(wrapper.text()).not.toContain('USD 90,071,992,547,409.93')
+    expect(wrapper.find('a[download]').exists()).toBe(false)
+    expect(revokeBlob).toHaveBeenCalledWith('blob:revoked-report')
+    expect(
+      vi.mocked(callOperation).mock.calls.find(([name]) => name === 'financeWorkspace.revoke')![1],
+    ).toMatchObject({ project_id: 1, workspace_ref: 'finance:one', expected_generation: 1 })
+    await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+    await flushPromises()
+    expect(
+      vi.mocked(callOperation).mock.calls.filter(([name]) => name === 'finance.query'),
+    ).toHaveLength(priorQueries)
+    expect(wrapper.get('[role="alert"]').text()).toContain(
+      'Finance workspace authorization was revoked.',
+    )
+    expect(
+      vi.mocked(callOperation).mock.calls.some(([name]) => name === 'financeWorkspace.select'),
+    ).toBe(false)
+    await router.push('/projects/2/finance')
+    await flushPromises()
+    expect(
+      vi
+        .mocked(callOperation)
+        .mock.calls.filter(([name]) => name === 'finance.query')
+        .slice(priorQueries)
+        .map(([, args]) => [args.project_id, args.workspace_ref]),
+    ).toEqual([[2, 'finance:other']])
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Private report from revoked workspace')
+    wrapper.unmount()
+  })
+  it('explains zero supported revenue contributions while expense-only totals stay unavailable', async () => {
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name !== 'finance.query') return basics(name, args)
+      const contribution = {
+        label: 'Unknown/unassigned',
+        currency: 'USD',
+        spend_minor: '9007199254740993',
+        revenue_minor: '0',
+        included_record_refs: ['book:expense'],
+      }
+      return {
+        data: {
+          ...projection(args),
+          breakdowns: {
+            category: [contribution],
+            account: [{ ...contribution, label: 'bank:one' }],
+            counterparty: [contribution],
+            project: [contribution],
+          },
+          trend: [{ ...contribution, date: '2026-10-01' }],
+        },
+      }
+    })
+    const { wrapper } = await mounted()
+    const metrics = wrapper.findAllComponents({ name: 'UiMetricCard' })
+    for (const label of ['Revenue', 'Operating profit']) {
+      const metric = metrics.find((card) => card.props('label') === label)!
+      expect(metric.props('value')).toBe('Unavailable')
+      expect(metric.props('hint')).toBe('unavailable')
+    }
+    for (const label of [
+      'category breakdown',
+      'account breakdown',
+      'counterparty breakdown',
+      'project breakdown',
+      'Finance trend',
+    ]) {
+      const table = wrapper.get(`table[aria-label="${label}"]`)
+      expect(table.findAll('th').map((header) => header.text())).toContain('Spend contribution')
+      expect(table.findAll('th').map((header) => header.text())).toContain('Revenue contribution')
+      expect(table.text()).toContain('USD 90,071,992,547,409.93')
+      expect(table.text()).toContain('USD 0.00')
+    }
+    const note = wrapper
+      .findAll('p')
+      .find((paragraph) => paragraph.text().startsWith('Breakdowns and trends show'))!
+      .text()
+    expect(note).toContain('selected supported records')
+    expect(note).toContain(
+      'A zero revenue contribution means no selected supported income contribution',
+    )
+    expect(note).toContain(
+      'for expense-only records without income coverage, total revenue and operating profit remain unavailable',
+    )
+    wrapper.unmount()
+  })
+  it.each([
+    ['not_configured', 'The selected finance workspace is missing finance.json.'],
+    ['unreadable', 'The selected finance workspace cannot be read.'],
+    ['corrupt_workspace', 'The selected finance workspace is corrupt or invalid.'],
+    ['unsupported_version', 'The selected finance workspace uses an unsupported version.'],
+    ['revoked', 'Finance workspace authorization was revoked.'],
+    ['denied', 'Finance workspace access was denied.'],
+    ['root_changed', 'The selected finance workspace folder changed.'],
+    ['unknown-private-diagnostic', 'Finance workspace is not ready.'],
+  ])(
+    'explains %s readiness and clears prior private content without switching workspaces',
+    async (readiness, expected) => {
+      let failed = false
+      const revoke = vi.fn()
+      const OriginalURL = URL
+      vi.stubGlobal(
+        'URL',
+        class extends OriginalURL {
+          static override createObjectURL = vi.fn(() => 'blob:prior-finance-report')
+          static override revokeObjectURL = revoke
+        },
+      )
+      const basics = vi.mocked(callOperation).getMockImplementation()!
+      vi.mocked(callOperation).mockImplementation(async (name, args) => {
+        if (name === 'financeWorkspace.status' && failed)
+          return {
+            data: {
+              project_id: args.project_id,
+              readiness: 'select_workspace',
+              access: [
+                {
+                  ...access,
+                  readiness,
+                  canonical_root: '/private/customer',
+                  diagnostic: 'private-token',
+                },
+                { ...access, workspace_ref: 'finance:other', readiness: 'ready' },
+              ],
+            },
+          }
+        if (name === 'finance.report.render')
+          return {
+            state: 'current',
+            snapshot,
+            content_base64: btoa('Prior private report'),
+            content_type: 'text/markdown',
+            filename: 'prior.md',
+          }
+        return basics(name, args)
+      })
+      const { wrapper } = await mounted()
+      expect(wrapper.text()).toContain('USD 90,071,992,547,409.93')
+      await wrapper
+        .findAll('button')
+        .find((button) => button.text() === 'Reports')!
+        .trigger('click')
+      await wrapper
+        .findAll('button')
+        .find((button) => button.text() === 'View period report')!
+        .trigger('click')
+      await flushPromises()
+      expect(wrapper.text()).toContain('Prior private report')
+      expect(wrapper.find('a[download="prior.md"]').exists()).toBe(true)
+      const priorQueries = vi
+        .mocked(callOperation)
+        .mock.calls.filter(([name]) => name === 'finance.query').length
+      failed = true
+      await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[role="alert"]').text()).toContain(expected)
+      await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[role="alert"]').text()).toContain(expected)
+      expect(wrapper.text()).not.toContain('Prior private report')
+      expect(wrapper.text()).not.toContain('USD 90,071,992,547,409.93')
+      expect(wrapper.text()).not.toContain('/private/customer')
+      expect(wrapper.text()).not.toContain('private-token')
+      expect(wrapper.text()).not.toContain('unknown-private-diagnostic')
+      expect(wrapper.find('a[download]').exists()).toBe(false)
+      expect(revoke).toHaveBeenCalledWith('blob:prior-finance-report')
+      expect(
+        vi.mocked(callOperation).mock.calls.filter(([name]) => name === 'finance.query'),
+      ).toHaveLength(priorQueries)
+      expect(
+        vi.mocked(callOperation).mock.calls.some(([name]) => name === 'financeWorkspace.select'),
+      ).toBe(false)
+      wrapper.unmount()
+    },
+  )
+  it('explains absent workspace configuration without making a write', async () => {
+    vi.mocked(callOperation).mockResolvedValue({
+      data: { project_id: 1, readiness: 'not_configured', access: [] },
+    })
+    const { wrapper } = await mounted()
+    expect(wrapper.get('[role="alert"]').text()).toContain('No finance workspace is configured.')
+    expect(vi.mocked(callOperation).mock.calls.map(([name]) => name)).toEqual([
+      'financeWorkspace.status',
+    ])
+    wrapper.unmount()
+  })
   it('keeps the newer selected request after queue reconciliation and a late original acknowledgement', async () => {
     const queue = new Map<number, Record<string, unknown>>()
     const attempts: Record<string, unknown>[] = []

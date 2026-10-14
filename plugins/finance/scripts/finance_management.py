@@ -1731,7 +1731,12 @@ def render_report(
                 "",
                 f"Warnings: {cell(projection['warnings'])}",
                 "",
-                "## Breakdowns",
+                "## Breakdowns · supported record contributions",
+                "",
+                "Breakdowns and trends show spend and revenue contributions "
+                "from selected supported records. A zero revenue contribution means "
+                "no selected supported income contribution; for expense-only records "
+                "without income coverage, total revenue and operating profit remain unavailable.",
                 "",
             ]
         )
@@ -1749,7 +1754,7 @@ def render_report(
         for dimension, groups in projection["breakdowns"].items():
             lines.extend([f"### {cell(dimension.title())}", ""])
             table(
-                ["Group", "Revenue", "Spend", "Included current refs"],
+                ["Group", "Revenue contribution", "Spend contribution", "Included current refs"],
                 [
                     [
                         cell(r["label"]),
@@ -1760,9 +1765,9 @@ def render_report(
                     for r in groups
                 ],
             )
-        lines.extend(["## Trend", ""])
+        lines.extend(["## Trend · supported record contributions", ""])
         table(
-            ["Date", "Revenue", "Spend", "Included current refs"],
+            ["Date", "Revenue contribution", "Spend contribution", "Included current refs"],
             [
                 [
                     cell(r["date"]),
