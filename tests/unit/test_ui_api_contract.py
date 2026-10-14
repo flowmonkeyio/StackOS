@@ -16,6 +16,14 @@ from stackos.operations.actions.schemas import (
     ActionCallResumeInput,
     ActionCallRetryInput,
 )
+from stackos.operations.finance import (
+    FinanceCommitInput,
+    FinanceContentOut,
+    FinanceEditIntent,
+    FinanceProjectionOut,
+    FinanceQueryInput,
+    FinanceWorkspaceSelectInput,
+)
 from stackos.server import create_app
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -68,6 +76,12 @@ def test_ui_generation_includes_registry_owned_durable_contracts(
         DurableActionItemOut,
         ActionCallResumeInput,
         ActionCallRetryInput,
+        FinanceWorkspaceSelectInput,
+        FinanceQueryInput,
+        FinanceEditIntent,
+        FinanceCommitInput,
+        FinanceProjectionOut,
+        FinanceContentOut,
     ):
         assert schemas[model.__name__]["properties"].keys() == model.model_fields.keys()
         assert f"Schema{model.__name__}" in generated

@@ -133,6 +133,7 @@ def build_operation_registry() -> OperationRegistry:
         cost,
         discovery,
         execution_contexts,
+        finance,
         guides,
         integrations,
         project_bootstrap,
@@ -151,6 +152,8 @@ def build_operation_registry() -> OperationRegistry:
     from stackos.operations import tracker as tracker_operations
 
     registry = OperationRegistry()
+    for spec in finance.operation_specs():
+        registry.register(spec)
     for spec in discovery.operation_specs():
         registry.register(spec)
     for spec in project_bootstrap.operation_specs():

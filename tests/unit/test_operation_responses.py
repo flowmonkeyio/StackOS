@@ -664,6 +664,7 @@ def test_operation_list_compact_keeps_agent_decision_fields() -> None:
                 "read_only": False,
                 "mutating": True,
                 "grant_policy": "workflow-grant",
+                "idempotency_policy": "dispatcher",
                 "secret_policy": "no-secret-output",
                 "surfaces": {
                     "mcp": {"enabled": True},
@@ -698,6 +699,7 @@ def test_operation_list_compact_keeps_agent_decision_fields() -> None:
             "read_only": False,
             "mutating": True,
             "grant_policy": "workflow-grant",
+            "idempotency_policy": "dispatcher",
             "secret_policy": "no-secret-output",
             "surfaces": ["mcp", "rest"],
             "response_policy": {

@@ -10,6 +10,7 @@ from sqlmodel import Session
 
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
+from stackos.mcp.errors import ToolNotGrantedError
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.operations.communication_delivery import (
     operation_specs as communication_delivery_operation_specs,
@@ -75,6 +76,8 @@ async def local_agent_chat_create_message(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> WriteEnvelope[LocalAgentChatMessageOut]:
+    if str(ctx.extras.get("auth_scope", "")).startswith("ui-"):
+        inp = validate_console_chat(inp)
     _require_project(ctx.session, inp.project_id)
     _validate_local_key(inp.thread_key, "thread_key")
     _validate_local_key(inp.message_key, "message_key")
@@ -158,6 +161,144 @@ async def local_agent_chat_create_message(
     return WriteEnvelope(data=out, run_id=ctx.run_id, project_id=inp.project_id)
 
 
+def validate_console_chat(
+    inp: LocalAgentChatCreateMessageInput,
+) -> LocalAgentChatCreateMessageInput:
+    """The browser contributes a human intent and bounded references only."""
+    if (
+        inp.direction != "inbound"
+        or not inp.create_request
+        or inp.content_blocks
+        or inp.sender_ref != "local-user:operator"
+        or inp.run_token is not None
+    ):
+        raise ToolNotGrantedError("Browser local chat only accepts inbound human requests")
+    if not inp.text or len(inp.text) > 240:
+        raise ValidationError("Browser local chat requires a bounded question")
+    allowed = {
+        "workspace_ref",
+        "access_generation",
+        "source_snapshot",
+        "query",
+        "analysis_kind",
+        "record_refs",
+        "source_refs",
+        "intent_key",
+    }
+    if set(inp.metadata_json) - allowed:
+        raise ValidationError("Browser local chat metadata must contain safe references")
+    for key, value in inp.metadata_json.items():
+        if key == "source_snapshot":
+            if (
+                not isinstance(value, dict)
+                or set(value) != {"revision", "sha256"}
+                or type(value["revision"]) is not int
+                or value["revision"] < 0
+                or not isinstance(value["sha256"], str)
+                or not re.fullmatch(r"[a-f0-9]{64}", value["sha256"])
+            ):
+                raise ValidationError("Invalid source snapshot reference")
+        elif key == "access_generation":
+            if type(value) is not int or value < 1:
+                raise ValidationError("Invalid access generation")
+        elif key in {"record_refs", "source_refs"}:
+            if (
+                not isinstance(value, list)
+                or len(value) > 200
+                or not all(_console_ref(x) for x in value)
+            ):
+                raise ValidationError("Invalid record references")
+        elif key == "query":
+            _validate_console_query(value)
+        elif key == "analysis_kind":
+            if not isinstance(value, str) or value not in {
+                "spending",
+                "opportunities",
+                "collections",
+                "cashflow",
+                "review-records",
+            }:
+                raise ValidationError("Invalid analysis kind")
+        elif not _console_ref(value):
+            raise ValidationError("Invalid safe request reference")
+    return inp.model_copy(
+        update={"sender_ref": "local-user:operator", "sender_display_name": "Operator"}
+    )
+
+
+def _console_ref(value: Any) -> bool:
+    return isinstance(value, str) and bool(
+        re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,239}", value)
+    )
+
+
+def _validate_console_query(value: Any) -> None:
+    allowed = {
+        "start",
+        "end",
+        "comparison",
+        "recognition_basis",
+        "date_basis",
+        "timezone",
+        "currency",
+        "scope",
+        "external_project_ref",
+        "kind",
+        "account_ref",
+        "category_ref",
+        "counterparty_ref",
+        "needs_review",
+        "sort",
+        "descending",
+        "offset",
+        "limit",
+        "workspace_ref",
+        "access_generation",
+        "expected_snapshot",
+    }
+    if not isinstance(value, dict) or set(value) - allowed:
+        raise ValidationError("Request filters must contain safe scope references")
+    for key, item in value.items():
+        if item is None:
+            continue
+        if key in {"comparison", "expected_snapshot"}:
+            keys = {"start", "end"} if key == "comparison" else {"revision", "sha256"}
+            if not isinstance(item, dict) or (
+                (key == "comparison" and (not keys <= set(item) or set(item) - keys - {"clamped"}))
+                or (key != "comparison" and set(item) != keys)
+            ):
+                raise ValidationError("Invalid scoped filter")
+            if key == "comparison":
+                if not all(
+                    isinstance(v, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", v)
+                    for v in (item["start"], item["end"])
+                ):
+                    raise ValidationError("Invalid period filter")
+                if "clamped" in item and type(item["clamped"]) is not bool:
+                    raise ValidationError("Invalid comparison flag")
+            elif (
+                type(item["revision"]) is not int
+                or not isinstance(item["sha256"], str)
+                or not re.fullmatch(r"[a-f0-9]{64}", item["sha256"])
+            ):
+                raise ValidationError("Invalid snapshot filter")
+        elif key == "timezone":
+            from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+            try:
+                ZoneInfo(item)
+            except (ValueError, TypeError, ZoneInfoNotFoundError):
+                raise ValidationError("Invalid timezone filter") from None
+        elif key in {"needs_review", "descending"}:
+            if type(item) is not bool:
+                raise ValidationError("Invalid flag filter")
+        elif key in {"offset", "limit", "access_generation"}:
+            if type(item) is not int or not 0 <= item <= 1_000_000:
+                raise ValidationError("Invalid bounded filter")
+        elif not _console_ref(item):
+            raise ValidationError("Invalid filter reference")
+
+
 def _require_project(session: Session, project_id: int) -> None:
     ProjectRepository(session).get(project_id)
 
@@ -181,7 +322,11 @@ def _local_body_preview(text: str | None, content_blocks: list[dict[str, Any]]) 
 def _surfaces(name: str, command: str) -> OperationSurfaces:
     return OperationSurfaces(
         mcp=OperationSurface(enabled=True),
-        rest=OperationSurface(enabled=True, path=f"/api/v1/operations/{name}/call"),
+        rest=OperationSurface(
+            enabled=True,
+            path=f"/api/v1/operations/{name}/call",
+            browser_safe=name == "localAgentChat.createMessage",
+        ),
         cli=OperationSurface(enabled=True, command=command),
     )
 

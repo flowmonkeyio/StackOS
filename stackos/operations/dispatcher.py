@@ -52,6 +52,7 @@ class OperationDispatcher:
         client_surface: str | None = None,
         settings: Settings | None = None,
         trusted_local_admin: bool = False,
+        auth_scope: str | None = None,
     ) -> OperationDispatchResult:
         if trusted_local_admin and surface != "rest":
             raise ValueError("trusted local-admin dispatch is REST-only")
@@ -70,6 +71,7 @@ class OperationDispatcher:
         ctx.extras["surface"] = surface
         ctx.extras["client_surface"] = response_surface
         ctx.extras["trusted_local_admin"] = trusted_local_admin
+        ctx.extras["auth_scope"] = auth_scope
         if settings is not None:
             ctx.extras["settings"] = settings
         with bind_context(ctx):
@@ -91,7 +93,8 @@ class OperationDispatcher:
             if not trusted_local_admin:
                 check_call_grant(spec.name, ctx, parsed)
             if (
-                not spec.read_only
+                spec.idempotency_policy == "dispatcher"
+                and not spec.read_only
                 and ctx.idempotency_key is not None
                 and ctx.project_id is not None
             ):
@@ -110,7 +113,8 @@ class OperationDispatcher:
                 duration_ms = int((time.perf_counter() - started) * 1000)
             except RepositoryError:
                 if (
-                    not spec.read_only
+                    spec.idempotency_policy == "dispatcher"
+                    and not spec.read_only
                     and ctx.idempotency_key is not None
                     and ctx.project_id is not None
                 ):
@@ -118,7 +122,8 @@ class OperationDispatcher:
                 raise
             except Exception as exc:
                 if (
-                    not spec.read_only
+                    spec.idempotency_policy == "dispatcher"
+                    and not spec.read_only
                     and ctx.idempotency_key is not None
                     and ctx.project_id is not None
                 ):
@@ -142,7 +147,8 @@ class OperationDispatcher:
                         },
                     )
             if (
-                not spec.read_only
+                spec.idempotency_policy == "dispatcher"
+                and not spec.read_only
                 and ctx.idempotency_key is not None
                 and ctx.project_id is not None
             ):

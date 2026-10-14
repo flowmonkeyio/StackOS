@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ValidationError as PydanticValidationError
 from sqlmodel import Session
 
 from stackos.api.deps import get_session, get_settings
@@ -16,6 +17,8 @@ from stackos.logging import get_logger
 from stackos.operations.dispatcher import OperationDispatcher
 from stackos.operations.registry import build_operation_registry
 from stackos.operations.spec import OperationDescribeOut, OperationListOut
+from stackos.repositories.base import ValidationError
+from stackos.validation_errors import safe_validation_errors
 
 router = APIRouter(prefix="/api/v1/operations", tags=["operations"])
 
@@ -56,6 +59,7 @@ async def describe_operation(operation_name: str) -> OperationDescribeOut:
 async def call_operation(
     operation_name: str,
     payload: OperationCallIn,
+    request: Request,
     client_surface: str | None = Header(default=None, alias="X-StackOS-Client-Surface"),
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
@@ -68,9 +72,33 @@ async def call_operation(
     )
     if normalized_client_surface not in {"cli"}:
         normalized_client_surface = None
+    auth_scope = getattr(request.state, "auth_scope", None)
+    if operation_name == "localAgentChat.createMessage" and str(auth_scope).startswith("ui-"):
+        # Validate the browser-owned intent before a possible generic replay.
+        from stackos.operations.communications import (
+            LocalAgentChatCreateMessageInput,
+            validate_console_chat,
+        )
+
+        try:
+            parsed = LocalAgentChatCreateMessageInput.model_validate(payload.arguments)
+        except PydanticValidationError as exc:
+            raise ValidationError(
+                "operation input validation failed",
+                data={"operation": operation_name, "errors": safe_validation_errors(exc.errors())},
+            ) from None
+        payload.arguments = validate_console_chat(parsed).model_dump(mode="json")
     generic_operation_path = f"/api/v1/operations/{operation_name}/call"
+    console_contract = (
+        spec.surfaces.rest.browser_safe
+        and not spec.surfaces.mcp.enabled
+        and (
+            (spec.grant_policy == "local-admin-console-write" and not spec.read_only)
+            or (spec.grant_policy == "local-admin-console-read" and spec.read_only)
+        )
+    )
     trusted_local_admin = bool(
-        spec.grant_policy == "local-admin-auth-write"
+        (spec.grant_policy == "local-admin-auth-write" or console_contract)
         and spec.surfaces.rest.path == generic_operation_path
     )
     result = await OperationDispatcher(registry).dispatch(
@@ -81,6 +109,7 @@ async def call_operation(
         client_surface=normalized_client_surface,
         settings=settings,
         trusted_local_admin=trusted_local_admin,
+        auth_scope=auth_scope,
     )
     if result.duration_ms >= 100:
         get_logger("stackos.api.operations").warning(
@@ -94,6 +123,11 @@ async def call_operation(
         headers={
             "Server-Timing": f"stackos-operation;dur={result.duration_ms}",
             "X-StackOS-Operation-Duration-Ms": str(result.duration_ms),
+            **(
+                {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
+                if console_contract
+                else {}
+            ),
         },
     )
 
