@@ -522,7 +522,11 @@ onBeforeUnmount(() => {
           <UiFormField
             v-if="allowed.includes('amount')"
             label="Amount"
-            help="An empty amount keeps the existing fact. Confirm precision before changing it."
+            :help="
+              recordRef === null
+                ? 'Amount is required. Enter a decimal amount using the selected currency decimal places.'
+                : 'Leave the amount unchanged to preserve the existing fact. Confirm precision before changing it.'
+            "
             ><UiInput v-model="draft.amount" inputmode="decimal" data-test="amount"
           /></UiFormField>
           <UiFormField v-if="allowed.includes('amount')" label="Currency"
