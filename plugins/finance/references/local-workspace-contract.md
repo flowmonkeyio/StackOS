@@ -449,6 +449,139 @@ review or handoff evidence.
 
 A document change never automatically grants or revokes a StackOS technical gate.
 
+## Local management console
+
+The existing `local-json-v1` master remains authoritative and immediately
+inspectable. Finance management adds typed, versioned method metadata in
+`operating_settings.scope`/`policy_text`, sourced provenance and exact decision
+bindings, validated by the packaged `management-v1.schema.json`. It does not
+require a master schema migration. Unsupported treatment, dates, account scope
+or coverage remain gaps; operators/agents supply and review those facts.
+
+The daemon's private `plugin-state/finance/access.json` is authorization metadata,
+not financial storage. Explicit selection binds one project/workspace to one
+canonical existing root, read/correct/export modes and generation. Every call
+rechecks enabled plugin, project, current generation/mode and root device/inode;
+commit rechecks authority inside the existing writer lock. Revoked/root-replaced
+access requires deliberate reselection and fresh state. Run tokens and caller
+actor/admin fields cannot establish console authority. Keep the external root
+owner-private; owner-only read access is suitable for read/export fixtures.
+
+Console corrections preserve original observations and additive history. Preview
+and cancel do not write. Commit uses an opaque stable request, exact source
+revision/hash, source refs or explicit operator attestation for manual creation,
+reason, preview digest and verified reread receipt. Provider fields remain owned
+by their providers; billing changes are proposals where material approval is
+required. Do not guess missing dates or resurrect cancelled corrections.
+Handler-owned retries revalidate current authority and original intent through
+the external writer; generic operation cache replay does not bypass that check.
+An outcome-unknown receipt requires reconciliation of the same request.
+
+### Display precision
+
+The native edit contract accepts `fields.amount` with required exact `minor`
+string and `currency`, plus an optional strict integer `exponent` from 0 through
+6. Boolean, string, float and out-of-range exponents are rejected. Omitting
+the exponent remains a supported legacy input; callers must not invent units to
+make an edit valid. Canonical v1 money still stores only integer `amount_minor`
+and currency. There is no money-schema migration or precision backfill.
+
+Explicit display units use the existing versioned `operating_settings` owner:
+scope `finance-management-precision:<target_ref>` and typed `policy_text` with
+`kind=record-precision`, `management_schema_version=finance-management-v1`,
+`target_ref`, exact `target_digest_sha256`, matching `currency`, `exponent` and
+current `source_refs`. A separate exact review of this formatting setting binds
+its version/material digest and the `finance-management` / `amount-precision`
+scopes. It approves formatting only, independently of economic reporting:
+precision cannot establish treatment, category, event identity, recognition
+basis, dates, coverage, allocation or supported totals. An unclassified entry
+may have known display units while remaining excluded from those metrics.
+
+The existing preview/commit writer persists money, formatting setting and its
+review together under the same lock, snapshot, authority and reread checks.
+The exponent participates in the intent and preview digests; changing it on a
+retry conflicts with the original request. Original records and prior settings
+remain intact. A nonamount correction may carry forward only exact currently
+verified formatting when amount/currency and required source/decision bindings
+remain valid. A money/currency correction without supplied precision does not
+inherit old formatting or stale reporting units.
+
+Query rows and `record_detail.amount` expose derived
+`{minor: string, currency: string, exponent: integer | null}`; detail amount is
+null when there is no monetary value. The original/current record dictionaries
+retain their canonical fields, with exact minor-unit strings on the native
+transport. Unsupported, proposed, stale, unapproved or conflicting formatting
+keeps precision unknown with a named gap. Valid reporting precision is a fallback
+only when there is no stale/proposed/conflicting formatting candidate. A valid
+formatting/reporting disagreement yields `currency_precision_conflict`, unknown
+display precision and metric exclusion; no implicit USD/two-decimal fallback or
+rounding is applied.
+
+### Derived correction history
+
+`record_detail` and native `finance.record.get` return `lineage` as ordered string
+refs and `correction_history` as a list, defaulting to empty. Both come from the
+existing validated `CurrentRecords` chain. They introduce no stored history or
+second lifecycle. Opening a current or superseded ref retains its original and
+the same complete applied correction chain, with canonical `current_ref`.
+
+Each history item has exactly these fields:
+
+| Field | Observed value |
+| --- | --- |
+| `correction_ref` | Existing correction record ID. |
+| `status` | `applied`. |
+| `superseded_ref` | Exact stored prior record ref. |
+| `replacement_ref` | Exact stored replacement ref. |
+| `reason` | Exact stored correction reason. |
+| `actor` | Actor from the last stored applied event, or null. |
+| `at` | Time from that same applied event, or null; never a transaction date. |
+| `decision_ref` | Exact stored decision ref, or null; no synthesized approval. |
+| `evidence_refs` | String refs retained on that applied event. |
+| `source_refs` | Unique historical source refs from correction-evidence provenance. |
+
+Items follow the canonical original-to-current chain order, preserving distinct
+applied correction records rather than sorting by time, array position or ID.
+Proposed/rejected/withdrawn corrections and supersedes-only versions do not
+become fabricated applied items. Missing actor/time stays unavailable; do not
+substitute the current user, approval actor or creation time. Label a replacement
+current only when it equals the returned `current_ref`. Current record status
+history remains a separate observation. Existing unknown/cycle/fork/merge and
+cross-collection failures still require repair. These private detail fields use
+the existing project/root/generation/snapshot guards and never belong in generic
+resources, run results, tracker notes or chat.
+
+Original transport accepts only a registered attachment ref from the current
+snapshot. It verifies contained no-follow paths, root/file identity, bytes and
+SHA-256; unavailable/disposed/quarantined/oversize originals have explicit states.
+Responses use no-store and private bounded content. HTML/SVG and unknown active
+types are download-only. Originals never become generated public assets.
+Inline preview is browser-dependent; a verified original download remains the
+fallback when a PDF cannot render inside the browser.
+
+Overview, Expenses & income and Reports share one filtered population and source
+snapshot. Money crosses the UI as exact minor-unit strings, with explicit currency
+precision. Revenue/profit stay unavailable when evidence cannot support them;
+project contributions are before shared/unallocated costs. Period reports and
+formula-safe CSV are derived downloads with filters/basis/coverage/IDs and source
+revision/hash; editing a download never updates the master. Undated/period-only
+record refs stay visible instead of receiving guessed dates.
+
+`scripts/finance_management.py` is shipped with the plugin's scripts, templates
+and schemas. The fixed first-party loader uses installed package assets, or the
+source package in a checkout, never scripts from the business root. It exposes
+snapshot/query/detail/preview/commit and source-bound report/result functions.
+An installed app must contain the matching runtime and UI bundle; source changes
+alone do not activate them. The existing writer/CurrentRecords owners are reused.
+See [the management host/result protocol](workflow-handoffs.md#management-review-request-and-result).
+
+Recovery preserves the external master and originals: refresh/rebase stale
+edits, reconcile unknown outcomes, repair/reselect local file authorization and
+restore only from independently verified operator-owned backups. This finance
+authorization map and selected roots are not automatically enrolled in the
+separate, unmerged backup work. Enroll finance roots explicitly when that backup
+feature is activated; do not claim current automatic backup/restore coverage.
+
 ## Prepared bookkeeping
 
 Record bank/card/Stripe accounts, required windows, statements/exports, opening/

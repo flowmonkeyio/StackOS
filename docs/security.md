@@ -244,7 +244,8 @@ create projects during local setup, and manage provider auth setup for a
 project (`account.start`, secret storage and edits, sanitized auth tests, and
 revoke). Provider-auth route definitions own method validity inside that
 namespace. Mutating operation calls are allowed only when the operation's REST
-surface declares `browser_safe=True` for explicit local setup. It cannot access
+surface declares `browser_safe=True` for explicit local setup or the bounded
+human finance console contract described below. It cannot access
 MCP, arbitrary mutating operation calls, tracker lifecycle writes, or general
 mutation routes. The
 installable MCP bridge keeps the daemon bearer inside the bridge process rather
@@ -269,6 +270,32 @@ arguments; template schema/secret checks and immutable version conflicts still
 apply. These operations do not create runs or grant actions, are not run-step
 tools, and remain unavailable to the browser console token. Their CLI path uses
 the ordinary authenticated operation route, not a caller-asserted admin bypass.
+
+### Private finance console
+
+The exact registered MCP-disabled Finance REST operations use
+`local-admin-console-read` or `local-admin-console-write` according to mutability.
+Only the authenticated exact-path policy establishes trusted REST context; an
+operation name prefix, run token, caller admin/actor field or CLI response header
+does not. Root association is a separate deliberate local authorization, not
+workspace binding or agent filesystem permission. Each call checks enabled
+plugin, project, canonical root identity, modes and generation; writes recheck
+inside the existing external writer lock. Handler-owned replay validates current
+authority and intent instead of returning stale cached financial success.
+
+Financial originals remain in the owner-private external root. Registered
+attachment refs require containment, no-follow descriptor reads, size/hash checks
+and current snapshot. Console responses are no-store; active HTML/SVG is
+download-only, never a public generated asset. Private search text is refused in
+analysis intake until the operator clears it and applies filters. Browser local
+chat accepts only a bounded inbound human intent with safe query/snapshot refs;
+it cannot spoof an agent, send outbound content or run a model. Reviewed result
+reads bind original request/query/source and exact published result/report hashes.
+
+Selected finance roots and their private authorization map are not automatically
+backed up by the separate unmerged backup work. Recovery includes verified
+operator-owned backups and explicit file-access reselection; future activated
+backup enrollment must cover the finance roots separately.
 
 ## Daemon-Owned Browser Sessions
 

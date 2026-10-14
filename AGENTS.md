@@ -76,7 +76,7 @@ Project-local main-agent mappings:
   [`.codex/orchestrator/workflow-orchestrator.md`](./.codex/orchestrator/workflow-orchestrator.md)
 - `finance.receipt-intake`, `finance.bookkeeping-close`,
   `finance.payment-request`, `finance.payment-request-followups`,
-  `finance.cashflow-management`, and `finance.tax-estimates` ->
+  `finance.cashflow-management`, `finance.tax-estimates`, and `finance.management-review` ->
   [`.codex/orchestrator/finance-department-orchestrator.md`](./.codex/orchestrator/finance-department-orchestrator.md)
 
 ## Core Rules

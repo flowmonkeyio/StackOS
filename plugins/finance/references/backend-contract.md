@@ -23,6 +23,15 @@ prefer a report or synchronize two masters.
 
 ## Business and project scope
 
+The authorized local Finance console delegates bounded read/correct/export
+access to the daemon over that same external master. Its private control map
+stores project/workspace refs, canonical root identity, modes and access generation;
+it stores no financial rows. Project binding, descriptive associations and a
+workflow token do not supply this local file authority or agent-host file access.
+The nine registered console operations are REST/CLI contracts with finance MCP
+visibility disabled, not a generic filesystem connector. See
+[the local console contract](local-workspace-contract.md#local-management-console).
+
 Run from a standalone business directory or an agency root using the existing
 finance workflows and one selected external financial master per business.
 Reuse that master across client engagements; do not create a finance.json in
@@ -89,6 +98,7 @@ from their external owner instead of repeatedly asking for reference strings.
 | Follow-ups | Current invoice/contact/reply history and operator-provided or documented sending instructions: Stripe resend or SMTP email, account, recipients and wording. IMAP is optional reply evidence. Settlement-only needs source/allocation, not send setup. |
 | Cashflow | Dated opening cash, expected receipts, commitments, horizon/scenario conventions and reserve source or explicit uncertainty. No complete tax packet prerequisite. |
 | Tax preparation | Relevant annual business/taxpayer inputs and current sources. Legal form is separate from federal/California tax treatment/effective dates; qualified review is required before adoption, not source gathering. |
+| Management review | Original request ID, selected workspace, source revision/hash and exact period/basis/query; capable host file access, sourced reporting metadata and independent result/report reviewer. No provider action or adoption. |
 
 A run supplies only its current choice: period, billing request, review window
 or as-of date. Optional safe overrides replace a selected setup default.

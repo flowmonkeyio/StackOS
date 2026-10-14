@@ -240,7 +240,9 @@ def precision_create(finance, amount, request_id="synthetic-precision"):
         "action": "create-bookkeeping",
         "fields": {"date": "2026-09-04", "amount": amount, "category": {"state": "unresolved"}},
         "source_refs": [],
-        "attestation": "Simulated operator verifies the entered amount/currency/units for isolated proof only.",
+        "attestation": (
+            "Simulated operator verifies the entered amount/currency/units for isolated proof only."
+        ),
         "reason": "Synthetic unclassified entry; no economic treatment adopted.",
     }
 

@@ -58,6 +58,29 @@ preparation and resolve access before the affected write or provider action.
 
 ## Where records live
 
+For the local Finance console, select this existing private folder from the
+owning project and choose read, sourced-correction and export access. Selection
+and navigation never reset `finance.json`. **Overview**, **Expenses & income**
+and **Reports** share the chosen period/basis/filters. Inspect an original and
+current history, preview a supported correction, then save or cancel. A stale
+source requires refresh/rebase; an unknown save requires same-request reconciliation.
+Unknown revenue/profit is not zero, and currencies are not implicitly combined.
+
+The installed plugin also ships `scripts/finance_management.py` and
+`schemas/management-v1.schema.json` for typed approved method metadata in existing
+`operating_settings`; the master remains `local-json-v1`. Resolve those files from
+the plugin package origin, not this copied workspace or a guessed source checkout.
+The local console contract owns bounded daemon authorization; project binding
+does not grant an agent host filesystem access.
+
+Clear search text and apply filters before requesting agent analysis. Queueing
+stores a request, not a model result. A capable host executes
+`finance.management-review`, independently reviews the exact result and readable
+report hash, then publishes in the external root. Pending/blocked/unavailable and
+stale results stay honest. Reports/CSV remain derived, non-authoritative views;
+recommendations need separate adoption decisions. Use the canonical
+`finance-plugin:references/workflow-handoffs.md` management-review protocol.
+
 Keep one financial master per business, standalone or agency-root, across its
 client engagements. Agency setup is optional and grants no cross-project access.
 Optional `external_project_ref` labels only source-backed single-project billing
