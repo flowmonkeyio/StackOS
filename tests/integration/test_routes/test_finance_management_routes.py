@@ -7,12 +7,15 @@ import copy
 import hashlib
 import json
 import os
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlmodel import Session, select
 
-from stackos.db.models import AgentRequest, IdempotencyKey
+from stackos.db.models import AgentRequest, IdempotencyKey, RunPlan, RunPlanStepStatus
 from stackos.plugins.builtin_finance import helpers
+from stackos.repositories.agent_requests import AgentRequestRepository
+from stackos.repositories.run_plans import RunPlanRepository
 from tests.helpers.finance_workspace import record
 from tests.unit.test_finance_management import QUERY, analysis_result, fixture_document
 
@@ -432,6 +435,228 @@ def test_readiness_no_bootstrap_and_config_private(api, finance, settings, tmp_p
     assert config.stat().st_mode & 0o777 == 0o600
     assert config.parent.stat().st_mode & 0o777 == 0o700
     assert "book:expense" not in config.read_text() and "100000" not in config.read_text()
+
+
+@pytest.fixture
+def analysis_request(api, finance):
+    response = call(
+        api,
+        "localAgentChat.createMessage",
+        {
+            "project_id": finance["project_id"],
+            "thread_key": "finance-status",
+            "message_key": "synthetic-status",
+            "sender_ref": "local-user:operator",
+            "text": "Inspect the selected snapshot.",
+            "metadata_json": {
+                "workspace_ref": WORKSPACE,
+                "access_generation": finance["common"]["access_generation"],
+                "source_snapshot": snapshot(finance),
+                "query": QUERY,
+                "analysis_kind": "opportunities",
+            },
+        },
+    )
+    assert response.status_code == 200, response.text
+    return body(response)["agent_request"]["id"]
+
+
+def analysis_status(api, finance, request_id):
+    response = call(
+        api,
+        "finance.report.render",
+        {
+            **finance["common"],
+            **QUERY,
+            "report_kind": "analysis",
+            "analysis_request_id": request_id,
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.headers["cache-control"] == "no-store"
+    return body(response)
+
+
+def prepare_analysis_run(api, finance, request_id):
+    with Session(api.app.state.engine) as session:
+        prepared = (
+            AgentRequestRepository(session)
+            .prepare_run_plan(
+                project_id=finance["project_id"],
+                request_id=request_id,
+                claimed_by="host:synthetic",
+                run_plan_json={
+                    "schema_version": "stackos.run-plan.v1",
+                    "key": "synthetic-status-run",
+                    "title": "Synthetic analysis lifecycle",
+                    "steps": [{"id": "analyze", "title": "Analyze"}],
+                },
+            )
+            .data
+        )
+        return prepared.run_plan.id
+
+
+@pytest.mark.parametrize(
+    ("terminal", "expected"),
+    [
+        ("blocked", "run-blocked"),
+        ("failed", "failed"),
+        ("success", "completed_unpublished"),
+        ("aborted", "run-aborted"),
+    ],
+)
+def test_analysis_status_reads_canonical_run_without_mutating_queue(
+    api, finance, analysis_request, terminal, expected
+):
+    plan_id = prepare_analysis_run(api, finance, analysis_request)
+    master = finance["path"].read_bytes()
+    assert analysis_status(api, finance, analysis_request)["state"] == "run-created"
+    with Session(api.app.state.engine) as session:
+        plans = RunPlanRepository(session)
+        started = plans.start(plan_id, project_id=finance["project_id"]).data
+        plans.claim_step(
+            run_plan_id=plan_id,
+            run_id=started.run_id,
+            step_id="analyze",
+            claimed_by="host:synthetic",
+        )
+    assert analysis_status(api, finance, analysis_request)["state"] == "run-started"
+    with Session(api.app.state.engine) as session:
+        plans = RunPlanRepository(session)
+        if terminal == "aborted":
+            plans.abort(
+                run_plan_id=plan_id, project_id=finance["project_id"], reason="Synthetic abort"
+            )
+        else:
+            plans.record_step(
+                run_plan_id=plan_id,
+                run_id=started.run_id,
+                step_id="analyze",
+                status=RunPlanStepStatus(terminal),
+                error="PRIVATE_FINANCE_STATUS_MARKER" if terminal != "success" else None,
+            )
+    final = analysis_status(api, finance, analysis_request)
+    assert final["state"] == expected
+    assert final["next_action"] == "inspect_agent_request"
+    assert "PRIVATE_FINANCE_STATUS_MARKER" not in json.dumps(final)
+    assert not final.get("report") and not final.get("result")
+    with Session(api.app.state.engine) as session:
+        assert session.get(AgentRequest, analysis_request).status == "run-created"
+    assert finance["path"].read_bytes() == master
+
+
+@pytest.mark.parametrize("stale", ["source", "access", "missing-source"])
+def test_unresolved_analysis_checks_freshness_before_run_status(
+    api, finance, analysis_request, stale
+):
+    prepare_analysis_run(api, finance, analysis_request)
+    if stale == "source":
+        intent = edit(finance, request_id="synthetic-after-analysis")
+        preview = call(api, "finance.record.preview", intent)
+        assert preview.status_code == 200, preview.text
+        committed = call(
+            api,
+            "finance.record.commit",
+            {**intent, "preview_digest": body(preview)["preview_digest"]},
+        )
+        assert committed.status_code == 200, committed.text
+    elif stale == "access":
+        selection = call(
+            api,
+            "financeWorkspace.select",
+            {
+                "project_id": finance["project_id"],
+                "workspace_ref": WORKSPACE,
+                "root": str(finance["path"].parent),
+                "authority_ref": "operator:synthetic-reselection",
+                "expected_generation": finance["common"]["access_generation"],
+                "idempotency_key": "synthetic-reselect-after-analysis",
+            },
+        )
+        assert selection.status_code == 200, selection.text
+        finance["common"]["access_generation"] = body(selection)["generation"]
+    else:
+        with Session(api.app.state.engine) as session:
+            row = session.get(AgentRequest, analysis_request)
+            metadata = copy.deepcopy(row.metadata_json)
+            metadata["metadata_json"].pop("source_snapshot")
+            row.metadata_json = metadata
+            session.add(row)
+            session.commit()
+    status = analysis_status(api, finance, analysis_request)
+    assert (
+        status["state"]
+        == {
+            "source": "historical_source",
+            "access": "historical_access",
+            "missing-source": "source_unavailable",
+        }[stale]
+    )
+    assert status["next_action"] == "request_current_analysis"
+    assert not status.get("report")
+
+
+@pytest.mark.parametrize("link", ["missing", "wrong-project", "absent"])
+def test_unresolved_analysis_invalid_link_is_safe(
+    api, finance, analysis_request, link, monkeypatch
+):
+    plan_id = prepare_analysis_run(api, finance, analysis_request)
+    if link == "missing":
+        original_get = Session.get
+
+        def unavailable_plan(session, model, identity, *args, **kwargs):
+            if model is RunPlan and identity == plan_id:
+                return None
+            return original_get(session, model, identity, *args, **kwargs)
+
+        # Emulate an unavailable linked read without violating stored FK custody.
+        monkeypatch.setattr(Session, "get", unavailable_plan)
+    with Session(api.app.state.engine) as session:
+        if link == "wrong-project":
+            from stackos.repositories.projects import ProjectRepository
+
+            other = (
+                ProjectRepository(session)
+                .create(
+                    name="Synthetic other",
+                    slug="synthetic-other-status",
+                    domain="synthetic-other.test",
+                )
+                .data
+            )
+            plan = session.get(RunPlan, plan_id)
+            plan.project_id = other.id
+            session.add(plan)
+        elif link == "absent":
+            row = session.get(AgentRequest, analysis_request)
+            row.run_plan_id = None
+            session.add(row)
+        session.commit()
+    status = analysis_status(api, finance, analysis_request)
+    assert {key: status[key] for key in ("state", "request_id", "next_action")} == {
+        "state": "run_unavailable",
+        "request_id": analysis_request,
+        "next_action": "inspect_agent_request",
+    }
+    assert not status.get("report") and not status.get("result")
+
+
+def test_unlinked_analysis_queue_and_expiry_preserved(api, finance, analysis_request):
+    assert analysis_status(api, finance, analysis_request)["state"] == "awaiting_agent"
+    with Session(api.app.state.engine) as session:
+        AgentRequestRepository(session).claim(
+            project_id=finance["project_id"],
+            request_id=analysis_request,
+            claimed_by="host:synthetic",
+        )
+    assert analysis_status(api, finance, analysis_request)["state"] == "claimed"
+    with Session(api.app.state.engine) as session:
+        row = session.get(AgentRequest, analysis_request)
+        row.claim_expires_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=1)
+        session.add(row)
+        session.commit()
+    assert analysis_status(api, finance, analysis_request)["state"] == "claim_expired"
 
 
 def test_analysis_intake_pending_and_exact_reviewed_result(api, finance):

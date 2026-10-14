@@ -64,12 +64,12 @@ function projection(args: Record<string, unknown>, vendor = 'Synthetic vendor') 
     comparison: null,
   }
 }
-async function mounted() {
+async function mounted(query = '') {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/projects/:id/finance', component: FinanceView }],
   })
-  await router.push('/projects/1/finance')
+  await router.push('/projects/1/finance' + query)
   await router.isReady()
   const wrapper = mount(
     { template: '<RouterView />' },
@@ -110,6 +110,81 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 describe('Finance management', () => {
+  it.each([
+    ['run-created', 'Run prepared — awaiting execution'],
+    ['run-started', 'Running in the linked agent run'],
+    ['run-blocked', 'Agent run blocked — inspect the linked run'],
+    ['failed', 'Analysis failed'],
+    ['run-aborted', 'Agent run aborted — reviewed result not published'],
+    ['completed_unpublished', 'Run completed — reviewed result not published'],
+    ['run_unavailable', 'Linked run unavailable — inspect the agent request'],
+    ['historical_source', 'Analysis request is historical — source changed'],
+    ['historical_access', 'Historical workspace authorization'],
+    ['source_unavailable', 'Request source unavailable — request new analysis'],
+    ['current', 'Reviewed analysis · current source'],
+  ])(
+    'renders canonical analysis state %s without adopting or changing scope',
+    async (state, label) => {
+      const basics = vi.mocked(callOperation).getMockImplementation()!
+      const metadata = {
+        workspace_ref: 'finance:one',
+        source_snapshot: snapshot,
+        query: { start: '2026-09-01', end: '2026-09-30' },
+      }
+      vi.mocked(callOperation).mockImplementation(async (name, args) => {
+        if (name === 'agentRequest.list')
+          return {
+            items: [
+              {
+                id: 7,
+                status: 'new',
+                run_plan_id: 3,
+                metadata_json: { metadata_json: metadata },
+              },
+            ],
+          }
+        if (name === 'agentRequest.get')
+          return {
+            id: 7,
+            status: state === 'current' ? 'resolved' : 'run-created',
+            run_plan_id: 3,
+            metadata_json: { metadata_json: metadata },
+          }
+        if (name === 'finance.report.render')
+          return { state, request_id: 7, next_action: 'inspect_agent_request' }
+        return basics(name, args)
+      })
+      const { wrapper } = await mounted('?analysis=7')
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text() === 'Reports')!
+        .trigger('click')
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text() === 'Refresh analysis status')!
+        .trigger('click')
+      await flushPromises()
+      expect(wrapper.text()).toContain(label)
+      expect(wrapper.text()).toContain(
+        `Request 7 · ${state === 'current' ? 'resolved' : 'run-created'}`,
+      )
+      expect(wrapper.text()).not.toContain('Request 7 · new')
+      if (state !== 'run-started')
+        expect(wrapper.text()).not.toContain('Running in the linked agent run')
+      expect(wrapper.text()).toContain('2026-09-01')
+      expect(wrapper.text()).toContain('2026-09-30')
+      const calls = vi.mocked(callOperation).mock.calls
+      expect(
+        calls.some((c) => c[0] === 'finance.record.commit' || c[0].startsWith('runPlan.')),
+      ).toBe(false)
+      expect(calls.find((c) => c[0] === 'finance.report.render')![1]).toMatchObject({
+        start: '2026-09-01',
+        end: '2026-09-30',
+        analysis_request_id: 7,
+      })
+      wrapper.unmount()
+    },
+  )
   it.each(['markdown', 'csv', 'json'])(
     'renders canonical current %s period bytes and private download',
     async (format) => {

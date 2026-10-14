@@ -523,7 +523,28 @@ class FinanceConsole:
             selected = meta.get("metadata_json", meta)
             if not isinstance(selected, dict) or selected.get("workspace_ref") != inp.workspace_ref:
                 _deny("wrong_workspace")
+            if selected.get("access_generation") != inp.access_generation:
+                return {
+                    "state": "historical_access",
+                    "request_id": request.id,
+                    "next_action": "request_current_analysis",
+                }
             if request.status != "resolved":
+                requested_source = selected.get("source_snapshot")
+                if not isinstance(requested_source, dict) or not all(
+                    key in requested_source for key in ("revision", "sha256")
+                ):
+                    return {
+                        "state": "source_unavailable",
+                        "request_id": request.id,
+                        "next_action": "request_current_analysis",
+                    }
+                if requested_source != {key: snapshot[key] for key in ("revision", "sha256")}:
+                    return {
+                        "state": "historical_source",
+                        "request_id": request.id,
+                        "next_action": "request_current_analysis",
+                    }
                 expiry = request.claim_expires_at
                 if (
                     request.status == "claimed"
@@ -535,16 +556,50 @@ class FinanceConsole:
                         "request_id": request.id,
                         "next_action": "inspect_agent_request",
                     }
+                state = "awaiting_agent" if request.status == "new" else request.status
+                if request.run_plan_id is not None:
+                    # The request records queue/linkage state; canonical run/step
+                    # rows own execution. Read statuses only, never result/error bodies.
+                    from sqlmodel import select
+
+                    from stackos.db.models import (
+                        RunPlan,
+                        RunPlanStatus,
+                        RunPlanStep,
+                        RunPlanStepStatus,
+                    )
+
+                    plan = self.session.get(RunPlan, request.run_plan_id)
+                    if plan is None or plan.project_id != inp.project_id:
+                        state = "run_unavailable"
+                    elif plan.status == RunPlanStatus.DRAFT:
+                        state = "run-created"
+                    elif plan.status == RunPlanStatus.COMPLETED:
+                        state = "completed_unpublished"
+                    elif plan.status == RunPlanStatus.FAILED:
+                        state = "failed"
+                    elif plan.status == RunPlanStatus.ABORTED:
+                        state = "run-aborted"
+                    elif plan.status == RunPlanStatus.STARTED and plan.run_id is not None:
+                        steps = set(
+                            self.session.exec(
+                                select(RunPlanStep.status).where(RunPlanStep.run_plan_id == plan.id)
+                            ).all()
+                        )
+                        if RunPlanStepStatus.FAILED in steps:
+                            state = "failed"
+                        elif RunPlanStepStatus.BLOCKED in steps:
+                            state = "run-blocked"
+                        else:
+                            state = "run-started"
+                    else:
+                        state = "run_unavailable"
+                elif state in {"run-created", "run-started"}:
+                    state = "run_unavailable"
                 return {
-                    "state": "awaiting_agent" if request.status == "new" else request.status,
+                    "state": state,
                     "request_id": request.id,
                     "next_action": "inspect_agent_request",
-                }
-            if selected.get("access_generation") != inp.access_generation:
-                return {
-                    "state": "historical_access",
-                    "request_id": request.id,
-                    "next_action": "request_current_analysis",
                 }
             ref = meta.get("external_result_ref")
             digest = meta.get("external_result_sha256")

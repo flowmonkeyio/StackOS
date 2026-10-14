@@ -136,11 +136,17 @@ const statusText = computed(() => {
         awaiting_agent: 'Awaiting agent — a host must claim this request',
         claimed: 'Claimed — awaiting execution',
         'run-created': 'Run prepared — awaiting execution',
+        'run-blocked': 'Agent run blocked — inspect the linked run',
+        'run-aborted': 'Agent run aborted — reviewed result not published',
+        completed_unpublished: 'Run completed — reviewed result not published',
+        run_unavailable: 'Linked run unavailable — inspect the agent request',
         responded: 'Awaiting reviewed publication',
         failed: 'Analysis failed',
         ignored: 'Request ignored',
         claim_expired: 'Agent claim expired',
         historical_access: 'Historical workspace authorization',
+        historical_source: 'Analysis request is historical — source changed',
+        source_unavailable: 'Request source unavailable — request new analysis',
         result_unavailable: 'Reviewed result unavailable',
       } as Record<string, string>
     )[state || ''] || (selectedRequest.value ? 'Awaiting agent status' : 'No analysis requested')
@@ -523,6 +529,9 @@ async function refreshAnalysis() {
     })
     if (!active || sequence !== analysisSequence || identity !== JSON.stringify(base())) return
     selectedRequest.value = request
+    requests.value = requests.value.map((row) =>
+      String(row.id) === String(request.id) ? request : row,
+    )
     const originalQuery = object(object(object(request.metadata_json).metadata_json).query)
     const value = await callOperation<SchemaFinanceContentOut>('finance.report.render', {
       ...originalQuery,
