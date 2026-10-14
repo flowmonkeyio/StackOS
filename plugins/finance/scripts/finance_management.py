@@ -842,7 +842,11 @@ def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
         "warnings": ["prepared/unposted; supported operating result, not posted books"],
     }
     if q.get("comparison"):
-        comparison = query(snapshot, {**q, **q["comparison"], "comparison": None})
+        window = q["comparison"]
+        comparison = query(
+            snapshot,
+            {**q, "start": window["start"], "end": window["end"], "comparison": None},
+        )
         result["comparison"] = {
             "query": comparison["query"],
             "metrics_by_currency": comparison["metrics_by_currency"],

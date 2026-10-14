@@ -308,6 +308,75 @@ def test_currency_precision_large_integer_filter_and_comparison():
     assert module.query(snapshot(d), {**QUERY, "q": "not-present"})["page"]["total"] == 0
 
 
+@pytest.mark.parametrize(
+    "window_kind", ["hint-true", "hint-false", "generated-true", "generated-false"]
+)
+def test_comparison_hint_preserves_window_filters_population_and_metadata(window_kind):
+    module = management()
+    if window_kind == "generated-true":
+        current_start, current_end = "2024-02-29", "2024-02-29"
+        window = module.comparison_window(current_start, current_end, "previous-year")
+        assert window["clamped"] is True
+    elif window_kind == "generated-false":
+        current_start, current_end = QUERY["start"], QUERY["end"]
+        window = module.comparison_window(current_start, current_end, "previous-year")
+        assert window["clamped"] is False
+    else:
+        current_start, current_end = QUERY["start"], QUERY["end"]
+        window = {
+            **module.comparison_window(current_start, current_end, "previous-period"),
+            "clamped": window_kind == "hint-true",
+        }
+    document = fixture_document()
+    for number, (amount, project, account) in enumerate(
+        [
+            (1000, "project:A", "bank:one"),
+            (2000, "project:A", "bank:one"),
+            (9000, "project:B", "bank:one"),
+            (8000, "project:A", "bank:other"),
+        ]
+    ):
+        row = record(
+            f"book:comparison-{number}",
+            "prepared/unposted",
+            date=window["start"],
+            amount=money(amount),
+            source_refs=["source:bank"],
+            account_ref=account,
+            category={"state": "unresolved"},
+            external_project_ref=project,
+        )
+        document["bookkeeping"].append(row)
+        metadata(document, row)
+    source = snapshot(document)
+    filters = {
+        **QUERY,
+        "start": current_start,
+        "end": current_end,
+        "scope": "external-project",
+        "external_project_ref": "project:A",
+        "account_ref": "bank:one",
+        "kind": "expense",
+        "currency": "USD",
+        "limit": 1,
+        "comparison": window,
+    }
+    before = copy.deepcopy(filters)
+    dates = {"start": window["start"], "end": window["end"]}
+    plain = module.query(source, {**filters, **dates, "comparison": None})
+    assert plain["page"]["total"] == 2 and len(plain["rows"]) == 1
+    assert plain["metrics_by_currency"][0]["spend"]["amount"]["minor"] == "3000"
+    without_hint = module.query(source, {**filters, "comparison": dates})
+    actual = module.query(source, filters)
+    assert actual["comparison"] == without_hint["comparison"]
+    assert actual["comparison"]["metrics_by_currency"] == plain["metrics_by_currency"]
+    assert actual["comparison"]["coverage"] == plain["coverage"]
+    assert actual["comparison"]["query"] == plain["query"]
+    assert actual["query"]["comparison"] == window
+    assert filters == before
+    assert source["sha256"] == snapshot(document)["sha256"]
+
+
 def test_expense_only_missing_coverage_and_basis_conflict():
     module = management()
     d = fixture_document()
