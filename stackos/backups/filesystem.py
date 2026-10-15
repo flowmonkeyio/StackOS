@@ -6,6 +6,7 @@ import json
 import os
 import stat
 import tempfile
+import unicodedata
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -33,10 +34,17 @@ def canonical(path: Path) -> Path:
 
 
 def inside(path: Path, root: Path) -> bool:
-    # Match the public asset boundary conservatively even for not-yet-created
-    # paths on case-insensitive volumes. Case-only overlaps are always denied.
-    path_parts = tuple(part.casefold() for part in path.parts)
-    root_parts = tuple(part.casefold() for part in root.parts)
+    # Compare canonical caseless forms without changing filesystem spelling.
+    # macOS also aliases canonically equivalent Unicode names; resolve() alone
+    # does not merge those spellings, including for not-yet-created outputs.
+    path_parts = tuple(
+        unicodedata.normalize("NFD", unicodedata.normalize("NFD", part).casefold())
+        for part in path.parts
+    )
+    root_parts = tuple(
+        unicodedata.normalize("NFD", unicodedata.normalize("NFD", part).casefold())
+        for part in root.parts
+    )
     return path_parts[: len(root_parts)] == root_parts
 
 

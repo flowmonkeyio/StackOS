@@ -83,8 +83,6 @@ describe('local backup console', () => {
     await flushPromises()
     expect(configureBackups).toHaveBeenCalledWith({
       enabled: true,
-      interval_hours: 24,
-      keep_last: 30,
     })
     expect(wrapper.text()).toContain('Business bills')
     expect(wrapper.text()).toContain('Backup settings saved.')
@@ -93,8 +91,54 @@ describe('local backup console', () => {
     await flushPromises()
     expect(configureBackups).toHaveBeenLastCalledWith({
       enabled: false,
-      interval_hours: 24,
-      keep_last: 30,
+    })
+    wrapper.unmount()
+  })
+  it('sends only the disable when unchanged coverage has become unsafe', async () => {
+    const value = fixture({
+      configured: true,
+      enabled: true,
+      ready: false,
+      interval_hours: 12,
+      keep_last: 7,
+      last_error: {
+        code: 'unsafe_path',
+        message: 'Backup paths must be absolute and cannot be symlinks.',
+        next_action: 'Check backup configuration.',
+      },
+    })
+    vi.mocked(loadBackupStatus).mockResolvedValue(value)
+    vi.mocked(configureBackups).mockResolvedValue({ ...value, enabled: false })
+    const wrapper = mount(BackupPanel)
+    await flushPromises()
+    await wrapper.get('input[type="checkbox"]').setValue(false)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(configureBackups).toHaveBeenCalledTimes(1)
+    expect(configureBackups).toHaveBeenCalledWith({ enabled: false })
+    expect(wrapper.text()).toContain('Automatic backups are off')
+    expect(wrapper.text()).toContain('Backup settings saved.')
+    wrapper.unmount()
+  })
+  it('preserves simultaneous schedule and public key changes when disabling', async () => {
+    const value = fixture({ configured: true, enabled: true, ready: true })
+    const publicKey = '-----BEGIN PUBLIC KEY-----\nc3ludGhldGlj\n-----END PUBLIC KEY-----'
+    vi.mocked(loadBackupStatus).mockResolvedValue(value)
+    const wrapper = mount(BackupPanel)
+    await flushPromises()
+    await wrapper.get('input[type="checkbox"]').setValue(false)
+    const numbers = wrapper.findAll('input[type="number"]')
+    await numbers[0].setValue('12')
+    await numbers[1].setValue('7')
+    await wrapper.get('textarea').setValue(publicKey)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(configureBackups).toHaveBeenCalledTimes(1)
+    expect(configureBackups).toHaveBeenCalledWith({
+      enabled: false,
+      interval_hours: 12,
+      keep_last: 7,
+      recipient_public_key: publicKey,
     })
     wrapper.unmount()
   })

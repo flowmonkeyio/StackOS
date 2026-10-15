@@ -60,7 +60,10 @@ def test_local_console_configuration_preserves_enrolled_targets(api, settings, t
     disabled = call(api, "backup.configure", {"enabled": False}, ui)
     assert disabled.status_code == 200, disabled.text
     assert disabled.json()["data"]["enabled"] is False
+    assert disabled.json()["data"]["ready"] is False
+    assert disabled.json()["data"]["targets"][0]["id"] == "finance"
     assert backups.load_policy(settings).enabled is False
+    assert backups.run_due_backup(settings) == {"status": "skipped", "reason": "disabled"}
 
 
 def test_backup_controls_reject_absent_forged_run_and_secret_inputs(api, settings):

@@ -1405,6 +1405,8 @@ def test_cli_install_mcp_only_registers_claude_with_fake_cli(
     state_path = tmp_path / "claude-state.json"
     _write_fake_claude_cli(bin_dir, state_path)
     monkeypatch.setenv("PATH", str(bin_dir))
+    # Keep optional Codex discovery inside this fixture, not installed host binaries.
+    monkeypatch.setenv("STACKOS_CODEX_BIN", str(bin_dir / "codex"))
 
     result = CliRunner().invoke(
         app,

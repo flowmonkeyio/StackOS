@@ -46,7 +46,8 @@ existing settings and targets.
 Creation and recovery share the same archive member rules. Unsupported names,
 including backslashes in POSIX filenames, fail creation before publication or
 retention can replace a usable archive. Path boundaries conservatively reject
-case-only overlaps, including aliases on case-insensitive macOS volumes.
+case-only and Unicode-normalization overlaps, including equivalent directory
+spellings on macOS volumes.
 
 The recovery key generator records private key exclusions. Later enrollment
 of that key's parent folder is rejected, and copying the matching private key
@@ -75,7 +76,9 @@ stackos backups configure --disabled
 ```
 
 A pure disable remains available when an enrolled source, lock or destination
-has become unsafe. Enabling or changing coverage still validates those paths.
+has become unsafe. In Home, turn off automatic backups and save without other
+settings changes to use this action. Enabling or changing other settings still
+validates those paths.
 Scheduled history stores compact retention receipts, with at most 366 records
 (365 retained archives plus a newly published archive awaiting pruning). Older
 destinations and files that cannot be pruned cannot grow this metadata without

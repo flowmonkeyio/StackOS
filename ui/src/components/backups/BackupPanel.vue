@@ -74,8 +74,12 @@ async function save(): Promise<void> {
     applyStatus(
       await configureBackups({
         enabled: enabled.value,
-        interval_hours: Number(interval.value),
-        keep_last: Number(keepLast.value),
+        ...(Number(interval.value) !== status.value?.interval_hours
+          ? { interval_hours: Number(interval.value) }
+          : {}),
+        ...(Number(keepLast.value) !== status.value?.keep_last
+          ? { keep_last: Number(keepLast.value) }
+          : {}),
         ...(publicKey.value.trim() ? { recipient_public_key: publicKey.value.trim() } : {}),
       }),
     )

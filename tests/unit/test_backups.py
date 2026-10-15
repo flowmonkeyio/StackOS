@@ -34,7 +34,7 @@ from stackos.backups import (
     service,
     update_policy,
 )
-from stackos.backups.filesystem import backup_lock
+from stackos.backups.filesystem import backup_lock, inside, overlap
 from stackos.config import Settings
 
 SENTINEL = b"synthetic-provider-secret-no-real-account"
@@ -918,6 +918,54 @@ def test_case_aliases_cannot_bypass_backup_path_boundaries(workspace, tmp_path, 
     assert caught.value.code == expected
     assert not (alias / "private.pem").exists()
     assert not (alias / "recovered").exists()
+
+
+@pytest.mark.parametrize(
+    ("root_name", "alias_name"),
+    [
+        ("caf\u00e9", "cafe\u0301"),
+        ("cafe\u0301", "caf\u00e9"),
+        ("CAF\u00c9", "cafe\u0301"),
+        ("\u1e0a\u0323", "d\u0323\u0307"),
+    ],
+)
+def test_backup_containment_compares_canonical_unicode_components(root_name, alias_name):
+    root = Path("/synthetic") / root_name
+    alias = Path("/synthetic") / alias_name
+    assert inside(alias, root)
+    assert inside(alias / "fresh-output", root)
+    assert overlap(root, alias / "fresh-output")
+    assert overlap(alias / "fresh-output", root)
+    assert not inside(alias.with_name(alias_name + "-sibling"), root)
+    assert not inside(Path("/synthetic/cafe"), root)
+
+
+@pytest.mark.parametrize("operation", ["destination", "keygen", "restore"])
+def test_unicode_filesystem_aliases_cannot_enter_protected_roots(
+    workspace, tmp_path, monkeypatch, operation
+):
+    original_settings, _, private, *_ = workspace
+    archive = Path(create_backup(original_settings)["path"])
+    settings = original_settings.model_copy(update={"data_dir": tmp_path / "caf\u00e9"})
+    settings.generated_assets_dir.mkdir(parents=True)
+    alias = tmp_path / "cafe\u0301" / "generated-assets"
+    if not alias.exists() or not os.path.samefile(alias, settings.generated_assets_dir):
+        pytest.skip("The test filesystem distinguishes canonical Unicode spellings")
+
+    def forbidden_staging(*args, **kwargs):
+        pytest.fail("Protected recovery output must be rejected before plaintext staging")
+
+    monkeypatch.setattr(recovery.tempfile, "TemporaryDirectory", forbidden_staging)
+    with pytest.raises(BackupError) as caught:
+        if operation == "destination":
+            update_policy(settings, {"destination": str(alias / "backups")})
+        elif operation == "keygen":
+            generate_recovery_key(settings, alias / "private.pem", tmp_path / "public.pem")
+        else:
+            restore_backup(settings, archive, private, alias / "recovered")
+    expected = "recovery_key_capture" if operation == "keygen" else "unsafe_destination"
+    assert caught.value.code == expected
+    assert list(settings.generated_assets_dir.iterdir()) == []
 
 
 def test_maximum_policy_history_stays_readable_and_prunes_verified_archives(workspace, tmp_path):
