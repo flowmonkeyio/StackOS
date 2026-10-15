@@ -274,6 +274,42 @@ Use [`task-tracker.md`](./task-tracker.md) for project work state. The tracker
 is not the grant boundary; it is the navigation and lifecycle mirror for tasks,
 tickets, dependencies, and verification.
 
+## Private launch accounting source seam
+
+`RunRepository._reserve_owner_launch` is a private source seam for the
+cooperative host integration. Its only consumer currently is synthetic
+repository proof; there is no public operation or host launcher. It requires a
+matched running controller and the caller's existing authority commit guard.
+The host must independently verify the admitted manifest and actual current
+step/grant authority; an owner string, digest or callback's presence cannot
+establish those facts by itself.
+
+One owner CAS transaction creates the bound child audit Run, reserves the stable
+intent under ownership continuity, charges one attempt, invalidates old
+quiescence certification and records audit. Only a newly committed reservation
+returns `launch_permit=true`; this is a reservation result, not permission to
+spawn. A matching duplicate returns the existing Run with no permit or charge,
+or conflicts on a stale fence. Lost responses, new epochs and terminal runs
+cannot turn the original intent into another permit. Reservations are retained,
+never evicted into permission to relaunch. Accounting reuses the same monotone
+budget calculation as `owner_consume`, including a check under the writer lock.
+
+`_record_owner_launch_receipt` stores only an already verified receipt
+fingerprint for the exact reserved, same-epoch, nonterminal child. An identical
+receipt can replay without another write; contradictory, stale-epoch and
+terminal receipts reject before replay. It never changes terminal status,
+reason or disposition, accepts work, or certifies process/effect quiescence.
+Generic Run metadata writes and caller-supplied canonical continuity cannot
+forge the derived reservation/receipt namespaces. These are integrity checks
+for cooperative callers, not hostile same-UID isolation or receipt
+authentication. Terminal historical control facts need their separately
+admitted reconciliation path; this slice supplies none.
+
+Actual launch/barrier release, manifest and receipt authentication, host
+deadline/cancellation, effect disposition and loaded-interface proof remain
+with the existing MYB-95/93/100 owners and their applicable acceptance gates.
+Source tests activate no workflow, grant, daemon or worker.
+
 ## UI
 
 The Runs UI renders generic run and run-plan state. The Tasks UI renders the

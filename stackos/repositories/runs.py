@@ -151,6 +151,14 @@ class OwnershipAttemptOut(BaseModel):
     attempt: RunOut
 
 
+class _LaunchReservationOut(OwnershipAttemptOut):
+    launch_permit: bool
+
+
+class _LaunchReceiptOut(OwnershipAttemptOut):
+    recorded: bool
+
+
 # ---------------------------------------------------------------------------
 # RunRepository.
 # ---------------------------------------------------------------------------
@@ -228,6 +236,8 @@ class RunRepository:
         )
         assert native is not None
         continuity = (native.metadata_json or {}).get("ownership_continuity")
+        if isinstance(continuity, dict) and "launch_reservations" in continuity:
+            raise ValidationError("launch reservations are derived by the private run owner")
         if not isinstance(continuity, dict) or any(
             not isinstance(continuity.get(key), str)
             or not continuity[key].strip()
@@ -423,6 +433,8 @@ class RunRepository:
         current = (native.metadata_json or {}).get("ownership_continuity")
         if not isinstance(current, dict):
             raise ConflictError("current canonical continuity is unknown; adjudication required")
+        if "launch_reservations" in current:
+            raise ConflictError("canonical metadata cannot supply private launch reservations")
         if any(type(current.get(key)) is not bool for key in ("stopped", "denied")) or any(
             type(current.get(key)) is not int or current[key] < 0
             for key in ("attempts_used", "failures_used")
@@ -475,16 +487,42 @@ class RunRepository:
         if not evidence_ref or len(evidence_ref) > 1000:
             raise ValidationError("bounded consumption evidence reference required")
         row = self._owner_row(project_id=project_id, canonical_item_id=canonical_item_id)
-        if row.scope_digest != scope_digest:
+        continuity = self._owner_consumption_values(
+            ownership=WorkItemOwnershipOut.model_validate(row),
+            scope_digest=scope_digest,
+            attempts_delta=attempts_delta,
+            failures_delta=failures_delta,
+            evidence_ref=evidence_ref,
+        )
+        return self._owner_cas(
+            row,
+            owner_ref=owner_ref,
+            expected_epoch=expected_epoch,
+            expected_revision=expected_revision,
+            changes={"continuity_json": continuity, "quiescence_revision": None},
+            event_type="WORK_ITEM_OWNER_CONSUMPTION_RECORDED",
+        )
+
+    def _owner_consumption_values(
+        self,
+        *,
+        ownership: WorkItemOwnershipOut,
+        scope_digest: str,
+        attempts_delta: int,
+        failures_delta: int,
+        evidence_ref: str,
+    ) -> dict[str, Any]:
+        """Calculate accounting without committing, for the existing writer transaction."""
+        if ownership.scope_digest != scope_digest:
             raise ConflictError("ownership scope changed; adjudication required")
         current = self.owner_authority(
-            project_id=project_id,
-            canonical_item_id=canonical_item_id,
-            ownership=WorkItemOwnershipOut.model_validate(row),
+            project_id=ownership.project_id,
+            canonical_item_id=ownership.canonical_item_id,
+            ownership=ownership,
             allow_stopped=True,
             require_budget=True,
         )
-        continuity = deepcopy(row.continuity_json)
+        continuity = deepcopy(ownership.continuity_json)
         stopped = bool(continuity["stopped"] or current["stopped"])
         denied = bool(continuity["denied"] or current["denied"])
         attempts = max(continuity["attempts_used"], current["attempts_used"])
@@ -505,14 +543,319 @@ class RunRepository:
         )
         if failures >= current["failure_limit"] and not continuity.get("stop_reason_ref"):
             continuity["stop_reason_ref"] = evidence_ref
-        return self._owner_cas(
-            row,
+        return continuity
+
+    def _require_launch_controller(self, project_id: int, controller_run_id: int) -> None:
+        if (
+            self._owner_commit_guard is None
+            or type(controller_run_id) is not int
+            or self._audit_run_id != controller_run_id
+        ):
+            raise ConflictError("private launch admission requires the trusted controller guard")
+        controller = self._s.get(Run, controller_run_id, populate_existing=True)
+        if (
+            controller is None
+            or controller.project_id != project_id
+            or controller.kind != RunKind.RUN_PLAN
+            or controller.status != RunStatus.RUNNING
+        ):
+            raise ConflictError("launch controller is not current in this project")
+
+    def _launch_owner(
+        self,
+        *,
+        project_id: int,
+        canonical_item_id: str,
+        owner_ref: str,
+        scope_digest: str,
+        expected_epoch: int,
+        expected_revision: int,
+        controller_run_id: int,
+    ) -> WorkItemOwnership:
+        self._validate_owner_ref(owner_ref)
+        self._require_launch_controller(project_id, controller_run_id)
+        row = self._owner_row(project_id=project_id, canonical_item_id=canonical_item_id)
+        if (
+            type(expected_epoch) is not int
+            or type(expected_revision) is not int
+            or row.epoch != expected_epoch
+            or row.revision != expected_revision
+            or row.owner_ref != owner_ref
+        ):
+            raise ConflictError("stale ownership fence")
+        self._owner_admissible(row, scope_digest)
+        self.owner_authority(
+            project_id=project_id,
+            canonical_item_id=canonical_item_id,
+            ownership=WorkItemOwnershipOut.model_validate(row),
+            require_budget=True,
+        )
+        return row
+
+    @staticmethod
+    def _validate_launch_refs(intent_ref: str, manifest_digest: str, evidence_ref: str) -> None:
+        if not isinstance(intent_ref, str) or not intent_ref.strip() or len(intent_ref) > 160:
+            raise ValidationError("bounded stable launch intent required")
+        if (
+            not isinstance(evidence_ref, str)
+            or not evidence_ref.strip()
+            or len(evidence_ref) > 1000
+        ):
+            raise ValidationError("bounded launch evidence reference required")
+        if (
+            not isinstance(manifest_digest, str)
+            or len(manifest_digest) != 64
+            or any(c not in "0123456789abcdef" for c in manifest_digest)
+        ):
+            raise ValidationError("launch digest must be SHA-256")
+
+    def _launch_attempt(
+        self,
+        row: WorkItemOwnership,
+        entry: Any,
+        *,
+        controller_run_id: int,
+        intent_ref: str,
+        manifest_digest: str,
+    ) -> Run:
+        if not isinstance(entry, dict) or type(entry.get("attempt_run_id")) is not int:
+            raise ConflictError("launch reservation is unknown; reconcile original intent")
+        binding = dict(
+            canonical_item_id=row.canonical_item_id,
+            owner_ref=row.owner_ref,
+            epoch=row.epoch,
+            scope_digest=row.scope_digest,
+        )
+        if entry != dict(
+            attempt_run_id=entry["attempt_run_id"],
+            controller_run_id=controller_run_id,
+            owner_ref=row.owner_ref,
+            epoch=row.epoch,
+            scope_digest=row.scope_digest,
+            manifest_digest=manifest_digest,
+        ):
+            raise ConflictError("stable launch intent has a different binding; no relaunch")
+        attempt = self._s.get(Run, entry["attempt_run_id"], populate_existing=True)
+        metadata = (attempt.metadata_json or {}) if attempt else {}
+        if (
+            attempt is None
+            or attempt.project_id != row.project_id
+            or attempt.parent_run_id != controller_run_id
+            or attempt.kind != RunKind.SKILL_RUN
+            or metadata.get("ownership_binding") != binding
+            or metadata.get("launch_reservation")
+            != dict(intent_ref=intent_ref, manifest_digest=manifest_digest)
+        ):
+            raise ConflictError("attempt does not match the reserved launch binding")
+        if attempt.status != RunStatus.RUNNING:
+            raise ConflictError("terminal launch attempt cannot admit or replay a receipt")
+        return attempt
+
+    def _reserve_owner_launch(
+        self,
+        *,
+        project_id: int,
+        canonical_item_id: str,
+        owner_ref: str,
+        scope_digest: str,
+        expected_epoch: int,
+        expected_revision: int,
+        controller_run_id: int,
+        intent_ref: str,
+        manifest_digest: str,
+        evidence_ref: str,
+    ) -> _LaunchReservationOut:
+        """Private accounting seam; no process, barrier release or execution authority.
+
+        A future trusted host must verify the admitted manifest and supply the
+        existing current step/grant commit guard. This source slice has no host consumer.
+        """
+        self._validate_launch_refs(intent_ref, manifest_digest, evidence_ref)
+        row = self._launch_owner(
+            project_id=project_id,
+            canonical_item_id=canonical_item_id,
             owner_ref=owner_ref,
+            scope_digest=scope_digest,
             expected_epoch=expected_epoch,
             expected_revision=expected_revision,
-            changes={"continuity_json": continuity, "quiescence_revision": None},
-            event_type="WORK_ITEM_OWNER_CONSUMPTION_RECORDED",
+            controller_run_id=controller_run_id,
         )
+        ledger = deepcopy(row.continuity_json.get("launch_reservations", {}))
+        if not isinstance(ledger, dict):
+            raise ConflictError("launch reservation ledger is unknown")
+        if intent_ref in ledger:
+            attempt = self._launch_attempt(
+                row,
+                ledger[intent_ref],
+                controller_run_id=controller_run_id,
+                intent_ref=intent_ref,
+                manifest_digest=manifest_digest,
+            )
+            assert self._owner_commit_guard is not None
+            self._owner_commit_guard()
+            return _LaunchReservationOut(
+                launch_permit=False,
+                ownership=WorkItemOwnershipOut.model_validate(row),
+                attempt=RunOut.model_validate(attempt),
+            )
+        before = WorkItemOwnershipOut.model_validate(row)
+        accounting = self._owner_consumption_values(
+            ownership=before,
+            scope_digest=scope_digest,
+            attempts_delta=1,
+            failures_delta=0,
+            evidence_ref=evidence_ref,
+        )
+        try:
+            child = self.start(
+                project_id=project_id,
+                kind=RunKind.SKILL_RUN,
+                parent_run_id=controller_run_id,
+                metadata_json={
+                    "ownership_binding": dict(
+                        canonical_item_id=canonical_item_id,
+                        owner_ref=owner_ref,
+                        epoch=expected_epoch,
+                        scope_digest=scope_digest,
+                    )
+                },
+                _commit=False,
+            ).data
+            attempt = self._s.get(Run, child.id)
+            assert attempt is not None
+            attempt.metadata_json = dict(attempt.metadata_json or {}) | {
+                "launch_reservation": dict(intent_ref=intent_ref, manifest_digest=manifest_digest)
+            }
+            self._s.add(attempt)
+            ledger[intent_ref] = dict(
+                attempt_run_id=child.id,
+                controller_run_id=controller_run_id,
+                owner_ref=owner_ref,
+                epoch=expected_epoch,
+                scope_digest=scope_digest,
+                manifest_digest=manifest_digest,
+            )
+            continuity = deepcopy(accounting) | {"launch_reservations": ledger}
+
+            def recheck() -> None:
+                self._require_launch_controller(project_id, controller_run_id)
+                current = self._owner_consumption_values(
+                    ownership=before,
+                    scope_digest=scope_digest,
+                    attempts_delta=1,
+                    failures_delta=0,
+                    evidence_ref=evidence_ref,
+                )
+                if current != accounting:
+                    raise ConflictError(
+                        "canonical accounting changed before launch reservation commit"
+                    )
+
+            ownership = self._owner_cas(
+                row,
+                owner_ref=owner_ref,
+                expected_epoch=expected_epoch,
+                expected_revision=expected_revision,
+                changes={"continuity_json": continuity, "quiescence_revision": None},
+                event_type="WORK_ITEM_OWNER_LAUNCH_RESERVED",
+                admission_scope_digest=scope_digest,
+                before_commit=recheck,
+                event_metadata={"intent_ref": intent_ref, "attempt_run_id": child.id},
+            )
+            return _LaunchReservationOut(
+                launch_permit=True, ownership=ownership, attempt=RunOut.model_validate(attempt)
+            )
+        except Exception:
+            self._s.rollback()
+            raise
+
+    def _record_owner_launch_receipt(
+        self,
+        *,
+        project_id: int,
+        canonical_item_id: str,
+        owner_ref: str,
+        scope_digest: str,
+        expected_epoch: int,
+        expected_revision: int,
+        controller_run_id: int,
+        intent_ref: str,
+        manifest_digest: str,
+        evidence_ref: str,
+        attempt_run_id: int,
+        receipt_digest: str,
+    ) -> _LaunchReceiptOut:
+        """Retain a caller-verified nonterminal receipt fingerprint; never certify cleanup."""
+        self._validate_launch_refs(intent_ref, manifest_digest, evidence_ref)
+        self._validate_launch_refs(intent_ref, receipt_digest, evidence_ref)
+        row = self._launch_owner(
+            project_id=project_id,
+            canonical_item_id=canonical_item_id,
+            owner_ref=owner_ref,
+            scope_digest=scope_digest,
+            expected_epoch=expected_epoch,
+            expected_revision=expected_revision,
+            controller_run_id=controller_run_id,
+        )
+        ledger = row.continuity_json.get("launch_reservations", {})
+        if not isinstance(ledger, dict):
+            raise ConflictError("launch reservation ledger is unknown")
+        attempt = self._launch_attempt(
+            row,
+            ledger.get(intent_ref),
+            controller_run_id=controller_run_id,
+            intent_ref=intent_ref,
+            manifest_digest=manifest_digest,
+        )
+        if type(attempt_run_id) is not int or attempt.id != attempt_run_id:
+            raise ConflictError("receipt names a different attempt")
+        fingerprint = dict(digest=receipt_digest, evidence_ref=evidence_ref)
+        metadata = deepcopy(attempt.metadata_json or {})
+        if "launch_receipt" in metadata:
+            if metadata["launch_receipt"] != fingerprint:
+                raise ConflictError("contradictory launch receipt; reconcile original facts")
+            assert self._owner_commit_guard is not None
+            self._owner_commit_guard()
+            return _LaunchReceiptOut(
+                recorded=False,
+                ownership=WorkItemOwnershipOut.model_validate(row),
+                attempt=RunOut.model_validate(attempt),
+            )
+        metadata["launch_receipt"] = fingerprint
+        try:
+            result = cast(
+                CursorResult[Any],
+                self._s.execute(
+                    update(Run)
+                    .where(
+                        col(Run.id) == attempt.id,
+                        col(Run.status) == RunStatus.RUNNING,
+                        col(Run.metadata_json) == attempt.metadata_json,
+                    )
+                    .values(metadata_json=metadata)
+                ),
+            )
+            if result.rowcount != 1:
+                raise ConflictError("stale or terminal launch receipt")
+            self._s.refresh(attempt)
+            ownership = self._owner_cas(
+                row,
+                owner_ref=owner_ref,
+                expected_epoch=expected_epoch,
+                expected_revision=expected_revision,
+                changes={"quiescence_revision": None},
+                event_type="WORK_ITEM_OWNER_LAUNCH_RECEIPT_RECORDED",
+                before_commit=lambda: self._require_launch_controller(
+                    project_id, controller_run_id
+                ),
+                event_metadata={"intent_ref": intent_ref, "attempt_run_id": attempt.id},
+            )
+            return _LaunchReceiptOut(
+                recorded=True, ownership=ownership, attempt=RunOut.model_validate(attempt)
+            )
+        except Exception:
+            self._s.rollback()
+            raise
 
     def _record_owner_attempt(
         self,
@@ -691,6 +1034,7 @@ class RunRepository:
         require_quiescence: bool = False,
         admission_scope_digest: str | None = None,
         event_metadata: dict[str, Any] | None = None,
+        before_commit: Callable[[], None] | None = None,
     ) -> WorkItemOwnershipOut:
         if (
             row.epoch != expected_epoch
@@ -729,6 +1073,8 @@ class RunRepository:
             if result.rowcount != 1:
                 raise ConflictError("stale ownership fence")
             self._s.refresh(row)
+            if before_commit is not None:
+                before_commit()
             return self._owner_commit(row, event_type, event_metadata)
         except Exception:
             self._s.rollback()
@@ -883,7 +1229,13 @@ class RunRepository:
     def _validate_run_annotation_owner(metadata_json: dict[str, Any] | None) -> None:
         if (
             metadata_json
-            and {"ownership_observation", "ownership_disposition"} & metadata_json.keys()
+            and {
+                "ownership_observation",
+                "ownership_disposition",
+                "launch_reservation",
+                "launch_receipt",
+            }
+            & metadata_json.keys()
         ):
             raise ValidationError("ownership annotations must use the fenced attempt owner")
 
