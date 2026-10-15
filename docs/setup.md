@@ -307,18 +307,23 @@ database under `~/.local/share/stackos/` and daemon state under
 
 ## Backup
 
-Before serious upgrades or machine moves, export the minimal local state needed
-for operator-guided recovery:
+Before serious upgrades or machine moves, configure an independent recovery
+key and enroll external finance folders using [backup setup](./backups.md).
+Create an encrypted archive:
 
 ```bash
-stackos backup --output ~/Desktop/stackos-backup.zip
+stackos backup --output /private-backups/stackos/manual.sbak
 ```
 
-The backup contains `stackos.db`, `seed.bin`, `auth.token`, and
-`manifest.json`, and is written with mode `0600`. Automated restore is not
-implemented yet. It does not include TDLib's Account-owned native database;
-Telegram user Accounts need a new sign-in after restoring only this archive on
-another machine. An in-place upgrade preserves the native database.
+Every new backup encrypts `stackos.db`, its matching `seed.bin`, `auth.token`,
+the manifest and every enrolled external folder. Files are private (`0600`).
+Automatic backups require explicit opt-in and start disabled. Home and
+`stackos backups status` show coverage and the last success or failure.
+`stackos restore` verifies recovery into a fresh inert folder; it requires the
+separately stored private recovery key. It does not include TDLib's
+Account-owned native database; Telegram user Accounts need a new sign-in after
+archive-only recovery on another machine. An in-place upgrade preserves that
+native database. Existing plaintext ZIP backups remain plaintext.
 
 ## First Run In The UI
 

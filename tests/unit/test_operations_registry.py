@@ -11,7 +11,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 219
+    assert len(names) == 222
     assert not names.intersection(
         {"actionCall.aggregate", "actionCall.aggregateAll", "actionCall.queryAll"}
     )
@@ -80,6 +80,9 @@ def test_operation_registry_documents_core_operations() -> None:
         "browser.runtime.status",
         "browser.session.start",
         "guide.gettingStarted",
+        "backup.status",
+        "backup.configure",
+        "backup.create",
     } <= names
 
     getting_started = registry.get("guide.gettingStarted").describe_out()

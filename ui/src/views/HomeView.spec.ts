@@ -29,6 +29,11 @@ describe('HomeView', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('Local service'))
 
     expect(wrapper.text()).toContain('Running')
+    expect(wrapper.text()).toContain('Local backups')
+    expect(wrapper.get('[aria-label="Local backups"]').text()).toContain('Automatic backups are off')
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      '/api/v1/operations/backup.status/call', expect.anything(),
+    )
     const service = wrapper.get('[aria-label="System status"]')
     expect(service.findAll('button').map((button) => button.text())).toEqual([
       'Restart',
@@ -235,6 +240,13 @@ async function mountHome() {
 }
 
 function defaultFetch(url: string): Response {
+  if (url === '/api/v1/operations/backup.status/call') {
+    return json({
+      configured: false, ready: false, enabled: false, interval_hours: 24,
+      keep_last: 30, destination: '/private/backups', targets: [],
+      recipient_fingerprint: null, last_attempt: null, last_success: null, last_error: null,
+    })
+  }
   if (url === '/api/v1/operations/tracker.ticketCountsAll/call') {
     return json(ticketSummaryFixture())
   }

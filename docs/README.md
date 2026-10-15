@@ -10,6 +10,7 @@ obvious without loading every document.
 | Understanding what StackOS is or evaluating a proposed product change | [`product-direction.md`](./product-direction.md), [`architecture.md`](./architecture.md), [`agent-operating-model.md`](./agent-operating-model.md) |
 | Helping a person take the first steps after installing StackOS | [Public getting-started guide](https://stackos.flowmonkey.io/getting-started); use [`setup.md`](./setup.md) only for the technical install and repair contract |
 | Installing, starting, repairing, or lifecycle-smoke testing StackOS | [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`lifecycle-smoke-verification.md`](./lifecycle-smoke-verification.md), [`security.md`](./security.md) |
+| Backing up local state and external finance folders, opting in to automatic backups, or verifying recovery | [`backups.md`](./backups.md), [`security.md`](./security.md), [`upgrade.md`](./upgrade.md) |
 | Adding, repairing, or explaining ChatGPT, Codex, Claude, Gemini, or Hermes host connections | [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`lifecycle-smoke-verification.md`](./lifecycle-smoke-verification.md) |
 | Building the macOS desktop app or installer | [`desktop-distribution.md`](./desktop-distribution.md), [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`security.md`](./security.md), [`release-signoff.md`](./release-signoff.md) |
 | Renaming this repository for release | [`repository-rename.md`](./repository-rename.md), [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md) |

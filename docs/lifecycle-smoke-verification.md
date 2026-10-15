@@ -97,21 +97,30 @@ Confirm preserved:
 
 ### Backup
 
-In a temp home with a real SQLite DB, seed, and token:
+In an isolated temp home with a synthetic SQLite DB, seed, token and finance
+folder, follow [backup setup](./backups.md). Keep test recovery keys outside
+the data/state, finance and archive directories:
 
 ```bash
-STACKOS_HOME="$tmp_home" HOME="$tmp_home" .venv/bin/python -m stackos backup --output "$tmp/backup.zip"
+STACKOS_HOME="$tmp_home" HOME="$tmp_home" .venv/bin/python -m stackos backup --output "$tmp/archive.sbak"
+STACKOS_HOME="$tmp_home" HOME="$tmp_home" .venv/bin/python -m stackos restore "$tmp/archive.sbak" --private-key-file "$tmp_keys/private.pem" --output-dir "$tmp/recovered"
 ```
 
 Confirm:
 
 - archive mode is `0600`
-- archive includes `manifest.json`, `data/stackos.db`, `state/seed.bin`, and
-  `state/auth.token`
-- archive includes `state/seed.bin.bak` when a staged seed backup exists
-- manifest schema is `stackos.local-backup.v1`
-- manifest says automated restore is not implemented
-- copied SQLite DB opens and contains expected data
+- archive is encrypted; raw bytes reveal neither token nor finance originals
+- verified recovery includes manifest, `data/stackos.db`, `state/seed.bin`,
+  `state/auth.token` and `state/seed.bin.bak` when present
+- every enrolled finance original/master/review matches the source bytes/hash
+- copied SQLite DB passes integrity and contains expected WAL-committed data
+- wrong key, tampering, unsafe members, busy writer and missing targets fail
+  without publishing partial archives or recovery folders
+- fresh startup makes no backups; explicit enable survives restart, due work
+  creates a recoverable archive, and disable stops subsequent execution
+- a failed attempt preserves the previous success and manual archives survive
+  scheduled retention
+- recovery never overwrites live files or activates a schedule
 
 ## Closeout
 

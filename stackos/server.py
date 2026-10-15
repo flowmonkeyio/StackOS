@@ -8,6 +8,7 @@ Lifespan ensures dirs/seed/token before the first request lands.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import secrets
 import stat
@@ -16,6 +17,7 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
 
+from apscheduler.events import EVENT_SCHEDULER_SHUTDOWN
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,6 +34,7 @@ from stackos.actions.durable_dispatcher import DurableActionDispatcher
 from stackos.actions.telegram import TelegramActionConnector
 from stackos.api import register_routers
 from stackos.auth import BearerTokenMiddleware, derive_ui_token, ensure_token
+from stackos.backups import run_due_backup
 from stackos.config import Settings, get_settings
 from stackos.crypto import cleanup_old_backup
 from stackos.crypto.aes_gcm import configure_seed_path
@@ -72,6 +75,7 @@ _PUBLIC_INGRESS_PREFIXES: tuple[str, ...] = (
 _OAUTH_CALLBACK_PATH = "/api/v1/auth/oauth/callback"
 _SLOW_REQUEST_MS = 100
 _PRIVATE_TRANSFER_STAGING_ROOTS = ("imap-transfers", "stripe-invoice-transfers")
+BACKUP_MAINTENANCE_JOB_ID = "background-encrypted-backups"
 
 
 class GeneratedAssetsStaticFiles(StaticFiles):
@@ -329,6 +333,18 @@ def _build_lifespan(
             jobstore="memory",
             misfire_grace_time=REAPER_MISFIRE_GRACE_SECONDS,
         )
+        scheduler.add_job(
+            run_due_backup,
+            kwargs={"settings": settings},
+            trigger=IntervalTrigger(minutes=5),
+            id=BACKUP_MAINTENANCE_JOB_ID,
+            name="encrypted local backup maintenance",
+            replace_existing=True,
+            jobstore="memory",
+            executor="long",
+            coalesce=True,
+            max_instances=1,
+        )
 
         try:
             scheduler.start()
@@ -355,12 +371,19 @@ def _build_lifespan(
                 try:
                     await telegram_runtime.close_all()
                 finally:
-                    # Drain the scheduler before disposing the engine so any
-                    # in-flight short job finishes its DB writes cleanly.
+                    # AsyncIOScheduler.shutdown queues a callback. Await its
+                    # completion event before disposing state; wait=True drains
+                    # the long executor's backup thread inside that callback.
                     import contextlib as _ctx_lib
 
                     with _ctx_lib.suppress(Exception):  # pragma: no cover — defensive
-                        scheduler.shutdown(wait=True)
+                        if scheduler.running:
+                            stopped = asyncio.Event()
+                            scheduler.add_listener(
+                                lambda _event: stopped.set(), EVENT_SCHEDULER_SHUTDOWN
+                            )
+                            scheduler.shutdown(wait=True)
+                            await stopped.wait()
                     app.state.scheduler_running = False
                     engine.dispose()
 

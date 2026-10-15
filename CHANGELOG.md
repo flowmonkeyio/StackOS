@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.1.37 - 2026-10-15
+
+- Encrypt all new backups with an independent recovery key, including the
+  database, matching credential seed, daemon token and explicitly enrolled
+  external finance folders with invoice originals and review evidence.
+- Add opt-in automatic backups, retention, coverage and failure status through
+  local CLI setup and global Home controls. Fresh and upgraded installs remain
+  disabled until configured and enabled.
+- Replace the restore placeholder with authenticated, verified recovery into
+  a fresh inert directory. Existing plaintext ZIP archives remain plaintext.
+- Reject canonically equivalent macOS paths at backup and recovery boundaries,
+  and allow automatic backups to be disabled when their setup needs repair.
+- Include the published `stackos-connectors==0.2.8` package in the desktop runtime.
+
 ## 2.1.36 - 2026-10-09
 
 - Let global chats start without creating a project or folder binding. Agents
