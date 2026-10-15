@@ -193,6 +193,21 @@ def owner_request_digest(name: str, inp: OwnerAcquireInput, ctx: MCPContext) -> 
     return digest
 
 
+def _validate_owner_counter_floor(name: str, inp: OwnerAcquireInput, repo: RunRepository) -> None:
+    if name in {"run.ownerStop", "run.ownerReassign", "run.ownerRecordAttempt"}:
+        return
+    row = repo.owner_get(project_id=inp.project_id, canonical_item_id=inp.canonical_item_id)
+    source = repo.owner_authority(
+        project_id=inp.project_id,
+        canonical_item_id=inp.canonical_item_id,
+        ownership=row,
+        allow_stopped=True,
+        require_budget=True,
+    )
+    if any(row.continuity_json[key] < source[key] for key in ("attempts_used", "failures_used")):
+        raise ConflictError("canonical counters advanced; reconcile continuity before publication")
+
+
 def _owner_preflight(name: str, inp: OwnerAcquireInput, ctx: MCPContext) -> RunRepository:
     plan, step = active_run_plan_step(ctx, name)
     execution_fence = (ctx.run_id, plan.id, step.id, inp.canonical_item_id)
@@ -205,24 +220,7 @@ def _owner_preflight(name: str, inp: OwnerAcquireInput, ctx: MCPContext) -> RunR
         ctx.session.expire_all()
         check_call_grant(name, ctx, inp)
         current_repo = _owner_preflight(name, inp, ctx)
-        if name not in {"run.ownerStop", "run.ownerReassign", "run.ownerRecordAttempt"}:
-            current_row = current_repo.owner_get(
-                project_id=inp.project_id, canonical_item_id=inp.canonical_item_id
-            )
-            current_source = current_repo.owner_authority(
-                project_id=inp.project_id,
-                canonical_item_id=inp.canonical_item_id,
-                ownership=current_row,
-                allow_stopped=True,
-                require_budget=True,
-            )
-            if any(
-                current_row.continuity_json[key] < current_source[key]
-                for key in ("attempts_used", "failures_used")
-            ):
-                raise ConflictError(
-                    "canonical counters advanced; reconcile continuity before publication"
-                )
+        _validate_owner_counter_floor(name, inp, current_repo)
 
     repo = RunRepository(
         ctx.session, audit_run_id=ctx.run_id, owner_commit_guard=current_commit_authority
@@ -292,6 +290,7 @@ def validate_owner_replay(
     if data.get("request_digest") != owner_request_digest(name, inp, ctx):
         raise ConflictError("ownership idempotency key belongs to another request/context")
     repo = _owner_preflight(name, inp, ctx)
+    _validate_owner_counter_floor(name, inp, repo)
     current = repo.owner_get(project_id=inp.project_id, canonical_item_id=inp.canonical_item_id)
     if current.model_dump(mode="json") != data.get("ownership"):
         raise ConflictError("cached ownership fence is stale; read current assignment")

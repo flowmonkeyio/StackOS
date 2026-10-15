@@ -431,6 +431,82 @@ def test_owner_request_bound_replay_and_stale_cached_fence(
     assert "stale" in stale["data"]["detail"]
 
 
+@pytest.mark.parametrize(
+    ("counter", "limit"),
+    [("attempts_used", "attempt_limit"), ("failures_used", "failure_limit")],
+)
+def test_owner_checkpoint_replay_rechecks_current_canonical_counter_floor(
+    mcp_client: MCPClient,
+    owned: dict,
+    counter: str,
+    limit: str,
+) -> None:
+    first = _acquire(mcp_client, owned)["ownership"]
+    arguments = _arguments(
+        owned,
+        **_fence(first),
+        checkpoint_ref="evidence:criterion",
+        idempotency_key="fixture:checkpoint-counter-floor",
+    )
+    checkpoint = mcp_client.call_tool_structured("run.ownerCheckpoint", arguments)
+    row = checkpoint["data"]["ownership"]
+    assert row["continuity_json"][counter] == 0
+    unchanged = mcp_client.call_tool_structured("run.ownerCheckpoint", arguments)
+    assert unchanged["data"] == checkpoint["data"]
+    assert unchanged["idempotency_replay"] is True
+
+    with Session(owned["engine"]) as session:
+        ticket = session.get(TrackerTicket, int(owned["canonical_item_id"].split(":")[1]))
+        metadata = deepcopy(ticket.metadata_json)
+        metadata["ownership_continuity"][counter] = metadata["ownership_continuity"][limit]
+    updated = mcp_client.call_tool_structured(
+        "tracker.updateTicket",
+        {
+            "project_id": owned["project_id"],
+            "ticket_key": "ownership-work",
+            "patch_json": {"metadata_json": metadata},
+            "actor": "fixture:canonical-accounting",
+            "response_mode": "raw",
+        },
+    )
+    assert updated["data"]["ticket"]["metadata_json"] == metadata
+    with Session(owned["engine"]) as session:
+        before = (
+            RunRepository(session)
+            .owner_get(project_id=owned["project_id"], canonical_item_id=owned["canonical_item_id"])
+            .model_dump(mode="json")
+        )
+        assert before == row
+        events_before = [event.id for event in session.exec(select(ProjectEvent)).all()]
+
+    fresh_error = mcp_client.call_tool_error(
+        "run.ownerCheckpoint",
+        _arguments(
+            owned,
+            **_fence(row),
+            checkpoint_ref="evidence:fresh-checkpoint-with-stale-counters",
+        ),
+    )
+    replay_error = mcp_client.call_tool_error("run.ownerCheckpoint", arguments)
+    with Session(owned["engine"]) as session:
+        current = (
+            RunRepository(session)
+            .owner_get(project_id=owned["project_id"], canonical_item_id=owned["canonical_item_id"])
+            .model_dump(mode="json")
+        )
+        ticket = session.get(TrackerTicket, int(owned["canonical_item_id"].split(":")[1]))
+        assert current == before
+        assert current["continuity_json"][counter] == 0
+        assert ticket.metadata_json == metadata
+        assert (
+            ticket.metadata_json["ownership_continuity"][counter]
+            == metadata["ownership_continuity"][limit]
+        )
+        assert [event.id for event in session.exec(select(ProjectEvent)).all()] == events_before
+    assert fresh_error.get("code") == -32008, fresh_error
+    assert replay_error.get("code") == fresh_error["code"], replay_error
+
+
 def test_owner_continuity_cannot_reset_or_extend_budget(
     mcp_client: MCPClient,
     owned: dict,
@@ -609,6 +685,161 @@ def test_owner_reported_activity_and_terminal_attempt_do_not_accept_ticket(
         ),
     )
     assert "terminal attempt" in error["data"]["detail"]
+
+
+def _review_ready_owned_attempt(mcp_client: MCPClient, owned: dict) -> tuple[dict, int]:
+    row = _acquire(mcp_client, owned)["ownership"]
+    with Session(owned["engine"]) as session:
+        attempt_id = (
+            RunRepository(session)
+            .start(
+                project_id=owned["project_id"],
+                kind=RunKind.SKILL_RUN,
+                parent_run_id=owned["run_id"],
+                metadata_json={
+                    "ownership_binding": {
+                        "canonical_item_id": owned["canonical_item_id"],
+                        "owner_ref": owned["owner_ref"],
+                        "epoch": row["epoch"],
+                        "scope_digest": SCOPE,
+                    }
+                },
+            )
+            .data.id
+        )
+    for observation in ("running", "review_ready"):
+        result = mcp_client.call_tool_structured(
+            "run.ownerRecordAttempt",
+            _arguments(
+                owned,
+                **_fence(row),
+                attempt_run_id=attempt_id,
+                observation=observation,
+                evidence_ref=f"fixture:{observation}",
+            ),
+        )
+        row = result["data"]["ownership"]
+    return row, attempt_id
+
+
+def _owned_attempt_snapshot(owned: dict, attempt_id: int) -> dict:
+    with Session(owned["engine"]) as session:
+        return {
+            "ownership": (
+                RunRepository(session)
+                .owner_get(
+                    project_id=owned["project_id"], canonical_item_id=owned["canonical_item_id"]
+                )
+                .model_dump(mode="json")
+            ),
+            "attempt": session.get(Run, attempt_id).model_dump(mode="json"),
+            "ticket": session.get(
+                TrackerTicket, int(owned["canonical_item_id"].split(":")[1])
+            ).model_dump(mode="json"),
+            "events": [event.id for event in session.exec(select(ProjectEvent)).all()],
+        }
+
+
+@pytest.mark.parametrize("observation", ["blocked", "scope_drift"])
+def test_owner_successful_production_can_record_review_rejection_without_reactivation(
+    mcp_client: MCPClient,
+    owned: dict,
+    observation: str,
+) -> None:
+    row, attempt_id = _review_ready_owned_attempt(mcp_client, owned)
+    ticket_before = _owned_attempt_snapshot(owned, attempt_id)["ticket"]
+    finished = mcp_client.call_tool_structured(
+        "run.ownerRecordAttempt",
+        _arguments(
+            owned,
+            **_fence(row),
+            attempt_run_id=attempt_id,
+            disposition="succeeded",
+            evidence_ref="fixture:production-result",
+        ),
+    )["data"]
+    assert finished["attempt"]["status"] == "success"
+    assert finished["attempt"]["ended_at"] is not None
+    disposition = deepcopy(finished["attempt"]["metadata_json"]["ownership_disposition"])
+    assert disposition["state"] == "succeeded"
+    annotated = mcp_client.call_tool_structured(
+        "run.ownerRecordAttempt",
+        _arguments(
+            owned,
+            **_fence(finished["ownership"]),
+            attempt_run_id=attempt_id,
+            observation=observation,
+            evidence_ref="fixture:review-rejection",
+        ),
+    )
+    assert "ownership" in annotated.get("data", {}), annotated
+    result = annotated["data"]
+    assert result["attempt"]["status"] == "success"
+    assert result["attempt"]["ended_at"] == finished["attempt"]["ended_at"]
+    assert result["attempt"]["metadata_json"]["ownership_disposition"] == disposition
+    reported = result["attempt"]["metadata_json"]["ownership_observation"]
+    assert reported["state"] == observation
+    assert reported["evidence_ref"] == "fixture:review-rejection"
+    assert result["ownership"]["epoch"] == finished["ownership"]["epoch"]
+    assert result["ownership"]["revision"] == finished["ownership"]["revision"] + 1
+    assert result["ownership"]["continuity_json"] == finished["ownership"]["continuity_json"]
+    before = _owned_attempt_snapshot(owned, attempt_id)
+    assert before["ticket"] == ticket_before
+    assert before["attempt"]["status"] == "success"
+    for forbidden in (
+        {"observation": "running", "clearance_ref": "fixture:clearance"},
+        {"observation": "waiting", "clearance_ref": "fixture:clearance"},
+        {"disposition": "failed"},
+    ):
+        error = mcp_client.call_tool_error(
+            "run.ownerRecordAttempt",
+            _arguments(
+                owned,
+                **_fence(result["ownership"]),
+                attempt_run_id=attempt_id,
+                evidence_ref="fixture:forbidden-terminal-change",
+                **forbidden,
+            ),
+        )
+        assert error.get("code") == -32008, error
+        assert _owned_attempt_snapshot(owned, attempt_id) == before
+
+
+@pytest.mark.parametrize("disposition", ["cancelled", "failed"])
+@pytest.mark.parametrize("observation", ["blocked", "scope_drift"])
+def test_owner_unsuccessful_terminal_attempt_still_rejects_review_annotations(
+    mcp_client: MCPClient,
+    owned: dict,
+    disposition: str,
+    observation: str,
+) -> None:
+    row, attempt_id = _review_ready_owned_attempt(mcp_client, owned)
+    finished = mcp_client.call_tool_structured(
+        "run.ownerRecordAttempt",
+        _arguments(
+            owned,
+            **_fence(row),
+            attempt_run_id=attempt_id,
+            disposition=disposition,
+            evidence_ref=f"fixture:{disposition}",
+        ),
+    )["data"]
+    assert (
+        finished["attempt"]["status"] == {"cancelled": "aborted", "failed": "failed"}[disposition]
+    )
+    before = _owned_attempt_snapshot(owned, attempt_id)
+    error = mcp_client.call_tool_error(
+        "run.ownerRecordAttempt",
+        _arguments(
+            owned,
+            **_fence(finished["ownership"]),
+            attempt_run_id=attempt_id,
+            observation=observation,
+            evidence_ref="fixture:forbidden-terminal-annotation",
+        ),
+    )
+    assert error.get("code") == -32008, error
+    assert _owned_attempt_snapshot(owned, attempt_id) == before
 
 
 def test_owner_reassignment_requires_backend_evidence_and_retains_continuity(

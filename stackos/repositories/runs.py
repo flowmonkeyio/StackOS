@@ -563,12 +563,16 @@ class RunRepository:
         ):
             raise ConflictError("attempt is not bound to this controller/item/epoch")
         status = attempt.status
+        previous = metadata.get("ownership_observation", {}).get("state")
         accepted_annotation = observation == RunObservationState.ACCEPTED_COMPLETION
+        review_annotation = previous == RunObservationState.REVIEW_READY and observation in {
+            RunObservationState.BLOCKED,
+            RunObservationState.SCOPE_DRIFT,
+        }
         if status != RunStatus.RUNNING and not (
-            accepted_annotation and status == RunStatus.SUCCESS
+            status == RunStatus.SUCCESS and (accepted_annotation or review_annotation)
         ):
             raise ConflictError("terminal attempt cannot reactivate or change disposition")
-        previous = metadata.get("ownership_observation", {}).get("state")
         target_status: RunStatus
         if observation is not None:
             if previous is None and observation != RunObservationState.RUNNING:
