@@ -8,10 +8,11 @@ does not enroll a folder or authorize filesystem access.
 
 Automatic backups are disabled on fresh and upgraded installations. Setup is
 local operator administration through the CLI or the Local backups panel in
-Setup. The panel manages this StackOS installation and enrolled folders across
-projects, regardless of which project's Setup page is open. These controls
-are unavailable to ordinary MCP agents. Backup creation needs only a public
-key; recovery requires the separate private key.
+Local setup or a project's Setup page. Local setup is always available from the
+sidebar, including when no projects exist. The panel manages this StackOS
+installation and enrolled folders across projects, regardless of which page is
+open. These controls are unavailable to ordinary MCP agents. Backup creation
+needs only a public key; recovery requires the separate private key.
 
 ## Set up the recovery key and finance coverage
 

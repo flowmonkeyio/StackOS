@@ -155,9 +155,9 @@ Prove default-off and persisted enable/disable, WAL and matching seed recovery,
 complete finance original/master custody, wrong-key/tamper/path rejection,
 busy/missing/changing sources, later key capture and public output denial.
 Verify the recovered policy is inert reference data. Use an isolated daemon
-and a Setup panel walkthrough; do not enable backups or read production
-financial content for source signoff. The full `make signoff` includes these
-backup authority and recovery checks.
+and a Setup panel walkthrough, including Local setup with no projects; do not
+enable backups or read production financial content for source signoff. The
+full `make signoff` includes these backup authority and recovery checks.
 
 For a faster local check while iterating on action execution, run the mock
 provider and connector-contract slice directly:
