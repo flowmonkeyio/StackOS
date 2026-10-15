@@ -33,7 +33,11 @@ def canonical(path: Path) -> Path:
 
 
 def inside(path: Path, root: Path) -> bool:
-    return path == root or root in path.parents
+    # Match the public asset boundary conservatively even for not-yet-created
+    # paths on case-insensitive volumes. Case-only overlaps are always denied.
+    path_parts = tuple(part.casefold() for part in path.parts)
+    root_parts = tuple(part.casefold() for part in root.parts)
+    return path_parts[: len(root_parts)] == root_parts
 
 
 def overlap(first: Path, second: Path) -> bool:
@@ -41,12 +45,21 @@ def overlap(first: Path, second: Path) -> bool:
 
 
 def private_directory(path: Path) -> None:
+    """Create private directories without changing existing caller-owned parents."""
     if path.is_symlink():
         raise BackupError("unsafe_path", "A backup directory cannot be a symlink.")
-    path.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if not path.is_dir():
-        raise BackupError("unsafe_path", "A backup directory must be a regular directory.")
-    os.chmod(path, 0o700)
+    try:
+        path.mkdir(mode=0o700)
+    except FileNotFoundError:
+        private_directory(path.parent)
+        private_directory(path)
+    except FileExistsError:
+        if path.is_symlink() or not path.is_dir():
+            raise BackupError(
+                "unsafe_path", "A backup directory must be a regular directory."
+            ) from None
+    else:
+        os.chmod(path, 0o700)
 
 
 def open_regular(path: Path, *, writable: bool = False) -> int:
@@ -78,11 +91,11 @@ def read_regular(path: Path, *, limit: int = MAX_JSON) -> bytes:
         os.close(fd)
 
 
-def read_json(path: Path, default: Any) -> Any:
+def read_json(path: Path, default: Any, *, limit: int = MAX_JSON) -> Any:
     if not path.exists() and not path.is_symlink():
         return default
     try:
-        return json.loads(read_regular(path))
+        return json.loads(read_regular(path, limit=limit))
     except (ValueError, UnicodeError) as exc:
         raise BackupError("invalid_metadata", "Local backup metadata is invalid.") from exc
 

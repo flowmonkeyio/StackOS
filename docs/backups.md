@@ -43,6 +43,11 @@ all enrolled folders; it never silently omits one. Configure additional
 targets separately. Omitted fields in a later configuration update preserve
 existing settings and targets.
 
+Creation and recovery share the same archive member rules. Unsupported names,
+including backslashes in POSIX filenames, fail creation before publication or
+retention can replace a usable archive. Path boundaries conservatively reject
+case-only overlaps, including aliases on case-insensitive macOS volumes.
+
 The recovery key generator records private key exclusions. Later enrollment
 of that key's parent folder is rejected, and copying the matching private key
 into a source folder is also rejected. The backup destination and explicit
@@ -69,6 +74,13 @@ attempts:
 stackos backups configure --disabled
 ```
 
+A pure disable remains available when an enrolled source, lock or destination
+has become unsafe. Enabling or changing coverage still validates those paths.
+Scheduled history stores compact retention receipts, with at most 366 records
+(365 retained archives plus a newly published archive awaiting pruning). Older
+destinations and files that cannot be pruned cannot grow this metadata without
+bound; archives whose receipts leave the history are preserved.
+
 The Home console and `backups status` report coverage, last attempt, last
 success and a repairable error. A failed attempt preserves the last successful
 archive and retries with backoff. Local archives protect against accidental
@@ -85,6 +97,11 @@ stackos restore /private-backups/stackos/manual.sbak \
   --private-key-file /secure-recovery/stackos-private.pem \
   --output-dir /recovery/stackos-check
 ```
+
+The output must be outside this installation's data, state and public
+generated-assets trees. Recovery rejects overlapping paths before creating
+plaintext staging files. Existing output parents keep their permissions;
+recovered directories and newly created ancestors are private.
 
 The recovered `data/`, `state/` and `external/<target-id>/` folders are inert.
 Restore does not replace a live installation, reconnect providers or enable
@@ -115,7 +132,7 @@ the seed stored inside the archive. See the library's
 and [GCM](https://cryptography.io/en/latest/hazmat/primitives/symmetric-encryption/)
 contracts.
 
-Owned directories use mode `0700`; archive and staging files use `0600`.
+Newly created directories use mode `0700`; archive and staging files use `0600`.
 Private temporary plaintext is removed on normal success or failure. Database
 snapshots include committed WAL state, and seed rotation is fenced to keep the
 snapshot and seed coherent.

@@ -1683,7 +1683,7 @@ def test_cli_backup_creates_private_archive_with_manifest(sandbox: Path, tmp_pat
     assert output.stat().st_mode & 0o777 == 0o600
     assert not zipfile.is_zipfile(output)
     recovered = tmp_path / "recovered"
-    restore_backup(output, private, recovered)
+    restore_backup(settings, output, private, recovered)
     assert (recovered / "manifest.json").is_file()
     assert (recovered / "state/auth.token").read_text() == "token stays\n"
     with sqlite3.connect(recovered / "data/stackos.db") as conn:
@@ -1707,7 +1707,7 @@ def test_cli_backup_includes_staged_seed_backup(sandbox: Path, tmp_path: Path) -
     result = CliRunner().invoke(app, ["backup", "--output", str(output)], catch_exceptions=False)
     assert result.exit_code == 0, result.stdout
     recovered = tmp_path / "recovered"
-    restore_backup(output, private, recovered)
+    restore_backup(settings, output, private, recovered)
     assert (recovered / "state/seed.bin.bak").read_bytes() == b"old seed"
 
 

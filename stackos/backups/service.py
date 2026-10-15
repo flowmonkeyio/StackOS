@@ -41,12 +41,12 @@ from .filesystem import (
     read_regular,
     source_lock,
 )
+from .format import MANIFEST_SCHEMA, allowed_member_name
 from .models import BackupError, BackupPolicy, BackupTarget, parse_public_key
 
 POLICY_FILE = "backup-policy.json"
 OUTCOME_FILE = "backup-outcome.json"
 KEY_EXCLUSIONS_FILE = "backup-key-exclusions.json"
-MANIFEST_SCHEMA = "stackos.local-backup.v2"
 PRIVATE_PEM_BEGIN = b"-----BEGIN PRIVATE KEY-----"
 PRIVATE_PEM_END = b"-----END PRIVATE KEY-----"
 MAX_PRIVATE_PEM_BYTES = 8192
@@ -57,6 +57,29 @@ def load_policy(settings: Settings) -> BackupPolicy:
         return BackupPolicy.model_validate(read_json(settings.state_dir / POLICY_FILE, {}))
     except ValidationError as exc:
         raise BackupError("invalid_policy", "The saved backup policy is invalid.") from exc
+
+
+def _load_outcome(settings: Settings) -> dict[str, Any]:
+    return read_json(settings.state_dir / OUTCOME_FILE, {}, limit=limits.MAX_OUTCOME_BYTES)
+
+
+def _save_outcome(settings: Settings, outcome: dict[str, Any]) -> None:
+    if "scheduled_archives" in outcome:
+        # Keep one extra receipt until pruning runs after durable publication.
+        # Old destinations and unremovable files cannot grow metadata forever.
+        outcome["scheduled_archives"] = [
+            {
+                "path": item["path"],
+                "sha256": item["sha256"],
+                "encryption": {
+                    "recipient_fingerprint": item["encryption"]["recipient_fingerprint"]
+                },
+            }
+            for item in outcome["scheduled_archives"][-(limits.MAX_RETAINED_ARCHIVES + 1) :]
+        ]
+    if len(json.dumps(outcome, sort_keys=True, indent=2).encode()) > limits.MAX_OUTCOME_BYTES:
+        raise BackupError("invalid_metadata", "Backup outcome metadata exceeds its supported size.")
+    atomic_json(settings.state_dir / OUTCOME_FILE, outcome)
 
 
 def _exclusions(settings: Settings) -> list[Path]:
@@ -142,7 +165,13 @@ def update_policy(
 ) -> BackupPolicy:
     """Apply explicit fields against current durable state under one lock."""
     with backup_lock(settings.state_dir):
-        current = load_policy(settings).model_dump(mode="json")
+        saved = load_policy(settings)
+        if patch == {"enabled": False} and upsert_target is None:
+            # Stopping automation must remain possible during coverage failures.
+            disabled = saved.model_copy(update={"enabled": False})
+            atomic_json(settings.state_dir / POLICY_FILE, disabled.model_dump(mode="json"))
+            return disabled
+        current = saved.model_dump(mode="json")
         current.update(patch)
         if upsert_target is not None:
             if "targets" in patch:
@@ -176,7 +205,7 @@ def backup_status(settings: Settings) -> dict[str, Any]:
     except BackupError as exc:
         ready = False
         readiness_error = exc.as_dict()
-    outcome = read_json(settings.state_dir / OUTCOME_FILE, {})
+    outcome = _load_outcome(settings)
     return {
         "configured": policy.recipient_public_key is not None,
         "ready": ready,
@@ -441,6 +470,15 @@ def _snapshot(
     atomic_json(payload / "state" / "backup-policy.reference.json", policy.model_dump(mode="json"))
     members = sorted(path for path in payload.rglob("*") if path.is_file())
     directories = sorted(path for path in payload.rglob("*") if path.is_dir())
+    if any(
+        not allowed_member_name(str(path.relative_to(payload)), directory=False) for path in members
+    ) or any(
+        not allowed_member_name(str(path.relative_to(payload)) + "/", directory=True)
+        for path in directories
+    ):
+        raise BackupError(
+            "unsafe_file", "A registered folder contains a filename unsupported by backup recovery."
+        )
     if len(members) + len(directories) + 1 > limits.MAX_MEMBERS:
         raise BackupError("payload_too_large", "The backup exceeds supported archive limits.")
     manifest = {
@@ -529,11 +567,11 @@ def _create_locked(
     scheduled: bool,
     now: datetime,
 ) -> dict[str, Any]:
-    outcome = read_json(settings.state_dir / OUTCOME_FILE, {})
+    outcome = _load_outcome(settings)
     prior_outcome = deepcopy(outcome)
     attempt = {"started_at": now.isoformat(), "scheduled": scheduled, "status": "running"}
     outcome["last_attempt"] = attempt
-    atomic_json(settings.state_dir / OUTCOME_FILE, outcome)
+    _save_outcome(settings, outcome)
     temporary: Path | None = None
     published: Path | None = None
     try:
@@ -586,7 +624,7 @@ def _create_locked(
             history.append(result)
             outcome["scheduled_archives"] = history
             outcome["last_scheduled_success"] = now.isoformat()
-        atomic_json(settings.state_dir / OUTCOME_FILE, outcome)
+        _save_outcome(settings, outcome)
         if scheduled:
             # Retention failure cannot invalidate a published successful archive.
             with suppress(OSError, BackupError):
@@ -609,7 +647,7 @@ def _create_locked(
         attempt.update({"finished_at": datetime.now(UTC).isoformat(), "status": "failed"})
         outcome = prior_outcome
         outcome.update({"last_attempt": attempt, "last_error": error.as_dict()})
-        atomic_json(settings.state_dir / OUTCOME_FILE, outcome)
+        _save_outcome(settings, outcome)
         raise error from (None if isinstance(exc, BackupError) else exc)
 
 
@@ -658,7 +696,7 @@ def _prune(settings: Settings, policy: BackupPolicy, outcome: dict[str, Any]) ->
             continue
     if removed:
         outcome["scheduled_archives"] = [item for item in history if item["path"] not in removed]
-        atomic_json(settings.state_dir / OUTCOME_FILE, outcome)
+        _save_outcome(settings, outcome)
 
 
 def run_due_backup(settings: Settings, *, now: datetime | None = None) -> dict[str, Any]:
@@ -670,7 +708,7 @@ def run_due_backup(settings: Settings, *, now: datetime | None = None) -> dict[s
             policy = load_policy(settings)
             if not policy.enabled:
                 return {"status": "skipped", "reason": "disabled"}
-            outcome = read_json(settings.state_dir / OUTCOME_FILE, {})
+            outcome = _load_outcome(settings)
             success = outcome.get("last_scheduled_success")
             if success and now < datetime.fromisoformat(success) + timedelta(
                 hours=policy.interval_hours

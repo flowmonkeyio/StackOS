@@ -105,6 +105,21 @@ def test_local_cli_configuration_and_finance_recovery(tmp_path, monkeypatch):
         finance / "original.pdf"
     ).read_bytes()
     assert (restored / "state/seed.bin").read_bytes() == b"s" * 32
+    public_output = settings.generated_assets_dir / "unsafe-recovery"
+    rejected = runner.invoke(
+        app,
+        [
+            "restore",
+            str(output),
+            "--private-key-file",
+            str(private),
+            "--output-dir",
+            str(public_output),
+        ],
+    )
+    assert rejected.exit_code != 0
+    assert "unsafe_destination" in rejected.output
+    assert not public_output.exists()
     wrong_private, wrong_public = (
         tmp_path / "wrong-keys/recovery.pem",
         tmp_path / "wrong-keys/public.pem",
@@ -129,6 +144,13 @@ def test_local_cli_configuration_and_finance_recovery(tmp_path, monkeypatch):
     result = runner.invoke(app, ["backups", "status"])
     assert result.exit_code == 0
     assert "PRIVATE KEY" not in result.output
+    assert runner.invoke(app, ["backups", "configure", "--enabled"]).exit_code == 0
+    moved = finance.with_name("moved-finance")
+    finance.rename(moved)
+    finance.symlink_to(moved, target_is_directory=True)
+    disabled = runner.invoke(app, ["backups", "configure", "--disabled"])
+    assert disabled.exit_code == 0, disabled.output
+    assert backups.load_policy(settings).enabled is False
 
 
 def test_cli_target_registration_upserts_without_replacing_other_folders(tmp_path, monkeypatch):

@@ -137,6 +137,6 @@ def restore(
 ) -> None:
     """Authenticate and verify a backup into a new directory without activating it."""
     try:
-        _emit(backups.restore_backup(file, private_key_file, output_dir))
+        _emit(backups.restore_backup(get_settings(), file, private_key_file, output_dir))
     except (backups.BackupError, OSError, ValueError) as exc:
         _fail(exc)

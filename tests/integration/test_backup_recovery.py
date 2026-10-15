@@ -135,7 +135,7 @@ def test_manual_and_due_backups_recover_finance_and_matching_account_seed(tmp_pa
         assert settings.token_path.read_bytes() not in archive.read_bytes()
         assert invoice_bytes not in archive.read_bytes()
         recovered = tmp_path / f"recovered-{name}"
-        restore_backup(archive, private, recovered)
+        restore_backup(settings, archive, private, recovered)
         recovered_finance = recovered / "external/business-finance"
         recovered_document = read_document(recovered_finance / "finance.json")
         assert recovered_document == document

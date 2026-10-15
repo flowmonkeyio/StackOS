@@ -7,6 +7,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PublicKey
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from . import limits
+
 
 class BackupError(ValueError):
     """An operator-safe failure, suitable for CLI/status without exception internals."""
@@ -53,7 +55,7 @@ class BackupPolicy(BaseModel):
     version: Literal[1] = 1
     enabled: bool = False
     interval_hours: int = Field(default=24, ge=1, le=168)
-    keep_last: int = Field(default=30, ge=1, le=365)
+    keep_last: int = Field(default=30, ge=1, le=limits.MAX_RETAINED_ARCHIVES)
     destination: Path | None = None
     recipient_public_key: str | None = Field(default=None, max_length=4096)
     targets: list[BackupTarget] = Field(default_factory=list, max_length=100)

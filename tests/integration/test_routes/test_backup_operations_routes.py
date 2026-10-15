@@ -50,9 +50,17 @@ def test_local_console_configuration_preserves_enrolled_targets(api, settings, t
     assert response.status_code == 200, response.text
     assert "PRIVATE KEY" not in response.text
     recovered = tmp_path / "recovered"
-    backups.restore_backup(Path(response.json()["data"]["path"]), private, recovered)
+    backups.restore_backup(settings, Path(response.json()["data"]["path"]), private, recovered)
     assert (recovered / "external/finance/original.pdf").read_bytes() == b"synthetic invoice"
     assert call(api, "backup.status", {}, ui).json()["last_success"]
+    assert call(api, "backup.configure", {"enabled": True}, ui).status_code == 200
+    moved = finance.with_name("moved-finance")
+    finance.rename(moved)
+    finance.symlink_to(moved, target_is_directory=True)
+    disabled = call(api, "backup.configure", {"enabled": False}, ui)
+    assert disabled.status_code == 200, disabled.text
+    assert disabled.json()["data"]["enabled"] is False
+    assert backups.load_policy(settings).enabled is False
 
 
 def test_backup_controls_reject_absent_forged_run_and_secret_inputs(api, settings):

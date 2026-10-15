@@ -85,7 +85,7 @@ def _assert_clean(settings):
 
 def _compare_restored(workspace, archive, output):
     settings, finance, private, _, _, _ = workspace
-    result = restore_backup(Path(archive), private, output)
+    result = restore_backup(settings, Path(archive), private, output)
     assert result["verified"] and result["adoption_required"]
     assert result["target_ids"] == ["finance"]
     for source in finance.rglob("*"):
@@ -491,7 +491,7 @@ def test_authentication_rejection_happens_before_zip_use_or_output(
 
     monkeypatch.setattr(recovery.zipfile, "ZipFile", forbidden_zip)
     with pytest.raises(BackupError):
-        restore_backup(damaged, private, tmp_path / "unsafe-restored")
+        restore_backup(workspace[0], damaged, private, tmp_path / "unsafe-restored")
     assert not touched_zip
     assert not (tmp_path / "unsafe-restored").exists()
     assert not list(tmp_path.glob(".stackos-recovery-*"))
@@ -583,7 +583,7 @@ def test_authenticated_malicious_zip_rejected_without_partial_output(workspace, 
 
     encrypted = _mutated_authenticated_archive(workspace, tmp_path, mutate)
     with pytest.raises(BackupError):
-        restore_backup(encrypted, workspace[2], tmp_path / "rejected")
+        restore_backup(workspace[0], encrypted, workspace[2], tmp_path / "rejected")
     assert not (tmp_path / "rejected").exists()
     assert not (tmp_path / "escape").exists()
     assert not list(tmp_path.glob(".stackos-recovery-*"))
@@ -595,7 +595,7 @@ def test_restore_refuses_existing_live_or_empty_directory(workspace, tmp_path):
     empty.mkdir()
     for directory in (workspace[0].state_dir, empty):
         with pytest.raises(BackupError) as error:
-            restore_backup(Path(result["path"]), workspace[2], directory)
+            restore_backup(workspace[0], Path(result["path"]), workspace[2], directory)
         assert error.value.code == "output_exists"
     assert workspace[0].seed_path.read_bytes()
 
@@ -667,7 +667,7 @@ def test_authenticated_zip_resource_limits_are_enforced(workspace, tmp_path, mon
     elif bound == "manifest":
         monkeypatch.setattr(limits, "MAX_MANIFEST_BYTES", 1)
     with pytest.raises(BackupError):
-        restore_backup(path, workspace[2], tmp_path / "bounded-restore")
+        restore_backup(workspace[0], path, workspace[2], tmp_path / "bounded-restore")
     assert not (tmp_path / "bounded-restore").exists()
 
 
@@ -686,7 +686,7 @@ def test_changed_archive_is_rejected_even_after_cipher_authentication(
 
     monkeypatch.setattr(envelope, "_read_header", changing_header)
     with pytest.raises(BackupError):
-        restore_backup(archive, workspace[2], tmp_path / "changed-restore")
+        restore_backup(workspace[0], archive, workspace[2], tmp_path / "changed-restore")
     assert not (tmp_path / "changed-restore").exists()
 
 
@@ -791,3 +791,205 @@ def test_producer_enforces_shared_recovery_byte_limits(workspace, monkeypatch, b
         create_backup(workspace[0])
     assert error.value.code == "payload_too_large"
     _assert_clean(workspace[0])
+
+
+@pytest.mark.parametrize("location", ["public", "data", "state"])
+def test_recovery_rejects_protected_output_before_plaintext_staging(
+    workspace, monkeypatch, location
+):
+    settings, _, private, *_ = workspace
+    archive = Path(create_backup(settings)["path"])
+    root = {
+        "public": settings.generated_assets_dir,
+        "data": settings.data_dir,
+        "state": settings.state_dir,
+    }[location]
+    output = root / "fresh-recovery"
+
+    def forbidden_staging(*args, **kwargs):
+        pytest.fail("Protected recovery output must be rejected before plaintext staging")
+
+    monkeypatch.setattr(recovery.tempfile, "TemporaryDirectory", forbidden_staging)
+    with pytest.raises(BackupError) as caught:
+        restore_backup(settings, archive, private, output)
+    assert caught.value.code == "unsafe_destination"
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("kind", ["file", "directory"])
+def test_unsupported_member_names_preserve_last_scheduled_recovery(workspace, tmp_path, kind):
+    settings, finance, private, *_ = workspace
+    update_policy(settings, {"enabled": True, "interval_hours": 1, "keep_last": 1})
+    now = datetime.now(UTC)
+    first = run_due_backup(settings, now=now)
+    unsupported = finance / "report\\2026.csv"
+    if kind == "file":
+        unsupported.write_text("synthetic")
+    else:
+        unsupported.mkdir()
+    second = run_due_backup(settings, now=now + timedelta(hours=2))
+    assert second["status"] == "failed"
+    assert second["error"]["code"] == "unsafe_file"
+    assert Path(first["path"]).exists()
+    assert backup_status(settings)["last_success"]["path"] == first["path"]
+    assert list(Path(first["path"]).parent.glob("*.sbak")) == [Path(first["path"])]
+    assert restore_backup(settings, Path(first["path"]), private, tmp_path / "last-good")[
+        "verified"
+    ]
+    _assert_clean(settings)
+
+
+@pytest.mark.parametrize("kind", ["source", "destination", "lock"])
+def test_pure_disable_persists_despite_unsafe_coverage(workspace, kind):
+    settings, finance, _, _, policy, _ = workspace
+    destination = policy.destination
+    destination.mkdir(parents=True, exist_ok=True)
+    update_policy(settings, {"enabled": True})
+    path = {"source": finance, "destination": destination, "lock": finance / ".writer.lock"}[kind]
+    moved = path.with_name(path.name + "-moved")
+    path.rename(moved)
+    path.symlink_to(moved, target_is_directory=kind != "lock")
+    with pytest.raises(BackupError) as caught:
+        update_policy(settings, {"enabled": False, "keep_last": 2})
+    assert caught.value.code == "unsafe_path"
+    assert update_policy(settings, {"enabled": False}).enabled is False
+    assert load_policy(settings).enabled is False
+    assert backup_status(settings)["enabled"] is False
+    assert run_due_backup(settings) == {"status": "skipped", "reason": "disabled"}
+    with pytest.raises(BackupError):
+        update_policy(settings, {"enabled": True})
+    path.unlink()
+    moved.rename(path)
+    assert load_policy(settings).enabled is False
+    assert run_due_backup(settings) == {"status": "skipped", "reason": "disabled"}
+
+
+@pytest.mark.parametrize("operation", ["restore", "invalid_restore", "backup", "keygen"])
+def test_existing_output_parents_preserve_permissions(workspace, tmp_path, operation):
+    settings, _, private, *_ = workspace
+    parent = tmp_path / "shared-parent"
+    parent.mkdir(mode=0o755)
+    os.chmod(parent, 0o755)
+    sibling = parent / "unrelated.txt"
+    sibling.write_text("unrelated")
+    if operation in {"restore", "invalid_restore"}:
+        archive = Path(create_backup(settings)["path"])
+        if operation == "invalid_restore":
+            archive = tmp_path / "invalid.sbak"
+            archive.write_bytes(b"synthetic invalid archive")
+            with pytest.raises(BackupError):
+                restore_backup(settings, archive, private, parent / "recovered")
+        else:
+            restore_backup(settings, archive, private, parent / "recovered")
+    elif operation == "backup":
+        create_backup(settings, output=parent / "manual.sbak")
+    else:
+        generate_recovery_key(settings, parent / "private.pem", parent / "public.pem")
+    assert stat.S_IMODE(parent.stat().st_mode) == 0o755
+    assert sibling.read_text() == "unrelated"
+
+
+def test_new_output_ancestors_are_private(workspace, tmp_path):
+    parent = tmp_path / "new-ancestor" / "new-parent"
+    create_backup(workspace[0], output=parent / "manual.sbak")
+    assert stat.S_IMODE(parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(parent.parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE((parent / "manual.sbak").stat().st_mode) == 0o600
+
+
+@pytest.mark.parametrize("operation", ["destination", "backup", "keygen", "restore"])
+def test_case_aliases_cannot_bypass_backup_path_boundaries(workspace, tmp_path, operation):
+    settings, _, private, *_ = workspace
+    settings.generated_assets_dir.mkdir(exist_ok=True)
+    alias = settings.data_dir.with_name("DATA") / "GENERATED-ASSETS"
+    if alias.exists():
+        assert os.path.samefile(alias, settings.generated_assets_dir)
+    with pytest.raises(BackupError) as caught:
+        if operation == "destination":
+            update_policy(settings, {"destination": str(alias / "backups")})
+        elif operation == "backup":
+            create_backup(settings, output=alias / "manual.sbak")
+        elif operation == "keygen":
+            generate_recovery_key(settings, alias / "private.pem", tmp_path / "other-public.pem")
+        else:
+            archive = Path(create_backup(settings)["path"])
+            restore_backup(settings, archive, private, alias / "recovered")
+    expected = "recovery_key_capture" if operation == "keygen" else "unsafe_destination"
+    assert caught.value.code == expected
+    assert not (alias / "private.pem").exists()
+    assert not (alias / "recovered").exists()
+
+
+def test_maximum_policy_history_stays_readable_and_prunes_verified_archives(workspace, tmp_path):
+    from stackos.backups.filesystem import MAX_JSON, atomic_json, read_json
+
+    settings, _, private, *_ = workspace
+    targets = []
+    for index in range(100):
+        folder = tmp_path / f"source-{index}"
+        folder.mkdir()
+        targets.append(BackupTarget(id=f"{index:03d}" + "x" * 61, label="Synthetic", path=folder))
+    update_policy(
+        settings,
+        {
+            "enabled": True,
+            "interval_hours": 1,
+            "keep_last": 365,
+            "targets": [target.model_dump(mode="json") for target in targets],
+        },
+    )
+    now = datetime.now(UTC)
+    first = run_due_backup(settings, now=now)
+    archive = Path(first["path"])
+    history = [dict(first)]
+    for index in range(364):
+        path = archive.parent / f"stackos-auto-history-{index:03d}.sbak"
+        os.link(archive, path)
+        history.append({**first, "path": str(path)})
+    # Recreate the previous full-result format at the maximum accepted policy.
+    outcome_path = settings.state_dir / service.OUTCOME_FILE
+    outcome = read_json(outcome_path, {})
+    outcome["scheduled_archives"] = history
+    atomic_json(outcome_path, outcome)
+    assert outcome_path.stat().st_size > MAX_JSON
+    assert backup_status(settings)["last_success"]["target_ids"] == [
+        target.id for target in targets
+    ]
+    second = run_due_backup(settings, now=now + timedelta(hours=2))
+    assert second["status"] == "success"
+    assert not archive.exists()
+    assert len(list(archive.parent.glob("*.sbak"))) == 365
+    assert outcome_path.stat().st_size < MAX_JSON
+    compact = read_json(outcome_path, {})["scheduled_archives"]
+    assert len(compact) == 365
+    assert all("target_ids" not in entry for entry in compact)
+    third = run_due_backup(settings, now=now + timedelta(hours=4))
+    assert third["status"] == "success"
+    assert len(list(archive.parent.glob("*.sbak"))) == 365
+    assert restore_backup(settings, Path(third["path"]), private, tmp_path / "maximum-restored")[
+        "verified"
+    ]
+    assert backup_status(settings)["last_success"]["path"] == third["path"]
+
+
+def test_history_is_bounded_when_old_destinations_cannot_be_pruned(workspace, tmp_path):
+    from stackos.backups.filesystem import atomic_json, read_json
+
+    settings = workspace[0]
+    update_policy(settings, {"enabled": True, "interval_hours": 1, "keep_last": 365})
+    now = datetime.now(UTC)
+    first = run_due_backup(settings, now=now)
+    original = Path(first["path"])
+    outcome_path = settings.state_dir / service.OUTCOME_FILE
+    outcome = read_json(outcome_path, {})
+    outcome["scheduled_archives"] = [
+        {**first, "path": str(original.parent / f"stackos-auto-{index}.sbak")}
+        for index in range(400)
+    ]
+    atomic_json(outcome_path, outcome)
+    update_policy(settings, {"destination": str(tmp_path / "new-destination")})
+    result = run_due_backup(settings, now=now + timedelta(hours=2))
+    assert result["status"] == "success"
+    assert original.exists()
+    assert len(read_json(outcome_path, {})["scheduled_archives"]) <= 366
+    assert backup_status(settings)["last_success"]["path"] == result["path"]

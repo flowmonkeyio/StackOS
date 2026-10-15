@@ -16,53 +16,20 @@ from typing import Any
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
+from stackos.config import Settings
+
 from . import limits
 from .envelope import decrypt_payload
 from .filesystem import (
     CHUNK,
     canonical,
     fsync_directory,
+    overlap,
     private_directory,
     read_regular,
 )
+from .format import MANIFEST_SCHEMA, REQUIRED_NAMES, TARGET_ID, allowed_member_name
 from .models import BackupError
-
-MANIFEST_SCHEMA = "stackos.local-backup.v2"
-CORE_NAMES = {
-    "data/stackos.db",
-    "state/seed.bin",
-    "state/auth.token",
-    "state/seed.bin.bak",
-    "state/backup-policy.reference.json",
-}
-REQUIRED_NAMES = {
-    "data/stackos.db",
-    "state/seed.bin",
-    "state/auth.token",
-    "state/backup-policy.reference.json",
-}
-TARGET_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
-
-
-def _allowed_name(name: str, *, directory: bool) -> bool:
-    stripped = name[:-1] if directory else name
-    path = PurePosixPath(stripped)
-    if not stripped or "\\" in stripped or "\x00" in stripped or path.is_absolute():
-        return False
-    if any(part in {"", ".", ".."} for part in stripped.split("/")) or str(path) != stripped:
-        return False
-    parts = path.parts
-    if directory:
-        return stripped in {"data", "state", "external"} or (
-            len(parts) >= 2 and parts[0] == "external" and TARGET_ID.fullmatch(parts[1]) is not None
-        )
-    return (
-        stripped == "manifest.json"
-        or stripped in CORE_NAMES
-        or (
-            len(parts) >= 3 and parts[0] == "external" and TARGET_ID.fullmatch(parts[1]) is not None
-        )
-    )
 
 
 def _inspect(archive: zipfile.ZipFile) -> tuple[dict[str, Any], list[zipfile.ZipInfo]]:
@@ -73,7 +40,7 @@ def _inspect(archive: zipfile.ZipFile) -> tuple[dict[str, Any], list[zipfile.Zip
     total = 0
     for info in infos:
         normalized = info.filename.rstrip("/")
-        if normalized in names or not _allowed_name(info.filename, directory=info.is_dir()):
+        if normalized in names or not allowed_member_name(info.filename, directory=info.is_dir()):
             raise BackupError(
                 "unsafe_archive", "The recovery archive contains an unsafe or duplicate path."
             )
@@ -119,7 +86,7 @@ def _inspect(archive: zipfile.ZipFile) -> tuple[dict[str, Any], list[zipfile.Zip
                 raise ValueError("invalid member declaration")
             if (
                 entry["path"] in declared
-                or not _allowed_name(entry["path"], directory=False)
+                or not allowed_member_name(entry["path"], directory=False)
                 or entry["path"] == "manifest.json"
             ):
                 raise ValueError("invalid member path")
@@ -207,10 +174,19 @@ def _extract_verified(archive: zipfile.ZipFile, output: Path) -> dict[str, Any]:
     return manifest
 
 
-def restore_backup(archive: Path, private_key_path: Path, output_dir: Path) -> dict[str, Any]:
+def restore_backup(
+    settings: Settings, archive: Path, private_key_path: Path, output_dir: Path
+) -> dict[str, Any]:
     archive, output = canonical(archive), canonical(output_dir)
     if output.exists() or output.is_symlink():
         raise BackupError("output_exists", "Recovery requires a fresh output directory.")
+    if any(
+        overlap(output, canonical(root))
+        for root in (settings.generated_assets_dir, settings.data_dir, settings.state_dir)
+    ):
+        raise BackupError(
+            "unsafe_destination", "Recovery output cannot overlap public assets or live state."
+        )
     try:
         key = serialization.load_pem_private_key(read_regular(private_key_path), password=None)
     except (ValueError, TypeError) as exc:
