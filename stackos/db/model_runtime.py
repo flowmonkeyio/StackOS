@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    CheckConstraint,
     Column,
     ForeignKey,
     Index,
@@ -197,6 +198,34 @@ class Run(SQLModel, table=True):
     last_step: str | None = Field(default=None, max_length=120)
     last_step_at: datetime | None = Field(default=None)
     metadata_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+
+
+class WorkItemOwnership(SQLModel, table=True):
+    """Integrity state for one native item; not another task lifecycle."""
+
+    __tablename__ = "work_item_ownership"
+    __table_args__ = (
+        UniqueConstraint("project_id", "canonical_item_id", name="uq_work_item_ownership_item"),
+        CheckConstraint("epoch >= 1 AND revision >= 1 AND checkpoint_revision >= 0"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(
+        sa_column=Column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    )
+    canonical_item_id: str = Field(max_length=64)
+    owner_ref: str | None = Field(default=None, max_length=160)
+    previous_owner_ref: str | None = Field(default=None, max_length=160)
+    epoch: int = Field(default=1, nullable=False)
+    revision: int = Field(default=1, nullable=False)
+    scope_digest: str = Field(max_length=64)
+    checkpoint_revision: int = Field(default=0, nullable=False)
+    checkpoint_ref: str | None = Field(default=None, max_length=1000)
+    continuity_json: dict[str, Any] = Field(sa_column=Column(JSON, nullable=False))
+    quiescence_ref: str | None = Field(default=None, max_length=1000)
+    quiescence_revision: int | None = Field(default=None)
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
 
 
 class RunStep(SQLModel, table=True):

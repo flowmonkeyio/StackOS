@@ -615,6 +615,16 @@ The mechanical mapping is:
 
 ## Boundaries
 
+Canonical execution ownership is integrity state keyed by the existing native
+task/ticket, not another tracker lifecycle. `run.ownerResolve` reads existing
+external links; `run.ownerGet` exposes its stored epoch/revision and current
+continuity consistency. Ownership mutations require the item's persisted current
+plan/step binding plus explicit step grants, and emit existing project events
+with the controller run and tracker source. A workflow parent task alone cannot
+authorize a child or substitute for a missing step binding. Attempt observations
+and terminal reasons remain on existing runs; they never close a tracker item.
+See [operation contracts](./operations.md#canonical-ownership-operations).
+
 - Do not store secrets in tracker fields. Metadata, context, references, and
   patches are redacted.
 - Do not add provider or workflow-specific tracker logic. Domain behavior

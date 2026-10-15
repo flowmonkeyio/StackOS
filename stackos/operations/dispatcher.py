@@ -28,6 +28,7 @@ from stackos.repositories.base import (
 )
 from stackos.repositories.runs import IdempotencyKeyRepository
 from stackos.validation_errors import safe_validation_errors
+from stackos.workflows.run_plan_grants import RUN_PLAN_OWNER_TOOL_NAMES
 
 
 @dataclass(frozen=True)
@@ -88,14 +89,14 @@ class OperationDispatcher:
                         "requested_project_id": ctx.project_id,
                     },
                 )
-            if not trusted_local_admin:
+            if not trusted_local_admin or spec.name in RUN_PLAN_OWNER_TOOL_NAMES:
                 check_call_grant(spec.name, ctx, parsed)
             if (
                 not spec.read_only
                 and ctx.idempotency_key is not None
                 and ctx.project_id is not None
             ):
-                cached = self._idempotency_check(spec.name, ctx)
+                cached = self._idempotency_check(spec.name, ctx, parsed)
                 if cached is not None:
                     shaped = shape_operation_response(
                         spec,
@@ -150,7 +151,12 @@ class OperationDispatcher:
             shaped = shape_operation_response(spec, payload, response_mode=response_mode)
             return OperationDispatchResult(payload=shaped, duration_ms=duration_ms)
 
-    def _idempotency_check(self, operation_name: str, ctx: Any) -> dict[str, Any] | None:
+    def _idempotency_check(
+        self,
+        operation_name: str,
+        ctx: Any,
+        parsed: Any,
+    ) -> dict[str, Any] | None:
         repo = IdempotencyKeyRepository(ctx.session)
         assert ctx.project_id is not None
         assert ctx.idempotency_key is not None
@@ -164,6 +170,10 @@ class OperationDispatcher:
         except IdempotencyReplayError as exc:
             cached = exc.data.get("response_json")
             if cached is not None and isinstance(cached, dict):
+                if operation_name in RUN_PLAN_OWNER_TOOL_NAMES:
+                    from stackos.operations.runs import validate_owner_replay
+
+                    return validate_owner_replay(operation_name, parsed, ctx, cached)
                 return cached
             raise ConflictError(
                 "idempotency key is already in-flight",

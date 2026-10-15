@@ -368,6 +368,14 @@ def register(registry: ToolRegistry) -> None:
             "run.listSteps",
             "run.recordStepCall",
             "run.listStepCalls",
+            "run.ownerResolve",
+            "run.ownerGet",
+            "run.ownerAcquire",
+            "run.ownerCheckpoint",
+            "run.ownerStop",
+            "run.ownerReassign",
+            "run.ownerConsume",
+            "run.ownerRecordAttempt",
         ),
     )
 

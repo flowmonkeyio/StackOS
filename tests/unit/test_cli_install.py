@@ -51,7 +51,7 @@ from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.secrets import PayloadSecretRepository
 
-HEAD_REVISION = "0033_project_id_nonreuse"
+HEAD_REVISION = "0034_work_item_ownership"
 
 
 @pytest.fixture
@@ -1550,6 +1550,9 @@ def test_cli_uninstall_removes_integrations_and_preserves_state(
         encoding="utf-8",
     )
     monkeypatch.setenv("PATH", str(bin_dir))
+
+    # A fake HOME/PATH does not hide absolute bundled CLIs or inherited CODEX_HOME.
+    monkeypatch.setenv("STACKOS_CODEX_BIN", str(bin_dir / "codex"))
 
     data_dir = sandbox / ".local" / "share" / "stackos"
     data_dir.mkdir(parents=True)

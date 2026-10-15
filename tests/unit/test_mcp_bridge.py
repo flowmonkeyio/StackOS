@@ -1503,6 +1503,12 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
         "learning.create",
         "learning.update",
         "resource.upsert",
+        "run.ownerAcquire",
+        "run.ownerCheckpoint",
+        "run.ownerConsume",
+        "run.ownerReassign",
+        "run.ownerRecordAttempt",
+        "run.ownerStop",
     } == _AGENT_RUN_PLAN_GATED_TOOL_NAMES
     assert _AGENT_GATED_TOOL_NAMES == (
         _AGENT_ADMIN_GATED_TOOL_NAMES | _AGENT_RUN_PLAN_GATED_TOOL_NAMES

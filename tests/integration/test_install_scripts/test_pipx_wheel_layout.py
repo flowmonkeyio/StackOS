@@ -12,11 +12,14 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+import tomllib
 import zipfile
 from email.parser import Parser
 from pathlib import Path
 
 import pytest
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 
 
 @pytest.fixture(scope="module")
@@ -142,8 +145,28 @@ def test_wheel_keeps_s3_host_assets_and_uses_separate_connector_package(
     for dependency in ("boto3", "botocore", "s3transfer"):
         assert f"Requires-Dist: {dependency}" in metadata
     requirements = Parser().parsestr(metadata).get_all("Requires-Dist", [])
-    connector_requirements = [
-        value for value in requirements if value.startswith("stackos-connectors")
+
+    repo_root = Path(__file__).resolve().parents[3]
+    source = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
+    source_connectors = [
+        requirement
+        for value in source["project"]["dependencies"]
+        if canonicalize_name((requirement := Requirement(value)).name) == "stackos-connectors"
     ]
-    assert connector_requirements == ["stackos-connectors==0.2.4"]
+    assert len(source_connectors) == 1, "source must declare one connector dependency"
+    source_connector = source_connectors[0]
+    assert source_connector.url is None
+    assert source_connector.marker is None
+    assert not source_connector.extras
+    specifiers = list(source_connector.specifier)
+    assert len(specifiers) == 1
+    assert specifiers[0].operator == "==" and "*" not in specifiers[0].version, (
+        "source connector dependency must pin one exact version"
+    )
+    connector_requirements = [
+        requirement
+        for value in requirements
+        if canonicalize_name((requirement := Requirement(value)).name) == "stackos-connectors"
+    ]
+    assert connector_requirements == source_connectors
     assert all("file:" not in value and " @ " not in value for value in requirements)
