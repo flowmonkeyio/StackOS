@@ -17,6 +17,7 @@ from stackos.artifacts import (
 from stackos.db.models import (
     TaskTracker,
     TrackerLinkKind,
+    TrackerTask,
     TrackerTicket,
     TrackerTicketDependency,
     TrackerTicketLink,
@@ -24,11 +25,13 @@ from stackos.db.models import (
 )
 from stackos.repositories.base import (
     ConflictError,
+    NotFoundError,
     ValidationError,
 )
 from stackos.repositories.tracker.schema import (
     TrackerDependencyOut,
     TrackerLinkOut,
+    TrackerOwnerItemOut,
 )
 from stackos.repositories.tracker.utils import (
     ACTIVATES_DEPENDENCY_TYPE,
@@ -41,6 +44,118 @@ from stackos.repositories.tracker.utils import (
 
 class TrackerRelationsMixin:
     """Tracker dependency, reference, and link helpers."""
+
+    def resolve_owner_item(
+        self,
+        *,
+        project_id: int,
+        canonical_item_id: str | None = None,
+        alias_ref: str | None = None,
+    ) -> TrackerOwnerItemOut:
+        """Resolve one native task/ticket or exact existing external reference.
+
+        Providers register opaque references through existing tracker records;
+        this boundary performs no provider-specific parsing or title matching.
+        Resolution reads state without creating a tracker or claiming ownership.
+        """
+        if (canonical_item_id is None) == (alias_ref is None):
+            raise ValidationError("provide exactly one canonical_item_id or alias_ref")
+        if canonical_item_id is not None:
+            kind, _, raw_id = canonical_item_id.partition(":")
+            if (
+                kind not in {"task", "ticket"}
+                or not raw_id.isascii()
+                or not raw_id.isdecimal()
+                or raw_id.startswith("0")
+                or len(raw_id) > 19
+                or int(raw_id) > 2**63 - 1
+            ):
+                raise ValidationError("canonical_item_id must be task:<id> or ticket:<id>")
+            candidates = {(kind, int(raw_id))}
+        else:
+            if not alias_ref or len(alias_ref) > 1000:
+                raise ValidationError("alias_ref must be a nonempty registered reference")
+            references = self._s.exec(
+                select(TrackerTicketReference.ticket_id)
+                .where(
+                    TrackerTicketReference.project_id == project_id,
+                    TrackerTicketReference.ref == alias_ref,
+                )
+                .distinct()
+            ).all()
+            candidates = {("ticket", item_id) for item_id in references}
+            links = self._s.exec(
+                select(TrackerTicketLink.ticket_id, TrackerTicketLink.task_id)
+                .where(
+                    TrackerTicketLink.project_id == project_id,
+                    TrackerTicketLink.link_kind == TrackerLinkKind.EXTERNAL,
+                    TrackerTicketLink.ref == alias_ref,
+                )
+                .distinct()
+            ).all()
+            for ticket_id, task_id in links:
+                if ticket_id is not None:
+                    candidates.add(("ticket", ticket_id))
+                elif task_id is not None:
+                    candidates.add(("task", task_id))
+
+        if not candidates:
+            raise NotFoundError("ownership alias not found in project")
+        if len(candidates) != 1:
+            raise ConflictError(
+                "ownership alias is ambiguous", data={"match_count": len(candidates)}
+            )
+        kind, item_id = candidates.pop()
+        row = (
+            self._s.get(TrackerTicket, item_id, populate_existing=True)
+            if kind == "ticket"
+            else self._s.get(TrackerTask, item_id, populate_existing=True)
+        )
+        if row is None or row.project_id != project_id:
+            raise NotFoundError("ownership item not found in project")
+        return TrackerOwnerItemOut(
+            project_id=project_id,
+            item_kind="ticket" if kind == "ticket" else "task",
+            item_id=item_id,
+            canonical_item_id=f"{kind}:{item_id}",
+        )
+
+    def require_owner_execution_binding(
+        self,
+        *,
+        project_id: int,
+        canonical_item_id: str,
+        run_plan_id: int,
+        run_plan_step_id: int,
+    ) -> TrackerOwnerItemOut:
+        item = self.resolve_owner_item(project_id=project_id, canonical_item_id=canonical_item_id)
+        if item.item_kind == "ticket":
+            native = self._s.get(TrackerTicket, item.item_id, populate_existing=True)
+            matches = (
+                native is not None
+                and native.run_plan_id == run_plan_id
+                and native.run_plan_step_id == run_plan_step_id
+            )
+        else:
+            task = self._s.get(TrackerTask, item.item_id, populate_existing=True)
+            binding = task.source_json if task is not None else None
+            matches = (
+                isinstance(binding, dict)
+                and type(binding.get("run_plan_id")) is int
+                and type(binding.get("run_plan_step_id")) is int
+                and binding.get("run_plan_id") == run_plan_id
+                and binding.get("run_plan_step_id") == run_plan_step_id
+            )
+        if not matches:
+            raise ConflictError(
+                "canonical work item is not bound to the current workflow step",
+                data={
+                    "canonical_item_id": canonical_item_id,
+                    "run_plan_id": run_plan_id,
+                    "run_plan_step_id": run_plan_step_id,
+                },
+            )
+        return item
 
     def _dependency_rows_for_ticket(self, ticket_id: int | None) -> list[TrackerTicketDependency]:
         if ticket_id is None:

@@ -158,6 +158,27 @@ The daemon dispatcher requires:
 - matching `project_id`
 - an explicit grant for the requested tool/action/resource/context fields
 
+### Canonical ownership grants
+
+Canonical ownership operations use the same frozen grant owner. Each
+`run.ownerAcquire`, `run.ownerCheckpoint`, `run.ownerStop`,
+`run.ownerReassign`, `run.ownerConsume`, or `run.ownerRecordAttempt` grant must
+declare exact `targets` such as `ticket:231`; an unscoped `step_tools` entry
+cannot grant these writes. The canonical ticket must already carry this plan
+and active step's IDs. A task fallback needs both IDs explicitly in its existing
+`source_json`; workflow parentage alone grants nothing. Existing templates and
+grant snapshots are unchanged by this source addition. New eligibility in the
+tool catalog is not an issued grant.
+
+```json
+{"step_id":"write","tool":"run.ownerCheckpoint","targets":["ticket:231"]}
+```
+
+This illustrates a future reviewed snapshot, not permission to change the
+current run. Ownership writes revalidate current grants and canonical continuity
+inside their transaction before audit/commit. Read-only `run.ownerResolve` and
+`run.ownerGet` require no started workflow and grant no execution.
+
 ## Validation Warnings
 
 `runPlan.validate` separates structural validity from executable readiness.

@@ -247,6 +247,67 @@ and tokens are not exposed. Native output may contain requested page data.
 Agents preserve useful captures explicitly through generic artifacts. See
 [browser sessions](browser-automation.md) for usage and profile continuity.
 
+## Canonical ownership operations
+
+The `run.owner*` contracts use the existing tracker identity and run/event owner.
+Resolve external aliases first; mutations accept only one canonical `task:<id>`
+or `ticket:<id>`. Ambiguous aliases reject. These operations store integrity and
+audit; they launch no process, signal no cancellation and grant no publication.
+
+| Operation | Contract |
+| --- | --- |
+| `run.ownerResolve` | Read one native identity or existing opaque external alias |
+| `run.ownerGet` | Read stored fence/continuity plus current-source consistency and capture time |
+| `run.ownerAcquire` | Reserve once; duplicate assignment returns `acquired=false` or conflict |
+| `run.ownerCheckpoint` | CAS a reported checkpoint reference, preserving scope and counters |
+| `run.ownerStop` | Add a stop without clearing ownership, counts or original scope |
+| `run.ownerReassign` | Explicit replacement, or explicit `new_owner_ref=null` revocation, after backend-certified quiescence/effect disposition |
+| `run.ownerConsume` | Increase counts or reconcile authoritative floors; reject negative/reset/limit/ref changes |
+| `run.ownerRecordAttempt` | Annotate an existing bound child run's reported observation or terminal attempt reason |
+
+Writes require the current controller run, exactly one running step, an explicit
+tool grant with exact canonical `targets`, and the item's persisted plan/step
+binding. They recheck the shared grant owner and current canonical continuity
+inside the SQLite write transaction before audit/commit. System/local-admin
+traffic, arbitrary owner strings and evidence references cannot bypass this
+boundary. Controller tokens stay controller-held; `owner_ref` names an assignment.
+See [ownership grants](./run-plans.md#canonical-ownership-grants).
+
+Before first admission the canonical item's existing `metadata_json` holds
+`ownership_continuity`: scope digest, original budget/stop/history refs, known
+stopped/denied flags, cumulative attempts/failures and positive attempt/failure
+limits. Existing effect/deadline refs are retained. These are corroborated inputs
+from the work-item owner, not a caller's replacement policy. Unknown or changed
+authority blocks the affected write. Consumption preserves immutable refs and
+limits, takes the maximum stored/current counts and adds only nonnegative deltas.
+Late failures remain recorded after a stop; they cannot admit another attempt.
+Exhausted failures persist a stop. No operation clears stops or extends a budget.
+`authority_valid` in inspection describes continuity consistency, not permission.
+
+Observation annotations and terminal reasons stay on existing child `Run`
+metadata/status. The child must match controller parent, project, canonical item,
+owner, epoch and scope. Reported states are running, waiting, suspected stall,
+blocked, scope drift and review ready. Resuming blocked/drift observations needs
+recorded clearance and current unstopped authority. Verified hang, host suspension
+and accepted completion are backend-only; their trusted producers remain separate.
+Terminal reasons map to existing run status: succeeded→success, failed→failed,
+cancelled/abandoned/superseded→aborted. Supersession needs current backend evidence.
+Terminal attempts cannot reactivate; succeeded never completes a tracker ticket.
+
+Compact/raw ownership receipts retain the complete canonical fence, checkpoint,
+continuity refs, request digest, actual controller `run_id` and replay status;
+ack is not supported. Idempotency matches exact operation/input/run/step before
+replay and revalidates current authority/fence. Acquisition replay always returns
+`acquired=false`. A changed request or stale result conflicts. If commit precedes
+response/cache interruption, inspect `run.ownerGet`; an in-flight key is not
+permission to retry or dispatch. No quiescence certificate setter exists on MCP,
+REST or CLI. MYB-95 supplies genuine host/effect evidence; storage fixtures are
+not that proof.
+
+The generic operation catalog/REST/CLI and UI operation inspector consume these
+same schemas. This source contract does not upgrade a loaded daemon, alter an
+existing grant snapshot or activate the stopped evaluation.
+
 ## Generic REST Calls
 
 The generic REST adapter is command-shaped and meant for scripts, CLI, CI, and

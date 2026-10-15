@@ -57,6 +57,15 @@ class TrackerReferenceOut(BaseModel):
     created_at: datetime
 
 
+class TrackerOwnerItemOut(BaseModel):
+    """Native work identity used by ownership; aliases do not own another key."""
+
+    project_id: int
+    item_kind: Literal["task", "ticket"]
+    item_id: int
+    canonical_item_id: str
+
+
 class TrackerLinkOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
