@@ -305,8 +305,12 @@ Observation annotations and terminal reasons stay on existing child `Run`
 metadata/status. The child must match controller parent, project, canonical item,
 owner, epoch and scope. Reported states are running, waiting, suspected stall,
 blocked, scope drift and review ready. Resuming blocked/drift observations needs
-recorded clearance and current unstopped authority. Verified hang, host suspension
-and accepted completion are backend-only; their trusted producers remain separate.
+recorded clearance, current unstopped authority, reconciled canonical counters,
+and remaining failure budget. Zero-delta `ownerConsume` reconciles externally
+advanced counters; exhausted failures persist a stop and cannot be cleared by an
+observation. Resuming an already charged attempt does not admit another attempt.
+Verified hang, host suspension and accepted completion are backend-only; their
+trusted producers remain separate.
 Terminal reasons map to existing run status: succeeded→success, failed→failed,
 cancelled/abandoned/superseded→aborted. Supersession needs current backend evidence.
 Terminal attempts cannot reactivate; succeeded never completes a tracker ticket.
@@ -315,10 +319,12 @@ Compact/raw ownership receipts retain the complete canonical fence, checkpoint,
 continuity refs, request digest, actual controller `run_id` and replay status;
 ack is not supported. Idempotency matches exact operation/input/run/step before
 replay and revalidates current authority/fence. Acquisition replay always returns
-`acquired=false`. A changed request or stale result conflicts. If commit precedes
-response/cache interruption, inspect `run.ownerGet`; an in-flight key is not
-permission to retry or dispatch. No quiescence certificate setter exists on MCP,
-REST or CLI. MYB-95 supplies genuine host/effect evidence; storage fixtures are
+`acquired=false`. Attempt receipts also revalidate the child's identity, ownership
+binding/annotations and terminal lifecycle; heartbeat or unrelated metadata updates
+alone do not invalidate replay. A changed request or stale result conflicts. If
+commit precedes response/cache interruption, inspect `run.ownerGet`; an in-flight
+key is not permission to retry or dispatch. No quiescence certificate setter
+exists on MCP, REST or CLI. MYB-95 supplies genuine host/effect evidence; storage fixtures are
 not that proof.
 
 The generic operation catalog/REST/CLI and UI operation inspector consume these

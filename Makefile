@@ -109,6 +109,7 @@ signoff: lint typecheck test-transfer-connectors ## Before commit/release: setup
 		tests/integration/test_mcp/test_mcp_finance_email_followups.py \
 		tests/integration/test_mcp/test_mcp_bridge_agent_path.py \
 		tests/integration/test_mcp/test_mcp_readiness.py \
+		tests/integration/test_mcp/test_mcp_ownership.py \
 		tests/integration/test_mcp/test_mcp_run_plans.py \
 		tests/integration/test_mcp/test_mcp_workspaces.py \
 		tests/integration/test_mcp/test_mcp_projects.py \
@@ -118,6 +119,7 @@ signoff: lint typecheck test-transfer-connectors ## Before commit/release: setup
 		tests/integration/test_mcp/test_mcp_seo_workflows.py \
 		tests/integration/test_mcp/test_mcp_agent_requests.py \
 		tests/integration/test_mcp/test_mcp_stripe_actions.py \
+		tests/integration/test_repositories/test_runs.py \
 		tests/integration/test_repositories/test_tracker.py \
 		tests/integration/test_repositories/test_workspaces.py \
 		tests/integration/test_repositories/test_actions.py \

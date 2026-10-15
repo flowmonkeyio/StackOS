@@ -194,7 +194,9 @@ def owner_request_digest(name: str, inp: OwnerAcquireInput, ctx: MCPContext) -> 
 
 
 def _validate_owner_counter_floor(name: str, inp: OwnerAcquireInput, repo: RunRepository) -> None:
-    if name in {"run.ownerStop", "run.ownerReassign", "run.ownerRecordAttempt"}:
+    if name in {"run.ownerStop", "run.ownerReassign"} or (
+        isinstance(inp, OwnerRecordAttemptInput) and inp.clearance_ref is None
+    ):
         return
     row = repo.owner_get(project_id=inp.project_id, canonical_item_id=inp.canonical_item_id)
     source = repo.owner_authority(
@@ -237,7 +239,8 @@ def _owner_preflight(name: str, inp: OwnerAcquireInput, ctx: MCPContext) -> RunR
         isinstance(inp, OwnerReassignInput) and inp.new_owner_ref is not None
     )
     # Stops/revocation and late accounting can preserve a stopped assignment.
-    reported_only = isinstance(inp, OwnerRecordAttemptInput) and inp.clearance_ref is None
+    is_clearance = isinstance(inp, OwnerRecordAttemptInput) and inp.clearance_ref is not None
+    reported_only = isinstance(inp, OwnerRecordAttemptInput) and not is_clearance
     if (
         name != "run.ownerStop"
         and not reported_only
@@ -251,11 +254,18 @@ def _owner_preflight(name: str, inp: OwnerAcquireInput, ctx: MCPContext) -> RunR
             require_budget=True,
         )
         stored = row.continuity_json if row is not None else current
-        if is_admission and (
-            max(stored["attempts_used"], current["attempts_used"]) >= current["attempt_limit"]
-            or max(stored["failures_used"], current["failures_used"]) >= current["failure_limit"]
+        # Clearance resumes an allocated attempt, so the final attempt slot may
+        # already be consumed. Exhausted failures still prohibit resumption.
+        if (
+            is_admission
+            and max(stored["attempts_used"], current["attempts_used"]) >= current["attempt_limit"]
+        ) or (
+            (is_admission or is_clearance)
+            and max(stored["failures_used"], current["failures_used"]) >= current["failure_limit"]
         ):
-            raise ConflictError("original cumulative budget is exhausted; no owner admission")
+            raise ConflictError(
+                "original cumulative budget is exhausted; no admission or clearance"
+            )
     return repo
 
 
@@ -294,6 +304,40 @@ def validate_owner_replay(
     current = repo.owner_get(project_id=inp.project_id, canonical_item_id=inp.canonical_item_id)
     if current.model_dump(mode="json") != data.get("ownership"):
         raise ConflictError("cached ownership fence is stale; read current assignment")
+    if isinstance(inp, OwnerRecordAttemptInput):
+        ctx.session.expire_all()
+        try:
+            attempt = repo.get(inp.attempt_run_id, project_id=inp.project_id).model_dump(
+                mode="json"
+            )
+        except NotFoundError as exc:
+            raise ConflictError(
+                "cached attempt is stale; read current assignment and attempt"
+            ) from exc
+        cached_attempt = data.get("attempt")
+        # Heartbeats, step activity and unrelated metadata do not invalidate an
+        # annotation receipt. Identity, ownership and lifecycle changes do.
+        fields = (
+            "id",
+            "project_id",
+            "kind",
+            "parent_run_id",
+            "started_at",
+            "ended_at",
+            "status",
+            "error",
+        )
+        annotations = ("ownership_binding", "ownership_observation", "ownership_disposition")
+        if (
+            not isinstance(cached_attempt, dict)
+            or any(attempt[field] != cached_attempt.get(field) for field in fields)
+            or any(
+                (attempt.get("metadata_json") or {}).get(field)
+                != (cached_attempt.get("metadata_json") or {}).get(field)
+                for field in annotations
+            )
+        ):
+            raise ConflictError("cached attempt is stale; read current assignment and attempt")
     out = copy.deepcopy(cached)
     if name == "run.ownerAcquire":
         out["data"]["acquired"] = False
