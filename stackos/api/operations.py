@@ -70,7 +70,12 @@ async def call_operation(
         normalized_client_surface = None
     generic_operation_path = f"/api/v1/operations/{operation_name}/call"
     trusted_local_admin = bool(
-        spec.grant_policy == "local-admin-auth-write"
+        spec.grant_policy
+        in {
+            "local-admin-auth-write",
+            "local-admin-backup-read",
+            "local-admin-backup-write",
+        }
         and spec.surfaces.rest.path == generic_operation_path
     )
     result = await OperationDispatcher(registry).dispatch(
