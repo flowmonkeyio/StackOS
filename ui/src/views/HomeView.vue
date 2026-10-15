@@ -12,7 +12,6 @@ import { useHomeAgentHostStatuses } from './home/useHomeAgentHostStatuses'
 import { useHomePortfolioInsights } from './home/useHomePortfolioInsights'
 import { useHomeSystemStatus } from './home/useHomeSystemStatus'
 import { useTicketCounts } from './home/useTicketCounts'
-import BackupPanel from '@/components/backups/BackupPanel.vue'
 
 const isShell = isDesktopShell()
 const repairOpen = ref(false)
@@ -94,7 +93,6 @@ function selectStatus(status: TrackerStatus | null): void {
       @repair="repairOpen = true"
       @refresh-hosts="loadHostStatuses"
     />
-    <BackupPanel />
     <HomePortfolioOverview
       :summary="summary"
       :visibility="visibility"

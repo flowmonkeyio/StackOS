@@ -7,7 +7,9 @@ schemas, reviews and exports. A project binding or workflow `workspace_ref`
 does not enroll a folder or authorize filesystem access.
 
 Automatic backups are disabled on fresh and upgraded installations. Setup is
-local operator administration through the CLI or Home console. These controls
+local operator administration through the CLI or the Local backups panel in
+Setup. The panel manages this StackOS installation and enrolled folders across
+projects, regardless of which project's Setup page is open. These controls
 are unavailable to ordinary MCP agents. Backup creation needs only a public
 key; recovery requires the separate private key.
 
@@ -76,7 +78,7 @@ stackos backups configure --disabled
 ```
 
 A pure disable remains available when an enrolled source, lock or destination
-has become unsafe. In Home, turn off automatic backups and save without other
+has become unsafe. In Setup, turn off automatic backups and save without other
 settings changes to use this action. Enabling or changing other settings still
 validates those paths.
 Scheduled history stores compact retention receipts, with at most 366 records
@@ -84,7 +86,7 @@ Scheduled history stores compact retention receipts, with at most 366 records
 destinations and files that cannot be pruned cannot grow this metadata without
 bound; archives whose receipts leave the history are preserved.
 
-The Home console and `backups status` report coverage, last attempt, last
+The Setup panel and `backups status` report coverage, last attempt, last
 success and a repairable error. A failed attempt preserves the last successful
 archive and retries with backoff. Local archives protect against accidental
 changes; use a separate copy of the encrypted archives for device loss.

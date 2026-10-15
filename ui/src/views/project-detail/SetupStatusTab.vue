@@ -9,6 +9,7 @@
 
 import { computed, ref } from 'vue'
 
+import BackupPanel from '@/components/backups/BackupPanel.vue'
 import { UiBadge, UiButton, UiCard, UiIcon, UiMedallion, UiSkeleton } from '@/components/ui'
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
@@ -326,6 +327,8 @@ const setupLinks = computed(() => [
         </li>
       </ul>
     </section>
+
+    <BackupPanel />
 
     <details class="rounded-lg border border-subtle bg-bg-surface-alt p-4">
       <summary class="focus-ring cursor-pointer rounded-sm text-sm font-medium text-fg-strong">

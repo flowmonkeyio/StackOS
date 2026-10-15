@@ -317,7 +317,7 @@ stackos backup --output /private-backups/stackos/manual.sbak
 
 Every new backup encrypts `stackos.db`, its matching `seed.bin`, `auth.token`,
 the manifest and every enrolled external folder. Files are private (`0600`).
-Automatic backups require explicit opt-in and start disabled. Home and
+Automatic backups require explicit opt-in and start disabled. Setup and
 `stackos backups status` show coverage and the last success or failure.
 `stackos restore` verifies recovery into a fresh inert folder; it requires the
 separately stored private recovery key. It does not include TDLib's

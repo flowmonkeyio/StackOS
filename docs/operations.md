@@ -32,7 +32,7 @@ behavior. Operations define the callable contract around that behavior:
 
 `backup.status`, `backup.configure` and `backup.create` share the generic
 encrypted local backup service. They are local-admin REST/CLI operations,
-with explicitly browser-safe Home console controls. They are excluded from
+with explicitly browser-safe controls under Setup. They are excluded from
 MCP, project/workflow grants and derived agent-token authority. Their exact
 registered REST paths enforce the local-admin boundary.
 
