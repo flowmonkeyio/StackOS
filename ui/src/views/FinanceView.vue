@@ -93,7 +93,7 @@ let active = true,
   analysisSequence = 0
 function initialQuery(): FinanceQuery {
   return {
-    ...timeframe('month'),
+    ...timeframe('year'),
     recognition_basis: 'cash' as FinanceQuery['recognition_basis'],
     date_basis: 'transaction' as FinanceQuery['date_basis'],
     timezone: 'UTC',
@@ -911,8 +911,16 @@ onBeforeUnmount(() => {
             >
               <UiSectionHeader
                 title="AI category and concern review"
-                description="An available finance agent proposes descriptive categories and highlights supported concerns, then obtains independent control review. Queueing does not execute a model."
+                description="Choose a review or inspect a previous request."
               />
+              <details class="text-sm text-fg-muted">
+                <summary class="focus-ring cursor-pointer">How reviews work</summary>
+                <p class="mt-2">
+                  An available finance agent proposes descriptive categories and highlights
+                  supported concerns, then obtains independent control review. Queueing does not
+                  execute a model.
+                </p>
+              </details>
               <div class="flex items-end gap-3">
                 <UiFormField label="Analysis question"
                   ><UiSelect
@@ -990,31 +998,47 @@ onBeforeUnmount(() => {
               ><UiCallout v-if="analysis?.state === 'stale'" variant="warning"
                 >Historical result: source changed after review. Request new analysis for current
                 decisions.</UiCallout
-              ><MarkdownView
-                v-if="analysis?.report && ['current', 'stale'].includes(analysis.state)"
-                :source="analysis.report"
-              />
-              <ul v-if="analysis?.result" class="space-y-3">
-                <li
-                  v-for="finding in objects(analysis.result.opportunities)"
-                  :key="text(finding.opportunity_ref)"
-                >
-                  <p class="font-medium">{{ text(finding.kind).replaceAll('-', ' ') }}</p>
-                  <p>{{ text(finding.rationale) }}</p>
-                  <p class="text-sm text-fg-muted">Uncertainty: {{ text(finding.uncertainty) }}</p>
-                  <p v-if="finding.estimated_impact">
-                    Estimated impact: {{ formatMoney(finding.estimated_impact) }}
-                  </p>
-                  <UiButton
-                    v-for="evidence in refs(finding.evidence_refs)"
-                    :key="evidence"
-                    size="sm"
-                    variant="ghost"
-                    @click="inspect(evidence)"
-                    >{{ evidence }}</UiButton
-                  >
-                </li>
-              </ul>
+              >
+              <details
+                v-if="
+                  analysis?.result ||
+                  (analysis?.report && ['current', 'stale'].includes(analysis.state))
+                "
+                class="space-y-3"
+              >
+                <summary class="focus-ring cursor-pointer text-sm font-medium">
+                  Full analysis
+                </summary>
+                <div class="space-y-3 pt-2">
+                  <MarkdownView
+                    v-if="analysis?.report && ['current', 'stale'].includes(analysis.state)"
+                    :source="analysis.report"
+                  />
+                  <ul v-if="analysis?.result" class="space-y-3">
+                    <li
+                      v-for="finding in objects(analysis.result.opportunities)"
+                      :key="text(finding.opportunity_ref)"
+                    >
+                      <p class="font-medium">{{ text(finding.kind).replaceAll('-', ' ') }}</p>
+                      <p>{{ text(finding.rationale) }}</p>
+                      <p class="text-sm text-fg-muted">
+                        Uncertainty: {{ text(finding.uncertainty) }}
+                      </p>
+                      <p v-if="finding.estimated_impact">
+                        Estimated impact: {{ formatMoney(finding.estimated_impact) }}
+                      </p>
+                      <UiButton
+                        v-for="evidence in refs(finding.evidence_refs)"
+                        :key="evidence"
+                        size="sm"
+                        variant="ghost"
+                        @click="inspect(evidence)"
+                        >{{ evidence }}</UiButton
+                      >
+                    </li>
+                  </ul>
+                </div>
+              </details>
             </section>
           </template>
         </main>

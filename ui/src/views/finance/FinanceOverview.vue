@@ -62,40 +62,46 @@ const groups = computed(() =>
       </div>
     </section>
     <FinanceOverviewCharts :currencies="currencies" @inspect="emit('inspect', $event)" />
-    <p class="text-sm text-fg-muted">
-      Breakdowns and trends show spend and revenue contributions from selected supported records. A
-      zero revenue contribution means no selected supported income contribution; for expense-only
-      records without income coverage, total revenue and operating profit remain unavailable.
-    </p>
-    <section v-for="group in groups" :key="group.dimension" class="space-y-2">
-      <h3 class="t-h3">By {{ group.dimension }}</h3>
-      <DataTable
-        :items="contributionRows(group.rows, projection)"
-        :columns="[
-          { key: 'label', label: 'Group' },
-          { key: 'currency', label: 'Currency' },
-          { key: 'spend', label: 'Spend contribution' },
-          { key: 'revenue', label: 'Revenue contribution' },
-        ]"
-        interactive
-        :aria-label="`${group.dimension} breakdown`"
-        max-height="220px"
-        @row-click="emit('drill', group.dimension, $event)"
-      />
-    </section>
-    <section class="space-y-2">
-      <h3 class="t-h3">Recorded contributions across currencies</h3>
-      <DataTable
-        :items="contributionRows(projection.trend, projection)"
-        :columns="[
-          { key: 'date', label: 'Date' },
-          { key: 'currency', label: 'Currency' },
-          { key: 'spend', label: 'Spend contribution' },
-          { key: 'revenue', label: 'Revenue contribution' },
-        ]"
-        aria-label="Finance trend"
-        max-height="220px"
-      />
-    </section>
+    <details class="space-y-3">
+      <summary class="focus-ring cursor-pointer text-sm font-medium">Detailed breakdowns</summary>
+      <div class="space-y-5 pt-2">
+        <p class="text-sm text-fg-muted">
+          Breakdowns and trends show spend and revenue contributions from selected supported
+          records. A zero revenue contribution means no selected supported income contribution; for
+          expense-only records without income coverage, total revenue and operating profit remain
+          unavailable.
+        </p>
+        <section v-for="group in groups" :key="group.dimension" class="space-y-2">
+          <h3 class="t-h3">By {{ group.dimension }}</h3>
+          <DataTable
+            :items="contributionRows(group.rows, projection)"
+            :columns="[
+              { key: 'label', label: 'Group' },
+              { key: 'currency', label: 'Currency' },
+              { key: 'spend', label: 'Spend contribution' },
+              { key: 'revenue', label: 'Revenue contribution' },
+            ]"
+            interactive
+            :aria-label="`${group.dimension} breakdown`"
+            max-height="220px"
+            @row-click="emit('drill', group.dimension, $event)"
+          />
+        </section>
+        <section class="space-y-2">
+          <h3 class="t-h3">Recorded contributions across currencies</h3>
+          <DataTable
+            :items="contributionRows(projection.trend, projection)"
+            :columns="[
+              { key: 'date', label: 'Date' },
+              { key: 'currency', label: 'Currency' },
+              { key: 'spend', label: 'Spend contribution' },
+              { key: 'revenue', label: 'Revenue contribution' },
+            ]"
+            aria-label="Finance trend"
+            max-height="220px"
+          />
+        </section>
+      </div>
+    </details>
   </section>
 </template>

@@ -38,9 +38,7 @@ const emit = defineEmits<{ request: []; refresh: []; inspect: [recordRef: string
     </UiSectionHeader>
     <p role="status" class="text-sm">{{ status }}</p>
     <p v-if="!model.hasResult" class="text-sm text-fg-muted">
-      No reviewed category or concern material is available yet. Request a review, then refresh its
-      status. An available host and independent control review are required; queueing does not
-      execute a model.
+      No reviewed suggestions yet. Request a review, then refresh its status.
     </p>
     <template v-else>
       <p class="text-xs text-fg-muted">

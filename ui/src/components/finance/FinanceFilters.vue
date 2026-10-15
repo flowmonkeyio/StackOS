@@ -1,12 +1,46 @@
 <script setup lang="ts">
 import { onBeforeUpdate, ref } from 'vue'
-import { UiButton, UiCheckbox, UiFormField, UiInput, UiSelect } from '@/components/ui'
+import {
+  UiButton,
+  UiButtonGroup,
+  UiCheckbox,
+  UiFormField,
+  UiInput,
+  UiSelect,
+} from '@/components/ui'
 import { comparisonWindow, timeframe, type FinanceQuery } from '@/lib/finance'
 const props = defineProps<{ query: FinanceQuery; disabled?: boolean }>()
 const emit = defineEmits<{ (e: 'apply', query: FinanceQuery): void }>()
 const draft = ref<FinanceQuery>({ ...props.query })
-const preset = ref('month'),
-  compare = ref('none'),
+const periods = [
+  { value: 'week', label: 'Week' },
+  { value: 'month', label: 'Month' },
+  { value: 'quarter', label: 'Quarter' },
+  { value: 'year', label: 'Year' },
+]
+function matchesPreset(value: string) {
+  const range = timeframe(value)
+  return draft.value.start === range.start && draft.value.end === range.end
+}
+function currentPreset() {
+  return (
+    ['year', 'week', 'month', 'quarter', 'year-to-date', 'last-month', 'all'].find(matchesPreset) ||
+    'custom'
+  )
+}
+function comparisonMode(query: FinanceQuery, preferred = 'none') {
+  if (!query.comparison || (query.start === '0001-01-01' && query.end === '9999-12-31'))
+    return 'none'
+  return (
+    [preferred, 'period', 'year'].find((mode) => {
+      if (mode === 'none') return false
+      const range = comparisonWindow(query.start, query.end, mode)
+      return range?.start === query.comparison?.start && range?.end === query.comparison?.end
+    }) || 'none'
+  )
+}
+const preset = ref(currentPreset()),
+  compare = ref(comparisonMode(props.query)),
   error = ref('')
 let appliedQuery = JSON.stringify(props.query)
 onBeforeUpdate(() => {
@@ -14,6 +48,8 @@ onBeforeUpdate(() => {
   if (nextQuery !== appliedQuery) {
     appliedQuery = nextQuery
     draft.value = { ...props.query }
+    preset.value = currentPreset()
+    compare.value = comparisonMode(props.query, compare.value)
   }
 })
 function setPreset(value: string | number | null) {
@@ -21,9 +57,16 @@ function setPreset(value: string | number | null) {
   if (preset.value !== 'custom') Object.assign(draft.value, timeframe(preset.value))
   if (preset.value === 'all') compare.value = 'none'
 }
+function shortcut(value: string) {
+  if (props.disabled) return
+  setPreset(value)
+  apply()
+}
 function apply() {
+  if (props.disabled) return
   error.value = ''
   try {
+    if (!draft.value.start || !draft.value.end) throw new Error('Choose valid dates.')
     if (draft.value.start > draft.value.end) throw new Error('Start must precede end.')
     emit('apply', {
       ...draft.value,
@@ -44,14 +87,34 @@ function apply() {
     aria-label="Finance timeframe and filters"
     @submit.prevent="apply"
   >
+    <div class="flex flex-wrap items-center gap-3">
+      <UiButtonGroup aria-label="Current calendar period" :attached="false" class="flex-wrap">
+        <UiButton
+          v-for="period in periods"
+          :key="period.value"
+          type="button"
+          size="sm"
+          :variant="matchesPreset(period.value) ? 'primary' : 'secondary'"
+          :aria-pressed="matchesPreset(period.value)"
+          :disabled="disabled"
+          :data-test="`finance-period-${period.value}`"
+          @click="shortcut(period.value)"
+          >{{ period.label }}</UiButton
+        >
+      </UiButtonGroup>
+      <span class="text-sm text-fg-muted">Calendar shortcuts use UTC dates.</span>
+    </div>
     <div class="grid grid-cols-4 gap-3">
       <UiFormField label="Timeframe"
         ><UiSelect
           :model-value="preset"
           :options="[
+            { value: 'year', label: 'Calendar year' },
+            { value: 'week', label: 'This week' },
             { value: 'month', label: 'This month' },
+            { value: 'quarter', label: 'This quarter' },
             { value: 'last-month', label: 'Last month' },
-            { value: 'year', label: 'Year to date' },
+            { value: 'year-to-date', label: 'Year to date' },
             { value: 'all', label: 'All time' },
             { value: 'custom', label: 'Custom dates' },
           ]"
@@ -64,7 +127,7 @@ function apply() {
           min="0001-01-01"
           max="9999-12-31"
           data-test="filter-start"
-          @update:model-value="preset = 'custom'"
+          @update:model-value="preset = currentPreset()"
       /></UiFormField>
       <UiFormField label="Through"
         ><UiInput
@@ -73,7 +136,7 @@ function apply() {
           min="0001-01-01"
           max="9999-12-31"
           data-test="filter-end"
-          @update:model-value="preset = 'custom'"
+          @update:model-value="preset = currentPreset()"
       /></UiFormField>
       <UiFormField
         label="Compare with"

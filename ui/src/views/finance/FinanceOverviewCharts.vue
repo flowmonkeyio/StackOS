@@ -81,6 +81,9 @@ function paint() {
     totalsCanvas.value || trendCanvas.value || document.documentElement,
   )
   const token = (key: string) => style.getPropertyValue(`--color-${key}`).trim()
+  const incomeColor = token('success-fg'),
+    expenseColor = token('danger-fg')
+  const totalColors = group.totals.map((row) => (row.id === 'revenue' ? incomeColor : expenseColor))
   const axes = {
     x: {
       ticks: { color: token('fg-muted'), font: { family: style.fontFamily } },
@@ -97,8 +100,8 @@ function paint() {
       {
         label: `Current · ${group.currentWindow}`,
         data: group.totals.map((row) => totalScale.value.value(row.current)),
-        backgroundColor: token('fg-strong'),
-        borderColor: token('fg-strong'),
+        backgroundColor: totalColors,
+        borderColor: totalColors,
         borderWidth: 1,
       },
       ...(group.compared
@@ -107,7 +110,7 @@ function paint() {
               label: `Prior · ${group.priorWindow}`,
               data: group.totals.map((row) => totalScale.value.value(row.prior)),
               backgroundColor: token('bg-surface'),
-              borderColor: token('fg-muted'),
+              borderColor: totalColors,
               borderWidth: 2,
             },
           ]
@@ -147,8 +150,8 @@ function paint() {
         {
           label: 'Income contribution',
           data: group.trendPoints.map((row) => trendScale.value.value(row?.income ?? null)),
-          borderColor: token('fg-strong'),
-          backgroundColor: token('fg-strong'),
+          borderColor: incomeColor,
+          backgroundColor: incomeColor,
           pointStyle: 'circle' as const,
           borderWidth: 2,
           spanGaps: false,
@@ -156,8 +159,8 @@ function paint() {
         {
           label: 'Expense contribution',
           data: group.trendPoints.map((row) => trendScale.value.value(row?.expenses ?? null)),
-          borderColor: token('fg-muted'),
-          backgroundColor: token('fg-muted'),
+          borderColor: expenseColor,
+          backgroundColor: expenseColor,
           pointStyle: 'rect' as const,
           borderDash: [5, 4],
           borderWidth: 2,

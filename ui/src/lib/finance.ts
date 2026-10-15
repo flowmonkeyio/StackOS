@@ -146,9 +146,22 @@ export function timeframe(preset: string, now = new Date()): { start: string; en
   if (preset === 'all') return { start: '0001-01-01', end: '9999-12-31' }
   const year = now.getUTCFullYear(),
     month = now.getUTCMonth()
-  if (preset === 'year') return { start: `${year}-01-01`, end: iso(now) }
-  const start = new Date(Date.UTC(year, month - (preset === 'last-month' ? 1 : 0), 1, 12))
-  const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0, 12))
+  if (preset === 'year') return { start: `${year}-01-01`, end: `${year}-12-31` }
+  if (preset === 'year-to-date') return { start: `${year}-01-01`, end: iso(now) }
+  if (preset === 'week') {
+    const start = new Date(now)
+    start.setUTCHours(12, 0, 0, 0)
+    start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() + 6) % 7))
+    const end = new Date(start)
+    end.setUTCDate(end.getUTCDate() + 6)
+    return { start: iso(start), end: iso(end) }
+  }
+  const firstMonth =
+    preset === 'quarter' ? Math.floor(month / 3) * 3 : month - (preset === 'last-month' ? 1 : 0)
+  const start = new Date(Date.UTC(year, firstMonth, 1, 12))
+  const end = new Date(
+    Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + (preset === 'quarter' ? 3 : 1), 0, 12),
+  )
   return { start: iso(start), end: iso(end) }
 }
 export function comparisonWindow(

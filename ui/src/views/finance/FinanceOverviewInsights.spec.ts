@@ -115,7 +115,7 @@ describe('read-only Overview category and concern presentation', () => {
       refreshAllowed: false,
     })
     expect(wrapper.text()).toContain(status)
-    expect(wrapper.text()).toContain('No reviewed category or concern material')
+    expect(wrapper.text()).toContain('No reviewed suggestions')
     expect(wrapper.text()).not.toContain('Software tools')
     expect(
       wrapper.findAll('button').every((button) => button.attributes('disabled') !== undefined),

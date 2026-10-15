@@ -2412,3 +2412,213 @@ def test_categorization_bill_is_never_a_category_target_even_when_selected():
     with pytest.raises(module.ManagementError) as error:
         module.validate_result(result, source)
     assert error.value.code == "category_target_out_of_scope"
+
+
+def comparison_concern_fixture(*, prior_fields=None, prior_reporting=None, filters=None):
+    module, document = management(), fixture_document()
+    selected = record(
+        "book:selected",
+        "prepared/unposted",
+        date="2026-09-03",
+        amount=money(10000),
+        source_refs=["source:bank"],
+        account_ref="bank:one",
+        category={"state": "reviewed", "category_ref": "category:one"},
+        external_project_ref="project:one",
+        business_purpose="unique-comparison-purpose",
+    )
+    document["bookkeeping"].append(selected)
+    metadata(document, selected, counterparty_ref="vendor:one")
+    prior = {
+        **copy.deepcopy(selected),
+        "record_id": "book:prior-expense",
+        "date": "2026-08-03",
+        "amount": money(5000),
+        **(prior_fields or {}),
+    }
+    document["bookkeeping"].append(prior)
+    metadata(document, prior, **{"counterparty_ref": "vendor:one", **(prior_reporting or {})})
+    document["sources"].append(
+        record(
+            "source:other",
+            "verified",
+            source_kind="bank-export",
+            source_identity="synthetic:other",
+            attachment_refs=[],
+            coverage_state="partial",
+        )
+    )
+    source = snapshot(document)
+    result = categorization_result(source, target="book:selected")
+    result["query"] = {
+        **QUERY,
+        "q": "unique-comparison-purpose",
+        "comparison": {"start": "2026-08-01", "end": "2026-08-31"},
+        **(filters or {}),
+    }
+    result["proposal_coverage"]["gaps"] = []
+    result["evidence_refs"] = ["book:selected", "book:prior-expense"]
+    result["state"] = "supported-opportunities"
+    result["opportunities"] = [
+        {
+            "opportunity_ref": "opportunity:expense-increase",
+            "kind": "spending",
+            "title": "Expense contributions increased",
+            "attention_level": "watch",
+            "rationale": "Compare the selected current and prior source contributions.",
+            "evidence_refs": ["book:selected", "book:prior-expense"],
+            "uncertainty": "Synthetic partial coverage; no complete expense or savings claim.",
+            "assumptions": ["Same selected population, currency and declared precision."],
+        }
+    ]
+    result["review"]["target_digest_sha256"] = module.result_digest(result)
+    return source, result
+
+
+@pytest.mark.parametrize("where", ["root", "concern", "both"])
+def test_categorization_comparison_accepts_exact_prior_concern_evidence(where):
+    module = management()
+    source, result = comparison_concern_fixture()
+    if where == "root":
+        result["opportunities"][0]["evidence_refs"] = ["book:selected"]
+    elif where == "concern":
+        result["evidence_refs"] = ["book:selected"]
+    result["review"]["target_digest_sha256"] = module.result_digest(result)
+    before, original = copy.deepcopy(source), copy.deepcopy(result)
+    projection = module.query(source, result["query"])
+    assert [row["record_ref"] for row in projection["rows"]] == ["book:selected"]
+    assert projection["comparison"]["metrics_by_currency"][0]["spend"]["included_record_refs"] == [
+        "book:prior-expense"
+    ]
+    module.validate_result(
+        result, source, expected_query=result["query"], expected_selection=result["selection"]
+    )
+    assert source == before and result == original
+    assert module.query(source, result["query"]) == projection
+
+
+def test_categorization_comparison_applies_original_selectors_to_both_windows():
+    module = management()
+    source, result = comparison_concern_fixture()
+    result["selection"] = {
+        "record_refs": ["book:selected", "book:prior-expense"],
+        "source_refs": ["source:bank"],
+    }
+    result["review"]["target_digest_sha256"] = module.result_digest(result)
+    module.validate_result(result, source, expected_selection=result["selection"])
+    assert result["proposal_coverage"] == {
+        "considered_record_refs": ["book:selected"],
+        "unassigned_record_refs": [],
+        "gaps": [],
+    }
+    with pytest.raises(module.ManagementError) as error:
+        module.validate_result(
+            result, source, expected_selection={"record_refs": [], "source_refs": []}
+        )
+    assert error.value.code == "result_selection_mismatch"
+
+
+@pytest.mark.parametrize(
+    "scope",
+    [
+        "window",
+        "account",
+        "category",
+        "currency",
+        "counterparty",
+        "project",
+        "kind",
+        "search",
+        "record_selector",
+        "source_selector",
+        "no_comparison",
+    ],
+)
+def test_categorization_comparison_rejects_foreign_prior_concern_evidence(scope):
+    module = management()
+    prior_fields, prior_reporting, filters = {}, {}, {}
+    if scope == "window":
+        prior_fields["date"] = "2026-07-31"
+    elif scope == "account":
+        prior_fields["account_ref"], filters["account_ref"] = "bank:other", "bank:one"
+    elif scope == "category":
+        prior_fields["category"] = {"state": "reviewed", "category_ref": "category:other"}
+        filters["category_ref"] = "category:one"
+    elif scope == "currency":
+        prior_fields["amount"], filters["currency"] = money(5000, "EUR"), "USD"
+    elif scope == "counterparty":
+        prior_reporting["counterparty_ref"], filters["counterparty_ref"] = (
+            "vendor:other",
+            "vendor:one",
+        )
+    elif scope == "project":
+        prior_fields["external_project_ref"] = "project:other"
+        filters.update(scope="external-project", external_project_ref="project:one")
+    elif scope == "kind":
+        prior_reporting["treatment"], filters["kind"] = "revenue", "expense"
+    elif scope == "search":
+        prior_fields["business_purpose"] = "Other purpose"
+    elif scope == "source_selector":
+        prior_fields["source_refs"] = ["source:other"]
+    elif scope == "no_comparison":
+        filters["comparison"] = None
+    source, result = comparison_concern_fixture(
+        prior_fields=prior_fields, prior_reporting=prior_reporting, filters=filters
+    )
+    if scope == "record_selector":
+        result["selection"]["record_refs"] = ["book:selected"]
+    elif scope == "source_selector":
+        result["selection"]["source_refs"] = ["source:bank"]
+    result["review"]["target_digest_sha256"] = module.result_digest(result)
+    with pytest.raises(module.ManagementError) as error:
+        module.validate_result(result, source)
+    assert error.value.code == "result_evidence_out_of_scope"
+
+
+@pytest.mark.parametrize("material", ["target", "taxonomy_evidence", "proposal_evidence"])
+def test_categorization_comparison_never_categorizes_prior_records(material):
+    module = management()
+    source, result = comparison_concern_fixture()
+    proposal = result["category_proposals"][0]
+    if material == "target":
+        proposal["record_ref"] = "book:prior-expense"
+        current = module.CurrentRecords(source["document"])
+        proposal["target_digest_sha256"] = module.workspace.material_record_digest(
+            current.records["book:prior-expense"], "bookkeeping"
+        )
+        result["proposal_coverage"]["considered_record_refs"] = ["book:prior-expense"]
+    elif material == "taxonomy_evidence":
+        result["taxonomy_proposal"]["categories"][0]["evidence_refs"] = ["book:prior-expense"]
+    else:
+        proposal["evidence_refs"] = ["book:prior-expense"]
+    result["review"]["target_digest_sha256"] = module.result_digest(result)
+    with pytest.raises(module.ManagementError) as error:
+        module.validate_result(result, source)
+    assert error.value.code == (
+        "category_target_out_of_scope" if material == "target" else "result_evidence_out_of_scope"
+    )
+
+
+def test_categorization_comparison_walks_all_pages_without_expanding_current_coverage():
+    module = management()
+    source, result = comparison_concern_fixture()
+    document = source["document"]
+    template = next(
+        row for row in document["bookkeeping"] if row["record_id"] == "book:prior-expense"
+    )
+    for number in range(205):
+        row = {**copy.deepcopy(template), "record_id": f"book:prior:{number:03}"}
+        document["bookkeeping"].append(row)
+        metadata(document, row, counterparty_ref="vendor:one")
+    source = snapshot(document)
+    result["source_snapshot"] = {"revision": source["revision"], "sha256": source["sha256"]}
+    result["query"].update(offset=999, limit=1)
+    result["selection"]["record_refs"] = ["book:selected", "book:prior:204"]
+    result["evidence_refs"] = ["book:selected", "book:prior:204"]
+    result["opportunities"][0]["evidence_refs"] = ["book:selected", "book:prior:204"]
+    result["review"]["target_digest_sha256"] = module.result_digest(result)
+    assert module.query(source, result["query"])["rows"] == []
+    before = copy.deepcopy(source)
+    module.validate_result(result, source, expected_selection=result["selection"])
+    assert result["proposal_coverage"]["considered_record_refs"] == ["book:selected"]
+    assert result["proposal_coverage"]["gaps"] == [] and source == before

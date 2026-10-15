@@ -119,9 +119,9 @@ describe('Overview graph lifecycle and exact alternatives', () => {
     document.documentElement.dataset.theme = 'dark'
     await vi.waitFor(() => expect(mocks.updated).toHaveBeenCalledTimes(4))
     expect(
-      (mocks.updated.mock.contexts[2] as { data: { datasets: { backgroundColor: string }[] } }).data
-        .datasets[0]!.backgroundColor,
-    ).toBe('dark:--color-fg-strong')
+      (mocks.updated.mock.contexts[2] as { data: { datasets: { backgroundColor: string[] }[] } })
+        .data.datasets[0]!.backgroundColor,
+    ).toEqual(['dark:--color-success-fg', 'dark:--color-danger-fg'])
     expect(mocks.created).toHaveBeenCalledTimes(2)
     wrapper.unmount()
     document.documentElement.dataset.theme = 'light'

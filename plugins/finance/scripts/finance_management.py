@@ -1994,23 +1994,41 @@ def _validate_categorization(result, snapshot, current, *, is_current):
         _fail("unknown_result_selection")
     # query owns filtering. Walk its full population rather than mistaking the
     # original offset/limit for analysis scope; do not modify its financial logic.
-    selected_query = {**result["query"], "offset": 0, "limit": 200, "comparison": None}
-    rows = []
-    while True:
-        page = query(snapshot, selected_query)
-        rows.extend(page["rows"])
-        if not page["page"]["has_more"]:
-            break
-        selected_query["offset"] += selected_query["limit"]
-    population = {r["record_ref"] for r in rows}
+    windows = [result["query"]]
+    if result["query"].get("comparison"):
+        windows.append(result["query"]["comparison"])
+    populations = []
+    for window in windows:
+        selected_query = {
+            **result["query"],
+            "start": window["start"],
+            "end": window["end"],
+            "offset": 0,
+            "limit": 200,
+            "comparison": None,
+        }
+        rows = []
+        while True:
+            page = query(snapshot, selected_query)
+            rows.extend(page["rows"])
+            if not page["page"]["has_more"]:
+                break
+            selected_query["offset"] += selected_query["limit"]
+        populations.append(rows)
+    population = {r["record_ref"] for rows in populations for r in rows}
     if not record_selectors.issubset(population):
         _fail("unknown_result_selection")
-    rows = [
-        r
-        for r in rows
-        if (not record_selectors or r["record_ref"] in record_selectors)
-        and (not source_selectors or source_selectors.intersection(r["source_refs"]))
+    populations = [
+        [
+            r
+            for r in rows
+            if (not record_selectors or r["record_ref"] in record_selectors)
+            and (not source_selectors or source_selectors.intersection(r["source_refs"]))
+        ]
+        for rows in populations
     ]
+    concern_rows = [r for rows in populations for r in rows]
+    rows = populations[0]
     category_rows = [r for r in rows if r["collection"] in {"bookkeeping", "receipts"}]
     eligible = {r["record_ref"] for r in category_rows}
     if not considered.issubset(eligible):
@@ -2039,9 +2057,9 @@ def _validate_categorization(result, snapshot, current, *, is_current):
         }
         return {r["record_ref"] for r in scope_rows} | sources | attachments
 
-    # Concerns use every selected Finance row. Category evidence, like category
-    # targets, must come from the selected bookkeeping/receipt subset.
-    scoped_evidence = evidence_scope(rows, source_selectors)
+    # Concerns may cite both requested periods. Category evidence, like category
+    # targets and coverage, stays within current selected bookkeeping/receipt rows.
+    scoped_evidence = evidence_scope(concern_rows, source_selectors)
     category_evidence = evidence_scope(category_rows)
     concern_refs = [
         *result["evidence_refs"],

@@ -134,9 +134,59 @@ beforeEach(() => {
 afterEach(() => {
   vi.resetAllMocks()
   vi.unstubAllGlobals()
+  vi.useRealTimers()
   document.body.innerHTML = ''
 })
 describe('Finance management', () => {
+  it('loads the complete calendar year, applies shortcuts once and restores the default on project remount', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-14T12:00:00Z'))
+    const { wrapper, router } = await mounted()
+    const queries = () =>
+      vi.mocked(callOperation).mock.calls.filter((call) => call[0] === 'finance.query')
+    expect(queries()).toHaveLength(1)
+    expect(queries()[0]![1]).toMatchObject({
+      project_id: 1,
+      start: '2026-01-01',
+      end: '2026-12-31',
+      timezone: 'UTC',
+      offset: 0,
+    })
+    expect(wrapper.text()).toContain('Calendar year')
+    expect(wrapper.get('[data-test="finance-period-year"]').attributes('aria-pressed')).toBe('true')
+    await wrapper.get('[data-test="finance-search"]').setValue('invoice-17')
+    await wrapper.get('[data-test="finance-period-month"]').trigger('click')
+    await flushPromises()
+    expect(queries()).toHaveLength(2)
+    expect(queries().at(-1)![1]).toMatchObject({
+      start: '2026-10-01',
+      end: '2026-10-31',
+      q: 'invoice-17',
+      offset: 0,
+    })
+    await wrapper.get('[data-test="finance-period-year"]').trigger('click')
+    await flushPromises()
+    expect(queries()).toHaveLength(3)
+    expect(queries().at(-1)![1]).toMatchObject({
+      start: '2026-01-01',
+      end: '2026-12-31',
+      q: 'invoice-17',
+      offset: 0,
+    })
+    await router.push('/projects/2/finance')
+    await flushPromises()
+    expect(queries()).toHaveLength(4)
+    expect(queries().at(-1)![1]).toMatchObject({
+      project_id: 2,
+      start: '2026-01-01',
+      end: '2026-12-31',
+      timezone: 'UTC',
+      offset: 0,
+    })
+    expect(queries().at(-1)![1].q).toBeUndefined()
+    expect(wrapper.get('[data-test="finance-period-year"]').attributes('aria-pressed')).toBe('true')
+    wrapper.unmount()
+  })
   it.each(['current', 'stale', 'legacy'])(
     'presents %s AI categories separately from source categories through the existing reviewed reader',
     async (state) => {
@@ -1555,7 +1605,7 @@ describe('Finance management', () => {
     })
     const timeframe = wrapper
       .findAll('[role="combobox"]')
-      .find((c) => c.text().includes('This month'))!
+      .find((c) => c.text().includes('Calendar year'))!
     await timeframe.trigger('click')
     await wrapper
       .findAll('[role="option"]')
