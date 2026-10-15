@@ -310,6 +310,19 @@ deadline/cancellation, effect disposition and loaded-interface proof remain
 with the existing MYB-95/93/100 owners and their applicable acceptance gates.
 Source tests activate no workflow, grant, daemon or worker.
 
+The private `controlled_process_clock` and `controlled_process_identity` source
+modules expose lazy read-only Darwin observations for the cooperative host's
+future consumer. Known clock observations bind boot/API/ABI and independently
+nonnegative continuous/awake deltas; zero is valid, the reads are non-atomic,
+and reaching the total ceiling is expired. Counter divergence is not suspension
+or hang proof. Process observations require exact SDK structure/byte count and
+stable boot, PID/birth and corroborated PGID/SID. Unknown/denied/unsupported reads
+fail closed. These inputs confer no spawn, signal, receipt or quiescence
+certification authority. The self-native source check proves only the observed
+interpreter's capability; host admission, timer/barrier, authenticated receipts,
+signals/cleanup, registered-set/effect certification and historical late facts
+remain with their future existing owners and acceptance gates.
+
 ## UI
 
 The Runs UI renders generic run and run-plan state. The Tasks UI renders the
