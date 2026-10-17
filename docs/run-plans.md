@@ -323,6 +323,37 @@ interpreter's capability; host admission, timer/barrier, authenticated receipts,
 signals/cleanup, registered-set/effect certification and historical late facts
 remain with their future existing owners and acceptance gates.
 
+The private `controlled_process_receipt` source seam seals and authenticates
+canonical, bounded receipts using an exact caller-supplied 32-byte key. Its
+binding and claimed armed fact are byte-integrity inputs; they establish no
+host origin, freshness, actual armed state, current grant or execution authority.
+Descriptor-relative POSIX I/O requires private owned directory/file metadata,
+no-follow opens and stable entry/FD fingerprints. Exclusive creation, bounded
+I/O, file/directory fsync and full readback yield a logical create-once result;
+identical authenticated bytes may replay without another write. Publication is
+not atomic: partial files and I/O, sync or close failures remain Holds, with no
+overwrite, deletion or repair. Later authentication/replay proves current bytes
+and does not clear prior failure or prove earlier durability; callers retain
+that history. The seam neither generates nor stores keys and has no live host
+consumer, launcher, signals, cleanup or certification authority. Key custody,
+worker exclusion and actual host/control integration remain separate gates.
+
+The private opt-in preallocated receipt-slot path separates exclusive empty-file
+allocation from a once-frozen `Dalloc` interval. Allocation is outside that
+interval and cannot attribute directory changes solely to its own create. During
+fill/verification all six directory fields remain exact; full empty-file `F9`
+is checked at claim and the actual write-body boundary, then own data writes
+lead to the unchanged full written-file/readback checks. Existing direct-create
+receipt behavior and valid v1 read/replay stay strict; arbitrary empty/partial
+`EEXIST` is never a fresh slot. The existing private Run owner stores protected
+typed slot state, one cooperating claim and atomic slot/receipt commit. Local
+consume/close-once FD ownership requires known close before commit; uncertain
+or partial work retains a failed/unknown hold and the file, without reopen,
+repair, deletion or reuse. These sampled checks and cooperating CAS provide no
+hostile same-UID exclusion, live command/grant admission, key/FD custody or
+atomic filesystem/database publication. The component has no live host caller;
+that integration, STOP2 and publication authority remain separate gates.
+
 ## UI
 
 The Runs UI renders generic run and run-plan state. The Tasks UI renders the

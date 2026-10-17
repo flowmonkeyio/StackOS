@@ -1,13 +1,18 @@
 """Private repository proof on disposable SQLite; no worker or host is launched."""
 
+import os
+import stat
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import FrozenInstanceError, dataclass, replace
+from tempfile import gettempdir
 from threading import Barrier, local
 
 import pytest
+from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from stackos import controlled_process_receipt as controlled_receipt
 from stackos.db.models import Project, ProjectEvent, Run, RunKind, RunStatus, TrackerTask
 from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.runs import RunRepository
@@ -49,11 +54,18 @@ class Case:
 
 @pytest.fixture
 def case(tmp_path):
+    target_device = os.stat(gettempdir()).st_dev
+    assert tmp_path.stat().st_dev == target_device
     engine = create_engine(
         f"sqlite:///{tmp_path / 'launch.db'}",
         connect_args={"check_same_thread": False, "timeout": 10},
     )
     SQLModel.metadata.create_all(engine)
+    try:
+        assert (tmp_path / "launch.db").stat().st_dev == target_device
+    except BaseException:
+        engine.dispose()
+        raise
     with Session(engine) as session:
         project = Project(slug="fixture", name="Fixture", domain="example.test", locale="en-US")
         session.add(project)
@@ -282,7 +294,7 @@ def test_commit_guard_failure_rolls_back_every_staged_write(case, operation):
         assert snapshot(case, session) == before
 
 
-@pytest.mark.parametrize("key", ["launch_reservation", "launch_receipt"])
+@pytest.mark.parametrize("key", ["launch_reservation", "launch_receipt", "receipt_slot"])
 def test_generic_run_metadata_cannot_forge_private_launch_state(case, key):
     with Session(case.engine) as session:
         repo = RunRepository(session)
@@ -424,3 +436,675 @@ def test_new_owner_cannot_copy_forged_reservations_from_canonical_metadata(case)
                 owner_ref="fixture:lead",
                 scope_digest=SCOPE,
             )
+
+
+# These component guards record/reject state transitions on disposable SQLite.
+# They are deliberately NOT current-step grants or a production host adapter.
+class SlotGuard:
+    def __init__(self):
+        self.calls = 0
+        self.deny_at = None
+
+    def __call__(self):
+        self.calls += 1
+        if self.deny_at is not None and self.calls >= self.deny_at:
+            raise ConflictError("fixture:slot-authority-rejected")
+
+
+def slot_setup(case, session, phase="ALLOCATION_PENDING"):
+    guard = SlotGuard()
+    repo = case.repo(session, guard)
+    launch = repo._reserve_owner_launch(**case.args(repo))
+    binding = controlled_receipt._Binding(
+        project_id=case.project_id,
+        canonical_item_id=case.item,
+        owner_ref="fixture:lead",
+        epoch=launch.ownership.epoch,
+        reservation_revision=launch.ownership.revision,
+        scope_digest=SCOPE,
+        controller_run_id=case.controller,
+        run_plan_id=1,
+        run_plan_step_id=1,
+        attempt_run_id=launch.attempt.id,
+        intent_ref="fixture:one-launch",
+        manifest_digest=MANIFEST,
+        host_ref="fixture:synthetic-host",
+        boot_uuid="00000000-0000-0000-0000-000000000001",
+    )
+    out = repo._reserve_receipt_slot(
+        **slot_args(case, repo, launch.attempt.id, 0, "fixture:pending"), binding=binding
+    )
+    if phase != "ALLOCATION_PENDING":
+        out = repo._record_receipt_slot_allocated(
+            **slot_args(case, repo, out.attempt.id, out.slot["slot_revision"], "fixture:allocated"),
+            dalloc=(1, 2, 123, 123, stat.S_IFDIR | 0o700, 2),
+            fempty=(1, 3, 123, 123, stat.S_IFREG | 0o600, 1, 0, 100, 200),
+            status_flags=os.O_WRONLY,
+            offset=0,
+        )
+    if phase == "CLAIMED":
+        out = repo._claim_receipt_slot(
+            **slot_args(case, repo, out.attempt.id, out.slot["slot_revision"], "fixture:claimed"),
+            sealed_digest=RECEIPT,
+        )
+    return repo, binding, out, guard
+
+
+def slot_args(case, repo, attempt_id, slot_revision, evidence, **changes):
+    return (
+        case.args(repo, evidence_ref=evidence)
+        | {"attempt_run_id": attempt_id, "expected_slot_revision": slot_revision}
+        | changes
+    )
+
+
+def test_slot_one_shot_claim_and_atomic_commit(case):
+    from stackos.repositories.runs import RunOut, WorkItemOwnershipOut
+
+    with Session(case.engine) as session:
+        repo, binding, pending, guard = slot_setup(case, session)
+        before = snapshot(case, session)
+        duplicate = repo._reserve_receipt_slot(
+            **slot_args(case, repo, pending.attempt.id, 0, "fixture:pending"), binding=binding
+        )
+        assert not duplicate.applied and snapshot(case, session) == before
+        assert type(duplicate.ownership) is WorkItemOwnershipOut
+        assert type(duplicate.attempt) is RunOut
+        with pytest.raises(FrozenInstanceError):
+            duplicate.applied = True
+        allocated = repo._record_receipt_slot_allocated(
+            **slot_args(case, repo, pending.attempt.id, 1, "fixture:allocated"),
+            dalloc=(1, 2, 123, 123, stat.S_IFDIR | 0o700, 2),
+            fempty=(1, 3, 123, 123, stat.S_IFREG | 0o600, 1, 0, 100, 200),
+            status_flags=os.O_WRONLY,
+            offset=0,
+        )
+        before = snapshot(case, session)
+        again = repo._record_receipt_slot_allocated(
+            **slot_args(case, repo, pending.attempt.id, 2, "fixture:allocated"),
+            dalloc=tuple(allocated.slot["dalloc"]),
+            fempty=tuple(allocated.slot["fempty"]),
+            status_flags=os.O_WRONLY,
+            offset=0,
+        )
+        assert not again.applied and snapshot(case, session) == before
+        claimed = repo._claim_receipt_slot(
+            **slot_args(case, repo, pending.attempt.id, 2, "fixture:claimed"),
+            sealed_digest=RECEIPT,
+        )
+        before = snapshot(case, session)
+        again = repo._claim_receipt_slot(
+            **slot_args(case, repo, pending.attempt.id, 3, "fixture:claimed"),
+            sealed_digest=RECEIPT,
+        )
+        assert not again.applied and snapshot(case, session) == before
+        with pytest.raises(ConflictError):
+            repo._reserve_receipt_slot(
+                **slot_args(case, repo, pending.attempt.id, 0, "fixture:pending"), binding=binding
+            )
+        committed = repo._commit_receipt_slot(
+            **slot_args(case, repo, pending.attempt.id, 3, "fixture:committed"),
+            receipt_digest=RECEIPT,
+        )
+        assert committed.applied and committed.slot["phase"] == "COMMITTED"
+        assert committed.slot["sealed_digest"] == claimed.slot["sealed_digest"] == RECEIPT
+        assert committed.attempt.metadata_json["launch_receipt"] == {
+            "digest": RECEIPT,
+            "evidence_ref": "fixture:committed",
+        }
+        assert committed.ownership.continuity_json["attempts_used"] == 1
+        before = snapshot(case, session)
+        again = repo._commit_receipt_slot(
+            **slot_args(case, repo, pending.attempt.id, 4, "fixture:committed"),
+            receipt_digest=RECEIPT,
+        )
+        assert not again.applied and snapshot(case, session) == before
+        with pytest.raises(ConflictError):
+            repo._record_owner_launch_receipt(
+                **case.args(repo), attempt_run_id=pending.attempt.id, receipt_digest=RECEIPT
+            )
+        assert snapshot(case, session) == before and guard.calls > 0
+
+
+def test_slot_concurrent_claim_has_at_most_one_transition(case, monkeypatch):
+    with Session(case.engine) as session:
+        repo, _binding, allocated, _guard = slot_setup(case, session, "ALLOCATED")
+        args = slot_args(case, repo, allocated.attempt.id, 2, "fixture:claim")
+    original = RunRepository._slot_context
+    barrier = Barrier(2)
+
+    def aligned(repo, fence):
+        result = original(repo, fence)
+        barrier.wait(timeout=5)
+        return result
+
+    monkeypatch.setattr(RunRepository, "_slot_context", aligned)
+
+    def contender():
+        with Session(case.engine) as session:
+            try:
+                repo = case.repo(session, SlotGuard())
+                return repo._claim_receipt_slot(**args, sealed_digest=RECEIPT).applied
+            except ConflictError:
+                return False
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: contender(), range(2)))
+    assert results.count(True) == 1
+    with Session(case.engine) as session:
+        attempt = session.get(Run, allocated.attempt.id)
+        assert attempt.metadata_json["receipt_slot"]["phase"] == "CLAIMED"
+        assert attempt.metadata_json["receipt_slot"]["slot_revision"] == 3
+        events = session.exec(select(ProjectEvent)).all()
+        assert sum(e.event_type == "WORK_ITEM_OWNER_RECEIPT_SLOT_TRANSITIONED" for e in events) == 3
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"project_id": 999},
+        {"canonical_item_id": "task:999"},
+        {"owner_ref": "fixture:other"},
+        {"scope_digest": "d" * 64},
+        {"expected_epoch": 2},
+        {"expected_revision": 1},
+        {"controller_run_id": 999},
+        {"intent_ref": "fixture:other"},
+        {"manifest_digest": "d" * 64},
+        {"attempt_run_id": 999},
+        {"expected_slot_revision": 1},
+    ],
+)
+def test_slot_fences_and_protected_metadata_reject_forgery(case, change):
+    with Session(case.engine) as session:
+        repo, _binding, allocated, _guard = slot_setup(case, session, "ALLOCATED")
+        before = snapshot(case, session)
+        with pytest.raises(ConflictError):
+            repo._claim_receipt_slot(
+                **slot_args(case, repo, allocated.attempt.id, 2, "fixture:claim", **change),
+                sealed_digest=RECEIPT,
+            )
+        assert snapshot(case, session) == before
+        with pytest.raises(ValidationError):
+            repo.finish(
+                allocated.attempt.id,
+                status=RunStatus.SUCCESS,
+                metadata_json={"receipt_slot": {"forged": True}},
+            )
+        with pytest.raises(ConflictError):
+            repo._record_owner_launch_receipt(
+                **case.args(repo), attempt_run_id=allocated.attempt.id, receipt_digest=RECEIPT
+            )
+        assert snapshot(case, session) == before
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("project_id", 999),
+        ("canonical_item_id", "task:999"),
+        ("owner_ref", "fixture:other"),
+        ("epoch", 2),
+        ("reservation_revision", 99),
+        ("scope_digest", "d" * 64),
+        ("controller_run_id", 999),
+        ("run_plan_id", 99),
+        ("run_plan_step_id", 99),
+        ("attempt_run_id", 999),
+        ("intent_ref", "fixture:other"),
+        ("manifest_digest", "d" * 64),
+        ("host_ref", "fixture:other"),
+        ("boot_uuid", "00000000-0000-0000-0000-000000000002"),
+    ],
+)
+def test_slot_reserve_readback_does_not_rebind_any_identity(case, field, value):
+    with Session(case.engine) as session:
+        repo, binding, pending, _guard = slot_setup(case, session)
+        before = snapshot(case, session)
+        with pytest.raises(ConflictError):
+            repo._reserve_receipt_slot(
+                **slot_args(case, repo, pending.attempt.id, 0, "fixture:pending"),
+                binding=replace(binding, **{field: value}),
+            )
+        assert snapshot(case, session) == before
+
+
+@pytest.mark.parametrize(
+    "window,phase,reason",
+    [
+        ("before-claim", "ALLOCATED", "context_lost"),
+        ("after-claim", "CLAIMED", "context_lost"),
+        ("partial-fill", "CLAIMED", "io_outcome_unconfirmed"),
+        ("after-sync-before-close", "CLAIMED", "close_unconfirmed"),
+        ("after-close-before-ack", "CLAIMED", "canonical_ack_unconfirmed"),
+    ],
+)
+def test_slot_failure_windows_never_reissue_claim(case, window, phase, reason):
+    with Session(case.engine) as session:
+        repo, binding, out, _guard = slot_setup(case, session, phase)
+        held = repo._hold_receipt_slot(
+            **slot_args(case, repo, out.attempt.id, out.slot["slot_revision"], "fixture:" + window),
+            unknown=True,
+            fixed_reason=reason,
+        )
+        assert held.slot["phase"] == "UNKNOWN_HOLD" and held.slot["hold_from"] == phase
+        assert held.slot["fempty"] == out.slot["fempty"]
+        assert "launch_receipt" not in held.attempt.metadata_json
+        attempt_id = out.attempt.id
+    with Session(case.engine) as session:
+        repo = case.repo(session, SlotGuard())
+        before = snapshot(case, session)
+        again = repo._hold_receipt_slot(
+            **slot_args(case, repo, attempt_id, held.slot["slot_revision"], "fixture:" + window),
+            unknown=True,
+            fixed_reason=reason,
+        )
+        assert not again.applied and snapshot(case, session) == before
+        with pytest.raises(ConflictError):
+            repo._claim_receipt_slot(
+                **slot_args(case, repo, attempt_id, held.slot["slot_revision"], "fixture:new"),
+                sealed_digest=RECEIPT,
+            )
+        with pytest.raises(ConflictError):
+            repo._reserve_receipt_slot(
+                **slot_args(case, repo, attempt_id, 0, "fixture:pending"), binding=binding
+            )
+        assert snapshot(case, session) == before
+
+
+@pytest.mark.parametrize("operation", ["reserve", "allocated", "claim", "commit", "hold"])
+@pytest.mark.parametrize("fault", ["guard", "audit"])
+def test_slot_commit_guard_or_audit_failure_rolls_back_atomically(
+    case, monkeypatch, operation, fault
+):
+    from stackos.repositories.project_events import StackOSEventEmitter
+
+    with Session(case.engine) as session:
+        phase = (
+            "CLAIMED"
+            if operation == "commit"
+            else ("ALLOCATED" if operation in {"claim", "hold"} else "ALLOCATION_PENDING")
+        )
+        repo, binding, out, guard = slot_setup(case, session, phase)
+        if operation == "reserve":
+            # Use a second stable intent; the old claim/history is untouched.
+            launch = repo._reserve_owner_launch(**case.args(repo, intent_ref="fixture:second"))
+            binding = replace(
+                binding,
+                attempt_run_id=launch.attempt.id,
+                intent_ref="fixture:second",
+                reservation_revision=launch.ownership.revision,
+            )
+            attempt_id, revision = launch.attempt.id, 0
+        else:
+            attempt_id, revision = out.attempt.id, out.slot["slot_revision"]
+        before = snapshot(case, session)
+        args = slot_args(case, repo, attempt_id, revision, "fixture:failed-transition")
+        if operation == "reserve":
+            args["intent_ref"] = "fixture:second"
+            # Existing two-attempt budget must leave room for this receipt scope.
+            # Set a larger fixture limit in BOTH canonical and owner state first.
+            task = session.get(TrackerTask, int(case.item.split(":")[1]))
+            owner = repo._owner_row(project_id=case.project_id, canonical_item_id=case.item)
+            task.metadata_json = deepcopy(task.metadata_json)
+            task.metadata_json["ownership_continuity"]["attempt_limit"] = 3
+            owner.continuity_json = deepcopy(owner.continuity_json) | {"attempt_limit": 3}
+            session.add(task)
+            session.add(owner)
+            session.commit()
+            before = snapshot(case, session)
+        if fault == "guard":
+            guard.deny_at = guard.calls + 2
+        else:
+
+            def fail(*args, **kwargs):
+                raise RuntimeError("fixture:slot-audit-unavailable")
+
+            monkeypatch.setattr(StackOSEventEmitter, "emit", fail)
+        expected = ConflictError if fault == "guard" else RuntimeError
+        with pytest.raises(expected):
+            if operation == "reserve":
+                repo._reserve_receipt_slot(**args, binding=binding)
+            elif operation == "allocated":
+                repo._record_receipt_slot_allocated(
+                    **args,
+                    dalloc=(1, 2, 123, 123, stat.S_IFDIR | 0o700, 2),
+                    fempty=(1, 3, 123, 123, stat.S_IFREG | 0o600, 1, 0, 100, 200),
+                    status_flags=os.O_WRONLY,
+                    offset=0,
+                )
+            elif operation == "claim":
+                repo._claim_receipt_slot(**args, sealed_digest=RECEIPT)
+            elif operation == "commit":
+                repo._commit_receipt_slot(**args, receipt_digest=RECEIPT)
+            else:
+                repo._hold_receipt_slot(**args, unknown=False, fixed_reason="io_failure")
+        assert snapshot(case, session) == before
+
+
+@pytest.mark.parametrize("mode", ["missing", "denying", "recording"])
+def test_slot_component_guard_is_not_live_admission(case, mode):
+    with Session(case.engine) as session:
+        _repo, binding, pending, _guard = slot_setup(case, session)
+        guard = SlotGuard()
+        if mode == "denying":
+            guard.deny_at = 1
+        selected = (
+            RunRepository(session, audit_run_id=case.controller)
+            if mode == "missing"
+            else case.repo(session, guard)
+        )
+        before = snapshot(case, session)
+        if mode == "recording":
+            out = selected._reserve_receipt_slot(
+                **slot_args(case, selected, pending.attempt.id, 0, "fixture:pending"),
+                binding=binding,
+            )
+            assert not out.applied and guard.calls == 1
+        else:
+            with pytest.raises(ConflictError):
+                selected._reserve_receipt_slot(
+                    **slot_args(case, selected, pending.attempt.id, 0, "fixture:pending"),
+                    binding=binding,
+                )
+        assert snapshot(case, session) == before
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"schema_version": True},
+        {"slot_revision": None},
+        {"extra": 1},
+        {"phase": None},
+        {"name": None},
+        {"binding_digest": "bad"},
+        {"allocation_reservation_revision": True},
+        {"evidence_ref": " "},
+        {"dalloc": [1, 2]},
+        {"fempty": [1] * 9},
+        {"status_flags": True},
+        {"offset": True},
+        {"hold_from": "ALLOCATED"},
+        {"sealed_digest": "d" * 64},
+    ],
+)
+def test_slot_exact_record_schema_rejects_corruption(case, change):
+    with Session(case.engine) as session:
+        repo, _binding, out, _guard = slot_setup(case, session, "ALLOCATED")
+        attempt = session.get(Run, out.attempt.id)
+        altered = deepcopy(attempt.metadata_json)
+        altered["receipt_slot"].update(change)
+        attempt.metadata_json = altered
+        flag_modified(attempt, "metadata_json")
+        session.add(attempt)
+        session.commit()
+        session.refresh(attempt)
+        for field, expected in change.items():
+            actual = attempt.metadata_json["receipt_slot"][field]
+            assert type(actual) is type(expected)
+            assert actual == expected
+        before = snapshot(case, session)
+        with pytest.raises(ValidationError):
+            repo._claim_receipt_slot(
+                **slot_args(case, repo, out.attempt.id, 2, "fixture:claim"),
+                sealed_digest=RECEIPT,
+            )
+        assert snapshot(case, session) == before
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        "ALLOCATION_PENDING",
+        "ALLOCATED",
+        "CLAIMED",
+        "COMMITTED",
+        "FAILED_HOLD:ALLOCATION_PENDING",
+        "FAILED_HOLD:ALLOCATED",
+        "FAILED_HOLD:CLAIMED",
+        "UNKNOWN_HOLD:ALLOCATION_PENDING",
+        "UNKNOWN_HOLD:ALLOCATED",
+        "UNKNOWN_HOLD:CLAIMED",
+    ],
+)
+@pytest.mark.parametrize("corruption", ["missing", "extra", "null"])
+def test_slot_all_phase_keysets_are_exact(state, corruption):
+    from stackos.repositories.runs import _parse_receipt_slot
+
+    binding = controlled_receipt._Binding(
+        1,
+        "task:1",
+        "fixture:lead",
+        1,
+        2,
+        SCOPE,
+        1,
+        1,
+        1,
+        2,
+        "fixture:one",
+        MANIFEST,
+        "fixture:synthetic-host",
+        "00000000-0000-0000-0000-000000000001",
+    )
+    phase, _, origin = state.partition(":")
+    record = {
+        "schema_version": 1,
+        "phase": phase,
+        "slot_revision": 1,
+        "binding": controlled_receipt._table(binding),
+        "binding_digest": controlled_receipt._name(binding)[:-8],
+        "name": controlled_receipt._name(binding),
+        "allocation_reservation_revision": 2,
+        "evidence_ref": "fixture:record",
+    }
+    if (origin or phase) in {"ALLOCATED", "CLAIMED", "COMMITTED"}:
+        record.update(
+            dalloc=[1, 2, 123, 123, stat.S_IFDIR | 0o700, 2],
+            fempty=[1, 3, 123, 123, stat.S_IFREG | 0o600, 1, 0, 100, 200],
+            status_flags=os.O_WRONLY,
+            offset=0,
+        )
+    if (origin or phase) in {"CLAIMED", "COMMITTED"}:
+        record["sealed_digest"] = RECEIPT
+    if phase == "COMMITTED":
+        record["receipt_digest"] = RECEIPT
+    if origin:
+        record.update(
+            hold_from=origin,
+            hold_reason="context_lost" if phase == "UNKNOWN_HOLD" else "io_failure",
+        )
+    assert _parse_receipt_slot(record) == record
+    if corruption == "extra":
+        with pytest.raises(ValidationError):
+            _parse_receipt_slot(record | {"not_allowed": 0})
+    else:
+        for key in record:
+            bad = deepcopy(record)
+            if corruption == "missing":
+                del bad[key]
+            else:
+                bad[key] = None
+            with pytest.raises(ValidationError):
+                _parse_receipt_slot(bad)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("stopped", True),
+        ("denied", True),
+        ("attempts_used", 2),
+        ("failures_used", 2),
+    ],
+)
+def test_slot_current_authority_blocks_claim_without_rewriting(case, field, value):
+    with Session(case.engine) as session:
+        repo, _binding, out, _guard = slot_setup(case, session, "ALLOCATED")
+        task = session.get(TrackerTask, int(case.item.split(":")[1]))
+        changed = deepcopy(task.metadata_json)
+        changed["ownership_continuity"][field] = value
+        task.metadata_json = changed
+        session.add(task)
+        session.commit()
+        before = snapshot(case, session)
+        with pytest.raises(ConflictError):
+            repo._claim_receipt_slot(
+                **slot_args(case, repo, out.attempt.id, 2, "fixture:blocked"),
+                sealed_digest=RECEIPT,
+            )
+        assert snapshot(case, session) == before
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("stopped", True),
+        ("denied", True),
+        ("attempts_used", 2),
+        ("failures_used", 2),
+    ],
+)
+def test_slot_canonical_stop_race_rolls_back(case, monkeypatch, field, value):
+    with Session(case.engine) as session:
+        repo, _binding, out, _guard = slot_setup(case, session, "ALLOCATED")
+        args = slot_args(case, repo, out.attempt.id, 2, "fixture:race")
+        original = RunRepository._slot_context
+
+        def race(current_repo, fence):
+            result = original(current_repo, fence)
+            with Session(case.engine) as other:
+                task = other.get(TrackerTask, int(case.item.split(":")[1]))
+                changed = deepcopy(task.metadata_json)
+                changed["ownership_continuity"][field] = value
+                task.metadata_json = changed
+                other.add(task)
+                other.commit()
+            return result
+
+        monkeypatch.setattr(RunRepository, "_slot_context", race)
+        before = snapshot(case, session)
+        with pytest.raises(ConflictError):
+            repo._claim_receipt_slot(**args, sealed_digest=RECEIPT)
+        after = snapshot(case, session)
+        assert after == before
+
+
+@pytest.mark.parametrize("operation", ["reserve", "allocated", "claim", "commit", "hold"])
+def test_slot_stale_duplicate_fences_are_never_relaxed(case, operation):
+    with Session(case.engine) as session:
+        repo, binding, out, _guard = slot_setup(case, session)
+        if operation == "reserve":
+            args = slot_args(case, repo, out.attempt.id, 0, "fixture:pending")
+            args["expected_revision"] -= 1
+
+            def call():
+                return repo._reserve_receipt_slot(**args, binding=binding)
+        elif operation == "allocated":
+            args = slot_args(case, repo, out.attempt.id, 1, "fixture:allocated")
+            repo._record_receipt_slot_allocated(
+                **args,
+                dalloc=(1, 2, 123, 123, stat.S_IFDIR | 0o700, 2),
+                fempty=(1, 3, 123, 123, stat.S_IFREG | 0o600, 1, 0, 100, 200),
+                status_flags=os.O_WRONLY,
+                offset=0,
+            )
+
+            def call():
+                return repo._record_receipt_slot_allocated(
+                    **args,
+                    dalloc=(1, 2, 123, 123, stat.S_IFDIR | 0o700, 2),
+                    fempty=(1, 3, 123, 123, stat.S_IFREG | 0o600, 1, 0, 100, 200),
+                    status_flags=os.O_WRONLY,
+                    offset=0,
+                )
+        else:
+            # Reuse the same canonical owner/attempt and advance it finitely.
+            allocated = repo._record_receipt_slot_allocated(
+                **slot_args(case, repo, out.attempt.id, 1, "fixture:allocated"),
+                dalloc=(1, 2, 123, 123, stat.S_IFDIR | 0o700, 2),
+                fempty=(1, 3, 123, 123, stat.S_IFREG | 0o600, 1, 0, 100, 200),
+                status_flags=os.O_WRONLY,
+                offset=0,
+            )
+            args = slot_args(case, repo, out.attempt.id, 2, "fixture:claimed")
+            repo._claim_receipt_slot(**args, sealed_digest=RECEIPT)
+            if operation == "claim":
+
+                def call():
+                    return repo._claim_receipt_slot(**args, sealed_digest=RECEIPT)
+            else:
+                args = slot_args(case, repo, out.attempt.id, 3, "fixture:terminal")
+                if operation == "commit":
+                    repo._commit_receipt_slot(**args, receipt_digest=RECEIPT)
+
+                    def call():
+                        return repo._commit_receipt_slot(**args, receipt_digest=RECEIPT)
+                else:
+                    repo._hold_receipt_slot(**args, unknown=False, fixed_reason="io_failure")
+
+                    def call():
+                        return repo._hold_receipt_slot(
+                            **args, unknown=False, fixed_reason="io_failure"
+                        )
+
+            assert allocated.slot["slot_revision"] == 2
+        before = snapshot(case, session)
+        with pytest.raises(ConflictError):
+            call()
+        assert snapshot(case, session) == before
+
+
+@pytest.mark.parametrize(
+    "field,kind",
+    [
+        ("status_flags", "bool"),
+        ("status_flags", "int-subclass"),
+        ("offset", "bool"),
+        ("offset", "int-subclass"),
+        ("dalloc", "bool"),
+        ("dalloc", "int-subclass"),
+        ("dalloc", "tuple-subclass"),
+        ("fempty", "bool"),
+        ("fempty", "int-subclass"),
+        ("fempty", "tuple-subclass"),
+    ],
+)
+def test_slot_duplicate_allocation_rejects_nonexact_facts(case, field, kind):
+    class IntegerSubclass(int):
+        pass
+
+    class TupleSubclass(tuple):
+        pass
+
+    with Session(case.engine) as session:
+        repo, _binding, allocated, guard = slot_setup(case, session, "ALLOCATED")
+        facts = {
+            "dalloc": tuple(allocated.slot["dalloc"]),
+            "fempty": tuple(allocated.slot["fempty"]),
+            "status_flags": allocated.slot["status_flags"],
+            "offset": allocated.slot["offset"],
+        }
+        if field in {"dalloc", "fempty"}:
+            value = facts[field]
+            if kind == "tuple-subclass":
+                facts[field] = TupleSubclass(value)
+            else:
+                head = True if kind == "bool" else IntegerSubclass(value[0])
+                facts[field] = (head, *value[1:])
+        else:
+            value = facts[field]
+            facts[field] = bool(value) if kind == "bool" else IntegerSubclass(value)
+        # Every supplied value compares equal to its valid stored counterpart.
+        assert facts[field] == (
+            tuple(allocated.slot[field]) if field in {"dalloc", "fempty"} else allocated.slot[field]
+        )
+        before = snapshot(case, session)
+        calls_before = guard.calls
+        with pytest.raises(ValidationError):
+            repo._record_receipt_slot_allocated(
+                **slot_args(case, repo, allocated.attempt.id, 2, "fixture:allocated"), **facts
+            )
+        assert guard.calls == calls_before + 1  # Fresh guard still precedes classification.
+        assert snapshot(case, session) == before

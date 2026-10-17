@@ -8,10 +8,13 @@ agent and tool activity.
 
 from __future__ import annotations
 
+import os
+import stat
 from collections.abc import Callable
 from copy import deepcopy
+from dataclasses import dataclass, fields
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal, cast
+from typing import Any, Literal, TypedDict, cast
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import update
@@ -19,6 +22,7 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
+from stackos import controlled_process_receipt as _receipt
 from stackos.artifacts import redact_secrets
 from stackos.db.model_enums import (
     RUN_ATTEMPT_DISPOSITION_STATUS,
@@ -157,6 +161,268 @@ class _LaunchReservationOut(OwnershipAttemptOut):
 
 class _LaunchReceiptOut(OwnershipAttemptOut):
     recorded: bool
+
+
+type _SlotFailureReason = Literal[
+    "unsupported_fs",
+    "unsafe_directory",
+    "unsafe_entry",
+    "entry_changed",
+    "invalid_key",
+    "invalid_schema",
+    "invalid_json",
+    "noncanonical",
+    "authentication_failed",
+    "binding_mismatch",
+    "io_limit",
+    "io_failure",
+    "conflict",
+    "admission_rejected",
+    "state_conflict",
+    "context_lost",
+    "io_outcome_unconfirmed",
+    "close_unconfirmed",
+    "canonical_ack_unconfirmed",
+]
+_SLOT_CONFIRMED = frozenset(
+    (
+        "unsupported_fs",
+        "unsafe_directory",
+        "unsafe_entry",
+        "entry_changed",
+        "invalid_key",
+        "invalid_schema",
+        "invalid_json",
+        "noncanonical",
+        "authentication_failed",
+        "binding_mismatch",
+        "io_limit",
+        "io_failure",
+        "conflict",
+        "admission_rejected",
+        "state_conflict",
+    )
+)
+_SLOT_UNKNOWN = frozenset(
+    (
+        "context_lost",
+        "io_outcome_unconfirmed",
+        "close_unconfirmed",
+        "canonical_ack_unconfirmed",
+    )
+)
+
+
+class _SlotCommon(TypedDict):
+    schema_version: Literal[1]
+    slot_revision: int
+    binding: dict[str, object]
+    binding_digest: str
+    name: str
+    allocation_reservation_revision: int
+    evidence_ref: str
+
+
+class _SlotAllocation(TypedDict):
+    dalloc: list[int]
+    fempty: list[int]
+    status_flags: int
+    offset: int
+
+
+class _SlotClaim(TypedDict):
+    sealed_digest: str
+
+
+class _PendingSlot(_SlotCommon):
+    phase: Literal["ALLOCATION_PENDING"]
+
+
+class _ReadySlot(_SlotCommon, _SlotAllocation):
+    phase: Literal["ALLOCATED"]
+
+
+class _ClaimedSlot(_SlotCommon, _SlotAllocation, _SlotClaim):
+    phase: Literal["CLAIMED"]
+
+
+class _CommittedSlot(_SlotCommon, _SlotAllocation, _SlotClaim):
+    phase: Literal["COMMITTED"]
+    receipt_digest: str
+
+
+class _SlotHoldFields(TypedDict):
+    phase: Literal["FAILED_HOLD", "UNKNOWN_HOLD"]
+    hold_reason: _SlotFailureReason
+
+
+class _PendingSlotHold(_SlotCommon, _SlotHoldFields):
+    hold_from: Literal["ALLOCATION_PENDING"]
+
+
+class _ReadySlotHold(_SlotCommon, _SlotAllocation, _SlotHoldFields):
+    hold_from: Literal["ALLOCATED"]
+
+
+class _ClaimedSlotHold(_SlotCommon, _SlotAllocation, _SlotClaim, _SlotHoldFields):
+    hold_from: Literal["CLAIMED"]
+
+
+type _ReceiptSlotRecord = (
+    _PendingSlot
+    | _ReadySlot
+    | _ClaimedSlot
+    | _CommittedSlot
+    | _PendingSlotHold
+    | _ReadySlotHold
+    | _ClaimedSlotHold
+)
+
+
+@dataclass(frozen=True)
+class _SlotTransitionOut:
+    applied: bool
+    slot: _ReceiptSlotRecord
+    ownership: WorkItemOwnershipOut
+    attempt: RunOut
+
+
+@dataclass(frozen=True)
+class _SlotFence:
+    project_id: int
+    canonical_item_id: str
+    owner_ref: str
+    scope_digest: str
+    expected_epoch: int
+    expected_revision: int
+    controller_run_id: int
+    intent_ref: str
+    manifest_digest: str
+    attempt_run_id: int
+    expected_slot_revision: int
+    evidence_ref: str
+
+
+def _slot_evidence(value: object) -> bool:
+    return type(value) is str and 1 <= len(value) <= 1000 and bool(value.strip())
+
+
+def _slot_binding(value: object) -> _receipt._Binding:
+    if type(value) is not dict or value.keys() != {f.name for f in fields(_receipt._Binding)}:
+        raise ValidationError("invalid private receipt slot binding")
+    binding = _receipt._Binding(**value)
+    if not _receipt._valid_binding(binding):
+        raise ValidationError("invalid private receipt slot binding")
+    return binding
+
+
+def _slot_vector(value: object, length: int, *, native: bool = False) -> list[int]:
+    expected = tuple if native else list
+    if type(value) is not expected or not isinstance(value, list | tuple):
+        raise ValidationError("invalid private receipt slot fingerprint")
+    if len(value) != length or any(type(part) is not int for part in value):
+        raise ValidationError("invalid private receipt slot fingerprint")
+    return list(value)
+
+
+def _slot_allocation_facts(
+    directory: object,
+    empty_file: object,
+    status_flags: object,
+    offset: object,
+    *,
+    native: bool = False,
+) -> dict[str, object]:
+    """Validate exact supplied facts before any equality/readback shortcut."""
+    dalloc = _slot_vector(directory, 6, native=native)
+    fempty = _slot_vector(empty_file, 9, native=native)
+    if (
+        not stat.S_ISDIR(dalloc[4])
+        or stat.S_IMODE(dalloc[4]) != 0o700
+        or not stat.S_ISREG(fempty[4])
+        or stat.S_IMODE(fempty[4]) != 0o600
+        or fempty[5] != 1
+        or fempty[6] != 0
+        or dalloc[2] != fempty[2]
+        or type(status_flags) is not int
+        or status_flags < 0
+        or status_flags & os.O_ACCMODE != os.O_WRONLY
+        or status_flags & os.O_APPEND
+        or type(offset) is not int
+        or offset != 0
+    ):
+        raise ValidationError("invalid private receipt slot allocation facts")
+    return {"dalloc": dalloc, "fempty": fempty, "status_flags": status_flags, "offset": offset}
+
+
+def _parse_receipt_slot(value: object) -> _ReceiptSlotRecord:
+    """Exact phase schema; this is data validation, never physical custody proof."""
+    if type(value) is not dict:
+        raise ValidationError("invalid private receipt slot record")
+    common = {
+        "schema_version",
+        "phase",
+        "slot_revision",
+        "binding",
+        "binding_digest",
+        "name",
+        "allocation_reservation_revision",
+        "evidence_ref",
+    }
+    phase = value.get("phase")
+    if type(phase) is not str:
+        raise ValidationError("invalid private receipt slot phase")
+    origin = value.get("hold_from") if phase in {"FAILED_HOLD", "UNKNOWN_HOLD"} else phase
+    if type(origin) is not str:
+        raise ValidationError("invalid private receipt slot hold origin")
+    expected = set(common)
+    if origin in {"ALLOCATED", "CLAIMED", "COMMITTED"}:
+        expected.update(("dalloc", "fempty", "status_flags", "offset"))
+    if origin in {"CLAIMED", "COMMITTED"}:
+        expected.add("sealed_digest")
+    if phase == "COMMITTED":
+        expected.add("receipt_digest")
+    elif phase in {"FAILED_HOLD", "UNKNOWN_HOLD"}:
+        if origin not in {"ALLOCATION_PENDING", "ALLOCATED", "CLAIMED"}:
+            raise ValidationError("invalid private receipt slot hold origin")
+        expected.update(("hold_from", "hold_reason"))
+        reason = value.get("hold_reason")
+        allowed = _SLOT_UNKNOWN if phase == "UNKNOWN_HOLD" else _SLOT_CONFIRMED
+        if type(reason) is not str or reason not in allowed:
+            raise ValidationError("invalid private receipt slot hold reason")
+    elif phase not in {"ALLOCATION_PENDING", "ALLOCATED", "CLAIMED"}:
+        raise ValidationError("invalid private receipt slot phase")
+    if value.keys() != expected:
+        raise ValidationError("private receipt slot has missing or extra fields")
+    binding = _slot_binding(value["binding"])
+    name = _receipt._name(binding)
+    if (
+        type(value["schema_version"]) is not int
+        or value["schema_version"] != 1
+        or not _receipt._integer(value["slot_revision"])
+        or type(value["name"]) is not str
+        or value["name"] != name
+        or type(value["binding_digest"]) is not str
+        or value["binding_digest"] != name[:-8]
+        or not _receipt._integer(value["allocation_reservation_revision"])
+        or value["allocation_reservation_revision"] != binding.reservation_revision
+        or not _slot_evidence(value["evidence_ref"])
+    ):
+        raise ValidationError("invalid private receipt slot common fields")
+    if "dalloc" in expected:
+        _slot_allocation_facts(
+            value["dalloc"], value["fempty"], value["status_flags"], value["offset"]
+        )
+    if "sealed_digest" in expected and not _receipt._hex(value["sealed_digest"]):
+        raise ValidationError("invalid private receipt slot claim digest")
+    if phase == "COMMITTED" and (
+        not _receipt._hex(value["receipt_digest"])
+        or value["receipt_digest"] != value["sealed_digest"]
+    ):
+        raise ValidationError("invalid private receipt slot committed digest")
+    # Checked cast: exact key set, every field type, literal phase/origin and
+    # phase-specific invariants above establish the complete TypedDict union.
+    return cast(_ReceiptSlotRecord, deepcopy(value))
 
 
 # ---------------------------------------------------------------------------
@@ -684,7 +950,7 @@ class RunRepository:
         if not isinstance(ledger, dict):
             raise ConflictError("launch reservation ledger is unknown")
         if intent_ref in ledger:
-            attempt = self._launch_attempt(
+            attempt: Run | None = self._launch_attempt(
                 row,
                 ledger[intent_ref],
                 controller_run_id=controller_run_id,
@@ -811,6 +1077,8 @@ class RunRepository:
             raise ConflictError("receipt names a different attempt")
         fingerprint = dict(digest=receipt_digest, evidence_ref=evidence_ref)
         metadata = deepcopy(attempt.metadata_json or {})
+        if "receipt_slot" in metadata:
+            raise ConflictError("private receipt slot must use its atomic commit owner")
         if "launch_receipt" in metadata:
             if metadata["launch_receipt"] != fingerprint:
                 raise ConflictError("contradictory launch receipt; reconcile original facts")
@@ -856,6 +1124,462 @@ class RunRepository:
         except Exception:
             self._s.rollback()
             raise
+
+    def _slot_context(
+        self, fence: _SlotFence
+    ) -> tuple[WorkItemOwnership, Run, dict[str, Any], _ReceiptSlotRecord | None]:
+        if (
+            any(
+                not _receipt._integer(value)
+                for value in (
+                    fence.project_id,
+                    fence.expected_epoch,
+                    fence.expected_revision,
+                    fence.controller_run_id,
+                    fence.attempt_run_id,
+                )
+            )
+            or not _receipt._integer(fence.expected_slot_revision, 0)
+            or not _receipt._token(fence.owner_ref, 160)
+            or not _receipt._token(fence.intent_ref, 128)
+            or not _receipt._hex(fence.scope_digest)
+            or not _receipt._hex(fence.manifest_digest)
+            or type(fence.canonical_item_id) is not str
+            or _receipt._ITEM.fullmatch(fence.canonical_item_id) is None
+            or int(fence.canonical_item_id.split(":")[1]) > _receipt._MAX_INT
+            or not _slot_evidence(fence.evidence_ref)
+        ):
+            raise ValidationError("invalid private receipt slot fence")
+        try:
+            row = self._launch_owner(
+                project_id=fence.project_id,
+                canonical_item_id=fence.canonical_item_id,
+                owner_ref=fence.owner_ref,
+                scope_digest=fence.scope_digest,
+                expected_epoch=fence.expected_epoch,
+                expected_revision=fence.expected_revision,
+                controller_run_id=fence.controller_run_id,
+            )
+        except NotFoundError:
+            raise ConflictError("private receipt slot canonical owner is missing") from None
+        authority = self.owner_authority(
+            project_id=fence.project_id,
+            canonical_item_id=fence.canonical_item_id,
+            ownership=WorkItemOwnershipOut.model_validate(row),
+            require_budget=True,
+        )
+        for source in (row.continuity_json, authority):
+            for used, limit in (
+                ("attempts_used", "attempt_limit"),
+                ("failures_used", "failure_limit"),
+            ):
+                if (
+                    type(source.get(used)) is not int
+                    or type(source.get(limit)) is not int
+                    or source[used] < 0
+                    or source[used] >= source[limit]
+                ):
+                    raise ConflictError("private receipt slot budget is exhausted or unknown")
+        ledger = row.continuity_json.get("launch_reservations", {})
+        if type(ledger) is not dict:
+            raise ConflictError("private receipt slot reservation is unknown")
+        attempt = self._launch_attempt(
+            row,
+            ledger.get(fence.intent_ref),
+            controller_run_id=fence.controller_run_id,
+            intent_ref=fence.intent_ref,
+            manifest_digest=fence.manifest_digest,
+        )
+        if attempt.id != fence.attempt_run_id:
+            raise ConflictError("private receipt slot names another attempt")
+        metadata = deepcopy(attempt.metadata_json or {})
+        slot = _parse_receipt_slot(metadata["receipt_slot"]) if "receipt_slot" in metadata else None
+        if slot is not None:
+            self._slot_check_binding(fence, _slot_binding(slot["binding"]))
+        assert self._owner_commit_guard is not None
+        self._owner_commit_guard()
+        return row, attempt, metadata, slot
+
+    @staticmethod
+    def _slot_check_binding(fence: _SlotFence, binding: _receipt._Binding) -> None:
+        if not _receipt._valid_binding(binding):
+            raise ValidationError("invalid private receipt slot binding")
+        if (
+            binding.project_id != fence.project_id
+            or binding.canonical_item_id != fence.canonical_item_id
+            or binding.owner_ref != fence.owner_ref
+            or binding.epoch != fence.expected_epoch
+            or binding.scope_digest != fence.scope_digest
+            or binding.controller_run_id != fence.controller_run_id
+            or binding.attempt_run_id != fence.attempt_run_id
+            or binding.intent_ref != fence.intent_ref
+            or binding.manifest_digest != fence.manifest_digest
+        ):
+            raise ConflictError("private receipt slot binding disagrees with canonical attempt")
+
+    @staticmethod
+    def _slot_existing(fence: _SlotFence, slot: _ReceiptSlotRecord | None) -> _ReceiptSlotRecord:
+        if slot is None or slot["slot_revision"] != fence.expected_slot_revision:
+            raise ConflictError("stale or missing private receipt slot revision")
+        return slot
+
+    @staticmethod
+    def _slot_readback(
+        row: WorkItemOwnership, attempt: Run, slot: _ReceiptSlotRecord
+    ) -> _SlotTransitionOut:
+        return _SlotTransitionOut(
+            False,
+            deepcopy(slot),
+            WorkItemOwnershipOut.model_validate(row).model_copy(deep=True),
+            RunOut.model_validate(attempt).model_copy(deep=True),
+        )
+
+    def _slot_apply(
+        self,
+        fence: _SlotFence,
+        row: WorkItemOwnership,
+        attempt: Run,
+        metadata: dict[str, Any],
+        candidate: dict[str, object],
+        *,
+        receipt_digest: str | None = None,
+    ) -> _SlotTransitionOut:
+        previous = (
+            _parse_receipt_slot(metadata["receipt_slot"]) if "receipt_slot" in metadata else None
+        )
+        revision = previous["slot_revision"] if previous is not None else 0
+        if revision >= _receipt._MAX_INT:
+            raise ConflictError("private receipt slot revision exhausted")
+        candidate["slot_revision"] = revision + 1
+        candidate["evidence_ref"] = fence.evidence_ref
+        slot = _parse_receipt_slot(candidate)
+        changed = deepcopy(metadata)
+        changed["receipt_slot"] = slot
+        if receipt_digest is not None:
+            if "launch_receipt" in metadata:
+                raise ConflictError("private receipt slot cannot replace an existing receipt")
+            changed["launch_receipt"] = dict(digest=receipt_digest, evidence_ref=fence.evidence_ref)
+        try:
+            result = cast(
+                CursorResult[Any],
+                self._s.execute(
+                    update(Run)
+                    .where(
+                        col(Run.id) == attempt.id,
+                        col(Run.project_id) == fence.project_id,
+                        col(Run.status) == RunStatus.RUNNING,
+                        col(Run.metadata_json) == attempt.metadata_json,
+                    )
+                    .values(metadata_json=changed)
+                ),
+            )
+            if result.rowcount != 1:
+                raise ConflictError("stale or terminal private receipt slot")
+            self._s.refresh(attempt)
+
+            def recheck() -> None:
+                self._require_launch_controller(fence.project_id, fence.controller_run_id)
+                authority = self.owner_authority(
+                    project_id=fence.project_id,
+                    canonical_item_id=fence.canonical_item_id,
+                    ownership=WorkItemOwnershipOut.model_validate(row),
+                    require_budget=True,
+                )
+                for source in (row.continuity_json, authority):
+                    for used, limit in (
+                        ("attempts_used", "attempt_limit"),
+                        ("failures_used", "failure_limit"),
+                    ):
+                        if (
+                            type(source.get(used)) is not int
+                            or type(source.get(limit)) is not int
+                            or source[used] < 0
+                            or source[used] >= source[limit]
+                        ):
+                            raise ConflictError("private receipt slot budget changed at commit")
+
+            ownership = self._owner_cas(
+                row,
+                owner_ref=fence.owner_ref,
+                expected_epoch=fence.expected_epoch,
+                expected_revision=fence.expected_revision,
+                changes={"quiescence_revision": None},
+                event_type="WORK_ITEM_OWNER_RECEIPT_SLOT_TRANSITIONED",
+                admission_scope_digest=fence.scope_digest,
+                before_commit=recheck,
+                event_metadata={
+                    "attempt_run_id": attempt.id,
+                    "intent_ref": fence.intent_ref,
+                    "receipt_slot_before": deepcopy(previous),
+                    "receipt_slot_after": deepcopy(slot),
+                },
+            )
+            return _SlotTransitionOut(
+                True,
+                deepcopy(slot),
+                ownership.model_copy(deep=True),
+                RunOut.model_validate(attempt).model_copy(deep=True),
+            )
+        except Exception:
+            self._s.rollback()
+            raise
+
+    def _reserve_receipt_slot(
+        self,
+        *,
+        project_id: int,
+        canonical_item_id: str,
+        owner_ref: str,
+        scope_digest: str,
+        expected_epoch: int,
+        expected_revision: int,
+        controller_run_id: int,
+        intent_ref: str,
+        manifest_digest: str,
+        attempt_run_id: int,
+        expected_slot_revision: int,
+        evidence_ref: str,
+        binding: _receipt._Binding,
+    ) -> _SlotTransitionOut:
+        fence = _SlotFence(
+            project_id,
+            canonical_item_id,
+            owner_ref,
+            scope_digest,
+            expected_epoch,
+            expected_revision,
+            controller_run_id,
+            intent_ref,
+            manifest_digest,
+            attempt_run_id,
+            expected_slot_revision,
+            evidence_ref,
+        )
+        row, attempt, metadata, slot = self._slot_context(fence)
+        self._slot_check_binding(fence, binding)
+        if expected_slot_revision != 0:
+            raise ConflictError("private receipt slot reserve requires absent revision zero")
+        name = _receipt._name(binding)
+        candidate: dict[str, object] = {
+            "schema_version": 1,
+            "phase": "ALLOCATION_PENDING",
+            "slot_revision": 1,
+            "binding": _receipt._table(binding),
+            "binding_digest": name[:-8],
+            "name": name,
+            "allocation_reservation_revision": binding.reservation_revision,
+            "evidence_ref": evidence_ref,
+        }
+        if slot is not None:
+            if slot != candidate:
+                raise ConflictError("private receipt slot already progressed or differs")
+            return self._slot_readback(row, attempt, slot)
+        if "launch_receipt" in metadata:
+            raise ConflictError("legacy receipt cannot be adopted as a private slot")
+        # The original reservation revision is an immutable binding fact, not
+        # the changing current owner CAS revision or proof of live admission.
+        return self._slot_apply(fence, row, attempt, metadata, candidate)
+
+    def _record_receipt_slot_allocated(
+        self,
+        *,
+        project_id: int,
+        canonical_item_id: str,
+        owner_ref: str,
+        scope_digest: str,
+        expected_epoch: int,
+        expected_revision: int,
+        controller_run_id: int,
+        intent_ref: str,
+        manifest_digest: str,
+        attempt_run_id: int,
+        expected_slot_revision: int,
+        evidence_ref: str,
+        dalloc: _receipt.D6,
+        fempty: _receipt.F9,
+        status_flags: int,
+        offset: int,
+    ) -> _SlotTransitionOut:
+        fence = _SlotFence(
+            project_id,
+            canonical_item_id,
+            owner_ref,
+            scope_digest,
+            expected_epoch,
+            expected_revision,
+            controller_run_id,
+            intent_ref,
+            manifest_digest,
+            attempt_run_id,
+            expected_slot_revision,
+            evidence_ref,
+        )
+        row, attempt, metadata, current = self._slot_context(fence)
+        slot = self._slot_existing(fence, current)
+        facts = _slot_allocation_facts(dalloc, fempty, status_flags, offset, native=True)
+        if slot["phase"] == "ALLOCATED":
+            if (
+                any(dict(slot)[key] != value for key, value in facts.items())
+                or slot["evidence_ref"] != evidence_ref
+            ):
+                raise ConflictError("private receipt slot allocation facts differ")
+            return self._slot_readback(row, attempt, slot)
+        if slot["phase"] != "ALLOCATION_PENDING":
+            raise ConflictError("private receipt slot cannot allocate after progress")
+        candidate = dict(slot) | facts | {"phase": "ALLOCATED"}
+        return self._slot_apply(fence, row, attempt, metadata, candidate)
+
+    def _claim_receipt_slot(
+        self,
+        *,
+        project_id: int,
+        canonical_item_id: str,
+        owner_ref: str,
+        scope_digest: str,
+        expected_epoch: int,
+        expected_revision: int,
+        controller_run_id: int,
+        intent_ref: str,
+        manifest_digest: str,
+        attempt_run_id: int,
+        expected_slot_revision: int,
+        evidence_ref: str,
+        sealed_digest: str,
+    ) -> _SlotTransitionOut:
+        fence = _SlotFence(
+            project_id,
+            canonical_item_id,
+            owner_ref,
+            scope_digest,
+            expected_epoch,
+            expected_revision,
+            controller_run_id,
+            intent_ref,
+            manifest_digest,
+            attempt_run_id,
+            expected_slot_revision,
+            evidence_ref,
+        )
+        if not _receipt._hex(sealed_digest):
+            raise ValidationError("private receipt slot requires an exact digest")
+        row, attempt, metadata, current = self._slot_context(fence)
+        slot = self._slot_existing(fence, current)
+        if slot["phase"] == "CLAIMED":
+            if slot["sealed_digest"] != sealed_digest or slot["evidence_ref"] != evidence_ref:
+                raise ConflictError("private receipt slot claim differs")
+            return self._slot_readback(row, attempt, slot)
+        if slot["phase"] != "ALLOCATED":
+            raise ConflictError("private receipt slot cannot claim after progress")
+        candidate = dict(slot) | {"phase": "CLAIMED", "sealed_digest": sealed_digest}
+        return self._slot_apply(fence, row, attempt, metadata, candidate)
+
+    def _commit_receipt_slot(
+        self,
+        *,
+        project_id: int,
+        canonical_item_id: str,
+        owner_ref: str,
+        scope_digest: str,
+        expected_epoch: int,
+        expected_revision: int,
+        controller_run_id: int,
+        intent_ref: str,
+        manifest_digest: str,
+        attempt_run_id: int,
+        expected_slot_revision: int,
+        evidence_ref: str,
+        receipt_digest: str,
+    ) -> _SlotTransitionOut:
+        fence = _SlotFence(
+            project_id,
+            canonical_item_id,
+            owner_ref,
+            scope_digest,
+            expected_epoch,
+            expected_revision,
+            controller_run_id,
+            intent_ref,
+            manifest_digest,
+            attempt_run_id,
+            expected_slot_revision,
+            evidence_ref,
+        )
+        if not _receipt._hex(receipt_digest):
+            raise ValidationError("private receipt slot requires an exact digest")
+        row, attempt, metadata, current = self._slot_context(fence)
+        slot = self._slot_existing(fence, current)
+        if slot["phase"] == "COMMITTED":
+            if (
+                slot["receipt_digest"] != receipt_digest
+                or slot["evidence_ref"] != evidence_ref
+                or metadata.get("launch_receipt")
+                != dict(digest=receipt_digest, evidence_ref=evidence_ref)
+            ):
+                raise ConflictError("private receipt slot committed fingerprint differs")
+            return self._slot_readback(row, attempt, slot)
+        if slot["phase"] != "CLAIMED" or slot["sealed_digest"] != receipt_digest:
+            raise ConflictError("private receipt slot commit requires its one claim")
+        candidate = dict(slot) | {"phase": "COMMITTED", "receipt_digest": receipt_digest}
+        return self._slot_apply(
+            fence, row, attempt, metadata, candidate, receipt_digest=receipt_digest
+        )
+
+    def _hold_receipt_slot(
+        self,
+        *,
+        project_id: int,
+        canonical_item_id: str,
+        owner_ref: str,
+        scope_digest: str,
+        expected_epoch: int,
+        expected_revision: int,
+        controller_run_id: int,
+        intent_ref: str,
+        manifest_digest: str,
+        attempt_run_id: int,
+        expected_slot_revision: int,
+        evidence_ref: str,
+        unknown: bool,
+        fixed_reason: _SlotFailureReason,
+    ) -> _SlotTransitionOut:
+        fence = _SlotFence(
+            project_id,
+            canonical_item_id,
+            owner_ref,
+            scope_digest,
+            expected_epoch,
+            expected_revision,
+            controller_run_id,
+            intent_ref,
+            manifest_digest,
+            attempt_run_id,
+            expected_slot_revision,
+            evidence_ref,
+        )
+        if type(unknown) is not bool:
+            raise ValidationError("private receipt slot hold requires an exact boolean")
+        allowed = _SLOT_UNKNOWN if unknown else _SLOT_CONFIRMED
+        if type(fixed_reason) is not str or fixed_reason not in allowed:
+            raise ValidationError("private receipt slot hold requires a fixed matching reason")
+        row, attempt, metadata, current = self._slot_context(fence)
+        slot = self._slot_existing(fence, current)
+        phase = "UNKNOWN_HOLD" if unknown else "FAILED_HOLD"
+        if slot["phase"] in {"FAILED_HOLD", "UNKNOWN_HOLD"}:
+            if (
+                slot["phase"] != phase
+                or dict(slot)["hold_reason"] != fixed_reason
+                or slot["evidence_ref"] != evidence_ref
+            ):
+                raise ConflictError("private receipt slot hold differs")
+            return self._slot_readback(row, attempt, slot)
+        if slot["phase"] not in {"ALLOCATION_PENDING", "ALLOCATED", "CLAIMED"}:
+            raise ConflictError("private receipt slot cannot hold a committed record")
+        candidate = dict(slot) | {
+            "phase": phase,
+            "hold_from": slot["phase"],
+            "hold_reason": fixed_reason,
+        }
+        return self._slot_apply(fence, row, attempt, metadata, candidate)
 
     def _record_owner_attempt(
         self,
@@ -1234,6 +1958,7 @@ class RunRepository:
                 "ownership_disposition",
                 "launch_reservation",
                 "launch_receipt",
+                "receipt_slot",
             }
             & metadata_json.keys()
         ):
