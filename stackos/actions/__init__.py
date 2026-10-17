@@ -23,6 +23,7 @@ from stackos.actions.connectors import (
     ActionConnectorResult,
     ActionValidationIssue,
 )
+from stackos.actions.controlled_command import ControlledCommandConnector
 from stackos.actions.google_gemini_image import GoogleGeminiImageActionConnector
 from stackos.actions.google_veo import GoogleVeoVideoActionConnector
 from stackos.actions.http import HttpActionConnector
@@ -80,6 +81,7 @@ DEFAULT_ACTION_CONNECTORS.register(SmtpActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(ImapActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(StripeActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(MockProviderActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(ControlledCommandConnector())
 
 DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("apollo"))
 DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("clay"))

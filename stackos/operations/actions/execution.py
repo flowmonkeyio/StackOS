@@ -116,26 +116,35 @@ async def action_execute(
     action_ref = inp.action_ref
     if action_ref is None and inp.plugin_slug and inp.action_key:
         action_ref = f"{inp.plugin_slug}.{inp.action_key}"
-    if not inp.dry_run:
+    controlled_authority = None
+    if action_ref == "engineering.controlled-proof.v1":
+        from .controlled import _controlled_intent_key, _issue_controlled_authority
+
+        controlled_authority = _issue_controlled_authority(inp, ctx)
+        idempotency_key = None if inp.dry_run else _controlled_intent_key(controlled_authority)
+        if inp.idempotency_key is not None and inp.idempotency_key != idempotency_key:
+            raise ConflictError("controlled intent key mismatch")
+    elif not inp.dry_run:
         _ensure_action_contract_approval(
             ctx,
             plan_id=plan.id,
             grant_snapshot=plan.grant_snapshot_json,
             action_ref=action_ref,
         )
-    idempotency_key = inp.idempotency_key or _derive_workflow_idempotency_key(
-        project_id=inp.project_id,
-        run_id=ctx.run_id,
-        run_plan_id=plan.id,
-        run_plan_step_id=step.id,
-        step_id=step.step_id,
-        action_ref=action_ref,
-        input_json=inp.input_json,
-        context_ref=inp.context_ref,
-        provider_context_json=inp.provider_context_json,
-        credential_ref=inp.credential_ref,
-        dry_run=inp.dry_run,
-    )
+    if controlled_authority is None:
+        idempotency_key = inp.idempotency_key or _derive_workflow_idempotency_key(
+            project_id=inp.project_id,
+            run_id=ctx.run_id,
+            run_plan_id=plan.id,
+            run_plan_step_id=step.id,
+            step_id=step.step_id,
+            action_ref=action_ref,
+            input_json=inp.input_json,
+            context_ref=inp.context_ref,
+            provider_context_json=inp.provider_context_json,
+            credential_ref=inp.credential_ref,
+            dry_run=inp.dry_run,
+        )
     settings = ctx.extras.get("settings")
     asset_dir = getattr(settings, "generated_assets_dir", None)
     env = await ActionRepository(ctx.session, asset_dir=asset_dir).execute(
@@ -160,10 +169,13 @@ async def action_execute(
         durable_expires_at=inp.expires_at,
         durable_account_interval_seconds=inp.account_interval_seconds,
         durable_destination_interval_seconds=inp.destination_interval_seconds,
-        metadata_json={
+        metadata_json=None
+        if controlled_authority is not None
+        else {
             **(inp.metadata_json or {}),
             "dedupe_source": "caller" if inp.idempotency_key else "workflow-step",
         },
+        _controlled_authority=controlled_authority,
     )
     return WriteEnvelope[ActionExecutionOut](
         data=env.data,

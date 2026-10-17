@@ -1,5 +1,37 @@
 # StackOS Action Executor
 
+## Controlled Engineering Admission
+
+`engineering.controlled-proof.v1` is workflow-only and foreground. Its single
+`noop-v1` descriptor fixes the interpreter bytes, arguments, source hashes,
+working directory and four-entry environment; callers cannot supply a command,
+path, environment, credential or output policy. The current authenticated
+controller must pass the full step/action/argument grant, canonical item and
+owner fences, known unstopped continuity, and an approved exact
+`decision_json.controlled_command` binding. Approval provenance and command
+bytes are reread at reservation and replay. Approved decisions are terminal;
+owner stops, scope changes and edited approved decision data invalidate admission.
+
+The controlled host is unavailable. Successful admission therefore records the
+original ActionCall as `FAILED/controlled_host_unavailable`, with
+`host_dispatched=false`, `retry_safe=false` and `certified=false`. No connector,
+process, Run attempt, key or FD is dispatched or charged. Dry-run records
+`DRY_RUN` and `admission_verified=false`; it is not admission. Direct execution,
+background/durable overrides and registry fallback fail closed. Stable intent
+deduplication retains the original failed audit; unknown histories hold rather
+than authorize retry. Controlled public metadata is allowlisted consistently
+in the initial envelope, audit/get/query and repository/operation replay;
+approval/owner provenance stays backend-only. Native custody, reserve/release,
+barrier/timer/cleanup and terminal certification remain separate host work.
+
+Readback also preserves the existing audit lifecycle: a legitimate `RUNNING`
+reservation has no response yet and remains inspectable through get/query.
+The canonical restart reconciler's `FAILED/daemon-restart-orphan` evidence
+exposes only `outcome_unknown=true` and `retry_safe=false`, with the same safe
+metadata projection. These pending/unknown states assert no admission or
+successful execution and cannot replay as a fresh dispatch. Other malformed
+terminal results still fail closed; the reconciler and public schemas are unchanged.
+
 The action executor is the daemon-side foundation for provider and utility
 calls. It is intentionally a substrate, not an agent decision layer.
 

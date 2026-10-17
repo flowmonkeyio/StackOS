@@ -1,5 +1,16 @@
 # Run Plans
 
+The opt-in `engineering.controlled-proof.v1` action requires an actual current
+controller token, the full `action.execute` grant and declared step action,
+canonical item/owner/epoch/revision/scope, known unstopped continuity, and the
+exact command/source/environment approved under the existing plan approval
+writer. A running step or request IDs alone are insufficient. The action
+currently records only a terminal host-unavailable no-dispatch failure; it
+creates no worker attempt, consumes no owner budget and supplies no launch,
+signal or certification authority. Cached replay rechecks the same current
+binding. No native grant is implied by installing this source; existing runs
+retain their frozen grant snapshots. See [controlled admission](./action-executor.md#controlled-engineering-admission).
+
 A run plan is a concrete, auditable execution plan for one run. It is usually
 derived from a workflow template, then authored by an agent for the project,
 goal, context, and approval requirements at hand.

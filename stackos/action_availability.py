@@ -439,6 +439,10 @@ def build_action_availability(
         status = "missing_connector"
         executable = False
         reasons.insert(0, "connector_not_registered")
+    elif manifest.action_ref == "engineering.controlled-proof.v1":
+        status = "not_executable"
+        executable = False
+        reasons.insert(0, "controlled_host_unavailable")
     elif credential_state == "unknown":
         status = "unknown"
         executable = False

@@ -1,5 +1,20 @@
 # StackOS Security Notes
 
+## Controlled Command Admission Boundary
+
+The private controlled-action authority is cooperative in-process data, never
+a public permission token. Its repository and cache consumers repeat real
+authenticated controller, full grant, item/owner and exact approval checks;
+constructing an object, supplying IDs, or registering a callback grants nothing.
+Command/source/environment hashes are observations, not hostile same-UID file
+custody or atomic DB-to-OS revocation. The fixed Engineering admission action
+has no execution branch: the host remains unavailable and audit says FAILED,
+no-dispatch and uncertified. Private provenance cannot escape through envelope,
+audit/get/query or replay metadata. Unknown/corrupt histories fail closed.
+Independent OS identity, host-only keys/FD custody, release/barrier/timer/signal
+cleanup and effect/set certification require their later explicit integration;
+none is inferred from source availability, workspace binding or this action.
+
 This document records security trade-offs and threat-model decisions that
 deviate from the simplest "lock everything down" posture. Each section
 explains *what* is loosened, *why*, and *what* still defends the surface.

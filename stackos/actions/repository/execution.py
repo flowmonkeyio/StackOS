@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import math
@@ -13,7 +14,7 @@ from contextlib import suppress
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlmodel import Session
 
@@ -43,6 +44,9 @@ from .durable import durable_action_schedule_snapshot
 from .schema import ActionExecutionOut
 from .utils import _redact_for_audit, utcnow
 from .validation import RuntimeActionContext
+
+if TYPE_CHECKING:
+    from stackos.operations.actions.controlled import _ControlledAuthority
 
 ACTION_OUTPUT_SCHEMA_VERSION = ACTION_OUTPUT_SCHEMA_REF
 MAX_TRANSIENT_OUTPUT_BYTES = 262_144
@@ -96,6 +100,7 @@ class ActionExecutionMixin:
         durable_expires_at: datetime | None = None,
         durable_account_interval_seconds: float | None = None,
         durable_destination_interval_seconds: float | None = None,
+        _controlled_authority: _ControlledAuthority | None = None,
     ) -> Envelope[ActionExecutionOut]:
         self._require_project(project_id)
         payload, resolved_ref = self._normalize_payload_and_ref(
@@ -110,6 +115,56 @@ class ActionExecutionMixin:
             context_ref=context_ref,
             credential_ref=resolved_ref,
         )
+        if manifest.action_ref == "engineering.controlled-proof.v1":
+            from stackos.actions.controlled_command import _check_controlled_manifest
+            from stackos.operations.actions.controlled import _ControlledAuthority
+
+            if (
+                type(_controlled_authority) is not _ControlledAuthority
+                or _controlled_authority._ctx.session is not self._s
+                or any(
+                    v is not None
+                    for v in (
+                        context_ref,
+                        provider_context_json,
+                        credential_ref,
+                        output_policy_json,
+                        metadata_json,
+                        durable_items,
+                        durable_due_at,
+                        durable_expires_at,
+                        durable_account_interval_seconds,
+                        durable_destination_interval_seconds,
+                    )
+                )
+            ):
+                raise ValidationError("controlled action requires current operation admission")
+            authority = _controlled_authority
+            if (
+                project_id != authority.fence.project_id
+                or run_id != authority.fence.controller_run_id
+                or run_plan_id != authority.fence.run_plan_id
+                or run_plan_step_id != authority.fence.run_plan_step_id
+                or payload != authority.request.model_dump()
+                or dry_run != authority._inp.dry_run
+            ):
+                raise ConflictError("controlled repository scope mismatch")
+            _check_controlled_manifest(manifest)
+            if self._plugin_disabled_for_project(
+                project_id=project_id, plugin_slug=manifest.plugin_slug
+            ):
+                raise ValidationError("controlled manifest is unavailable or incompatible")
+            return await self._execute_controlled_admission(
+                manifest=manifest,
+                payload=payload,
+                authority=authority,
+                idempotency_key=idempotency_key or "",
+            )
+        if (
+            manifest.connector_key == "controlled-command"
+            or manifest.config_json.get("controlled_host") is not None
+        ):
+            raise ValidationError("controlled namespace cannot be impersonated")
         explicit_provider_context = self._normalize_provider_context(provider_context_json)
         runtime_context = self._resolve_runtime_context(
             project_id=project_id,
@@ -585,6 +640,210 @@ class ActionExecutionMixin:
             project_id=project_id,
             run_id=run_id,
         )
+
+    def _controlled_metadata(self, authority: _ControlledAuthority) -> dict[str, Any]:
+        from stackos.actions.controlled_command import _canonical_digest
+
+        fence, request = authority.fence, authority.request
+        return {
+            "controlled_admission": {
+                "schema_version": "stackos.controlled-command-admission.v1",
+                "request_digest": _canonical_digest(request.model_dump()),
+                "command_digest": request.command_digest,
+                "scope_digest": request.scope_digest,
+                "intent_ref": request.intent_ref,
+                "epoch": request.expected_epoch,
+                "approval_id": fence.approval_id,
+                "approval_updated_at": fence.approval_updated_at.isoformat()
+                if fence.approval_updated_at
+                else None,
+                "approval_decision_digest": fence.approval_decision_digest,
+                "project_id": fence.project_id,
+                "controller_run_id": fence.controller_run_id,
+                "run_plan_id": fence.run_plan_id,
+                "run_plan_step_id": fence.run_plan_step_id,
+                "canonical_item_id": fence.canonical_item_id,
+                "owner_ref": fence.owner_ref,
+                "revision": fence.revision,
+                "continuity_digest": fence.continuity_digest,
+                "grant_digest": fence.grant_digest,
+                "step_actions_digest": fence.step_actions_digest,
+            }
+        }
+
+    def _controlled_replay_out(
+        self,
+        *,
+        row: ActionCall,
+        authority: _ControlledAuthority,
+    ) -> ActionExecutionOut:
+        from stackos.actions.controlled_command import _canonical_digest
+        from stackos.operations.actions.controlled import _controlled_intent_key
+
+        authority.revalidate()
+        if (
+            row.project_id != authority.fence.project_id
+            or (row.plugin_slug, row.action_key) != ("engineering", "controlled-proof.v1")
+            or row.run_id != authority.fence.controller_run_id
+            or row.run_plan_id != authority.fence.run_plan_id
+            or row.run_plan_step_id != authority.fence.run_plan_step_id
+            or row.idempotency_key != _controlled_intent_key(authority)
+            or _canonical_digest(row.request_json)
+            != _canonical_digest(authority.request.model_dump())
+            or row.metadata_json != self._controlled_metadata(authority)
+        ):
+            raise ConflictError("controlled replay binding changed")
+        if row.status == ActionCallStatus.RUNNING:
+            raise ConflictError("controlled_call_in_flight", data={"action_call_id": row.id})
+        output = self._public_action_result(row)
+        if row.status != ActionCallStatus.FAILED or output is None or output["outcome_unknown"]:
+            raise ConflictError("controlled_history_unknown", data={"action_call_id": row.id})
+        return ActionExecutionOut(
+            action_call=self._call_audit_out(row),
+            output_json=output,
+            metadata_json=self._public_action_metadata(
+                plugin_slug=row.plugin_slug,
+                action_key=row.action_key,
+                metadata_json=row.metadata_json,
+            ),
+            cost_cents=0,
+            replayed=True,
+        )
+
+    async def _execute_controlled_admission(
+        self,
+        *,
+        manifest: ExecutableActionManifest,
+        payload: dict[str, Any],
+        authority: _ControlledAuthority,
+        idempotency_key: str,
+    ) -> Envelope[ActionExecutionOut]:
+        from stackos.mcp.errors import ToolNotGrantedError
+        from stackos.operations.actions.controlled import _controlled_intent_key
+
+        authority.revalidate()
+        fence = authority.fence
+        key = _controlled_intent_key(authority)
+        if idempotency_key and idempotency_key != key:
+            raise ConflictError("controlled intent key mismatch")
+        metadata = self._controlled_metadata(authority)
+
+        def result(code: str, *, verified: bool) -> dict[str, Any]:
+            return {
+                "schema_version": "stackos.controlled-command-result.v1",
+                "status": "failed",
+                "code": code,
+                "admission_verified": verified,
+                "command_digest": authority.request.command_digest,
+                "intent_ref": authority.request.intent_ref,
+                "host_dispatched": False,
+                "provider_executed": False,
+                "outcome_unknown": False,
+                "retry_safe": False,
+                "certified": False,
+            }
+
+        def envelope(row: ActionCall) -> Envelope[ActionExecutionOut]:
+            return Envelope(
+                data=ActionExecutionOut(
+                    action_call=self._call_audit_out(row),
+                    output_json=self._public_action_result(row) or {},
+                    metadata_json=self._public_action_metadata(
+                        plugin_slug=row.plugin_slug,
+                        action_key=row.action_key,
+                        metadata_json=row.metadata_json,
+                    ),
+                    cost_cents=0,
+                    dry_run=authority._inp.dry_run,
+                ),
+                project_id=fence.project_id,
+                run_id=fence.controller_run_id,
+            )
+
+        if authority._inp.dry_run:
+            row = self._record_call(
+                project_id=fence.project_id,
+                manifest=manifest,
+                credential=None,
+                credential_ref=None,
+                run_id=fence.controller_run_id,
+                run_plan_id=fence.run_plan_id,
+                run_plan_step_id=fence.run_plan_step_id,
+                idempotency_key=None,
+                request_json=payload,
+                provider_context_json=None,
+                response_json=result("controlled_host_unavailable", verified=False),
+                metadata_json=metadata,
+                status=ActionCallStatus.DRY_RUN,
+                dry_run=True,
+                cost_cents=0,
+                duration_ms=0,
+            )
+            return envelope(row)
+
+        def guard() -> None:
+            authority.revalidate()
+
+        row, replayed = self._reserve_background_call(
+            project_id=fence.project_id,
+            manifest=manifest,
+            credential_ref=None,
+            run_id=fence.controller_run_id,
+            run_plan_id=fence.run_plan_id,
+            run_plan_step_id=fence.run_plan_step_id,
+            idempotency_key=key,
+            request_json=payload,
+            provider_context_json=None,
+            metadata_json=metadata,
+            estimated_cost_cents=0,
+            commit_guard=guard,
+        )
+        if replayed:
+            return Envelope(
+                data=self._controlled_replay_out(row=row, authority=authority),
+                project_id=fence.project_id,
+                run_id=fence.controller_run_id,
+            )
+        assert row.id is not None
+        try:
+            try:
+                authority.revalidate()
+                output = result("controlled_host_unavailable", verified=True)
+            except (ConflictError, ToolNotGrantedError, ValidationError):
+                output = result("authority_changed", verified=False)
+            row = self._finalize_running_call(
+                project_id=fence.project_id,
+                action_call_id=row.id,
+                credential=None,
+                response_json=output,
+                metadata_json=metadata,
+                status=ActionCallStatus.FAILED,
+                cost_cents=0,
+                duration_ms=0,
+                error=output["code"],
+                commit=True,
+            )
+            return envelope(row)
+        except BaseException as exc:
+            self._s.rollback()
+            # Settle this original no-dispatch record only; preserve the original
+            # cancellation/error even if evidence persistence is unavailable.
+            with suppress(Exception):
+                self._finalize_running_call(
+                    project_id=fence.project_id,
+                    action_call_id=row.id,
+                    credential=None,
+                    response_json=result("interrupted_before_dispatch", verified=False),
+                    metadata_json=metadata,
+                    status=ActionCallStatus.FAILED,
+                    cost_cents=0,
+                    duration_ms=0,
+                    error="interrupted_before_dispatch",
+                    commit=True,
+                )
+            if isinstance(exc, asyncio.CancelledError):
+                raise
+            raise
 
     async def _execute_prepared(
         self,

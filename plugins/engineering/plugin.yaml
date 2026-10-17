@@ -4,6 +4,33 @@ version: 0.2.0
 description: First-party StackOS domain package for SDLC workflow templates, engineering task state, and reusable delivery agent presets.
 display_order: 10
 source: builtin
+actions:
+  - key: controlled-proof.v1
+    name: Controlled proof admission
+    description: Validate a fixed command against current workflow authority and record a no-dispatch failure while the controlled host is unavailable.
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [canonical_item_id, owner_ref, expected_epoch, expected_revision, scope_digest, intent_ref, command_key, command_digest]
+      properties:
+        canonical_item_id: {type: string, pattern: '^(task|ticket):[1-9][0-9]*$', maxLength: 128}
+        owner_ref: {type: string, minLength: 1, maxLength: 160}
+        expected_epoch: {type: integer, minimum: 1, maximum: 9223372036854775807}
+        expected_revision: {type: integer, minimum: 1, maximum: 9223372036854775807}
+        scope_digest: {type: string, pattern: '^[0-9a-f]{64}$'}
+        intent_ref: {type: string, minLength: 1, maxLength: 240, pattern: '^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$'}
+        command_key: {const: noop-v1}
+        command_digest: {type: string, pattern: '^[0-9a-f]{64}$'}
+    config:
+      schema_version: stackos.action.v1
+      connector: controlled-command
+      operation: controlled-proof.v1
+      execution_mode: foreground
+      controlled_host: unavailable
+      direct_run: workflow-only
+      requires_credential: false
+      allows_credential: false
 capabilities:
   - key: engineering-delivery
     name: Engineering Delivery

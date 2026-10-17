@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any, Literal
 
@@ -201,6 +202,7 @@ class ActionAuditMixin:
         metadata_json: dict[str, Any] | None,
         estimated_cost_cents: int,
         durable_schedule_json: dict[str, Any] | None = None,
+        commit_guard: Callable[[], None] | None = None,
     ) -> tuple[ActionCall, bool]:
         fingerprint = _background_request_fingerprint(
             action_ref=manifest.action_ref,
@@ -252,6 +254,9 @@ class ActionAuditMixin:
                         },
                     )
                 )
+            self._s.flush()
+            if commit_guard is not None:
+                commit_guard()
             self._s.commit()
             self._s.refresh(row)
             return row, False
@@ -269,7 +274,12 @@ class ActionAuditMixin:
             )
             if replay is None:
                 raise
+            if commit_guard is not None:
+                commit_guard()
             return replay, True
+        except BaseException:
+            self._s.rollback()
+            raise
 
     def _background_replay(
         self,
@@ -427,8 +437,14 @@ class ActionAuditMixin:
             credential_ref=row.credential_ref,
             request_json=_redact_for_audit(row.request_json),
             provider_context_json=_redact_for_audit(row.provider_context_json),
-            response_json=_redact_for_audit(row.response_json),
-            metadata_json=_redact_for_audit(row.metadata_json),
+            response_json=_redact_for_audit(self._public_action_result(row)),
+            metadata_json=_redact_for_audit(
+                self._public_action_metadata(
+                    plugin_slug=row.plugin_slug,
+                    action_key=row.action_key,
+                    metadata_json=row.metadata_json,
+                )
+            ),
             cost_cents=row.cost_cents,
             duration_ms=row.duration_ms,
             error=redact_secret_text(row.error) if row.error is not None else None,
@@ -439,6 +455,11 @@ class ActionAuditMixin:
     def _call_audit_out(self, row: ActionCall) -> ActionCallAuditOut:
         assert row.id is not None
         metadata_json = generated_action_public_audit_metadata(row.metadata_json)
+        metadata_json = self._public_action_metadata(
+            plugin_slug=row.plugin_slug,
+            action_key=row.action_key,
+            metadata_json=metadata_json,
+        )
         return ActionCallAuditOut(
             id=row.id,
             project_id=row.project_id,
@@ -455,7 +476,7 @@ class ActionAuditMixin:
             credential_ref=row.credential_ref,
             request_json=_redact_for_audit(row.request_json),
             provider_context_json=_redact_for_audit(row.provider_context_json),
-            response_json=_redact_for_audit(row.response_json),
+            response_json=_redact_for_audit(self._public_action_result(row)),
             metadata_json=_redact_for_audit(metadata_json),
             cost_cents=row.cost_cents,
             duration_ms=row.duration_ms,
@@ -463,6 +484,127 @@ class ActionAuditMixin:
             created_at=row.created_at,
             completed_at=row.completed_at,
         )
+
+    def _public_action_metadata(
+        self,
+        *,
+        plugin_slug: str,
+        action_key: str,
+        metadata_json: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if (plugin_slug, action_key) != ("engineering", "controlled-proof.v1"):
+            return metadata_json
+        from stackos.actions.controlled_command import _ControlledCommandInput
+
+        source = (metadata_json or {}).get("controlled_admission")
+        if not isinstance(source, dict):
+            raise ConflictError("controlled_history_unknown")
+        keys = (
+            "schema_version",
+            "request_digest",
+            "command_digest",
+            "scope_digest",
+            "intent_ref",
+            "epoch",
+        )
+        public = {key: source.get(key) for key in keys}
+        if (
+            public["schema_version"] != "stackos.controlled-command-admission.v1"
+            or type(public["request_digest"]) is not str
+            or len(public["request_digest"]) != 64
+            or any(c not in "0123456789abcdef" for c in public["request_digest"])
+        ):
+            raise ConflictError("controlled_history_unknown")
+        try:
+            _ControlledCommandInput.model_validate(
+                {
+                    "canonical_item_id": "task:1",
+                    "owner_ref": "projection",
+                    "expected_epoch": public["epoch"],
+                    "expected_revision": 1,
+                    "scope_digest": public["scope_digest"],
+                    "intent_ref": public["intent_ref"],
+                    "command_key": "noop-v1",
+                    "command_digest": public["command_digest"],
+                }
+            )
+        except ValueError as exc:
+            raise ConflictError("controlled_history_unknown") from exc
+        return {"controlled_admission": public}
+
+    def _public_action_result(self, row: ActionCall) -> dict[str, Any] | None:
+        if (row.plugin_slug, row.action_key) != ("engineering", "controlled-proof.v1"):
+            return row.response_json
+        if row.status == ActionCallStatus.RUNNING and row.response_json is None:
+            # A reserved call has no terminal result yet. Readers still validate
+            # its metadata and expose the existing RUNNING/poll contract only.
+            return None
+        output = row.response_json
+        if (
+            row.status == ActionCallStatus.FAILED
+            and row.error == "daemon-restart-orphan"
+            and type(output) is dict
+            and output.keys() == {"outcome_unknown", "retry_safe"}
+            and output["outcome_unknown"] is True
+            and output["retry_safe"] is False
+        ):
+            # Canonical restart evidence remains inspectable, but supplies no
+            # admission/result assertion. Controlled replay still holds unknown.
+            return {"outcome_unknown": True, "retry_safe": False}
+        required = {
+            "schema_version",
+            "status",
+            "code",
+            "admission_verified",
+            "command_digest",
+            "intent_ref",
+            "host_dispatched",
+            "provider_executed",
+            "outcome_unknown",
+            "retry_safe",
+            "certified",
+        }
+        if (
+            type(output) is not dict
+            or output.keys() != required
+            or output.get("schema_version") != "stackos.controlled-command-result.v1"
+            or output.get("status") != "failed"
+            or output.get("code")
+            not in {
+                "controlled_host_unavailable",
+                "authority_changed",
+                "interrupted_before_dispatch",
+            }
+            or any(
+                type(output.get(k)) is not bool
+                for k in (
+                    "admission_verified",
+                    "host_dispatched",
+                    "provider_executed",
+                    "outcome_unknown",
+                    "retry_safe",
+                    "certified",
+                )
+            )
+            or any(
+                output[k]
+                for k in ("host_dispatched", "provider_executed", "retry_safe", "certified")
+            )
+        ):
+            raise ConflictError("controlled_history_unknown", data={"action_call_id": row.id})
+        public = self._public_action_metadata(
+            plugin_slug=row.plugin_slug,
+            action_key=row.action_key,
+            metadata_json=row.metadata_json,
+        )
+        assert public is not None
+        binding = public["controlled_admission"]
+        if (
+            output["command_digest"] != binding["command_digest"]
+            or output["intent_ref"] != binding["intent_ref"]
+        ):
+            raise ConflictError("controlled_history_unknown", data={"action_call_id": row.id})
+        return dict(output)
 
     def _idempotency_replay(
         self,
@@ -505,8 +647,12 @@ class ActionAuditMixin:
             )
         return ActionExecutionOut(
             action_call=self._call_audit_out(row),
-            output_json=row.response_json or {},
-            metadata_json=row.metadata_json,
+            output_json=self._public_action_result(row) or {},
+            metadata_json=self._public_action_metadata(
+                plugin_slug=row.plugin_slug,
+                action_key=row.action_key,
+                metadata_json=row.metadata_json,
+            ),
             cost_cents=row.cost_cents,
             dry_run=row.dry_run,
             replayed=True,

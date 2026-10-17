@@ -170,6 +170,12 @@ class OperationDispatcher:
         except IdempotencyReplayError as exc:
             cached = exc.data.get("response_json")
             if cached is not None and isinstance(cached, dict):
+                if operation_name == "action.execute":
+                    from stackos.operations.actions.controlled import (
+                        _validate_controlled_cached_replay,
+                    )
+
+                    return _validate_controlled_cached_replay(parsed, ctx, cached)
                 if operation_name in RUN_PLAN_OWNER_TOOL_NAMES:
                     from stackos.operations.runs import validate_owner_replay
 
