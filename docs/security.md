@@ -292,10 +292,11 @@ chat accepts only a bounded inbound human intent with safe query/snapshot refs;
 it cannot spoof an agent, send outbound content or run a model. Reviewed result
 reads bind original request/query/source and exact published result/report hashes.
 
-Selected finance roots and their private authorization map are not automatically
-backed up by the separate unmerged backup work. Recovery includes verified
-operator-owned backups and explicit file-access reselection; future activated
-backup enrollment must cover the finance roots separately.
+Finance workspace selection does not enroll its files in encrypted backups.
+Explicitly enroll the entire finance root and its persistent `.writer.lock`
+through [local backup setup](./backups.md). Verify recovery into an inert
+directory before adoption and explicitly reselect file access; restoring a
+private authorization map does not grant access to a restored finance root.
 
 ## Daemon-Owned Browser Sessions
 
@@ -389,6 +390,31 @@ machines and want browser bootstrap removed can:
    `WHITELIST_PREFIXES`. This is intentionally a code change, not a runtime
    flag, to make sure any operator going down that path has read the
    implications.
+
+## Encrypted backup custody
+
+All newly created backups encrypt the complete database, matching seed, daemon
+token, manifest and enrolled external folders with an independent X25519
+recovery key and authenticated AES-256-GCM encryption. The seed inside a backup
+cannot unlock its outer encryption. Creation and scheduling use only the
+public key; recovery private keys stay in operator-controlled files outside
+the sources and destination and never traverse REST, MCP or status responses.
+
+Backup setup is explicit local administration. Automatic execution starts
+disabled. Enroll the entire finance folder and its persistent writer lock;
+project bindings and workflow references imply no filesystem permission.
+Missing, busy, unsafe or changing sources fail closed. Backup outputs cannot
+be placed in the publicly served generated-assets directory. Private key
+exclusions survive configuration changes and reject later enrollment or a
+copied matching recovery key.
+
+Private staging files are removed on normal completion or failure. Archive
+publication is exclusive and atomic; failed attempts preserve prior successful
+archives. Restore authenticates before inspecting plaintext and validates
+member paths, types, hashes and database integrity into a fresh inert folder.
+It neither replaces live state nor activates a saved policy. Old plaintext ZIP
+archives remain plaintext and are rejected by the new restore command.
+See [backup and recovery](./backups.md) for custody, exclusions and commands.
 
 ## Rate-Limit Posture
 

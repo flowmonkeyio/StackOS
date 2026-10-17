@@ -820,6 +820,10 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
         return {key: value for key, value in data.items() if key in fields}
     if operation_name in {"action.run", "action.execute"}:
         return _compact_action_execution(data)
+    if operation_name.startswith("run.owner"):
+        # This bounded fence/continuity receipt must remain complete in compact:
+        # truncating epochs, revisions or policy refs would change its meaning.
+        return copy.deepcopy(data)
     if operation_name == "actionCall.get":
         return _compact_action_call_get(data)
     if operation_name == "resource.get":

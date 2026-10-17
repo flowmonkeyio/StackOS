@@ -29,6 +29,10 @@ describe('HomeView', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('Local service'))
 
     expect(wrapper.text()).toContain('Running')
+    expect(wrapper.find('[aria-label="Local backups"]').exists()).toBe(false)
+    expect(globalThis.fetch).not.toHaveBeenCalledWith(
+      '/api/v1/operations/backup.status/call', expect.anything(),
+    )
     const service = wrapper.get('[aria-label="System status"]')
     expect(service.findAll('button').map((button) => button.text())).toEqual([
       'Restart',

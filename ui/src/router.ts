@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 
 import HomeView from './views/HomeView.vue'
+import LocalSetupView from './views/LocalSetupView.vue'
 import AuthErrorView from './views/AuthErrorView.vue'
 import ProjectDetailView from './views/ProjectDetailView.vue'
 import HomeConsoleView from './views/HomeConsoleView.vue'
@@ -26,6 +27,7 @@ import FinanceView from './views/FinanceView.vue'
 
 const routes: RouteRecordRaw[] = [
   { path: '/', name: 'home', component: HomeView },
+  { path: '/setup', name: 'local-setup', component: LocalSetupView },
   { path: '/auth-error', name: 'auth-error', component: AuthErrorView },
   { path: '/accounts', name: 'accounts', component: AccountsView },
   { path: '/projects', redirect: '/' },

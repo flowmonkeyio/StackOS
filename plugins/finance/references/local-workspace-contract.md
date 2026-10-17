@@ -655,9 +655,12 @@ bucketing from it. Period report renderers and exports remain unchanged.
 Recovery preserves the external master and originals: refresh/rebase stale
 edits, reconcile unknown outcomes, repair/reselect local file authorization and
 restore only from independently verified operator-owned backups. This finance
-authorization map and selected roots are not automatically enrolled in the
-separate, unmerged backup work. Enroll finance roots explicitly when that backup
-feature is activated; do not claim current automatic backup/restore coverage.
+authorization map and workspace selection do not register backup coverage:
+finance roots are not automatically enrolled. Explicitly enroll the entire
+finance directory and its persistent `.writer.lock` through local backup setup.
+Verify recovery into an inert directory before adoption and perform explicit
+file-access reselection; backup or recovery does not activate finance
+authorization.
 
 ## Prepared bookkeeping
 
@@ -768,3 +771,13 @@ These are source families, not hardcoded reusable tax rules.
 
 The operator owns backup, restore, retention periods, access permissions,
 encryption and secure disposal. Credentials never belong here.
+
+StackOS local backup setup can explicitly enroll the entire external finance
+directory with its persistent `.writer.lock`. It takes a shared lock while
+copying and rejects a busy writer, missing or changing evidence and unsafe
+files. Register the directory through local administration; neither
+`workspace_ref` nor a project binding grants coverage. Manual and opted-in
+automatic backups then include the master, originals, schema, review packets
+and views in the same encrypted archive. Verify recovery into an inert folder
+with the separately stored private key before adopting restored financial
+records. No backup or restore changes posting or reconciliation decisions.

@@ -91,6 +91,7 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
         "workflow_template_extensions",
         "workflow_templates",
         "workspace_bindings",
+        "work_item_ownership",
     }
 )
 
@@ -592,7 +593,7 @@ def test_global_account_backing_repair_is_a_healthy_noop(
             == before
         )
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0033_project_id_nonreuse",
+            "0034_work_item_ownership",
         )
     finally:
         conn.close()
@@ -1683,7 +1684,7 @@ def _assert_project_migration_preserved(db_path: Path, before: dict) -> None:
 
 def test_project_id_migration_preserves_data_and_never_reuses_ids(isolated_alembic: Path) -> None:
     before = _project_migration_fixture(isolated_alembic)
-    _run_alembic(["upgrade", "head"])
+    _run_alembic(["upgrade", "0033_project_id_nonreuse"])
     _assert_project_migration_preserved(isolated_alembic, before)
     with sqlite3.connect(isolated_alembic) as conn:
         ddl = conn.execute("SELECT sql FROM sqlite_master WHERE name='projects'").fetchone()[0]
@@ -1709,7 +1710,7 @@ def test_project_id_migration_preserves_data_and_never_reuses_ids(isolated_alemb
         ).fetchone()[0]
         # Simulate a crash after successful DDL but before the Alembic stamp.
         conn.execute("UPDATE alembic_version SET version_num='0032_shared_telegram_application'")
-    _run_alembic(["upgrade", "head"])
+    _run_alembic(["upgrade", "0033_project_id_nonreuse"])
     with sqlite3.connect(isolated_alembic) as conn:
         assert (
             conn.execute("SELECT seq FROM sqlite_sequence WHERE name='projects'").fetchone()[0]
@@ -1761,6 +1762,58 @@ def test_project_id_migration_failure_rolls_back_and_restores_foreign_keys(
     engine.dispose()
     _assert_project_migration_preserved(isolated_alembic, before)
     _run_alembic(["upgrade", "head"])
+
+
+def test_ownership_migration_preserves_existing_data_and_refuses_history_loss(
+    isolated_alembic: Path,
+) -> None:
+    _run_alembic(["upgrade", "0033_project_id_nonreuse"])
+    now = "2026-10-14 00:00:00"
+    with sqlite3.connect(isolated_alembic) as conn:
+        _insert_legacy_project(conn, project_id=1, now=now)
+    _run_alembic(["upgrade", "head"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        assert conn.execute("SELECT id FROM projects").fetchall() == [(1,)]
+        assert conn.execute("SELECT * FROM work_item_ownership").fetchall() == []
+        values = (
+            1,
+            "ticket:1",
+            "session:original",
+            1,
+            1,
+            "a" * 64,
+            0,
+            json.dumps({"stopped": True, "failures_used": 2}),
+            now,
+            now,
+        )
+        statement = """
+            INSERT INTO work_item_ownership
+            (project_id, canonical_item_id, owner_ref, epoch, revision, scope_digest,
+             checkpoint_revision, continuity_json, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        conn.execute(statement, values)
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(statement, values)
+    with pytest.raises(subprocess.CalledProcessError):
+        _run_alembic(["downgrade", "0033_project_id_nonreuse"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        persisted = conn.execute(
+            "SELECT owner_ref, epoch, revision, continuity_json FROM work_item_ownership"
+        ).fetchone()
+        assert persisted[:3] == ("session:original", 1, 1)
+        assert json.loads(persisted[3]) == {"stopped": True, "failures_used": 2}
+        assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
+            "0034_work_item_ownership",
+        )
+        conn.execute("DELETE FROM work_item_ownership")
+    _run_alembic(["downgrade", "0033_project_id_nonreuse"])
+    assert "work_item_ownership" not in _list_tables(isolated_alembic)
+    _run_alembic(["upgrade", "head"])
+    assert "work_item_ownership" in _list_tables(isolated_alembic)
+    with sqlite3.connect(isolated_alembic) as conn:
+        assert conn.execute("SELECT id FROM projects").fetchall() == [(1,)]
 
 
 def test_alembic_downgrade_then_upgrade_idempotent(isolated_alembic: Path) -> None:

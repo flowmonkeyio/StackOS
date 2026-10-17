@@ -10,6 +10,7 @@ obvious without loading every document.
 | Understanding what StackOS is or evaluating a proposed product change | [`product-direction.md`](./product-direction.md), [`architecture.md`](./architecture.md), [`agent-operating-model.md`](./agent-operating-model.md) |
 | Helping a person take the first steps after installing StackOS | [Public getting-started guide](https://stackos.flowmonkey.io/getting-started); use [`setup.md`](./setup.md) only for the technical install and repair contract |
 | Installing, starting, repairing, or lifecycle-smoke testing StackOS | [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`lifecycle-smoke-verification.md`](./lifecycle-smoke-verification.md), [`security.md`](./security.md) |
+| Backing up local state and external finance folders, opting in to automatic backups, or verifying recovery | [`backups.md`](./backups.md), [`security.md`](./security.md), [`upgrade.md`](./upgrade.md) |
 | Adding, repairing, or explaining ChatGPT, Codex, Claude, Gemini, or Hermes host connections | [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`lifecycle-smoke-verification.md`](./lifecycle-smoke-verification.md) |
 | Building the macOS desktop app or installer | [`desktop-distribution.md`](./desktop-distribution.md), [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`security.md`](./security.md), [`release-signoff.md`](./release-signoff.md) |
 | Renaming this repository for release | [`repository-rename.md`](./repository-rename.md), [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md) |
@@ -22,6 +23,8 @@ obvious without loading every document.
 | Passing a tenant/customer secret in an action payload | [`action-executor.md`](./action-executor.md), [`security.md`](./security.md) |
 | Adding or using browser automation | [`browser-automation.md`](./browser-automation.md), [`operations.md`](./operations.md), [`setup.md`](./setup.md), [`security.md`](./security.md) |
 | Adding or changing task/ticket tracking | [`task-tracker.md`](./task-tracker.md), [`run-plans.md`](./run-plans.md), [`operations.md`](./operations.md) |
+| Designing bounded session supervision | [`session-supervision-spec.md`](./session-supervision-spec.md) |
+| Designing feedback, resolution and verified learning | [`feedback-resolution-spec.md`](./feedback-resolution-spec.md) |
 | Choosing OAuth versus a static key/token, or adding providers, auth methods, or credentials | [`auth-providers.md`](./auth-providers.md), [`oauth-provider-setup.md`](./oauth-provider-setup.md), [`security.md`](./security.md), [`integration-contracts/AGENTS.md`](./integration-contracts/AGENTS.md) |
 | Adding or changing communications, chat, email, targets, or memberships | [`integration-contracts/communications.md`](./integration-contracts/communications.md), [`operations.md`](./operations.md), [`resources-and-artifacts.md`](./resources-and-artifacts.md) |
 | Adding or changing plugins | [`plugins.md`](./plugins.md), [`extending.md`](./extending.md), [`workflow-templates.md`](./workflow-templates.md) |

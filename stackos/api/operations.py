@@ -98,7 +98,15 @@ async def call_operation(
         )
     )
     trusted_local_admin = bool(
-        (spec.grant_policy == "local-admin-auth-write" or console_contract)
+        (
+            spec.grant_policy
+            in {
+                "local-admin-auth-write",
+                "local-admin-backup-read",
+                "local-admin-backup-write",
+            }
+            or console_contract
+        )
         and spec.surfaces.rest.path == generic_operation_path
     )
     result = await OperationDispatcher(registry).dispatch(

@@ -37,6 +37,7 @@ from stackos.db.models import (
 from stackos.mcp.errors import ToolNotGrantedError
 from stackos.workflows.run_plan_grants import (
     RUN_PLAN_GRANTABLE_TOOL_NAMES,
+    RUN_PLAN_OWNER_TOOL_NAMES,
     RunPlanMcpToolGrant,
     parse_run_plan_mcp_tool_grants,
 )
@@ -208,6 +209,8 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "run.cost",
         "run.finish",
         "run.get",
+        "run.ownerGet",
+        "run.ownerResolve",
         "run.heartbeat",
         "run.insertStep",
         "run.list",
@@ -265,6 +268,8 @@ _RUN_PLAN_CONTROL: frozenset[str] = frozenset(
         "actionCall.resume",
         "actionCall.retry",
         "run.get",
+        "run.ownerGet",
+        "run.ownerResolve",
         "run.heartbeat",
         "runPlan.claimStep",
         "runPlan.checkConsistency",
@@ -478,16 +483,20 @@ def _grant_matches_arguments(
         if requested_action_ref not in set(grant.action_refs):
             return False
     if grant.targets:
-        requested_target = arguments.get("to")
-        if not isinstance(requested_target, str) or not requested_target.strip():
-            return False
-        raw = requested_target.strip()
-        candidates = {
-            raw,
-            raw if raw.startswith("communication-target:") else f"communication-target:{raw}",
-        }
-        if candidates.isdisjoint(set(grant.targets)):
-            return False
+        if grant.tool_name in RUN_PLAN_OWNER_TOOL_NAMES:
+            if arguments.get("canonical_item_id") not in set(grant.targets):
+                return False
+        else:
+            requested_target = arguments.get("to")
+            if not isinstance(requested_target, str) or not requested_target.strip():
+                return False
+            raw = requested_target.strip()
+            candidates = {
+                raw,
+                raw if raw.startswith("communication-target:") else f"communication-target:{raw}",
+            }
+            if candidates.isdisjoint(set(grant.targets)):
+                return False
     if grant.tool_name == "communication.reply" and grant.sources:
         if session is None or project_id is None:
             return False
@@ -765,6 +774,11 @@ def check_call_grant(tool_name: str, ctx: Any, parsed_arguments: Any | None = No
     """
     skill_name = getattr(ctx, "skill_name", INVALID_SKILL)
     check_grant(tool_name, skill_name)
+    if tool_name in RUN_PLAN_OWNER_TOOL_NAMES and skill_name != RUN_PLAN_CONTROLLER_SKILL:
+        raise ToolNotGrantedError(
+            "ownership mutations require a current run-plan controller grant",
+            data={"tool_name": tool_name, "skill_name": skill_name},
+        )
     if skill_name == SYSTEM_SKILL:
         arguments = _model_to_dict(parsed_arguments)
         if tool_name == "context.query":
@@ -786,6 +800,19 @@ def check_call_grant(tool_name: str, ctx: Any, parsed_arguments: Any | None = No
     if tool_name not in _RUN_PLAN_DYNAMIC_TOOLS:
         return
     _check_run_plan_dynamic_grant(tool_name, ctx, parsed_arguments)
+    if tool_name in RUN_PLAN_OWNER_TOOL_NAMES:
+        # Keep item binding ahead of dispatcher idempotency replay on every adapter.
+        from stackos.repositories.tracker import TrackerRepository
+
+        arguments = _model_to_dict(parsed_arguments)
+        plan, step = _running_run_plan_step(ctx, tool_name)
+        assert plan.id is not None and step.id is not None
+        TrackerRepository(ctx.session).require_owner_execution_binding(
+            project_id=plan.project_id,
+            canonical_item_id=arguments["canonical_item_id"],
+            run_plan_id=plan.id,
+            run_plan_step_id=step.id,
+        )
 
 
 __all__ = [

@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from threading import Barrier
 
 import pytest
-from sqlmodel import Session, select
+from sqlalchemy.orm.attributes import flag_modified
+from sqlmodel import Session, SQLModel, create_engine, select
 
 from stackos.db.models import (
+    ProjectEvent,
     Run,
     RunKind,
     RunPlan,
@@ -15,8 +20,13 @@ from stackos.db.models import (
     RunPlanStep,
     RunPlanStepStatus,
     RunStatus,
+    TrackerLinkKind,
+    TrackerTicket,
+    TrackerTicketLink,
+    TrackerTicketReference,
+    WorkItemOwnership,
 )
-from stackos.repositories.base import ConflictError
+from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.runs import RunRepository
 from stackos.repositories.tracker import TrackerRepository
@@ -24,6 +34,585 @@ from stackos.repositories.tracker import TrackerRepository
 
 def _now() -> datetime:
     return datetime.now(tz=UTC).replace(tzinfo=None)
+
+
+def _ownership_ticket(session: Session, project_id: int, key: str = "work"):
+    tracker = TrackerRepository(session)
+    tracker.create_task(project_id=project_id, key=key, title="Canonical task")
+    result = tracker.create_ticket(
+        project_id=project_id,
+        task_key=key,
+        key=key,
+        title="Canonical ticket",
+        references_json=[
+            {"ref_type": "external", "ref": "https://example.test/issues/one"},
+            {"ref_type": "external", "ref": "https://example.test/issues/one"},
+        ],
+    ).data
+    assert result.ticket is not None
+    return result.ticket
+
+
+def test_owner_item_aliases_converge_on_native_ticket(session: Session, project_id: int) -> None:
+    ticket = _ownership_ticket(session, project_id)
+    session.add(
+        TrackerTicketLink(
+            tracker_id=ticket.tracker_id,
+            project_id=project_id,
+            task_id=ticket.task_id,
+            ticket_id=ticket.id,
+            link_kind=TrackerLinkKind.EXTERNAL,
+            ref="external-system:stable-uuid",
+        )
+    )
+    session.commit()
+    repo = TrackerRepository(session)
+    native = repo.resolve_owner_item(project_id=project_id, canonical_item_id=f"ticket:{ticket.id}")
+    by_url = repo.resolve_owner_item(
+        project_id=project_id, alias_ref="https://example.test/issues/one"
+    )
+    by_uuid = repo.resolve_owner_item(
+        project_id=project_id, alias_ref="external-system:stable-uuid"
+    )
+    assert native == by_url == by_uuid
+    assert native.project_id == project_id
+    assert native.canonical_item_id == f"ticket:{ticket.id}"
+    assert native.item_kind == "ticket"
+
+
+def test_owner_item_task_and_ticket_ids_are_distinct(session: Session, project_id: int) -> None:
+    ticket = _ownership_ticket(session, project_id)
+    # SQLite tables allocate independently: raw integer IDs overlap.
+    assert ticket.id == ticket.task_id
+    repo = TrackerRepository(session)
+    task = repo.resolve_owner_item(
+        project_id=project_id, canonical_item_id=f"task:{ticket.task_id}"
+    )
+    child = repo.resolve_owner_item(project_id=project_id, canonical_item_id=f"ticket:{ticket.id}")
+    assert task.item_id == child.item_id
+    assert task.canonical_item_id != child.canonical_item_id
+
+
+def test_owner_item_ambiguous_alias_is_rejected(session: Session, project_id: int) -> None:
+    first = _ownership_ticket(session, project_id)
+    second = _ownership_ticket(session, project_id, key="other-work")
+    assert first.id != second.id
+    with pytest.raises(ConflictError, match="ambiguous"):
+        TrackerRepository(session).resolve_owner_item(
+            project_id=project_id, alias_ref="https://example.test/issues/one"
+        )
+
+
+def test_owner_item_project_scope_rejects_foreign_and_corrupt_alias_targets(
+    session: Session, project_id: int
+) -> None:
+    from stackos.repositories.projects import ProjectRepository
+
+    other_project_id = (
+        ProjectRepository(session)
+        .create(slug="other-owner-project", name="Other project", domain="example.test")
+        .data.id
+    )
+    ticket = _ownership_ticket(session, project_id)
+    foreign = _ownership_ticket(session, other_project_id, key="foreign-work")
+    repo = TrackerRepository(session)
+    assert (
+        repo.resolve_owner_item(
+            project_id=project_id, alias_ref="https://example.test/issues/one"
+        ).item_id
+        == ticket.id
+    )
+    with pytest.raises(NotFoundError):
+        repo.resolve_owner_item(project_id=project_id, canonical_item_id=f"ticket:{foreign.id}")
+    session.add(
+        TrackerTicketReference(
+            tracker_id=ticket.tracker_id,
+            project_id=project_id,
+            ticket_id=foreign.id,
+            ref_type="external",
+            ref="external-system:corrupt-target",
+        )
+    )
+    session.commit()
+    with pytest.raises(NotFoundError):
+        repo.resolve_owner_item(project_id=project_id, alias_ref="external-system:corrupt-target")
+
+
+@pytest.mark.parametrize(
+    "canonical_item_id",
+    ["ticket:0", "ticket:-1", "ticket:01", "task:bad", "1", "run:1", "ticket:9223372036854775808"],
+)
+def test_owner_item_rejects_malformed_native_identity(
+    session: Session, project_id: int, canonical_item_id: str
+) -> None:
+    with pytest.raises(ValidationError):
+        TrackerRepository(session).resolve_owner_item(
+            project_id=project_id, canonical_item_id=canonical_item_id
+        )
+
+
+def test_owner_item_requires_one_selector_and_known_alias(
+    session: Session, project_id: int
+) -> None:
+    repo = TrackerRepository(session)
+    with pytest.raises(ValidationError):
+        repo.resolve_owner_item(project_id=project_id)
+    with pytest.raises(ValidationError):
+        repo.resolve_owner_item(
+            project_id=project_id, canonical_item_id="ticket:1", alias_ref="external:one"
+        )
+    with pytest.raises(ValidationError):
+        repo.resolve_owner_item(project_id=project_id, alias_ref="")
+    with pytest.raises(NotFoundError):
+        repo.resolve_owner_item(project_id=project_id, alias_ref="external:missing")
+
+
+OWNER_SCOPE = "a" * 64
+
+
+def _continuity_ticket(session: Session, project_id: int):
+    ticket = _ownership_ticket(session, project_id)
+    native = session.get(TrackerTicket, ticket.id)
+    assert native is not None
+    native.metadata_json = {
+        "ownership_continuity": {
+            "budget_ref": "budget:original",
+            "stop_scope_ref": "stop-scope:original",
+            "history_ref": "history:original",
+            "scope_digest": OWNER_SCOPE,
+            "stopped": False,
+            "denied": False,
+            "attempts_used": 2,
+            "failures_used": 1,
+            "attempt_limit": 4,
+            "failure_limit": 3,
+            "effect_identity": "effect:stable",
+        }
+    }
+    session.add(native)
+    session.commit()
+    return f"ticket:{ticket.id}"
+
+
+def _acquire(repo: RunRepository, project_id: int, item: str, owner: str = "session:first"):
+    return repo.owner_acquire(
+        project_id=project_id,
+        canonical_item_id=item,
+        owner_ref=owner,
+        scope_digest=OWNER_SCOPE,
+    ).ownership
+
+
+def _checkpoint(repo: RunRepository, row, **overrides):
+    args = {
+        "project_id": row.project_id,
+        "canonical_item_id": row.canonical_item_id,
+        "owner_ref": row.owner_ref,
+        "scope_digest": row.scope_digest,
+        "expected_epoch": row.epoch,
+        "expected_revision": row.revision,
+        "checkpoint_ref": "evidence:checkpoint",
+    }
+    return repo.owner_checkpoint(**(args | overrides))
+
+
+def _certify(repo: RunRepository, row):
+    # Fixture for the private producer seam, NOT evidence of real host control.
+    return repo._certify_owner_quiescence(
+        project_id=row.project_id,
+        canonical_item_id=row.canonical_item_id,
+        owner_ref=row.owner_ref,
+        expected_epoch=row.epoch,
+        expected_revision=row.revision,
+        evidence_ref="fixture:quiescence-and-effects-disposed",
+    )
+
+
+def _reassign(repo: RunRepository, row, new_owner="session:replacement"):
+    return repo.owner_reassign(
+        project_id=row.project_id,
+        canonical_item_id=row.canonical_item_id,
+        owner_ref=row.owner_ref,
+        new_owner_ref=new_owner,
+        scope_digest=row.scope_digest,
+        expected_epoch=row.epoch,
+        expected_revision=row.revision,
+    )
+
+
+def test_owner_duplicate_alias_trigger_has_one_epoch_and_one_event(
+    session: Session, project_id: int
+) -> None:
+    item = _continuity_ticket(session, project_id)
+    repo = RunRepository(session)
+    row = _acquire(repo, project_id, item)
+    repeat = repo.owner_acquire(
+        project_id=project_id,
+        alias_ref="https://example.test/issues/one",
+        owner_ref=row.owner_ref,
+        scope_digest=OWNER_SCOPE,
+    )
+    assert repeat.acquired is False
+    assert repeat.ownership == row
+    assert row.epoch == row.revision == 1
+    assert len(session.exec(select(WorkItemOwnership)).all()) == 1
+    events = session.exec(
+        select(ProjectEvent).where(ProjectEvent.event_type == "WORK_ITEM_OWNER_ACQUIRED")
+    ).all()
+    assert len(events) == 1
+    assert events[0].source_type == "tracker_ticket"
+    assert events[0].source_id == int(item.split(":")[1])
+    with pytest.raises(ConflictError, match="already has an owner"):
+        _acquire(repo, project_id, item, "session:duplicate")
+
+
+def test_owner_checkpoint_cas_and_replacement_preserve_lineage(
+    session: Session, project_id: int
+) -> None:
+    repo = RunRepository(session)
+    first = _acquire(repo, project_id, _continuity_ticket(session, project_id))
+    checked = _checkpoint(repo, first)
+    assert checked.revision == 2
+    assert checked.checkpoint_revision == 1
+    with pytest.raises(ConflictError, match="stale ownership fence"):
+        _checkpoint(repo, first)
+    with pytest.raises(ConflictError, match="quiescence"):
+        _reassign(repo, checked)
+    certified = _certify(repo, checked)
+    assert certified.revision == certified.quiescence_revision == 3
+    replacement = _reassign(repo, certified)
+    assert replacement.epoch == 2
+    assert replacement.revision == 4
+    assert replacement.previous_owner_ref == first.owner_ref
+    assert replacement.checkpoint_ref == checked.checkpoint_ref
+    assert replacement.checkpoint_revision == checked.checkpoint_revision
+    assert replacement.continuity_json == first.continuity_json
+    assert replacement.quiescence_ref == certified.quiescence_ref
+    assert replacement.quiescence_revision is None
+    with pytest.raises(ConflictError, match="stale ownership fence"):
+        _checkpoint(repo, replacement, owner_ref=first.owner_ref, expected_epoch=first.epoch)
+    assert (
+        repo.owner_get(project_id=project_id, canonical_item_id=first.canonical_item_id)
+        == replacement
+    )
+
+
+def test_owner_new_checkpoint_invalidates_old_quiescence(session: Session, project_id: int) -> None:
+    repo = RunRepository(session)
+    first = _acquire(repo, project_id, _continuity_ticket(session, project_id))
+    certified = _certify(repo, first)
+    checked = _checkpoint(repo, certified)
+    with pytest.raises(ConflictError, match="quiescence"):
+        _reassign(repo, checked)
+    with pytest.raises(ConflictError, match="stale ownership fence"):
+        _certify(repo, first)
+
+
+def test_owner_explicit_revocation_fences_and_reacquires_without_reset(
+    session: Session, project_id: int
+) -> None:
+    repo = RunRepository(session)
+    item = _continuity_ticket(session, project_id)
+    original = _acquire(repo, project_id, item)
+    revoked = _reassign(repo, _certify(repo, original), None)
+    assert revoked.owner_ref is None
+    assert revoked.epoch == 2
+    with pytest.raises(ConflictError, match="stale ownership fence"):
+        _checkpoint(repo, original)
+    next_owner = _acquire(repo, project_id, item, "session:next")
+    assert next_owner.epoch == 3
+    assert next_owner.previous_owner_ref == original.owner_ref
+    assert next_owner.continuity_json == original.continuity_json
+
+
+def test_owner_stop_survives_restart_and_revocation(session: Session, project_id: int) -> None:
+    repo = RunRepository(session)
+    item = _continuity_ticket(session, project_id)
+    original = _acquire(repo, project_id, item)
+    stopped = repo.owner_stop(
+        project_id=project_id,
+        canonical_item_id=item,
+        owner_ref=original.owner_ref,
+        expected_epoch=original.epoch,
+        expected_revision=original.revision,
+        reason_ref="STOP2:original",
+    )
+    with Session(session.get_bind()) as restarted:
+        repo = RunRepository(restarted)
+        loaded = repo.owner_get(project_id=project_id, canonical_item_id=item)
+        assert loaded == stopped
+        assert loaded.continuity_json["attempts_used"] == 2
+        assert loaded.continuity_json["failures_used"] == 1
+        assert loaded.continuity_json["effect_identity"] == "effect:stable"
+        with pytest.raises(ConflictError, match="stop/denial"):
+            _checkpoint(repo, loaded)
+        certified = _certify(repo, loaded)
+        with pytest.raises(ConflictError, match="stop/denial"):
+            _reassign(repo, certified)
+        revoked = _reassign(repo, certified, None)
+        assert revoked.continuity_json == loaded.continuity_json
+        with pytest.raises(ConflictError, match="stop/denial"):
+            _acquire(repo, project_id, item, "session:renamed")
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"scope_digest": "b" * 64},
+        {"stopped": None},
+        {"denied": None},
+        {"attempts_used": -1},
+        {"failures_used": True},
+        {"history_ref": None},
+    ],
+)
+def test_owner_unknown_or_changed_continuity_is_not_fresh_budget(
+    session: Session, project_id: int, changes: dict
+) -> None:
+    item = _continuity_ticket(session, project_id)
+    native = session.get(TrackerTicket, int(item.split(":")[1]))
+    native.metadata_json = {
+        "ownership_continuity": native.metadata_json["ownership_continuity"] | changes
+    }
+    flag_modified(native, "metadata_json")
+    session.add(native)
+    session.commit()
+    with pytest.raises(ValidationError):
+        _acquire(RunRepository(session), project_id, item)
+    assert session.exec(select(WorkItemOwnership)).all() == []
+
+
+@pytest.mark.parametrize("flag", ["stopped", "denied"])
+def test_owner_original_stop_or_denial_blocks_first_admission(
+    session: Session, project_id: int, flag: str
+) -> None:
+    item = _continuity_ticket(session, project_id)
+    native = session.get(TrackerTicket, int(item.split(":")[1]))
+    native.metadata_json = {
+        "ownership_continuity": native.metadata_json["ownership_continuity"] | {flag: True}
+    }
+    session.add(native)
+    session.commit()
+    with pytest.raises(ConflictError, match="stop/denial"):
+        _acquire(RunRepository(session), project_id, item)
+    assert session.exec(select(WorkItemOwnership)).all() == []
+
+
+def test_owner_scope_and_project_changes_are_rejected(session: Session, project_id: int) -> None:
+    from stackos.repositories.projects import ProjectRepository
+
+    repo = RunRepository(session)
+    item = _continuity_ticket(session, project_id)
+    row = _acquire(repo, project_id, item)
+    with pytest.raises(ConflictError, match="scope changed"):
+        _checkpoint(repo, row, scope_digest="b" * 64)
+    other = (
+        ProjectRepository(session).create(slug="other", name="Other", domain="other.test").data.id
+    )
+    with pytest.raises(NotFoundError):
+        repo.owner_get(project_id=other, canonical_item_id=item)
+    with pytest.raises(NotFoundError):
+        _acquire(repo, other, item)
+
+
+def test_owner_acquisition_race_through_aliases_has_one_winner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from stackos.repositories.projects import ProjectRepository
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'race.db'}", connect_args={"timeout": 10})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as setup:
+        pid = ProjectRepository(setup).create(slug="race", name="Race", domain="race.test").data.id
+        item = _continuity_ticket(setup, pid)
+    barrier = Barrier(2, timeout=5)
+    admissible = RunRepository._owner_admissible
+
+    def synchronized(row, scope_digest):
+        admissible(row, scope_digest)
+        if row.id is None:
+            barrier.wait()
+
+    monkeypatch.setattr(RunRepository, "_owner_admissible", staticmethod(synchronized))
+
+    def contender(number):
+        with Session(engine) as active:
+            try:
+                return (
+                    RunRepository(active)
+                    .owner_acquire(
+                        project_id=pid,
+                        owner_ref=f"session:{number}",
+                        scope_digest=OWNER_SCOPE,
+                        **(
+                            {"canonical_item_id": item}
+                            if number == 0
+                            else {"alias_ref": "https://example.test/issues/one"}
+                        ),
+                    )
+                    .acquired
+                )
+            except ConflictError:
+                return False
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(contender, [0, 1])) == [False, True]
+    with Session(engine) as readback:
+        rows = readback.exec(select(WorkItemOwnership)).all()
+        assert len(rows) == 1
+        assert rows[0].epoch == rows[0].revision == 1
+        assert (
+            len(
+                readback.exec(
+                    select(ProjectEvent).where(
+                        ProjectEvent.event_type == "WORK_ITEM_OWNER_ACQUIRED"
+                    )
+                ).all()
+            )
+            == 1
+        )
+    engine.dispose()
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_owner_mutation_and_audit_are_one_transaction(
+    session: Session, project_id: int, monkeypatch: pytest.MonkeyPatch, existing: bool
+) -> None:
+    from stackos.repositories.project_events import StackOSEventEmitter
+
+    item = _continuity_ticket(session, project_id)
+    repo = RunRepository(session)
+    row = _acquire(repo, project_id, item) if existing else None
+
+    def failed_emit(*args, **kwargs):
+        raise RuntimeError("fixture: audit unavailable")
+
+    monkeypatch.setattr(StackOSEventEmitter, "emit", failed_emit)
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        if row:
+            _checkpoint(repo, row)
+        else:
+            _acquire(repo, project_id, item)
+    session.commit()
+    if row:
+        assert repo.owner_get(project_id=project_id, canonical_item_id=item) == row
+    else:
+        assert session.exec(select(WorkItemOwnership)).all() == []
+
+
+@pytest.mark.parametrize("operation", ["checkpoint", "reassign", "acquire"])
+def test_owner_retained_session_cannot_bypass_concurrent_stop(
+    session: Session, project_id: int, operation: str
+) -> None:
+    repo = RunRepository(session)
+    item = _continuity_ticket(session, project_id)
+    original = _acquire(repo, project_id, item)
+    cached = session.get(WorkItemOwnership, original.id)
+    assert cached is not None
+    with Session(session.get_bind()) as other:
+        current = RunRepository(other).owner_stop(
+            project_id=project_id,
+            canonical_item_id=item,
+            owner_ref=original.owner_ref,
+            expected_epoch=original.epoch,
+            expected_revision=original.revision,
+            reason_ref="STOP2:concurrent",
+        )
+        if operation == "reassign":
+            current = _certify(RunRepository(other), current)
+    assert cached.revision == 1
+    assert cached.continuity_json["stopped"] is False
+    with pytest.raises(ConflictError, match="stop/denial"):
+        if operation == "checkpoint":
+            _checkpoint(repo, current)
+        elif operation == "reassign":
+            _reassign(repo, current)
+        else:
+            _acquire(repo, project_id, item)
+    readback = repo.owner_get(project_id=project_id, canonical_item_id=item)
+    assert readback == current
+    assert readback.continuity_json["attempts_used"] == 2
+    assert readback.continuity_json["failures_used"] == 1
+
+
+def test_owner_stop_racing_admission_preflight_rejects_cas(
+    session: Session, project_id: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = RunRepository(session)
+    item = _continuity_ticket(session, project_id)
+    original = _acquire(repo, project_id, item)
+    admissible = RunRepository._owner_admissible
+
+    def stop_after_preflight(row, scope):
+        admissible(row, scope)
+        with Session(session.get_bind()) as other:
+            RunRepository(other).owner_stop(
+                project_id=project_id,
+                canonical_item_id=item,
+                owner_ref=row.owner_ref,
+                expected_epoch=row.epoch,
+                expected_revision=row.revision,
+                reason_ref="STOP2:after-preflight",
+            )
+
+    monkeypatch.setattr(RunRepository, "_owner_admissible", staticmethod(stop_after_preflight))
+    with pytest.raises(ConflictError, match="stale ownership fence"):
+        _checkpoint(repo, original)
+    readback = repo.owner_get(project_id=project_id, canonical_item_id=item)
+    assert readback.revision == 2
+    assert readback.continuity_json["stopped"] is True
+    assert readback.checkpoint_ref is None
+
+
+@pytest.mark.parametrize("mutation", ["acquire-flush", "checkpoint-refresh"])
+def test_owner_pre_audit_failure_cannot_later_commit_mutation(
+    session: Session, project_id: int, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
+    repo = RunRepository(session)
+    item = _continuity_ticket(session, project_id)
+    original = _acquire(repo, project_id, item) if mutation == "checkpoint-refresh" else None
+    if original:
+
+        def failed_refresh(row, *args, **kwargs):
+            raise RuntimeError("fixture: pre-audit refresh unavailable")
+
+        monkeypatch.setattr(session, "refresh", failed_refresh)
+    else:
+        flush = session.flush
+
+        def failed_flush(*args, **kwargs):
+            ownership_insert = any(isinstance(row, WorkItemOwnership) for row in session.new)
+            flush(*args, **kwargs)
+            if ownership_insert:
+                raise RuntimeError("fixture: pre-audit flush unavailable")
+
+        monkeypatch.setattr(session, "flush", failed_flush)
+    with pytest.raises(RuntimeError, match="pre-audit"):
+        if original:
+            _checkpoint(repo, original)
+        else:
+            _acquire(repo, project_id, item)
+    monkeypatch.undo()
+    session.commit()
+    rows = session.exec(select(WorkItemOwnership)).all()
+    if original:
+        assert repo.owner_get(project_id=project_id, canonical_item_id=item) == original
+        assert (
+            session.exec(
+                select(ProjectEvent).where(
+                    ProjectEvent.event_type == "WORK_ITEM_OWNER_CHECKPOINTED"
+                )
+            ).all()
+            == []
+        )
+    else:
+        assert rows == []
+        assert (
+            session.exec(
+                select(ProjectEvent).where(ProjectEvent.event_type == "WORK_ITEM_OWNER_ACQUIRED")
+            ).all()
+            == []
+        )
 
 
 def test_start_finish_happy_path(session: Session, project_id: int) -> None:

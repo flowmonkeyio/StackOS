@@ -28,6 +28,7 @@ from .app import (
     run_plans_app,
     tracker_app,
 )
+from .backup_commands import backup, restore
 from .constants import _LAUNCHD_LABEL, _LOOPBACK_HOSTS, _MCP_SERVER_NAME
 from .daemon_commands import (
     _autostart_bridge_daemon,
@@ -93,11 +94,9 @@ from .launchd import (
     _uninstall_launchd_autostart,
 )
 from .local_commands import (
-    backup,
     init,
     install,
     migrate,
-    restore,
     rotate_seed,
     rotate_token,
     uninstall,

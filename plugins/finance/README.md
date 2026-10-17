@@ -328,6 +328,14 @@ Neither substitutes for the separately authorized activation below.
 
 ## Signoff and activation
 
+Local JSON/files workspaces need explicit backup enrollment of the entire
+folder and its persistent `.writer.lock`. A workflow reference alone provides
+no coverage. Follow [StackOS encrypted backup setup](../../docs/backups.md),
+check the target list and verify recovery of the master and invoice originals.
+Automatic backups start disabled and require operator opt-in. Recovery keys
+stay outside the finance workspace and backup destination; backup or recovery
+does not change accounting decisions or posting status.
+
 Use the generic [release signoff](../../docs/release-signoff.md) for test slices,
 packaged/native activation evidence and shared-runtime coordination. Automated
 checks use isolated fixtures, never live customers, mailboxes or financial work.

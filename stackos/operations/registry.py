@@ -127,6 +127,7 @@ def build_operation_registry() -> OperationRegistry:
         agent_presets,
         agent_requests,
         auth,
+        backups,
         browser,
         catalog,
         communications,
@@ -165,6 +166,8 @@ def build_operation_registry() -> OperationRegistry:
     for spec in agent_requests.operation_specs():
         registry.register(spec)
     for spec in auth.operation_specs():
+        registry.register(spec)
+    for spec in backups.operation_specs():
         registry.register(spec)
     for spec in browser.operation_specs():
         registry.register(spec)

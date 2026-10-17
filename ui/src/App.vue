@@ -199,12 +199,29 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
 
         <div class="px-3 pb-2">
           <RouterLink
+            to="/setup"
+            class="focus-ring-sb flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors duration-fast hover:bg-sb-hover hover:text-sb-strong"
+            :class="route.path === '/setup' ? 'bg-sb-active text-sb-strong' : 'text-sb-fg'"
+            @click="closeDrawer"
+          >
+            <UiIcon
+              name="settings"
+              class="h-4 w-4"
+              aria-hidden="true"
+            />
+            <span>Local setup</span>
+          </RouterLink>
+          <RouterLink
             to="/accounts"
             class="focus-ring-sb flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors duration-fast hover:bg-sb-hover hover:text-sb-strong"
             :class="route.path === '/accounts' ? 'bg-sb-active text-sb-strong' : 'text-sb-fg'"
             @click="closeDrawer"
           >
-            <UiIcon name="key" class="h-4 w-4" aria-hidden="true" />
+            <UiIcon
+              name="key"
+              class="h-4 w-4"
+              aria-hidden="true"
+            />
             <span>Accounts</span>
           </RouterLink>
         </div>
