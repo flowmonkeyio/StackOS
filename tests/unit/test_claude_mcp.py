@@ -8,7 +8,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from stackos import claude_mcp
+
+
+@pytest.fixture(autouse=True)
+def _isolate_default_host_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("STACKOS_DATA_DIR", raising=False)
+    monkeypatch.delenv("STACKOS_STATE_DIR", raising=False)
 
 
 def _write_fake_claude(bin_dir: Path, state_path: Path) -> Path:

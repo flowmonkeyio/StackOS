@@ -117,6 +117,21 @@ lifecycle responsibilities:
 - repair MCP registration for supported agent hosts;
 - retry a lifecycle or credential diagnostic owned by the human side.
 
+### Finance local console exception
+
+Finance has a bounded human console exception: explicitly select/revoke an
+existing private external root and modes, preview a sourced local correction,
+then commit through the registered external writer with current authority and
+revision/hash. Overview, Expenses & income and Reports use shared UI primitives
+and one source snapshot. This does not authorize provider mutations, financial
+adoption, run lifecycle control or a separate financial master. Private originals
+and source-bound reports preserve their coverage/currentness; unknown revenue
+does not become zero. Clear search text and apply filters before sending a safe
+analysis request. An actual capable host plus independent control reviewer must
+produce the externally published result; the UI reports waiting/blocked/stale
+states rather than executing a model. See
+[the operator flow](../plugins/finance/README.md#manage-finance-in-the-local-console).
+
 ### Agent-owned writes
 
 These must remain in the MCP/operation path unless a separately reviewed

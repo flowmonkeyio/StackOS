@@ -2280,6 +2280,71 @@ export interface components {
             /** Risk Level */
             risk_level: string;
         };
+        /**
+         * AgentRequestAttentionStatus
+         * @description Persists to ``agent_requests.attention_status`` for local inbox state.
+         * @enum {string}
+         */
+        AgentRequestAttentionStatus: AgentRequestAttentionStatus;
+        /** AgentRequestOut */
+        AgentRequestOut: {
+            attention_status: components["schemas"]["AgentRequestAttentionStatus"];
+            /** Body Preview */
+            body_preview: string;
+            /** Claim Expires At */
+            claim_expires_at: string | null;
+            /** Claimed At */
+            claimed_at: string | null;
+            /** Claimed By */
+            claimed_by: string | null;
+            /** Completed At */
+            completed_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Ignored At */
+            ignored_at: string | null;
+            /** Metadata Json */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Priority */
+            priority: number;
+            /** Project Id */
+            project_id: number;
+            /** Request Key */
+            request_key: string;
+            /** Run Plan Id */
+            run_plan_id: number | null;
+            /** Source Kind */
+            source_kind: string | null;
+            /** Source Message Ref */
+            source_message_ref: string | null;
+            /** Source Provider */
+            source_provider: string | null;
+            /** Source Resource Key */
+            source_resource_key: string | null;
+            /** Source Resource Record Id */
+            source_resource_record_id: number | null;
+            status: components["schemas"]["AgentRequestStatus"];
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * AgentRequestStatus
+         * @description Persists to ``agent_requests.status`` for the generic agent inbox.
+         * @enum {string}
+         */
+        AgentRequestStatus: AgentRequestStatus;
         /** ApprovalGateSpec */
         ApprovalGateSpec: {
             /** Approver */
@@ -3510,6 +3575,887 @@ export interface components {
                 [key: string]: unknown;
             }[] | null;
         };
+        /** FinanceAccessOut */
+        FinanceAccessOut: {
+            /** Access Id */
+            access_id: string;
+            /**
+             * Backend Key
+             * @constant
+             */
+            backend_key: "local-json";
+            /** Generation */
+            generation: number;
+            /** Modes */
+            modes: string[];
+            /** Project Id */
+            project_id: number;
+            /**
+             * Revoked At
+             * @default null
+             */
+            revoked_at: string | null;
+            /** Workspace Ref */
+            workspace_ref: string;
+        };
+        /** FinanceCommitInput */
+        FinanceCommitInput: {
+            /** Access Generation */
+            access_generation: number;
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: FinanceCommitInputAction;
+            /**
+             * Attestation
+             * @default null
+             */
+            attestation: string | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: null;
+            expected_snapshot: components["schemas"]["SnapshotRef"];
+            fields: components["schemas"]["FinanceEditFields"];
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Preview Digest */
+            preview_digest: string;
+            /** Project Id */
+            project_id: number;
+            /** Reason */
+            reason: string;
+            /**
+             * Record Ref
+             * @default null
+             */
+            record_ref: string | null;
+            /** Request Id */
+            request_id: string;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: FinanceCommitInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: null;
+            /** Source Refs */
+            source_refs?: string[];
+            /** Workspace Ref */
+            workspace_ref: string;
+        };
+        /** FinanceCommitOut */
+        FinanceCommitOut: {
+            /** Changed Refs */
+            changed_refs: string[];
+            /** Idempotency Replay */
+            idempotency_replay: boolean;
+            /** Request Id */
+            request_id: string;
+            /** Reread Result */
+            reread_result: string;
+            snapshot: components["schemas"]["FinanceSnapshotOut"];
+        };
+        /** FinanceComparisonInput */
+        FinanceComparisonInput: {
+            /**
+             * Clamped
+             * @default null
+             */
+            clamped: boolean | null;
+            /** End */
+            end: string;
+            /** Start */
+            start: string;
+        };
+        /** FinanceContentOut */
+        FinanceContentOut: {
+            /**
+             * Bytes
+             * @default null
+             */
+            bytes: number | null;
+            /**
+             * Content Base64
+             * @default null
+             */
+            content_base64: string | null;
+            /**
+             * Content Type
+             * @default null
+             */
+            content_type: string | null;
+            /**
+             * Disposition
+             * @default null
+             */
+            disposition: string | null;
+            /**
+             * Filename
+             * @default null
+             */
+            filename: string | null;
+            /**
+             * Inline Allowed
+             * @default null
+             */
+            inline_allowed: boolean | null;
+            /**
+             * Next Action
+             * @default null
+             */
+            next_action: string | null;
+            /**
+             * Report
+             * @default null
+             */
+            report: string | null;
+            /**
+             * Request Id
+             * @default null
+             */
+            request_id: number | null;
+            /**
+             * Result
+             * @default null
+             */
+            result: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Sha256
+             * @default null
+             */
+            sha256: string | null;
+            /** @default null */
+            snapshot: components["schemas"]["FinanceSnapshotOut"] | null;
+            /** State */
+            state: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** FinanceCorrectionHistoryItemOut */
+        FinanceCorrectionHistoryItemOut: {
+            /** Actor */
+            actor: string | null;
+            /** At */
+            at: string | null;
+            /** Correction Ref */
+            correction_ref: string;
+            /** Decision Ref */
+            decision_ref: string | null;
+            /** Evidence Refs */
+            evidence_refs: string[];
+            /** Reason */
+            reason: string;
+            /** Replacement Ref */
+            replacement_ref: string;
+            /** Source Refs */
+            source_refs: string[];
+            /**
+             * Status
+             * @constant
+             */
+            status: "applied";
+            /** Superseded Ref */
+            superseded_ref: string;
+        };
+        /** FinanceEditFields */
+        FinanceEditFields: {
+            /**
+             * Account Ref
+             * @default null
+             */
+            account_ref: string | null;
+            /** @default null */
+            amount: components["schemas"]["FinanceMoneyInput"] | null;
+            /**
+             * Business Date
+             * @default null
+             */
+            business_date: string | null;
+            /**
+             * Business Purpose
+             * @default null
+             */
+            business_purpose: string | null;
+            /**
+             * Category
+             * @default null
+             */
+            category: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Date
+             * @default null
+             */
+            date: string | null;
+            /**
+             * External Project Ref
+             * @default null
+             */
+            external_project_ref: string | null;
+            /**
+             * Merchant
+             * @default null
+             */
+            merchant: string | null;
+            /**
+             * Reporting
+             * @default null
+             */
+            reporting: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** FinanceEditIntent */
+        FinanceEditIntent: {
+            /** Access Generation */
+            access_generation: number;
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: FinanceEditIntentAction;
+            /**
+             * Attestation
+             * @default null
+             */
+            attestation: string | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: null;
+            expected_snapshot: components["schemas"]["SnapshotRef"];
+            fields: components["schemas"]["FinanceEditFields"];
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Id */
+            project_id: number;
+            /** Reason */
+            reason: string;
+            /**
+             * Record Ref
+             * @default null
+             */
+            record_ref: string | null;
+            /** Request Id */
+            request_id: string;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: FinanceEditIntentResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: null;
+            /** Source Refs */
+            source_refs?: string[];
+            /** Workspace Ref */
+            workspace_ref: string;
+        };
+        /** FinanceEvidenceReadInput */
+        FinanceEvidenceReadInput: {
+            /** Access Generation */
+            access_generation: number;
+            /** Attachment Ref */
+            attachment_ref: string;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: null;
+            expected_snapshot: components["schemas"]["SnapshotRef"];
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: FinanceEvidenceReadInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: null;
+            /** Workspace Ref */
+            workspace_ref: string;
+        };
+        /** FinanceMoneyInput */
+        FinanceMoneyInput: {
+            /** Currency */
+            currency: string;
+            /** Exponent */
+            exponent?: number | null;
+            /** Minor */
+            minor: string;
+        };
+        /** FinanceMoneyOut */
+        FinanceMoneyOut: {
+            /** Currency */
+            currency: string;
+            /**
+             * Exponent
+             * @default null
+             */
+            exponent: number | null;
+            /** Minor */
+            minor: string;
+        };
+        /** FinancePreviewOut */
+        FinancePreviewOut: {
+            /** Changed Refs */
+            changed_refs: string[];
+            /** Diff */
+            diff: {
+                [key: string]: unknown;
+            };
+            /**
+             * Financial Decision Adopted
+             * @default false
+             * @constant
+             */
+            financial_decision_adopted: false;
+            /** Preview Digest */
+            preview_digest: string;
+            source_snapshot: components["schemas"]["FinanceSnapshotOut"];
+            /** State */
+            state: string;
+        };
+        /** FinanceProjectionOut */
+        FinanceProjectionOut: {
+            /** Breakdowns */
+            breakdowns: unknown;
+            /**
+             * Comparison
+             * @default null
+             */
+            comparison: {
+                [key: string]: unknown;
+            } | null;
+            /** Coverage */
+            coverage: {
+                [key: string]: unknown;
+            };
+            /** Exclusions */
+            exclusions: {
+                [key: string]: unknown;
+            }[];
+            /** Metrics By Currency */
+            metrics_by_currency: {
+                [key: string]: unknown;
+            }[];
+            /** Page */
+            page: {
+                [key: string]: unknown;
+            };
+            /** Query */
+            query: {
+                [key: string]: unknown;
+            };
+            /** Review Items */
+            review_items: {
+                [key: string]: unknown;
+            }[];
+            /** Rows */
+            rows: {
+                [key: string]: unknown;
+            }[];
+            snapshot: components["schemas"]["FinanceSnapshotOut"];
+            /** Trend */
+            trend: unknown;
+            /** Undated Or Period Only */
+            undated_or_period_only: string[];
+            /** Warnings */
+            warnings: string[];
+        };
+        /** FinanceQueryInput */
+        FinanceQueryInput: {
+            /** Access Generation */
+            access_generation: number;
+            /**
+             * Account Ref
+             * @default null
+             */
+            account_ref: string | null;
+            /**
+             * Category Ref
+             * @default null
+             */
+            category_ref: string | null;
+            /** @default null */
+            comparison: components["schemas"]["FinanceComparisonInput"] | null;
+            /**
+             * Counterparty Ref
+             * @default null
+             */
+            counterparty_ref: string | null;
+            /**
+             * Currency
+             * @default null
+             */
+            currency: string | null;
+            /**
+             * Date Basis
+             * @enum {string}
+             */
+            date_basis: FinanceQueryInputDate_basis;
+            /**
+             * Descending
+             * @default false
+             */
+            descending: boolean;
+            /** End */
+            end: string;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: null;
+            /** @default null */
+            expected_snapshot: components["schemas"]["SnapshotRef"] | null;
+            /**
+             * External Project Ref
+             * @default null
+             */
+            external_project_ref: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: null;
+            /**
+             * Kind
+             * @default all
+             * @enum {string}
+             */
+            kind: FinanceQueryInputKind;
+            /**
+             * Limit
+             * @default 50
+             */
+            limit: number;
+            /**
+             * Needs Review
+             * @default null
+             */
+            needs_review: boolean | null;
+            /**
+             * Offset
+             * @default 0
+             */
+            offset: number;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Q
+             * @default null
+             */
+            q: string | null;
+            /**
+             * Recognition Basis
+             * @enum {string}
+             */
+            recognition_basis: FinanceQueryInputRecognition_basis;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: FinanceQueryInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: null;
+            /**
+             * Scope
+             * @default business
+             * @enum {string}
+             */
+            scope: FinanceQueryInputScope;
+            /**
+             * Sort
+             * @default date
+             * @enum {string}
+             */
+            sort: FinanceQueryInputSort;
+            /** Start */
+            start: string;
+            /** Timezone */
+            timezone: string;
+            /** Workspace Ref */
+            workspace_ref: string;
+        };
+        /** FinanceRecordGetInput */
+        FinanceRecordGetInput: {
+            /** Access Generation */
+            access_generation: number;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: null;
+            /** @default null */
+            expected_snapshot: components["schemas"]["SnapshotRef"] | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: null;
+            /** Project Id */
+            project_id: number;
+            /** Record Ref */
+            record_ref: string;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: FinanceRecordGetInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: null;
+            /** Workspace Ref */
+            workspace_ref: string;
+        };
+        /** FinanceRecordOut */
+        FinanceRecordOut: {
+            /** @default null */
+            amount: components["schemas"]["FinanceMoneyOut"] | null;
+            /** Collection */
+            collection: string;
+            /** Correction History */
+            correction_history?: components["schemas"]["FinanceCorrectionHistoryItemOut"][];
+            /** Current Ref */
+            current_ref: string;
+            /**
+             * Document Summary
+             * @default null
+             */
+            document_summary: {
+                [key: string]: unknown;
+            } | null;
+            /** Editable Fields */
+            editable_fields: string[];
+            /** Evidence */
+            evidence: {
+                [key: string]: unknown;
+            }[];
+            /** Lineage */
+            lineage: string[];
+            /** Original */
+            original: {
+                [key: string]: unknown;
+            };
+            /**
+             * Provider Fields Editable
+             * @default false
+             * @constant
+             */
+            provider_fields_editable: false;
+            /** Record */
+            record: {
+                [key: string]: unknown;
+            };
+            /** Requested Ref */
+            requested_ref: string;
+            /** Source Refs */
+            source_refs: string[];
+        };
+        /** FinanceReportRenderInput */
+        FinanceReportRenderInput: {
+            /** Access Generation */
+            access_generation: number;
+            /**
+             * Account Ref
+             * @default null
+             */
+            account_ref: string | null;
+            /**
+             * Analysis Request Id
+             * @default null
+             */
+            analysis_request_id: number | null;
+            /**
+             * Category Ref
+             * @default null
+             */
+            category_ref: string | null;
+            /** @default null */
+            comparison: components["schemas"]["FinanceComparisonInput"] | null;
+            /**
+             * Counterparty Ref
+             * @default null
+             */
+            counterparty_ref: string | null;
+            /**
+             * Currency
+             * @default null
+             */
+            currency: string | null;
+            /**
+             * Date Basis
+             * @enum {string}
+             */
+            date_basis: FinanceReportRenderInputDate_basis;
+            /**
+             * Descending
+             * @default false
+             */
+            descending: boolean;
+            /** End */
+            end: string;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: null;
+            /** @default null */
+            expected_snapshot: components["schemas"]["SnapshotRef"] | null;
+            /**
+             * External Project Ref
+             * @default null
+             */
+            external_project_ref: string | null;
+            /**
+             * Format
+             * @default markdown
+             * @enum {string}
+             */
+            format: FinanceReportRenderInputFormat;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: null;
+            /**
+             * Kind
+             * @default all
+             * @enum {string}
+             */
+            kind: FinanceReportRenderInputKind;
+            /**
+             * Limit
+             * @default 50
+             */
+            limit: number;
+            /**
+             * Needs Review
+             * @default null
+             */
+            needs_review: boolean | null;
+            /**
+             * Offset
+             * @default 0
+             */
+            offset: number;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Q
+             * @default null
+             */
+            q: string | null;
+            /**
+             * Recognition Basis
+             * @enum {string}
+             */
+            recognition_basis: FinanceReportRenderInputRecognition_basis;
+            /**
+             * Report Kind
+             * @default period
+             * @enum {string}
+             */
+            report_kind: FinanceReportRenderInputReport_kind;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: FinanceReportRenderInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: null;
+            /**
+             * Scope
+             * @default business
+             * @enum {string}
+             */
+            scope: FinanceReportRenderInputScope;
+            /**
+             * Sort
+             * @default date
+             * @enum {string}
+             */
+            sort: FinanceReportRenderInputSort;
+            /** Start */
+            start: string;
+            /** Timezone */
+            timezone: string;
+            /** Workspace Ref */
+            workspace_ref: string;
+        };
+        /** FinanceSnapshotOut */
+        FinanceSnapshotOut: {
+            /** Custody Issues */
+            custody_issues?: {
+                [key: string]: unknown;
+            }[];
+            /** Read At */
+            read_at: string;
+            /** Revision */
+            revision: number;
+            /** Schema Version */
+            schema_version: string;
+            /** Sha256 */
+            sha256: string;
+        };
+        /** FinanceStatusOut */
+        FinanceStatusOut: {
+            /** Access */
+            access: {
+                [key: string]: unknown;
+            }[];
+            /** Project Id */
+            project_id: number;
+            /** Readiness */
+            readiness: string;
+        };
+        /** FinanceWorkspaceRevokeInput */
+        FinanceWorkspaceRevokeInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: null;
+            /** Expected Generation */
+            expected_generation: number;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: FinanceWorkspaceRevokeInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: null;
+            /** Workspace Ref */
+            workspace_ref: string;
+        };
+        /** FinanceWorkspaceSelectInput */
+        FinanceWorkspaceSelectInput: {
+            /** Authority Ref */
+            authority_ref: string;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: null;
+            /**
+             * Expected Generation
+             * @default null
+             */
+            expected_generation: number | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Modes
+             * @default [
+             *       "read",
+             *       "correct",
+             *       "export"
+             *     ]
+             */
+            modes: FinanceWorkspaceSelectInputModes[];
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: FinanceWorkspaceSelectInputResponse_modeAnyOf0 | null;
+            /** Root */
+            root: string;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: null;
+            /** Workspace Ref */
+            workspace_ref: string;
+        };
+        /** FinanceWorkspaceStatusInput */
+        FinanceWorkspaceStatusInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: FinanceWorkspaceStatusInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: null;
+            /**
+             * Workspace Ref
+             * @default null
+             */
+            workspace_ref: string | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -3712,6 +4658,103 @@ export interface components {
             spec: components["schemas"]["WorkflowTemplateSpec"];
             summary: components["schemas"]["WorkflowTemplateSummaryOut"];
         };
+        /**
+         * LocalAgentChatCreateMessageInput
+         * @example {
+         *       "create_request": true,
+         *       "message_key": "msg-20260523-001",
+         *       "project_id": 1,
+         *       "sender_display_name": "Operator",
+         *       "sender_ref": "local-user:operator",
+         *       "text": "Check the latest media buying results and suggest next actions.",
+         *       "thread_key": "support"
+         *     }
+         */
+        LocalAgentChatCreateMessageInput: {
+            /** Content Blocks */
+            content_blocks?: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Create Request
+             * @default true
+             */
+            create_request: boolean;
+            /**
+             * Direction
+             * @default inbound
+             * @enum {string}
+             */
+            direction: LocalAgentChatCreateMessageInputDirection;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Message Key */
+            message_key: string;
+            /** Metadata Json */
+            metadata_json?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Priority
+             * @default 0
+             */
+            priority: number;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Request Title
+             * @default null
+             */
+            request_title: string | null;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: LocalAgentChatCreateMessageInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /**
+             * Sender Display Name
+             * @default null
+             */
+            sender_display_name: string | null;
+            /** Sender Ref */
+            sender_ref: string;
+            /**
+             * Text
+             * @default null
+             */
+            text: string | null;
+            /** Thread Key */
+            thread_key: string;
+        };
+        /** LocalAgentChatMessageOut */
+        LocalAgentChatMessageOut: {
+            /** @default null */
+            agent_request: components["schemas"]["AgentRequestOut"] | null;
+            /** Message Record Id */
+            message_record_id: number;
+            /** Message Ref */
+            message_ref: string;
+            /** Project Id */
+            project_id: number;
+            /** Thread Record Id */
+            thread_record_id: number;
+            /** Thread Ref */
+            thread_ref: string;
+        };
         /** MetricSnapshotOut */
         MetricSnapshotOut: {
             /**
@@ -3774,6 +4817,12 @@ export interface components {
             examples?: components["schemas"]["OperationExampleOut"][];
             /** Grant Policy */
             grant_policy: string;
+            /**
+             * Idempotency Policy
+             * @default dispatcher
+             * @enum {string}
+             */
+            idempotency_policy: OperationDescribeOutIdempotency_policy;
             /** Input Schema */
             input_schema: {
                 [key: string]: unknown;
@@ -3855,6 +4904,12 @@ export interface components {
             category: string;
             /** Grant Policy */
             grant_policy: string;
+            /**
+             * Idempotency Policy
+             * @default dispatcher
+             * @enum {string}
+             */
+            idempotency_policy: OperationSummaryOutIdempotency_policy;
             /** Mutating */
             mutating: boolean;
             /** Name */
@@ -4997,6 +6052,13 @@ export interface components {
             /** Url */
             url: string;
         };
+        /** SnapshotRef */
+        SnapshotRef: {
+            /** Revision */
+            revision: number;
+            /** Sha256 */
+            sha256: string;
+        };
         /** TelegramApplicationStatusOut */
         TelegramApplicationStatusOut: {
             /** Configured */
@@ -5577,6 +6639,48 @@ export interface components {
              */
             run_id: number | null;
         };
+        /** WriteEnvelope[FinanceAccessOut] */
+        WriteEnvelope_FinanceAccessOut_: {
+            data: components["schemas"]["FinanceAccessOut"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
+        /** WriteEnvelope[FinanceCommitOut] */
+        WriteEnvelope_FinanceCommitOut_: {
+            data: components["schemas"]["FinanceCommitOut"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
+        /** WriteEnvelope[LocalAgentChatMessageOut] */
+        WriteEnvelope_LocalAgentChatMessageOut_: {
+            data: components["schemas"]["LocalAgentChatMessageOut"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
         /** WriteEnvelope[WorkflowTemplateExtensionDeleteOut] */
         WriteEnvelope_WorkflowTemplateExtensionDeleteOut_: {
             data: components["schemas"]["WorkflowTemplateExtensionDeleteOut"];
@@ -5865,6 +6969,7 @@ export type SchemaActionContractSpec = components['schemas']['ActionContractSpec
 export type SchemaActionExposureNextActionOut = components['schemas']['ActionExposureNextActionOut'];
 export type SchemaActionExposureOut = components['schemas']['ActionExposureOut'];
 export type SchemaActionOut = components['schemas']['ActionOut'];
+export type SchemaAgentRequestOut = components['schemas']['AgentRequestOut'];
 export type SchemaApprovalGateSpec = components['schemas']['ApprovalGateSpec'];
 export type SchemaApprovalRequestOut = components['schemas']['ApprovalRequestOut'];
 export type SchemaArtifactCreateRequest = components['schemas']['ArtifactCreateRequest'];
@@ -5906,6 +7011,28 @@ export type SchemaExperimentObservationRequest = components['schemas']['Experime
 export type SchemaExperimentOut = components['schemas']['ExperimentOut'];
 export type SchemaExperimentVariantOut = components['schemas']['ExperimentVariantOut'];
 export type SchemaExperimentVariantRequest = components['schemas']['ExperimentVariantRequest'];
+export type SchemaFinanceAccessOut = components['schemas']['FinanceAccessOut'];
+export type SchemaFinanceCommitInput = components['schemas']['FinanceCommitInput'];
+export type SchemaFinanceCommitOut = components['schemas']['FinanceCommitOut'];
+export type SchemaFinanceComparisonInput = components['schemas']['FinanceComparisonInput'];
+export type SchemaFinanceContentOut = components['schemas']['FinanceContentOut'];
+export type SchemaFinanceCorrectionHistoryItemOut = components['schemas']['FinanceCorrectionHistoryItemOut'];
+export type SchemaFinanceEditFields = components['schemas']['FinanceEditFields'];
+export type SchemaFinanceEditIntent = components['schemas']['FinanceEditIntent'];
+export type SchemaFinanceEvidenceReadInput = components['schemas']['FinanceEvidenceReadInput'];
+export type SchemaFinanceMoneyInput = components['schemas']['FinanceMoneyInput'];
+export type SchemaFinanceMoneyOut = components['schemas']['FinanceMoneyOut'];
+export type SchemaFinancePreviewOut = components['schemas']['FinancePreviewOut'];
+export type SchemaFinanceProjectionOut = components['schemas']['FinanceProjectionOut'];
+export type SchemaFinanceQueryInput = components['schemas']['FinanceQueryInput'];
+export type SchemaFinanceRecordGetInput = components['schemas']['FinanceRecordGetInput'];
+export type SchemaFinanceRecordOut = components['schemas']['FinanceRecordOut'];
+export type SchemaFinanceReportRenderInput = components['schemas']['FinanceReportRenderInput'];
+export type SchemaFinanceSnapshotOut = components['schemas']['FinanceSnapshotOut'];
+export type SchemaFinanceStatusOut = components['schemas']['FinanceStatusOut'];
+export type SchemaFinanceWorkspaceRevokeInput = components['schemas']['FinanceWorkspaceRevokeInput'];
+export type SchemaFinanceWorkspaceSelectInput = components['schemas']['FinanceWorkspaceSelectInput'];
+export type SchemaFinanceWorkspaceStatusInput = components['schemas']['FinanceWorkspaceStatusInput'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
 export type SchemaHealthResponse = components['schemas']['HealthResponse'];
 export type SchemaHeartbeatResponse = components['schemas']['HeartbeatResponse'];
@@ -5915,6 +7042,8 @@ export type SchemaLearningHookSpec = components['schemas']['LearningHookSpec'];
 export type SchemaLearningOut = components['schemas']['LearningOut'];
 export type SchemaLearningUpdateRequest = components['schemas']['LearningUpdateRequest'];
 export type SchemaLoadedWorkflowTemplate = components['schemas']['LoadedWorkflowTemplate'];
+export type SchemaLocalAgentChatCreateMessageInput = components['schemas']['LocalAgentChatCreateMessageInput'];
+export type SchemaLocalAgentChatMessageOut = components['schemas']['LocalAgentChatMessageOut'];
 export type SchemaMetricSnapshotOut = components['schemas']['MetricSnapshotOut'];
 export type SchemaOperationCallIn = components['schemas']['OperationCallIn'];
 export type SchemaOperationDescribeOut = components['schemas']['OperationDescribeOut'];
@@ -5966,6 +7095,7 @@ export type SchemaScheduleUpsertRequest = components['schemas']['ScheduleUpsertR
 export type SchemaScheduledJobOut = components['schemas']['ScheduledJobOut'];
 export type SchemaSitemapFetchRequest = components['schemas']['SitemapFetchRequest'];
 export type SchemaSitemapFetchResponse = components['schemas']['SitemapFetchResponse'];
+export type SchemaSnapshotRef = components['schemas']['SnapshotRef'];
 export type SchemaTelegramApplicationStatusOut = components['schemas']['TelegramApplicationStatusOut'];
 export type SchemaTemplateBaseSpec = components['schemas']['TemplateBaseSpec'];
 export type SchemaTemplateIoSpec = components['schemas']['TemplateIOSpec'];
@@ -5990,6 +7120,9 @@ export type SchemaWorkflowTemplateListOut = components['schemas']['WorkflowTempl
 export type SchemaWorkflowTemplateSpec = components['schemas']['WorkflowTemplateSpec'];
 export type SchemaWorkflowTemplateSummaryOut = components['schemas']['WorkflowTemplateSummaryOut'];
 export type SchemaWriteEnvelopeDurableActionJobOut = components['schemas']['WriteEnvelope_DurableActionJobOut_'];
+export type SchemaWriteEnvelopeFinanceAccessOut = components['schemas']['WriteEnvelope_FinanceAccessOut_'];
+export type SchemaWriteEnvelopeFinanceCommitOut = components['schemas']['WriteEnvelope_FinanceCommitOut_'];
+export type SchemaWriteEnvelopeLocalAgentChatMessageOut = components['schemas']['WriteEnvelope_LocalAgentChatMessageOut_'];
 export type SchemaWriteEnvelopeWorkflowTemplateExtensionDeleteOut = components['schemas']['WriteEnvelope_WorkflowTemplateExtensionDeleteOut_'];
 export type SchemaWriteEnvelopeWorkflowTemplateExtensionUpsertOut = components['schemas']['WriteEnvelope_WorkflowTemplateExtensionUpsertOut_'];
 export type SchemaWriteResponseAccountAuthStatusOut = components['schemas']['WriteResponse_AccountAuthStatusOut_'];
@@ -9175,6 +10308,21 @@ export enum ActionCallStatus {
     success = "success",
     failed = "failed"
 }
+export enum AgentRequestAttentionStatus {
+    unread = "unread",
+    read = "read",
+    archived = "archived"
+}
+export enum AgentRequestStatus {
+    new = "new",
+    claimed = "claimed",
+    run_created = "run-created",
+    run_started = "run-started",
+    responded = "responded",
+    resolved = "resolved",
+    ignored = "ignored",
+    failed = "failed"
+}
 export enum ApprovalRequestStatus {
     pending = "pending",
     approved = "approved",
@@ -9213,9 +10361,169 @@ export enum DurableActionJobStatus {
     failed = "failed",
     unknown_hold = "unknown-hold"
 }
+export enum FinanceCommitInputAction {
+    create_bookkeeping = "create-bookkeeping",
+    correct_bookkeeping = "correct-bookkeeping",
+    correct_receipt_facts = "correct-receipt-facts",
+    propose_billing_correction = "propose-billing-correction"
+}
+export enum FinanceCommitInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum FinanceEditIntentAction {
+    create_bookkeeping = "create-bookkeeping",
+    correct_bookkeeping = "correct-bookkeeping",
+    correct_receipt_facts = "correct-receipt-facts",
+    propose_billing_correction = "propose-billing-correction"
+}
+export enum FinanceEditIntentResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum FinanceEvidenceReadInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum FinanceQueryInputDate_basis {
+    transaction = "transaction",
+    posting = "posting",
+    issue = "issue",
+    cash = "cash"
+}
+export enum FinanceQueryInputKind {
+    all = "all",
+    expense = "expense",
+    income = "income",
+    bill = "bill",
+    receipt = "receipt"
+}
+export enum FinanceQueryInputRecognition_basis {
+    cash = "cash",
+    accrual = "accrual"
+}
+export enum FinanceQueryInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum FinanceQueryInputScope {
+    business = "business",
+    external_project = "external-project"
+}
+export enum FinanceQueryInputSort {
+    date = "date",
+    amount = "amount",
+    counterparty = "counterparty",
+    kind = "kind",
+    review = "review"
+}
+export enum FinanceRecordGetInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum FinanceReportRenderInputDate_basis {
+    transaction = "transaction",
+    posting = "posting",
+    issue = "issue",
+    cash = "cash"
+}
+export enum FinanceReportRenderInputFormat {
+    json = "json",
+    csv = "csv",
+    markdown = "markdown"
+}
+export enum FinanceReportRenderInputKind {
+    all = "all",
+    expense = "expense",
+    income = "income",
+    bill = "bill",
+    receipt = "receipt"
+}
+export enum FinanceReportRenderInputRecognition_basis {
+    cash = "cash",
+    accrual = "accrual"
+}
+export enum FinanceReportRenderInputReport_kind {
+    period = "period",
+    analysis = "analysis"
+}
+export enum FinanceReportRenderInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum FinanceReportRenderInputScope {
+    business = "business",
+    external_project = "external-project"
+}
+export enum FinanceReportRenderInputSort {
+    date = "date",
+    amount = "amount",
+    counterparty = "counterparty",
+    kind = "kind",
+    review = "review"
+}
+export enum FinanceWorkspaceRevokeInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum FinanceWorkspaceSelectInputModes {
+    read = "read",
+    correct = "correct",
+    export = "export"
+}
+export enum FinanceWorkspaceSelectInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum FinanceWorkspaceStatusInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
 export enum HealthResponseDb_status {
     ok = "ok",
     unreachable = "unreachable"
+}
+export enum LocalAgentChatCreateMessageInputDirection {
+    inbound = "inbound",
+    outbound = "outbound"
+}
+export enum LocalAgentChatCreateMessageInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum OperationDescribeOutIdempotency_policy {
+    dispatcher = "dispatcher",
+    handler = "handler"
 }
 export enum OperationResponsePolicyOutAllowed_modes {
     compact = "compact",
@@ -9226,6 +10534,10 @@ export enum OperationResponsePolicyOutDefault_mode {
     compact = "compact",
     raw = "raw",
     ack = "ack"
+}
+export enum OperationSummaryOutIdempotency_policy {
+    dispatcher = "dispatcher",
+    handler = "handler"
 }
 export enum PermissionVerificationOutEnforcement {
     local_required = "local_required",

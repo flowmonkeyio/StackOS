@@ -162,6 +162,7 @@ def test_finance_markdown_template_routes_to_canonical_collections_and_controls(
         "references/approval-matrix.md",
         "references/backend-contract.md",
         "references/imap-host-handoff-contract.md",
+        "references/workflow-handoffs.md",
     }
     preset = SkillPresetLoader().describe_preset(
         key="stackos.finance.department-orchestrator", plugin_slug="finance", source="plugin"

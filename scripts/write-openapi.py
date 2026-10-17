@@ -25,7 +25,11 @@ def main() -> int:
     models = [
         (model, mode)
         for spec in build_operation_registry().by_surface("rest")
-        if spec.name.startswith("actionCall.")
+        if (
+            spec.name.startswith("actionCall.")
+            or spec.grant_policy in {"local-admin-console-read", "local-admin-console-write"}
+            or spec.name == "localAgentChat.createMessage"
+        )
         for model, mode in (
             (spec.input_model, "validation"),
             (spec.output_model, "serialization"),

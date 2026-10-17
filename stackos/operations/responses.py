@@ -712,6 +712,7 @@ def _compact_operation_summary(item: dict[str, Any]) -> dict[str, Any]:
         "read_only": item.get("read_only"),
         "mutating": item.get("mutating"),
         "grant_policy": item.get("grant_policy"),
+        "idempotency_policy": item.get("idempotency_policy", "dispatcher"),
         "secret_policy": item.get("secret_policy"),
     }
     surfaces = item.get("surfaces")
@@ -739,6 +740,50 @@ def _compact_operation_summary(item: dict[str, Any]) -> dict[str, Any]:
 def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
     if not isinstance(data, dict):
         return {"value": data}
+    if operation_name == "localAgentChat.createMessage":
+        out = {
+            k: copy.deepcopy(data[k])
+            for k in (
+                "project_id",
+                "thread_record_id",
+                "message_record_id",
+                "thread_ref",
+                "message_ref",
+            )
+            if k in data
+        }
+        request = data.get("agent_request")
+        out["agent_request"] = (
+            {
+                k: copy.deepcopy(request[k])
+                for k in (
+                    "id",
+                    "project_id",
+                    "status",
+                    "attention_status",
+                    "claimed_by",
+                    "claim_expires_at",
+                    "run_plan_id",
+                    "source_message_ref",
+                )
+                if k in request
+            }
+            if isinstance(request, dict)
+            else None
+        )
+        return out
+    if operation_name in {
+        "financeWorkspace.select",
+        "financeWorkspace.revoke",
+        "financeWorkspace.status",
+        "finance.query",
+        "finance.record.get",
+        "finance.record.preview",
+        "finance.record.commit",
+    }:
+        # Ref-bounded console contracts: truncating source, exclusions, or money
+        # fields here would misrepresent current financial support/completeness.
+        return copy.deepcopy(data)
     if operation_name in {
         "account.application.status",
         "tracker.ticketCounts",

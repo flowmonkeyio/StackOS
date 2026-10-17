@@ -360,6 +360,39 @@ UI-friendly resource routes still exist separately, for example
 generic callable surface; resource routes remain the ergonomic query/read model
 for the UI.
 
+## Finance local console operations
+
+Finance registers these exact REST/CLI operations over the one authorized external
+`local-json-v1` master. They are disabled on MCP; agents perform finance method
+through existing host/workflow contracts, not domain MCP primitives.
+
+| Operation | Behavior | Authority/response |
+| --- | --- | --- |
+| `financeWorkspace.select` / `financeWorkspace.revoke` | Deliberately associate/revoke a private existing root, modes and access generation. No master initialization. | `local-admin-console-write`; handler-owned retry validation; compact/raw safe receipt. |
+| `financeWorkspace.status` | Inspect authorization and actual external readiness/snapshot. | `local-admin-console-read`; compact/raw. |
+| `finance.query` / `finance.record.get` | Bounded filters, source coverage, current facts/history and undated record refs. | Current project/root/read mode; compact/raw. |
+| `finance.record.preview` | Validate a sourced draft against its source snapshot without writing. | Current correction mode; compact/raw. |
+| `finance.record.commit` | Guarded additive correction/create/proposal, exact preview and revision/hash, actual readback. | `local-admin-console-write`; handler-owned retry and under-lock authority recheck. |
+| `finance.evidence.read` / `finance.report.render` | Registered private original or derived period/independently reviewed analysis result. | Raw-only bounded content with exact hash/state; no ack/compact. |
+
+The generic endpoint is `/api/v1/operations/{name}/call`; CLI `ops call {name}`
+uses the same authenticated REST owner. Trusted local context requires the exact
+registered path, browser-safe surface, MCP-disabled spec and matching read/write
+policy. Headers, caller actor/admin fields and run tokens cannot widen it.
+`OperationSpec.idempotency_policy` defaults to `dispatcher`; finance writes opt
+into `handler` so every retry revalidates current root authority and original
+external intent. Descriptions expose that metadata. Existing dispatcher raw/ack
+replay remains unchanged for its default consumers.
+
+Private evidence/report responses are bare `FinanceContentOut` in raw mode;
+other default compact console calls return the normal `data` envelope.
+Exact minor-unit strings and source revision/hash survive shaping. Registry models
+generate UI contracts through `scripts/write-openapi.py`, without a second schema.
+Browser `localAgentChat.createMessage` is a separate bounded inbound human intent:
+safe refs/query/snapshot only, no actor/outbound spoofing, provider work or model
+execution. Clear private search text and apply filters before analysis; read
+[the actual host and result protocol](../plugins/finance/references/workflow-handoffs.md#management-review-request-and-result).
+
 ## CLI Calls
 
 The CLI uses the same REST operation adapter:

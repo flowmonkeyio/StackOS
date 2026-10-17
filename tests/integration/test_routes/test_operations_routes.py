@@ -1315,6 +1315,43 @@ def test_operation_rest_idempotency_replay_can_expand_from_ack_to_raw(
     )
 
 
+def test_handler_owned_idempotency_revalidates_every_attempt(
+    api: TestClient,
+    project_id: int,
+    monkeypatch,
+) -> None:
+    """External/config owners must see retries before any cached success."""
+    from stackos.operations.registry import build_operation_registry
+
+    registry = build_operation_registry()
+    spec = registry.get("localAgentChat.createMessage")
+    original = spec.handler
+    calls = []
+
+    async def checked_handler(inp, ctx, emitter):
+        calls.append(inp.message_key)
+        return await original(inp, ctx, emitter)
+
+    # Exercise the declared policy against the old dispatcher for a semantic red.
+    object.__setattr__(spec, "idempotency_policy", "handler")
+    object.__setattr__(spec, "handler", checked_handler)
+    monkeypatch.setattr("stackos.api.operations.build_operation_registry", lambda: registry)
+    arguments = {
+        "project_id": project_id,
+        "thread_key": "handler-replay",
+        "message_key": "same-message",
+        "sender_ref": "local-user:operator",
+        "text": "Synthetic bounded request",
+        "idempotency_key": "handler-policy",
+    }
+    for _ in range(2):
+        response = api.post(
+            "/api/v1/operations/localAgentChat.createMessage/call", json={"arguments": arguments}
+        )
+        assert response.status_code == 200, response.text
+    assert calls == ["same-message", "same-message"]
+
+
 def test_operation_rest_communication_setup_rejects_secret_like_fields(
     api: TestClient,
     project_id: int,

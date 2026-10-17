@@ -234,6 +234,23 @@ primary lanes. Plugin nav points to generic renderers with plugin/resource
 keys. New domains should not require bespoke top-level pages unless a
 specialized editor is clearly justified.
 
+### Finance console over external truth
+
+Finance contributes one registered local console, reachable at
+`/projects/:id/finance`, with Overview, Expenses & income and Reports. The plugin
+owns reporting method, typed metadata and external helpers; the existing operation
+registry/auth/dispatcher, generic request lifecycle and shared UI primitives own
+transport and authority. There is no financial database/resource ledger or
+arbitrary file connector. One external `finance.json` and retained originals
+remain authoritative; daemon state contains safe root authorization and refs.
+
+Bounded human corrections delegate to the canonical external writer under current
+project/root/mode/generation authority, preview and revision/hash. Generic request
+creation does not execute a model: an actual available host runs the plugin's
+`finance.management-review` and independent report/result review. Findings and
+readable report bytes stay externally published; StackOS retains safe completion
+refs/status. See [the finance contract](../plugins/finance/references/local-workspace-contract.md#local-management-console).
+
 ## Delivery Invariants
 
 - A new domain starts as a plugin manifest plus templates and actions.
@@ -242,6 +259,8 @@ specialized editor is clearly justified.
 - A new callable operation starts as one operation spec with schemas, examples,
   surface policy, grant policy, and agent guidance.
 - A new workflow starts as a template and run-plan tests.
-- A new UI surface should render generic StackOS data.
+- UI surfaces use shared primitives and declared authority. Finance's approved
+  local console renders bounded external read models without taking ownership
+  of the financial master; other runtime views render generic StackOS data.
 - Removed flows must be deleted from routes, MCP registration, bridge exposure,
   tests, docs, install assets, and generated API types.

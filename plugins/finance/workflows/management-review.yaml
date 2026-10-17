@@ -1,0 +1,616 @@
+schema_version: stackos.workflow-template.v1
+key: finance.management-review
+name: Finance Management Review
+version: 0.1.1
+description: A host agent analyzes a bounded external snapshot, obtains independent control review, and publishes
+  a source-bound report without adopting financial decisions.
+domain: finance
+owner:
+  team: StackOS
+experience:
+  problem: A finance analysis request needs an actual host agent, current source evidence and independent review before it can become a useful report.
+  outcome: A reviewed external report bound to the requested snapshot and filters, with supported findings or explicit evidence gaps and no adopted financial decisions.
+  operator_path:
+  - Select the finance timeframe, filters and analysis question, then request agent analysis.
+  - Inspect awaiting-agent, running, blocked or completed status and the source snapshot used.
+  - Read the reviewed report and its evidence; authorize any chosen financial action through separate work.
+  agent_path:
+  - Claim the existing request and verify workspace authority, current source, original query and available host execution.
+  - Prepare evidence-grounded analysis and obtain independent control review of the exact result and report bytes.
+  - Publish and read back the immutable external result, then complete the original request with safe refs and status.
+  progress_signals:
+  - Request scoped
+  - Evidence analyzed
+  - Independent review completed
+  - External result verified
+  recovery:
+  - Keep missing host, authority, source or reviewer prerequisites visible; queueing alone does not run a model.
+  - Reconcile uncertain submission or publication before retry; source changes require current evidence and fresh review.
+  safe_stopping_points:
+  - Return incomplete-data or no-supported-opportunity when the evidence does not support a finding.
+  - Stop after the reviewed report; corrections, payments and adoption require separate authorization.
+public:
+  audience: Operators reviewing sourced business expenses and income
+  setup: mixed
+  prerequisites:
+  - A selected external local-json finance workspace and authorized host access
+  - A persisted finance request with the original snapshot, query and analysis question
+  - An available host agent and a separate control reviewer
+  proof:
+  - An immutable external result and readable report bound to the requested source snapshot
+  - Independent review binding the exact result digest and report bytes
+  - Verified readback and completion of the original request with safe refs
+  featured: false
+agent_requirements:
+- role: bookkeeping-preparer
+  requirement: required
+  agent_preset_ref: stackos.finance.bookkeeping-preparer
+  purpose: Analyze selected current evidence and prepare a typed derived result and exact report bytes.
+  applies_to_steps:
+  - preflight
+  - analyze
+- role: control-reviewer
+  requirement: required
+  agent_preset_ref: stackos.finance.control-reviewer
+  purpose: Independently inspect actual evidence, query, result material digest and exact readable report bytes.
+  applies_to_steps:
+  - review
+- role: cashflow-preparer
+  requirement: recommended
+  agent_preset_ref: stackos.finance.cashflow-preparer
+  purpose: Use only when the selected question requires bounded cashflow analysis.
+  applies_to_steps:
+  - analyze
+skill_requirements:
+- skill_ref: stackos:stackos
+  requirement: required
+  purpose: Use StackOS grants and action audit while keeping all finance records in the selected external backend.
+  applies_to_steps: &id001
+  - preflight
+  - analyze
+  - review
+  - publish
+skill_preset_requirements:
+- skill_preset_ref: stackos.finance.department-orchestrator
+  requirement: required
+  purpose: Coordinate external-backend finance work, specialist handoffs, exceptions, and approval boundaries.
+  applies_to_steps: *id001
+inputs:
+- key: goal
+  name: Goal
+  type: string
+  required: false
+  default: Complete the selected finance work and report material decisions or gaps.
+  schema:
+    type: string
+    minLength: 1
+- key: backend_key
+  name: Backend Key
+  type: string
+  required: false
+  default: local-json
+  schema:
+    type: string
+    const: local-json
+- key: workspace_ref
+  name: External Workspace Ref
+  type: string
+  required: true
+  description: One selected business financial master, usable from a standalone business directory or agency root.
+    Agency/project setup is optional; descriptive associations never grant cross-project access. Follow the backend
+    contract's business/project scope guidance.
+  schema:
+    type: string
+    minLength: 1
+- key: recording_mode
+  name: Recording Mode
+  type: string
+  required: false
+  default: prepared-unposted
+  schema:
+    type: string
+    const: prepared-unposted
+- key: business_profile_ref
+  name: External Business Profile Override
+  type: string
+  required: false
+  description: Optional override; reuse applicable workspace facts. Missing basis or tax treatment limits affected
+    conclusions, not evidence preparation; never infer an election from legal form.
+  schema:
+    type: string
+    minLength: 1
+- key: operator_policy_ref
+  name: Operator Policy Ref
+  type: string
+  required: false
+  description: Optional override of the durable external workspace policy; the agent resolves it during preflight.
+  schema:
+    type: string
+    minLength: 1
+- key: trigger_kind
+  name: Trigger Kind
+  type: string
+  required: false
+  default: manual
+  schema:
+    type: string
+    enum:
+    - manual
+    - external
+- key: request_id
+  name: Persisted Request ID
+  type: integer
+  required: true
+  schema:
+    type: integer
+    minimum: 1
+- key: source_snapshot
+  name: Requested Source Snapshot
+  type: object
+  required: true
+  schema: &id002
+    type: object
+    additionalProperties: false
+    required:
+    - revision
+    - sha256
+    properties:
+      revision:
+        type: integer
+        minimum: 0
+      sha256: &id004
+        type: string
+        pattern: ^[a-f0-9]{64}$
+- key: query
+  name: Selected Finance Query
+  type: object
+  required: true
+  schema:
+    type: object
+    additionalProperties: false
+    required:
+    - start
+    - end
+    - recognition_basis
+    - date_basis
+    - timezone
+    properties:
+      start:
+        type: string
+        format: date
+      end:
+        type: string
+        format: date
+      recognition_basis:
+        enum:
+        - cash
+        - accrual
+      date_basis:
+        enum:
+        - transaction
+        - posting
+        - issue
+        - cash
+      timezone:
+        type: string
+        minLength: 1
+      scope:
+        enum:
+        - business
+        - external-project
+      external_project_ref:
+        type: string
+        minLength: 1
+      currency:
+        type: string
+        pattern: ^[A-Z]{3}$
+      kind:
+        enum:
+        - all
+        - expense
+        - income
+        - bill
+        - receipt
+      needs_review:
+        type: boolean
+      offset:
+        type: integer
+        minimum: 0
+      limit:
+        type: integer
+        minimum: 1
+        maximum: 200
+      account_ref:
+        type: string
+      category_ref:
+        type: string
+      counterparty_ref:
+        type: string
+      q:
+        type: string
+      sort:
+        type: string
+      descending:
+        type: boolean
+      comparison:
+        type: object
+        additionalProperties: false
+        required:
+        - start
+        - end
+        properties:
+          start:
+            type: string
+            format: date
+          end:
+            type: string
+            format: date
+          clamped:
+            type: boolean
+      expected_snapshot: *id002
+      workspace_ref:
+        type: string
+        minLength: 1
+      access_generation:
+        type: integer
+        minimum: 1
+- key: analysis_kind
+  name: Analysis Kind
+  type: string
+  required: false
+  default: opportunities
+  schema:
+    enum:
+    - spending
+    - opportunities
+    - collections
+    - cashflow
+    - review-records
+- key: access_generation
+  name: Access Generation
+  type: integer
+  required: false
+  schema:
+    type: integer
+    minimum: 1
+- key: record_refs
+  name: Record Refs
+  type: array
+  required: false
+  schema:
+    type: array
+    maxItems: 200
+    items:
+      type: string
+      minLength: 1
+      maxLength: 240
+- key: source_refs
+  name: Source Refs
+  type: array
+  required: false
+  schema:
+    type: array
+    maxItems: 200
+    items:
+      type: string
+      minLength: 1
+      maxLength: 240
+capability_requirements: []
+auth_requirements: []
+action_contracts: []
+metadata:
+  artifact_grant_policy: explicit
+  trigger_kinds:
+  - manual
+  - external
+  finance_record_owner: external-backend
+  state_model:
+  - scoped
+  - drafted
+  - reviewed
+  - published
+  - blocked
+  finance_result_owner: external-derived-analysis
+  host_execution: explicit-agent-request-consumption
+when_to_use:
+- A persisted finance management request needs source-grounded spending, opportunities, collections, cashflow, or
+  source-quality analysis.
+when_not_to_use:
+- Provider actions, financial corrections, classification adoption, payments, or tax advice require separately authorized
+  work.
+resource_contracts: []
+context_requirements: []
+policies:
+- key: local-json-single-source
+  kind: boundary
+  description: For local-json, finance.json is the sole authoritative local financial record, including mutable
+    setup. Packet refs resolve to record_id in that document; approved proposals also bind an immutable version/digest,
+    not separate editable files. FINANCE.md is guidance/navigation; CSV is import/export, never a second master.
+    Original evidence stays immutable; provider state stays provider-owned and JSON stores dated observations. Follow
+    the packaged local workspace contract.
+- key: external-backend-is-authoritative
+  kind: boundary
+  description: The external backend owns all bookkeeping records, corrections, reconciliation, and posting status;
+    StackOS holds only workflow/action audit.
+- key: prepared-not-posted
+  kind: integrity
+  description: Local-json work is always labeled prepared/unposted and must not claim authoritative ledger posting,
+    settled allocation, period close, filing, or remittance.
+- key: no-inferred-accounting-or-tax-policy
+  kind: boundary
+  description: Requested management analysis proposes evidence-supported descriptive organizational taxonomy and
+    item buckets, including when no configured list exists or it is insufficient. These result-local groups remain
+    proposed; adopted bookkeeping categories still follow approved configured rules and applicable owner decisions.
+    Do not invent business purpose, accounting basis, tax treatment, payment authority or a final accounting conclusion.
+- key: reviewed-derived-result
+  kind: integrity
+  description: Derived analysis is not a financial record or adopted decision. Use the accepted finance-management-result-v1
+    schema and finance_management helper from the installed package origin. Evidence and readable report remain
+    in the authorized private external root; StackOS stores safe refs, hashes and status only. The report_sha256
+    must bind exact report bytes before independent review; result_digest binds that hash and all material fields.
+    Required review is read-only and independent of the producer.
+- key: explicit-host-consumption
+  kind: boundary
+  description: localAgentChat.createMessage persists an agentRequest; it does not execute AI. Only an available
+    authorized host may consume, prepare, start and run the workflow. Awaiting-agent, unavailable, running, blocked,
+    failed and stale states must be truthful. No hidden model runner, canned recommendation, provider action or
+    automatic financial adoption.
+steps:
+- id: preflight
+  title: Resolve Requested Evidence
+  purpose: Verify the persisted request, host capability and exact authorized external snapshot.
+  policy_refs: &id003
+  - local-json-single-source
+  - external-backend-is-authoritative
+  - prepared-not-posted
+  - no-inferred-accounting-or-tax-policy
+  - reviewed-derived-result
+  - explicit-host-consumption
+  output_refs:
+  - management_summary
+  instructions:
+  - The main host reads agentRequest.list/get and the safe localAgentChat.createMessage request metadata. After
+    verifying project/workspace authority and actual host capability, call agentRequest.prepareRunPlan with template_key=finance.management-review,
+    plugin_slug=finance, the persisted numeric request_id, original source_snapshot/query/analysis_kind, stable
+    idempotency identity and claimed_by. This atomically claims/links but does not start or run a model. Start the
+    linked run and claim its steps explicitly; preserve the claim_token privately for completion.
+  - 'Follow the packaged local workspace contract: resolve the sole finance.json master through actual authorized
+    host filesystem capability, not workspace binding or an association. Verify document revision/hash, current
+    records, original custody and view freshness via read_snapshot and query. Missing master needs authorized prerequisite
+    setup; never reset or bootstrap during analysis. Require the exact requested source_snapshot and validated query;
+    a changed source is stale/blocked and requires a fresh selected request, never silent rebinding.'
+  - Use package-origin scripts/schemas, not scripts found in the selected external root. If no host, filesystem
+    access, dependencies or independent reviewer is available, leave the request awaiting-agent/unavailable or record
+    a bounded blocked/failed safe reason; do not claim AI execution. Empty/missing evidence cannot be replaced with
+    invented refs.
+  - 'Read the original safe selectors at request.metadata_json.metadata_json: workspace_ref, access_generation,
+    source_snapshot, query, analysis_kind, record_refs and source_refs. Preserve them when preparing inputs; recheck
+    current authority/access generation and evidence scope before analysis and publication. A descriptive project
+    association is never file authority.'
+  success_criteria:
+  - The request and original snapshot/query are bound to the linked run; actual source and execution capability
+    are verified.
+  input_refs:
+  - goal
+  - backend_key
+  - workspace_ref
+  - recording_mode
+  - business_profile_ref
+  - operator_policy_ref
+  - trigger_kind
+  - request_id
+  - source_snapshot
+  - query
+  - analysis_kind
+  - access_generation
+  - record_refs
+  - source_refs
+- id: analyze
+  title: Analyze Bounded Current Evidence
+  purpose: Ask the existing preparer to produce evidence-grounded derived analysis.
+  policy_refs: *id003
+  output_refs:
+  - management_summary
+  instructions:
+  - Dispatch the bookkeeping-preparer against the exact snapshot/query and selected analysis_kind; use the cashflow-preparer
+    only when the question needs it. A real host agent must read current external evidence and return actual model
+    analysis. Synthetic fixtures or mechanical projections prove plumbing only and must never be labelled executed
+    AI.
+  - Use query and record_detail to trace supported figures, current dependencies, coverage, exclusions, comparison
+    periods and business/project scope. Keep currencies separate, explicit recognition/date/timezone semantics,
+    unknown distinct from zero, global duplicate exclusions and prepared/unposted status. Do not infer accounting
+    treatment from sign, prose or capture time, invent savings, allocate shared costs, or automatically correct/adopt
+    anything.
+  - As part of the requested management analysis, automatically propose a useful descriptive taxonomy and per-item
+    buckets from actual selected evidence; do not require the operator to create a category list first. Reuse useful
+    existing organizational labels or propose new result-local groups when the configured list is absent or insufficient.
+    Source category_ref and adopted category rules remain separate. No proposal adopts policy or changes finance.json.
+  - Preserve selection={record_refs,source_refs} exactly from the original persisted request, using empty arrays only
+    when its selectors are empty. Nonempty selectors restrict the eligible original query population and evidence.
+    Read every query page on the exact source_snapshot; offset/limit are pagination, not analysis scope. Eligible targets
+    are current selected bookkeeping/receipt rows, including visibly excluded rows without treating them as recognized money.
+  - Include the optional categorization bundle together as taxonomy_proposal, category_proposals, proposal_coverage
+    and selection using the installed result schema. Taxonomy and categories are proposed with unique result-local refs,
+    readable labels/descriptions, rationale, evidence and uncertainty. Each unique target proposal has its exact current
+    workspace.material_record_digest(record, collection), taxonomy/category membership, low/medium/high confidence,
+    rationale, scoped evidence and uncertainty. Unknown classification stays explicitly unassigned; category_ref may be
+    null and low confidence remains tentative. Never infer tax or business-purpose facts to make a bucket fit.
+  - Bound considered targets and proposals to 200. proposal_coverage.considered_record_refs partitions exactly into
+    assigned or explicit unassigned_record_refs; a null proposal must agree with the unassigned partition. Larger or
+    partially considered populations require named gaps and truthful coverage, never silent first-page truncation.
+    If no useful taxonomy is supported, return empty categories/proposals and explicit empty/partial coverage with
+    unassigned items/gaps. No-supported-opportunity may coexist with organizational proposals; it claims no cost opportunity.
+  - Evaluate supported expense increases against the exact requested comparison window and investigate repeated
+    costs, possible duplicates and source-quality concerns using actual records and coverage. Use existing opportunities
+    kinds, readable title and attention_level=info/watch/high, evidence, uncertainty and assumptions. Keep currencies,
+    precision and supported economic IDs separate; unknown or incomplete baselines stay gaps. Recurrence is not proof
+    of a duplicate charge, and no fixed rule, canned finding or frontend threshold substitutes for actual AI reasoning.
+  - Prepare a finance-management-result-v1 candidate plus UTF-8 report bytes outside the immutable published destination.
+    Use request_id=str(the persisted numeric request_id), exact source_snapshot/query, actual producer_ref/run_ref/created_at,
+    opportunities/evidence_refs/gaps and a truthful supported-opportunities, no-supported-opportunity or incomplete-data
+    state. Hash the exact report bytes into report_sha256 BEFORE computing result_digest and dispatching independent
+    review. Each finding cites existing authorized evidence, uncertainty, assumptions and sourced currency/precision
+    for any estimated impact. Missing evidence blocks publication; partial/no-finding is a valid evidence-grounded
+    outcome.
+  success_criteria:
+  - Actual host analysis has traceable evidence and a typed material digest binding the readable report; drafts
+    remain external.
+  depends_on:
+  - preflight
+- id: review
+  title: Independently Review Analysis
+  purpose: Obtain read-only control review of the exact derived candidate and actual source.
+  policy_refs: *id003
+  output_refs:
+  - management_summary
+  instructions:
+  - Dispatch the control-reviewer as a distinct actor from producer_ref. It independently reads actual external
+    evidence and the exact candidate result/report bytes, verifies current source_snapshot/query and supporting
+    current records, challenges unsupported opportunities and estimates, and checks coverage/duplicate/date/currency/scope/unknown
+    semantics. An unavailable reviewer or narrative-only review leaves required review pending.
+  - Review the proposed taxonomy, every considered/assigned/unassigned target, original selectors, full filtered
+    population, exact current target digests, unique IDs/membership, scoped evidence, confidence and partial coverage.
+    Challenge unsupported category meaning or expense-increase/repeat/duplicate claims; verify comparison periods,
+    currencies and uncertainty from actual sources. Current proposal presentation requires a matching source snapshot;
+    stale historical material retains its original refs/digests and cannot bucket current replacement records.
+  - The reviewer returns approved or blocking findings bound to result_digest(candidate), which includes report_sha256.
+    The main host records review.reviewer_ref, actual review.run_ref, verdict=approved, reviewed_at and target_digest_sha256
+    only after an independent approved review. Same workflow run is permitted; same producer actor is not. Changed
+    result material or readable bytes requires fresh independent review. Control approval approves analysis evidence,
+    never accounting policy or business adoption.
+  success_criteria:
+  - An independent reviewer has verified the exact material and readable bytes against current source; findings
+    are resolved or held.
+  depends_on:
+  - analyze
+- id: publish
+  title: Publish And Complete Request
+  purpose: Materialize reviewed external analysis and complete only the verified request.
+  policy_refs: *id003
+  output_refs:
+  - management_summary
+  instructions:
+  - The main host is the single publisher. Call finance_management.publish_result(finance_json_path, reviewed_result,
+    exact_report_bytes); its canonical writer lock validates schema, current source/query, evidence, independent
+    review digest and report hash, then writes immutable exports/analysis/<request_id>/result.json and report.md
+    with the completion manifest last. This does not change finance.json. Reconcile an unknown/interrupted outcome
+    by readback before any retry; no replacement ID or blind write.
+  - Call read_result with external_result_ref, expected_digest=publication.result_sha256, expected_query=the
+    original query and expected_selection={record_refs,source_refs} from the original persisted request. Require current complete readback before recording status=published with safe request/source/result/report
+    hashes, control_review_ref, external_result_ref and outcome only. Never store amounts, opportunities, report
+    text, private paths or original bytes in StackOS resources, artifacts, run results, tracker or chat.
+  - Only after verified external publication/readback, call agentRequest.complete with the original project/request/claim_token
+    and metadata_json={external_result_ref,external_result_sha256,source_snapshot,state:published}. If a local acknowledgement
+    is useful, call localAgentChat.createMessage direction=outbound, create_request=false with safe status/refs
+    only. The UI resolves the private external result via its authorized adapter; queue completion alone is not
+    proof of publication/currentness. Failure or source change stays failed/blocked/stale; do not claim completed
+    analysis or adopt a financial decision. Any chosen opportunity requires a separately authorized correction or
+    existing finance workflow.
+  - Historical/stale readback preserves original reviewed material and file/report integrity without comparing old
+    target digests to newer records. Do not rebind old selectors or present historical proposals as current buckets;
+    request fresh selected analysis. Keep Reports period features/exports unchanged; the existing private report bytes
+    remain review/publication evidence, not a request for a Reports redesign.
+  - Completion metadata has exactly top-level external_result_ref, external_result_sha256, source_snapshot and state=published;
+    map external_result_sha256 from publish_result receipt result_sha256, the full result.json file SHA. review.target_digest_sha256
+    is a different digest covering material excluding review. There are no nested completion aliases.
+  success_criteria:
+  - A complete reviewed external result is read back against the original request and the queue is truthfully resolved
+    with safe refs only.
+  depends_on:
+  - review
+outputs:
+- key: management_summary
+  name: Safe Management Analysis Summary
+  type: object
+  required: true
+  description: Safe request/source/result/report digests and external refs/status only; no financial values, recommendations,
+    private paths or report content.
+  schema:
+    type: object
+    additionalProperties: false
+    required:
+    - status
+    - request_id
+    - source_snapshot
+    - exception_refs
+    properties:
+      status:
+        enum:
+        - scoped
+        - drafted
+        - reviewed
+        - published
+        - blocked
+      request_id:
+        type: integer
+        minimum: 1
+      source_snapshot: *id002
+      exception_refs:
+        type: array
+        items: &id005
+          type: string
+          minLength: 1
+          maxLength: 240
+      result_digest_sha256: *id004
+      report_sha256: *id004
+      result_sha256: *id004
+      control_review_ref: *id005
+      external_result_ref:
+        type: string
+        pattern: ^finance-analysis:[A-Za-z0-9][A-Za-z0-9_-]{0,159}$
+      outcome:
+        enum:
+        - supported-opportunities
+        - no-supported-opportunity
+        - incomplete-data
+    allOf:
+    - if:
+        properties:
+          status:
+            enum:
+            - drafted
+            - reviewed
+            - published
+        required:
+        - status
+      then:
+        required:
+        - result_digest_sha256
+        - report_sha256
+    - if:
+        properties:
+          status:
+            enum:
+            - reviewed
+            - published
+        required:
+        - status
+      then:
+        required:
+        - control_review_ref
+    - if:
+        properties:
+          status:
+            enum:
+            - published
+        required:
+        - status
+      then:
+        required:
+        - external_result_ref
+        - result_sha256
+        - outcome
+    - if:
+        properties:
+          status:
+            const: blocked
+        required:
+        - status
+      then:
+        properties:
+          exception_refs:
+            minItems: 1
+failure_handling:
+- Missing authority, source, host, evidence or reviewer leaves a bounded unavailable/awaiting-agent/blocked/failed
+  state. Changed snapshot/query or report material never inherits old review. Preserve actual work externally and
+  reconcile publication before retry.

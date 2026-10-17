@@ -364,7 +364,13 @@ def test_codex_local_finance_agents_track_finance_presets_without_model_override
     project_rules = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
     assert ".codex/orchestrator/finance-department-orchestrator.md" in project_rules
     for workflow in workflows:
-        assert f"`{workflow['key']}`" in project_rules
+        # Root documentation routing is delivered separately from the method packet.
+        guidance = project_rules
+        if workflow["key"] == "finance.management-review":
+            guidance = (
+                REPO_ROOT / ".codex/orchestrator/finance-department-orchestrator.md"
+            ).read_text(encoding="utf-8")
+        assert f"`{workflow['key']}`" in guidance
 
     config = tomllib.loads((REPO_ROOT / ".codex/config.toml").read_text(encoding="utf-8"))
     expected_efforts = {
@@ -377,11 +383,11 @@ def test_codex_local_finance_agents_track_finance_presets_without_model_override
     }
     expected_versions = {
         "finance_receipt_operator": "0.4.4",
-        "finance_bookkeeping_preparer": "0.5.4",
+        "finance_bookkeeping_preparer": "0.5.6",
         "finance_billing_collections_operator": "0.6.6",
-        "finance_cashflow_preparer": "0.4.4",
+        "finance_cashflow_preparer": "0.4.5",
         "finance_tax_preparer": "0.4.4",
-        "finance_control_reviewer": "0.6.5",
+        "finance_control_reviewer": "0.6.7",
     }
     for agent_name, (config_file, preset_ref) in LOCAL_CODEX_FINANCE_AGENT_PRESETS.items():
         assert config["agents"][agent_name]["config_file"] == config_file
@@ -413,7 +419,7 @@ def test_codex_local_finance_agents_track_finance_presets_without_model_override
     orchestrator_text = (
         REPO_ROOT / ".codex/orchestrator/finance-department-orchestrator.md"
     ).read_text(encoding="utf-8")
-    assert "Source skill preset: `stackos.finance.department-orchestrator` v0.7.5" in (
+    assert "Source skill preset: `stackos.finance.department-orchestrator` v0.8.1" in (
         orchestrator_text
     )
     assert "not a subagent" in orchestrator_text
@@ -636,12 +642,18 @@ def test_finance_agent_presets_preserve_external_backend_and_role_boundaries() -
     assert tax.role_class == "reasoning"
     assert reviewer.role_class == "review"
     assert receipt.applies_to_workflows == ["finance.receipt-intake"]
-    assert bookkeeping.applies_to_workflows == ["finance.bookkeeping-close"]
+    assert bookkeeping.applies_to_workflows == [
+        "finance.bookkeeping-close",
+        "finance.management-review",
+    ]
     assert billing.applies_to_workflows == [
         "finance.payment-request",
         "finance.payment-request-followups",
     ]
-    assert cashflow.applies_to_workflows == ["finance.cashflow-management"]
+    assert cashflow.applies_to_workflows == [
+        "finance.cashflow-management",
+        "finance.management-review",
+    ]
     assert tax.applies_to_workflows == ["finance.tax-estimates"]
     assert reviewer.applies_to_workflows == [
         "finance.receipt-intake",
@@ -650,6 +662,7 @@ def test_finance_agent_presets_preserve_external_backend_and_role_boundaries() -
         "finance.payment-request-followups",
         "finance.cashflow-management",
         "finance.tax-estimates",
+        "finance.management-review",
     ]
 
     for preset in (receipt, bookkeeping, billing, cashflow, tax, reviewer):

@@ -6,6 +6,56 @@ invoicing, collections follow-up, cashflow planning, and tax-estimate packet
 preparation. It deliberately does **not** make StackOS the finance system of
 record.
 
+## Manage finance in the local console
+
+Enable Finance for the owning StackOS project, open **Finance**, and select an
+existing private folder containing `finance.json`. Choose read, sourced-correction
+and export access deliberately. Selection records a local authorization; it does
+not initialize, copy or reset the business master. A new empty workspace is a
+separate authorized host setup step. One business keeps one external master.
+
+The console has three views:
+
+- **Overview** shows supported spend, income and profit by currency, with the
+  selected period, date/recognition basis, source coverage and review gaps.
+- **Expenses & income** searches and filters expenses, income, bills and receipts.
+  Open a row to inspect current facts, retained original evidence and correction
+  history. Prepare a sourced edit, inspect its preview, then save or cancel.
+- **Reports** renders the selected period as Markdown, JSON or formula-safe CSV,
+  and requests independently reviewed agent analysis.
+
+Inline original preview depends on browser support. If a PDF preview is blank,
+use the verified original download; inline PDF rendering is not guaranteed.
+
+Keep the same period/basis/filter selection across views. Amounts retain exact
+minor-unit strings and currency precision, including values beyond JavaScript's
+integer precision. Currencies stay separate; missing revenue or incomplete
+coverage produces unavailable/partial profit, never invented zero or implicit FX.
+Business-wide views include shared/unassigned costs. Optional verified project
+labels do not infer allocation from customer names or require agency setup.
+
+Reads and cancelled previews leave the master unchanged. Saves use the current
+revision/hash and existing exclusive writer, validation, atomic replacement and
+readback. Stale editors must refresh/rebase; unknown outcomes reconcile the same
+request before retry. Original observations remain in additive history; local
+edits cannot change provider state. Legacy supported v1 facts stay inspectable
+and editable; no master migration or historical date backfill is performed.
+
+Clear nonempty search text and **apply filters** before requesting agent analysis:
+private search text is refused, not silently dropped or copied to the request.
+The request stores safe selectors, the original query/snapshot and its actual ID.
+Queueing does not run a model. A capable authorized host must consume the request,
+run [management review](workflows/management-review.yaml), obtain independent
+control review of the exact result and readable-report hash, and publish externally.
+Awaiting, blocked, unavailable and source-stale results remain explicit. See the
+[host/result handoff](references/workflow-handoffs.md#management-review-request-and-result).
+
+These instructions describe the reviewed source feature. Installed use requires
+a runtime/UI bundle containing it; a source build does not update or restart an
+already installed app. Actual browser and host/model completion require their own
+integration evidence. The [local console contract](references/local-workspace-contract.md#local-management-console)
+defines authorization, private originals, reports and recovery.
+
 QuickBooks Online adds two bounded reads: company information and one invoice
 page for explicit transaction dates. Connect through the generic Accounts form
 with Intuit OAuth or an externally managed access token, choosing the intended
@@ -102,7 +152,7 @@ Finance works without an agency. Start from the business directory and set up
 only the selected finance workflows. An agency may first use
 [`agency.setup` and `agency.project-setup`](../agency/README.md) to retain minimal
 nonfinancial agency/client-engagement context, then separately authorize finance
-setup at the agency root. The six finance workflows and specialists are the same.
+setup at the agency root. The seven finance workflows and specialists are the same.
 
 Keep one selected `finance/finance.json` per business, shared across its client
 engagements—not one financial master per client or project. The main agent can
@@ -116,7 +166,7 @@ version or prepared bookkeeping record. It points to a verified nonfinancial
 identity from agency context or an operator/external source; agency is not
 required. Same customer does not imply same project. Company-wide costs stay
 unassigned; uncertain/shared attribution stays absent with a gap. There is no
-automatic cost allocation or profitability engine. See the
+automatic cost allocation; project contributions retain shared/unallocated gaps. See the
 [business/project scope contract](references/backend-contract.md#business-and-project-scope).
 
 | Workflow | Job and safe completion boundary | Provider actions / gates |
@@ -127,6 +177,7 @@ automatic cost allocation or profitability engine. See the
 | [Payment follow-ups](workflows/payment-request-followups.yaml) | One billing agent follows operator-provided or documented instructions to resend through Stripe or send an authored SMTP email; alternatively reconcile a payment already received. | IMAP reads replies, SMTP sends. Existing Stripe/settlement gates remain; no extra email approval gate. See the shared [follow-up protocol](references/approval-matrix.md#follow-up-approvals). |
 | [Cashflow management](workflows/cashflow-management.yaml) | Produce 13 dated base/downside weeks: opening cash, expected receipts, actual cash outflows, closing cash, earmarked reserves and spendable cash. | A reserve is not itself a bank outflow. A reviewed reserve version is applied once; no automatic tax/forecast loop. |
 | [Tax estimates](workflows/tax-estimates.yaml) | Gather annual taxpayer inputs and current official sources; calculate and document applicable estimates, or produce an explicitly incomplete packet. | Preparation can proceed before an advisor is selected. CPA/EA review then owner approval are required before adoption; no filing, remittance or payment. |
+| [Management review](workflows/management-review.yaml) | Analyze the original requested snapshot/query, retain sourced findings and obtain independent control review of the exact result plus readable report before external publication. | An actual capable host executes; no provider actions, financial adoption or autonomous model runner. |
 
 The complete cross-workflow conditions and reference-only handoff payloads are
 in [workflow-handoffs.md](references/workflow-handoffs.md). Workflow, tracker,
@@ -194,7 +245,7 @@ owns primary-email hashes, externally verified Dashboard To/CC settings and
 their reuse/recheck rules. Unknown recipients hold the send, not draft work.
 
 For “the customer wired money” or another already-received payment, use the
-existing follow-ups workflow in `settlement-only` mode, not a seventh workflow.
+existing follow-ups workflow in `settlement-only` mode, without another settlement workflow.
 The [settlement approval protocol](references/approval-matrix.md#received-payment-settlement-approvals)
 owns route selection and distinct report/attach/paid-out-of-band gates. The
 [backend recovery contract](references/backend-contract.md#duplicate-handling-and-retries)
@@ -342,7 +393,7 @@ Production activation is separate and applies only to selected routes:
 ## Initial non-goals
 
 This release does not add a StackOS finance ledger, finance resources/artifacts,
-database, filesystem connector, accounting/tax engine, finance UI, scheduler,
+database, filesystem connector, accounting/tax engine, scheduler,
 QuickBooks/Google Sheets adapter, bank feed, AP/vendor payments, payroll,
 customer email outside the selected invoice/follow-up routes, tax portal, filing, remittance,
 or entity-election action. Engineering verification uses fixtures and local

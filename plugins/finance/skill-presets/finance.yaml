@@ -2,8 +2,8 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: stackos.finance.department-orchestrator
     name: Finance Department Orchestrator
-    version: 0.7.5
-    description: Main-agent guidance for a six-workflow finance department that keeps all finance facts external while coordinating bounded agents, provider actions, received-payment settlement approvals, and audit.
+    version: 0.8.1
+    description: Main-agent guidance for a seven-workflow finance department that keeps all finance facts external while coordinating bounded agents, provider actions, received-payment settlement approvals, and audit.
     domain: finance
     skill_type: main-agent-orchestration
     generic_preset: true
@@ -14,7 +14,13 @@ presets:
       - finance.payment-request-followups
       - finance.cashflow-management
       - finance.tax-estimates
+      - finance.management-review
     recommended_tools:
+      - localAgentChat.createMessage
+      - agentRequest.list
+      - agentRequest.get
+      - agentRequest.prepareRunPlan
+      - agentRequest.complete
       - workspace.startSession
       - workflowTemplate.describe
       - workflowExtension.get
@@ -110,6 +116,10 @@ presets:
         - Use existing StackOS auth, active grants, named approvals, and action audit; do not introduce finance state, a ledger, DSL, model selector, scheduler, or finance-specific core behavior.
         - Consolidate specialist partial progress and findings into one owner digest with safe external refs, status, recovery path, and next decision.
       must_do:
+        - Finance management is an authorized local console over the one external master, not another finance record. A localAgentChat.createMessage request remains awaiting-agent until a capable host explicitly consumes agentRequest.list/get, prepares the finance.management-review run with the original request_id/source_snapshot/query, starts it and runs the real preparer plus independent control-reviewer. StackOS never runs a model; unavailable tools/host/source/reviewer remain truthful pending/blocked states.
+        - Keep actual analysis and readable report externally. Use installed package-origin finance_management and management-result-v1.schema.json; bind exact report_sha256 before result_digest and independent review, retain producer/run/source/query/evidence/gaps, then publish_result and read_result against the original request. Only current complete reviewed readback permits agentRequest.complete with top-level metadata_json.external_result_ref/external_result_sha256/source_snapshot/state safe refs/hashes/status, with external_result_sha256 taken from publication.result_sha256 (full result bytes), not the review material digest. No amounts, report text or opportunities in StackOS control records; acknowledgement is safe outbound local chat with create_request=false. Changed source/material is stale and requires repair/new selection; recommendations are never automatically adopted or provider-executed.
+        - Include descriptive taxonomy and per-item proposed buckets automatically in requested management analysis using actual authorized evidence, even without a sufficient configured category list. Keep adopted bookkeeping categories/policy separate. Dispatch the existing preparer with original query/source_snapshot and exact selection record_refs/source_refs, full filtered population beyond pagination, current bookkeeping/receipt target digests, scoped evidence, confidence/rationale/uncertainty, unique membership, max200 and explicit assigned/unassigned/partial coverage. Require the taxonomy_proposal/category_proposals/proposal_coverage/selection bundle; unsupported grouping stays empty or unassigned with gaps. Concerns use existing opportunities/title/attention_level info/watch/high for supported expense increases/repeats/source quality, with exact comparison evidence and no recurrence-equals-duplicate assumption, fixed rules or canned AI.
+        - Required independent control review binds every proposal/concern and exact report bytes. After publish_result, call read_result with expected_digest, expected_query and expected_selection from original persisted selectors, and complete only after current verified readback. Stale historical material retains original refs/digests and file/report integrity; do not apply old digests to new targets or bucket current replacements. Keep proposal/cost-opportunity states distinct, all private analysis externally owned and Reports period features/exports unchanged. No new core executor, model selection, provider action or automatic adoption.
         - Apply the external delivery evidence contract before direct-deposit-only send or resend. Compute the exact invoice snapshot from independent invoice/item reads and validate current account/version/recipient/route proof; Dashboard-only evidence cannot establish stripe-api-send behavior, and unknown/visible/stale proof stops contact while drafts remain preparable.
         - Reconcile an already completed manual Dashboard no-link send using prior exact owner approval and independent retained delivery evidence. Preserve manual-sent plus reconciliation/delivery/owner approval refs without another send or fabricated API audit. Carry its actual contact time into follow-up suppression; uncertainty stays unresolved.
         - Use explicit finalized-invoice PDF download only when an artifact is needed, verify external custody and clean private staging afterward. The API supplies no draft PDF, no-link send parameter, recipient override or complete additional To/CC readback. Never finalize to obtain a review artifact or alter billing details to deliver a review copy.
@@ -144,7 +154,7 @@ presets:
         - Keep cashflow as a dated thirteen-week base and downside packet, with each week proving opening cash plus receipts minus cash payments equals closing cash. Tax prepares a separate current-source obligation matrix; reviewed reserve is an earmark that reduces spendable rather than bank cash and is applied by cashflow exactly once.
         - Let tax preparation gather sources and surface an incomplete/awaiting-advisor packet. Keep advice, filing, remittance, payroll, payment, entity decisions, tax-conclusion adoption, and reserve handoff with the owner and qualified professional; require designated CPA/EA review where the workflow says so.
       must_not_do:
-        - Do not create a StackOS ledger, finance table, finance repository, finance resource/artifact, accounting/tax engine, finance-specific UI, filesystem connector, or domain-specific core policy.
+        - Do not create a StackOS ledger, finance table, finance repository, finance resource/artifact, accounting/tax engine, hidden workflow executor, generic filesystem connector, or domain-specific core policy.
         - Do not make StackOS action audit, run state, tracker notes, or specialist narratives an authoritative record for financial facts.
         - Do not invent business/tax profile, accounting basis, customer facts, invoice terms, payment promise, source facts, rates, thresholds, deadlines, forecasts, advice, or an external record reference.
         - Do not allow a reviewer to write, approve itself, or substitute a ticket note for actual record/action evidence.
