@@ -1900,8 +1900,13 @@ This is a same-occurrence consistency check, not a Slack provenance attestation:
 matching resource fields do not prove who created them. Nonempty message
 subtypes, including `message_changed`, keep the existing route behavior and are
 outside this comparator. `decision.store=false` still returns before request
-lookup and writes. Initial-create races and whole-pipeline atomicity remain
-outside this slice.
+lookup and writes. For this selected ordinary Slack path, first request/source
+lookup, comparison, and selected event/message/request/state persistence share
+one SQLite writer transaction, and success is returned only after commit. Other
+providers and subtypes, independent event writers, whole-pipeline transactional
+guarantees, and PostgreSQL concurrency remain outside this slice. Matching
+source fields do not add provider authenticity, issuer, team, or delegation
+authority.
 
 Rules:
 

@@ -11,7 +11,7 @@ import json
 import re
 from typing import Any, TypeGuard
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from stackos.artifacts import redact_secrets
 from stackos.communications.contracts import (
@@ -21,10 +21,63 @@ from stackos.communications.contracts import (
     NormalizedResourcePatch,
     NormalizedResourceWrite,
 )
-from stackos.communications.resources import communication_record_by_external_id
-from stackos.repositories.agent_requests import AgentRequestRepository
+from stackos.communications.resources import (
+    communication_record_by_external_id,
+    communication_record_by_external_id_in_transaction,
+)
+from stackos.db.models import AgentRequest, Project, ResourceRecord
+from stackos.repositories.agent_requests import AgentRequestOut, AgentRequestRepository
 from stackos.repositories.base import ConflictError, NotFoundError
-from stackos.repositories.resources import ResourceRepository
+from stackos.repositories.resources import (
+    PreparedInboundResources,
+    ResourceRecordOut,
+    ResourceRepository,
+)
+
+
+def _require_inbound_writer_session(session: Session) -> None:
+    if session.new or session.dirty or session.deleted or session._flushing:
+        raise ConflictError("selected Slack writer cannot consume pending caller work")
+    connection = session.connection()
+    if connection.dialect.name != "sqlite":
+        raise ConflictError("selected Slack writer requires SQLite")
+    if getattr(connection.connection.driver_connection, "in_transaction", None) is not False:
+        raise ConflictError("selected Slack writer cannot consume caller transaction")
+
+
+def _inbound_resource_keys(event: NormalizedInboundEvent) -> set[str]:
+    # The existing-request comparator reads the canonical source even when a
+    # normalized self-message has no write for communication-message.
+    keys = {event.event.resource_key, "communication-event", "communication-message"}
+    for write in (event.surface, event.message, event.interaction, *event.related_resources):
+        if write is not None:
+            keys.add(write.resource_key)
+    keys.update(patch.resource_key for patch in event.state_patches)
+    return keys
+
+
+def _validate_prepared_resources(
+    session: Session,
+    prepared: PreparedInboundResources,
+    resource_keys: set[str],
+) -> None:
+    if prepared.session is not session:
+        raise ConflictError("prepared resource refs belong to another Session")
+    project = session.exec(
+        select(Project)
+        .where(Project.id == prepared.project_id)
+        .execution_options(populate_existing=True)
+    ).first()
+    if project is None:
+        raise NotFoundError(f"project {prepared.project_id} not found")
+    repository = ResourceRepository(session)
+    for key in resource_keys:
+        repository._prepared_pair(
+            prepared,
+            project_id=prepared.project_id,
+            plugin_slug="communications",
+            resource_key=key,
+        )
 
 
 def process_inbound_event(
@@ -47,20 +100,81 @@ def process_inbound_event(
             response_json=event.response_json,
         )
 
-    request_repo = AgentRequestRepository(session)
-    existing_request = (
-        request_repo.find_by_key(project_id=project_id, request_key=event.request_key)
-        if event.request_key
-        else None
+    selected = event.provider_key == "slack-bot" and event.request_metadata_json.get(
+        "source_occurrence_check"
+    ) in {"compare", "unverifiable"}
+    if not selected:
+        return _process_inbound_event_impl(
+            session, project_id=project_id, event=event, decision=decision, prepared=None
+        )
+
+    _require_inbound_writer_session(session)
+    resource_keys = _inbound_resource_keys(event)
+    prepared = ResourceRepository(session).prepare_inbound_resources(
+        project_id=project_id,
+        resource_keys=resource_keys,
     )
+    _require_inbound_writer_session(session)
+    connection = session.connection()
+    dbapi_connection = connection.connection.driver_connection
+    if (
+        connection.dialect.name != "sqlite"
+        or getattr(dbapi_connection, "in_transaction", None) is not False
+    ):
+        raise ConflictError("selected Slack occurrence requires an unowned SQLite transaction")
+    connection.exec_driver_sql("BEGIN IMMEDIATE")
+    try:
+        session.expire_all()
+        _validate_prepared_resources(session, prepared, resource_keys)
+        result = _process_inbound_event_impl(
+            session,
+            project_id=project_id,
+            event=event,
+            decision=decision,
+            prepared=prepared,
+        )
+        session.commit()
+        return result
+    except BaseException:
+        session.rollback()
+        raise
+
+
+def _process_inbound_event_impl(
+    session: Session,
+    *,
+    project_id: int,
+    event: NormalizedInboundEvent,
+    decision: CommunicationDecision,
+    prepared: PreparedInboundResources | None,
+) -> CommunicationProcessingResult:
+    """Shared policy/storage flow; selected writes use a caller-owned transaction."""
+
+    request_repo = AgentRequestRepository(session)
+    existing_request: AgentRequest | AgentRequestOut | None = None
+    if event.request_key:
+        if prepared is not None:
+            existing_request = request_repo.find_by_key_in_transaction(
+                project_id=project_id,
+                request_key=event.request_key,
+            )
+        else:
+            existing_request = request_repo.find_by_key(
+                project_id=project_id,
+                request_key=event.request_key,
+            )
     create_request = decision.create_request and event.request_key is not None
     create_request = create_request and existing_request is None
     policy_status = "request_deduped" if existing_request is not None else decision.status
     if event.provider_key == "slack-bot":
         occurrence_check = event.request_metadata_json.get("source_occurrence_check")
         if existing_request is not None and occurrence_check in {"compare", "unverifiable"}:
+            existing_request_id = existing_request.id
+            if existing_request_id is None:
+                raise ConflictError("persisted request has no id")
             status, mismatch_fields, stored_occurrence = _classify_slack_occurrence(
                 session,
+                prepared=prepared,
                 project_id=project_id,
                 request=existing_request,
                 incoming_metadata=event.request_metadata_json,
@@ -71,9 +185,10 @@ def process_inbound_event(
             if status != "request_deduped":
                 diagnostic_id = _persist_occurrence_diagnostic(
                     session,
+                    prepared=prepared,
                     project_id=project_id,
                     profile_key=event.profile_key,
-                    request_id=existing_request.id,
+                    request_id=existing_request_id,
                     event_key=event.event_key,
                     request_key=event.request_key or "",
                     status=status,
@@ -91,7 +206,7 @@ def process_inbound_event(
                     event_record_id=diagnostic_id,
                     message_record_id=None,
                     interaction_record_id=None,
-                    agent_request_id=existing_request.id,
+                    agent_request_id=existing_request_id,
                     response_json=event.response_json,
                 )
     policy_fields = _policy_fields(
@@ -106,6 +221,7 @@ def process_inbound_event(
     surface_record_id = _upsert_optional(
         session,
         resources,
+        prepared=prepared,
         project_id=project_id,
         write=event.surface,
     )
@@ -114,6 +230,7 @@ def process_inbound_event(
         _upsert_optional(
             session,
             resources,
+            prepared=prepared,
             project_id=project_id,
             write=related_resource,
             deduped=existing_request is not None,
@@ -123,6 +240,7 @@ def process_inbound_event(
     event_record_id = _upsert_required(
         session,
         resources,
+        prepared=prepared,
         project_id=project_id,
         write=event_write,
         deduped=existing_request is not None,
@@ -130,6 +248,7 @@ def process_inbound_event(
     message_record_id = _upsert_optional(
         session,
         resources,
+        prepared=prepared,
         project_id=project_id,
         write=_merge_write(event.message, {"policy_status": policy_status}),
         deduped=existing_request is not None,
@@ -137,6 +256,7 @@ def process_inbound_event(
     interaction_record_id = _upsert_optional(
         session,
         resources,
+        prepared=prepared,
         project_id=project_id,
         write=_merge_write(event.interaction, {"status": policy_status}),
         deduped=existing_request is not None,
@@ -152,6 +272,7 @@ def process_inbound_event(
 
     request_id = existing_request.id if existing_request is not None else None
     if create_request and event.request_key is not None:
+        request: AgentRequest | AgentRequestOut
         metadata_json = {
             **{
                 key: value
@@ -163,23 +284,37 @@ def process_inbound_event(
             "matched_command": decision.matched_command,
             **decision.metadata,
         }
-        request = request_repo.create(
-            project_id=project_id,
-            request_key=event.request_key,
-            title=event.request_title,
-            body_preview=event.body_preview,
-            source_provider=event.provider_key,
-            source_kind=event.source_kind,
-            source_resource_key=source_resource_key,
-            source_resource_record_id=source_record_id,
-            source_message_ref=event.source_message_ref,
-            metadata_json=metadata_json,
-        ).data
+        if prepared is not None:
+            request = request_repo.create_in_transaction(
+                project_id=project_id,
+                request_key=event.request_key,
+                title=event.request_title,
+                body_preview=event.body_preview,
+                source_provider=event.provider_key,
+                source_kind=event.source_kind,
+                source_resource_key=source_resource_key,
+                source_resource_record_id=source_record_id,
+                source_message_ref=event.source_message_ref,
+                metadata_json=metadata_json,
+            )
+        else:
+            request = request_repo.create(
+                project_id=project_id,
+                request_key=event.request_key,
+                title=event.request_title,
+                body_preview=event.body_preview,
+                source_provider=event.provider_key,
+                source_kind=event.source_kind,
+                source_resource_key=source_resource_key,
+                source_resource_record_id=source_record_id,
+                source_message_ref=event.source_message_ref,
+                metadata_json=metadata_json,
+            ).data
         request_id = request.id
 
     if create_request or existing_request is not None:
         for patch in event.state_patches:
-            _apply_patch(session, project_id=project_id, patch=patch)
+            _apply_patch(session, project_id=project_id, patch=patch, prepared=prepared)
 
     return CommunicationProcessingResult(
         ok=True,
@@ -243,6 +378,7 @@ _LOWER_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 def _classify_slack_occurrence(
     session: Session,
     *,
+    prepared: PreparedInboundResources | None,
     project_id: int,
     request: Any,
     incoming_metadata: dict[str, Any],
@@ -282,12 +418,29 @@ def _classify_slack_occurrence(
     ):
         mismatch("source_message_ref")
 
-    record = None
+    record: ResourceRecord | ResourceRecordOut | None = None
+    linked_plugin_slug = "communications"
+    linked_resource_key = "communication-message"
     record_id = request.source_resource_record_id
     if type(record_id) is int and record_id > 0:
-        try:
-            record = ResourceRepository(session).get_record(record_id)
-        except NotFoundError:
+        if prepared is not None:
+            linked = ResourceRepository(session).get_record_in_transaction(
+                prepared,
+                project_id=project_id,
+                plugin_slug="communications",
+                resource_key="communication-message",
+                record_id=record_id,
+            )
+            if linked is not None:
+                record, linked_resource, linked_plugin = linked
+                linked_plugin_slug = linked_plugin.slug
+                linked_resource_key = linked_resource.key
+        else:
+            try:
+                record = ResourceRepository(session).get_record(record_id)
+            except NotFoundError:
+                mismatch("source_resource_record_id")
+        if record is None:
             mismatch("source_resource_record_id")
 
     stored_data = (
@@ -296,9 +449,9 @@ def _classify_slack_occurrence(
     if record is not None:
         if type(record.project_id) is not int or record.project_id != project_id:
             mismatch("resource_record.project_id")
-        if record.plugin_slug != "communications":
+        if getattr(record, "plugin_slug", linked_plugin_slug) != "communications":
             mismatch("resource.plugin_slug")
-        if record.resource_key != "communication-message":
+        if getattr(record, "resource_key", linked_resource_key) != "communication-message":
             mismatch("resource.key")
         if not _slack_message_external_id_matches(record, stored_data, incoming):
             mismatch("resource_record.external_id")
@@ -491,6 +644,7 @@ def _occurrence_digest(value: Any) -> str | None:
 def _persist_occurrence_diagnostic(
     session: Session,
     *,
+    prepared: PreparedInboundResources | None,
     project_id: int,
     profile_key: str,
     request_id: int,
@@ -528,11 +682,21 @@ def _persist_occurrence_diagnostic(
     }
     title = "Slack source occurrence diagnostic"
     provenance = {"source": "slack-ingress"}
-    existing = communication_record_by_external_id(
-        session,
-        project_id=project_id,
-        resource_key="communication-event",
-        external_id=external_id,
+    existing = (
+        communication_record_by_external_id_in_transaction(
+            session,
+            prepared,
+            project_id=project_id,
+            resource_key="communication-event",
+            external_id=external_id,
+        )
+        if prepared is not None
+        else communication_record_by_external_id(
+            session,
+            project_id=project_id,
+            resource_key="communication-event",
+            external_id=external_id,
+        )
     )
     if existing is not None:
         existing_data = existing.data_json
@@ -548,7 +712,18 @@ def _persist_occurrence_diagnostic(
             raise ConflictError("Slack occurrence diagnostic id is unavailable")
         return existing.id
     saved = (
-        ResourceRepository(session)
+        ResourceRepository(session).upsert_record_in_transaction(
+            prepared,
+            project_id=project_id,
+            plugin_slug="communications",
+            resource_key="communication-event",
+            external_id=external_id,
+            title=title,
+            data_json=data_json,
+            provenance_json=provenance,
+        )
+        if prepared is not None
+        else ResourceRepository(session)
         .upsert_record(
             project_id=project_id,
             plugin_slug="communications",
@@ -560,6 +735,8 @@ def _persist_occurrence_diagnostic(
         )
         .data
     )
+    if type(saved.id) is not int:
+        raise ConflictError("Slack occurrence diagnostic id is unavailable")
     return saved.id
 
 
@@ -657,6 +834,7 @@ def _upsert_required(
     session: Session,
     resources: ResourceRepository,
     *,
+    prepared: PreparedInboundResources | None,
     project_id: int,
     write: NormalizedResourceWrite,
     deduped: bool = False,
@@ -665,6 +843,7 @@ def _upsert_required(
         _upsert_optional(
             session,
             resources,
+            prepared=prepared,
             project_id=project_id,
             write=write,
             deduped=deduped,
@@ -677,6 +856,7 @@ def _upsert_optional(
     session: Session,
     resources: ResourceRepository,
     *,
+    prepared: PreparedInboundResources | None,
     project_id: int,
     write: NormalizedResourceWrite | None,
     deduped: bool = False,
@@ -684,37 +864,71 @@ def _upsert_optional(
     if write is None:
         return None
     if deduped and write.preserve_existing_on_dedupe:
-        existing = communication_record_by_external_id(
-            session,
-            project_id=project_id,
-            resource_key=write.resource_key,
-            external_id=write.external_id,
+        existing = (
+            communication_record_by_external_id_in_transaction(
+                session,
+                prepared,
+                project_id=project_id,
+                resource_key=write.resource_key,
+                external_id=write.external_id,
+            )
+            if prepared is not None
+            else communication_record_by_external_id(
+                session,
+                project_id=project_id,
+                resource_key=write.resource_key,
+                external_id=write.external_id,
+            )
         )
         if existing is not None:
             return existing.id
-    record = resources.upsert_record(
-        project_id=project_id,
-        plugin_slug="communications",
-        resource_key=write.resource_key,
-        external_id=write.external_id,
-        title=write.title,
-        data_json=write.data_json,
-        provenance_json=write.provenance_json,
-    ).data
+    record = (
+        resources.upsert_record_in_transaction(
+            prepared,
+            project_id=project_id,
+            plugin_slug="communications",
+            resource_key=write.resource_key,
+            external_id=write.external_id,
+            title=write.title,
+            data_json=write.data_json,
+            provenance_json=write.provenance_json,
+        )
+        if prepared is not None
+        else resources.upsert_record(
+            project_id=project_id,
+            plugin_slug="communications",
+            resource_key=write.resource_key,
+            external_id=write.external_id,
+            title=write.title,
+            data_json=write.data_json,
+            provenance_json=write.provenance_json,
+        ).data
+    )
     return record.id
 
 
 def _apply_patch(
     session: Session,
     *,
+    prepared: PreparedInboundResources | None,
     project_id: int,
     patch: NormalizedResourcePatch,
 ) -> None:
-    record = communication_record_by_external_id(
-        session,
-        project_id=project_id,
-        resource_key=patch.resource_key,
-        external_id=patch.external_id,
+    record = (
+        communication_record_by_external_id_in_transaction(
+            session,
+            prepared,
+            project_id=project_id,
+            resource_key=patch.resource_key,
+            external_id=patch.external_id,
+        )
+        if prepared is not None
+        else communication_record_by_external_id(
+            session,
+            project_id=project_id,
+            resource_key=patch.resource_key,
+            external_id=patch.external_id,
+        )
     )
     if record is None:
         return
@@ -723,4 +937,5 @@ def _apply_patch(
         **redact_secrets(patch.data_json),
     }
     session.add(record)
-    session.commit()
+    if prepared is None:
+        session.commit()

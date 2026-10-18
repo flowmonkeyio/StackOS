@@ -283,8 +283,78 @@ class AgentRequestRepository:
         if existing is not None:
             return Envelope(data=self._out(existing), project_id=project_id)
 
+        row = self._new_request_row(
+            project_id=project_id,
+            request_key=request_key,
+            title=title,
+            body_preview=body_preview,
+            source_provider=source_provider,
+            source_kind=source_kind,
+            source_resource_key=source_resource_key,
+            source_resource_record_id=source_resource_record_id,
+            source_message_ref=source_message_ref,
+            priority=priority,
+            metadata_json=metadata_json,
+        )
+        self._s.add(row)
+        self._s.commit()
+        self._s.refresh(row)
+        return Envelope(data=self._out(row), project_id=project_id)
+
+    def create_in_transaction(
+        self,
+        *,
+        project_id: int,
+        request_key: str,
+        title: str,
+        body_preview: str = "",
+        source_provider: str | None = None,
+        source_kind: str | None = None,
+        source_resource_key: str | None = None,
+        source_resource_record_id: int | None = None,
+        source_message_ref: str | None = None,
+        priority: int = 0,
+        metadata_json: dict[str, Any] | None = None,
+    ) -> AgentRequest:
+        """Add and flush a request without taking ownership of the transaction."""
+        self._require_project(project_id)
+        self._validate_source_record(project_id, source_resource_record_id)
+        if not request_key.strip():
+            raise ValidationError("request_key is required")
+        row = self._new_request_row(
+            project_id=project_id,
+            request_key=request_key,
+            title=title,
+            body_preview=body_preview,
+            source_provider=source_provider,
+            source_kind=source_kind,
+            source_resource_key=source_resource_key,
+            source_resource_record_id=source_resource_record_id,
+            source_message_ref=source_message_ref,
+            priority=priority,
+            metadata_json=metadata_json,
+        )
+        self._s.add(row)
+        self._s.flush()
+        return row
+
+    def _new_request_row(
+        self,
+        *,
+        project_id: int,
+        request_key: str,
+        title: str,
+        body_preview: str,
+        source_provider: str | None,
+        source_kind: str | None,
+        source_resource_key: str | None,
+        source_resource_record_id: int | None,
+        source_message_ref: str | None,
+        priority: int,
+        metadata_json: dict[str, Any] | None,
+    ) -> AgentRequest:
         now = _utcnow()
-        row = AgentRequest(
+        return AgentRequest(
             project_id=project_id,
             request_key=request_key,
             title=_clean_text(title),
@@ -301,10 +371,6 @@ class AgentRequestRepository:
             created_at=now,
             updated_at=now,
         )
-        self._s.add(row)
-        self._s.commit()
-        self._s.refresh(row)
-        return Envelope(data=self._out(row), project_id=project_id)
 
     def find_by_key(self, *, project_id: int, request_key: str) -> AgentRequestOut | None:
         """Return one request by stable provider key without changing lifecycle state."""
@@ -318,6 +384,22 @@ class AgentRequestRepository:
             )
         ).first()
         return self._out(row) if row is not None else None
+
+    def find_by_key_in_transaction(
+        self, *, project_id: int, request_key: str
+    ) -> AgentRequest | None:
+        """Fresh canonical request read for the caller-owned writer transaction."""
+        self._require_project(project_id)
+        if not request_key.strip():
+            raise ValidationError("request_key is required")
+        return self._s.exec(
+            select(AgentRequest)
+            .where(
+                AgentRequest.project_id == project_id,
+                AgentRequest.request_key == request_key,
+            )
+            .execution_options(populate_existing=True)
+        ).first()
 
     def get(self, *, project_id: int, request_id: int) -> AgentRequestOut:
         return self._out(self._fetch(project_id=project_id, request_id=request_id))

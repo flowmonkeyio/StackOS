@@ -301,6 +301,89 @@ def test_slack_ingress_records_app_mention_and_creates_agent_request_without_bea
     )
 
 
+def test_slack_ingress_first_occurrence_ack_follows_commit(
+    api: TestClient,
+    project_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from stackos.communications import processor
+
+    _store_slack_profile(api, project_id)
+    client = TestClient(api.app, raise_server_exceptions=False)
+    original_impl = processor._process_inbound_event_impl
+
+    def mark_before_commit(*args, **kwargs):
+        result = original_impl(*args, **kwargs)
+        args[0].info["raise_before_inbound_commit"] = True
+        return result
+
+    original_commit = Session.commit
+
+    def fail_before_commit(session: Session) -> None:
+        if session.info.pop("raise_before_inbound_commit", False):
+            raise RuntimeError("injected before selected commit")
+        original_commit(session)
+
+    monkeypatch.setattr(processor, "_process_inbound_event_impl", mark_before_commit)
+    monkeypatch.setattr(Session, "commit", fail_before_commit)
+    precommit = _send_occurrence_message(
+        client,
+        project_id,
+        event_id="EvPrecommitFailure",
+        message_ts="1770000000.000900",
+        text="<@U_BOT> fail before commit",
+    )
+    assert precommit.status_code == 500
+    assert _occurrence_snapshot(client, project_id)["requests"] == []
+    assert _occurrence_snapshot(client, project_id)["communication-message"] == []
+    assert _occurrence_snapshot(client, project_id)["communication-event"] == []
+
+    monkeypatch.setattr(Session, "commit", original_commit)
+    monkeypatch.setattr(processor, "_process_inbound_event_impl", original_impl)
+
+    def mark_commit_boundary(*args, **kwargs):
+        result = original_impl(*args, **kwargs)
+        args[0].info["raise_after_inbound_commit"] = True
+        return result
+
+    original_commit = Session.commit
+
+    def commit_then_raise(session: Session) -> None:
+        original_commit(session)
+        if session.info.pop("raise_after_inbound_commit", False):
+            raise RuntimeError("ack boundary failed after durable commit")
+
+    monkeypatch.setattr(processor, "_process_inbound_event_impl", mark_commit_boundary)
+    monkeypatch.setattr(Session, "commit", commit_then_raise)
+    first = _send_occurrence_message(
+        client,
+        project_id,
+        event_id="EvCommitThenAckFailure",
+        message_ts="1770000000.000901",
+        text="<@U_BOT> reconcile the signed delivery",
+    )
+    assert first.status_code == 500
+    persisted = _occurrence_snapshot(client, project_id)
+    assert len(persisted["requests"]) == 1
+    assert len(persisted["communication-message"]) == 1
+    first_request_id = persisted["requests"][0]["id"]
+
+    monkeypatch.setattr(Session, "commit", original_commit)
+    monkeypatch.setattr(processor, "_process_inbound_event_impl", original_impl)
+    replay = _send_occurrence_message(
+        client,
+        project_id,
+        event_id="EvCommitThenAckReplay",
+        message_ts="1770000000.000901",
+        text="<@U_BOT> reconcile the signed delivery",
+    )
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["agent_request_id"] == first_request_id
+    after_replay = _occurrence_snapshot(client, project_id)
+    assert len(after_replay["requests"]) == 1
+    assert len(after_replay["communication-message"]) == 1
+
+
 def test_slack_ingress_self_message_echo_does_not_overwrite_outbound_history(
     api: TestClient,
     project_id: int,
@@ -382,6 +465,54 @@ def test_slack_ingress_self_message_echo_does_not_overwrite_outbound_history(
     assert messages.items[0].data_json["attention_status"] == "sent"
     assert messages.items[0].provenance_json == {"source": "slack-bot-action"}
     assert requests.total_estimate == 0
+
+
+def test_slack_self_message_with_missing_write_compares_existing_occurrence(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    _store_slack_profile(api, project_id)
+    client = TestClient(api.app, raise_server_exceptions=False)
+    timestamp = "1770000000.000910"
+    text = "<@U_BOT> handle the original signed request"
+    first = _send_occurrence_message(
+        client,
+        project_id,
+        event_id="EvSelfOccurrenceFirst",
+        message_ts=timestamp,
+        text=text,
+    )
+    assert first.status_code == 200, first.text  # type: ignore[attr-defined]
+    first_request_id = first.json()["agent_request_id"]  # type: ignore[attr-defined]
+    before = _occurrence_snapshot(client, project_id)
+    assert len(before["requests"]) == 1
+    assert len(before["communication-message"]) == 1
+
+    echo = _send_occurrence_message(
+        client,
+        project_id,
+        event_id="EvSelfOccurrenceEcho",
+        message_ts=timestamp,
+        text="StackOS produced a contradictory self echo",
+        user="U_BOT",
+    )
+    assert echo.status_code == 200, echo.text  # type: ignore[attr-defined]
+    body = echo.json()  # type: ignore[attr-defined]
+    assert body["agent_request_id"] == first_request_id
+    assert body["policy_status"] == "source_occurrence_conflict"
+    assert body["event_record_id"] is not None
+    assert body["message_record_id"] is None
+    after = _occurrence_snapshot(client, project_id)
+    assert len(after["requests"]) == 1
+    assert len(after["communication-message"]) == 1
+    assert after["communication-message"][0]["data_json"]["text_preview"] == text
+    diagnostics = [
+        row
+        for row in after["communication-event"]
+        if str(row["external_id"]).startswith("slack-occurrence-diagnostic:")
+    ]
+    assert len(diagnostics) == 1
+    assert diagnostics[0]["data_json"]["diagnostic_type"] == "source_occurrence_conflict"
 
 
 def test_slack_ingress_stores_disallowed_actor_mention_without_request(
@@ -566,12 +697,13 @@ def _send_occurrence_message(
     message_ts: str,
     text: Any,
     team_id: Any = "T123",
+    user: str = "U111",
     event_type: str = "message",
     subtype: str | None = None,
 ) -> object:
     event = {
         "type": event_type,
-        "user": "U111",
+        "user": user,
         "channel": "C123",
         "channel_type": "channel",
         "text": text,
@@ -1124,14 +1256,16 @@ def test_slack_ingress_diagnostic_write_failure_does_not_return_success_ack(
     message_ts = "1770000000.000706"
     _seed_occurrence_request(api, project_id, message_ts=message_ts, text="<@U_BOT> original")
     baseline = _occurrence_snapshot(api, project_id)
-    original_upsert = ResourceRepository.upsert_record
+    original_upsert = ResourceRepository.upsert_record_in_transaction
+    injected_diagnostic_writes: list[str] = []
 
-    def fail_diagnostic(self, **kwargs):
+    def fail_diagnostic(self, prepared, **kwargs):
         if kwargs.get("title") == "Slack source occurrence diagnostic":
+            injected_diagnostic_writes.append(kwargs["title"])
             raise ConflictError("synthetic diagnostic persistence failure")
-        return original_upsert(self, **kwargs)
+        return original_upsert(self, prepared, **kwargs)
 
-    monkeypatch.setattr(ResourceRepository, "upsert_record", fail_diagnostic)
+    monkeypatch.setattr(ResourceRepository, "upsert_record_in_transaction", fail_diagnostic)
     response = _send_occurrence_message(
         api,
         project_id,
@@ -1140,6 +1274,7 @@ def test_slack_ingress_diagnostic_write_failure_does_not_return_success_ack(
         text="<@U_BOT> contradictory source",
     )
     assert response.status_code != 200  # type: ignore[attr-defined]
+    assert injected_diagnostic_writes == ["Slack source occurrence diagnostic"]
     after = _occurrence_snapshot(api, project_id)
     assert after == baseline
 

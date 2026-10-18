@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlmodel import Session, col, select
 
 from stackos.db.models import Plugin, Resource, ResourceRecord
-from stackos.repositories.resources import ResourceRepository
+from stackos.repositories.resources import PreparedInboundResources, ResourceRepository
 
 
 def communication_record_by_external_id(
@@ -32,3 +32,21 @@ def communication_record_by_external_id(
             col(Plugin.slug) == "communications",
         )
     ).first()
+
+
+def communication_record_by_external_id_in_transaction(
+    session: Session,
+    prepared: PreparedInboundResources,
+    *,
+    project_id: int,
+    resource_key: str,
+    external_id: str,
+) -> ResourceRecord | None:
+    """Resolve a prepared communications record without catalog synchronization."""
+    return ResourceRepository(session).find_record_in_transaction(
+        prepared,
+        project_id=project_id,
+        plugin_slug="communications",
+        resource_key=resource_key,
+        external_id=external_id,
+    )
