@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import asdict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import Barrier
 
 import pytest
+from sqlalchemy import event
 from sqlalchemy.orm.attributes import flag_modified
-from sqlmodel import Session, select
+from sqlmodel import Session, SQLModel, select
 from typer.testing import CliRunner
 
 import stackos.cli.operation_commands as operation_cli
@@ -19,6 +23,8 @@ from stackos import controlled_process_receipt as receipt
 from stackos.cli import app as cli_app
 from stackos.db.models import (
     ActionCall,
+    AgentRequest,
+    IdempotencyKey,
     ProjectEvent,
     Run,
     RunKind,
@@ -30,8 +36,14 @@ from stackos.db.models import (
     TrackerTicket,
     WorkItemOwnership,
 )
+from stackos.mcp.context import bind_context, build_context
 from stackos.operations.dispatcher import OperationDispatcher
 from stackos.operations.registry import build_operation_registry
+from stackos.repositories.agent_requests import AgentRequestRepository
+from stackos.repositories.base import ConflictError, RepositoryError
+from stackos.repositories.projects import ProjectRepository
+from stackos.repositories.resources import ResourceRepository
+from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.runs import RunRepository
 from stackos.repositories.tracker import TrackerRepository
 from stackos.workflows.run_plan_grants import RUN_PLAN_OWNER_TOOL_NAMES
@@ -183,6 +195,10 @@ def owned(mcp_client: MCPClient, seeded_project: dict) -> dict:
             "response_mode": "raw",
         },
     )["data"]
+    return _ownership_fixture(mcp_client, pid, plan)
+
+
+def _ownership_fixture(mcp_client: MCPClient, pid: int, plan: dict) -> dict:
     engine = mcp_client.test_client.app.state.engine
     with Session(engine) as session:
         task = session.exec(
@@ -287,12 +303,770 @@ def _arguments(owned: dict, **changes) -> dict:
 
 def _acquire(mcp: MCPClient, owned: dict, **changes) -> dict:
     out = mcp.call_tool_structured("run.ownerAcquire", _arguments(owned, **changes))
-    assert "error" not in out, out
+    assert "error" not in out and "code" not in out, out
+    assert (
+        isinstance(out.get("data"), dict)
+        and isinstance(out["data"].get("ownership"), dict)
+        and type(out["data"].get("acquired")) is bool
+    ), out
     return out["data"]
 
 
 def _fence(row: dict) -> dict:
     return {"expected_epoch": row["epoch"], "expected_revision": row["revision"]}
+
+
+@pytest.fixture
+def occurrence_owned(mcp_client: MCPClient, seeded_project: dict) -> dict:
+    pid = seeded_project["data"]["id"]
+    engine = mcp_client.test_client.app.state.engine
+    with Session(engine) as session:
+        repo = AgentRequestRepository(session)
+        request = repo.create(
+            project_id=pid,
+            request_key="synthetic:inbox-occurrence",
+            title="Original title",
+            body_preview="Synthetic body preview",
+            source_provider="synthetic",
+            source_kind="manual-request",
+            source_message_ref="synthetic:message",
+        ).data
+        prepared = repo.prepare_run_plan(
+            project_id=pid,
+            request_id=request.id,
+            claimed_by="fixture:inbox-owner",
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "occurrence-fixture",
+                "title": "Occurrence fixture",
+                "steps": [
+                    {"id": "write", "title": "Write"},
+                    {"id": "later", "title": "Later", "depends_on": ["write"]},
+                ],
+            },
+        ).data
+        plan = prepared.run_plan.model_dump(mode="json")
+    return _ownership_fixture(mcp_client, pid, plan) | {"request_id": request.id}
+
+
+def _occurrence_state(owned: dict, *, transport: bool = True) -> str:
+    """All disposable DB tables, not merely a net ownership row count."""
+    with Session(owned["engine"]) as session:
+        state = {}
+        for table in SQLModel.metadata.sorted_tables:
+            if not transport and table.name == IdempotencyKey.__tablename__:
+                continue
+            statement = select(table)
+            if len(table.primary_key.columns):
+                statement = statement.order_by(*table.primary_key.columns)
+            state[table.name] = [dict(row._mapping) for row in session.execute(statement).all()]
+        return json.dumps(state, sort_keys=True, default=str)
+
+
+def _occurrence_events(owned: dict) -> list[dict]:
+    with Session(owned["engine"]) as session:
+        return [
+            row.model_dump(mode="json")
+            for row in session.exec(
+                select(ProjectEvent)
+                .where(ProjectEvent.event_type == "WORK_ITEM_OWNER_REQUEST_OCCURRENCE")
+                .order_by(ProjectEvent.id)
+            ).all()
+        ]
+
+
+def _assert_one_occurrence(owned: dict) -> dict:
+    events = _occurrence_events(owned)
+    assert len(events) == 1, "one immutable occurrence receipt per request/item"
+    record = events[0]["metadata_json"]["request_occurrence"]
+    assert record["canonical_item_id"] == owned["canonical_item_id"]
+    assert record["source_id"] == owned["request_id"]
+    assert record["inspection_operation"] == "run.ownerGet"
+    with Session(owned["engine"]) as session:
+        owners = session.exec(select(WorkItemOwnership)).all()
+        assert len(owners) == 1
+        assert owners[0].continuity_json["attempts_used"] == 0
+        assert owners[0].continuity_json["failures_used"] == 0
+        assert len(session.exec(select(Run).where(Run.kind == RunKind.SKILL_RUN)).all()) == 0
+    serialized = json.dumps(events)
+    assert "Synthetic body preview" not in serialized
+    assert "synthetic:inbox-occurrence" not in serialized
+    return events[0]
+
+
+def _occurrence_dispatch(owned: dict, **changes) -> dict:
+    with Session(owned["engine"]) as session:
+        return asyncio.run(
+            OperationDispatcher(build_operation_registry()).dispatch(
+                "run.ownerAcquire",
+                _arguments(owned, **changes),
+                session=session,
+                surface="mcp",
+            )
+        ).payload
+
+
+@pytest.mark.parametrize(
+    "branch", ["legacy-none", "legacy-empty", "legacy-reverse-only", "strict-both"]
+)
+def test_owner_request_occurrence_dispatch_branches(
+    mcp_client: MCPClient, occurrence_owned: dict, branch: str
+) -> None:
+    owned = occurrence_owned
+    with Session(owned["engine"]) as session:
+        plan = session.get(RunPlan, owned["run_plan_id"])
+        if branch == "legacy-none":
+            plan.metadata_json = None
+        elif branch != "strict-both":
+            plan.metadata_json = {
+                key: value
+                for key, value in plan.metadata_json.items()
+                if key not in {"agent_request_id", "agent_request_key"}
+            }
+        if branch == "legacy-empty":
+            request = session.get(AgentRequest, owned["request_id"])
+            request.run_plan_id = None
+            session.add(request)
+        session.add(plan)
+        session.commit()
+    first = _acquire(mcp_client, owned)
+    assert first["acquired"] is True
+    before = _occurrence_state(owned)
+    assert _acquire(mcp_client, owned)["acquired"] is False
+    assert _occurrence_state(owned) == before
+    if branch == "strict-both":
+        _assert_one_occurrence(owned)
+    else:
+        assert _occurrence_events(owned) == []
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "id-only",
+        "key-only",
+        "null-id",
+        "null-key",
+        "bool-id",
+        "string-id",
+        "int-key",
+        "empty-key",
+        "missing-request",
+        "foreign-request",
+        "key-mismatch",
+        "no-reverse",
+        "wrong-reverse",
+        "bad-metadata",
+        "fresh-key-null-id",
+    ],
+)
+def test_owner_request_occurrence_bad_link(
+    mcp_client: MCPClient, occurrence_owned: dict, fault: str
+) -> None:
+    owned = occurrence_owned
+    with Session(owned["engine"]) as session:
+        plan = session.get(RunPlan, owned["run_plan_id"])
+        metadata = deepcopy(plan.metadata_json)
+        request = session.get(AgentRequest, owned["request_id"])
+        if fault == "id-only":
+            metadata.pop("agent_request_key")
+        elif fault == "key-only":
+            metadata.pop("agent_request_id")
+        elif fault in {"null-id", "bool-id", "string-id", "missing-request", "fresh-key-null-id"}:
+            metadata["agent_request_id"] = {
+                "null-id": None,
+                "bool-id": True,
+                "string-id": str(request.id),
+                "missing-request": 9223372036854775807,
+                "fresh-key-null-id": None,
+            }[fault]
+        elif fault in {"null-key", "int-key", "empty-key", "key-mismatch"}:
+            metadata["agent_request_key"] = {
+                "null-key": None,
+                "int-key": 1,
+                "empty-key": "",
+                "key-mismatch": "synthetic:different",
+            }[fault]
+        elif fault == "foreign-request":
+            foreign = (
+                ProjectRepository(session)
+                .create(
+                    slug="occurrence-foreign",
+                    name="Foreign synthetic project",
+                    domain="synthetic.invalid",
+                )
+                .data
+            )
+            other = (
+                AgentRequestRepository(session)
+                .create(project_id=foreign.id, request_key="synthetic:foreign", title="Foreign")
+                .data
+            )
+            metadata.update(agent_request_id=other.id, agent_request_key=other.request_key)
+        elif fault == "no-reverse":
+            request.run_plan_id = None
+        elif fault == "wrong-reverse":
+            other = (
+                RunPlanRepository(session)
+                .create(
+                    project_id=owned["project_id"],
+                    run_plan_json={
+                        "schema_version": "stackos.run-plan.v1",
+                        "key": "other-reverse-plan",
+                        "title": "Other plan",
+                        "steps": [{"id": "handle", "title": "Handle"}],
+                    },
+                )
+                .data
+            )
+            request.run_plan_id = other.id
+        plan.metadata_json = [] if fault == "bad-metadata" else metadata
+        expected_plan_metadata = deepcopy(plan.metadata_json)
+        flag_modified(plan, "metadata_json")
+        session.add(request)
+        session.add(plan)
+        session.commit()
+        session.refresh(plan)
+        assert json.dumps(plan.metadata_json, sort_keys=True, allow_nan=False) == json.dumps(
+            expected_plan_metadata, sort_keys=True, allow_nan=False
+        )
+    before = _occurrence_state(owned)
+    if fault == "fresh-key-null-id":
+        key = "occurrence:fresh-denied"
+        with Session(owned["engine"]) as session:
+            assert (
+                session.exec(
+                    select(IdempotencyKey).where(IdempotencyKey.idempotency_key == key)
+                ).first()
+                is None
+            )
+        statements = []
+
+        def observe(_connection, _cursor, statement, _parameters, _context, _many):
+            if statement.lstrip().split(None, 1)[0].upper() in {"INSERT", "UPDATE", "DELETE"}:
+                statements.append(statement)
+
+        event.listen(owned["engine"], "before_cursor_execute", observe)
+        try:
+            error = mcp_client.call_tool_error(
+                "run.ownerAcquire", _arguments(owned, idempotency_key=key)
+            )
+        finally:
+            event.remove(owned["engine"], "before_cursor_execute", observe)
+        assert [statement.lstrip().split(None, 1)[0].upper() for statement in statements] == [
+            "INSERT",
+            "DELETE",
+        ]
+        assert all(IdempotencyKey.__tablename__ in statement for statement in statements)
+    else:
+        error = mcp_client.call_tool_error("run.ownerAcquire", _arguments(owned))
+    assert "code" in error, error
+    assert error["code"] < 0
+    assert _occurrence_state(owned) == before
+    assert _occurrence_events(owned) == []
+
+
+@pytest.mark.parametrize("mode", ["no-key", "same-key", "fresh-key", "rebound-current-controller"])
+def test_owner_request_occurrence_duplicate(
+    mcp_client: MCPClient, occurrence_owned: dict, mode: str
+) -> None:
+    owned = occurrence_owned
+    key = (
+        {}
+        if mode in {"no-key", "rebound-current-controller"}
+        else {"idempotency_key": "occurrence:first"}
+    )
+    first = _acquire(mcp_client, owned, **key)
+    original = _assert_one_occurrence(owned)
+    resolved = mcp_client.call_tool_structured(
+        "run.ownerResolve",
+        {
+            "project_id": owned["project_id"],
+            "alias_ref": "external:fixture-work",
+            "response_mode": "raw",
+        },
+    )
+    assert resolved["canonical_item_id"] == owned["canonical_item_id"]
+    if mode == "rebound-current-controller":
+        with Session(owned["engine"]) as session:
+            old = session.get(Run, owned["run_id"])
+            fresh = (
+                RunRepository(session)
+                .start(
+                    project_id=owned["project_id"],
+                    kind=RunKind.RUN_PLAN,
+                    client_session_id="synthetic:rebound-token",
+                    metadata_json=deepcopy(old.metadata_json),
+                )
+                .data
+            )
+            plan = session.get(RunPlan, owned["run_plan_id"])
+            plan.run_id = fresh.id
+            plan.metadata_json = plan.metadata_json | {"run_id": fresh.id}
+            session.add(plan)
+            session.commit()
+        old_error = mcp_client.call_tool_error("run.ownerAcquire", _arguments(owned))
+        assert old_error["code"] < 0
+        owned = owned | {"run_token": "synthetic:rebound-token", "run_id": fresh.id}
+    before = _occurrence_state(owned, transport=mode != "fresh-key")
+    statements = []
+
+    def observe(_connection, _cursor, statement, _parameters, _context, _many):
+        if statement.lstrip().split(" ", 1)[0].upper() in {"INSERT", "UPDATE", "DELETE"}:
+            statements.append(statement)
+
+    event.listen(owned["engine"], "before_cursor_execute", observe)
+    try:
+        repeat = _acquire(
+            mcp_client,
+            owned,
+            canonical_item_id=resolved["canonical_item_id"],
+            **({"idempotency_key": "occurrence:second"} if mode == "fresh-key" else key),
+        )
+    finally:
+        event.remove(owned["engine"], "before_cursor_execute", observe)
+    assert repeat["acquired"] is False
+    assert repeat["ownership"] == first["ownership"]
+    assert _occurrence_state(owned, transport=mode != "fresh-key") == before
+    assert _occurrence_events(owned) == [original]
+    if mode == "fresh-key":
+        assert len(statements) == 2
+        assert all(IdempotencyKey.__tablename__ in statement for statement in statements)
+    else:
+        assert statements == []
+
+
+def test_owner_request_occurrence_items_are_independent(
+    mcp_client: MCPClient, occurrence_owned: dict
+) -> None:
+    owned = occurrence_owned
+    first = _acquire(mcp_client, owned)
+    with Session(owned["engine"]) as session:
+        ticket = session.get(TrackerTicket, int(owned["canonical_item_id"].split(":")[1]))
+        task = session.get(TrackerTask, ticket.task_id)
+        other = (
+            TrackerRepository(session)
+            .create_ticket(
+                project_id=owned["project_id"],
+                task_key=task.key,
+                key="occurrence-other-work",
+                title="Other legitimately bound work",
+                run_plan_id=owned["run_plan_id"],
+                run_plan_step_id=owned["step_id"],
+                metadata_json={
+                    "ownership_continuity": deepcopy(ticket.metadata_json["ownership_continuity"])
+                },
+            )
+            .data.ticket
+        )
+        plan = session.get(RunPlan, owned["run_plan_id"])
+        grants = deepcopy(plan.grant_snapshot_json)
+        for grant in grants["mcp_tool_grants"]:
+            grant["targets"].append(f"ticket:{other.id}")
+        plan.grant_snapshot_json = grants
+        session.add(plan)
+        session.commit()
+    second = _acquire(mcp_client, owned, canonical_item_id=f"ticket:{other.id}")
+    assert first["acquired"] is second["acquired"] is True
+    events = _occurrence_events(owned)
+    assert len(events) == 2
+    records = [row["metadata_json"]["request_occurrence"] for row in events]
+    assert records[0]["occurrence_digest"] == records[1]["occurrence_digest"]
+    assert records[0]["key_digest"] != records[1]["key_digest"]
+
+
+def test_owner_request_occurrence_distinct_requests(
+    mcp_client: MCPClient, occurrence_owned: dict
+) -> None:
+    owned = occurrence_owned
+    original = _acquire(mcp_client, owned)
+    with Session(owned["engine"]) as session:
+        requests = AgentRequestRepository(session)
+        fresh = requests.create(
+            project_id=owned["project_id"],
+            request_key="synthetic:distinct",
+            title="Distinct request",
+        ).data
+        claimed = requests.claim(
+            project_id=owned["project_id"], request_id=fresh.id, claimed_by="fixture:second-source"
+        ).data
+        requests.link_run_plan(
+            project_id=owned["project_id"],
+            request_id=fresh.id,
+            run_plan_id=owned["run_plan_id"],
+            claim_token=claimed.claim_token,
+        )
+        plan = session.get(RunPlan, owned["run_plan_id"])
+        plan.metadata_json = plan.metadata_json | {
+            "agent_request_id": fresh.id,
+            "agent_request_key": fresh.request_key,
+        }
+        session.add(plan)
+        session.commit()
+    repeat = _acquire(mcp_client, owned)
+    assert repeat == {
+        "ownership": original["ownership"],
+        "request_digest": original["request_digest"],
+        "acquired": False,
+        "attempt": None,
+    }
+    records = [row["metadata_json"]["request_occurrence"] for row in _occurrence_events(owned)]
+    assert len(records) == 2
+    assert records[0]["occurrence_digest"] != records[1]["occurrence_digest"]
+    assert records[1]["outcome"] == "owner_already_current"
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "title",
+        "body-preview",
+        "source-kind",
+        "source-record",
+        "created-at",
+        "scope",
+        "stored-key",
+        "stored-fingerprint",
+        "stored-extra",
+        "stored-bool",
+    ],
+)
+def test_owner_request_occurrence_contradiction(
+    mcp_client: MCPClient, occurrence_owned: dict, fault: str
+) -> None:
+    owned = occurrence_owned
+    _acquire(mcp_client, owned, idempotency_key="occurrence:original")
+    with Session(owned["engine"]) as session:
+        request = session.get(AgentRequest, owned["request_id"])
+        if fault in {"title", "body-preview", "source-kind", "source-record", "created-at"}:
+            field = {
+                "title": "title",
+                "body-preview": "body_preview",
+                "source-kind": "source_kind",
+                "source-record": "source_resource_record_id",
+                "created-at": "created_at",
+            }[fault]
+            if fault == "source-record":
+                value = (
+                    ResourceRepository(session)
+                    .upsert_record(
+                        project_id=owned["project_id"],
+                        plugin_slug="communications",
+                        resource_key="communication-message",
+                        external_id="synthetic:changed-record",
+                        title="Synthetic changed source",
+                        data_json={"body_preview": "Synthetic input"},
+                    )
+                    .data.id
+                )
+            else:
+                value = (
+                    request.created_at + timedelta(microseconds=1)
+                    if fault == "created-at"
+                    else "Changed immutable source"
+                )
+            setattr(request, field, value)
+            session.add(request)
+        elif fault.startswith("stored-"):
+            row = session.exec(
+                select(ProjectEvent).where(
+                    ProjectEvent.event_type == "WORK_ITEM_OWNER_REQUEST_OCCURRENCE"
+                )
+            ).one()
+            metadata = deepcopy(row.metadata_json)
+            record = metadata["request_occurrence"]
+            if fault == "stored-key":
+                record["key_digest"] = "b" * 64
+            elif fault == "stored-fingerprint":
+                record["source_fingerprint"] = "b" * 64
+            elif fault == "stored-extra":
+                record["extra"] = "not admitted"
+            else:
+                record["source_id"] = True
+            row.metadata_json = metadata
+            expected_event_metadata = deepcopy(metadata)
+            flag_modified(row, "metadata_json")
+            session.add(row)
+        session.commit()
+        if fault.startswith("stored-"):
+            session.refresh(row)
+            assert json.dumps(row.metadata_json, sort_keys=True, allow_nan=False) == json.dumps(
+                expected_event_metadata, sort_keys=True, allow_nan=False
+            )
+    before = _occurrence_state(owned)
+    changes = {"scope_digest": "b" * 64} if fault == "scope" else {}
+    for transport in ({}, {"idempotency_key": "occurrence:original"}):
+        error = mcp_client.call_tool_error(
+            "run.ownerAcquire", _arguments(owned, **changes, **transport)
+        )
+        assert "code" in error, error
+        assert error["code"] < 0
+        assert _occurrence_state(owned) == before
+
+
+def test_owner_request_occurrence_two_session_race(occurrence_owned: dict) -> None:
+    owned = occurrence_owned
+    with owned["engine"].connect() as connection:
+        assert connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one() == "wal"
+    barrier = Barrier(2)
+
+    def acquire():
+        barrier.wait()
+        return _occurrence_dispatch(owned)["data"]
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        results = list(workers.map(lambda _index: acquire(), range(2)))
+    assert sorted(result["acquired"] for result in results) == [False, True]
+    assert results[0]["ownership"] == results[1]["ownership"]
+    _assert_one_occurrence(owned)
+
+
+@pytest.mark.parametrize("fault", ["event-before", "event-after", "commit-before", "commit-after"])
+def test_owner_request_occurrence_atomic_fault(
+    occurrence_owned: dict, monkeypatch: pytest.MonkeyPatch, fault: str
+) -> None:
+    owned = occurrence_owned
+    before = _occurrence_state(owned)
+    original_event = RunRepository._owner_event
+    original_commit = Session.commit
+    injected = False
+
+    def emit(repo, row, event_type, event_metadata=None):
+        nonlocal injected
+        if event_type == "WORK_ITEM_OWNER_REQUEST_OCCURRENCE" and fault.startswith("event-"):
+            injected = True
+            if fault == "event-after":
+                original_event(repo, row, event_type, event_metadata)
+            raise RuntimeError("synthetic occurrence event fault")
+        return original_event(repo, row, event_type, event_metadata)
+
+    def commit(session):
+        nonlocal injected
+        if fault.startswith("commit-"):
+            injected = True
+            if fault == "commit-after":
+                original_commit(session)
+            raise RuntimeError("synthetic commit acknowledgment fault")
+        return original_commit(session)
+
+    with monkeypatch.context() as faults:
+        faults.setattr(RunRepository, "_owner_event", emit)
+        faults.setattr(Session, "commit", commit)
+        with pytest.raises(RepositoryError) as error:
+            _occurrence_dispatch(owned)
+        assert isinstance(error.value.__cause__, RuntimeError)
+    assert injected
+    if fault == "commit-after":
+        original = _assert_one_occurrence(owned)
+        committed = _occurrence_state(owned)
+        assert _occurrence_dispatch(owned)["data"]["acquired"] is False
+        assert _occurrence_state(owned) == committed
+        assert _occurrence_events(owned) == [original]
+    else:
+        assert _occurrence_state(owned) == before
+        assert _occurrence_events(owned) == []
+
+
+@pytest.mark.parametrize(
+    "fault",
+    ["wrong-item", "wrong-project", "stop", "exhausted", "foreign-controller", "grant-drift"],
+)
+def test_owner_request_occurrence_current_authority(
+    mcp_client: MCPClient, occurrence_owned: dict, fault: str
+) -> None:
+    owned = occurrence_owned
+    _acquire(mcp_client, owned)
+    changes = {}
+    with Session(owned["engine"]) as session:
+        if fault == "wrong-item":
+            step = session.exec(
+                select(RunPlanStep).where(
+                    RunPlanStep.run_plan_id == owned["run_plan_id"], RunPlanStep.step_id == "later"
+                )
+            ).one()
+            ticket = session.get(TrackerTicket, int(owned["canonical_item_id"].split(":")[1]))
+            ticket.run_plan_step_id = step.id
+            session.add(ticket)
+        elif fault == "wrong-project":
+            changes["project_id"] = (
+                ProjectRepository(session)
+                .create(
+                    slug="wrong-occurrence-project",
+                    name="Synthetic foreign project",
+                    domain="synthetic.invalid",
+                )
+                .data.id
+            )
+        elif fault in {"stop", "exhausted"}:
+            ticket = session.get(TrackerTicket, int(owned["canonical_item_id"].split(":")[1]))
+            metadata = deepcopy(ticket.metadata_json)
+            metadata["ownership_continuity"]["stopped" if fault == "stop" else "attempts_used"] = (
+                True if fault == "stop" else 2
+            )
+            ticket.metadata_json = metadata
+            session.add(ticket)
+        else:
+            plan = session.get(RunPlan, owned["run_plan_id"])
+            if fault == "grant-drift":
+                plan.grant_snapshot_json = {"mcp_tool_grants": []}
+            else:
+                foreign = (
+                    RunRepository(session)
+                    .start(
+                        project_id=owned["project_id"],
+                        kind=RunKind.RUN_PLAN,
+                        client_session_id="synthetic:foreign-controller",
+                        metadata_json={
+                            "run_plan_id": 9223372036854775807,
+                            "skill_name": "stackos/run-plan-controller",
+                        },
+                    )
+                    .data
+                )
+                changes["run_token"] = foreign.client_session_id
+            session.add(plan)
+        session.commit()
+    before = _occurrence_state(owned)
+    assert mcp_client.call_tool_error("run.ownerAcquire", _arguments(owned, **changes))["code"] < 0
+    assert _occurrence_state(owned) == before
+
+
+def test_owner_request_occurrence_current_assignment_after_checkpoint(
+    mcp_client: MCPClient, occurrence_owned: dict
+) -> None:
+    owned = occurrence_owned
+    first = _acquire(mcp_client, owned, idempotency_key="occurrence:before-checkpoint")
+    original = _assert_one_occurrence(owned)
+    checkpoint = mcp_client.call_tool_structured(
+        "run.ownerCheckpoint",
+        _arguments(
+            owned, **_fence(first["ownership"]), checkpoint_ref="fixture:current-checkpoint"
+        ),
+    )["data"]["ownership"]
+    before = _occurrence_state(owned)
+    assert (
+        mcp_client.call_tool_error(
+            "run.ownerAcquire", _arguments(owned, idempotency_key="occurrence:before-checkpoint")
+        )["code"]
+        < 0
+    )
+    assert _occurrence_state(owned) == before
+    current = _acquire(mcp_client, owned)
+    assert current["acquired"] is False
+    assert current["ownership"] == checkpoint
+    assert _occurrence_events(owned) == [original]
+    assert original["metadata_json"]["revision"] < checkpoint["revision"]
+
+
+@pytest.mark.parametrize("corrupt", ["bool-link", "non-dict-metadata"])
+def test_owner_request_occurrence_historical_controller_requires_native_link(
+    mcp_client: MCPClient,
+    occurrence_owned: dict,
+    corrupt: str,
+) -> None:
+    owned = occurrence_owned
+    _acquire(mcp_client, owned)
+    with Session(owned["engine"]) as session:
+        original = session.get(Run, owned["run_id"])
+        fresh = (
+            RunRepository(session)
+            .start(
+                project_id=owned["project_id"],
+                kind=RunKind.RUN_PLAN,
+                client_session_id="synthetic:current-after-original",
+                metadata_json=deepcopy(original.metadata_json),
+            )
+            .data
+        )
+        original.metadata_json = (
+            {"run_plan_id": True} if corrupt == "bool-link" else ["invalid original metadata"]
+        )
+        expected_original_metadata = deepcopy(original.metadata_json)
+        flag_modified(original, "metadata_json")
+        plan = session.get(RunPlan, owned["run_plan_id"])
+        plan.run_id = fresh.id
+        plan.metadata_json = plan.metadata_json | {"run_id": fresh.id}
+        session.add(original)
+        session.add(plan)
+        session.commit()
+        session.refresh(original)
+        assert json.dumps(original.metadata_json, sort_keys=True, allow_nan=False) == json.dumps(
+            expected_original_metadata, sort_keys=True, allow_nan=False
+        )
+    current = owned | {"run_token": fresh.client_session_id, "run_id": fresh.id}
+    before = _occurrence_state(current)
+    # A distinct, valid current controller reaches historical receipt validation.
+    error = mcp_client.call_tool_error("run.ownerAcquire", _arguments(current))
+    assert "code" in error, error
+    assert error["code"] == -32008, error
+    assert error["message"] == "ConflictError", error
+    assert error["data"]["detail"] == "stored request occurrence original binding is invalid", error
+    assert _occurrence_state(current) == before
+
+
+@pytest.mark.parametrize("pending", ["new", "dirty", "deleted", "physical-begin"])
+def test_owner_request_occurrence_preserves_caller_work(
+    occurrence_owned: dict, monkeypatch: pytest.MonkeyPatch, pending: str
+) -> None:
+    owned = occurrence_owned
+    before = _occurrence_state(owned)
+    with Session(owned["engine"]) as session:
+        arguments = _arguments(owned)
+        ctx = build_context(arguments, session)
+        row = session.get(AgentRequest, owned["request_id"])
+        if pending == "new":
+            session.add(
+                AgentRequest(
+                    project_id=owned["project_id"], request_key="synthetic:pending", title="Pending"
+                )
+            )
+        elif pending == "dirty":
+            row.priority += 1
+        elif pending == "deleted":
+            session.delete(row)
+        else:
+            session.connection().exec_driver_sql("BEGIN")
+        collections = (tuple(session.new), tuple(session.dirty), tuple(session.deleted))
+        calls = []
+
+        def forbidden(*_args, **_kwargs):
+            calls.append("caller work consumed")
+            raise AssertionError("caller work consumed")
+
+        with monkeypatch.context() as guards, bind_context(ctx):
+            for method in ("flush", "commit", "rollback"):
+                guards.setattr(session, method, forbidden)
+            with pytest.raises(ConflictError, match="caller"):
+                asyncio.run(
+                    run_operations._owner_acquire(
+                        run_operations.OwnerAcquireInput.model_validate(arguments),
+                        ctx,
+                        run_operations.ProgressEmitter(None, None),
+                    )
+                )
+        assert calls == []
+        assert (tuple(session.new), tuple(session.dirty), tuple(session.deleted)) == collections
+        if pending == "physical-begin":
+            assert session.connection().connection.driver_connection.in_transaction is True
+        session.rollback()
+    assert _occurrence_state(owned) == before
+
+
+def test_owner_request_occurrence_verifier_rejects_disabled_dedup(
+    mcp_client: MCPClient, occurrence_owned: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    owned = occurrence_owned
+    _acquire(mcp_client, owned)
+    _assert_one_occurrence(owned)
+    # Counterfactual disables only the new lookup. The same real input, authority,
+    # transaction, event writer and assertion expose the semantic duplicate.
+    with monkeypatch.context() as omitted:
+        omitted.setattr(
+            RunRepository, "_owner_request_occurrence_event", lambda self, **_kwargs: None
+        )
+        assert _acquire(mcp_client, owned)["acquired"] is False
+    with pytest.raises(AssertionError, match="one immutable occurrence receipt"):
+        _assert_one_occurrence(owned)
 
 
 def _start_owned_attempt(mcp: MCPClient, owned: dict, row: dict) -> int:

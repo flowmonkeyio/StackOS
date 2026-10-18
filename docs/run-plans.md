@@ -204,6 +204,37 @@ current run. Ownership writes revalidate current grants and canonical continuity
 inside their transaction before audit/commit. Read-only `run.ownerResolve` and
 `run.ownerGet` require no started workflow and grant no execution.
 
+### Inbox-linked ownership occurrences
+
+For a plan prepared from the native agent-request inbox, `run.ownerAcquire`
+validates both literal plan metadata links (`agent_request_id` and
+`agent_request_key`) against the same-project request and its reverse plan link.
+Neither key means legacy acquisition, including a reverse-only link; either key
+present requires both to be valid. Invalid or contradictory links hold without
+changing ownership. Inbox identity is not provider authentication or execution
+permission: the current token, step/item grant, stop, scope and cumulative budget
+checks still govern each call.
+
+The canonical owner serializes acquisition with one immutable
+`WORK_ITEM_OWNER_REQUEST_OCCURRENCE` timeline receipt. The deduplication key is
+the native request's project/ID/birth identity paired with the resolved canonical
+ticket (or task fallback). Aliases resolve through `run.ownerResolve` first;
+there is no caller-supplied occurrence or alias field on acquisition. The same
+request/item returns the current assignment or a conflict without another owner
+revision, occurrence receipt, attempt charge or launch. Different legitimately
+bound items remain independent; this is not a single-target routing policy.
+Distinct request rows are distinct occurrences. Immutable source/binding drift
+holds; mutable inbox lifecycle, claim and priority fields are not source facts.
+
+The receipt stores bounded IDs, digests and the original owner snapshot, never
+the request key or body. It remains historical after current assignment changes;
+cached ownership results must still match the current owner and source. A fresh
+transport idempotency key retains the generic transport reservation/result
+writes, even when semantic acquisition is a duplicate. No-key and valid same-key
+duplicates add no database writes. This inbox-linked subset does not establish
+occurrence provenance for other ingress, delegation or trigger sources, and
+does not authorize dispatch, retries, learning or loaded useful work.
+
 ## Validation Warnings
 
 `runPlan.validate` separates structural validity from executable readiness.

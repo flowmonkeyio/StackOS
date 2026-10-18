@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
 
 if TYPE_CHECKING:
     from stackos.actions.repository.audit import _ControlledEffectSnapshot
+    from stackos.repositories.agent_requests import _AgentRequestOccurrence
 
 from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import update
@@ -37,8 +38,11 @@ from stackos.db.model_enums import (
 from stackos.db.models import (
     RUN_STATUS_TRANSITIONS,
     IdempotencyKey,
+    ProjectEvent,
     Run,
     RunKind,
+    RunPlan,
+    RunPlanStep,
     RunStatus,
     RunStep,
     RunStepCall,
@@ -203,6 +207,102 @@ class WorkItemOwnershipOut(BaseModel):
 class OwnershipAcquisitionOut(BaseModel):
     acquired: bool
     ownership: WorkItemOwnershipOut
+
+
+class _OwnerRequestOccurrenceRecord(TypedDict):
+    schema_version: Literal["stackos.owner-request-occurrence.v1"]
+    source_type: Literal["agent_request"]
+    project_id: int
+    source_id: int
+    source_created_at: str
+    source_fingerprint: str
+    occurrence_digest: str
+    key_digest: str
+    canonical_item_id: str
+    scope_digest: str
+    run_plan_id: int
+    run_plan_step_id: int
+    controller_run_id: int
+    outcome: Literal["owner_acquired", "owner_already_current"]
+    inspection_operation: Literal["run.ownerGet"]
+
+
+def _parse_owner_request_occurrence(value: object) -> _OwnerRequestOccurrenceRecord:
+    """Validate durable facts before using any one of them as a lookup key."""
+    from stackos.repositories.agent_requests import _AgentRequestOccurrence, _occurrence_birth
+
+    if (
+        type(value) is not dict
+        or value.keys() != _OwnerRequestOccurrenceRecord.__annotations__.keys()
+    ):
+        raise ConflictError("stored request occurrence shape is invalid")
+    if (
+        value["schema_version"] != "stackos.owner-request-occurrence.v1"
+        or type(value["schema_version"]) is not str
+        or value["source_type"] != "agent_request"
+        or type(value["source_type"]) is not str
+        or value["inspection_operation"] != "run.ownerGet"
+        or type(value["inspection_operation"]) is not str
+        or type(value["outcome"]) is not str
+        or value["outcome"] not in {"owner_acquired", "owner_already_current"}
+        or any(
+            type(value[name]) is not int or not 0 < value[name] <= 9223372036854775807
+            for name in (
+                "project_id",
+                "source_id",
+                "run_plan_id",
+                "run_plan_step_id",
+                "controller_run_id",
+            )
+        )
+        or any(
+            not _receipt._hex(value[name])
+            for name in ("source_fingerprint", "occurrence_digest", "key_digest", "scope_digest")
+        )
+        or type(value["canonical_item_id"]) is not str
+        or re.fullmatch(r"(?:task|ticket):[1-9][0-9]*", value["canonical_item_id"]) is None
+        or type(value["source_created_at"]) is not str
+    ):
+        raise ConflictError("stored request occurrence primitives are invalid")
+    try:
+        birth = _occurrence_birth(datetime.fromisoformat(value["source_created_at"]))
+    except (ValueError, TypeError) as exc:
+        raise ConflictError("stored request occurrence birth is invalid") from exc
+    if birth != value["source_created_at"]:
+        raise ConflictError("stored request occurrence birth is not canonical")
+    source = _AgentRequestOccurrence(
+        project_id=value["project_id"],
+        request_id=value["source_id"],
+        created_at=birth,
+        source_fingerprint=value["source_fingerprint"],
+        run_plan_id=value["run_plan_id"],
+        request_key_digest="",
+    )
+    if (
+        source.identity_digest() != value["occurrence_digest"]
+        or source.item_digest(value["canonical_item_id"]) != value["key_digest"]
+    ):
+        raise ConflictError("stored request occurrence digest is invalid")
+    outcome: Literal["owner_acquired", "owner_already_current"] = (
+        "owner_acquired" if value["outcome"] == "owner_acquired" else "owner_already_current"
+    )
+    return {
+        "schema_version": "stackos.owner-request-occurrence.v1",
+        "source_type": "agent_request",
+        "project_id": value["project_id"],
+        "source_id": value["source_id"],
+        "source_created_at": birth,
+        "source_fingerprint": value["source_fingerprint"],
+        "occurrence_digest": value["occurrence_digest"],
+        "key_digest": value["key_digest"],
+        "canonical_item_id": value["canonical_item_id"],
+        "scope_digest": value["scope_digest"],
+        "run_plan_id": value["run_plan_id"],
+        "run_plan_step_id": value["run_plan_step_id"],
+        "controller_run_id": value["controller_run_id"],
+        "outcome": outcome,
+        "inspection_operation": "run.ownerGet",
+    }
 
 
 class OwnershipAttemptOut(BaseModel):
@@ -1117,11 +1217,245 @@ class RunRepository:
         scope_digest: str,
         canonical_item_id: str | None = None,
         alias_ref: str | None = None,
+        _request_run_plan_id: int | None = None,
+        _request_step_id: int | None = None,
     ) -> OwnershipAcquisitionOut:
         """Reserve once; repeated triggers return the same assignment without dispatch."""
+        from stackos.repositories.agent_requests import AgentRequestRepository
         from stackos.repositories.tracker import TrackerRepository
 
         self._require_native_clean_session()
+        if _request_run_plan_id is None and _request_step_id is None:
+            return self._owner_acquire_current(
+                project_id=project_id,
+                owner_ref=owner_ref,
+                scope_digest=scope_digest,
+                canonical_item_id=canonical_item_id,
+                alias_ref=alias_ref,
+            )
+        if any(
+            type(value) is not int or value <= 0
+            for value in (_request_run_plan_id, _request_step_id)
+        ):
+            raise ConflictError("request occurrence needs the current plan and step")
+        assert _request_run_plan_id is not None and _request_step_id is not None
+        requests = AgentRequestRepository(self._s)
+        source = requests._owner_occurrence_for_plan(
+            project_id=project_id, run_plan_id=_request_run_plan_id
+        )
+        if source is None:
+            return self._owner_acquire_current(
+                project_id=project_id,
+                owner_ref=owner_ref,
+                scope_digest=scope_digest,
+                canonical_item_id=canonical_item_id,
+                alias_ref=alias_ref,
+            )
+        connection = self._s.connection()
+        if connection.dialect.name != "sqlite":
+            raise ConflictError("request occurrence needs the canonical SQLite writer")
+        # Logical token-read autobegin is harmless; a caller-owned physical
+        # transaction was rejected above. Serialize lookup, acquisition and event.
+        connection.exec_driver_sql("BEGIN IMMEDIATE")
+        try:
+            source = requests._owner_occurrence_for_plan(
+                project_id=project_id, run_plan_id=_request_run_plan_id
+            )
+            if source is None:
+                raise ConflictError("request occurrence binding changed")
+            item = TrackerRepository(self._s).resolve_owner_item(
+                project_id=project_id,
+                canonical_item_id=canonical_item_id,
+                alias_ref=alias_ref,
+            )
+            TrackerRepository(self._s).require_owner_execution_binding(
+                project_id=project_id,
+                canonical_item_id=item.canonical_item_id,
+                run_plan_id=_request_run_plan_id,
+                run_plan_step_id=_request_step_id,
+            )
+            if self._owner_commit_guard is None or not callable(self._owner_commit_guard):
+                raise ConflictError("request occurrence requires current operation authority")
+            self._owner_commit_guard()
+            prior = self._owner_request_occurrence_event(
+                source=source,
+                canonical_item_id=item.canonical_item_id,
+                scope_digest=scope_digest,
+            )
+            if prior is not None:
+                row = self._owner_row(
+                    project_id=project_id, canonical_item_id=item.canonical_item_id
+                )
+                self._owner_admissible(row, scope_digest)
+                if row.owner_ref != owner_ref:
+                    raise ConflictError("request occurrence has a different current assignment")
+                result = OwnershipAcquisitionOut(
+                    acquired=False, ownership=WorkItemOwnershipOut.model_validate(row)
+                )
+            else:
+                result = self._owner_acquire_current(
+                    project_id=project_id,
+                    owner_ref=owner_ref,
+                    scope_digest=scope_digest,
+                    canonical_item_id=item.canonical_item_id,
+                    alias_ref=None,
+                    _commit=False,
+                )
+                if type(self._audit_run_id) is not int or self._audit_run_id <= 0:
+                    raise ConflictError("request occurrence needs the original controller")
+                record: _OwnerRequestOccurrenceRecord = {
+                    "schema_version": "stackos.owner-request-occurrence.v1",
+                    "source_type": "agent_request",
+                    "project_id": project_id,
+                    "source_id": source.request_id,
+                    "source_created_at": source.created_at,
+                    "source_fingerprint": source.source_fingerprint,
+                    "occurrence_digest": source.identity_digest(),
+                    "key_digest": source.item_digest(item.canonical_item_id),
+                    "canonical_item_id": item.canonical_item_id,
+                    "scope_digest": scope_digest,
+                    "run_plan_id": _request_run_plan_id,
+                    "run_plan_step_id": _request_step_id,
+                    "controller_run_id": self._audit_run_id,
+                    "outcome": "owner_acquired" if result.acquired else "owner_already_current",
+                    "inspection_operation": "run.ownerGet",
+                }
+                _parse_owner_request_occurrence(record)
+                row = self._owner_row(
+                    project_id=project_id, canonical_item_id=item.canonical_item_id
+                )
+                self._owner_event(
+                    row, "WORK_ITEM_OWNER_REQUEST_OCCURRENCE", {"request_occurrence": record}
+                )
+            self._s.flush()
+            current_source = requests._owner_occurrence_for_plan(
+                project_id=project_id, run_plan_id=_request_run_plan_id
+            )
+            if current_source != source:
+                raise ConflictError("request occurrence changed before commit")
+            self._owner_commit_guard()
+            self._s.commit()
+            return result
+        except BaseException:
+            self._s.rollback()
+            raise
+
+    def _owner_request_occurrence_event(
+        self,
+        *,
+        source: _AgentRequestOccurrence,
+        canonical_item_id: str,
+        scope_digest: str,
+    ) -> ProjectEvent | None:
+        """Inspect all tagged receipts for this item, never trust an unparsed key."""
+        kind, item_id = canonical_item_id.split(":")
+        events = self._s.exec(
+            select(ProjectEvent)
+            .where(
+                ProjectEvent.project_id == source.project_id,
+                ProjectEvent.source_type == f"tracker_{kind}",
+                ProjectEvent.source_id == int(item_id),
+                ProjectEvent.event_type == "WORK_ITEM_OWNER_REQUEST_OCCURRENCE",
+            )
+            .execution_options(populate_existing=True)
+        ).all()
+        root_keys = set(WorkItemOwnershipOut.model_fields) | {
+            "request_occurrence",
+            "actor",
+            "schema_version",
+        }
+        match = None
+        for event in events:
+            metadata = event.metadata_json
+            if type(metadata) is not dict or metadata.keys() != root_keys:
+                raise ConflictError("stored request occurrence owner snapshot is invalid")
+            if (
+                any(
+                    type(metadata[name]) is not int or not 0 < metadata[name] <= 9223372036854775807
+                    for name in ("id", "project_id", "epoch", "revision")
+                )
+                or type(metadata["checkpoint_revision"]) is not int
+                or metadata["checkpoint_revision"] < 0
+                or type(metadata["schema_version"]) is not int
+                or metadata["schema_version"] != 1
+                or any(
+                    metadata[name] is not None
+                    and (
+                        type(metadata[name]) is not str
+                        or not metadata[name].strip()
+                        or len(metadata[name]) > bound
+                    )
+                    for name, bound in (
+                        ("owner_ref", 160),
+                        ("previous_owner_ref", 160),
+                        ("checkpoint_ref", 1000),
+                        ("quiescence_ref", 1000),
+                    )
+                )
+                or (
+                    metadata["quiescence_revision"] is not None
+                    and (
+                        type(metadata["quiescence_revision"]) is not int
+                        or metadata["quiescence_revision"] < 0
+                    )
+                )
+                or type(metadata["continuity_json"]) is not dict
+                or "native_quiescence_certificate" in metadata["continuity_json"]
+                or not _receipt._hex(metadata["scope_digest"])
+                or type(metadata["actor"]) is not str
+                or metadata["actor"] != metadata["owner_ref"]
+            ):
+                raise ConflictError("stored request occurrence owner primitives are invalid")
+            record = _parse_owner_request_occurrence(metadata["request_occurrence"])
+            plan = self._s.get(RunPlan, record["run_plan_id"], populate_existing=True)
+            step = self._s.get(RunPlanStep, record["run_plan_step_id"], populate_existing=True)
+            controller = self._s.get(Run, record["controller_run_id"], populate_existing=True)
+            if (
+                record["project_id"] != source.project_id
+                or metadata["project_id"] != source.project_id
+                or record["canonical_item_id"] != canonical_item_id
+                or metadata["canonical_item_id"] != canonical_item_id
+                or metadata["scope_digest"] != record["scope_digest"]
+                or event.run_id != record["controller_run_id"]
+                or plan is None
+                or plan.project_id != source.project_id
+                or step is None
+                or step.run_plan_id != plan.id
+                or controller is None
+                or controller.project_id != source.project_id
+                or controller.kind != RunKind.RUN_PLAN
+                or type(controller.metadata_json) is not dict
+                or type(controller.metadata_json.get("run_plan_id")) is not int
+                or not 0 < controller.metadata_json["run_plan_id"] <= 9223372036854775807
+                or controller.metadata_json["run_plan_id"] != plan.id
+            ):
+                raise ConflictError("stored request occurrence original binding is invalid")
+            if record["source_id"] == source.request_id:
+                if (
+                    record["source_created_at"] != source.created_at
+                    or record["source_fingerprint"] != source.source_fingerprint
+                    or record["scope_digest"] != scope_digest
+                    or record["run_plan_id"] != source.run_plan_id
+                    or record["key_digest"] != source.item_digest(canonical_item_id)
+                    or match is not None
+                ):
+                    raise ConflictError("request occurrence contradicts its original receipt")
+                match = event
+        return match
+
+    def _owner_acquire_current(
+        self,
+        *,
+        project_id: int,
+        owner_ref: str,
+        scope_digest: str,
+        canonical_item_id: str | None,
+        alias_ref: str | None,
+        _commit: bool = True,
+    ) -> OwnershipAcquisitionOut:
+        """The existing acquisition algorithm, with one optional outer commit owner."""
+        from stackos.repositories.tracker import TrackerRepository
+
         self._validate_owner_ref(owner_ref)
         item = TrackerRepository(self._s).resolve_owner_item(
             project_id=project_id, canonical_item_id=canonical_item_id, alias_ref=alias_ref
@@ -1154,6 +1488,7 @@ class RunRepository:
                     },
                     event_type="WORK_ITEM_OWNER_ACQUIRED",
                     admission_scope_digest=scope_digest,
+                    _commit=_commit,
                 )
                 return OwnershipAcquisitionOut(acquired=True, ownership=reassigned)
             raise ConflictError("work item already has an owner; explicit reassignment required")
@@ -1200,7 +1535,7 @@ class RunRepository:
         try:
             self._s.add(row)
             self._s.flush()
-            ownership = self._owner_commit(row, "WORK_ITEM_OWNER_ACQUIRED")
+            ownership = self._owner_commit(row, "WORK_ITEM_OWNER_ACQUIRED", _commit=_commit)
         except IntegrityError as exc:
             self._s.rollback()
             raise ConflictError(
@@ -3445,6 +3780,7 @@ class RunRepository:
         admission_scope_digest: str | None = None,
         event_metadata: dict[str, Any] | None = None,
         before_commit: Callable[[], None] | None = None,
+        _commit: bool = True,
     ) -> WorkItemOwnershipOut:
         if (
             row.epoch != expected_epoch
@@ -3485,7 +3821,7 @@ class RunRepository:
             self._s.refresh(row)
             if before_commit is not None:
                 before_commit()
-            return self._owner_commit(row, event_type, event_metadata)
+            return self._owner_commit(row, event_type, event_metadata, _commit=_commit)
         except Exception:
             self._s.rollback()
             raise
@@ -3495,6 +3831,8 @@ class RunRepository:
         row: WorkItemOwnership,
         event_type: str,
         event_metadata: dict[str, Any] | None = None,
+        *,
+        _commit: bool = True,
     ) -> WorkItemOwnershipOut:
         try:
             if self._owner_commit_guard is not None:
@@ -3508,7 +3846,10 @@ class RunRepository:
                     self._owner_commit_guard()
             self._owner_event(row, event_type, event_metadata)
             receipt = WorkItemOwnershipOut.model_validate(row)
-            self._s.commit()
+            if _commit:
+                self._s.commit()
+            else:
+                self._s.flush()
         except Exception:
             self._s.rollback()
             raise

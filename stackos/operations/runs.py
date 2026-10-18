@@ -349,7 +349,14 @@ def _validate_owner_counter_floor(name: str, inp: OwnerAcquireInput, repo: RunRe
         isinstance(inp, OwnerRecordAttemptInput) and inp.clearance_ref is None
     ):
         return
-    row = repo.owner_get(project_id=inp.project_id, canonical_item_id=inp.canonical_item_id)
+    try:
+        row = repo.owner_get(project_id=inp.project_id, canonical_item_id=inp.canonical_item_id)
+    except NotFoundError:
+        if name == "run.ownerAcquire":
+            # A first acquisition has no stored floor yet. Its canonical
+            # counters, stop and budget were checked by the current preflight.
+            return
+        raise
     source = repo.owner_authority(
         project_id=inp.project_id,
         canonical_item_id=inp.canonical_item_id,
@@ -447,12 +454,33 @@ def validate_owner_replay(
     ctx: MCPContext,
     cached: dict[str, Any],
 ) -> dict[str, Any]:
+    if name == "run.ownerAcquire":
+        RunRepository(ctx.session)._require_native_clean_session()
     data = cached.get("data", {})
     if data.get("request_digest") != owner_request_digest(name, inp, ctx):
         raise ConflictError("ownership idempotency key belongs to another request/context")
     repo = _owner_preflight(name, inp, ctx)
     _validate_owner_counter_floor(name, inp, repo)
     current = repo.owner_get(project_id=inp.project_id, canonical_item_id=inp.canonical_item_id)
+    if name == "run.ownerAcquire":
+        from stackos.repositories.agent_requests import AgentRequestRepository
+
+        plan, _step = active_run_plan_step(ctx, name)
+        assert plan.id is not None
+        source = AgentRequestRepository(ctx.session)._owner_occurrence_for_plan(
+            project_id=inp.project_id,
+            run_plan_id=plan.id,
+        )
+        if (
+            source is not None
+            and repo._owner_request_occurrence_event(
+                source=source,
+                canonical_item_id=inp.canonical_item_id,
+                scope_digest=inp.scope_digest,
+            )
+            is None
+        ):
+            raise ConflictError("cached ownership has no original request occurrence")
     if current.model_dump(mode="json") != data.get("ownership"):
         raise ConflictError("cached ownership fence is stale; read current assignment")
     if isinstance(inp, OwnerRecordAttemptInput):
@@ -500,12 +528,17 @@ async def _owner_acquire(
     ctx: MCPContext,
     _emit: ProgressEmitter,
 ) -> WriteEnvelope[OwnerMutationOut]:
+    RunRepository(ctx.session)._require_native_clean_session()
     repo = _owner_preflight("run.ownerAcquire", inp, ctx)
+    plan, step = active_run_plan_step(ctx, "run.ownerAcquire")
+    assert plan.id is not None and step.id is not None
     result = repo.owner_acquire(
         project_id=inp.project_id,
         canonical_item_id=inp.canonical_item_id,
         owner_ref=inp.owner_ref,
         scope_digest=inp.scope_digest,
+        _request_run_plan_id=plan.id,
+        _request_step_id=step.id,
     )
     return _owner_receipt("run.ownerAcquire", inp, ctx, result.ownership, acquired=result.acquired)
 

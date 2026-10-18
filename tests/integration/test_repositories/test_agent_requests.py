@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlmodel import Session
 
-from stackos.db.models import AgentRequest, AgentRequestStatus
+from stackos.db.models import AgentRequest, AgentRequestStatus, RunPlan
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 from stackos.repositories.projects import ProjectRepository
@@ -22,6 +22,72 @@ def _run_plan_json() -> dict:
         "title": "Handle Agent Request",
         "steps": [{"id": "handle", "title": "Handle request"}],
     }
+
+
+def _prepared_occurrence(session: Session, project_id: int):
+    repo = AgentRequestRepository(session)
+    request = repo.create(
+        project_id=project_id,
+        request_key="synthetic:occurrence:1",
+        title="Original title",
+        body_preview="Synthetic local input",
+        source_kind="synthetic",
+    ).data
+    prepared = repo.prepare_run_plan(
+        project_id=project_id,
+        request_id=request.id,
+        claimed_by="fixture:request-owner",
+        run_plan_json=_run_plan_json(),
+    ).data
+    return repo, prepared
+
+
+def test_owner_request_occurrence_source_readback(session: Session, project_id: int) -> None:
+    repo, prepared = _prepared_occurrence(session, project_id)
+    before = session.get(AgentRequest, prepared.request.id).model_dump(mode="json")
+    source = repo._owner_occurrence_for_plan(
+        project_id=project_id, run_plan_id=prepared.run_plan.id
+    )
+    assert source is not None
+    assert source.request_id == prepared.request.id
+    assert source.run_plan_id == prepared.run_plan.id
+    assert source.created_at.endswith("+00:00")
+    assert len(source.source_fingerprint) == len(source.identity_digest()) == 64
+    assert source.item_digest("ticket:1") != source.item_digest("ticket:2")
+    assert "Original title" not in repr(source)
+    assert "synthetic:occurrence:1" not in repr(source)
+    assert session.get(AgentRequest, prepared.request.id).model_dump(mode="json") == before
+    plan = session.get(RunPlan, prepared.run_plan.id)
+    assert plan.metadata_json["agent_request_id"] == source.request_id
+    assert not session.new and not session.dirty and not session.deleted
+
+
+@pytest.mark.parametrize("change", ["claim", "status", "metadata", "priority"])
+def test_owner_request_occurrence_mutable_lifecycle_is_not_source(
+    session: Session,
+    project_id: int,
+    change: str,
+) -> None:
+    repo, prepared = _prepared_occurrence(session, project_id)
+    source = repo._owner_occurrence_for_plan(
+        project_id=project_id, run_plan_id=prepared.run_plan.id
+    )
+    row = session.get(AgentRequest, prepared.request.id)
+    if change == "claim":
+        row.claimed_by = "fixture:another-inbox-reader"
+        row.claim_expires_at = datetime.now(tz=UTC).replace(tzinfo=None)
+    elif change == "status":
+        row.status = AgentRequestStatus.RESOLVED
+    elif change == "metadata":
+        row.metadata_json = {"fixture": "lifecycle-only"}
+    else:
+        row.priority += 1
+    session.add(row)
+    session.commit()
+    assert (
+        repo._owner_occurrence_for_plan(project_id=project_id, run_plan_id=prepared.run_plan.id)
+        == source
+    )
 
 
 def test_agent_request_create_list_and_redaction(session: Session, project_id: int) -> None:
