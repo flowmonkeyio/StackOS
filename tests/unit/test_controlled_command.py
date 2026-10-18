@@ -23,6 +23,70 @@ from stackos.operations.actions.controlled import _check_approval_binding
 from stackos.repositories.base import ConflictError
 
 
+@pytest.mark.parametrize(
+    "case_id",
+    [
+        "missing-services",
+        "default-disabled",
+        "foreign-extras",
+        "unsupported-abi",
+        "enabled-canonical-settings",
+        "legacy-unavailable-manifest",
+    ],
+)
+def test_public_native_capability(case_id, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from stackos.actions import controlled_command as fixed
+    from stackos.config import Settings
+    from stackos.operations.actions.controlled import _native_settings
+
+    settings = Settings(
+        _env_file=None,
+        state_dir=tmp_path / "state",
+        data_dir=tmp_path / "data",
+        controlled_host_enabled=case_id not in {"default-disabled", "missing-services"},
+    )
+    with Session(create_engine("sqlite://")) as session:
+        if case_id != "missing-services":
+            session.info["operation_services"] = {"settings": settings}
+        ctx = SimpleNamespace(session=session, extras={"settings": settings})
+        if case_id == "foreign-extras":
+            ctx.extras["settings"] = settings.model_copy()
+        if case_id in {"missing-services", "default-disabled", "foreign-extras"}:
+            with pytest.raises(ConflictError, match="controlled_host_unavailable"):
+                _native_settings(ctx)
+        else:
+            assert _native_settings(ctx) is settings
+        if case_id == "unsupported-abi":
+            monkeypatch.setattr(fixed.sys, "platform", "linux")
+            assert not fixed._controlled_host_supported()
+        if case_id == "legacy-unavailable-manifest":
+            assert fixed._controlled_host_settings(session) is settings
+            # The installed setting never erases an explicit unavailable declaration.
+            manifest = ExecutableActionManifest(
+                action_id=1,
+                plugin_slug="engineering",
+                action_key="controlled-proof.v1",
+                action_ref="engineering.controlled-proof.v1",
+                name="Controlled",
+                operation="controlled-proof.v1",
+                connector_key="controlled-command",
+                execution_mode="foreground",
+                risk_level="write",
+                input_schema_json={},
+                config_json={"controlled_host": "unavailable", "direct_run": "workflow-only"},
+                requires_credential=False,
+                allows_credential=False,
+            )
+            assert (
+                build_action_availability(
+                    session, manifest=manifest, connector_keys={"controlled-command"}
+                ).executable
+                is False
+            )
+
+
 @pytest.fixture(autouse=True)
 def no_effects(monkeypatch):
     def forbidden(*args, **kwargs):
@@ -72,7 +136,12 @@ def test_fixed_descriptor_has_no_caller_command_surface():
     command = _resolve_controlled_command()
     assert command.argv == (str(command.executable), "-I", "-c", "pass")
     assert command.executable.is_absolute() and command.cwd == command.source_root
-    assert len(command.source_files) == 9 and len(command.digest) == 64
+    assert len(command.source_files) == 12 and len(command.digest) == 64
+    assert {
+        "stackos/config.py",
+        "stackos/controlled_process_host.py",
+        "plugins/engineering/plugin.yaml",
+    } <= dict(command.source_files).keys()
     assert dict(command.environment) == {
         "LANG": "C.UTF-8",
         "PATH": "/usr/bin:/bin",

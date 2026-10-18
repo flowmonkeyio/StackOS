@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import platform
+import struct
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from sqlmodel import Session
 
 from stackos.actions.connectors import (
     ActionConnectorError,
@@ -18,6 +21,7 @@ from stackos.actions.connectors import (
     ActionValidationIssue,
 )
 from stackos.actions.manifest import ExecutableActionManifest
+from stackos.config import Settings
 from stackos.repositories.base import ConflictError
 
 _CONTROLLED_ACTION_REF: Final[str] = "engineering.controlled-proof.v1"
@@ -31,6 +35,9 @@ _CONTROLLED_SOURCE_FILES: Final[tuple[str, ...]] = (
     "stackos/operations/actions/execution.py",
     "stackos/operations/actions/specs.py",
     "stackos/operations/dispatcher.py",
+    "stackos/config.py",
+    "stackos/controlled_process_host.py",
+    "plugins/engineering/plugin.yaml",
 )
 
 
@@ -105,11 +112,131 @@ def _check_controlled_manifest(manifest: ExecutableActionManifest) -> None:
         or manifest.risk_level != "write"
         or manifest.execution_mode != "foreground"
         or manifest.config_json.get("direct_run") != "workflow-only"
-        or manifest.config_json.get("controlled_host") != "unavailable"
+        or manifest.config_json.get("controlled_host") not in {None, "unavailable"}
         or manifest.config_json.get("public_action_key") is not None
         or manifest.config_json.get("durable_delivery")
     ):
         raise ConflictError("controlled manifest is incompatible")
+
+
+def _controlled_host_settings(session: Session) -> Settings | None:
+    """Configuration observation only; this creates no execution authority."""
+    services = session.info.get("operation_services", {})
+    settings = services.get("settings") if type(services) is dict else None
+    return settings if type(settings) is Settings else None
+
+
+def _controlled_host_supported() -> bool:
+    return sys.platform == "darwin" and platform.machine() == "arm64" and struct.calcsize("P") == 8
+
+
+class _ControlledNativeResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+    schema_version: Literal["stackos.controlled-command-result.v2"]
+    status: Literal["succeeded", "held", "failed"]
+    code: Literal[
+        "controlled_command_completed",
+        "controlled_execution_held",
+        "controlled_outcome_unknown",
+        "controlled_authority_changed",
+        "controlled_before_dispatch_failed",
+    ]
+    admission_verified: bool
+    command_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    intent_ref: str = Field(
+        min_length=1, max_length=240, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"
+    )
+    host_dispatched: bool | None
+    released: bool
+    provider_executed: Literal[False]
+    outcome_unknown: bool
+    cleanup_known: bool
+    retry_safe: Literal[False]
+    work_accepted: Literal[False]
+
+    @model_validator(mode="before")
+    @classmethod
+    def native_types(cls, value: Any) -> Any:
+        if type(value) is not dict:
+            raise ValueError("exact native result required")
+        for key in (
+            "admission_verified",
+            "released",
+            "provider_executed",
+            "outcome_unknown",
+            "cleanup_known",
+            "retry_safe",
+            "work_accepted",
+        ):
+            if type(value.get(key)) is not bool:
+                raise ValueError("exact native result flags required")
+        if (
+            value.get("host_dispatched") is not None
+            and type(value.get("host_dispatched")) is not bool
+        ):
+            raise ValueError("exact spawn observation required")
+        return value
+
+    @model_validator(mode="after")
+    def coherent(self) -> _ControlledNativeResult:
+        if self.host_dispatched is None and not self.outcome_unknown:
+            raise ValueError("unknown spawn requires unknown outcome")
+        if self.status == "succeeded" and not (
+            self.code == "controlled_command_completed"
+            and self.admission_verified
+            and self.host_dispatched is True
+            and self.released
+            and not self.outcome_unknown
+            and self.cleanup_known
+        ):
+            raise ValueError("completed result requires known original execution and cleanup")
+        if (self.code == "controlled_command_completed") != (self.status == "succeeded"):
+            raise ValueError("completed result status differs")
+        return self
+
+
+class _ControlledNativeAudit(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+    schema_version: Literal["stackos.controlled-native-audit.v1"]
+    action_call_id: int = Field(ge=1, le=9223372036854775807)
+    binding: dict[str, Any]
+    command_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    runtime_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    storage_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    owner_revision_at_finalize: int = Field(ge=1, le=9223372036854775807)
+    owner_basis_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    terminal_receipt_digest: str | None = Field(pattern=r"^[0-9a-f]{64}$")
+    terminal_slot_revision: int = Field(ge=0, le=9223372036854775807)
+    control_revision: int = Field(ge=0, le=9223372036854775807)
+    result_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @field_validator(
+        "action_call_id",
+        "owner_revision_at_finalize",
+        "terminal_slot_revision",
+        "control_revision",
+        mode="before",
+    )
+    @classmethod
+    def native_integer(cls, value: Any) -> int:
+        if type(value) is not int:
+            raise ValueError("exact native integer required")
+        return value
+
+    @field_validator("binding")
+    @classmethod
+    def original_binding(cls, value: dict[str, Any]) -> dict[str, Any]:
+        from stackos import controlled_process_receipt as receipt
+
+        try:
+            binding = receipt._Binding(**value)
+        except TypeError as exc:
+            raise ValueError("invalid original binding") from exc
+        if not receipt._valid_binding(binding):
+            raise ValueError("invalid original binding")
+        return value
 
 
 def _resolve_controlled_command() -> _ResolvedControlledCommand:

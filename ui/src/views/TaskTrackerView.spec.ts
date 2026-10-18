@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import type { TrackerSnapshot, TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
+import { formatDateTime } from '@/lib/stackos/json'
 
 import TaskTrackerView from './TaskTrackerView.vue'
+import TrackerTicketDetailPanel from './task-tracker/TrackerTicketDetailPanel.vue'
 
 const operationMocks = vi.hoisted(() => ({
   callOperation: vi.fn(),
@@ -32,6 +35,7 @@ describe('TaskTrackerView route integration', () => {
 
   afterEach(() => {
     sessionStorage.clear()
+    document.body.innerHTML = ''
     vi.restoreAllMocks()
   })
 
@@ -148,7 +152,9 @@ describe('TaskTrackerView route integration', () => {
       { global: { plugins: [router, createPinia()], stubs: trackerRouteStubs() } },
     )
     await vi.waitFor(() =>
-      expect(wrapper.findComponent({ name: 'TrackerTicketTable' }).props('tickets')).toHaveLength(1),
+      expect(wrapper.findComponent({ name: 'TrackerTicketTable' }).props('tickets')).toHaveLength(
+        1,
+      ),
     )
     const controls = wrapper.findComponent({ name: 'TaskTrackerCommandPanel' })
     controls.vm.$emit('update:view-mode', 'graph')
@@ -177,7 +183,9 @@ describe('TaskTrackerView route integration', () => {
       task_key: 'task-b',
       status: 'complete',
     })
-    operationMocks.callOperation.mockResolvedValue(trackerSnapshot([taskA, taskB], [ticketA, ticketB]))
+    operationMocks.callOperation.mockResolvedValue(
+      trackerSnapshot([taskA, taskB], [ticketA, ticketB]),
+    )
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [{ path: '/projects/:id/tasks', component: TaskTrackerView }],
@@ -189,18 +197,24 @@ describe('TaskTrackerView route integration', () => {
       { global: { plugins: [router, createPinia()], stubs: trackerRouteStubs() } },
     )
     await vi.waitFor(() =>
-      expect(wrapper.findComponent({ name: 'TrackerTicketTable' }).props('tickets')).toHaveLength(1),
+      expect(wrapper.findComponent({ name: 'TrackerTicketTable' }).props('tickets')).toHaveLength(
+        1,
+      ),
     )
     const controls = wrapper.findComponent({ name: 'TaskTrackerCommandPanel' })
     controls.vm.$emit('update:status-filter', 'complete')
     await flushPromises()
     expect(router.currentRoute.value.query).toEqual({
-      view: 'tickets', status: 'complete', task: 'task-b',
+      view: 'tickets',
+      status: 'complete',
+      task: 'task-b',
     })
     expect(controls.props('statusFilter')).toBe('complete')
     expect(controls.props('activeTaskKey')).toBe('task-b')
     expect(
-      wrapper.findComponent({ name: 'TrackerTicketTable' }).props('tickets')
+      wrapper
+        .findComponent({ name: 'TrackerTicketTable' })
+        .props('tickets')
         .map((ticket: TrackerTicket) => ticket.key),
     ).toEqual(['done-ticket'])
     wrapper.unmount()
@@ -433,6 +447,229 @@ describe('TaskTrackerView route integration', () => {
     await vi.waitFor(() => expect(wrapper.get('[data-test="graph-state"]').text()).toBe('ready'))
     wrapper.unmount()
   })
+
+  it('discards an owner status response after the selected task changes', async () => {
+    const taskA = trackerTask({ id: 1, key: 'task-a', title: 'Task A' })
+    const taskB = trackerTask({ id: 2, key: 'task-b', title: 'Task B' })
+    const base = trackerSnapshot([taskA, taskB], [])
+    const pending: Array<(value: { status: Record<string, unknown> }) => void> = []
+    operationMocks.callOperation.mockImplementation((operation: string) => {
+      if (operation === 'tracker.get') return Promise.resolve(base)
+      if (operation === 'run.ownerGet') {
+        return new Promise((resolve) => pending.push(resolve))
+      }
+      return Promise.resolve({ items: [], next_cursor: null, total_estimate: 0 })
+    })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/tasks', component: TaskTrackerView }],
+    })
+    await router.push('/projects/7/tasks?task=task-a')
+    await router.isReady()
+    const wrapper = mount(
+      { template: '<RouterView :key="$route.params.id" />' },
+      { global: { plugins: [router, createPinia()], stubs: trackerRouteStubs() } },
+    )
+    await vi.waitFor(() =>
+      expect(operationMocks.callOperation).toHaveBeenCalledWith('tracker.get', expect.anything()),
+    )
+    await wrapper.get('[data-test="open-task-detail"]').trigger('click')
+    await vi.waitFor(() => expect(pending.length).toBeGreaterThan(0))
+    const priorRequests = pending.length
+    await wrapper.get('[data-test="select-task-b"]').trigger('click')
+    await vi.waitFor(() => expect(pending.length).toBeGreaterThan(priorRequests))
+    pending.slice(0, priorRequests).forEach((resolve) => resolve({ status: { state: 'running' } }))
+    await flushPromises()
+    expect(
+      wrapper.findComponent({ name: 'TrackerTaskDetailDialog' }).props('ownerStatus'),
+    ).toBeNull()
+    pending[pending.length - 1]({ status: { state: 'production_succeeded' } })
+    await vi.waitFor(() =>
+      expect(
+        wrapper.findComponent({ name: 'TrackerTaskDetailDialog' }).props('ownerStatus'),
+      ).toEqual({
+        state: 'production_succeeded',
+      }),
+    )
+    wrapper.unmount()
+  })
+
+  it('discards an owner status response after a project switch with the same task id', async () => {
+    const taskInProject7 = trackerTask({
+      id: 1,
+      project_id: 7,
+      key: 'task-a',
+      title: 'Project 7 task',
+    })
+    const taskInProject8 = trackerTask({
+      id: 1,
+      project_id: 8,
+      key: 'task-a',
+      title: 'Project 8 task',
+    })
+    const snapshot7 = trackerSnapshot([taskInProject7], [], true)
+    const snapshot8 = trackerSnapshot([taskInProject8], [], true)
+    snapshot8.tracker.project_id = 8
+    const pending: Array<{
+      projectId: number
+      canonicalItemId: string
+      resolve: (value: { status: Record<string, unknown> }) => void
+    }> = []
+    operationMocks.callOperation.mockImplementation(
+      (operation: string, args: Record<string, unknown>) => {
+        if (operation === 'tracker.get') {
+          return Promise.resolve(args.project_id === 8 ? snapshot8 : snapshot7)
+        }
+        if (operation === 'run.ownerGet') {
+          return new Promise((resolve) =>
+            pending.push({
+              projectId: Number(args.project_id),
+              canonicalItemId: String(args.canonical_item_id),
+              resolve,
+            }),
+          )
+        }
+        return Promise.resolve({ items: [], next_cursor: null, total_estimate: 0 })
+      },
+    )
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/tasks', component: TaskTrackerView }],
+    })
+    await router.push('/projects/7/tasks?task=task-a')
+    await router.isReady()
+    const wrapper = mount(
+      { template: '<RouterView :key="$route.params.id" />' },
+      { global: { plugins: [router, createPinia()], stubs: trackerRouteStubs() } },
+    )
+
+    await vi.waitFor(() =>
+      expect(operationMocks.callOperation).toHaveBeenCalledWith('tracker.get', expect.anything()),
+    )
+    await wrapper.get('[data-test="open-task-detail"]').trigger('click')
+    await vi.waitFor(() => expect(pending.some((request) => request.projectId === 7)).toBe(true))
+    const staleRequest = pending.find((request) => request.projectId === 7)
+    expect(staleRequest?.canonicalItemId).toBe('task:1')
+
+    await router.push('/projects/8/tasks?task=task-a')
+    await vi.waitFor(() =>
+      expect(operationMocks.callOperation).toHaveBeenCalledWith(
+        'tracker.get',
+        expect.objectContaining({ project_id: 8 }),
+      ),
+    )
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-test="open-task-detail"]').exists()).toBe(true),
+    )
+    await wrapper.get('[data-test="open-task-detail"]').trigger('click')
+    await vi.waitFor(() =>
+      expect(
+        pending.some((request) => request.projectId === 8 && request.canonicalItemId === 'task:1'),
+      ).toBe(true),
+    )
+
+    staleRequest?.resolve({ status: { state: 'running', captured_project: 7 } })
+    await flushPromises()
+    expect(
+      wrapper.findComponent({ name: 'TrackerTaskDetailDialog' }).props('ownerStatus'),
+    ).toBeNull()
+
+    const currentRequest = pending.filter((request) => request.projectId === 8).at(-1)
+    currentRequest?.resolve({ status: { state: 'production_succeeded', captured_project: 8 } })
+    await vi.waitFor(() =>
+      expect(
+        wrapper.findComponent({ name: 'TrackerTaskDetailDialog' }).props('ownerStatus'),
+      ).toEqual({ state: 'production_succeeded', captured_project: 8 }),
+    )
+    wrapper.unmount()
+  })
+
+  it('keeps task and ticket detail bindings mutually exclusive', async () => {
+    const task = trackerTask()
+    const ticket = trackerTicket({ id: 11, task_id: task.id, task_key: task.key })
+    operationMocks.callOperation.mockResolvedValue(trackerSnapshot([task], [ticket], true))
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/tasks', component: TaskTrackerView }],
+    })
+    await router.push('/projects/7/tasks?view=stories')
+    await router.isReady()
+    const wrapper = mount(
+      { template: '<RouterView />' },
+      { global: { plugins: [router, createPinia()], stubs: trackerRouteStubs() } },
+    )
+    await vi.waitFor(() =>
+      expect(operationMocks.callOperation).toHaveBeenCalledWith('tracker.get', expect.anything()),
+    )
+    await vi.waitFor(() =>
+      expect(wrapper.findComponent({ name: 'TrackerStoriesPanel' }).exists()).toBe(true),
+    )
+    wrapper.findComponent({ name: 'TrackerStoriesPanel' }).vm.$emit('open-task-detail')
+    await vi.waitFor(() =>
+      expect(wrapper.findComponent({ name: 'TrackerTaskDetailDialog' }).props('modelValue')).toBe(
+        true,
+      ),
+    )
+
+    wrapper
+      .findComponent({ name: 'TaskTrackerCommandPanel' })
+      .vm.$emit('update:view-mode', 'tickets')
+    await vi.waitFor(() =>
+      expect(wrapper.findComponent({ name: 'TrackerTicketTable' }).exists()).toBe(true),
+    )
+    wrapper.findComponent({ name: 'TrackerTicketTable' }).vm.$emit('row-click', ticket)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findComponent({ name: 'TrackerTaskDetailDialog' }).props('modelValue')).toBe(
+      false,
+    )
+    expect(wrapper.findComponent({ name: 'TrackerTicketDetailPanel' }).props('modelValue')).toBe(
+      true,
+    )
+    wrapper.unmount()
+  })
+
+  it.each([
+    ['running', 'agent', 'inspect_attempt'],
+    ['production_succeeded', 'main_agent', 'review_acceptance'],
+    ['mixed', 'main_agent', 'reconcile_provenance'],
+    ['rejected', 'operator', 'repair_authority'],
+  ])(
+    'renders ticket owner status %s as read-only context',
+    async (state, nextActor, nextAction) => {
+      const wrapper = mount(TrackerTicketDetailPanel, {
+        props: {
+          modelValue: true,
+          ticket: trackerTicket(),
+          title: 'Ticket detail',
+          ownerStatus: {
+            state,
+            next_actor: nextActor,
+            next_action: nextAction,
+            acceptance_state: 'not_evaluated',
+            captured_at: '2026-10-17T18:00:00Z',
+            freshness: 'fresh',
+            owner: { owner_ref: 'owner:current', epoch: 8, revision: 12 },
+            original_binding: {
+              owner_ref: 'owner:original',
+              epoch: 7,
+              reservation_ref: 'intent:original',
+            },
+            needs: ['attempt_running', 'host_unavailable'],
+          },
+        },
+        attachTo: document.body,
+      })
+      await nextTick()
+      const text = (document.body.textContent ?? '').replace(/\s+/g, ' ')
+      expect(text).toContain(state)
+      expect(text).toContain('acceptance not_evaluated')
+      expect(text).toContain(`Captured ${formatDateTime('2026-10-17T18:00:00Z')} · freshness fresh`)
+      expect(text).toContain('Current owner:current · epoch 8 · revision 12')
+      expect(text).toContain('Original owner:original · epoch 7 · reservation intent:original')
+      expect(text).toContain('Needs: attempt_running, host_unavailable')
+      wrapper.unmount()
+    },
+  )
 })
 
 function trackerRouteStubs() {
@@ -443,7 +680,7 @@ function trackerRouteStubs() {
       props: ['viewMode', 'statusFilter', 'activeTaskKey'],
       emits: ['task-select', 'update:view-mode', 'update:status-filter'],
       template:
-        '<nav><button data-test="select-task-a" @click="$emit(\'task-select\', \'task-a\')">Task A</button></nav>',
+        '<nav><button data-test="select-task-a" @click="$emit(\'task-select\', \'task-a\')">Task A</button><button data-test="select-task-b" @click="$emit(\'task-select\', \'task-b\')">Task B</button></nav>',
     },
     TrackerGraphPanel: {
       props: ['loading'],
@@ -459,7 +696,8 @@ function trackerRouteStubs() {
     TrackerTicketDetailPanel: true,
     TrackerStoriesPanel: true,
     TrackerTaskDetailDialog: {
-      props: ['contexts'],
+      name: 'TrackerTaskDetailDialog',
+      props: ['contexts', 'ownerStatus', 'modelValue'],
       template: '<aside>{{ contexts?.[0]?.name }}</aside>',
     },
   }

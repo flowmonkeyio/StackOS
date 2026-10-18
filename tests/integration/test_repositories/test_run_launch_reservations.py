@@ -17,6 +17,13 @@ from stackos.db.models import Project, ProjectEvent, Run, RunKind, RunStatus, Tr
 from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.runs import RunRepository
 from stackos.repositories.tracker import TrackerRepository
+from tests.integration.test_controlled_command_admission import case_factory as case_factory
+from tests.integration.test_controlled_process_host import admitted as native_admitted
+from tests.integration.test_controlled_process_host import prepare as native_prepare
+from tests.integration.test_controlled_process_host import record as native_record
+from tests.integration.test_controlled_process_host import registration as native_registration
+from tests.integration.test_controlled_process_host import reserve as native_reserve
+from tests.integration.test_controlled_process_host import snapshot as native_snapshot
 
 SCOPE = "a" * 64
 MANIFEST = "b" * 64
@@ -245,33 +252,252 @@ def test_terminal_receipt_rejected_even_after_valid_receipt_without_rewriting_hi
         assert snapshot(case, session) == before
 
 
-def test_stale_epoch_receipt_and_stable_intent_cannot_relaunch_after_reassignment(case):
-    with Session(case.engine) as session:
-        admitted = reserve(case, session)
-        repo = case.repo(session)
-        fence = repo._certify_owner_quiescence(
-            project_id=case.project_id,
-            canonical_item_id=case.item,
-            owner_ref="fixture:lead",
-            expected_epoch=admitted.ownership.epoch,
-            expected_revision=admitted.ownership.revision,
-            evidence_ref="fixture:synthetic-only-certificate",
+def _never_spawned_precondition(case_factory, tmp_path, monkeypatch):
+    from stackos import controlled_process_clock as clock
+    from stackos.crypto import aes_gcm
+    from tests.integration.test_controlled_process_terminal import (
+        certify_original,
+        make_original,
+        observation,
+    )
+
+    monkeypatch.setattr(clock, "_sample_clock", observation)
+    seed = tmp_path / "original-test-seed"
+    seed.write_bytes(b"X" * 32)
+    seed.chmod(0o600)
+    monkeypatch.setattr(aes_gcm, "_default_seed_path", seed)
+    monkeypatch.setattr(aes_gcm, "_cache", {})
+    case = case_factory()
+    owner = make_original(case, tmp_path)
+    certified = certify_original(owner)
+    return case, owner, certified
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    [
+        "revision-bool",
+        "index-bool",
+        "index-float",
+        "sequence-bool",
+        "kind",
+        "origin",
+        "extra-key",
+        "payload-sequence-bool",
+        "payload-clock-bool",
+        "payload-extra-binding",
+        "payload-missing-key",
+        "material-payload",
+    ],
+)
+def test_stored_terminal_fact_corruption_denies_replay_certification_and_consumption(
+    case_factory, tmp_path, monkeypatch, corruption
+):
+    from stackos import controlled_process_host as host
+    from tests.integration.test_controlled_process_terminal import (
+        certify_original,
+        database_snapshot,
+    )
+
+    case, owner, certified = _never_spawned_precondition(case_factory, tmp_path, monkeypatch)
+    binding = owner.original.binding
+    repo = RunRepository(case.session)
+    row = case.session.get(Run, binding.attempt_run_id, populate_existing=True)
+    metadata = deepcopy(row.metadata_json)
+    history = metadata["native_terminal_facts"]
+    entry = history["entries"][0]
+    payload = entry["fact_payload"]
+    if corruption == "revision-bool":
+        history["revision"] = True
+    elif corruption in {"index-bool", "index-float"}:
+        entry["index"] = True if corruption == "index-bool" else 1.0
+    elif corruption == "sequence-bool":
+        entry["sequence"] = True
+    elif corruption == "kind":
+        entry["kind"] = "supplemental"
+    elif corruption == "origin":
+        entry["origin"] = "host-watchdog"
+    elif corruption == "extra-key":
+        entry["unknown"] = None
+    elif corruption == "payload-sequence-bool":
+        payload["sequence"] = True
+    elif corruption == "payload-clock-bool":
+        payload["clock"]["continuous_ns"] = True
+    elif corruption == "payload-extra-binding":
+        payload["binding"] = {"project_id": case.project}
+    elif corruption == "payload-missing-key":
+        del payload["policy_digest"]
+    else:
+        payload["policy_digest"] = "f" * 64
+    row.metadata_json = metadata
+    flag_modified(row, "metadata_json")  # bool/int equality must not mask the injected corruption
+    case.session.add(row)
+    case.session.commit()
+    before = database_snapshot(case.session)
+    with pytest.raises(ConflictError):
+        repo._commit_terminal_receipt_slot(
+            verified=host._terminal_verification(owner),
+            expected_slot_revision=4,
+            evidence_ref="native:not-spawned",
         )
+    assert database_snapshot(case.session) == before
+    if corruption == "material-payload":
+        current = repo.owner_get(
+            project_id=case.project, canonical_item_id=binding.canonical_item_id
+        )
+        changed = repo._native_quiescence_snapshot(
+            project_id=case.project,
+            canonical_item_id=binding.canonical_item_id,
+            owner_ref=current.owner_ref,
+            expected_epoch=current.epoch,
+            expected_revision=current.revision,
+        )
+        held = host._verify_native_quiescence(case.session, snapshot=changed, owners=(owner,))
+        assert type(held) is host._TerminalHold
+        assert held.issues == ("terminal_cleanup_unknown",)
+        with pytest.raises(ConflictError, match="actual host quiescence verification required"):
+            repo._certify_owner_quiescence(
+                project_id=case.project,
+                canonical_item_id=binding.canonical_item_id,
+                owner_ref=current.owner_ref,
+                expected_epoch=current.epoch,
+                expected_revision=current.revision,
+                evidence_ref="fixture:corrupt-fact",
+                verified=held,
+            )
+    else:
+        with pytest.raises(ConflictError):
+            certify_original(owner)
+    assert database_snapshot(case.session) == before
+    with pytest.raises(ConflictError):
         repo.owner_reassign(
-            project_id=case.project_id,
-            canonical_item_id=case.item,
-            owner_ref="fixture:lead",
+            project_id=case.project,
+            canonical_item_id=binding.canonical_item_id,
+            owner_ref=certified.owner_ref,
+            new_owner_ref="fixture:replacement",
+            scope_digest=certified.scope_digest,
+            expected_epoch=certified.epoch,
+            expected_revision=certified.revision,
+        )
+    assert database_snapshot(case.session) == before
+    assert owner.custody.close_accounted()
+
+
+@pytest.mark.parametrize("fault", ["different-session", "stale-original-record"])
+def test_terminal_commit_rejects_foreign_session_and_changed_original(
+    case_factory, tmp_path, monkeypatch, fault
+):
+    from stackos import controlled_process_host as host
+    from tests.integration.test_controlled_process_terminal import database_snapshot
+
+    case, owner, _ = _never_spawned_precondition(case_factory, tmp_path, monkeypatch)
+    binding = owner.original.binding
+    if fault == "stale-original-record":
+        row = case.session.get(Run, binding.attempt_run_id, populate_existing=True)
+        metadata = deepcopy(row.metadata_json)
+        metadata["native_recovery_private"]["policy"]["deadline_continuous_ns"] += 1
+        row.metadata_json = metadata
+        case.session.add(row)
+        case.session.commit()
+    before = database_snapshot(case.session)
+    verified = host._terminal_verification(owner)
+    if fault == "different-session":
+
+        def forbidden_read(*args, **kwargs):
+            raise AssertionError("verification read occurred before session rejection")
+
+        with Session(case.session.get_bind()) as other, monkeypatch.context() as local:
+            local.setattr(case.session, "get", forbidden_read)
+            with pytest.raises(ConflictError, match="another session"):
+                RunRepository(other)._commit_terminal_receipt_slot(
+                    verified=verified, expected_slot_revision=4, evidence_ref="native:not-spawned"
+                )
+    else:
+        with pytest.raises(host._ControlError, match="terminal_control_unknown"):
+            RunRepository(case.session)._commit_terminal_receipt_slot(
+                verified=verified, expected_slot_revision=4, evidence_ref="native:not-spawned"
+            )
+    assert database_snapshot(case.session) == before
+    assert owner.custody.close_accounted()
+
+
+def test_launch_accounting_preserves_private_certificate_while_invalidating_freshness(case):
+    from stackos.db.models import WorkItemOwnership
+    from tests.integration.test_controlled_process_terminal import certify_empty
+
+    with Session(case.engine) as session:
+        repo = case.repo(session)
+        row = repo._owner_row(project_id=case.project_id, canonical_item_id=case.item)
+        row.continuity_json = deepcopy(row.continuity_json) | {"effect_identity": "fixture:stable"}
+        task = session.get(TrackerTask, int(case.item.split(":")[1]))
+        task.metadata_json = deepcopy(task.metadata_json)
+        task.metadata_json["ownership_continuity"]["effect_identity"] = "fixture:stable"
+        session.add_all([row, task])
+        session.commit()
+        certified = certify_empty(
+            repo, repo.owner_get(project_id=case.project_id, canonical_item_id=case.item)
+        )
+        raw = session.get(WorkItemOwnership, certified.id, populate_existing=True)
+        certificate = deepcopy(raw.continuity_json["native_quiescence_certificate"])
+        reserved = repo._reserve_owner_launch(**case.args(repo))
+        raw = session.get(WorkItemOwnership, certified.id, populate_existing=True)
+        assert raw.continuity_json["native_quiescence_certificate"] == certificate
+        assert raw.quiescence_revision is None and raw.revision == certified.revision + 1
+        assert "native_quiescence_certificate" not in reserved.ownership.continuity_json
+        before = snapshot(case, session)
+        with pytest.raises(ConflictError):
+            repo.owner_reassign(
+                project_id=case.project_id,
+                canonical_item_id=case.item,
+                owner_ref=reserved.ownership.owner_ref,
+                new_owner_ref="fixture:replacement",
+                scope_digest=SCOPE,
+                expected_epoch=reserved.ownership.epoch,
+                expected_revision=reserved.ownership.revision,
+            )
+        assert snapshot(case, session) == before
+
+
+def test_stale_epoch_receipt_and_stable_intent_cannot_relaunch_after_reassignment(
+    case_factory, tmp_path, monkeypatch
+):
+    from tests.integration.test_controlled_process_terminal import database_snapshot
+
+    case, original, fence = _never_spawned_precondition(case_factory, tmp_path, monkeypatch)
+    binding = original.original.binding
+    repo = RunRepository(case.session, audit_run_id=case.run, owner_commit_guard=lambda: None)
+    try:
+        replacement = repo.owner_reassign(
+            project_id=case.project,
+            canonical_item_id=binding.canonical_item_id,
+            owner_ref=binding.owner_ref,
             new_owner_ref="fixture:replacement",
             scope_digest=SCOPE,
             expected_epoch=fence.epoch,
             expected_revision=fence.revision,
         )
-        before = snapshot(case, session)
+        args = dict(
+            project_id=case.project,
+            canonical_item_id=binding.canonical_item_id,
+            owner_ref=replacement.owner_ref,
+            scope_digest=SCOPE,
+            expected_epoch=replacement.epoch,
+            expected_revision=replacement.revision,
+            controller_run_id=case.run,
+            intent_ref=binding.intent_ref,
+            manifest_digest=binding.manifest_digest,
+            evidence_ref="fixture:forbidden-relaunch",
+        )
+        before = database_snapshot(case.session)
         with pytest.raises(ConflictError):
-            receipt(case, session, admitted.attempt.id)
+            repo._record_owner_launch_receipt(
+                **args, attempt_run_id=binding.attempt_run_id, receipt_digest=RECEIPT
+            )
         with pytest.raises(ConflictError):
-            reserve(case, session)
-        assert snapshot(case, session) == before
+            repo._reserve_owner_launch(**args)
+        assert database_snapshot(case.session) == before
+    finally:
+        original.custody.wait_accounted()
 
 
 @pytest.mark.parametrize("operation", ["reservation", "receipt"])
@@ -334,34 +560,41 @@ def test_private_admission_requires_trusted_guard_and_current_controller(case):
             reserve(case, session)
 
 
-def test_revoked_owner_cannot_obtain_a_new_permit_or_charge(case):
-    with Session(case.engine) as session:
-        admitted = reserve(case, session)
-        assert admitted.launch_permit
-        assert admitted.ownership.continuity_json["attempts_used"] == 1
-        repo = case.repo(session)
-        fence = repo._certify_owner_quiescence(
-            project_id=case.project_id,
-            canonical_item_id=case.item,
-            owner_ref="fixture:lead",
-            expected_epoch=admitted.ownership.epoch,
-            expected_revision=admitted.ownership.revision,
-            evidence_ref="fixture:synthetic-revocation-precondition",
-        )
+def test_revoked_owner_cannot_obtain_a_new_permit_or_charge(case_factory, tmp_path, monkeypatch):
+    from tests.integration.test_controlled_process_terminal import database_snapshot
+
+    case, original, fence = _never_spawned_precondition(case_factory, tmp_path, monkeypatch)
+    binding = original.original.binding
+    repo = RunRepository(case.session, audit_run_id=case.run, owner_commit_guard=lambda: None)
+    try:
+        assert fence.continuity_json["attempts_used"] == 1
         revoked = repo.owner_reassign(
-            project_id=case.project_id,
-            canonical_item_id=case.item,
-            owner_ref="fixture:lead",
+            project_id=case.project,
+            canonical_item_id=binding.canonical_item_id,
+            owner_ref=binding.owner_ref,
             new_owner_ref=None,
             scope_digest=SCOPE,
             expected_epoch=fence.epoch,
             expected_revision=fence.revision,
         )
         assert revoked.owner_ref is None
-        before = snapshot(case, session)
+        before = database_snapshot(case.session)
         with pytest.raises((ValidationError, ConflictError), match="owner"):
-            reserve(case, session, intent_ref="fixture:after-revocation")
-        assert snapshot(case, session) == before
+            repo._reserve_owner_launch(
+                project_id=case.project,
+                canonical_item_id=binding.canonical_item_id,
+                owner_ref=revoked.owner_ref,
+                scope_digest=SCOPE,
+                expected_epoch=revoked.epoch,
+                expected_revision=revoked.revision,
+                controller_run_id=case.run,
+                intent_ref="fixture:after-revocation",
+                manifest_digest=binding.manifest_digest,
+                evidence_ref="fixture:forbidden",
+            )
+        assert database_snapshot(case.session) == before
+    finally:
+        original.custody.wait_accounted()
 
 
 @pytest.mark.parametrize("operation", ["reservation", "receipt"])
@@ -1108,3 +1341,104 @@ def test_slot_duplicate_allocation_rejects_nonexact_facts(case, field, kind):
             )
         assert guard.calls == calls_before + 1  # Fresh guard still precedes classification.
         assert snapshot(case, session) == before
+
+
+@pytest.mark.parametrize("fault", ["stale-owner", "stale-control", "changed-manifest"])
+def test_native_record_fences_reject_without_effect(case_factory, fault):
+    candidate = case_factory()
+    native_prepare(candidate)
+    with native_admitted(candidate) as authority:
+        repo, guard, cursor, binding = native_reserve(candidate, authority)
+        cursor = native_record(
+            repo, guard, cursor, "register", native_registration(authority, binding)
+        ).cursor
+        if fault == "stale-owner":
+            cursor = replace(
+                cursor,
+                ownership=cursor.ownership.model_copy(
+                    update={"revision": cursor.ownership.revision - 1}
+                ),
+            )
+        elif fault == "stale-control":
+            cursor = replace(cursor, control_revision=cursor.control_revision - 1)
+        else:
+            cursor = replace(cursor, manifest_digest="f" * 64)
+        before = native_snapshot(candidate)
+        with pytest.raises(ConflictError):
+            native_record(repo, guard, cursor, "register", native_registration(authority, binding))
+        assert native_snapshot(candidate) == before
+
+
+def test_native_duplicate_does_not_advance_revision_or_audit(case_factory):
+    candidate = case_factory()
+    native_prepare(candidate)
+    with native_admitted(candidate) as authority:
+        repo, guard, cursor, binding = native_reserve(candidate, authority)
+        facts = native_registration(authority, binding)
+        first = native_record(repo, guard, cursor, "register", facts)
+        before = native_snapshot(candidate)
+        second = native_record(repo, guard, first.cursor, "register", facts)
+        assert second.applied is False and second.cursor == first.cursor
+        assert native_snapshot(candidate) == before
+
+
+@pytest.mark.parametrize("method", ["start", "finish"])
+def test_generic_metadata_cannot_write_native_authority(case, method):
+    with Session(case.engine) as session:
+        repo = RunRepository(session)
+        for key in ("native_control", "native_control_private"):
+            before = snapshot(case, session)
+            with pytest.raises(ValidationError):
+                if method == "start":
+                    repo.start(
+                        project_id=case.project_id,
+                        kind=RunKind.SKILL_RUN,
+                        metadata_json={key: {"forged": True}},
+                    )
+                else:
+                    repo.finish(
+                        case.controller,
+                        status=RunStatus.SUCCESS,
+                        metadata_json={key: {"forged": True}},
+                    )
+            assert snapshot(case, session) == before
+
+
+def test_native_restart_projection_cannot_recover_a_release_frame(case_factory):
+    candidate = case_factory()
+    native_prepare(candidate)
+    with native_admitted(candidate) as authority:
+        repo, guard, cursor, _binding = native_reserve(candidate, authority)
+        held = native_record(
+            repo, guard, cursor, "hold", {"reason": "ack_unknown", "outcome_unknown": True}
+        )
+        candidate.session.expire_all()
+        # Re-read is durable uncertainty, never a synthesized release capability.
+        row = candidate.session.get(Run, held.cursor.attempt.id)
+        assert row.metadata_json["native_control"]["phase"] == "UNKNOWN_HOLD"
+        assert "frame" not in row.metadata_json["native_control"]
+        assert row.status == RunStatus.RUNNING
+
+
+def test_native_cleanup_observation_is_not_certification(case_factory):
+    candidate = case_factory()
+    native_prepare(candidate)
+    with native_admitted(candidate) as authority:
+        repo, guard, cursor, binding = native_reserve(candidate, authority)
+        cursor = native_record(
+            repo, guard, cursor, "register", native_registration(authority, binding)
+        ).cursor
+        before = repo.owner_get(
+            project_id=candidate.project, canonical_item_id=binding.canonical_item_id
+        )
+        result = native_record(
+            repo, guard, cursor, "observe_cleanup", {"observation_digest": "a" * 64}
+        )
+        assert result.cursor.attempt.status == RunStatus.RUNNING
+        assert "certificate" not in result.cursor.attempt.metadata_json
+        assert (
+            repo.owner_get(
+                project_id=candidate.project, canonical_item_id=binding.canonical_item_id
+            )
+            == before
+        )

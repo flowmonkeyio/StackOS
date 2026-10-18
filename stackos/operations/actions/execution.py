@@ -118,8 +118,19 @@ async def action_execute(
         action_ref = f"{inp.plugin_slug}.{inp.action_key}"
     controlled_authority = None
     if action_ref == "engineering.controlled-proof.v1":
-        from .controlled import _controlled_intent_key, _issue_controlled_authority
+        from .controlled import (
+            _controlled_intent_key,
+            _issue_controlled_authority,
+            _resolve_controlled_readback,
+        )
 
+        readback = _resolve_controlled_readback(inp, ctx)
+        if readback is not None:
+            return WriteEnvelope[ActionExecutionOut](
+                data=ActionRepository(ctx.session)._controlled_native_readback(readback=readback),
+                run_id=ctx.run_id,
+                project_id=inp.project_id,
+            )
         controlled_authority = _issue_controlled_authority(inp, ctx)
         idempotency_key = None if inp.dry_run else _controlled_intent_key(controlled_authority)
         if inp.idempotency_key is not None and inp.idempotency_key != idempotency_key:

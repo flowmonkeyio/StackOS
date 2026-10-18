@@ -118,10 +118,13 @@ class Case:
     source: Path
     connectors: ActionConnectorRegistry
     echo: Echo
+    settings: object = None
 
     async def dispatch(self, args=None, *, operation="action.execute", session=None):
         active = session or self.session
         active.info["operation_services"] = {"action_connectors": self.connectors}
+        if self.settings is not None:
+            active.info["operation_services"]["settings"] = self.settings
         return (
             await OperationDispatcher(build_operation_registry()).dispatch(
                 operation,
@@ -161,7 +164,7 @@ def case_factory(tmp_path, monkeypatch):
     engines = []
     sessions = []
 
-    def make(initial_status="approved"):
+    def make(initial_status="approved", *, settings=None):
         index = len(engines)
         folder = tmp_path / str(index)
         folder.mkdir()
@@ -342,6 +345,7 @@ def case_factory(tmp_path, monkeypatch):
             source,
             connectors,
             echo,
+            settings,
         )
 
     yield make

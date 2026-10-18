@@ -5,11 +5,25 @@ controller token, the full `action.execute` grant and declared step action,
 canonical item/owner/epoch/revision/scope, known unstopped continuity, and the
 exact command/source/environment approved under the existing plan approval
 writer. A running step or request IDs alone are insufficient. The action
-currently records only a terminal host-unavailable no-dispatch failure; it
+defaults to a terminal host-unavailable no-dispatch failure; while disabled it
 creates no worker attempt, consumes no owner budget and supplies no launch,
 signal or certification authority. Cached replay rechecks the same current
 binding. No native grant is implied by installing this source; existing runs
 retain their frozen grant snapshots. See [controlled admission](./action-executor.md#controlled-engineering-admission).
+
+An explicitly enabled canonical daemon Settings instance can route this same
+fixed action through native custody and original terminal reconciliation.
+Native reservation charges once; only a committed own transition can release.
+The final ActionCall audit commits before the canonical owner certificate and
+is never updated afterward to claim certification. Public v2 execution results
+always retain `work_accepted=false`. Readback of an existing intent happens
+before strict new-launch admission, validates current authority and exact
+original progress, and cannot revive forward permission. Default installation,
+readback, cleanup and a private certificate do not enable an installed host or
+accept work. The scoped public-adapter proof covers final-audit hookup and
+terminal/effect certification for synthetic execution; loaded daemon/app
+activation, useful-work acceptance, and broader ticket or release completion
+remain unproven.
 
 A run plan is a concrete, auditable execution plan for one run. It is usually
 derived from a workflow template, then authored by an agent for the project,
@@ -316,23 +330,66 @@ for cooperative callers, not hostile same-UID isolation or receipt
 authentication. Terminal historical control facts need their separately
 admitted reconciliation path; this slice supplies none.
 
-Actual launch/barrier release, manifest and receipt authentication, host
-deadline/cancellation, effect disposition and loaded-interface proof remain
-with the existing MYB-95/93/100 owners and their applicable acceptance gates.
-Source tests activate no workflow, grant, daemon or worker.
+Fixture proof now covers private launch/barrier release, manifest/receipt
+authentication, host deadline/cancellation and bounded cleanup under the
+cooperative model. Loaded-interface behavior, effect disposition and terminal
+acceptance remain with the MYB-95/93/100 owners and their applicable gates.
+Pure/source tests activate no workflow, grant or daemon; isolated native tests
+use disposable owned children and do not activate a shared daemon or workflow.
+
+The fixture-tested private coordinator transfers the preallocated receipt
+writer through D→W→A custody. Each receiver validates its inherited descriptor and
+binding, acknowledges receipt, and the sender marks close-attempted before one
+close. A may fill only after both upstream known-close acknowledgments and the
+original slot/manifest binding agree; uncertain close or acknowledgment holds
+fill and release without retry, reopen or repair. W's deadline/cancel/EOF loop
+must progress independently of receipt I/O and handoff acknowledgments. A owns
+the final writer close. T receives no writer, key, directory or control-write
+handle. That is a live-object claim: retain acknowledged close history apart
+from the live protected-object set, and check T's actual three fresh bindings
+against the finite known descriptor slots and object identities. Device/inode
+tuples may recur across closed lifetimes; history alone is not a live handle,
+while any currently live protected duplicate denies. W is armed before release;
+the inert barrier consumes the one-use frame once, and daemon or receipt-writer
+loss cannot release the body. The bounded portable/native fixture proof passed
+independent technical review. The native recovery branch was not directly
+observed; deterministic
+tests exercise the production-timer behavior. Owner-stop/grant-loss native
+cases after release completed naturally and do not prove forced-signal-loss
+cleanup. No loaded-host, end-to-end, public-activation or terminal/set/effect
+certification is established.
+
+Fresh, bounded observations of the directly owned process group and registered
+members gate release and cleanup. Identity includes known boot, PID/birth, PGID
+and SID facts; denied, unstable, missing or contradictory observations remain
+unknown and cannot authorize signaling or certification. Cleanup targets only
+a freshly corroborated owned group, with at most one TERM and one KILL after
+the original grace. A finite sample does not prove absence of escaped or
+unregistered processes, and OS scheduling/syscalls preclude hard real-time
+cleanup. Loaded-host behavior, hostile same-UID isolation, terminal set/effect
+certification and successful execution remain outside this slice.
+
+Cleanup knowledge is separate from execution outcome: `execution_unknown` and
+the original failure history stay sticky. A later `cleanup_known` fact requires
+new proof that exact owned T was reaped, fresh strict corroboration of the
+remaining original A group, bounded permitted signaling, and all owned FDs
+closed and owned processes reaped within the original deadline, with no other
+uncertainty. It cannot revive forward authority, admit new members, extend the
+deadline or certify execution/effect.
 
 The private `controlled_process_clock` and `controlled_process_identity` source
-modules expose lazy read-only Darwin observations for the cooperative host's
-future consumer. Known clock observations bind boot/API/ABI and independently
+modules provide lazy read-only Darwin observations to the cooperative host
+component. Known clock observations bind boot/API/ABI and independently
 nonnegative continuous/awake deltas; zero is valid, the reads are non-atomic,
 and reaching the total ceiling is expired. Counter divergence is not suspension
 or hang proof. Process observations require exact SDK structure/byte count and
 stable boot, PID/birth and corroborated PGID/SID. Unknown/denied/unsupported reads
 fail closed. These inputs confer no spawn, signal, receipt or quiescence
 certification authority. The self-native source check proves only the observed
-interpreter's capability; host admission, timer/barrier, authenticated receipts,
-signals/cleanup, registered-set/effect certification and historical late facts
-remain with their future existing owners and acceptance gates.
+interpreter's capability. Fixture proof covers the private host
+admission, timer/barrier, receipts and bounded signal/cleanup paths; it does not
+establish loaded-host behavior, registered-set/effect certification or
+historical late-fact handling.
 
 The private `controlled_process_receipt` source seam seals and authenticates
 canonical, bounded receipts using an exact caller-supplied 32-byte key. Its
@@ -345,9 +402,10 @@ identical authenticated bytes may replay without another write. Publication is
 not atomic: partial files and I/O, sync or close failures remain Holds, with no
 overwrite, deletion or repair. Later authentication/replay proves current bytes
 and does not clear prior failure or prove earlier durability; callers retain
-that history. The seam neither generates nor stores keys and has no live host
-consumer, launcher, signals, cleanup or certification authority. Key custody,
-worker exclusion and actual host/control integration remain separate gates.
+that history. The receipt seam itself neither generates nor stores keys; the
+private coordinator consumes it. Fixture proof exercises this integration,
+but does not establish loaded-host operation or terminal/set/effect
+certification.
 
 The private opt-in preallocated receipt-slot path separates exclusive empty-file
 allocation from a once-frozen `Dalloc` interval. Allocation is outside that
@@ -361,9 +419,35 @@ typed slot state, one cooperating claim and atomic slot/receipt commit. Local
 consume/close-once FD ownership requires known close before commit; uncertain
 or partial work retains a failed/unknown hold and the file, without reopen,
 repair, deletion or reuse. These sampled checks and cooperating CAS provide no
-hostile same-UID exclusion, live command/grant admission, key/FD custody or
-atomic filesystem/database publication. The component has no live host caller;
-that integration, STOP2 and publication authority remain separate gates.
+hostile same-UID exclusion, loaded-host command/grant admission or atomic
+filesystem/database publication. The private component consumes this path in
+fixture-tested execution; it does not enable a public/loaded host caller.
+STOP2, terminal certification and publication authority remain separate gates.
+
+### Private original terminal reconciliation
+
+The private controlled host uses a separate preallocated terminal leaf and
+domain-separated terminal receipt. Allocation precedes Dalloc; full D6 is then
+stable throughout fill/readback, with empty F9 checked before the first write
+and final F9/raw bytes stable afterwards. D retains independent read/directory
+handles while W exclusively receives the transferred writer/directory; A/T
+receive neither. Actual original W exit and each owner's close accounting are
+required before atomic terminal slot COMMITTED plus original fact append.
+Late facts retain their original binding and never revive a terminal attempt,
+current owner, grant, stop or budget. Exact lost-ack replay writes nothing.
+
+Quiescence certificates belong to the canonical WorkItemOwnership row, including
+zero-launch scopes. The trusted verifier requires the complete original set,
+exact terminal/readback/exit evidence and ActionRepository's current no-effect
+readset. Certification and reassignment repeat those canonical snapshots under
+the existing SQLite writer/CAS boundary; only the certificate's own revision is
+normalized. Private descriptors are omitted from public outputs and cannot be
+supplied through tracker continuity. Unknown effects/custody deny certification;
+known quiescence can coexist with held execution. This is not worker acceptance
+or public activation. Restart reads never recreate keys, writers or exit witnesses.
+Recovery callers retain and inspect private held read-custody owners (also
+carried on an original interruption). An unknown close spends that exact FD;
+it neither permits a recycled-number retry nor proves original writer closure.
 
 ## UI
 

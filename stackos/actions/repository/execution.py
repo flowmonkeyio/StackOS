@@ -46,7 +46,11 @@ from .utils import _redact_for_audit, utcnow
 from .validation import RuntimeActionContext
 
 if TYPE_CHECKING:
-    from stackos.operations.actions.controlled import _ControlledAuthority
+    from stackos.operations.actions.controlled import (
+        _ControlledAuthority,
+        _ControlledReadback,
+        _NativeAdmission,
+    )
 
 ACTION_OUTPUT_SCHEMA_VERSION = ACTION_OUTPUT_SCHEMA_REF
 MAX_TRANSIENT_OUTPUT_BYTES = 262_144
@@ -680,6 +684,15 @@ class ActionExecutionMixin:
         from stackos.actions.controlled_command import _canonical_digest
         from stackos.operations.actions.controlled import _controlled_intent_key
 
+        if (row.metadata_json or {}).get("controlled_native") is not None:
+            from stackos.operations.actions.controlled import _resolve_controlled_readback
+
+            readback = _resolve_controlled_readback(
+                authority._inp, authority._ctx, cached_action_call_id=row.id
+            )
+            if readback is None:
+                raise ConflictError("controlled original linkage is unknown")
+            return self._controlled_native_readback(readback=readback)
         authority.revalidate()
         if (
             row.project_id != authority.fence.project_id
@@ -710,6 +723,227 @@ class ActionExecutionMixin:
             replayed=True,
         )
 
+    def _controlled_native_readback(self, *, readback: _ControlledReadback) -> ActionExecutionOut:
+        from stackos.actions.controlled_command import _canonical_digest
+        from stackos.operations.actions.controlled import (
+            _ControlledReadback,
+            _resolve_controlled_readback,
+        )
+
+        if type(readback) is not _ControlledReadback or readback.context.session is not self._s:
+            raise ConflictError("controlled readback context is invalid")
+        current = _resolve_controlled_readback(
+            readback.input, readback.context, cached_action_call_id=readback.original_action_call_id
+        )
+        if current is None or (
+            current.call_fingerprint,
+            current.current_owner_revision,
+            current.normalized_original_revision,
+        ) != (
+            readback.call_fingerprint,
+            readback.current_owner_revision,
+            readback.normalized_original_revision,
+        ):
+            raise ConflictError("controlled readback changed")
+        row = self._s.get(ActionCall, readback.original_action_call_id, populate_existing=True)
+        if (
+            row is None
+            or _canonical_digest(row.model_dump(mode="json")) != current.call_fingerprint
+        ):
+            raise ConflictError("controlled readback changed")
+        return ActionExecutionOut(
+            action_call=self._call_audit_out(row),
+            output_json=self._public_action_result(row) or {},
+            metadata_json=self._public_action_metadata(
+                plugin_slug=row.plugin_slug,
+                action_key=row.action_key,
+                metadata_json=row.metadata_json,
+            ),
+            cost_cents=0,
+            replayed=True,
+        )
+
+    async def _execute_controlled_native(
+        self,
+        *,
+        authority: _ControlledAuthority,
+        admission: _NativeAdmission,
+        action_call: ActionCall,
+    ) -> Envelope[ActionExecutionOut]:
+        from copy import deepcopy
+        from dataclasses import asdict
+
+        from stackos import controlled_process_host as host
+        from stackos import controlled_process_receipt as receipt
+        from stackos.actions.controlled_command import (
+            _canonical_digest,
+            _ControlledNativeAudit,
+            _ControlledNativeResult,
+        )
+        from stackos.db.models import Run, WorkItemOwnership
+        from stackos.repositories.runs import RunRepository
+
+        fence = authority.fence
+        if action_call.id is None:
+            raise ConflictError("controlled original identity is missing")
+        custody = host._NativeCustody(admission)
+        native = None
+        failure: BaseException | None = None
+        try:
+            with custody:
+                native = await host._run_native_control(admission, custody=custody)
+        except BaseException as caught:
+            failure = caught
+        owner = custody.terminal_owner
+        authenticated = owner.authenticated if owner is not None else None
+        fact = authenticated.fact if authenticated is not None else None
+        released = bool(
+            native is not None
+            and native.release_sent
+            and type(fact) is receipt._TerminalFact
+            and fact.child_returns.get("worker") == 0
+        )
+        unknown = (
+            bool(fact.execution_unknown)
+            if type(fact) is receipt._TerminalFact
+            else custody.ever_spawn_invoked and authenticated is None
+        )
+        cleanup = bool(native is not None and native.cleanup_known and custody.accounted)
+        completed = bool(
+            native is not None
+            and native.state == "cleaned"
+            and not native.issues
+            and released
+            and not unknown
+            and cleanup
+            and type(fact) is receipt._TerminalFact
+            and not fact.safety_blocked
+            and not fact.issues
+        )
+        output = _ControlledNativeResult(
+            schema_version="stackos.controlled-command-result.v2",
+            status="succeeded" if completed else "held" if custody.started else "failed",
+            code="controlled_command_completed"
+            if completed
+            else "controlled_outcome_unknown"
+            if unknown
+            else "controlled_execution_held",
+            admission_verified=True,
+            command_digest=authority.command.digest,
+            intent_ref=authority.request.intent_ref,
+            host_dispatched=True
+            if custody.process is not None
+            else None
+            if custody.ever_spawn_invoked
+            else False,
+            released=released,
+            provider_executed=False,
+            outcome_unknown=unknown,
+            cleanup_known=cleanup,
+            retry_safe=False,
+            work_accepted=False,
+        ).model_dump()
+        metadata = self._controlled_metadata(authority)
+        repo = RunRepository(self._s)
+        current_owner = None
+        if owner is not None:
+            binding = owner.original.binding
+            attempt = self._s.get(Run, binding.attempt_run_id, populate_existing=True)
+            current_owner = self._s.get(
+                WorkItemOwnership,
+                native.cursor.ownership.id
+                if native is not None
+                else repo.owner_get(
+                    project_id=fence.project_id, canonical_item_id=fence.canonical_item_id
+                ).id,
+                populate_existing=True,
+            )
+            if attempt is None or current_owner is None:
+                raise ConflictError("controlled original record is unknown")
+            terminal = (attempt.metadata_json or {}).get("native_terminal_slot", {})
+            control = (attempt.metadata_json or {}).get("native_control", {})
+            provenance = _ControlledNativeAudit(
+                schema_version="stackos.controlled-native-audit.v1",
+                action_call_id=action_call.id,
+                binding=asdict(binding),
+                command_digest=authority.command.digest,
+                runtime_digest=admission.runtime_digest,
+                storage_digest=admission.storage_digest,
+                owner_revision_at_finalize=current_owner.revision,
+                owner_basis_digest=_canonical_digest(
+                    repo._native_owner_basis(current_owner, current_owner.revision)
+                ),
+                terminal_receipt_digest=authenticated.digest if authenticated is not None else None,
+                terminal_slot_revision=terminal.get("revision", 0),
+                control_revision=control.get("control_revision", 0),
+                result_digest=_canonical_digest(output),
+            )
+            metadata = metadata | {"controlled_native": provenance.model_dump()}
+        # This terminal CAS is the only native ActionCall write. In particular,
+        # neither certificate completion nor a replay can rewrite this readset.
+        try:
+            row = self._finalize_running_call(
+                project_id=fence.project_id,
+                action_call_id=action_call.id,
+                credential=None,
+                response_json=output,
+                metadata_json=metadata,
+                status=ActionCallStatus.SUCCESS if completed else ActionCallStatus.FAILED,
+                cost_cents=0,
+                duration_ms=0,
+                error=None if completed else output["code"],
+                commit=True,
+            )
+        except BaseException:
+            self._s.rollback()
+            raise
+        if failure is not None:
+            if not isinstance(failure, Exception):
+                raise failure
+            raise ConflictError(
+                "controlled_execution_held", data={"action_call_id": row.id}
+            ) from failure
+        if owner is None or current_owner is None:
+            raise ConflictError("controlled_quiescence_held", data={"action_call_id": row.id})
+        try:
+            snapshot = repo._native_quiescence_snapshot(
+                project_id=fence.project_id,
+                canonical_item_id=fence.canonical_item_id,
+                owner_ref=fence.owner_ref,
+                expected_epoch=fence.epoch,
+                expected_revision=current_owner.revision,
+            )
+            verified = host._verify_native_quiescence(self._s, snapshot=snapshot, owners=(owner,))
+            if type(verified) is not host._VerifiedQuiescence:
+                raise ConflictError("controlled_quiescence_held")
+            repo._certify_owner_quiescence(
+                project_id=fence.project_id,
+                canonical_item_id=fence.canonical_item_id,
+                owner_ref=fence.owner_ref,
+                expected_epoch=fence.epoch,
+                expected_revision=current_owner.revision,
+                evidence_ref="native:public-action-terminal",
+                verified=verified,
+            )
+        except Exception as exc:
+            raise ConflictError(
+                "controlled_quiescence_held", data={"action_call_id": row.id}
+            ) from exc
+        return Envelope(
+            data=ActionExecutionOut(
+                action_call=self._call_audit_out(row),
+                output_json=deepcopy(output),
+                metadata_json=self._public_action_metadata(
+                    plugin_slug=row.plugin_slug,
+                    action_key=row.action_key,
+                    metadata_json=row.metadata_json,
+                ),
+                cost_cents=0,
+            ),
+            project_id=fence.project_id,
+            run_id=fence.controller_run_id,
+        )
+
     async def _execute_controlled_admission(
         self,
         *,
@@ -727,6 +961,22 @@ class ActionExecutionMixin:
         if idempotency_key and idempotency_key != key:
             raise ConflictError("controlled intent key mismatch")
         metadata = self._controlled_metadata(authority)
+        from stackos.actions.controlled_command import (
+            _controlled_host_settings,
+            _controlled_host_supported,
+        )
+        from stackos.operations.actions.controlled import _issue_native_admission
+
+        settings = _controlled_host_settings(self._s)
+        native_admission = None
+        if (
+            not authority._inp.dry_run
+            and settings is not None
+            and settings.controlled_host_enabled is True
+            and _controlled_host_supported()
+            and manifest.config_json.get("controlled_host") is None
+        ):
+            native_admission = _issue_native_admission(authority._inp, authority._ctx)
 
         def result(code: str, *, verified: bool) -> dict[str, Any]:
             return {
@@ -784,6 +1034,11 @@ class ActionExecutionMixin:
         def guard() -> None:
             authority.revalidate()
 
+        def original_readback(row: ActionCall) -> None:
+            # The losing insert has rolled back before this point. It cannot
+            # require stale new-winner fences after genuine winner progress.
+            self._controlled_replay_out(row=row, authority=authority)
+
         row, replayed = self._reserve_background_call(
             project_id=fence.project_id,
             manifest=manifest,
@@ -797,6 +1052,7 @@ class ActionExecutionMixin:
             metadata_json=metadata,
             estimated_cost_cents=0,
             commit_guard=guard,
+            replay_guard=original_readback,
         )
         if replayed:
             return Envelope(
@@ -805,6 +1061,10 @@ class ActionExecutionMixin:
                 run_id=fence.controller_run_id,
             )
         assert row.id is not None
+        if native_admission is not None:
+            return await self._execute_controlled_native(
+                authority=authority, admission=native_admission, action_call=row
+            )
         try:
             try:
                 authority.revalidate()

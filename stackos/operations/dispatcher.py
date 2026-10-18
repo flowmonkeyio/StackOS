@@ -9,7 +9,7 @@ from typing import Any, cast, get_origin
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import delete
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from stackos.config import Settings
 from stackos.db.models import IdempotencyKey
@@ -91,6 +91,50 @@ class OperationDispatcher:
                 )
             if not trusted_local_admin or spec.name in RUN_PLAN_OWNER_TOOL_NAMES:
                 check_call_grant(spec.name, ctx, parsed)
+            if spec.name == "action.execute":
+                from stackos.actions import ActionRepository
+                from stackos.operations.actions.controlled import (
+                    _resolve_controlled_readback,
+                    _validate_controlled_cached_replay,
+                )
+                from stackos.operations.actions.schemas import ActionExecuteInput
+
+                if type(parsed) is ActionExecuteInput:
+                    original = _resolve_controlled_readback(parsed, ctx)
+                    if original is not None:
+                        cached_row = None
+                        if ctx.idempotency_key is not None:
+                            cached_row = session.exec(
+                                select(IdempotencyKey)
+                                .where(
+                                    IdempotencyKey.project_id == ctx.project_id,
+                                    IdempotencyKey.tool_name == spec.name,
+                                    IdempotencyKey.idempotency_key == ctx.idempotency_key,
+                                )
+                                .execution_options(populate_existing=True)
+                            ).first()
+                        if cached_row is not None:
+                            if (
+                                type(cached_row.response_json) is not dict
+                                or cached_row.run_id != ctx.run_id
+                            ):
+                                raise ConflictError("controlled cached history is unknown")
+                            payload = _validate_controlled_cached_replay(
+                                parsed, ctx, cached_row.response_json
+                            )
+                        else:
+                            out = ActionRepository(session)._controlled_native_readback(
+                                readback=original
+                            )
+                            payload = WriteEnvelope(
+                                data=out, project_id=ctx.project_id, run_id=ctx.run_id
+                            ).model_dump(mode="json")
+                        return OperationDispatchResult(
+                            payload=shape_operation_response(
+                                spec, payload, response_mode=response_mode, idempotency_replay=True
+                            ),
+                            duration_ms=0,
+                        )
             if (
                 not spec.read_only
                 and ctx.idempotency_key is not None

@@ -24,6 +24,259 @@ BOOT = "00000000-0000-0000-0000-000000000001"
 KEY = b"K" * 32
 
 
+def terminal_payload():
+    payload = golden_payload()
+    registered = {}
+    for role, pid, pgid in (("watchdog", 111, 111), ("anchor", 112, 112), ("worker", 113, 112)):
+        registered[role] = dict(
+            boot_uuid=BOOT,
+            pid=pid,
+            parent_pid=100 if role == "watchdog" else 111,
+            pgid=pgid,
+            sid=111,
+            start_seconds=1,
+            start_microseconds=pid,
+            api_version="darwin-proc-bsdinfo-v1",
+            runtime_abi="Darwin/arm64/64",
+        )
+    payload["fact"] = dict(
+        kind="terminal",
+        origin="host-watchdog",
+        sequence=1,
+        registration_digest="f" * 64,
+        control_revision=3,
+        clock=payload["fact"]["clock"],
+        registered=registered,
+        child_returns={"anchor": 0, "worker": 0},
+        cleanup_candidate=True,
+        execution_unknown=False,
+        safety_blocked=False,
+        arm_closed={"writer": True, "directory": True, "control": True},
+        report_digest="e" * 64,
+        completed_continuous_ns=950,
+        issues=[],
+    )
+    return payload
+
+
+@pytest.mark.parametrize("case", ["canonical"])
+def test_terminal_receipt_round_trip(case):
+    receipt = importlib.import_module("stackos.controlled_process_receipt")
+    identity = importlib.import_module("stackos.controlled_process_identity")
+    payload = terminal_payload()
+    binding, armed = golden_values(receipt, golden_payload())
+    values = dict(payload["fact"])
+    values["clock"] = armed.clock
+    values["registered"] = {
+        role: identity._ProcessIdentity(**value) for role, value in values["registered"].items()
+    }
+    values["issues"] = ()
+    fact = receipt._TerminalFact(**values)
+    body = canonical(payload)
+    mac = hmac.digest(
+        KEY,
+        b"StackOS\x00controlled-terminal-receipt\x00v1\x00" + len(body).to_bytes(4, "big") + body,
+        "sha256",
+    ).hex()
+    expected = canonical(
+        dict(schema="stackos.controlled-terminal-receipt.v1", payload=payload, mac=mac)
+    )
+    raw = receipt._seal_terminal_receipt(binding, fact, KEY)
+    assert raw == expected
+    authenticated = receipt._authenticate_terminal_receipt(raw, binding, KEY)
+    assert authenticated.binding == binding
+    assert authenticated.fact == fact
+    assert authenticated.raw == expected
+    assert authenticated.digest == hashlib.sha256(expected).hexdigest()
+    assert type(receipt._authenticate_receipt(raw, binding, KEY)) is receipt._ReceiptHold
+
+
+def terminal_values(receipt):
+    identity = importlib.import_module("stackos.controlled_process_identity")
+    binding, arm = golden_values(receipt, golden_payload())
+    values = dict(terminal_payload()["fact"])
+    values.update(
+        clock=arm.clock,
+        issues=(),
+        registered={
+            name: identity._ProcessIdentity(**value) for name, value in values["registered"].items()
+        },
+    )
+    return binding, receipt._TerminalFact(**values)
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "arm-domain",
+        "wrong-key",
+        "wrong-binding",
+        "extra-key",
+        "missing-key",
+        "duplicate-key",
+        "bool-sequence",
+        "wrong-origin",
+        "wrong-registration",
+        "unknown-cleanup-valid-held",
+        "bad-clock-shape",
+        "oversize",
+        "not-spawned-origin",
+    ],
+)
+def test_terminal_receipt_rejects_invalid_or_foreign_bytes(receipt, case):
+    binding, fact = terminal_values(receipt)
+    raw = receipt._seal_terminal_receipt(binding, fact, KEY)
+    expected = binding
+    key = KEY
+    if case == "arm-domain":
+        raw = receipt._seal_receipt(*golden_values(receipt, golden_payload()), KEY)
+    elif case == "wrong-key":
+        key = b"Z" * 32
+    elif case == "wrong-binding":
+        expected = replace(binding, epoch=2)
+    elif case == "oversize":
+        raw = b" " * 16385
+    elif case == "duplicate-key":
+        raw = raw.replace(b'"kind":"terminal"', b'"kind":"terminal","kind":"terminal"')
+    elif case == "unknown-cleanup-valid-held":
+        raw = receipt._seal_terminal_receipt(
+            binding,
+            replace(
+                fact,
+                cleanup_candidate=False,
+                safety_blocked=True,
+                issues=("terminal_cleanup_unknown",),
+            ),
+            KEY,
+        )
+        result = receipt._authenticate_terminal_receipt(raw, binding, KEY)
+        assert result.fact.cleanup_candidate is False and result.fact.safety_blocked is True
+        return
+    else:
+        payload = terminal_payload()
+        if case == "extra-key":
+            payload["fact"]["extra"] = True
+        elif case == "missing-key":
+            del payload["fact"]["arm_closed"]
+        elif case == "bool-sequence":
+            payload["fact"]["sequence"] = True
+        elif case == "wrong-origin":
+            payload["fact"]["origin"] = "worker"
+        elif case == "wrong-registration":
+            payload["fact"]["registration_digest"] = "wrong"
+        elif case == "bad-clock-shape":
+            payload["fact"]["clock"]["continuous_ns"] = True
+        else:
+            payload["fact"] = dict(
+                kind="not_spawned",
+                origin="host-watchdog",
+                sequence=1,
+                clock=payload["fact"]["clock"],
+                policy_digest="e" * 64,
+                ever_spawn_invoked=False,
+            )
+        body = canonical(payload)
+        mac = hmac.digest(
+            KEY, receipt._TERMINAL_DOMAIN + len(body).to_bytes(4, "big") + body, "sha256"
+        ).hex()
+        raw = canonical(dict(schema=receipt._TERMINAL_SCHEMA, payload=payload, mac=mac))
+    assert type(receipt._authenticate_terminal_receipt(raw, expected, key)) is receipt._ReceiptHold
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "directory-drift",
+        "empty-file-drift",
+        "hardlink",
+        "symlink-replacement",
+        "short-eintr",
+        "partial-write",
+        "close-failure",
+        "retained-read-and-dir",
+        "transfer-close-failure",
+        "verification-read-substitution",
+    ],
+)
+def test_terminal_slot_preserves_frozen_io_contract(receipt, directory, monkeypatch, case):
+    binding, fact = terminal_values(receipt)
+    raw = receipt._seal_terminal_receipt(binding, fact, KEY)
+    path, dirfd = directory
+    slot = receipt._allocate_terminal_slot(dirfd, binding)
+    assert type(slot) is receipt._AllocatedSlot and slot.receipt_kind == "terminal"
+    original_write, original_close = os.write, os.close
+    calls = []
+    try:
+        if case == "directory-drift":
+            (path / "unrelated").mkdir()
+            object.__setattr__(slot, "dalloc", (*slot.dalloc[:5], slot.dalloc[5] + 17))
+        elif case == "empty-file-drift":
+            os.write(slot.fd, b"x")
+        elif case == "hardlink":
+            os.link(path / slot.name, path / "other")
+        elif case in {"symlink-replacement", "verification-read-substitution"}:
+            (path / slot.name).rename(path / "original")
+            (path / slot.name).symlink_to(path / "original")
+        elif case in {"short-eintr", "partial-write"}:
+
+            def write(fd, value):
+                calls.append(fd)
+                if len(calls) == 1:
+                    raise InterruptedError
+                if case == "partial-write" and len(calls) > 2:
+                    raise OSError("synthetic write failure")
+                return original_write(fd, value[:7])
+
+            monkeypatch.setattr(os, "write", write)
+        result = receipt._fill_terminal_slot(dirfd, slot, binding, KEY, raw)
+        if case in {
+            "directory-drift",
+            "empty-file-drift",
+            "hardlink",
+            "symlink-replacement",
+            "verification-read-substitution",
+            "partial-write",
+        }:
+            assert type(result) is receipt._ReceiptHold
+        else:
+            assert type(result) is receipt._TerminalWriteResult
+            read = receipt._read_terminal_receipt(dirfd, binding, KEY)
+            assert read[0].raw == raw and read[1][6] == len(raw)
+            assert receipt._fill_terminal_slot(dirfd, slot, binding, KEY, raw).code == "conflict"
+            if case == "retained-read-and-dir":
+                fd = os.open(slot.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=dirfd)
+                try:
+                    before_offset = os.lseek(fd, 0, os.SEEK_CUR)
+                    observed = receipt._read_opened(
+                        fd,
+                        dirfd,
+                        slot.name,
+                        slot.dalloc,
+                        receipt._entry(dirfd, slot.name),
+                        binding,
+                        KEY,
+                        receipt_kind="terminal",
+                        retained=True,
+                    )
+                    assert observed[0].raw == raw and os.lseek(fd, 0, os.SEEK_CUR) == before_offset
+                finally:
+                    original_close(fd)
+        if case in {"close-failure", "transfer-close-failure"}:
+
+            def close(fd):
+                calls.append(fd)
+                original_close(fd)
+                raise OSError("synthetic close failure")
+
+            monkeypatch.setattr(os, "close", close)
+            assert slot._close_once().code == "io_failure"
+            assert slot._close_once().code == "io_failure" and calls == [slot.fd]
+            monkeypatch.setattr(os, "close", original_close)
+        assert os.fstat(dirfd)
+    finally:
+        slot._close_once()
+
+
 def golden_payload():
     """An independent literal wire fixture, including every required field."""
     binding = {

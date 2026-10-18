@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Barrier
@@ -217,15 +218,9 @@ def _checkpoint(repo: RunRepository, row, **overrides):
 
 
 def _certify(repo: RunRepository, row):
-    # Fixture for the private producer seam, NOT evidence of real host control.
-    return repo._certify_owner_quiescence(
-        project_id=row.project_id,
-        canonical_item_id=row.canonical_item_id,
-        owner_ref=row.owner_ref,
-        expected_epoch=row.epoch,
-        expected_revision=row.revision,
-        evidence_ref="fixture:quiescence-and-effects-disposed",
-    )
+    from tests.integration.test_controlled_process_terminal import certify_empty
+
+    return certify_empty(repo, row)
 
 
 def _reassign(repo: RunRepository, row, new_owner="session:replacement"):
@@ -237,6 +232,44 @@ def _reassign(repo: RunRepository, row, new_owner="session:replacement"):
         scope_digest=row.scope_digest,
         expected_epoch=row.epoch,
         expected_revision=row.revision,
+    )
+
+
+def test_consumption_preserves_backend_certificate_but_invalidates_its_freshness(
+    session: Session, project_id: int
+) -> None:
+    repo = RunRepository(session)
+    original = _acquire(repo, project_id, _continuity_ticket(session, project_id))
+    certified = _certify(repo, original)
+    raw = session.get(WorkItemOwnership, certified.id, populate_existing=True)
+    private = deepcopy(raw.continuity_json["native_quiescence_certificate"])
+    assert "native_quiescence_certificate" not in certified.continuity_json
+    consumed = repo.owner_consume(
+        project_id=project_id,
+        canonical_item_id=certified.canonical_item_id,
+        owner_ref=certified.owner_ref,
+        scope_digest=certified.scope_digest,
+        expected_epoch=certified.epoch,
+        expected_revision=certified.revision,
+        attempts_delta=0,
+        failures_delta=1,
+        evidence_ref="fixture:failed-invocation",
+    )
+    raw = session.get(WorkItemOwnership, certified.id, populate_existing=True)
+    assert raw.continuity_json["native_quiescence_certificate"] == private
+    assert consumed.revision == certified.revision + 1 and consumed.quiescence_revision is None
+    assert "native_quiescence_certificate" not in consumed.continuity_json
+    assert (
+        "native_quiescence_certificate"
+        not in repo.owner_get(
+            project_id=project_id, canonical_item_id=certified.canonical_item_id
+        ).continuity_json
+    )
+    before = deepcopy(raw.model_dump())
+    with pytest.raises(ConflictError):
+        _reassign(repo, consumed)
+    assert (
+        session.get(WorkItemOwnership, certified.id, populate_existing=True).model_dump() == before
     )
 
 
@@ -319,6 +352,9 @@ def test_owner_explicit_revocation_fences_and_reacquires_without_reset(
     assert revoked.epoch == 2
     with pytest.raises(ConflictError, match="stale ownership fence"):
         _checkpoint(repo, original)
+    # Revocation changes the canonical tuple; it cannot consume the old
+    # certificate. Verify the genuinely empty unassigned tuple afresh.
+    _certify(repo, revoked)
     next_owner = _acquire(repo, project_id, item, "session:next")
     assert next_owner.epoch == 3
     assert next_owner.previous_owner_ref == original.owner_ref

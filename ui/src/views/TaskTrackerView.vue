@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
@@ -55,6 +55,8 @@ const search = ref('')
 const filtersExpanded = ref(statusFilter.value !== 'all')
 const activeTaskKey = ref(routeTaskKey())
 const taskDetailOpen = ref(false)
+const ownerStatus = ref<Record<string, unknown> | null>(null)
+let ownerStatusRequest = 0
 
 const statusOptions: Array<{ key: StatusFilter; label: string }> = [
   { key: 'all', label: 'All' },
@@ -96,18 +98,26 @@ const taskRows = computed<TaskProgressRow[]>(() =>
   buildTaskProgressRows(tasks.value, ticketsByTask.value, controlFilters.value),
 )
 
-const taskSelectOptions = computed(() =>
-  [
-  ...(viewMode.value === 'tickets' ? [{ value: '', label: 'All tasks', rightLabel: '', rightMeta: '', rightTone: 'neutral' as SelectMetaTone }] : []),
-    ...taskRows.value.map((row) => ({
+const taskSelectOptions = computed(() => [
+  ...(viewMode.value === 'tickets'
+    ? [
+        {
+          value: '',
+          label: 'All tasks',
+          rightLabel: '',
+          rightMeta: '',
+          rightTone: 'neutral' as SelectMetaTone,
+        },
+      ]
+    : []),
+  ...taskRows.value.map((row) => ({
     value: row.key,
     label: `#${row.id} ${row.task.title}`,
     rightLabel: resolveStatus('tracker', row.task.status).label,
     rightMeta: `${row.terminalCount}/${row.totalCount} terminal`,
     rightTone: trackerStatusTone(row.task.status),
-    })),
-  ],
-)
+  })),
+])
 
 const allTasksSelected = computed(() => viewMode.value === 'tickets' && !activeTaskKey.value)
 const activeTaskRow = computed<TaskProgressRow | null>(() => {
@@ -166,6 +176,36 @@ const {
   clearFocus: clearGraphFocus,
 } = graphSession
 
+watch([projectId, taskDetailOpen, detailPanelOpen, activeTaskRow, selectedTicket], async () => {
+  const ticket = detailPanelOpen.value ? selectedTicket.value : null
+  const task = taskDetailOpen.value ? (activeTaskRow.value?.task ?? null) : null
+  const canonicalItemId = ticket ? `ticket:${ticket.id}` : task ? `task:${task.id}` : null
+  const requestedProjectId = projectId.value
+  const request = ++ownerStatusRequest
+  ownerStatus.value = null
+  if (!canonicalItemId) return
+  try {
+    const result = await callOperation<{ status: Record<string, unknown> }>('run.ownerGet', {
+      project_id: requestedProjectId,
+      canonical_item_id: canonicalItemId,
+    })
+    const currentItem =
+      detailPanelOpen.value && selectedTicket.value
+        ? `ticket:${selectedTicket.value.id}`
+        : taskDetailOpen.value && activeTaskRow.value?.task
+          ? `task:${activeTaskRow.value.task.id}`
+          : null
+    if (
+      request === ownerStatusRequest &&
+      requestedProjectId === projectId.value &&
+      canonicalItemId === currentItem
+    )
+      ownerStatus.value = result.status
+  } catch {
+    if (request === ownerStatusRequest) ownerStatus.value = null
+  }
+})
+
 const focusedGraphPending = computed(() => focusedGraphLoading.value && !graphDataAvailable.value)
 
 const executionContexts = useTrackerExecutionContexts({ projectId })
@@ -182,7 +222,10 @@ const {
 const graphFlowId = computed(() => `tracker-flow-${projectId.value}`)
 
 const visibleTickets = computed(() => {
-  if (allTasksSelected.value) return taskRows.value.flatMap((row) => row.tickets.filter((ticket) => ticketMatchesControls(ticket, row.task, controlFilters.value)))
+  if (allTasksSelected.value)
+    return taskRows.value.flatMap((row) =>
+      row.tickets.filter((ticket) => ticketMatchesControls(ticket, row.task, controlFilters.value)),
+    )
   const row = activeTaskRow.value
   if (!row) return []
   return row.tickets.filter((ticket) =>
@@ -355,6 +398,7 @@ function onPaneClick(event: MouseEvent): void {
 }
 
 function onTicketRow(row: TrackerTicket): void {
+  taskDetailOpen.value = false
   if (!allTasksSelected.value) {
     activeTaskKey.value = row.task_key
     syncControlQuery()
@@ -365,6 +409,7 @@ function onTicketRow(row: TrackerTicket): void {
 }
 
 function openTaskDetail(): void {
+  detailPanelOpen.value = false
   taskDetailOpen.value = true
   void loadTaskContexts(activeTask.value)
 }
@@ -448,7 +493,9 @@ function viewModeFromQuery(raw: unknown): ViewMode {
 }
 
 function statusFromQuery(raw: unknown): StatusFilter {
-  return typeof raw === 'string' && Object.hasOwn(trackerStatus, raw) ? raw as TrackerStatus : 'all'
+  return typeof raw === 'string' && Object.hasOwn(trackerStatus, raw)
+    ? (raw as TrackerStatus)
+    : 'all'
 }
 
 function syncControlQuery(): void {
@@ -463,7 +510,8 @@ function syncControlQuery(): void {
     query.view === route.query.view &&
     query.status === route.query.status &&
     query.task === route.query.task
-  ) return
+  )
+    return
   void router.replace({ query })
 }
 
@@ -520,17 +568,11 @@ onBeforeRouteUpdate((to) => {
       </template>
     </ProjectPageHeader>
 
-    <UiCallout
-      v-if="error"
-      tone="danger"
-    >
+    <UiCallout v-if="error" tone="danger">
       {{ error }}
     </UiCallout>
 
-    <UiCallout
-      v-if="liveError"
-      tone="warning"
-    >
+    <UiCallout v-if="liveError" tone="warning">
       {{ liveError }}
     </UiCallout>
 
@@ -578,17 +620,9 @@ onBeforeRouteUpdate((to) => {
       @open-task-detail="openTaskDetail"
     />
 
-    <UiCallout
-      v-else-if="viewMode === 'stories'"
-      tone="neutral"
-    >
-      Loading work stories…
-    </UiCallout>
+    <UiCallout v-else-if="viewMode === 'stories'" tone="neutral"> Loading work stories… </UiCallout>
 
-    <TrackerWarningSummary
-      v-if="viewMode === 'graph'"
-      :warnings="flow.warnings"
-    />
+    <TrackerWarningSummary v-if="viewMode === 'graph'" :warnings="flow.warnings" />
 
     <UiCallout
       v-if="viewMode !== 'stories' && (initialLoading || fullSnapshotLoading)"
@@ -597,20 +631,14 @@ onBeforeRouteUpdate((to) => {
       Loading tracker work…
     </UiCallout>
 
-    <div
-      v-else-if="viewMode !== 'stories' && taskRows.length === 0"
-      class="min-h-[360px]"
-    >
+    <div v-else-if="viewMode !== 'stories' && taskRows.length === 0" class="min-h-[360px]">
       <UiEmptyState
         title="No tracker work"
         description="Agents can create tasks and tickets through tracker operations."
       />
     </div>
 
-    <div
-      v-else-if="viewMode !== 'stories'"
-      class="tracker-workspace"
-    >
+    <div v-else-if="viewMode !== 'stories'" class="tracker-workspace">
       <div class="tracker-focus">
         <div class="tracker-main">
           <TrackerGraphPanel
@@ -669,6 +697,7 @@ onBeforeRouteUpdate((to) => {
       :ticket="selectedTicket"
       :title="detailPanelTitle"
       :description="detailPanelDescription"
+      :owner-status="ownerStatus"
     />
 
     <TrackerTaskDetailDialog
@@ -680,6 +709,7 @@ onBeforeRouteUpdate((to) => {
       :context-artifact-page-info="taskContextArtifactPageInfo"
       :context-loading="taskContextLoading"
       :context-error="taskContextError"
+      :owner-status="ownerStatus"
     />
   </UiPageShell>
 </template>

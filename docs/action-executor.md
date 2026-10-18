@@ -12,7 +12,8 @@ owner fences, known unstopped continuity, and an approved exact
 bytes are reread at reservation and replay. Approved decisions are terminal;
 owner stops, scope changes and edited approved decision data invalidate admission.
 
-The controlled host is unavailable. Successful admission therefore records the
+The daemon's `Settings.controlled_host_enabled` capability defaults to false.
+With that default, successful admission records the
 original ActionCall as `FAILED/controlled_host_unavailable`, with
 `host_dispatched=false`, `retry_safe=false` and `certified=false`. No connector,
 process, Run attempt, key or FD is dispatched or charged. Dry-run records
@@ -22,7 +23,60 @@ deduplication retains the original failed audit; unknown histories hold rather
 than authorize retry. Controlled public metadata is allowlisted consistently
 in the initial envelope, audit/get/query and repository/operation replay;
 approval/owner provenance stays backend-only. Native custody, reserve/release,
-barrier/timer/cleanup and terminal certification remain separate host work.
+barrier/timer/cleanup are implemented in a private fixture-tested component.
+The component passed bounded portable/native fixture proof and independent
+technical review. This does not make the public action host available or
+establish loaded-host/end-to-end behavior; terminal/set/effect certification
+remains separate.
+
+The private native-control component consumes this admission in its bounded
+fixture path.
+The same fixed action has a daemon-owned adapter for an explicitly enabled,
+supported host. Installing source does not enable it. The exact `Settings`
+instance must come from the daemon's canonical operation services; request
+fields and connector calls cannot opt in. Native admission pins its state and
+seed paths and rechecks configuration at every forward transition.
+Key wrapping explicitly loads that canonical seed; original recovery requires
+the same private storage/seed context rather than ambient crypto configuration.
+Disabling the capability prevents new forward admission while preserving
+original-bound safety cleanup and authenticated immutable-result readback.
+
+The adapter reserves one original ActionCall, executes through the existing
+retained native custody, then commits its immutable terminal audit **before**
+the canonical owner certificate snapshot. The v2 result distinguishes execution
+uncertainty from known cleanup and always says `work_accepted=false`; it has no
+`certified` field. Historical v1 results retain `certified=false`. The owner is
+the sole quiescence certificate store. A certificate failure returns structured
+`controlled_quiescence_held` with the original call id without rewriting the
+known audit or retrying its effect.
+
+Existing original-intent readback precedes new-launch authorization in both
+repository and dispatcher-cache paths. Its read context cannot launch, charge,
+release or certify. Current grant, approval, source/runtime, configuration and
+stop checks still apply; only the exact final owner basis or its one genuine
+certificate increment can normalize revision for this read. Unknown, foreign
+or in-flight history holds. A lost acknowledgment never creates another host.
+
+Public-adapter validation exercises the configured fixed command through real
+native custody, immutable audit, certificate and original-result readback;
+portable cases also prove denied paths cannot dispatch. Enabling an installed daemon, its OS
+permissions, real grants and a useful pilot are separate lifecycle decisions.
+Forward transitions (reservation, registration, arm and
+release) revalidate the original authenticated controller, full current grant,
+approved command/runtime binding, and exact item/owner/epoch/scope/revision at
+the canonical write boundary. The cursor advances only from a successful
+canonical transition result; request IDs, stale snapshots and replay cannot
+manufacture authority. Original-bound cancellation, cleanup and hold remain
+available when forward authority disappears. A stop can race the final release
+observation and request cancellation; database state cannot atomically revoke
+an already released OS effect.
+
+Reservation consumes the one canonical attempt once. A newly applied release
+may create one in-memory release frame; duplicate transitions, replay or
+uncertain acknowledgments cannot create another frame or charge. Lost or
+contradictory results after reservation remain `UNKNOWN_HOLD`; never infer a
+release by readback or retry a possibly completed effect. Native custody,
+launch and release do not certify command completion or terminal effect.
 
 Readback also preserves the existing audit lifecycle: a legitimate `RUNNING`
 reservation has no response yet and remains inspectable through get/query.
@@ -712,3 +766,15 @@ Actions are dumb execution units. They do not pick campaigns, choose variants,
 optimize budgets, interpret SEO opportunities, or decide next steps. Those
 decisions belong to the agent/person and are passed into StackOS as explicit
 payloads, run plans, resources, learnings, decisions, or approvals.
+
+Private controlled-host terminal reconciliation reads effect disposition from
+the existing ActionRepository ledger, scoped by original controller/step and
+stable intent keys, including contradictory bindings and linked durable rows.
+Only the exact fixed noop descriptor with absent or genuine terminal
+no-dispatch/DRY_RUN rows establishes known no-effect. Running/orphan/unknown,
+unmapped commands or durable delivery evidence hold certification for their
+canonical owner; no provider action is replayed or reconciled by this reader.
+The certificate repeats the full rowset under the same SQLite writer interval
+as owner CAS and consumption. Terminal receipt integrity and execution result
+are distinct from effect settlement, quiescence and work acceptance. The public
+controlled action retains its host-unavailable result and safe readback shapes.

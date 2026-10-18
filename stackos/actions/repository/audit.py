@@ -7,17 +7,27 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable
+from copy import deepcopy
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 
-from sqlalchemy import update
+from sqlalchemy import or_, update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
 
+from stackos import controlled_process_receipt as _receipt
 from stackos.actions.manifest import ExecutableActionManifest
 from stackos.artifacts import redact_secret_text
 from stackos.auth_providers import ResolvedCredential
-from stackos.db.models import ActionCall, ActionCallStatus, DurableActionJob, IdempotencyKey
+from stackos.db.models import (
+    ActionCall,
+    ActionCallStatus,
+    DurableActionAttempt,
+    DurableActionItem,
+    DurableActionJob,
+    IdempotencyKey,
+)
 from stackos.generated_inventory import (
     generated_action_audit_key,
     generated_action_public_audit_metadata,
@@ -39,8 +49,301 @@ from .schema import (
 from .utils import _redact_for_audit, utcnow
 
 
+@dataclass(frozen=True)
+class _ControlledEffectSnapshot:
+    status: Literal["known_no_effect", "unknown"]
+    effect_identity: str
+    rows: tuple[dict[str, Any], ...]
+    descriptor_digest: str
+    issues: tuple[str, ...]
+
+
 class ActionAuditMixin:
     """Persist action-call audit rows with public-safe output shapes."""
+
+    def _controlled_effect_snapshot(
+        self,
+        *,
+        project_id: int,
+        bindings: tuple[_receipt._Binding, ...],
+        effect_identity: str,
+        command_manifests: tuple[dict[str, Any], ...],
+        _resolved_runtime: dict[str, Any] | None = None,
+    ) -> _ControlledEffectSnapshot:
+        """Canonical read-only raw ledger scope. A reference/worker flag is not settlement."""
+        from stackos.actions.controlled_command import (
+            _canonical_digest,
+            _resolve_controlled_command,
+        )
+
+        if not _receipt._integer(project_id) or not _receipt._token(effect_identity, 1000):
+            raise ValidationError("invalid controlled effect scope")
+        issues: set[str] = set()
+        if len(bindings) != len(command_manifests) or any(
+            not _receipt._valid_binding(binding) or binding.project_id != project_id
+            for binding in bindings
+        ):
+            raise ValidationError("invalid controlled effect bindings")
+        # Resolve actual immutable noop source/runtime. No caller-selected action
+        # or arbitrary manifest can declare itself effect-free.
+        from stackos.controlled_process_host import _native_manifest
+
+        if _resolved_runtime is None:
+            connection = self._s.connection()
+            if (
+                connection.dialect.name == "sqlite"
+                and getattr(connection.connection.driver_connection, "in_transaction", None)
+                is not False
+            ):
+                raise ConflictError("effect source resolution must precede writer interval")
+            actual = _native_manifest(_resolve_controlled_command())
+        else:
+            actual = deepcopy(_resolved_runtime)
+        if any(
+            manifest != actual or _canonical_digest(manifest) != binding.manifest_digest
+            for binding, manifest in zip(bindings, command_manifests, strict=True)
+        ):
+            issues.add("effect_command_unknown")
+        keys = {
+            "controlled:"
+            + _canonical_digest(
+                dict(
+                    project_id=project_id,
+                    controller_run_id=b.controller_run_id,
+                    canonical_item_id=b.canonical_item_id,
+                    epoch=b.epoch,
+                    intent_ref=b.intent_ref,
+                    dry_run=False,
+                )
+            ): b
+            for b in bindings
+        }
+        scopes = {(b.controller_run_id, b.run_plan_id, b.run_plan_step_id) for b in bindings}
+        rows: list[dict[str, Any]] = []
+        with self._s.no_autoflush:
+            # Include contradictory key bindings as well as every row in the
+            # bound original controller/step. No status-filtered absence proof.
+            calls = self._s.exec(
+                select(ActionCall)
+                .where(
+                    or_(
+                        col(ActionCall.project_id) == project_id,
+                        col(ActionCall.idempotency_key).in_(tuple(keys)),
+                        col(ActionCall.run_id).in_(tuple(b.controller_run_id for b in bindings)),
+                    )
+                )
+                .order_by(col(ActionCall.id))
+                .execution_options(populate_existing=True)
+            ).all()
+            selected = [
+                row
+                for row in calls
+                if row.idempotency_key in keys
+                or (row.run_id, row.run_plan_id, row.run_plan_step_id) in scopes
+            ]
+            # With no launches there are no original controllers; any project
+            # controlled/durable row is unresolved, rather than inferred absent.
+            if not bindings:
+                selected = list(calls)
+            for row in selected:
+                rows.append(
+                    {
+                        "kind": "call",
+                        **{
+                            name: (
+                                getattr(row, name).isoformat()
+                                if isinstance(getattr(row, name), datetime)
+                                else deepcopy(getattr(row, name))
+                            )
+                            for name in (
+                                "id",
+                                "project_id",
+                                "run_id",
+                                "run_plan_id",
+                                "run_plan_step_id",
+                                "plugin_slug",
+                                "action_key",
+                                "provider_key",
+                                "credential_id",
+                                "idempotency_key",
+                                "status",
+                                "request_json",
+                                "response_json",
+                                "metadata_json",
+                                "error",
+                                "dry_run",
+                                "completed_at",
+                            )
+                        },
+                    }
+                )
+                binding = keys.get(row.idempotency_key or "")
+                if binding is None and row.status == ActionCallStatus.DRY_RUN:
+                    binding = next(
+                        (
+                            b
+                            for b in bindings
+                            if (row.run_id, row.run_plan_id, row.run_plan_step_id)
+                            == (b.controller_run_id, b.run_plan_id, b.run_plan_step_id)
+                        ),
+                        None,
+                    )
+                admission = (row.metadata_json or {}).get("controlled_admission", {})
+                if binding is None or not (
+                    row.project_id == project_id
+                    and row.plugin_slug == "engineering"
+                    and row.action_key == "controlled-proof.v1"
+                    and row.provider_key is None
+                    and row.credential_id is None
+                    and row.status
+                    in {ActionCallStatus.SUCCESS, ActionCallStatus.FAILED, ActionCallStatus.DRY_RUN}
+                    and type(admission) is dict
+                    and admission.get("intent_ref") == binding.intent_ref
+                    and admission.get("epoch") == binding.epoch
+                    and admission.get("scope_digest") == binding.scope_digest
+                    and admission.get("canonical_item_id") == binding.canonical_item_id
+                    and admission.get("owner_ref") == binding.owner_ref
+                    and admission.get("project_id") == binding.project_id
+                    and admission.get("controller_run_id") == binding.controller_run_id
+                    and admission.get("run_plan_id") == binding.run_plan_id
+                    and admission.get("run_plan_step_id") == binding.run_plan_step_id
+                    and (row.run_id, row.run_plan_id, row.run_plan_step_id)
+                    == (binding.controller_run_id, binding.run_plan_id, binding.run_plan_step_id)
+                ):
+                    issues.add("effect_call_unknown")
+                    continue
+                try:
+                    from stackos.actions.controlled_command import _ControlledCommandInput
+
+                    request = _ControlledCommandInput.model_validate(row.request_json)
+                    if (
+                        request.canonical_item_id != binding.canonical_item_id
+                        or request.owner_ref != binding.owner_ref
+                        or request.expected_epoch != binding.epoch
+                        or request.scope_digest != binding.scope_digest
+                        or request.intent_ref != binding.intent_ref
+                        or request.command_digest != _canonical_digest(actual["command"])
+                        or admission.get("request_digest")
+                        != _canonical_digest(request.model_dump())
+                        or admission.get("command_digest") != request.command_digest
+                        or admission.get("revision") != request.expected_revision
+                    ):
+                        issues.add("effect_call_unknown")
+                    result = self._public_action_result(row)
+                    native = (row.metadata_json or {}).get("controlled_native")
+                    if native is not None:
+                        valid = self._controlled_native_effect(row, binding, actual)
+                    else:
+                        valid = bool(
+                            result
+                            and result.get("outcome_unknown") is False
+                            and result.get("host_dispatched") is False
+                            and result.get("provider_executed") is False
+                            and row.status in {ActionCallStatus.FAILED, ActionCallStatus.DRY_RUN}
+                        )
+                    if not valid:
+                        issues.add("effect_call_unknown")
+                except (ConflictError, ValueError):
+                    issues.add("effect_call_unknown")
+            call_ids = {row.id for row in selected}
+            jobs = self._s.exec(
+                select(DurableActionJob)
+                .where(
+                    or_(
+                        col(DurableActionJob.project_id) == project_id,
+                        col(DurableActionJob.action_call_id).in_(
+                            tuple(value for value in call_ids if value is not None)
+                        ),
+                        col(DurableActionJob.idempotency_key).in_(tuple(keys)),
+                    )
+                )
+                .order_by(col(DurableActionJob.id))
+                .execution_options(populate_existing=True)
+            ).all()
+            for job in jobs:
+                if (
+                    not bindings
+                    or job.action_call_id in call_ids
+                    or job.idempotency_key in keys
+                    or (job.run_id, job.run_plan_id, job.run_plan_step_id) in scopes
+                ):
+                    # Fixed foreground noop has no durable producer. Any such
+                    # job needs its real delivery owner; do not settle it here.
+                    issues.add("effect_durable_unknown")
+                    rows.append({"kind": "job", "row": job.model_dump(mode="json")})
+                    for item in self._s.exec(
+                        select(DurableActionItem)
+                        .where(DurableActionItem.job_id == job.id)
+                        .order_by(col(DurableActionItem.id))
+                        .execution_options(populate_existing=True)
+                    ).all():
+                        rows.append({"kind": "item", "row": item.model_dump(mode="json")})
+                        for attempt in self._s.exec(
+                            select(DurableActionAttempt)
+                            .where(DurableActionAttempt.item_id == item.id)
+                            .order_by(col(DurableActionAttempt.id))
+                            .execution_options(populate_existing=True)
+                        ).all():
+                            rows.append(
+                                {"kind": "effect_attempt", "row": attempt.model_dump(mode="json")}
+                            )
+        descriptor = dict(
+            project_id=project_id,
+            effect_identity=effect_identity,
+            bindings=[_receipt._table(b) for b in bindings],
+            manifests=command_manifests,
+            rows=rows,
+        )
+        return _ControlledEffectSnapshot(
+            "unknown" if issues else "known_no_effect",
+            effect_identity,
+            tuple(rows),
+            _canonical_digest(descriptor),
+            tuple(sorted(issues)),
+        )
+
+    def _controlled_native_effect(self, row: ActionCall, binding, runtime: dict[str, Any]) -> bool:
+        from dataclasses import asdict
+
+        from stackos.actions.controlled_command import (
+            _canonical_digest,
+            _ControlledNativeAudit,
+            _ControlledNativeResult,
+        )
+        from stackos.db.models import Run
+        from stackos.repositories.runs import _parse_terminal_facts, _parse_terminal_slot
+
+        try:
+            native = _ControlledNativeAudit.model_validate(
+                (row.metadata_json or {}).get("controlled_native")
+            )
+            result = _ControlledNativeResult.model_validate(row.response_json)
+            original = self._s.get(Run, binding.attempt_run_id, populate_existing=True)
+            if original is None:
+                return False
+            metadata = original.metadata_json or {}
+            slot = _parse_terminal_slot(metadata.get("native_terminal_slot"))
+            facts = _parse_terminal_facts(metadata.get("native_terminal_facts"), binding)
+            recovery = metadata.get("native_recovery_private", {})
+            return bool(
+                native.binding == asdict(binding)
+                and native.action_call_id == row.id
+                and native.runtime_digest == _canonical_digest(runtime)
+                and native.command_digest == _canonical_digest(runtime["command"])
+                and native.result_digest == _canonical_digest(row.response_json)
+                and not result.outcome_unknown
+                and result.cleanup_known
+                and slot["phase"] == "COMMITTED"
+                and slot["binding"] == asdict(binding)
+                and slot["revision"] == native.terminal_slot_revision
+                and slot["receipt_digest"] == native.terminal_receipt_digest
+                and facts["revision"] == 1
+                and facts["entries"][0]["receipt_digest"] == native.terminal_receipt_digest
+                and recovery.get("binding") == asdict(binding)
+                and recovery.get("manifest") == runtime
+            )
+        except (ValueError, TypeError, KeyError, ConflictError):
+            return False
 
     def get_call(self, *, project_id: int, action_call_id: int) -> ActionCallAuditOut:
         self._require_project(project_id)
@@ -203,6 +506,7 @@ class ActionAuditMixin:
         estimated_cost_cents: int,
         durable_schedule_json: dict[str, Any] | None = None,
         commit_guard: Callable[[], None] | None = None,
+        replay_guard: Callable[[ActionCall], None] | None = None,
     ) -> tuple[ActionCall, bool]:
         fingerprint = _background_request_fingerprint(
             action_ref=manifest.action_ref,
@@ -274,7 +578,9 @@ class ActionAuditMixin:
             )
             if replay is None:
                 raise
-            if commit_guard is not None:
+            if replay_guard is not None:
+                replay_guard(replay)
+            elif commit_guard is not None:
                 commit_guard()
             return replay, True
         except BaseException:
@@ -540,6 +846,36 @@ class ActionAuditMixin:
             # its metadata and expose the existing RUNNING/poll contract only.
             return None
         output = row.response_json
+        if (
+            type(output) is dict
+            and output.get("schema_version") == "stackos.controlled-command-result.v2"
+        ):
+            from stackos.actions.controlled_command import _ControlledNativeResult
+
+            try:
+                native = _ControlledNativeResult.model_validate(output)
+            except ValueError as exc:
+                raise ConflictError(
+                    "controlled_history_unknown", data={"action_call_id": row.id}
+                ) from exc
+            public = self._public_action_metadata(
+                plugin_slug=row.plugin_slug,
+                action_key=row.action_key,
+                metadata_json=row.metadata_json,
+            )
+            if (
+                public is None
+                or native.command_digest != public["controlled_admission"]["command_digest"]
+                or native.intent_ref != public["controlled_admission"]["intent_ref"]
+                or row.status
+                != (
+                    ActionCallStatus.SUCCESS
+                    if native.status == "succeeded"
+                    else ActionCallStatus.FAILED
+                )
+            ):
+                raise ConflictError("controlled_history_unknown", data={"action_call_id": row.id})
+            return native.model_dump()
         if (
             row.status == ActionCallStatus.FAILED
             and row.error == "daemon-restart-orphan"

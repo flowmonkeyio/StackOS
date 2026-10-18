@@ -4,15 +4,21 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
+from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import Session, select
 from typer.testing import CliRunner
 
 import stackos.cli.operation_commands as operation_cli
+import stackos.operations.runs as run_operations
+from stackos import controlled_process_receipt as receipt
 from stackos.cli import app as cli_app
 from stackos.db.models import (
+    ActionCall,
     ProjectEvent,
     Run,
     RunKind,
@@ -632,6 +638,676 @@ def test_owner_granted_acquisition_alias_read_and_audit(
         assert len(session.exec(select(WorkItemOwnership)).all()) == 1
 
 
+def test_owner_get_returns_bounded_status_in_authenticated_mcp_modes(
+    mcp_client: MCPClient, owned: dict
+) -> None:
+    _acquire(mcp_client, owned)
+    with Session(owned["engine"]) as session:
+        before = _owner_read_state(session, owned)
+    compact = mcp_client.call_tool_structured(
+        "run.ownerGet",
+        {
+            "project_id": owned["project_id"],
+            "canonical_item_id": owned["canonical_item_id"],
+            "run_token": owned["run_token"],
+        },
+    )
+    raw = mcp_client.call_tool_structured(
+        "run.ownerGet",
+        {
+            "project_id": owned["project_id"],
+            "canonical_item_id": owned["canonical_item_id"],
+            "run_token": owned["run_token"],
+            "response_mode": "raw",
+        },
+    )
+    assert compact["data"]["status"]["schema_version"] == "stackos.owner-status.v1"
+    assert compact["data"]["status"]["state"] == "not_reserved"
+    assert raw.get("data", raw)["status"]["state"] == compact["data"]["status"]["state"]
+    assert (
+        mcp_client.call_tool_error(
+            "run.ownerGet",
+            {
+                "project_id": owned["project_id"],
+                "canonical_item_id": owned["canonical_item_id"],
+                "run_token": owned["run_token"],
+                "response_mode": "ack",
+            },
+        )["code"]
+        < 0
+    )
+    with Session(owned["engine"]) as session:
+        assert _owner_read_state(session, owned) == before
+    rest = mcp_client.test_client.post(
+        "/api/v1/operations/run.ownerGet/call",
+        json={
+            "arguments": {
+                "project_id": owned["project_id"],
+                "canonical_item_id": owned["canonical_item_id"],
+            }
+        },
+        headers={"Authorization": f"Bearer {mcp_client.auth_token}"},
+    )
+    assert rest.status_code == 200, rest.text
+    assert rest.json().get("data", rest.json())["status"]["state"] == "not_reserved"
+    wrong_project = mcp_client.call_tool_error(
+        "run.ownerGet",
+        {
+            "project_id": owned["project_id"] + 10000,
+            "canonical_item_id": owned["canonical_item_id"],
+            "run_token": owned["run_token"],
+        },
+    )
+    invalid_item = mcp_client.call_tool_error(
+        "run.ownerGet",
+        {
+            "project_id": owned["project_id"],
+            "canonical_item_id": "ticket:999999999",
+            "run_token": owned["run_token"],
+        },
+    )
+    assert wrong_project["code"] < 0
+    assert invalid_item["code"] < 0
+    with Session(owned["engine"]) as session:
+        assert _owner_read_state(session, owned) == before
+
+
+def _owner_read_state(session: Session, owned: dict) -> tuple:
+    pid = owned["project_id"]
+    return (
+        tuple(
+            row.model_dump(mode="json")
+            for row in session.exec(select(Run).where(Run.project_id == pid).order_by(Run.id)).all()
+        ),
+        tuple(
+            row.model_dump(mode="json")
+            for row in session.exec(
+                select(WorkItemOwnership)
+                .where(WorkItemOwnership.project_id == pid)
+                .order_by(WorkItemOwnership.id)
+            ).all()
+        ),
+        tuple(
+            row.model_dump(mode="json")
+            for row in session.exec(
+                select(ProjectEvent).where(ProjectEvent.project_id == pid).order_by(ProjectEvent.id)
+            ).all()
+        ),
+        tuple(
+            row.model_dump(mode="json")
+            for row in session.exec(
+                select(ActionCall).where(ActionCall.project_id == pid).order_by(ActionCall.id)
+            ).all()
+        ),
+    )
+
+
+def _status_reservation(owned: dict, owner: dict, attempt_id: int, intent_ref: str) -> dict:
+    return {
+        "owner_ref": owner["owner_ref"],
+        "epoch": owner["epoch"],
+        "scope_digest": SCOPE,
+        "manifest_digest": "b" * 64,
+        "controller_run_id": owned["run_id"],
+        "attempt_run_id": attempt_id,
+    }
+
+
+def _replace_owner_reservation(
+    session: Session,
+    owned: dict,
+    owner: dict,
+    attempt_id: int,
+    *,
+    extra: dict | None = None,
+) -> None:
+    ownership = session.exec(
+        select(WorkItemOwnership).where(
+            WorkItemOwnership.project_id == owned["project_id"],
+            WorkItemOwnership.canonical_item_id == owned["canonical_item_id"],
+        )
+    ).one()
+    ledger = {"intent:current": _status_reservation(owned, owner, attempt_id, "intent:current")}
+    ledger.update(extra or {})
+    ownership.continuity_json = ownership.continuity_json | {"launch_reservations": ledger}
+    session.add(ownership)
+    attempt = session.get(Run, attempt_id)
+    if attempt is not None:
+        metadata = deepcopy(attempt.metadata_json or {})
+        metadata["launch_reservation"] = {
+            "intent_ref": "intent:current",
+            "manifest_digest": "b" * 64,
+        }
+        attempt.metadata_json = metadata
+        session.add(attempt)
+
+
+def _seed_status_attempt(owned: dict, owner: dict) -> int:
+    with Session(owned["engine"]) as session:
+        started = (
+            RunRepository(session)
+            .start(
+                project_id=owned["project_id"],
+                kind=RunKind.SKILL_RUN,
+                parent_run_id=owned["run_id"],
+                metadata_json={
+                    "ownership_binding": {
+                        "canonical_item_id": owned["canonical_item_id"],
+                        "owner_ref": owner["owner_ref"],
+                        "epoch": owner["epoch"],
+                        "scope_digest": SCOPE,
+                    }
+                },
+            )
+            .data
+        )
+        attempt_id = started.id
+        _replace_owner_reservation(session, owned, owner, attempt_id)
+        session.commit()
+    return attempt_id
+
+
+def _status_binding(owned: dict, owner: dict, attempt_id: int) -> receipt._Binding:
+    return receipt._Binding(
+        project_id=owned["project_id"],
+        canonical_item_id=owned["canonical_item_id"],
+        owner_ref=owner["owner_ref"],
+        epoch=owner["epoch"],
+        reservation_revision=owner["revision"],
+        scope_digest=SCOPE,
+        controller_run_id=owned["run_id"],
+        run_plan_id=owned["run_plan_id"],
+        run_plan_step_id=owned["step_id"],
+        attempt_run_id=attempt_id,
+        intent_ref="intent:current",
+        manifest_digest="b" * 64,
+        host_ref="host:fixture",
+        boot_uuid="00000000-0000-0000-0000-000000000002",
+    )
+
+
+def _status_committed_arm_slot(binding: receipt._Binding) -> dict:
+    name = receipt._name(binding)
+    return {
+        "schema_version": 1,
+        "phase": "COMMITTED",
+        "slot_revision": 4,
+        "binding": asdict(binding),
+        "binding_digest": name[:-8],
+        "name": name,
+        "allocation_reservation_revision": binding.reservation_revision,
+        "evidence_ref": "fixture:arm-committed",
+        "dalloc": [1, 2, 123, 123, 0o40700, 2],
+        "fempty": [1, 3, 123, 123, 0o100600, 1, 0, 100, 200],
+        "status_flags": 1,
+        "offset": 0,
+        "sealed_digest": "d" * 64,
+        "receipt_digest": "d" * 64,
+    }
+
+
+def test_owner_get_uses_current_reservation_and_real_run_provenance(
+    mcp_client: MCPClient, owned: dict
+) -> None:
+    owner = _acquire(mcp_client, owned)["ownership"]
+    with Session(owned["engine"]) as session:
+        old_owner_ref = "fixture:prior-worker"
+        old_attempt = (
+            RunRepository(session)
+            .start(
+                project_id=owned["project_id"],
+                kind=RunKind.SKILL_RUN,
+                parent_run_id=owned["run_id"],
+                metadata_json={
+                    "ownership_binding": {
+                        "canonical_item_id": owned["canonical_item_id"],
+                        "owner_ref": old_owner_ref,
+                        "epoch": 1,
+                        "scope_digest": SCOPE,
+                    }
+                },
+            )
+            .data
+        )
+        old_attempt_id = old_attempt.id
+        started = (
+            RunRepository(session)
+            .start(
+                project_id=owned["project_id"],
+                kind=RunKind.SKILL_RUN,
+                parent_run_id=owned["run_id"],
+                metadata_json={
+                    "ownership_binding": {
+                        "canonical_item_id": owned["canonical_item_id"],
+                        "owner_ref": owned["owner_ref"],
+                        "epoch": 2,
+                        "scope_digest": SCOPE,
+                    }
+                },
+            )
+            .data
+        )
+        attempt_id = started.id
+        ownership = session.exec(
+            select(WorkItemOwnership).where(
+                WorkItemOwnership.project_id == owned["project_id"],
+                WorkItemOwnership.canonical_item_id == owned["canonical_item_id"],
+            )
+        ).one()
+        historical = {
+            "owner_ref": old_owner_ref,
+            "epoch": 1,
+            "scope_digest": SCOPE,
+            "manifest_digest": "c" * 64,
+            "controller_run_id": owned["run_id"],
+            "attempt_run_id": old_attempt_id,
+        }
+        current = {
+            "owner_ref": owner["owner_ref"],
+            "epoch": 2,
+            "scope_digest": SCOPE,
+            "manifest_digest": "b" * 64,
+            "controller_run_id": owned["run_id"],
+            "attempt_run_id": attempt_id,
+        }
+        ownership.continuity_json = ownership.continuity_json | {
+            "launch_reservations": {"intent:old": historical, "intent:current": current}
+        }
+        ownership.previous_owner_ref = old_owner_ref
+        ownership.epoch = 2
+        ownership.revision += 1
+        old_row = session.get(Run, old_attempt_id)
+        old_row.metadata_json = (old_row.metadata_json or {}) | {
+            "launch_reservation": {"intent_ref": "intent:old", "manifest_digest": "c" * 64}
+        }
+        attempt = session.get(Run, attempt_id)
+        foreign_binding = receipt._Binding(
+            project_id=owned["project_id"],
+            canonical_item_id=owned["canonical_item_id"],
+            owner_ref=old_owner_ref,
+            epoch=1,
+            reservation_revision=owner["revision"],
+            scope_digest=SCOPE,
+            controller_run_id=owned["run_id"],
+            run_plan_id=owned["run_plan_id"],
+            run_plan_step_id=owned["step_id"],
+            attempt_run_id=old_attempt_id,
+            intent_ref="intent:old",
+            manifest_digest="c" * 64,
+            host_ref="host:fixture",
+            boot_uuid="00000000-0000-0000-0000-000000000001",
+        )
+        foreign_binding_digest = receipt._name(foreign_binding)[:-8]
+        attempt.metadata_json = (attempt.metadata_json or {}) | {
+            "launch_reservation": {
+                "intent_ref": "intent:current",
+                "manifest_digest": "b" * 64,
+            },
+            "native_control": {
+                "schema_version": "stackos.native-control.v1",
+                "phase": "REGISTERED",
+                "control_revision": 1,
+                "binding_digest": foreign_binding_digest,
+                "manifest_digest": "b" * 64,
+                "registration": {"binding": asdict(foreign_binding)},
+            },
+        }
+        session.add(ownership)
+        session.add(old_row)
+        session.add(attempt)
+        session.commit()
+
+    result = mcp_client.call_tool_structured(
+        "run.ownerGet",
+        {
+            "project_id": owned["project_id"],
+            "canonical_item_id": owned["canonical_item_id"],
+            "run_token": owned["run_token"],
+            "response_mode": "raw",
+        },
+    )
+    status = result.get("data", result)["status"]
+    assert status["state"] == "running"
+    assert status["original_binding"]["reservation_ref"] == "intent:current"
+    assert status["attempt"]["id"] == attempt_id
+    assert status["control"] is None
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_state", "expected_needs", "next_actor", "next_action"),
+    [
+        (
+            "success",
+            "production_succeeded",
+            ["acceptance_review"],
+            "main_agent",
+            "review_acceptance",
+        ),
+        ("failed", "production_failed", ["execution_failed"], "agent", "inspect_attempt"),
+        ("rejected", "rejected", ["authority_rejected"], "operator", "repair_authority"),
+        ("unknown", "unknown", ["provenance_unknown"], "main_agent", "reconcile_provenance"),
+        ("missing_attempt", "unknown", ["missing_attempt"], "main_agent", "reconcile_provenance"),
+        ("mixed", "mixed", ["provenance_unknown"], "main_agent", "reconcile_provenance"),
+        ("wrong_kind", "stale", ["binding_mismatch"], "operator", "repair_authority"),
+        ("bool_epoch", "stale", ["binding_mismatch"], "operator", "repair_authority"),
+    ],
+)
+def test_owner_get_real_canonical_state_matrix_is_read_only(
+    mcp_client: MCPClient,
+    owned: dict,
+    case: str,
+    expected_state: str,
+    expected_needs: list[str],
+    next_actor: str,
+    next_action: str,
+) -> None:
+    owner = _acquire(mcp_client, owned)["ownership"]
+    attempt_id = _seed_status_attempt(owned, owner)
+    with Session(owned["engine"]) as session:
+        if case in {"success", "failed"}:
+            attempt = session.get(Run, attempt_id)
+            attempt.status = RunStatus.SUCCESS if case == "success" else RunStatus.FAILED
+            attempt.ended_at = datetime(2026, 1, 2, 3, 4, 5)
+            attempt.heartbeat_at = datetime(2026, 1, 2, 3, 4, 6)
+            attempt.last_step_at = datetime(2026, 1, 2, 3, 4, 7)
+            if case == "success":
+                binding = _status_binding(owned, owner, attempt_id)
+                attempt.metadata_json = (attempt.metadata_json or {}) | {
+                    "receipt_slot": _status_committed_arm_slot(binding),
+                    "native_control": {
+                        "schema_version": "stackos.native-control.v1",
+                        "phase": "REGISTERED",
+                        "control_revision": 1,
+                        "binding_digest": receipt._name(binding)[:-8],
+                        "manifest_digest": "b" * 64,
+                        "registration": {"binding": asdict(binding)},
+                    },
+                }
+            session.add(attempt)
+        elif case == "rejected":
+            ticket = session.get(TrackerTicket, int(owned["canonical_item_id"].split(":")[1]))
+            metadata = deepcopy(ticket.metadata_json)
+            metadata["ownership_continuity"]["stopped"] = True
+            ticket.metadata_json = metadata
+            session.add(ticket)
+        elif case == "unknown":
+            ownership = session.exec(
+                select(WorkItemOwnership).where(
+                    WorkItemOwnership.project_id == owned["project_id"],
+                    WorkItemOwnership.canonical_item_id == owned["canonical_item_id"],
+                )
+            ).one()
+            ownership.continuity_json = ownership.continuity_json | {
+                "launch_reservations": {"intent:broken": {"partial": True}}
+            }
+            session.add(ownership)
+        elif case == "missing_attempt":
+            _replace_owner_reservation(session, owned, owner, 999999)
+        elif case == "mixed":
+            _replace_owner_reservation(
+                session,
+                owned,
+                owner,
+                attempt_id,
+                extra={
+                    "intent:second": _status_reservation(owned, owner, attempt_id, "intent:second")
+                },
+            )
+        elif case == "wrong_kind":
+            attempt = session.get(Run, attempt_id)
+            attempt.kind = RunKind.RUN_PLAN
+            session.add(attempt)
+        elif case == "bool_epoch":
+            attempt = session.get(Run, attempt_id)
+            metadata = deepcopy(attempt.metadata_json)
+            metadata["ownership_binding"]["epoch"] = True
+            attempt.metadata_json = metadata
+            flag_modified(attempt, "metadata_json")
+            session.add(attempt)
+        session.commit()
+    if case == "bool_epoch":
+        with Session(owned["engine"]) as session:
+            persisted = session.get(Run, attempt_id)
+            assert type(persisted.metadata_json["ownership_binding"]["epoch"]) is bool
+    expected_instants = {}
+    if case in {"success", "failed"}:
+        with Session(owned["engine"]) as session:
+            persisted = session.get(Run, attempt_id)
+            for field in ("started_at", "ended_at", "heartbeat_at", "last_step_at"):
+                value = getattr(persisted, field)
+                expected_instants[field] = (
+                    value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+                )
+
+    with Session(owned["engine"]) as session:
+        before = _owner_read_state(session, owned)
+    response = mcp_client.call_tool_structured(
+        "run.ownerGet",
+        {
+            "project_id": owned["project_id"],
+            "canonical_item_id": owned["canonical_item_id"],
+            "run_token": owned["run_token"],
+            "response_mode": "raw",
+        },
+    )
+    status = response.get("data", response)["status"]
+    assert status["state"] == expected_state
+    assert status["needs"] == expected_needs
+    assert status["next_actor"] == next_actor
+    assert status["next_action"] == next_action
+    assert status["acceptance_state"] == "not_evaluated"
+    if case == "success":
+        assert status["control"] == {
+            "schema_version": "stackos.native-control.v1",
+            "phase": "REGISTERED",
+            "control_revision": 1,
+            "binding_digest": status["control"]["binding_digest"],
+            "manifest_digest": "b" * 64,
+        }
+    if case in {"success", "failed"}:
+        for field in ("started_at", "ended_at", "heartbeat_at", "last_step_at"):
+            observed = datetime.fromisoformat(status["attempt"][field].replace("Z", "+00:00"))
+            assert observed == expected_instants[field]
+    with Session(owned["engine"]) as session:
+        assert _owner_read_state(session, owned) == before
+
+
+@pytest.mark.parametrize(
+    "arm_case",
+    [
+        "matching",
+        "foreign_plan",
+        "foreign_step",
+        "foreign_reservation_revision",
+        "foreign_host",
+        "missing_slot",
+        "malformed_slot",
+    ],
+)
+def test_owner_get_control_requires_full_original_arm_binding(
+    mcp_client: MCPClient, owned: dict, arm_case: str
+) -> None:
+    owner = _acquire(mcp_client, owned)["ownership"]
+    attempt_id = _seed_status_attempt(owned, owner)
+    arm_binding = _status_binding(owned, owner, attempt_id)
+    registered_binding = arm_binding
+    if arm_case.startswith("foreign_"):
+        fields = asdict(arm_binding)
+        key = {
+            "foreign_plan": "run_plan_id",
+            "foreign_step": "run_plan_step_id",
+            "foreign_reservation_revision": "reservation_revision",
+            "foreign_host": "host_ref",
+        }[arm_case]
+        fields[key] = "host:foreign" if key == "host_ref" else fields[key] + 100
+        registered_binding = receipt._Binding(**fields)
+    registered_digest = receipt._name(registered_binding)[:-8]
+
+    with Session(owned["engine"]) as session:
+        attempt = session.get(Run, attempt_id)
+        metadata = deepcopy(attempt.metadata_json)
+        metadata["native_control"] = {
+            "schema_version": "stackos.native-control.v1",
+            "phase": "REGISTERED",
+            "control_revision": 1,
+            "binding_digest": registered_digest,
+            "manifest_digest": "b" * 64,
+            "registration": {"binding": asdict(registered_binding)},
+        }
+        if arm_case == "missing_slot":
+            metadata.pop("receipt_slot", None)
+        elif arm_case == "malformed_slot":
+            metadata["receipt_slot"] = {"phase": "COMMITTED"}
+        else:
+            metadata["receipt_slot"] = _status_committed_arm_slot(arm_binding)
+        attempt.metadata_json = metadata
+        session.add(attempt)
+        session.commit()
+
+    with Session(owned["engine"]) as session:
+        before = _owner_read_state(session, owned)
+    response = mcp_client.call_tool_structured(
+        "run.ownerGet",
+        {
+            "project_id": owned["project_id"],
+            "canonical_item_id": owned["canonical_item_id"],
+            "run_token": owned["run_token"],
+            "response_mode": "raw",
+        },
+    )
+    status = response.get("data", response)["status"]
+    assert status["state"] == "running"
+    if arm_case == "matching":
+        assert status["control"] is not None
+        assert status["control"]["binding_digest"] == registered_digest
+    else:
+        assert status["control"] is None
+    with Session(owned["engine"]) as session:
+        assert _owner_read_state(session, owned) == before
+
+
+@pytest.mark.parametrize("snapshot_enabled", [True, False])
+def test_owner_get_file_wal_snapshot_is_coherent_across_real_projection_reads(
+    mcp_client: MCPClient,
+    owned: dict,
+    monkeypatch: pytest.MonkeyPatch,
+    snapshot_enabled: bool,
+) -> None:
+    if not snapshot_enabled:
+        monkeypatch.setattr(run_operations, "_begin_owner_status_snapshot", lambda _session: None)
+    owner = _acquire(mcp_client, owned)["ownership"]
+    with owned["engine"].connect() as connection:
+        mode = connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one()
+    assert str(mode).lower() == "wal"
+    with Session(owned["engine"]) as session:
+        attempt = (
+            RunRepository(session)
+            .start(
+                project_id=owned["project_id"],
+                kind=RunKind.SKILL_RUN,
+                parent_run_id=owned["run_id"],
+                metadata_json={
+                    "ownership_binding": {
+                        "canonical_item_id": owned["canonical_item_id"],
+                        "owner_ref": owned["owner_ref"],
+                        "epoch": owner["epoch"],
+                        "scope_digest": SCOPE,
+                    }
+                },
+            )
+            .data
+        )
+        attempt_id = attempt.id
+        ownership = session.exec(
+            select(WorkItemOwnership).where(
+                WorkItemOwnership.project_id == owned["project_id"],
+                WorkItemOwnership.canonical_item_id == owned["canonical_item_id"],
+            )
+        ).one()
+        ownership.continuity_json = ownership.continuity_json | {
+            "launch_reservations": {
+                "intent:current": {
+                    "owner_ref": owner["owner_ref"],
+                    "epoch": owner["epoch"],
+                    "scope_digest": SCOPE,
+                    "manifest_digest": "b" * 64,
+                    "controller_run_id": owned["run_id"],
+                    "attempt_run_id": attempt_id,
+                }
+            }
+        }
+        child = session.get(Run, attempt_id)
+        child.metadata_json = (child.metadata_json or {}) | {
+            "launch_reservation": {"intent_ref": "intent:current", "manifest_digest": "b" * 64}
+        }
+        session.add(ownership)
+        session.add(child)
+        session.commit()
+
+    original_owner_get = RunRepository.owner_get
+    interleaved = False
+
+    def owner_get_then_commit(repo, **kwargs):
+        nonlocal interleaved
+        row = original_owner_get(repo, **kwargs)
+        if not interleaved:
+            with Session(owned["engine"]) as second:
+                current = second.exec(
+                    select(WorkItemOwnership).where(
+                        WorkItemOwnership.project_id == owned["project_id"],
+                        WorkItemOwnership.canonical_item_id == owned["canonical_item_id"],
+                    )
+                ).one()
+                current.revision += 1
+                current.epoch += 1
+                current.previous_owner_ref = current.owner_ref
+                current.owner_ref = "fixture:next-owner"
+                second.add(current)
+                child = second.get(Run, attempt_id)
+                child_metadata = deepcopy(child.metadata_json)
+                child_metadata["ownership_binding"]["owner_ref"] = "fixture:next-owner"
+                child_metadata["ownership_binding"]["epoch"] = owner["epoch"] + 1
+                child.metadata_json = child_metadata
+                second.add(child)
+                second.commit()
+            interleaved = True
+        return row
+
+    monkeypatch.setattr(RunRepository, "owner_get", owner_get_then_commit)
+    response = mcp_client.call_tool_structured(
+        "run.ownerGet",
+        {
+            "project_id": owned["project_id"],
+            "canonical_item_id": owned["canonical_item_id"],
+            "run_token": owned["run_token"],
+            "response_mode": "raw",
+        },
+    )
+    assert interleaved
+    response_data = response.get("data", response)
+    if snapshot_enabled:
+        assert response_data["status"]["owner"]["revision"] == owner["revision"]
+        assert response_data["status"]["owner"]["epoch"] == owner["epoch"]
+        assert response_data["status"]["state"] == "running"
+        assert response_data["status"]["attempt"]["status"] == "running"
+        assert response_data["status"]["attempt"]["id"] == attempt_id
+    else:
+        assert response_data["status"]["state"] == "stale"
+    fresh = mcp_client.call_tool_structured(
+        "run.ownerGet",
+        {
+            "project_id": owned["project_id"],
+            "canonical_item_id": owned["canonical_item_id"],
+            "run_token": owned["run_token"],
+            "response_mode": "raw",
+        },
+    )
+    fresh_status = fresh.get("data", fresh)["status"]
+    assert fresh_status["owner"]["revision"] == owner["revision"] + 1
+    assert fresh_status["owner"]["epoch"] == owner["epoch"] + 1
+    assert fresh_status["state"] == "stale"
+
+
 @pytest.mark.parametrize(
     "case",
     [
@@ -1154,17 +1830,13 @@ def test_owner_reassignment_requires_backend_evidence_and_retains_continuity(
     error = mcp_client.call_tool_error("run.ownerReassign", args)
     assert "quiescence" in error["data"]["detail"]
     with Session(owned["engine"]) as session:
-        certified = (
-            RunRepository(session)
-            ._certify_owner_quiescence(
-                project_id=owned["project_id"],
-                canonical_item_id=owned["canonical_item_id"],
-                owner_ref=owned["owner_ref"],
-                **_fence(row),
-                evidence_ref="fixture:backend-only-proof-not-real-host",
-            )
-            .model_dump()
+        from tests.integration.test_controlled_process_terminal import certify_empty
+
+        repo = RunRepository(session)
+        current = repo.owner_get(
+            project_id=owned["project_id"], canonical_item_id=owned["canonical_item_id"]
         )
+        certified = certify_empty(repo, current).model_dump()
     replacement = mcp_client.call_tool_structured(
         "run.ownerReassign",
         _arguments(

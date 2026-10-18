@@ -473,8 +473,9 @@ def operation_specs() -> list[OperationSpec]:
                 "Use this only after a run plan has started and the active claimed step "
                 "grants the exact action ref. StackOS resolves credentials inside the daemon. "
                 "engineering.controlled-proof.v1 additionally requires current owner and exact "
-                "approved command/source/environment binding; it records host-unavailable "
-                "FAILED admission evidence and never dispatches a process."
+                "approved command/source/environment binding. Its daemon-owned host capability "
+                "is disabled by default; an enabled supported host executes only the fixed noop, "
+                "retaining original audit, native custody and separate owner certification."
             ),
             when_to_use=(
                 "A run-plan step is currently running and names the exact action_ref.",

@@ -7,7 +7,7 @@ source: builtin
 actions:
   - key: controlled-proof.v1
     name: Controlled proof admission
-    description: Validate a fixed command against current workflow authority and record a no-dispatch failure while the controlled host is unavailable.
+    description: Execute one approved fixed noop through a daemon-owned default-disabled controlled host, with current workflow authority and original-bound audit.
     risk_level: write
     input_schema:
       type: object
@@ -27,7 +27,6 @@ actions:
       connector: controlled-command
       operation: controlled-proof.v1
       execution_mode: foreground
-      controlled_host: unavailable
       direct_run: workflow-only
       requires_credential: false
       allows_credential: false

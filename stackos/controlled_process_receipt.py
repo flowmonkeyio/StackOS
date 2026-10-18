@@ -28,6 +28,19 @@ except ImportError:  # Unsupported hosts still import the codec.
 
 _SCHEMA = "stackos.controlled-arm-receipt.v1"
 _DOMAIN = b"StackOS\x00controlled-arm-receipt\x00v1\x00"
+_TERMINAL_SCHEMA = "stackos.controlled-terminal-receipt.v1"
+_TERMINAL_DOMAIN = b"StackOS\x00controlled-terminal-receipt\x00v1\x00"
+_TERMINAL_ISSUES = frozenset(
+    {
+        "terminal_cleanup_unknown",
+        "terminal_clock_unknown",
+        "terminal_custody_unknown",
+        "terminal_control_unknown",
+        "terminal_file_unknown",
+        "terminal_report_unknown",
+        "terminal_key_unknown",
+    }
+)
 _MAX_BYTES = 16_384
 _MAX_INT = 2**63 - 1
 _MAX_PID = 2**31 - 1
@@ -77,6 +90,49 @@ class _ReceiptHold:
 
 
 @dataclass(frozen=True)
+class _TerminalFact:
+    kind: Literal["terminal"]
+    origin: Literal["host-watchdog"]
+    sequence: int
+    registration_digest: str | None
+    control_revision: int
+    clock: clock._ClockObservation
+    registered: dict[str, identity._ProcessIdentity | None]
+    child_returns: dict[str, int | None]
+    cleanup_candidate: bool
+    execution_unknown: bool
+    safety_blocked: bool
+    arm_closed: dict[str, bool]
+    report_digest: str | None
+    completed_continuous_ns: int | None
+    issues: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class _NotSpawnedTerminalFact:
+    kind: Literal["not_spawned"]
+    origin: Literal["host-controller"]
+    sequence: int
+    clock: clock._ClockObservation
+    policy_digest: str
+    ever_spawn_invoked: Literal[False]
+
+
+@dataclass(frozen=True)
+class _KeyAuthenticatedTerminalReceipt:
+    binding: _Binding
+    fact: _TerminalFact | _NotSpawnedTerminalFact
+    raw: bytes = field(repr=False)
+    digest: str
+
+
+@dataclass(frozen=True)
+class _TerminalWriteResult:
+    state: Literal["created", "replayed"]
+    receipt: _KeyAuthenticatedTerminalReceipt
+
+
+@dataclass(frozen=True)
 class _KeyAuthenticatedReceipt:
     binding: _Binding
     fact: _ArmFact
@@ -102,6 +158,7 @@ class _AllocatedSlot:
     fempty: F9
     status_flags: int
     offset: int
+    receipt_kind: Literal["arm", "terminal"] = "arm"
     consume_state: Literal["FRESH", "CONSUMED"] = field(default="FRESH", init=False)
     fill_state: Literal["NOT_RUN", "IN_PROGRESS", "VERIFIED", "HOLD", "UNKNOWN"] = field(
         default="NOT_RUN", init=False
@@ -152,6 +209,9 @@ class _AllocatedSlot:
 
 
 type _ReadResult = tuple[_KeyAuthenticatedReceipt, _Fingerprint] | _ReceiptHold
+type _EitherRead = (
+    tuple[_KeyAuthenticatedReceipt | _KeyAuthenticatedTerminalReceipt, _Fingerprint] | _ReceiptHold
+)
 
 
 def _integer(value: object, minimum: int = 1, maximum: int = _MAX_INT) -> bool:
@@ -309,6 +369,205 @@ def _mac(payload: _Table, key32: bytes) -> str:
 
 def _valid_key(key32: object) -> bool:
     return type(key32) is bytes and len(key32) == 32
+
+
+def _terminal_clock(value: object, binding: _Binding, *, known: bool = False) -> bool:
+    if type(value) is not clock._ClockObservation:
+        return False
+    if value.status == "known":
+        return (
+            clock._valid_clock(value)
+            and value.boot_uuid == binding.boot_uuid
+            and value.issues == ()
+        )
+    return (
+        not known
+        and value.status == "unknown"
+        and value.boot_uuid is None
+        and value.continuous_ns is None
+        and value.awake_ns is None
+        and type(value.api_version) is str
+        and value.api_version == clock._API_VERSION
+        and (value.runtime_abi is None or type(value.runtime_abi) is str)
+        and type(value.issues) is tuple
+        and 1 <= len(value.issues) <= 16
+        and all(_token(part, 100) for part in value.issues)
+    )
+
+
+def _valid_terminal_fact(value: object, binding: _Binding) -> bool:
+    if type(value) is _NotSpawnedTerminalFact:
+        return (
+            type(value.kind) is str
+            and value.kind == "not_spawned"
+            and type(value.origin) is str
+            and value.origin == "host-controller"
+            and type(value.sequence) is int
+            and value.sequence == 1
+            and _terminal_clock(value.clock, binding, known=True)
+            and _hex(value.policy_digest)
+            and value.ever_spawn_invoked is False
+        )
+    if type(value) is not _TerminalFact:
+        return False
+    if not (
+        type(value.kind) is str
+        and value.kind == "terminal"
+        and type(value.origin) is str
+        and value.origin == "host-watchdog"
+        and type(value.sequence) is int
+        and value.sequence == 1
+        and (value.registration_digest is None or _hex(value.registration_digest))
+        and _integer(value.control_revision, 0)
+        and _terminal_clock(value.clock, binding)
+        and _exact_table(value.registered, {"watchdog", "anchor", "worker"})
+        and _exact_table(value.child_returns, {"anchor", "worker"})
+        and all(
+            type(part) is bool
+            for part in (value.cleanup_candidate, value.execution_unknown, value.safety_blocked)
+        )
+        and _exact_table(value.arm_closed, {"writer", "directory", "control"})
+        and all(type(part) is bool for part in value.arm_closed.values())
+        and (value.report_digest is None or _hex(value.report_digest))
+        and (value.completed_continuous_ns is None or _integer(value.completed_continuous_ns, 0))
+        and type(value.issues) is tuple
+        and all(type(part) is str and part in _TERMINAL_ISSUES for part in value.issues)
+        and tuple(sorted(set(value.issues))) == value.issues
+    ):
+        return False
+    for process in value.registered.values():
+        if process is not None and not (
+            type(process) is identity._ProcessIdentity
+            and identity._valid_identity(process)
+            and process.boot_uuid == binding.boot_uuid
+        ):
+            return False
+    return value.registered["watchdog"] is not None and all(
+        part is None or (type(part) is int and -(2**31) <= part <= 2**31 - 1)
+        for part in value.child_returns.values()
+    )
+
+
+def _terminal_payload(binding: _Binding, fact: _TerminalFact | _NotSpawnedTerminalFact) -> _Table:
+    data = _table(fact)
+    data["clock"] = _table(fact.clock) | {"issues": list(fact.clock.issues)}
+    if isinstance(fact, _TerminalFact):
+        data["registered"] = {
+            name: _table(part) if part is not None else None
+            for name, part in fact.registered.items()
+        }
+        data["issues"] = list(fact.issues)
+    return {"binding": _table(binding), "fact": data}
+
+
+def _terminal_mac(payload: _Table, key32: bytes) -> str:
+    raw = _canonical(payload)
+    return hmac.digest(key32, _TERMINAL_DOMAIN + len(raw).to_bytes(4, "big") + raw, "sha256").hex()
+
+
+def _seal_terminal_receipt(
+    binding: _Binding, fact: _TerminalFact | _NotSpawnedTerminalFact, key32: bytes
+) -> bytes | _ReceiptHold:
+    if not _valid_key(key32):
+        return _ReceiptHold("invalid_key")
+    if not _valid_binding(binding) or not _valid_terminal_fact(fact, binding):
+        return _ReceiptHold("invalid_schema")
+    payload = _terminal_payload(binding, fact)
+    raw = _canonical(
+        {"schema": _TERMINAL_SCHEMA, "payload": payload, "mac": _terminal_mac(payload, key32)}
+    )
+    return raw if len(raw) <= _MAX_BYTES else _ReceiptHold("invalid_json")
+
+
+def _decode_terminal_payload(
+    value: object,
+) -> tuple[_Binding, _TerminalFact | _NotSpawnedTerminalFact] | None:
+    if not _exact_table(value, {"binding", "fact"}):
+        return None
+    data = cast(_Table, value)
+    if not _exact_table(data["binding"], {part.name for part in fields(_Binding)}):
+        return None
+    binding = _Binding(**data["binding"])
+    fact_data = data["fact"]
+    if type(fact_data) is not dict:
+        return None
+    kind = fact_data.get("kind")
+    fact_type = _TerminalFact if kind == "terminal" else _NotSpawnedTerminalFact
+    if not _exact_table(fact_data, {part.name for part in fields(fact_type)}):
+        return None
+    if not _exact_table(
+        fact_data["clock"], {part.name for part in fields(clock._ClockObservation)}
+    ):
+        return None
+    observation = fact_data["clock"]
+    if type(observation["issues"]) is not list or not all(
+        type(part) is str for part in observation["issues"]
+    ):
+        return None
+    values = dict(fact_data)
+    values["clock"] = clock._ClockObservation(
+        **(observation | {"issues": tuple(observation["issues"])})
+    )
+    if kind == "terminal":
+        if (
+            not _exact_table(values["registered"], {"watchdog", "anchor", "worker"})
+            or type(values["issues"]) is not list
+        ):
+            return None
+        registered: dict[str, identity._ProcessIdentity | None] = {}
+        for name, process in values["registered"].items():
+            if process is not None and not _exact_table(
+                process, {part.name for part in fields(identity._ProcessIdentity)}
+            ):
+                return None
+            registered[name] = identity._ProcessIdentity(**process) if process is not None else None
+        values["registered"] = registered
+        values["issues"] = tuple(values["issues"])
+        fact: _TerminalFact | _NotSpawnedTerminalFact = _TerminalFact(**values)
+    else:
+        fact = _NotSpawnedTerminalFact(**values)
+    return (
+        (binding, fact) if _valid_binding(binding) and _valid_terminal_fact(fact, binding) else None
+    )
+
+
+def _authenticate_terminal_receipt(
+    raw: bytes, expected_binding: _Binding, key32: bytes
+) -> _KeyAuthenticatedTerminalReceipt | _ReceiptHold:
+    if not _valid_key(key32):
+        return _ReceiptHold("invalid_key")
+    if not _valid_binding(expected_binding):
+        return _ReceiptHold("invalid_schema")
+    if type(raw) is not bytes or not 1 <= len(raw) <= _MAX_BYTES:
+        return _ReceiptHold("invalid_json")
+    try:
+        envelope = json.loads(
+            _scan(raw),
+            object_pairs_hook=_pairs,
+            parse_int=_parse_int,
+            parse_float=_reject_number,
+            parse_constant=_reject_number,
+        )
+        if (
+            not _exact_table(envelope, {"schema", "payload", "mac"})
+            or type(envelope["schema"]) is not str
+            or envelope["schema"] != _TERMINAL_SCHEMA
+            or not _hex(envelope["mac"])
+        ):
+            return _ReceiptHold("invalid_schema")
+        decoded = _decode_terminal_payload(envelope["payload"])
+        if decoded is None:
+            return _ReceiptHold("invalid_schema")
+        if raw != _canonical(envelope):
+            return _ReceiptHold("noncanonical")
+        if not hmac.compare_digest(envelope["mac"], _terminal_mac(envelope["payload"], key32)):
+            return _ReceiptHold("authentication_failed")
+        binding, fact = decoded
+        if binding != expected_binding:
+            return _ReceiptHold("binding_mismatch")
+        return _KeyAuthenticatedTerminalReceipt(binding, fact, raw, hashlib.sha256(raw).hexdigest())
+    except (UnicodeError, ValueError, TypeError, OverflowError, RecursionError):
+        return _ReceiptHold("invalid_json")
 
 
 def _seal_receipt(binding: _Binding, fact: _ArmFact, key32: bytes) -> bytes | _ReceiptHold:
@@ -534,7 +793,10 @@ def _read_opened(
     entry: os.stat_result,
     binding: _Binding,
     key32: bytes,
-) -> _ReadResult:
+    *,
+    receipt_kind: Literal["arm", "terminal"] = "arm",
+    retained: bool = False,
+) -> _EitherRead:
     initial = os.fstat(fd)
     fingerprint = _file_fingerprint(initial)
     if not _safe_file(initial) or not _safe_fd(fd, os.O_RDONLY):
@@ -548,7 +810,7 @@ def _read_opened(
         if calls > 16_401:
             return _ReceiptHold("io_limit")
         try:
-            chunk = os.read(fd, 4096)
+            chunk = os.pread(fd, 4096, len(data)) if retained else os.read(fd, 4096)
         except InterruptedError:
             continue
         if type(chunk) is not bytes or len(chunk) > 4096:
@@ -565,11 +827,22 @@ def _read_opened(
         or not _same_directory(dirfd, before)
     ):
         return _ReceiptHold("entry_changed")
-    receipt = _authenticate_receipt(bytes(data), binding, key32)
+    receipt = (
+        _authenticate_terminal_receipt(bytes(data), binding, key32)
+        if receipt_kind == "terminal"
+        else _authenticate_receipt(bytes(data), binding, key32)
+    )
     return receipt if isinstance(receipt, _ReceiptHold) else (receipt, fingerprint)
 
 
-def _read_checked(dirfd: int, binding: _Binding, key32: bytes, before: _Fingerprint) -> _ReadResult:
+def _read_checked(
+    dirfd: int,
+    binding: _Binding,
+    key32: bytes,
+    before: _Fingerprint,
+    *,
+    receipt_kind: Literal["arm", "terminal"] = "arm",
+) -> _EitherRead:
     name = _name(binding)
     try:
         entry = _entry(dirfd, name)
@@ -586,10 +859,12 @@ def _read_checked(dirfd: int, binding: _Binding, key32: bytes, before: _Fingerpr
             "entry_changed" if error.errno in {errno.ENOENT, errno.ELOOP} else "io_failure"
         )
     close_failed = False
-    result: _ReadResult = _ReceiptHold("io_failure")
+    result: _EitherRead = _ReceiptHold("io_failure")
     try:
         try:
-            result = _read_opened(fd, dirfd, name, before, entry, binding, key32)
+            result = _read_opened(
+                fd, dirfd, name, before, entry, binding, key32, receipt_kind=receipt_kind
+            )
         except FileNotFoundError:
             result = _ReceiptHold("entry_changed")
         except OSError:
@@ -615,7 +890,13 @@ def _read_receipt(
     if isinstance(before, _ReceiptHold):
         return before
     result = _read_checked(dirfd, expected_binding, key32, before)
-    return result if isinstance(result, _ReceiptHold) else result[0]
+    if isinstance(result, _ReceiptHold):
+        return result
+    return (
+        result[0]
+        if isinstance(result[0], _KeyAuthenticatedReceipt)
+        else _ReceiptHold("invalid_schema")
+    )
 
 
 def _write_opened(
@@ -628,7 +909,8 @@ def _write_opened(
     raw: bytes,
     *,
     expected_empty_fingerprint: _Fingerprint | None = None,
-) -> _WriteReceiptResult | _ReceiptHold:
+    receipt_kind: Literal["arm", "terminal"] = "arm",
+) -> _WriteReceiptResult | _TerminalWriteResult | _ReceiptHold:
     initial = os.fstat(fd)
     if (
         expected_empty_fingerprint is not None
@@ -656,7 +938,11 @@ def _write_opened(
         offset += written
     os.fsync(fd)
     os.fsync(dirfd)
-    readback = _read_checked(dirfd, binding, key32, before)
+    readback = (
+        _read_checked(dirfd, binding, key32, before, receipt_kind="terminal")
+        if receipt_kind == "terminal"
+        else _read_checked(dirfd, binding, key32, before)
+    )
     if isinstance(readback, _ReceiptHold):
         return readback
     receipt, fingerprint = readback
@@ -668,7 +954,11 @@ def _write_opened(
         or not _same_directory(dirfd, before)
     ):
         return _ReceiptHold("entry_changed")
-    return _WriteReceiptResult("created", receipt)
+    return (
+        _TerminalWriteResult("created", receipt)
+        if isinstance(receipt, _KeyAuthenticatedTerminalReceipt)
+        else _WriteReceiptResult("created", receipt)
+    )
 
 
 def _write_receipt(
@@ -695,6 +985,8 @@ def _write_receipt(
         if isinstance(existing, _ReceiptHold):
             return existing
         receipt = existing[0]
+        if not isinstance(receipt, _KeyAuthenticatedReceipt):
+            return _ReceiptHold("invalid_schema")
         return (
             _WriteReceiptResult("replayed", receipt)
             if receipt.raw == raw
@@ -706,7 +998,12 @@ def _write_receipt(
     result: _WriteReceiptResult | _ReceiptHold = _ReceiptHold("io_failure")
     try:
         try:
-            result = _write_opened(fd, dirfd, name, before, binding, key32, raw)
+            written = _write_opened(fd, dirfd, name, before, binding, key32, raw)
+            result = (
+                written
+                if not isinstance(written, _TerminalWriteResult)
+                else _ReceiptHold("invalid_schema")
+            )
         except FileNotFoundError:
             result = _ReceiptHold("entry_changed")
         except OSError:
@@ -748,6 +1045,8 @@ def _valid_slot(slot: _AllocatedSlot) -> bool:
         and not slot.status_flags & os.O_APPEND
         and type(slot.offset) is int
         and slot.offset == 0
+        and type(slot.receipt_kind) is str
+        and slot.receipt_kind in {"arm", "terminal"}
         and type(slot.consume_state) is str
         and slot.consume_state in {"FRESH", "CONSUMED"}
         and type(slot.fill_state) is str
@@ -759,7 +1058,9 @@ def _valid_slot(slot: _AllocatedSlot) -> bool:
     )
 
 
-def _allocate_receipt_slot(dirfd: int, binding: _Binding) -> _AllocatedSlot | _ReceiptHold:
+def _allocate_receipt_slot(
+    dirfd: int, binding: _Binding, *, receipt_kind: Literal["arm", "terminal"] = "arm"
+) -> _AllocatedSlot | _ReceiptHold:
     """Allocate before Dalloc; never adopt any EEXIST entry or issue authority."""
     if not _valid_binding(binding):
         return _ReceiptHold("invalid_schema")
@@ -817,6 +1118,7 @@ def _allocate_receipt_slot(dirfd: int, binding: _Binding) -> _AllocatedSlot | _R
                     _file_fingerprint(final),
                     flags,
                     offset,
+                    receipt_kind,
                 )
     except FileNotFoundError:
         result = _ReceiptHold("entry_changed")
@@ -868,18 +1170,28 @@ def _check_allocated_receipt_slot(dirfd: int, slot: _AllocatedSlot) -> _ReceiptH
     return None
 
 
-def _fill_allocated_receipt_slot(
-    dirfd: int, slot: _AllocatedSlot, binding: _Binding, key32: bytes, raw: bytes
-) -> _WriteReceiptResult | _ReceiptHold:
+def _fill_slot(
+    dirfd: int,
+    slot: _AllocatedSlot,
+    binding: _Binding,
+    key32: bytes,
+    raw: bytes,
+    *,
+    receipt_kind: Literal["arm", "terminal"] = "arm",
+) -> _WriteReceiptResult | _TerminalWriteResult | _ReceiptHold:
     """Borrow once; the owner closes in finally before canonical commit."""
-    if type(slot) is not _AllocatedSlot:
+    if type(slot) is not _AllocatedSlot or slot.receipt_kind != receipt_kind:
         return _ReceiptHold("unsafe_entry")
     consumed = slot._consume_once()
     if consumed is not None:
         return consumed
     try:
-        authenticated = _authenticate_receipt(raw, binding, key32)
-        result: _WriteReceiptResult | _ReceiptHold
+        authenticated = (
+            _authenticate_terminal_receipt(raw, binding, key32)
+            if receipt_kind == "terminal"
+            else _authenticate_receipt(raw, binding, key32)
+        )
+        result: _WriteReceiptResult | _TerminalWriteResult | _ReceiptHold
         if isinstance(authenticated, _ReceiptHold):
             result = authenticated
         elif binding != slot.binding:
@@ -902,6 +1214,7 @@ def _fill_allocated_receipt_slot(
                     key32,
                     raw,
                     expected_empty_fingerprint=slot.fempty,
+                    receipt_kind=receipt_kind,
                 )
     except FileNotFoundError:
         result = _ReceiptHold("entry_changed")
@@ -916,3 +1229,52 @@ def _fill_allocated_receipt_slot(
     else:
         object.__setattr__(slot, "fill_state", "VERIFIED")
     return result
+
+
+def _allocate_terminal_slot(dirfd: int, binding: _Binding) -> _AllocatedSlot | _ReceiptHold:
+    return _allocate_receipt_slot(dirfd, binding, receipt_kind="terminal")
+
+
+def _fill_terminal_slot(
+    dirfd: int, slot: _AllocatedSlot, binding: _Binding, key32: bytes, raw: bytes
+) -> _TerminalWriteResult | _ReceiptHold:
+    result = _fill_slot(dirfd, slot, binding, key32, raw, receipt_kind="terminal")
+    return result if not isinstance(result, _WriteReceiptResult) else _ReceiptHold("invalid_schema")
+
+
+def _fill_allocated_receipt_slot(
+    dirfd: int, slot: _AllocatedSlot, binding: _Binding, key32: bytes, raw: bytes
+) -> _WriteReceiptResult | _ReceiptHold:
+    result = _fill_slot(dirfd, slot, binding, key32, raw)
+    return (
+        result if not isinstance(result, _TerminalWriteResult) else _ReceiptHold("invalid_schema")
+    )
+
+
+def _read_terminal_receipt(
+    dirfd: int, binding: _Binding, key32: bytes
+) -> tuple[_KeyAuthenticatedTerminalReceipt, F9] | _ReceiptHold:
+    if not _valid_key(key32) or not _valid_binding(binding):
+        return _ReceiptHold("invalid_schema")
+    before = _directory(dirfd)
+    if isinstance(before, _ReceiptHold):
+        return before
+    result = _read_checked(dirfd, binding, key32, before, receipt_kind="terminal")
+    if isinstance(result, _ReceiptHold):
+        return result
+    if not isinstance(result[0], _KeyAuthenticatedTerminalReceipt) or not _stat_vector(
+        result[1], 9
+    ):
+        return _ReceiptHold("invalid_schema")
+    vector = result[1]
+    return result[0], (
+        vector[0],
+        vector[1],
+        vector[2],
+        vector[3],
+        vector[4],
+        vector[5],
+        vector[6],
+        vector[7],
+        vector[8],
+    )
