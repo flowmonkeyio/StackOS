@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+
+import pytest
 from sqlmodel import Session
 
 from stackos.communications import (
@@ -291,3 +294,181 @@ def _event(
         request_metadata_json={"invoker_ref": "mock-user:1"},
         response_json={"profile_key": "support", "event_key": event_key},
     )
+
+
+def _slack_occurrence_event(*, event_key: str, text: str) -> NormalizedInboundEvent:
+    message_ts = "1770000000.000801"
+    message_ref = f"slack-message:C123:{message_ts}"
+    occurrence = {
+        "schema_version": 1,
+        "provider_key": "slack-bot",
+        "source_kind": "slack-message",
+        "profile_key": "support",
+        "team_id": "T123",
+        "channel_id": "C123",
+        "surface_ref": "slack-channel:C123",
+        "message_ts": message_ts,
+        "message_ref": message_ref,
+        "thread_ref": f"slack-thread:C123:{message_ts}",
+        "invoker_ref": "slack-user:U111",
+        "content_type": "text",
+        "normalized_text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+    }
+    return NormalizedInboundEvent(
+        provider_key="slack-bot",
+        profile_key="support",
+        event_key=event_key,
+        update_type="message",
+        source_kind="slack-message",
+        request_key=f"slack-message-trigger:support:{message_ref}",
+        request_title="Slack message in C123",
+        body_preview=text[:80],
+        source_message_ref=message_ref,
+        surface=NormalizedResourceWrite(
+            resource_key="communication-channel",
+            external_id="slack-channel:support:C123",
+            title="C123",
+            data_json={"provider_key": "slack-bot", "surface_ref": "slack-channel:C123"},
+            provenance_json={"source": "test"},
+        ),
+        event=NormalizedResourceWrite(
+            resource_key="communication-event",
+            external_id=f"slack-event:support:{event_key}",
+            title="Slack message",
+            data_json={"provider_key": "slack-bot", "event_key": event_key},
+            provenance_json={"source": "test"},
+            preserve_existing_on_dedupe=True,
+        ),
+        message=NormalizedResourceWrite(
+            resource_key="communication-message",
+            external_id=f"slack-message:support:C123:{message_ts}",
+            title="Slack message",
+            data_json={
+                "provider_key": "slack-bot",
+                "profile_key": "support",
+                "team_id": "T123",
+                "direction": "inbound",
+                "surface_ref": "slack-channel:C123",
+                "channel_ref": "slack-channel:C123",
+                "thread_ref": occurrence["thread_ref"],
+                "message_ref": message_ref,
+                "provider_message_ts": message_ts,
+                "content_type": "text",
+                "text_preview": text[:80],
+                "from_ref": "slack-user:U111",
+                "source_occurrence_v1": occurrence,
+            },
+            provenance_json={"source": "slack-ingress"},
+            preserve_existing_on_dedupe=True,
+        ),
+        request_metadata_json={
+            "profile_key": "support",
+            "surface_ref": "slack-channel:C123",
+            "channel_ref": "slack-channel:C123",
+            "thread_ref": occurrence["thread_ref"],
+            "invoker_ref": "slack-user:U111",
+            "source_occurrence_v1": occurrence,
+            "source_occurrence_check": "compare",
+        },
+        response_json={"profile_key": "support", "event_key": event_key, "update_type": "message"},
+    )
+
+
+def test_communication_processor_reports_same_key_source_conflicts(
+    session: Session,
+    project_id: int,
+) -> None:
+    first = process_inbound_event(
+        session,
+        project_id=project_id,
+        event=_slack_occurrence_event(event_key="occurrence-first", text="ordinary source"),
+        decision=CommunicationDecision(
+            store=True,
+            create_request=True,
+            status="request_created",
+            trigger_reason="mention",
+        ),
+    )
+    original_message = (
+        ResourceRepository(session)
+        .query_records(
+            project_id=project_id,
+            plugin_slug="communications",
+            resource_key="communication-message",
+        )
+        .items[0]
+        .model_dump(mode="json")
+    )
+
+    conflicting_event = _slack_occurrence_event(
+        event_key="occurrence-conflict", text="different source"
+    )
+    conflict = process_inbound_event(
+        session,
+        project_id=project_id,
+        event=conflicting_event,
+        decision=CommunicationDecision(
+            store=True,
+            create_request=True,
+            status="request_created",
+            trigger_reason="mention",
+        ),
+    )
+    repeated_conflict = process_inbound_event(
+        session,
+        project_id=project_id,
+        event=conflicting_event,
+        decision=CommunicationDecision(
+            store=True,
+            create_request=True,
+            status="request_created",
+            trigger_reason="mention",
+        ),
+    )
+
+    assert first.policy_status == "request_created"
+    assert conflict.ok is True
+    assert conflict.policy_status == "source_occurrence_conflict"
+    assert conflict.agent_request_id == first.agent_request_id
+    assert conflict.message_record_id is None
+    assert conflict.interaction_record_id is None
+    assert repeated_conflict.policy_status == "source_occurrence_conflict"
+    assert conflicting_event.request_metadata_json["source_occurrence_check"] == "compare"
+    assert repeated_conflict.event_record_id == conflict.event_record_id
+    messages = ResourceRepository(session).query_records(
+        project_id=project_id,
+        plugin_slug="communications",
+        resource_key="communication-message",
+    )
+    assert [item.model_dump(mode="json") for item in messages.items] == [original_message]
+    diagnostic = ResourceRepository(session).get_record(conflict.event_record_id or 0)
+    assert diagnostic.data_json["diagnostic_type"] == "source_occurrence_conflict"
+    assert "different source" not in str(diagnostic.data_json)
+
+
+def test_communication_processor_store_false_returns_without_lookup_or_write(
+    session: Session,
+    project_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def forbidden(*args, **kwargs):
+        raise AssertionError("store=false must return before comparison or resource access")
+
+    monkeypatch.setattr(AgentRequestRepository, "find_by_key", forbidden)
+    monkeypatch.setattr(ResourceRepository, "get_record", forbidden)
+    monkeypatch.setattr(ResourceRepository, "upsert_record", forbidden)
+    result = process_inbound_event(
+        session,
+        project_id=project_id,
+        event=_slack_occurrence_event(event_key="occurrence-store-false", text="not stored"),
+        decision=CommunicationDecision(
+            store=False,
+            create_request=False,
+            status="stored_ignored",
+        ),
+    )
+    assert result.ok is True
+    assert result.policy_status == "stored_ignored"
+    assert result.event_record_id is None
+    assert result.message_record_id is None
+    assert result.agent_request_id is None
