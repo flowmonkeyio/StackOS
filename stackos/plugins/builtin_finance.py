@@ -1,9 +1,10 @@
-"""Narrow first-party finance console adapter; financial truth stays external."""
+"""First-party Finance adapter over one private managed store per project."""
 
 from __future__ import annotations
 
 import base64
 import copy
+import ctypes
 import fcntl
 import hashlib
 import importlib.util
@@ -13,15 +14,24 @@ import re
 import stat
 import sys
 import types
+import unicodedata
 import uuid
-from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from functools import lru_cache
 from importlib import resources
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import NoReturn
 
+from stackos.backups.filesystem import (
+    directory_inventory,
+    fsync_directory,
+    identity,
+    open_relative,
+    read_regular,
+)
+from stackos.backups.limits import MAX_EXPANDED_BYTES, MAX_MEMBERS
+from stackos.backups.models import BackupError
 from stackos.config import Settings
 from stackos.mcp.errors import ToolNotGrantedError
 from stackos.repositories.base import ConflictError, ValidationError
@@ -29,7 +39,7 @@ from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.projects import ProjectRepository
 
 MAX_EVIDENCE_BYTES = 20 * 1024 * 1024
-_MODES = {"read", "correct", "export"}
+_MODES = ["correct", "export", "read"]
 
 
 def _error(code: str, *, conflict: bool = False) -> NoReturn:
@@ -48,7 +58,7 @@ def _deny(code: str = "access_denied") -> NoReturn:
 
 @lru_cache(maxsize=1)
 def helpers():
-    """Load a fixed shipped package origin, never the selected business root."""
+    """Load fixed shipped code, never scripts found in financial storage."""
     bundled = Path(str(resources.files("stackos").joinpath("_assets/plugins/finance/scripts")))
     source = Path(__file__).resolve().parents[2] / "plugins/finance/scripts"
     scripts = bundled if bundled.is_dir() else source
@@ -121,114 +131,397 @@ def _snapshot_metadata(snapshot):
     }
 
 
+def _digest(value) -> str:
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def _publish_directory(source: Path, target: Path) -> None:
+    """Atomic directory publication that cannot replace even an empty target."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    if sys.platform == "darwin":
+        rename = libc.renamex_np
+        rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+        result = rename(os.fsencode(source), os.fsencode(target), 4)  # RENAME_EXCL
+    elif sys.platform.startswith("linux"):
+        rename = libc.renameat2
+        rename.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        result = rename(-100, os.fsencode(source), -100, os.fsencode(target), 1)  # RENAME_NOREPLACE
+    else:
+        _error("atomic_publication_unavailable")
+    if result != 0:
+        number = ctypes.get_errno()
+        raise OSError(number, os.strerror(number))
+    fsync_directory(target.parent)
+
+
 class FinanceConsole:
-    """Authority config only; no financial data, generic file service or ledger."""
+    """Resolve the project's single JSON store; never accept a caller's path."""
 
     def __init__(self, session, settings: Settings):
         self.session, self.settings = session, settings
         self.config_dir = settings.data_dir / "plugin-state" / "finance"
-        self.config_path = self.config_dir / "access.json"
+        self.config_path = self.config_dir / "access.json"  # Legacy migration input only.
 
-    def _project(self, project_id: int) -> None:
-        ProjectRepository(self.session).get(project_id)
+    def _project(self, project_id: int):
+        project = ProjectRepository(self.session).get(project_id)
         plugin = PluginRepository(self.session).get_plugin("finance", project_id=project_id)
         if plugin.enabled_for_project is not True:
             _deny("plugin_not_enabled")
+        return project
 
-    def _load(self) -> dict[str, Any]:
-        if not self.config_path.exists():
-            return {"format": "finance-access-v1", "entries": [], "intents": {}}
-        try:
-            raw = helpers().workspace.read_regular(self.config_path)
-            doc = json.loads(raw)
-            if (
-                not isinstance(doc, dict)
-                or doc.get("format") != "finance-access-v1"
-                or not isinstance(doc.get("entries"), list)
-            ):
-                _error("access_config_corrupt")
-            if not isinstance(doc.get("intents"), dict):
-                _error("access_config_corrupt")
-            required = {
-                "access_id",
-                "project_id",
-                "workspace_ref",
-                "backend_key",
-                "canonical_root",
-                "root_device",
-                "root_inode",
-                "modes",
-                "generation",
-            }
-            for entry in doc["entries"]:
-                if (
-                    not isinstance(entry, dict)
-                    or not required <= set(entry)
-                    or not all(
-                        isinstance(entry[k], str)
-                        for k in ("access_id", "workspace_ref", "canonical_root")
-                    )
-                    or not all(
-                        type(entry[k]) is int
-                        for k in ("project_id", "root_device", "root_inode", "generation")
-                    )
-                    or entry["generation"] < 1
-                    or entry["backend_key"] != "local-json"
-                    or not isinstance(entry["modes"], list)
-                    or not all(isinstance(m, str) and m in _MODES for m in entry["modes"])
-                ):
-                    _error("access_config_corrupt")
-            for key, intent in doc["intents"].items():
-                if (
-                    not isinstance(key, str)
-                    or not isinstance(intent, dict)
-                    or not isinstance(intent.get("digest"), str)
-                    or type(intent.get("generation")) is not int
-                ):
-                    _error("access_config_corrupt")
-            return doc
-        except (ValueError, OSError, TypeError):
-            _error("access_config_corrupt")
-
-    @contextmanager
-    def _config_writer(self) -> Iterator[dict[str, Any]]:
-        # Never hold this lock while waiting on the finance writer lock.
-        try:
-            helpers().workspace.checked_path(self.config_dir)
-            self.config_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-            self.config_dir.chmod(0o700)
-            fd = os.open(
-                self.config_dir / ".access.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600
-            )
-            try:
-                if not stat.S_ISREG(os.fstat(fd).st_mode):
-                    _error("access_config_corrupt")
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                yield self._load()
-            finally:
-                os.close(fd)
-        except BlockingIOError:
-            _error("access_config_busy", conflict=True)
-        except (OSError, ValueError):
-            _error("access_config_unavailable")
-
-    def _save(self, doc: dict[str, Any]) -> None:
-        payload = json.dumps(doc, sort_keys=True, separators=(",", ":")).encode()
-        helpers().workspace.atomic_write(self.config_path, payload)
-        self.config_path.chmod(0o600)
-        if self._load() != doc:
-            _error("access_config_outcome_unknown", conflict=True)
+    def _paths(self, project_id):
+        parent = helpers().workspace.checked_path(
+            self.settings.data_dir / "projects" / str(project_id)
+        )
+        return parent, parent / "finance", parent / "finance-state.json"
 
     @staticmethod
-    def _entry(doc, project_id, workspace_ref):
-        return next(
-            (
-                e
-                for e in doc["entries"]
-                if e["project_id"] == project_id and e["workspace_ref"] == workspace_ref
-            ),
-            None,
+    def _ref(project_id):
+        return f"finance:project:{project_id}"
+
+    @contextmanager
+    def _lock(self, path: Path, *, create=False):
+        helpers().workspace.checked_path(path)
+        flags = os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK | (os.O_CREAT if create else 0)
+        fd = os.open(path, flags, 0o600)
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                _error("unsafe_storage_lock")
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                _error("writer_busy", conflict=True)
+            yield
+            if (path.lstat().st_dev, path.lstat().st_ino) != (info.st_dev, info.st_ino):
+                _error("storage_lock_changed", conflict=True)
+        finally:
+            os.close(fd)
+
+    @staticmethod
+    def _read_json(path):
+        if not path.exists() and not path.is_symlink():
+            return None
+        try:
+            helpers().workspace.checked_path(path)
+            before = path.lstat()
+            if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+                _error("unsafe_storage_metadata")
+            raw = read_regular(path)
+            after = path.lstat()
+            if identity(after) != identity(before) or after.st_nlink != 1:
+                _error("unsafe_storage_metadata")
+            value = json.loads(raw)
+        except (BackupError, OSError):
+            _error("unsafe_storage_metadata")
+        except ValueError:
+            _error("storage_metadata_corrupt")
+        if not isinstance(value, dict):
+            _error("storage_metadata_corrupt")
+        return value
+
+    @staticmethod
+    def _save(path, value):
+        helpers().workspace.atomic_write(
+            path, json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
         )
+        path.chmod(0o600)
+        if FinanceConsole._read_json(path) != value:
+            _error("storage_outcome_unknown", conflict=True)
+
+    def _state(self, path, project):
+        state = self._read_json(path)
+        if state is None:
+            return None
+        if (
+            state.get("format") != "finance-project-v1"
+            or type(state.get("project_id")) is not int
+            or state.get("project_id") != project.id
+            or state.get("project_created_at") != project.created_at.isoformat()
+            or state.get("workspace_ref") != self._ref(project.id)
+            or state.get("modes") != _MODES
+            or state.get("backend_key") != "local-json"
+            or type(state.get("generation")) is not int
+            or state["generation"] < 1
+            or not isinstance(state.get("access_id"), str)
+            or state.get("phase") not in {"publishing", "ready"}
+        ):
+            _error("storage_identity_mismatch")
+        if state["phase"] == "ready" and (
+            not isinstance(state.get("canonical_root"), str)
+            or type(state.get("root_device")) is not int
+            or type(state.get("root_inode")) is not int
+        ):
+            _error("storage_metadata_corrupt")
+        return state
+
+    def _legacy(self):
+        doc = self._read_json(self.config_path)
+        if doc is None:
+            return {"format": "finance-access-v1", "entries": [], "intents": {}}
+        if (
+            doc.get("format") != "finance-access-v1"
+            or not isinstance(doc.get("entries"), list)
+            or not isinstance(doc.get("intents"), dict)
+        ):
+            _error("legacy_access_corrupt")
+        for entry in doc["entries"]:
+            if (
+                not isinstance(entry, dict)
+                or not all(
+                    isinstance(entry.get(k), str)
+                    for k in ("access_id", "workspace_ref", "canonical_root")
+                )
+                or not all(
+                    type(entry.get(k)) is int
+                    for k in ("project_id", "root_device", "root_inode", "generation")
+                )
+                or entry["generation"] < 1
+            ):
+                _error("legacy_access_corrupt")
+        return doc
+
+    def _legacy_source(self, doc, project):
+        entries = [e for e in doc["entries"] if e["project_id"] == project.id]
+        if not entries:
+            if any(key.startswith(f"{project.id}:") for key in doc["intents"]):
+                _error("legacy_history_requires_recovery")
+            return None
+        if (
+            len(entries) != 1
+            or entries[0].get("revoked_at")
+            or entries[0].get("retired_to_managed_project")
+        ):
+            _error("legacy_history_requires_recovery")
+        entry = entries[0]
+        if (
+            entry.get("backend_key") != "local-json"
+            or not isinstance(entry.get("modes"), list)
+            or "read" not in entry["modes"]
+        ):
+            _error("legacy_history_requires_recovery")
+        try:
+            selected = datetime.fromisoformat(entry["selected_at"]).replace(tzinfo=UTC)
+            created = project.created_at.replace(tzinfo=UTC)
+            if selected < created:
+                _error("legacy_project_identity_ambiguous")
+        except (KeyError, ValueError, TypeError):
+            _error("legacy_project_identity_ambiguous")
+        root = _canonical_root(entry["canonical_root"])
+        info = root.stat()
+        if (info.st_dev, info.st_ino) != (entry["root_device"], entry["root_inode"]):
+            _error("legacy_root_changed")
+        from stackos.backups.filesystem import overlap
+
+        if overlap(root, self.settings.data_dir) or overlap(root, self.settings.state_dir):
+            _error("legacy_root_overlap")
+        for other in doc["entries"]:
+            if other is entry:
+                continue
+            path = Path(other["canonical_root"])
+            if not path.is_absolute():
+                _error("legacy_access_corrupt")
+            path = helpers().workspace.checked_path(path)
+            if (
+                not path.is_absolute()
+                or overlap(root, path)
+                or (other["root_device"], other["root_inode"]) == (info.st_dev, info.st_ino)
+            ):
+                _error("legacy_root_shared")
+        return entry, root
+
+    @staticmethod
+    def _tree(root: Path, destination: Path | None = None):
+        """Copy/hash the complete pinned tree, retaining every regular original."""
+        inventory = directory_inventory(root, root / ".writer.lock")
+        if len(inventory) > MAX_MEMBERS:
+            _error("migration_too_large")
+        manifest: list[list[str | int]] = []
+        aliases: set[str] = set()
+        total = 0
+        for relative, expected in inventory.items():
+            if relative == "/":
+                continue
+            alias = unicodedata.normalize("NFD", relative).casefold()
+            if alias in aliases:
+                _error("unsafe_storage_alias")
+            aliases.add(alias)
+            if relative.endswith("/"):
+                manifest.append([relative])
+                if destination is not None:
+                    (destination / relative).mkdir(mode=0o700)
+                continue
+            fd = open_relative(root, relative)
+            out = None
+            try:
+                before = os.fstat(fd)
+                if before.st_nlink != 1 or identity(before) != expected:
+                    _error("unsafe_or_changing_storage")
+                total += before.st_size
+                if total > MAX_EXPANDED_BYTES:
+                    _error("migration_too_large")
+                if destination is not None:
+                    out = os.open(
+                        destination / relative,
+                        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                        0o600,
+                    )
+                digest, count = hashlib.sha256(), 0
+                while chunk := os.read(fd, 1024 * 1024):
+                    count += len(chunk)
+                    if count > before.st_size:
+                        _error("storage_changed", conflict=True)
+                    digest.update(chunk)
+                    if out is not None:
+                        view = memoryview(chunk)
+                        while view:
+                            view = view[os.write(out, view) :]
+                if count != before.st_size or identity(os.fstat(fd)) != expected:
+                    _error("storage_changed", conflict=True)
+                if out is not None:
+                    os.fsync(out)
+                manifest.append([relative, count, digest.hexdigest()])
+            finally:
+                os.close(fd)
+                if out is not None:
+                    os.close(out)
+        if directory_inventory(root, root / ".writer.lock") != inventory:
+            _error("storage_changed", conflict=True)
+        if destination is not None:
+            for relative in reversed(list(inventory)):
+                if relative.endswith("/") and relative != "/":
+                    fsync_directory(destination / relative)
+            fsync_directory(destination)
+        return _digest(manifest)
+
+    @staticmethod
+    def _owner_material(state):
+        return {
+            "format": "finance-store-v1",
+            "project_id": state["project_id"],
+            "project_created_at": state["project_created_at"],
+            "access_id": state["access_id"],
+        }
+
+    def _owner(self, root, state):
+        if self._read_json(root / ".finance-owner.json") != self._owner_material(state):
+            _error("storage_owner_mismatch")
+
+    def _write_owner(self, root, state):
+        # This is a physical-store identity, never a replacement financial record.
+        payload = json.dumps(self._owner_material(state), sort_keys=True).encode()
+        fd = os.open(
+            root / ".finance-owner.json",
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+            0o600,
+        )
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        fsync_directory(root)
+
+    def _mark_publication(self, parent):
+        marker = parent / ".publication-pending"
+        try:
+            fd = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        except FileExistsError:
+            if (
+                marker.is_symlink()
+                or not stat.S_ISREG(marker.lstat().st_mode)
+                or marker.lstat().st_nlink != 1
+            ):
+                _error("unsafe_storage_metadata")
+        else:
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(b"pending\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+        fsync_directory(parent)
+
+    def _clear_publication(self, parent, state):
+        marker = parent / ".publication-pending"
+        if not marker.exists() and not marker.is_symlink():
+            return
+        if state["phase"] != "ready" or state.get("publication", {}).get("complete") is not True:
+            _error("storage_publication_incomplete")
+        prior = state["publication"].get("legacy")
+        if prior is not None:
+            matches = [e for e in self._legacy()["entries"] if e["access_id"] == prior["access_id"]]
+            if (
+                len(matches) != 1
+                or matches[0].get("retired_to_managed_project") != state["publication"]["token"]
+                or not matches[0].get("revoked_at")
+            ):
+                _error("legacy_mapping_changed", conflict=True)
+        if (
+            marker.is_symlink()
+            or not stat.S_ISREG(marker.lstat().st_mode)
+            or marker.lstat().st_nlink != 1
+        ):
+            _error("unsafe_storage_metadata")
+        marker.unlink()
+        fsync_directory(parent)
+
+    def _validated(self, root, state=None):
+        if state is not None:
+            self._owner(root, state)
+        master = root / "finance.json"
+        info = master.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            _error("storage_custody_requires_repair")
+        raw = helpers().workspace.read_regular(master)
+        document = helpers().workspace.decode_json(raw)
+        # read_snapshot deliberately groups unavailable originals together. Check
+        # actual paths/bytes here so missing evidence stays an inspectable gap,
+        # while containment, file aliases and altered originals block adoption.
+        for row in document["attachments"]:
+            if row["status"] in {"disposed", "quarantined"} or "quarantine_ref" in row:
+                continue
+            try:
+                path = helpers().workspace.evidence_path(root, row["relative_path"])
+                try:
+                    info = path.lstat()
+                except (FileNotFoundError, PermissionError):
+                    continue
+                if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                    _error("storage_custody_requires_repair")
+                fd = open_relative(root, path.relative_to(root).as_posix())
+                try:
+                    before = identity(os.fstat(fd))
+                    if before != identity(info) or info.st_size != row["bytes"]:
+                        _error("storage_custody_requires_repair")
+                    digest, count = hashlib.sha256(), 0
+                    while chunk := os.read(fd, 1024 * 1024):
+                        count += len(chunk)
+                        if count > row["bytes"]:
+                            _error("storage_custody_requires_repair")
+                        digest.update(chunk)
+                    if (
+                        count != row["bytes"]
+                        or digest.hexdigest() != row["sha256"]
+                        or identity(os.fstat(fd)) != before
+                        or identity(path.lstat()) != before
+                    ):
+                        _error("storage_custody_requires_repair")
+                finally:
+                    os.close(fd)
+            except (ValueError, KeyError, OSError, BackupError):
+                _error("storage_custody_requires_repair")
+        # Keep canonical structural validation/snapshot semantics, after rejecting
+        # special files that a normal blocking original read must never open.
+        snapshot = call_helper(helpers().read_snapshot, master)
+        if snapshot["sha256"] != hashlib.sha256(raw).hexdigest():
+            _error("storage_changed", conflict=True)
+        return snapshot
 
     @staticmethod
     def _safe(entry):
@@ -241,177 +534,240 @@ class FinanceConsole:
                 "backend_key",
                 "modes",
                 "generation",
-                "revoked_at",
             )
-            if k in entry
         }
 
-    @staticmethod
-    def _intent(doc, project_id, key, intent):
-        if not key:
-            return None, None
-        digest = hashlib.sha256(
-            json.dumps(intent, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest()
-        identity = str(project_id) + ":" + key
-        prior = doc["intents"].get(identity)
-        if prior and prior["digest"] != digest:
-            _error("intent_conflict", conflict=True)
-        return identity, digest
-
-    def select(self, inp) -> dict[str, Any]:
-        self._project(inp.project_id)
-        root = _canonical_root(inp.root)
-        root_stat = root.stat()
-        modes = sorted(set(inp.modes))
-        with self._config_writer() as doc:
-            old = self._entry(doc, inp.project_id, inp.workspace_ref)
-            identity, digest = self._intent(
-                doc,
-                inp.project_id,
-                inp.idempotency_key,
-                {
-                    "action": "select",
-                    "workspace_ref": inp.workspace_ref,
-                    "root": str(root),
-                    "modes": modes,
-                    "authority_ref": inp.authority_ref,
-                    "expected_generation": inp.expected_generation,
-                },
-            )
-            # Revalidate current root before acknowledging a config-owned retry.
-            if identity and identity in doc["intents"]:
-                if (
-                    not old
-                    or old.get("revoked_at")
-                    or (old["root_device"], old["root_inode"])
-                    != (root_stat.st_dev, root_stat.st_ino)
-                ):
-                    _deny("revoked_or_changed_root")
-                if doc["intents"][identity]["generation"] != old["generation"]:
-                    _error("stale_access_generation", conflict=True)
-                return self._safe(old)
-            if inp.expected_generation is not None and inp.expected_generation != (
-                old["generation"] if old else 0
-            ):
-                _error("stale_access_generation", conflict=True)
-            for e in doc["entries"]:
-                if (
-                    not e.get("revoked_at")
-                    and (e["root_device"], e["root_inode"]) == (root_stat.st_dev, root_stat.st_ino)
-                    and (e["project_id"], e["workspace_ref"]) != (inp.project_id, inp.workspace_ref)
-                ):
-                    _deny("root_already_authorized")
-            entry = {
-                "access_id": old["access_id"] if old else "finance-access:" + uuid.uuid4().hex,
-                "project_id": inp.project_id,
-                "workspace_ref": inp.workspace_ref,
-                "backend_key": "local-json",
-                "canonical_root": str(root),
-                "root_device": root_stat.st_dev,
-                "root_inode": root_stat.st_ino,
-                "modes": modes,
-                "generation": old["generation"] + 1 if old else 1,
-                "selected_by": "local-user:operator",
-                "selected_at": _now(),
-                "authority_ref": inp.authority_ref,
-            }
-            if old:
-                doc["entries"].remove(old)
-            doc["entries"].append(entry)
-            if identity:
-                doc["intents"][identity] = {
-                    "digest": digest,
-                    "access_id": entry["access_id"],
-                    "generation": entry["generation"],
-                }
-            self._save(doc)
-        return self._safe(entry)
-
-    def revoke(self, inp) -> dict[str, Any]:
-        self._project(inp.project_id)
-        with self._config_writer() as doc:
-            entry = self._entry(doc, inp.project_id, inp.workspace_ref)
-            if not entry:
-                _deny("not_configured")
-            identity, digest = self._intent(
-                doc,
-                inp.project_id,
-                inp.idempotency_key,
-                {
-                    "action": "revoke",
-                    "workspace_ref": inp.workspace_ref,
-                    "expected_generation": inp.expected_generation,
-                },
-            )
-            if identity and identity in doc["intents"]:
-                if not entry.get("revoked_at"):
-                    _error("intent_conflict", conflict=True)
-                if doc["intents"][identity]["generation"] != entry["generation"]:
-                    _error("stale_access_generation", conflict=True)
-                return self._safe(entry)
-            if inp.expected_generation != entry["generation"]:
-                _error("stale_access_generation", conflict=True)
-            entry["revoked_at"], entry["generation"] = _now(), entry["generation"] + 1
-            if identity:
-                doc["intents"][identity] = {
-                    "digest": digest,
-                    "access_id": entry["access_id"],
-                    "generation": entry["generation"],
-                }
-            self._save(doc)
-        return self._safe(entry)
-
-    def authorize(self, inp, mode: str = "read") -> tuple[dict[str, Any], Path]:
-        self._project(inp.project_id)
-        entry = self._entry(self._load(), inp.project_id, inp.workspace_ref)
-        if not entry or entry.get("revoked_at"):
-            _deny("not_configured_or_revoked")
-        if inp.access_generation != entry["generation"]:
-            _deny("stale_access_generation")
-        if mode not in entry["modes"]:
-            _deny("mode_denied")
-        root = _canonical_root(entry["canonical_root"])
-        info = root.stat()
-        if (info.st_dev, info.st_ino) != (entry["root_device"], entry["root_inode"]):
-            _deny("root_changed")
-        return entry, root / "finance.json"
-
-    def status(self, inp) -> dict[str, Any]:
-        self._project(inp.project_id)
-        doc = self._load()
-        entries = [
-            e
-            for e in doc["entries"]
-            if e["project_id"] == inp.project_id
-            and (not inp.workspace_ref or e["workspace_ref"] == inp.workspace_ref)
-        ]
-        if not entries:
-            return {"project_id": inp.project_id, "readiness": "not_configured", "access": []}
-        out = []
-        for e in entries:
-            safe = self._safe(e)
-            if e.get("revoked_at"):
-                safe["readiness"] = "revoked"
-            else:
-                try:
-                    root = _canonical_root(e["canonical_root"])
-                    info = root.stat()
-                    if (info.st_dev, info.st_ino) != (e["root_device"], e["root_inode"]):
-                        _deny("root_changed")
-                    snapshot = helpers().read_snapshot(root / "finance.json")
-                    safe["readiness"] = "ready"
-                    safe["snapshot"] = _snapshot_metadata(snapshot)
-                except helpers().ManagementError as exc:
-                    safe["readiness"] = exc.code
-                except (ToolNotGrantedError, OSError, ValueError):
-                    safe["readiness"] = "denied"
-            out.append(safe)
+    def _new_state(self, project, generation):
         return {
-            "project_id": inp.project_id,
-            "access": out,
-            "readiness": out[0]["readiness"] if len(out) == 1 else "select_workspace",
+            "format": "finance-project-v1",
+            "project_id": project.id,
+            "project_created_at": project.created_at.isoformat(),
+            "workspace_ref": self._ref(project.id),
+            "access_id": "finance-access:" + uuid.uuid4().hex,
+            "backend_key": "local-json",
+            "modes": _MODES.copy(),
+            "generation": generation,
+            "phase": "publishing",
         }
+
+    def _retire(self, pending, doc):
+        if "legacy" not in pending:
+            return
+        prior = pending["legacy"]
+        matches = [e for e in doc["entries"] if e["access_id"] == prior["access_id"]]
+        if len(matches) != 1:
+            _error("legacy_mapping_changed", conflict=True)
+        entry = matches[0]
+        if entry.get("retired_to_managed_project") == pending["token"]:
+            return
+        if _digest(doc) != prior["mapping_sha256"] or _digest(entry) != prior["entry_sha256"]:
+            _error("legacy_mapping_changed", conflict=True)
+        entry.update(
+            retired_to_managed_project=pending["token"],
+            revoked_at=_now(),
+            generation=entry["generation"] + 1,
+        )
+        self._save(self.config_path, doc)
+
+    def _complete(self, root, metadata, state, doc):
+        pending = state.get("publication")
+        if (
+            not isinstance(pending, dict)
+            or not isinstance(pending.get("token"), str)
+            or not re.fullmatch(r"[a-f0-9]{32}", pending["token"])
+        ):
+            _error("publication_metadata_corrupt")
+        stage = helpers().workspace.checked_path(self.config_dir / "staging" / pending["token"])
+        candidate = root if root.exists() or root.is_symlink() else stage
+        if not candidate.exists():
+            _error("storage_publication_incomplete")
+        candidate = _canonical_root(candidate)
+        if "legacy" not in pending and _digest(doc) != pending.get("legacy_mapping_sha256"):
+            _error("legacy_mapping_changed", conflict=True)
+        with self._lock(candidate / ".writer.lock", create=True):
+            self._validated(candidate, state)
+            if self._tree(candidate) != pending.get("tree_sha256"):
+                _error("storage_publication_conflict", conflict=True)
+        if candidate != root:
+            project = self._project(state["project_id"])
+            if project.created_at.isoformat() != state["project_created_at"]:
+                _error("storage_identity_mismatch")
+            _publish_directory(candidate, root)
+        self._retire(pending, doc)
+        info = root.stat()
+        state.update(
+            phase="ready", canonical_root=str(root), root_device=info.st_dev, root_inode=info.st_ino
+        )
+        # Completed provenance is metadata only; the retained source is never a fallback writer.
+        state["publication"]["complete"] = True
+        self._save(metadata, state)
+        self._clear_publication(metadata.parent, state)
+
+    def _prepare(self, project, root, metadata, doc):
+        source = self._legacy_source(doc, project)
+        if root.exists() or root.is_symlink():
+            _error("storage_metadata_missing")
+        self._mark_publication(metadata.parent)
+        token = uuid.uuid4().hex
+        staging = helpers().workspace.checked_path(self.config_dir / "staging")
+        staging.mkdir(mode=0o700, parents=True, exist_ok=True)
+        stage = staging / token
+        if source is None:
+            with self._lock(self.config_dir / ".access.lock", create=True):
+                current = self._legacy()
+                if current != doc or self._legacy_source(current, project) is not None:
+                    _error("legacy_mapping_changed", conflict=True)
+                helpers().workspace.initialize(stage)
+                state = self._new_state(project, 1)
+                self._write_owner(stage, state)
+                state["publication"] = {
+                    "token": token,
+                    "tree_sha256": self._tree(stage),
+                    "legacy_mapping_sha256": _digest(current),
+                }
+                self._validated(stage, state)
+                self._save(metadata, state)
+                self._complete(root, metadata, state, current)
+                return state
+        entry, legacy_root = source
+        with self._lock(legacy_root / ".writer.lock"):
+            self._legacy_source(doc, project)
+            with self._lock(self.config_dir / ".access.lock", create=True):
+                current = self._legacy()
+                if _digest(current) != _digest(doc):
+                    _error("legacy_mapping_changed", conflict=True)
+                self._legacy_source(current, project)
+                self._validated(legacy_root)
+                stage.mkdir(mode=0o700)
+                tree = self._tree(legacy_root, stage)
+                # A new persistent lock has its own inode; never copy an active lock.
+                with self._lock(stage / ".writer.lock", create=True):
+                    self._validated(stage)
+                if (
+                    self._tree(stage) != tree
+                    or self._tree(legacy_root) != tree
+                    or self._legacy() != current
+                ):
+                    _error("legacy_source_changed", conflict=True)
+                state = self._new_state(project, entry["generation"] + 1)
+                self._write_owner(stage, state)
+                state["publication"] = {
+                    "token": token,
+                    "tree_sha256": self._tree(stage),
+                    "legacy": {
+                        "access_id": entry["access_id"],
+                        "entry_sha256": _digest(entry),
+                        "mapping_sha256": _digest(current),
+                        "tree_sha256": tree,
+                    },
+                }
+                self._save(metadata, state)
+                self._complete(root, metadata, state, current)
+                return state
+
+    def status(self, inp):
+        try:
+            return self._status(inp)
+        except BackupError:
+            _error("unsafe_or_changing_storage")
+        except (OSError, ValueError, KeyError, TypeError):
+            _error("storage_requires_repair")
+
+    def _status(self, inp):
+        project = self._project(inp.project_id)
+        parent, root, metadata = self._paths(project.id)
+        parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        with self._lock(parent / ".writer.lock", create=True):
+            state = self._state(metadata, project)
+            if state is None:
+                state = self._prepare(project, root, metadata, self._legacy())
+            elif state["phase"] == "publishing":
+                self._mark_publication(parent)
+                if "legacy" in state.get("publication", {}):
+                    doc = self._legacy()
+                    prior = state["publication"]["legacy"]
+                    matches = [e for e in doc["entries"] if e["access_id"] == prior["access_id"]]
+                    if len(matches) != 1:
+                        _error("legacy_mapping_changed", conflict=True)
+                    if (
+                        matches[0].get("retired_to_managed_project")
+                        == state["publication"]["token"]
+                    ):
+                        with self._lock(self.config_dir / ".access.lock", create=True):
+                            self._complete(root, metadata, state, self._legacy())
+                    else:
+                        source = self._legacy_source(doc, project)
+                        if source is None:
+                            _error("legacy_history_requires_recovery")
+                        _, legacy_root = source
+                        with self._lock(legacy_root / ".writer.lock"):
+                            self._legacy_source(doc, project)
+                            with self._lock(self.config_dir / ".access.lock", create=True):
+                                current = self._legacy()
+                                self._legacy_source(current, project)
+                                if (
+                                    _digest(current) != prior["mapping_sha256"]
+                                    or self._tree(legacy_root) != prior["tree_sha256"]
+                                ):
+                                    _error("legacy_source_changed", conflict=True)
+                                self._complete(root, metadata, state, current)
+                else:
+                    self.config_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+                    with self._lock(self.config_dir / ".access.lock", create=True):
+                        self._complete(root, metadata, state, self._legacy())
+            if not root.exists():
+                _error("storage_missing")
+            root = _canonical_root(root)
+            self._owner(root, state)
+            with self._lock(root / ".writer.lock", create=True):
+                info = root.stat()
+                if (info.st_dev, info.st_ino, str(root)) != (
+                    state["root_device"],
+                    state["root_inode"],
+                    state["canonical_root"],
+                ):
+                    self._validated(root, state)
+                    self._tree(root)
+                    state.update(
+                        root_device=info.st_dev,
+                        root_inode=info.st_ino,
+                        canonical_root=str(root),
+                        generation=state["generation"] + 1,
+                    )
+                    self._save(metadata, state)
+                snapshot = call_helper(helpers().read_snapshot, root / "finance.json")
+            self._clear_publication(parent, state)
+            access = {
+                **self._safe(state),
+                "readiness": "ready",
+                "snapshot": _snapshot_metadata(snapshot),
+            }
+            return {"project_id": project.id, "readiness": "ready", "access": [access]}
+
+    def authorize(self, inp, mode="read"):
+        project = self._project(inp.project_id)
+        _, root, metadata = self._paths(project.id)
+        state = self._state(metadata, project)
+        if state is None or state["phase"] != "ready":
+            _deny("storage_not_ready")
+        if inp.workspace_ref != self._ref(project.id):
+            _deny("wrong_project_store")
+        if inp.access_generation != state["generation"]:
+            _deny("stale_access_generation")
+        if mode not in state["modes"]:
+            _deny("mode_denied")
+        root = _canonical_root(root)
+        info = root.stat()
+        if (info.st_dev, info.st_ino, str(root)) != (
+            state["root_device"],
+            state["root_inode"],
+            state["canonical_root"],
+        ):
+            _deny("root_changed")
+        self._owner(root, state)
+        if (root / "finance.json").lstat().st_nlink != 1:
+            _deny("unsafe_storage_alias")
+        return state, root / "finance.json"
 
     def snapshot(self, inp, mode="read"):
         _, path = self.authorize(inp, mode)
@@ -673,7 +1029,7 @@ def _read_contained(root: Path, relative: Path, cap: int, identity: tuple[int, i
         child = os.open(relative.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=fd)
         with os.fdopen(child, "rb") as stream:
             before = os.fstat(stream.fileno())
-            if not stat.S_ISREG(before.st_mode) or before.st_size > cap:
+            if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > cap:
                 raise ValueError("unavailable evidence")
             payload = stream.read(cap + 1)
             after = os.fstat(stream.fileno())

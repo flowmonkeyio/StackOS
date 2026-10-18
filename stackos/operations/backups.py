@@ -42,6 +42,7 @@ class BackupCreateInput(MCPInput):
 
 
 class BackupStatusOut(BaseModel):
+    project_ids: list[int] | None = None
     configured: bool
     ready: bool
     enabled: bool
@@ -132,7 +133,10 @@ async def create(
 
 def operation_specs() -> list[OperationSpec]:
     common: dict[str, Any] = dict(
-        purpose="Manage explicitly enrolled local backup folders and encrypted recovery archives.",
+        purpose=(
+            "Back up managed project data and explicitly enrolled external folders "
+            "in encrypted recovery archives."
+        ),
         prerequisites=("Explicit local operator authority; no workflow/run-token authority.",),
         returns=("Safe policy, coverage and outcome metadata; no private keys or archive bytes.",),
         secret_policy="public-key-input-no-secret-output",

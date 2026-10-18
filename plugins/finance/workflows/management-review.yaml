@@ -33,7 +33,7 @@ public:
   audience: Operators reviewing sourced business expenses and income
   setup: mixed
   prerequisites:
-  - A selected external local-json finance workspace and authorized host access
+  - The owning project's managed local-json Finance files and authorized host access
   - A persisted finance request with the original snapshot, query and analysis question
   - An available host agent and a separate control reviewer
   proof:
@@ -64,7 +64,7 @@ agent_requirements:
 skill_requirements:
 - skill_ref: stackos:stackos
   requirement: required
-  purpose: Use StackOS grants and action audit while keeping all finance records in the selected external backend.
+  purpose: Use StackOS grants and action audit while keeping all finance records in the selected project-local backend.
   applies_to_steps: &id001
   - preflight
   - analyze
@@ -93,12 +93,11 @@ inputs:
     type: string
     const: local-json
 - key: workspace_ref
-  name: External Workspace Ref
+  name: Project Finance Source Ref
   type: string
   required: true
-  description: One selected business financial master, usable from a standalone business directory or agency root.
-    Agency/project setup is optional; descriptive associations never grant cross-project access. Follow the backend
-    contract's business/project scope guidance.
+  description: The original request's opaque project-derived Finance source identity, not a folder selection.
+    Files belong only to the owning StackOS project. Descriptive associations never grant cross-project access.
   schema:
     type: string
     minLength: 1
@@ -123,7 +122,7 @@ inputs:
   name: Operator Policy Ref
   type: string
   required: false
-  description: Optional override of the durable external workspace policy; the agent resolves it during preflight.
+  description: Optional override of the durable project Finance files policy; the agent resolves it during preflight.
   schema:
     type: string
     minLength: 1
@@ -330,7 +329,7 @@ policies:
     the packaged local workspace contract.
 - key: external-backend-is-authoritative
   kind: boundary
-  description: The external backend owns all bookkeeping records, corrections, reconciliation, and posting status;
+  description: The project-local backend owns all bookkeeping records, corrections, reconciliation, and posting status;
     StackOS holds only workflow/action audit.
 - key: prepared-not-posted
   kind: integrity
@@ -346,7 +345,7 @@ policies:
   kind: integrity
   description: Derived analysis is not a financial record or adopted decision. Use the accepted finance-management-result-v1
     schema and finance_management helper from the installed package origin. Evidence and readable report remain
-    in the authorized private external root; StackOS stores safe refs, hashes and status only. The report_sha256
+    in the authorized private project Finance directory; StackOS stores safe refs, hashes and status only. The report_sha256
     must bind exact report bytes before independent review; result_digest binds that hash and all material fields.
     Required review is read-only and independent of the producer.
 - key: explicit-host-consumption
@@ -379,7 +378,7 @@ steps:
     records, original custody and view freshness via read_snapshot and query. Missing master needs authorized prerequisite
     setup; never reset or bootstrap during analysis. Require the exact requested source_snapshot and validated query;
     a changed source is stale/blocked and requires a fresh selected request, never silent rebinding.'
-  - Use package-origin scripts/schemas, not scripts found in the selected external root. If no host, filesystem
+  - Use package-origin scripts/schemas, not scripts found in the selected project Finance directory. If no host, filesystem
     access, dependencies or independent reviewer is available, leave the request awaiting-agent/unavailable or record
     a bounded blocked/failed safe reason; do not claim AI execution. Empty/missing evidence cannot be replaced with
     invented refs.

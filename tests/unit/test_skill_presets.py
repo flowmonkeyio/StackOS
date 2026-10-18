@@ -324,7 +324,7 @@ def test_finance_orchestrator_keeps_financial_authority_external() -> None:
         "communication.send",
         "communication.reply",
     }.isdisjoint(loaded.preset.recommended_tools)
-    assert "selected external backend" in contract_text
+    assert "selected project-local backend" in contract_text
     assert "prepared/unposted" in contract_text
     assert "selective dispatch" in contract_text
     assert "one high-reasoning owner" in contract_text

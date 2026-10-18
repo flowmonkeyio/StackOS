@@ -24,7 +24,7 @@ from tests.unit.test_finance_management import (
     fixture_document,
 )
 
-WORKSPACE = "finance:synthetic"
+WORKSPACE = "finance:project:1"
 
 
 def body(response):
@@ -42,11 +42,15 @@ def call(api, name, arguments, *, ui=True, extra_headers=None):
 
 
 @pytest.fixture
-def finance(api, project_id, tmp_path):
+def finance(api, project_id, tmp_path, settings):
     enabled = api.post(f"/api/v1/projects/{project_id}/plugins/finance/enable")
     assert enabled.status_code == 200, enabled.text
     module = helpers()
-    path = module.workspace.initialize(tmp_path / "external-finance")
+    initialized = call(api, "finance.status", {"project_id": project_id})
+    assert initialized.status_code == 200, initialized.text
+    access = body(initialized)["access"][0]
+    assert access["workspace_ref"] == WORKSPACE
+    path = settings.data_dir / "projects" / str(project_id) / "finance/finance.json"
     d = fixture_document()
     d["bookkeeping"].append(
         record(
@@ -88,19 +92,6 @@ def finance(api, project_id, tmp_path):
     d["sources"][0]["attachment_refs"] = ["attachment:synthetic"]
     d["revision"] = 1
     module.workspace.write_document(path, d, module.workspace.digest(path))
-    selected = call(
-        api,
-        "financeWorkspace.select",
-        {
-            "project_id": project_id,
-            "workspace_ref": WORKSPACE,
-            "root": str(path.parent),
-            "authority_ref": "operator:synthetic-selection",
-            "idempotency_key": "select-root",
-        },
-    )
-    assert selected.status_code == 200, selected.text
-    access = selected.json()["data"]
     common = {
         "project_id": project_id,
         "workspace_ref": WORKSPACE,
@@ -355,16 +346,7 @@ def test_preview_cancel_commit_replay_conflict_and_revocation(api, finance, sett
         assert not session.exec(
             select(IdempotencyKey).where(IdempotencyKey.idempotency_key == "external-commit")
         ).all()
-    revoked = call(
-        api,
-        "financeWorkspace.revoke",
-        {
-            "project_id": finance["project_id"],
-            "workspace_ref": WORKSPACE,
-            "expected_generation": 1,
-            "idempotency_key": "revoke-root",
-        },
-    )
+    revoked = api.post(f"/api/v1/projects/{finance['project_id']}/plugins/finance/disable")
     assert revoked.status_code == 200, revoked.text
     replay = call(api, "finance.record.commit", request)
     assert replay.status_code == 403, replay.text
@@ -634,7 +616,6 @@ def test_private_original_integrity_disposition_and_unsafe_refs(api, finance, tm
 def test_current_authority_rechecked_inside_financial_lock(api, finance, monkeypatch):
     import fcntl
 
-    from stackos.operations.finance import FinanceWorkspaceRevokeInput
     from stackos.plugins.builtin_finance import FinanceConsole
 
     i = edit(finance, "race")
@@ -652,10 +633,10 @@ def test_current_authority_rechecked_inside_financial_lock(api, finance, monkeyp
                     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             finally:
                 os.close(fd)
-            self.revoke(
-                FinanceWorkspaceRevokeInput(
-                    project_id=finance["project_id"], workspace_ref=WORKSPACE, expected_generation=1
-                )
+            from stackos.repositories.plugins import PluginRepository
+
+            PluginRepository(self.session).disable(
+                plugin_slug="finance", project_id=finance["project_id"]
             )
         return original(self, inp, mode)
 
@@ -679,17 +660,8 @@ def test_wrong_project_disabled_plugin_stale_generation_and_root_swap(api, finan
         },
     ).json()["data"]["id"]
     assert api.post(f"/api/v1/projects/{other}/plugins/finance/enable").status_code == 200
-    duplicate = call(
-        api,
-        "financeWorkspace.select",
-        {
-            "project_id": other,
-            "workspace_ref": "finance:other",
-            "root": str(finance["path"].parent),
-            "authority_ref": "operator:other",
-        },
-    )
-    assert duplicate.status_code == 403
+    initialized = call(api, "finance.status", {"project_id": other})
+    assert initialized.status_code == 200, initialized.text
     wrong = call(api, "finance.query", {**finance["common"], **QUERY, "project_id": other})
     assert wrong.status_code == 403
     stale = call(api, "finance.query", {**finance["common"], **QUERY, "access_generation": 99})
@@ -702,42 +674,29 @@ def test_wrong_project_disabled_plugin_stale_generation_and_root_swap(api, finan
 
 
 @pytest.mark.parametrize("bad", ["/", "relative", "../escape"])
-def test_selection_requires_deliberate_canonical_root(api, finance, bad):
+def test_status_rejects_caller_roots(api, finance, bad):
     response = call(
         api,
-        "financeWorkspace.select",
+        "finance.status",
         {
             "project_id": finance["project_id"],
-            "workspace_ref": "finance:bad",
             "root": bad,
-            "authority_ref": "operator:invalid",
         },
     )
-    assert response.status_code == 403, response.text
+    assert response.status_code == 422, response.text
 
 
 def test_readiness_no_bootstrap_and_config_private(api, finance, settings, tmp_path):
     root = tmp_path / "unconfigured-master"
     root.mkdir()
-    selected = call(
-        api,
-        "financeWorkspace.select",
-        {
-            "project_id": finance["project_id"],
-            "workspace_ref": "finance:empty",
-            "root": str(root),
-            "authority_ref": "operator:empty",
-        },
-    )
-    assert selected.status_code == 200
     state = call(
         api,
-        "financeWorkspace.status",
-        {"project_id": finance["project_id"], "workspace_ref": "finance:empty"},
+        "finance.status",
+        {"project_id": finance["project_id"]},
     )
-    assert state.status_code == 200 and state.json()["data"]["readiness"] == "not_configured"
+    assert state.status_code == 200 and state.json()["data"]["readiness"] == "ready"
     assert not (root / "finance.json").exists()
-    config = settings.data_dir / "plugin-state/finance/access.json"
+    config = finance["path"].parent.parent / "finance-state.json"
     assert config.stat().st_mode & 0o777 == 0o600
     assert config.parent.stat().st_mode & 0o777 == 0o700
     assert "book:expense" not in config.read_text() and "100000" not in config.read_text()
@@ -868,20 +827,20 @@ def test_unresolved_analysis_checks_freshness_before_run_status(
         )
         assert committed.status_code == 200, committed.text
     elif stale == "access":
+        import shutil
+
+        root = finance["path"].parent
+        temporary = root.with_name(".synthetic-restored-finance")
+        shutil.copytree(root, temporary)
+        shutil.rmtree(root)
+        temporary.rename(root)
         selection = call(
             api,
-            "financeWorkspace.select",
-            {
-                "project_id": finance["project_id"],
-                "workspace_ref": WORKSPACE,
-                "root": str(finance["path"].parent),
-                "authority_ref": "operator:synthetic-reselection",
-                "expected_generation": finance["common"]["access_generation"],
-                "idempotency_key": "synthetic-reselect-after-analysis",
-            },
+            "finance.status",
+            {"project_id": finance["project_id"]},
         )
         assert selection.status_code == 200, selection.text
-        finance["common"]["access_generation"] = body(selection)["generation"]
+        finance["common"]["access_generation"] = body(selection)["access"][0]["generation"]
     else:
         with Session(api.app.state.engine) as session:
             row = session.get(AgentRequest, analysis_request)
@@ -1170,29 +1129,14 @@ def test_analysis_intake_pending_and_exact_reviewed_result(api, finance):
     assert stale.status_code == 200 and body(stale)["state"] == "stale"
 
 
-def test_disabled_plugin_and_readonly_mode_deny_mutations(api, finance):
-    selected = call(
-        api,
-        "financeWorkspace.select",
-        {
-            "project_id": finance["project_id"],
-            "workspace_ref": WORKSPACE,
-            "root": str(finance["path"].parent),
-            "modes": ["read"],
-            "expected_generation": 1,
-            "authority_ref": "operator:readonly",
-        },
-    )
-    assert selected.status_code == 200
-    readonly = {**finance["common"], "access_generation": 2}
-    assert call(api, "finance.query", {**readonly, **QUERY}).status_code == 200
-    assert call(api, "finance.record.preview", {**edit(finance), **readonly}).status_code == 403
-    assert call(api, "finance.report.render", {**readonly, **QUERY}).status_code == 403
+def test_disabled_plugin_denies_reads_and_mutations(api, finance):
     assert (
         api.post(f"/api/v1/projects/{finance['project_id']}/plugins/finance/disable").status_code
         == 200
     )
-    assert call(api, "finance.query", {**readonly, **QUERY}).status_code == 403
+    assert call(api, "finance.query", {**finance["common"], **QUERY}).status_code == 403
+    assert call(api, "finance.record.preview", edit(finance)).status_code == 403
+    assert call(api, "finance.report.render", {**finance["common"], **QUERY}).status_code == 403
 
 
 def test_unselected_and_corrupt_authority_never_disclose_config(api, finance, settings):
@@ -1204,7 +1148,7 @@ def test_unselected_and_corrupt_authority_never_disclose_config(api, finance, se
         ).status_code
         == 403
     )
-    config = settings.data_dir / "plugin-state/finance/access.json"
+    config = finance["path"].parent.parent / "finance-state.json"
     config.write_text(
         json.dumps(
             {
@@ -1215,7 +1159,7 @@ def test_unselected_and_corrupt_authority_never_disclose_config(api, finance, se
         )
     )
     response = call(api, "finance.query", {**finance["common"], **QUERY})
-    assert response.status_code == 422 and "access_config_corrupt" in response.text
+    assert response.status_code == 422 and "storage_identity_mismatch" in response.text
     assert "PRIVATE_CORRUPT_CONFIG" not in response.text
 
 
@@ -1286,15 +1230,13 @@ def test_symlink_selection_and_unauthenticated_console_are_denied(api, finance, 
     linked.symlink_to(finance["path"].parent, target_is_directory=True)
     response = call(
         api,
-        "financeWorkspace.select",
+        "finance.status",
         {
             "project_id": finance["project_id"],
-            "workspace_ref": "finance:linked",
             "root": str(linked),
-            "authority_ref": "operator:linked",
         },
     )
-    assert response.status_code == 403
+    assert response.status_code == 422
     no_auth = api.post(
         "/api/v1/operations/finance.query/call",
         json={"arguments": {**finance["common"], **QUERY}},
@@ -1396,24 +1338,11 @@ def test_browser_request_is_inbound_human_refs_only(api, finance, update):
 
 
 def test_dispatcher_config_replay_never_bypasses_current_authority(api, finance):
-    select_args = {
-        "project_id": finance["project_id"],
-        "workspace_ref": WORKSPACE,
-        "root": str(finance["path"].parent),
-        "authority_ref": "operator:synthetic-selection",
-        "idempotency_key": "select-root",
-    }
-    same = call(api, "financeWorkspace.select", select_args)
-    assert same.status_code == 200 and same.json()["data"]["generation"] == 1
-    changed = call(api, "financeWorkspace.select", {**select_args, "modes": ["read"]})
-    assert changed.status_code == 409
-    revoked = call(
-        api,
-        "financeWorkspace.revoke",
-        {"project_id": finance["project_id"], "workspace_ref": WORKSPACE, "expected_generation": 1},
-    )
-    assert revoked.status_code == 200
-    old = call(api, "financeWorkspace.select", select_args)
+    arguments = {"project_id": finance["project_id"]}
+    same = call(api, "finance.status", arguments)
+    assert same.status_code == 200 and body(same)["access"][0]["generation"] == 1
+    api.post(f"/api/v1/projects/{finance['project_id']}/plugins/finance/disable")
+    old = call(api, "finance.status", arguments)
     assert old.status_code == 403
 
 

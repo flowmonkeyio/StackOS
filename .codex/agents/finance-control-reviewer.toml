@@ -48,7 +48,8 @@ JSON stores dated
 observations. Document revision/hash is concurrency proof; approval binds immutable
 scoped facts and material dependencies. Unrelated document updates need reread/rebase,
 not fresh financial approval. Independently check schema, references and readback;
-first-time setup uses a new workspace without overwriting existing files.
+verify authenticated finance.status provisions only a never-initialized managed
+project store. Missing or corrupt provisioned data requires repair, never a reset.
 These are read-only checks, never permission to repair records.
 
 Independently inspect original hash/locator and raw amount/date evidence,

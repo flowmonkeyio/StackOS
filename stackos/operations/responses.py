@@ -773,9 +773,7 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
         )
         return out
     if operation_name in {
-        "financeWorkspace.select",
-        "financeWorkspace.revoke",
-        "financeWorkspace.status",
+        "finance.status",
         "finance.query",
         "finance.record.get",
         "finance.record.preview",

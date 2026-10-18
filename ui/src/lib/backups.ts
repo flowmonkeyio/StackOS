@@ -24,6 +24,7 @@ export interface BackupStatus {
   keep_last: number
   destination: string
   targets: BackupTarget[]
+  project_ids: number[] | null
   recipient_fingerprint: string | null
   last_attempt: BackupOutcome | null
   last_success: BackupOutcome | null

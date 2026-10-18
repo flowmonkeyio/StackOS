@@ -1,16 +1,19 @@
-# Local JSON Finance Workspace Contract
+# Project Finance File Contract
 
 Format version: `local-json-v1`. Backend key: `local-json`.
 
 ## Layout and setup
 
-`finance/finance.json` is the **single authoritative local financial record**.
+`data/projects/<project-id>/finance/finance.json` is the **single authoritative
+local financial record for that project**. StackOS derives this private location
+from the permanent project ID. There is no Finance folder selection; other projects
+use different directories and cannot share or select this master.
 It owns financial facts, sourced mutable setup, decisions, versions, links and
 corrections. `FINANCE.md` is an operating guide, not a financial table or setup
 form. Originals may use `receipts/YYYY/MM/`, `attachments/YYYY/MM/`, or
 `attachments/<type>/YYYY/MM/`. The schema defines data shape,
-not facts. This is a host-owned convention, not a StackOS filesystem connector,
-schema registry, ledger or financial database.
+not facts. The Finance plugin owns these files inside generic managed project storage,
+without adding a financial ledger to the core database.
 
 ```text
 finance/
@@ -22,11 +25,14 @@ finance/
 └── attachments/[type/]YYYY/MM/  # originals: emails, statements, exports
 ```
 
-Copy the [JSON template](../templates/finance-workspace/finance.json),
+Opening Finance calls authenticated `finance.status`, which initializes only a
+never-provisioned enabled project's default store from the packaged
+[JSON template](../templates/finance-workspace/finance.json),
 [schema](../templates/finance-workspace/schemas/finance-v1.schema.json) and
-[guide](../templates/finance-workspace/FINANCE.md) only when initializing an
-authorized new, empty workspace. Initialize once; subsequent runs load the
-existing JSON rather than resetting it from the template. Empty collections are intentional.
+[guide](../templates/finance-workspace/FINANCE.md). Initialization is private,
+locked and atomic. Subsequent calls load existing data. Missing or corrupt
+provisioned files require repair and are never reset from the template.
+Empty collections are intentional.
 Fill only sourced facts; unknown does not mean zero. Apply the
 [selected-workflow setup matrix](backend-contract.md#setup-and-execution):
 receipt custody does not require taxpayer/advisor/bank setup. Complete only
@@ -43,11 +49,11 @@ location; dated research references and one-time outputs are distinct from that
 method. Do not turn a historical setup report, browser session or prior review
 into current readiness. A new session resolves its own binding and capabilities.
 
-Initialize financial storage only during explicitly authorized prerequisite
-setup, not infrastructure setup or preset materialization. Preserve an existing
-master and existing guidance. A future `projects/` directory is optional
-navigation: it creates no StackOS binding or inherited access and no additional
-business financial master.
+Infrastructure setup and preset materialization do not create financial records.
+Opening the enabled project's Finance console calls authenticated `finance.status`
+to provision only a never-initialized default store. Preserve existing masters and
+guidance; missing or damaged provisioned data needs repair. The managed directory
+path itself grants no StackOS binding, inherited access or host filesystem capability.
 
 ## Structured records and views
 
@@ -258,8 +264,11 @@ compares the generated files with the current master. None proves economic
 matching, policy adoption or complete reconciliation. These are confidential
 host-side outputs; do not copy their financial contents into StackOS results.
 
-Explicit prerequisite initialization uses `finance_workspace.py initialize`
-with the same `--finance-dir`; it refuses existing contents. For authorized
+Production provisioning uses `finance.status`, which creates the managed state,
+ownership marker and default files together. Standalone
+`finance_workspace.py initialize --finance-dir` remains a mechanical helper for
+isolated fixtures or explicitly separate file preparation; it does not provision
+a StackOS project's managed store. Never use it to repair or replace one. For authorized
 record updates, import the shipped module and use
 `writer(path, expected_hash, expected_revision)` as a context manager. Its
 session owns the current document, `retain_original` and `commit`; inspect the
@@ -458,14 +467,34 @@ bindings, validated by the packaged `management-v1.schema.json`. It does not
 require a master schema migration. Unsupported treatment, dates, account scope
 or coverage remain gaps; operators/agents supply and review those facts.
 
-The daemon's private `plugin-state/finance/access.json` is authorization metadata,
-not financial storage. Explicit selection binds one project/workspace to one
-canonical existing root, read/correct/export modes and generation. Every call
-rechecks enabled plugin, project, current generation/mode and root device/inode;
-commit rechecks authority inside the existing writer lock. Revoked/root-replaced
-access requires deliberate reselection and fresh state. Run tokens and caller
-actor/admin fields cannot establish console authority. Keep the external root
-owner-private; owner-only read access is suitable for read/export fixtures.
+Project-local `finance-state.json` next to `finance/` records safe storage
+incarnation/migration metadata. An opaque project-derived source ref and generation
+fence stale requests; they cannot select a root. Every call rechecks the enabled
+plugin, database project identity, derived private path and current incarnation.
+Commit rechecks inside the existing writer lock. Only `finance.status` prepares a
+never-provisioned store or validates an adopted restored store before refreshing
+generation. Ordinary reads never initialize or rebind files. Run tokens and caller
+actor/admin fields cannot establish authority.
+
+The physical `finance/.finance-owner.json` sidecar binds project ID,
+project creation time and the existing storage access ID to `finance-state.json`.
+Validate it before both ordinary access and restored inode rebinding. Copying
+another project's valid directory into the derived path fails this ownership
+check. Backup includes both markers. Missing or intentionally unavailable
+originals remain explicit document gaps and do not make otherwise valid records
+unreadable; unsafe aliases, escaped paths or retained-byte integrity failures
+still require repair.
+
+Legacy adoption requires exactly one unambiguous, currently authorized source
+not shared or overlapping with another project's historical roots. Copy the full
+validated tree under source and project locks, verify exact bytes and publish
+atomically without overwrite; retain originals. Ambiguous, revoked, unavailable
+or damaged legacy data needs repair instead of an empty bootstrap. Legacy
+`plugin-state/finance/access.json` serves only migration, not new selection.
+The project-parent `.publication-pending` marker is persisted before staging and
+pending metadata, and cleared only after ready state and migration retirement
+are durable. Backups refuse incomplete publications, including the crash window
+before or after the Finance directory rename.
 
 Console corrections preserve original observations and additive history. Preview
 and cancel do not write. Commit uses an opaque stable request, exact source
@@ -652,15 +681,16 @@ records or resolving an old proposal onto a replacement. `read_result` returns
 `state=stale` with the intact historical result; consumers must suppress current
 bucketing from it. Period report renderers and exports remain unchanged.
 
-Recovery preserves the external master and originals: refresh/rebase stale
-edits, reconcile unknown outcomes, repair/reselect local file authorization and
-restore only from independently verified operator-owned backups. This finance
-authorization map and workspace selection do not register backup coverage:
-finance roots are not automatically enrolled. Explicitly enroll the entire
-finance directory and its persistent `.writer.lock` through local backup setup.
-Verify recovery into an inert directory before adoption and perform explicit
-file-access reselection; backup or recovery does not activate finance
-authorization.
+Recovery preserves each project's master and originals. Rebase stale edits,
+reconcile unknown outcomes and restore only verified backups. Managed project
+Finance files and safe incarnation metadata are included automatically in encrypted
+backups, without external enrollment. Backup holds persistent project/Finance locks
+and refuses busy, unsafe or changing sources. Recovery retains project-ID paths in
+an inert directory. Operator-controlled adoption restores the matching database
+and files; `finance.status` then validates project identity and custody before
+refreshing generation. Old requests stay historical; missing masters are never
+replaced. Renames keep the location, disabling Finance preserves it, and deleted
+project files remain retained.
 
 ## Prepared bookkeeping
 
@@ -772,12 +802,10 @@ These are source families, not hardcoded reusable tax rules.
 The operator owns backup, restore, retention periods, access permissions,
 encryption and secure disposal. Credentials never belong here.
 
-StackOS local backup setup can explicitly enroll the entire external finance
-directory with its persistent `.writer.lock`. It takes a shared lock while
-copying and rejects a busy writer, missing or changing evidence and unsafe
-files. Register the directory through local administration; neither
-`workspace_ref` nor a project binding grants coverage. Manual and opted-in
-automatic backups then include the master, originals, schema, review packets
-and views in the same encrypted archive. Verify recovery into an inert folder
-with the separately stored private key before adopting restored financial
-records. No backup or restore changes posting or reconciliation decisions.
+Encrypted backups automatically include all managed project Finance directories
+and their safe incarnation metadata. Persistent writer locks fence snapshots;
+busy writers, missing locks, changed trees and unsafe files fail the archive.
+Manual and opted-in scheduled backups cover masters, originals, schemas, reviews
+and views separately by permanent project ID. Verify recovery into an inert
+folder with the separately stored private key before adoption. Neither backup nor
+restore changes posting or reconciliation decisions.

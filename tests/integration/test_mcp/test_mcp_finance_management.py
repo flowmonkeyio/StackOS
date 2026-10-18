@@ -8,9 +8,7 @@ from stackos.operations.registry import build_operation_registry
 from stackos.repositories.base import NotFoundError
 
 NAMES = (
-    "financeWorkspace.select",
-    "financeWorkspace.revoke",
-    "financeWorkspace.status",
+    "finance.status",
     "finance.query",
     "finance.record.get",
     "finance.record.preview",
@@ -55,3 +53,15 @@ def test_raw_only_finance_evidence_and_report_policies():
         spec = registry.get(name)
         assert spec.effective_response_policy.allowed_modes == ("raw",)
         assert spec.effective_response_policy.default_mode == "raw"
+
+
+def test_workspace_entrypoints_are_removed_and_status_initialization_is_explicit():
+    registry = build_operation_registry()
+    for name in ("financeWorkspace.select", "financeWorkspace.revoke", "financeWorkspace.status"):
+        with pytest.raises(NotFoundError):
+            registry.get(name)
+    status = registry.get("finance.status")
+    assert not status.read_only and status.idempotency_policy == "handler"
+    assert status.grant_policy == "local-admin-console-write"
+    assert "workspace_ref" not in status.input_model.model_fields
+    assert "root" not in status.input_model.model_fields

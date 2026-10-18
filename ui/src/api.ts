@@ -3591,10 +3591,13 @@ export interface components {
             /** Project Id */
             project_id: number;
             /**
-             * Revoked At
-             * @default null
+             * Readiness
+             * @default ready
+             * @constant
              */
-            revoked_at: string | null;
+            readiness: "ready";
+            /** @default null */
+            snapshot: components["schemas"]["FinanceSnapshotOut"] | null;
             /** Workspace Ref */
             workspace_ref: string;
         };
@@ -4338,95 +4341,8 @@ export interface components {
             /** Sha256 */
             sha256: string;
         };
-        /** FinanceStatusOut */
-        FinanceStatusOut: {
-            /** Access */
-            access: {
-                [key: string]: unknown;
-            }[];
-            /** Project Id */
-            project_id: number;
-            /** Readiness */
-            readiness: string;
-        };
-        /** FinanceWorkspaceRevokeInput */
-        FinanceWorkspaceRevokeInput: {
-            /**
-             * Expected Etag
-             * @default null
-             */
-            expected_etag: null;
-            /** Expected Generation */
-            expected_generation: number;
-            /**
-             * Idempotency Key
-             * @default null
-             */
-            idempotency_key: string | null;
-            /** Project Id */
-            project_id: number;
-            /**
-             * Response Mode
-             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
-             * @default null
-             */
-            response_mode: FinanceWorkspaceRevokeInputResponse_modeAnyOf0 | null;
-            /**
-             * Run Token
-             * @default null
-             */
-            run_token: null;
-            /** Workspace Ref */
-            workspace_ref: string;
-        };
-        /** FinanceWorkspaceSelectInput */
-        FinanceWorkspaceSelectInput: {
-            /** Authority Ref */
-            authority_ref: string;
-            /**
-             * Expected Etag
-             * @default null
-             */
-            expected_etag: null;
-            /**
-             * Expected Generation
-             * @default null
-             */
-            expected_generation: number | null;
-            /**
-             * Idempotency Key
-             * @default null
-             */
-            idempotency_key: string | null;
-            /**
-             * Modes
-             * @default [
-             *       "read",
-             *       "correct",
-             *       "export"
-             *     ]
-             */
-            modes: FinanceWorkspaceSelectInputModes[];
-            /** Project Id */
-            project_id: number;
-            /**
-             * Response Mode
-             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
-             * @default null
-             */
-            response_mode: FinanceWorkspaceSelectInputResponse_modeAnyOf0 | null;
-            /** Root */
-            root: string;
-            /**
-             * Run Token
-             * @default null
-             */
-            run_token: null;
-            /** Workspace Ref */
-            workspace_ref: string;
-        };
-        /** FinanceWorkspaceStatusInput */
-        FinanceWorkspaceStatusInput: {
+        /** FinanceStatusInput */
+        FinanceStatusInput: {
             /**
              * Expected Etag
              * @default null
@@ -4444,17 +4360,21 @@ export interface components {
              * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
              * @default null
              */
-            response_mode: FinanceWorkspaceStatusInputResponse_modeAnyOf0 | null;
+            response_mode: FinanceStatusInputResponse_modeAnyOf0 | null;
             /**
              * Run Token
              * @default null
              */
             run_token: null;
-            /**
-             * Workspace Ref
-             * @default null
-             */
-            workspace_ref: string | null;
+        };
+        /** FinanceStatusOut */
+        FinanceStatusOut: {
+            /** Access */
+            access: components["schemas"]["FinanceAccessOut"][];
+            /** Project Id */
+            project_id: number;
+            /** Readiness */
+            readiness: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -6639,9 +6559,9 @@ export interface components {
              */
             run_id: number | null;
         };
-        /** WriteEnvelope[FinanceAccessOut] */
-        WriteEnvelope_FinanceAccessOut_: {
-            data: components["schemas"]["FinanceAccessOut"];
+        /** WriteEnvelope[FinanceCommitOut] */
+        WriteEnvelope_FinanceCommitOut_: {
+            data: components["schemas"]["FinanceCommitOut"];
             /**
              * Project Id
              * @default null
@@ -6653,9 +6573,9 @@ export interface components {
              */
             run_id: number | null;
         };
-        /** WriteEnvelope[FinanceCommitOut] */
-        WriteEnvelope_FinanceCommitOut_: {
-            data: components["schemas"]["FinanceCommitOut"];
+        /** WriteEnvelope[FinanceStatusOut] */
+        WriteEnvelope_FinanceStatusOut_: {
+            data: components["schemas"]["FinanceStatusOut"];
             /**
              * Project Id
              * @default null
@@ -7029,10 +6949,8 @@ export type SchemaFinanceRecordGetInput = components['schemas']['FinanceRecordGe
 export type SchemaFinanceRecordOut = components['schemas']['FinanceRecordOut'];
 export type SchemaFinanceReportRenderInput = components['schemas']['FinanceReportRenderInput'];
 export type SchemaFinanceSnapshotOut = components['schemas']['FinanceSnapshotOut'];
+export type SchemaFinanceStatusInput = components['schemas']['FinanceStatusInput'];
 export type SchemaFinanceStatusOut = components['schemas']['FinanceStatusOut'];
-export type SchemaFinanceWorkspaceRevokeInput = components['schemas']['FinanceWorkspaceRevokeInput'];
-export type SchemaFinanceWorkspaceSelectInput = components['schemas']['FinanceWorkspaceSelectInput'];
-export type SchemaFinanceWorkspaceStatusInput = components['schemas']['FinanceWorkspaceStatusInput'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
 export type SchemaHealthResponse = components['schemas']['HealthResponse'];
 export type SchemaHeartbeatResponse = components['schemas']['HeartbeatResponse'];
@@ -7120,8 +7038,8 @@ export type SchemaWorkflowTemplateListOut = components['schemas']['WorkflowTempl
 export type SchemaWorkflowTemplateSpec = components['schemas']['WorkflowTemplateSpec'];
 export type SchemaWorkflowTemplateSummaryOut = components['schemas']['WorkflowTemplateSummaryOut'];
 export type SchemaWriteEnvelopeDurableActionJobOut = components['schemas']['WriteEnvelope_DurableActionJobOut_'];
-export type SchemaWriteEnvelopeFinanceAccessOut = components['schemas']['WriteEnvelope_FinanceAccessOut_'];
 export type SchemaWriteEnvelopeFinanceCommitOut = components['schemas']['WriteEnvelope_FinanceCommitOut_'];
+export type SchemaWriteEnvelopeFinanceStatusOut = components['schemas']['WriteEnvelope_FinanceStatusOut_'];
 export type SchemaWriteEnvelopeLocalAgentChatMessageOut = components['schemas']['WriteEnvelope_LocalAgentChatMessageOut_'];
 export type SchemaWriteEnvelopeWorkflowTemplateExtensionDeleteOut = components['schemas']['WriteEnvelope_WorkflowTemplateExtensionDeleteOut_'];
 export type SchemaWriteEnvelopeWorkflowTemplateExtensionUpsertOut = components['schemas']['WriteEnvelope_WorkflowTemplateExtensionUpsertOut_'];
@@ -10480,26 +10398,7 @@ export enum FinanceReportRenderInputSort {
     kind = "kind",
     review = "review"
 }
-export enum FinanceWorkspaceRevokeInputResponse_modeAnyOf0 {
-    compact = "compact",
-    raw = "raw",
-    ack = "ack",
-    standard = "standard",
-    verbose = "verbose"
-}
-export enum FinanceWorkspaceSelectInputModes {
-    read = "read",
-    correct = "correct",
-    export = "export"
-}
-export enum FinanceWorkspaceSelectInputResponse_modeAnyOf0 {
-    compact = "compact",
-    raw = "raw",
-    ack = "ack",
-    standard = "standard",
-    verbose = "verbose"
-}
-export enum FinanceWorkspaceStatusInputResponse_modeAnyOf0 {
+export enum FinanceStatusInputResponse_modeAnyOf0 {
     compact = "compact",
     raw = "raw",
     ack = "ack",

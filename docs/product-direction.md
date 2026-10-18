@@ -49,6 +49,8 @@ StackOS uses one connected operating model:
 
 1. **Project**: the business/workspace boundary for durable context, setup,
    enabled plugins, account bindings, workflows, runs, records, and audit.
+   Plugin-owned files use private managed storage keyed by the permanent project
+   ID. Project files remain separate and are included in encrypted backup/recovery.
 2. **Plugin**: a domain package contributing capabilities, providers, actions,
    resource schemas, workflows, presets, and generic UI metadata.
 3. **Workflow template**: reusable operating setup for a valuable job,

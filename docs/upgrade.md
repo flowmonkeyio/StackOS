@@ -120,7 +120,7 @@ stackos install
 ```
 
 Before rollback, serious upgrades, or cross-machine moves, configure the
-public recovery key and enroll external finance folders using
+public recovery key using
 [backup setup](./backups.md), then create an encrypted archive:
 
 ```bash
@@ -133,8 +133,9 @@ The archive contains:
 - `~/.local/state/stackos/seed.bin`
 - `~/.local/state/stackos/auth.token`
 - `manifest.json`
-- Every explicitly enrolled external folder, including finance master,
-  invoice originals, schemas and review evidence
+- All managed project files under `data/projects/<project-id>/`, including Finance
+  masters, safe incarnation metadata, invoices, receipts, schemas and reviews
+- Every explicitly enrolled additional external folder
 
 The entire archive is encrypted with an independent recovery key and written
 with mode `0600`. Keep the private recovery key separately; it is never stored
@@ -170,8 +171,11 @@ matching recovered files together:
 - `~/.local/state/stackos/seed.bin` (encryption seed)
 - `~/.local/state/stackos/auth.token` (bearer token)
 
-Recover enrolled finance folders from `external/<target-id>/` to their chosen
-external locations and explicitly reconfigure coverage on the new machine.
+Adopt the recovered `data/projects/` tree with its matching database. Keep the
+permanent project-ID directories intact; never merge or reassign another project's
+files. Opening Finance verifies identity and custody before refreshing its storage
+generation. Recover additional enrolled folders from `external/<target-id>/` and
+explicitly reconfigure only that external coverage on the new machine.
 Recovery does not enable a saved schedule. These files restore StackOS
 credential metadata and encrypted secrets, but not
 Telegram's native TDLib authorization database. User Accounts need a new

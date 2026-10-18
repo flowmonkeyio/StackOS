@@ -275,7 +275,8 @@ async function inspectRecord(recordRef: string, inspectionEvent?: Event) {
     detail.value = result.data
   } catch {
     if (active && sequence === loadSequence)
-      error.value = 'Record unavailable or source changed. Refresh the workspace before editing.'
+      error.value =
+        'Record unavailable or source changed. Refresh project Finance data before editing.'
   } finally {
     if (active && sequence === loadSequence) loading.value = false
   }
@@ -597,8 +598,8 @@ onBeforeUnmount(() => {
         </section>
         <p class="text-xs text-fg-muted">
           To identify or link the correct original, ask your finance agent to use the existing
-          receipt intake or finance workflow, then refresh this workspace. Typed counts cover the
-          explicitly identified originals; other linked files are listed separately.
+          receipt intake or finance workflow, then refresh project Finance data. Typed counts cover
+          the explicitly identified originals; other linked files are listed separately.
         </p>
         <p v-if="evidenceState" role="status" class="break-words text-sm text-fg-muted">
           {{ evidenceState }}

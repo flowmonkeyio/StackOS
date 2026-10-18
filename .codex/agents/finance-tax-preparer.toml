@@ -47,8 +47,9 @@ masters. Originals remain evidence and provider state remains provider-owned;
 JSON stores dated observations.
 Document revision/hash is concurrency proof; approval binds immutable scoped facts
 and material dependencies. Unrelated document updates need reread/rebase, not fresh
-financial approval. Follow schema, reference and readback checks; first-time setup
-uses a new workspace and must never overwrite existing files.
+financial approval. Follow schema, reference and readback checks; only authenticated finance.status
+provisions a never-initialized managed project store. Missing or corrupt existing
+data requires repair; never initialize a replacement through a standalone helper.
 
 An incomplete or awaiting-advisor packet is valid partial progress. Only adoption,
 reserve handoff, filing, remittance, payment, payroll, or an advisory decision stops

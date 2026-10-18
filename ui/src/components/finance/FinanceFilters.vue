@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUpdate, ref } from 'vue'
+import { onBeforeUpdate, ref, useId } from 'vue'
 import {
   UiButton,
   UiButtonGroup,
@@ -12,6 +12,8 @@ import { comparisonWindow, timeframe, type FinanceQuery } from '@/lib/finance'
 const props = defineProps<{ query: FinanceQuery; disabled?: boolean }>()
 const emit = defineEmits<{ (e: 'apply', query: FinanceQuery): void }>()
 const draft = ref<FinanceQuery>({ ...props.query })
+const expanded = ref(false)
+const controlsId = `finance-filter-controls-${useId()}`
 const periods = [
   { value: 'week', label: 'Week' },
   { value: 'month', label: 'Month' },
@@ -103,91 +105,106 @@ function apply() {
         >
       </UiButtonGroup>
       <span class="text-sm text-fg-muted">Calendar shortcuts use UTC dates.</span>
+      <UiButton
+        type="button"
+        size="sm"
+        class="ml-auto"
+        :icon-right="expanded ? 'chevron-up' : 'chevron-down'"
+        :aria-expanded="expanded"
+        :aria-controls="controlsId"
+        data-test="toggle-finance-filters"
+        @click="expanded = !expanded"
+        >{{ expanded ? 'Hide filters' : 'Show filters' }}</UiButton
+      >
     </div>
-    <div class="grid grid-cols-4 gap-3">
-      <UiFormField label="Timeframe"
-        ><UiSelect
-          :model-value="preset"
-          :options="[
-            { value: 'year', label: 'Calendar year' },
-            { value: 'week', label: 'This week' },
-            { value: 'month', label: 'This month' },
-            { value: 'quarter', label: 'This quarter' },
-            { value: 'last-month', label: 'Last month' },
-            { value: 'year-to-date', label: 'Year to date' },
-            { value: 'all', label: 'All time' },
-            { value: 'custom', label: 'Custom dates' },
-          ]"
-          @update:model-value="setPreset"
-      /></UiFormField>
-      <UiFormField label="From"
-        ><UiInput
-          v-model="draft.start"
-          type="date"
-          min="0001-01-01"
-          max="9999-12-31"
-          data-test="filter-start"
-          @update:model-value="preset = currentPreset()"
-      /></UiFormField>
-      <UiFormField label="Through"
-        ><UiInput
-          v-model="draft.end"
-          type="date"
-          min="0001-01-01"
-          max="9999-12-31"
-          data-test="filter-end"
-          @update:model-value="preset = currentPreset()"
-      /></UiFormField>
-      <UiFormField
-        label="Compare with"
-        :help="
-          preset === 'all'
-            ? 'All-time comparison is unavailable; choose a bounded period.'
-            : 'Same selected population and basis.'
-        "
-        ><UiSelect
-          v-model="compare"
-          :disabled="preset === 'all'"
-          :options="[
-            { value: 'none', label: 'No comparison' },
-            { value: 'period', label: 'Previous period' },
-            { value: 'year', label: 'Previous year' },
-          ]"
-      /></UiFormField>
-      <UiFormField
-        label="Find invoice or record"
-        help="Search stays inside the selected timeframe. Use All time for old invoices."
-        ><UiInput
-          v-model="draft.q"
-          type="search"
-          data-test="finance-search"
-          placeholder="Invoice ID, vendor or source"
-      /></UiFormField>
-      <UiFormField label="Record type"
-        ><UiSelect
-          v-model="draft.kind"
-          :options="[
-            { value: 'all', label: 'All records' },
-            { value: 'expense', label: 'Expenses' },
-            { value: 'income', label: 'Income' },
-            { value: 'bill', label: 'Bills' },
-            { value: 'receipt', label: 'Receipts' },
-          ]"
-      /></UiFormField>
-      <UiFormField label="Recognition basis"
-        ><UiSelect v-model="draft.recognition_basis" :options="['cash', 'accrual']"
-      /></UiFormField>
-      <UiFormField label="Date basis"
-        ><UiSelect
-          v-model="draft.date_basis"
-          :options="['transaction', 'posting', 'issue', 'cash']"
-      /></UiFormField>
-    </div>
-    <details class="text-sm">
-      <summary class="focus-ring cursor-pointer">
-        Account, category, currency and project filters
-      </summary>
-      <div class="mt-3 grid grid-cols-4 gap-3">
+    <div
+      v-show="expanded"
+      :id="controlsId"
+      role="region"
+      aria-label="Finance filter controls"
+      class="space-y-3"
+      data-test="finance-filter-controls"
+    >
+      <div class="grid grid-cols-4 gap-3">
+        <UiFormField label="Timeframe"
+          ><UiSelect
+            :model-value="preset"
+            :options="[
+              { value: 'year', label: 'Calendar year' },
+              { value: 'week', label: 'This week' },
+              { value: 'month', label: 'This month' },
+              { value: 'quarter', label: 'This quarter' },
+              { value: 'last-month', label: 'Last month' },
+              { value: 'year-to-date', label: 'Year to date' },
+              { value: 'all', label: 'All time' },
+              { value: 'custom', label: 'Custom dates' },
+            ]"
+            @update:model-value="setPreset"
+        /></UiFormField>
+        <UiFormField label="From"
+          ><UiInput
+            v-model="draft.start"
+            type="date"
+            min="0001-01-01"
+            max="9999-12-31"
+            data-test="filter-start"
+            @update:model-value="preset = currentPreset()"
+        /></UiFormField>
+        <UiFormField label="Through"
+          ><UiInput
+            v-model="draft.end"
+            type="date"
+            min="0001-01-01"
+            max="9999-12-31"
+            data-test="filter-end"
+            @update:model-value="preset = currentPreset()"
+        /></UiFormField>
+        <UiFormField
+          label="Compare with"
+          :help="
+            preset === 'all'
+              ? 'All-time comparison is unavailable; choose a bounded period.'
+              : 'Same selected population and basis.'
+          "
+          ><UiSelect
+            v-model="compare"
+            :disabled="preset === 'all'"
+            :options="[
+              { value: 'none', label: 'No comparison' },
+              { value: 'period', label: 'Previous period' },
+              { value: 'year', label: 'Previous year' },
+            ]"
+        /></UiFormField>
+        <UiFormField
+          label="Find invoice or record"
+          help="Search stays inside the selected timeframe. Use All time for old invoices."
+          ><UiInput
+            v-model="draft.q"
+            type="search"
+            data-test="finance-search"
+            placeholder="Invoice ID, vendor or source"
+        /></UiFormField>
+        <UiFormField label="Record type"
+          ><UiSelect
+            v-model="draft.kind"
+            :options="[
+              { value: 'all', label: 'All records' },
+              { value: 'expense', label: 'Expenses' },
+              { value: 'income', label: 'Income' },
+              { value: 'bill', label: 'Bills' },
+              { value: 'receipt', label: 'Receipts' },
+            ]"
+        /></UiFormField>
+        <UiFormField label="Recognition basis"
+          ><UiSelect v-model="draft.recognition_basis" :options="['cash', 'accrual']"
+        /></UiFormField>
+        <UiFormField label="Date basis"
+          ><UiSelect
+            v-model="draft.date_basis"
+            :options="['transaction', 'posting', 'issue', 'cash']"
+        /></UiFormField>
+      </div>
+      <div class="grid grid-cols-4 gap-3">
         <UiFormField label="Account reference"><UiInput v-model="draft.account_ref" /></UiFormField>
         <UiFormField label="Category reference"
           ><UiInput v-model="draft.category_ref"
@@ -212,10 +229,10 @@ function apply() {
         <UiFormField label="Timezone"><UiInput v-model="draft.timezone" /></UiFormField>
         <UiCheckbox v-model="draft.needs_review" label="Needs review only" />
       </div>
-    </details>
-    <p v-if="error" role="alert" class="text-sm text-danger-fg">{{ error }}</p>
-    <UiButton type="submit" :disabled="disabled" data-test="apply-finance-filters"
-      >Apply timeframe and filters</UiButton
-    >
+      <p v-if="error" role="alert" class="text-sm text-danger-fg">{{ error }}</p>
+      <UiButton type="submit" :disabled="disabled" data-test="apply-finance-filters"
+        >Apply timeframe and filters</UiButton
+      >
+    </div>
   </form>
 </template>

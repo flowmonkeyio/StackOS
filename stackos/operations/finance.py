@@ -49,24 +49,8 @@ class FinanceAccessInput(FinanceInput):
     access_generation: StrictInt = Field(ge=1)
 
 
-class FinanceWorkspaceSelectInput(FinanceInput):
-    root: str = Field(min_length=1, max_length=4096)
-    modes: list[Literal["read", "correct", "export"]] = Field(
-        default=["read", "correct", "export"], min_length=1
-    )
-    expected_generation: StrictInt | None = Field(default=None, ge=0)
-    authority_ref: str = Field(
-        min_length=1, max_length=240, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
-    )
-
-
-class FinanceWorkspaceRevokeInput(FinanceInput):
-    expected_generation: StrictInt = Field(ge=1)
-
-
-class FinanceWorkspaceStatusInput(MCPInput):
+class FinanceStatusInput(MCPInput):
     project_id: StrictInt = Field(gt=0)
-    workspace_ref: str | None = Field(default=None, min_length=1, max_length=160)
     run_token: None = None
     idempotency_key: None = None
 
@@ -188,13 +172,14 @@ class FinanceAccessOut(BaseModel):
     backend_key: Literal["local-json"]
     modes: list[str]
     generation: int
-    revoked_at: str | None = None
+    readiness: Literal["ready"] = "ready"
+    snapshot: FinanceSnapshotOut | None = None
 
 
 class FinanceStatusOut(BaseModel):
     project_id: int
     readiness: str
-    access: list[dict[str, Any]]
+    access: list[FinanceAccessOut]
 
 
 class FinanceMoneyOut(BaseModel):
@@ -335,27 +320,11 @@ def _handler(method, output, *, write=False):
 def operation_specs() -> list[OperationSpec]:
     rows = (
         (
-            "financeWorkspace.select",
-            FinanceWorkspaceSelectInput,
-            FinanceAccessOut,
-            "select",
-            True,
-            False,
-        ),
-        (
-            "financeWorkspace.revoke",
-            FinanceWorkspaceRevokeInput,
-            FinanceAccessOut,
-            "revoke",
-            True,
-            False,
-        ),
-        (
-            "financeWorkspace.status",
-            FinanceWorkspaceStatusInput,
+            "finance.status",
+            FinanceStatusInput,
             FinanceStatusOut,
             "status",
-            False,
+            True,
             False,
         ),
         ("finance.query", FinanceQueryInput, FinanceProjectionOut, "query", False, False),
@@ -382,7 +351,7 @@ def operation_specs() -> list[OperationSpec]:
     return [
         OperationSpec(
             name=name,
-            summary="Inspect or manage the explicitly selected external finance workspace.",
+            summary="Inspect or manage the project's private Finance data.",
             input_model=inp,
             output_model=WriteEnvelope.__class_getitem__(out) if write else out,
             handler=_handler(method, out, write=write),
@@ -393,18 +362,19 @@ def operation_specs() -> list[OperationSpec]:
                 ),
                 cli=OperationSurface(enabled=True, command=f"ops call {name}"),
             ),
-            purpose="Authenticated local finance console; access scope and current writer "
-            "authority checked separately.",
-            prerequisites=("Enable finance and deliberately authorize its external root.",),
+            purpose="Authenticated project Finance console with managed storage and writer checks.",
+            prerequisites=(
+                "Enable finance. Open finance.status to initialize or verify project storage.",
+            ),
             examples=(
                 OperationExample(
-                    title="Inspect selected synthetic workspace readiness",
-                    arguments={"project_id": 1, "workspace_ref": "finance:synthetic"},
-                    notes="Read financeWorkspace.status for generation and snapshot. "
+                    title="Initialize or inspect private project Finance storage",
+                    arguments={"project_id": 1},
+                    notes="finance.status initializes storage and preserves existing data. "
                     "Never supply a root, actor or provider status to record/report calls.",
                 ),
             )
-            if name == "financeWorkspace.status"
+            if name == "finance.status"
             else (),
             returns=(
                 "Current snapshot/record refs, explicit readiness/repair or verified safe receipt.",

@@ -112,5 +112,6 @@ def test_management_docs_preserve_privacy_and_actual_host_boundary() -> None:
         assert field in handoff
     assert "full published" in handoff and "independent" in handoff
     local = (FINANCE / "references/local-workspace-contract.md").read_text()
-    assert "not automatically enrolled" in local and "reselection" in local
+    assert "included automatically in encrypted" in local and "without external enrollment" in local
+    assert "project-ID paths" in local and "missing masters are never" in local
     assert "does not" in local and "master schema migration" in local

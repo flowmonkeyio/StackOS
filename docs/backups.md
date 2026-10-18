@@ -1,10 +1,12 @@
 # Backup and recovery
 
 StackOS creates encrypted local backups of its database, matching credential
-seed and daemon token, plus every explicitly enrolled external folder. Enroll
-the entire finance workspace to cover `finance.json`, invoice originals,
-schemas, reviews and exports. A project binding or workflow `workspace_ref`
-does not enroll a folder or authorize filesystem access.
+seed and daemon token, all managed project files under `data/projects/`, and
+every explicitly enrolled external folder. Project Finance records, invoices,
+receipts, schemas, reviews and exports are included automatically. No Finance
+folder selection or backup enrollment is required. Each permanent project ID
+has its own private data directory; renames do not move it, and retained files
+from disabled or deleted projects remain covered without attaching to another project.
 
 Automatic backups are disabled on fresh and upgraded installations. Setup is
 local operator administration through the CLI or the Local backups panel in
@@ -14,7 +16,7 @@ installation and enrolled folders across projects, regardless of which page is
 open. These controls are unavailable to ordinary MCP agents. Backup creation
 needs only a public key; recovery requires the separate private key.
 
-## Set up the recovery key and finance coverage
+## Set up the recovery key
 
 Choose a private key location outside StackOS data/state, enrolled folders and
 the backup destination. Keep a separate secure copy of that key, preferably
@@ -28,23 +30,25 @@ stackos backups keygen \
 
 stackos backups configure \
   --public-key-file /secure-recovery/stackos-public.pem \
-  --destination /private-backups/stackos \
-  --target-id business-finance \
-  --target-label "Business finance" \
-  --target-path /business/finance \
-  --target-lock /business/finance/.writer.lock
+  --destination /private-backups/stackos
 
 stackos backups status
 stackos backup --output /private-backups/stackos/manual.sbak
 ```
 
-Use the finance workspace's existing persistent `.writer.lock`. Backup takes
-a shared, nonblocking lock while copying; a busy finance writer postpones the
-attempt. Missing folders or locks, symlinks, unsupported special files and
-files changing during copying fail the backup. A successful archive includes
-all enrolled folders; it never silently omits one. Configure additional
-targets separately. Omitted fields in a later configuration update preserve
-existing settings and targets.
+Backup automatically discovers the managed project tree and takes shared,
+nonblocking locks on its persistent `.writer.lock` files, including each project
+initialization lock and Finance writer lock. A busy writer postpones the attempt.
+Missing locks, symlinks, hard links, unsupported special files, or a changed tree
+fail the archive instead of omitting a project. New or replaced coordination locks
+also invalidate the snapshot. Explicitly enroll only additional external folders;
+they must stay outside application data and use their existing writer lock when
+applicable. Omitted configuration fields preserve existing settings and targets.
+
+An interrupted managed-data publication leaves a project-local
+`.publication-pending` marker. Backups refuse that incomplete state until normal
+initialization or migration recovery finishes; staging files outside project
+storage are never silently treated as backed up.
 
 Creation and recovery share the same archive member rules. Unsupported names,
 including backslashes in POSIX filenames, fail creation before publication or
@@ -110,17 +114,22 @@ plaintext staging files. Existing output parents keep their permissions;
 recovered directories and newly created ancestors are private.
 
 The recovered `data/`, `state/` and `external/<target-id>/` folders are inert.
+Managed Finance records retain `data/projects/<project-id>/finance/`, together
+with their project-local identity metadata. Different projects remain separate;
+restore never merges their files.
 Restore does not replace a live installation, reconnect providers or enable
 a schedule. Inspect the recovered manifest and finance originals before any
 operator-controlled adoption. Stop the target daemon before replacing its
 database, seed and token together, and retain the existing installation until
 the recovered copy passes health and credential checks. Stop all host finance
 writers before replacing or adopting a recovered finance folder; stopping the
-StackOS daemon does not stop those independent writers. Recovery excludes the
-coordination `.writer.lock`. Create or retain that persistent lock through the
-finance workspace's normal custody setup before enrolling the recovered folder
-or resuming writes. Enroll recovered finance folders and opt in again through
-local setup if moving machines.
+StackOS daemon does not stop those independent writers. Recovery excludes
+coordination `.writer.lock` files. After operator-controlled adoption of the
+complete recovered data and matching database, opening Finance safely recreates
+its locks, verifies project identity and retained data, and refreshes the storage
+generation. Old queued requests remain historical. Missing or mismatched data
+requires repair and is never replaced with a fresh empty master. Automatic backups
+remain opt-in on the adopted installation; managed project files need no enrollment.
 
 Wrong keys, modified or truncated archives, unsafe members and hash failures
 leave no published recovery directory. Test recovery periodically with the
@@ -146,8 +155,13 @@ snapshot and seed coherent.
 TDLib native authorization databases, provider caches, logs, plugin/skill
 mirrors and generated assets are excluded unless explicitly supported as an
 external target. Telegram user Accounts need a new sign-in after archive-only
-recovery on another machine. Financial state remains owned by its external
-workspace; StackOS stores no ledger copy in its core database.
+recovery on another machine. Financial state stays in the Finance plugin's
+project-local JSON and originals; the core database holds no second financial ledger.
+
+New archives use `stackos.local-backup.v3` and declare their managed project IDs.
+Recovery also accepts v2 encrypted archives, which covered database/state and
+enrolled external folders. It does not invent missing project files or claim
+that those older archives included them.
 
 Older `.zip` backups are plaintext even when their permissions are private.
 This change does not encrypt those files retrospectively. Create and verify a

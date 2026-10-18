@@ -3,16 +3,18 @@
 The finance plugin packages a small, agent-operated finance department for a
 US solo business. It coordinates receipt intake, prepared bookkeeping, Stripe
 invoicing, collections follow-up, cashflow planning, and tax-estimate packet
-preparation. It deliberately does **not** make StackOS the finance system of
-record.
+preparation. The plugin owns project-local financial files; provider records
+remain authoritative for actual provider activity. Core keeps generic control
+and audit state rather than a second financial ledger.
 
 ## Manage finance in the local console
 
-Enable Finance for the owning StackOS project, open **Finance**, and select an
-existing private folder containing `finance.json`. Choose read, sourced-correction
-and export access deliberately. Selection records a local authorization; it does
-not initialize, copy or reset the business master. A new empty workspace is a
-separate authorized host setup step. One business keeps one external master.
+Enable Finance for the owning StackOS project and open **Finance**. StackOS
+automatically prepares its private default folder at
+`data/projects/<project-id>/finance/`; there is no folder or workspace selection.
+Existing project data is reused, and missing/corrupt provisioned data requires
+repair rather than an empty replacement. Each project has independent records,
+originals and reports. Renaming a project leaves its files in place.
 
 The console has three views:
 
@@ -66,7 +68,7 @@ exact decimal text, while agents own scan completeness and accounting judgment.
 See the [host contract](../../docs/integration-contracts/quickbooks-online.md).
 
 Financial records, original evidence, approval records, invoice details,
-forecast contents, and tax calculations stay in the selected external backend.
+forecast contents, and tax calculations stay in the selected project-local backend.
 The first backend is the host-managed local JSON workspace described in
 [the backend contract](references/backend-contract.md) and
 [local workspace contract](references/local-workspace-contract.md). StackOS
@@ -86,9 +88,9 @@ already finalized invoices, with private staging followed by verified external
 custody and cleanup. The API does not provide a draft PDF, no-link send option,
 review-recipient override or complete additional To/CC recipient readback.
 
-## Initial external backend
+## Project-local financial files
 
-The initial `local-json` backend is an external, host-owned workspace:
+The `local-json` backend is the Finance plugin-owned directory inside project data:
 
 ```text
 finance/
@@ -100,10 +102,11 @@ finance/
 └── attachments/[type/]YYYY/MM/  # emails, statements and complete exports
 ```
 
-During authorized prerequisite setup of a **new** workspace, copy the
-[JSON template](templates/finance-workspace/finance.json), its
-[schema](templates/finance-workspace/schemas/finance-v1.schema.json), and the
-[operating guide](templates/finance-workspace/FINANCE.md), preserving their layout.
+For a never-provisioned project, authenticated `finance.status` initializes the
+[JSON template](templates/finance-workspace/finance.json),
+[schema](templates/finance-workspace/schemas/finance-v1.schema.json), and
+[operating guide](templates/finance-workspace/FINANCE.md) atomically. Later calls
+reuse existing files and never reset missing or corrupt provisioned records.
 `finance.json` owns all local financial facts, sourced business settings,
 proposals, approvals, corrections and relationships. It starts at revision zero
 with empty collections, not invented business data. Markdown is guidance or a
@@ -116,8 +119,8 @@ Use one designated host writer; specialists propose changes. The
 owns validation, concurrency, original custody and readback. The host needs
 filesystem authority for that directory; StackOS grants none. QuickBooks, Google Sheets,
 bank feeds, and another authoritative backend are future work, not aliases for
-this local format. Initialize this first-version workspace once; subsequent runs
-read and update the existing JSON rather than copying the empty template again.
+this local format. The default store is provisioned once by `finance.status`;
+subsequent runs read and update existing JSON without copying an empty template.
 
 This layout illustrates the selected local backend, not a mandated company tree.
 Follow the root/scoped instruction router and keep financial settings in the
@@ -154,12 +157,12 @@ only the selected finance workflows. An agency may first use
 nonfinancial agency/client-engagement context, then separately authorize finance
 setup at the agency root. The seven finance workflows and specialists are the same.
 
-Keep one selected `finance/finance.json` per business, shared across its client
-engagements—not one financial master per client or project. The main agent can
-run from the agency directory without entering every client project. A descriptive
-association grants no cross-project MCP access, credential inheritance, or host
-filesystem access. Existing safe workspace refs select the financial master;
-financial facts and mutable settings remain there.
+Keep one managed financial master per StackOS project. A business-owning project
+may hold company-wide finances; other projects remain separate. Do not copy a
+master into client projects or infer sharing from agency/customer relationships.
+A descriptive association grants no cross-project MCP access, credential
+inheritance or host filesystem access. Safe source refs are project-derived
+identities for versioned work, never user-selectable financial folders.
 
 Optional `external_project_ref` belongs only to a sourced single-project billing
 version or prepared bookkeeping record. It points to a verified nonfinancial
@@ -172,7 +175,7 @@ automatic cost allocation; project contributions retain shared/unallocated gaps.
 | Workflow | Job and safe completion boundary | Provider actions / gates |
 | --- | --- | --- |
 | [Receipt intake](workflows/receipt-intake.yaml) | Retain originals, extract one or more receipts per source, detect duplicates, and isolate item exceptions. | IMAP transport is optional; store and re-read before acknowledgement. Chat uploads are supported host inputs. |
-| [Bookkeeping close](workflows/bookkeeping-close.yaml) | Categorize supported transactions, match evidence, reconcile available source balances, and retain a `prepared/unposted` packet with explicit gaps. | Bank/card exports and other source records come from the external backend; receipts alone cannot establish complete books. Optional Stripe reads support reconciliation. |
+| [Bookkeeping close](workflows/bookkeeping-close.yaml) | Categorize supported transactions, match evidence, reconcile available source balances, and retain a `prepared/unposted` packet with explicit gaps. | Bank/card exports and other source records come from the project-local backend; receipts alone cannot establish complete books. Optional Stripe reads support reconciliation. |
 | [Payment request](workflows/payment-request.yaml) | Check customer mapping and exact line terms, create/recover one draft, finalize and send, then record the result. | One explicit owner decision may cover both distinct action gates for the same immutable invoice. Material changes require a fresh approval occurrence. |
 | [Payment follow-ups](workflows/payment-request-followups.yaml) | One billing agent follows operator-provided or documented instructions to resend through Stripe or send an authored SMTP email; alternatively reconcile a payment already received. | IMAP reads replies, SMTP sends. Existing Stripe/settlement gates remain; no extra email approval gate. See the shared [follow-up protocol](references/approval-matrix.md#follow-up-approvals). |
 | [Cashflow management](workflows/cashflow-management.yaml) | Produce 13 dated base/downside weeks: opening cash, expected receipts, actual cash outflows, closing cash, earmarked reserves and spendable cash. | A reserve is not itself a bank outflow. A reviewed reserve version is applied once; no automatic tax/forecast loop. |
@@ -259,7 +262,7 @@ not charge or send a reminder.
 The communications IMAP connector is transport only. On the IMAP route,
 `message.export` reads one UID with verified SSL or STARTTLS and `BODY.PEEK[]`,
 then returns a safe staging manifest. The host validates/stores the original
-`.eml` and retained attachments in the external workspace, re-reads
+`.eml` and retained attachments in the project Finance files, re-reads
 `finance.json` and its original-evidence records, and only then invokes the separately granted, epoch-qualified
 `mark_seen` action followed by transfer-id-only cleanup. It never treats a
 search cursor as receipt progress.
@@ -328,13 +331,15 @@ Neither substitutes for the separately authorized activation below.
 
 ## Signoff and activation
 
-Local JSON/files workspaces need explicit backup enrollment of the entire
-folder and its persistent `.writer.lock`. A workflow reference alone provides
-no coverage. Follow [StackOS encrypted backup setup](../../docs/backups.md),
-check the target list and verify recovery of the master and invoice originals.
-Automatic backups start disabled and require operator opt-in. Recovery keys
-stay outside the finance workspace and backup destination; backup or recovery
-does not change accounting decisions or posting status.
+Managed project Finance files are automatically included in encrypted backups;
+no external-folder enrollment is required. Follow
+[encrypted backup setup](../../docs/backups.md), confirm covered project IDs,
+and verify recovery of each project's master, invoices and receipts. Writer and
+initialization locks fence snapshots. Recovery keeps project-relative paths in
+an inert directory; adoption verifies project identity before refreshing storage
+generation. Automatic schedules start disabled and require opt-in. Recovery keys
+stay outside application data and backup destinations. Backup or restore does
+not change accounting decisions or posting status.
 
 Use the generic [release signoff](../../docs/release-signoff.md) for test slices,
 packaged/native activation evidence and shared-runtime coordination. Automated
@@ -374,7 +379,7 @@ Static assertions do not prove agent behavior, OCR, inbox delivery or scheduling
 
 Production activation is separate and applies only to selected routes:
 
-- Verify the operator-selected external workspace is writable, backed up and
+- Verify the project's managed Finance files are writable, backed up and
   access-controlled; create/re-read a non-production record without resetting
   an existing workspace or introducing a second financial master.
 - For IMAP, use `account.test` and an operator-owned test message to prove the

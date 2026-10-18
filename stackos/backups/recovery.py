@@ -19,7 +19,7 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from stackos.config import Settings
 
 from . import limits
-from .envelope import decrypt_payload
+from .envelope import ENVELOPE_FORMAT, decrypt_payload
 from .filesystem import (
     CHUNK,
     canonical,
@@ -28,7 +28,14 @@ from .filesystem import (
     private_directory,
     read_regular,
 )
-from .format import MANIFEST_SCHEMA, REQUIRED_NAMES, TARGET_ID, allowed_member_name
+from .format import (
+    LEGACY_MANIFEST_SCHEMA,
+    MANIFEST_SCHEMA,
+    REQUIRED_NAMES,
+    TARGET_ID,
+    allowed_member_name,
+    valid_project_id,
+)
 from .models import BackupError
 
 
@@ -78,7 +85,9 @@ def _inspect(archive: zipfile.ZipFile) -> tuple[dict[str, Any], list[zipfile.Zip
         raise BackupError("invalid_manifest", "The recovery archive has no valid bounded manifest.")
     try:
         manifest = json.loads(archive.read("manifest.json"))
-        if manifest["schema"] != MANIFEST_SCHEMA or not isinstance(manifest["included"], list):
+        if manifest["schema"] not in {MANIFEST_SCHEMA, LEGACY_MANIFEST_SCHEMA} or not isinstance(
+            manifest["included"], list
+        ):
             raise ValueError("unsupported manifest")
         declared: dict[str, dict[str, Any]] = {}
         for entry in manifest["included"]:
@@ -108,7 +117,25 @@ def _inspect(archive: zipfile.ZipFile) -> tuple[dict[str, Any], list[zipfile.Zip
             raise ValueError("invalid source IDs")
         if any(f"external/{target_id}" not in names for target_id in target_ids):
             raise ValueError("missing source directory")
+        project_ids = manifest["project_ids"] if manifest["schema"] == MANIFEST_SCHEMA else []
+        if manifest["schema"] == LEGACY_MANIFEST_SCHEMA and manifest.get("project_ids", []):
+            raise ValueError("legacy archives do not declare managed project coverage")
+        if (
+            not isinstance(project_ids, list)
+            or any(type(item) is not int or not valid_project_id(str(item)) for item in project_ids)
+            or len(project_ids) != len(set(project_ids))
+        ):
+            raise ValueError("invalid project IDs")
+        if any(f"data/projects/{project_id}" not in names for project_id in project_ids):
+            raise ValueError("missing project directory")
         for info in infos:
+            parts = PurePosixPath(info.filename).parts
+            if (
+                len(parts) >= 3
+                and parts[:2] == ("data", "projects")
+                and int(parts[2]) not in project_ids
+            ):
+                raise ValueError("undeclared managed project")
             if (
                 info.filename.startswith("external/")
                 and len(PurePosixPath(info.filename).parts) >= 2
@@ -223,8 +250,10 @@ def restore_backup(
             "archive_sha256": header["archive_sha256"],
             "created_at": manifest["created_at"],
             "target_ids": [target["id"] for target in manifest["targets"]],
+            "project_ids": manifest.get("project_ids", []),
+            "manifest_schema": manifest["schema"],
             "encryption": {
-                "format": MANIFEST_SCHEMA,
+                "format": ENVELOPE_FORMAT,
                 "algorithm": header["algorithm"],
                 "recipient_fingerprint": header["recipient_fingerprint"],
             },

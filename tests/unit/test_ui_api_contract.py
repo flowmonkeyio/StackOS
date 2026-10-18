@@ -25,7 +25,7 @@ from stackos.operations.finance import (
     FinanceProjectionOut,
     FinanceQueryInput,
     FinanceRecordOut,
-    FinanceWorkspaceSelectInput,
+    FinanceStatusInput,
 )
 from stackos.server import create_app
 
@@ -79,7 +79,7 @@ def test_ui_generation_includes_registry_owned_durable_contracts(
         DurableActionItemOut,
         ActionCallResumeInput,
         ActionCallRetryInput,
-        FinanceWorkspaceSelectInput,
+        FinanceStatusInput,
         FinanceQueryInput,
         FinanceEditIntent,
         FinanceCommitInput,

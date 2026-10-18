@@ -33,12 +33,13 @@ const props = {
   projectId: 1,
   access: {
     project_id: 1,
-    workspace_ref: 'finance:one',
+    workspace_ref: 'finance:project:1',
     generation: 1,
     modes: ['read', 'correct', 'export'],
     access_id: 'access:one',
     backend_key: 'local-json' as const,
-    revoked_at: null,
+    readiness: 'ready' as const,
+    snapshot,
   },
   snapshot,
   recordRef: 'receipt:legacy',
@@ -104,7 +105,7 @@ describe('reviewed save and private originals', () => {
         .mock.calls.find((c) => c[0] === 'finance.record.commit')![1]
       expect(saved).toMatchObject({
         project_id: 1,
-        workspace_ref: 'finance:one',
+        workspace_ref: 'finance:project:1',
         access_generation: 1,
         expected_snapshot: { revision: 1, sha256: snapshot.sha256 },
         record_ref: 'receipt:legacy',
@@ -292,7 +293,7 @@ describe('invoice and receipt originals', () => {
         'finance.evidence.read',
         {
           project_id: 1,
-          workspace_ref: 'finance:one',
+          workspace_ref: 'finance:project:1',
           access_generation: 1,
           attachment_ref: document.attachment_ref,
           expected_snapshot: { revision: 1, sha256: snapshot.sha256 },
@@ -464,7 +465,7 @@ describe('invoice and receipt originals', () => {
     expect(panel.text()).not.toContain('late-invoice.pdf')
     panel.unmount()
   })
-  it.each(['project', 'workspace', 'generation', 'record', 'revision', 'sha', 'close', 'unmount'])(
+  it.each(['project', 'source', 'generation', 'record', 'revision', 'sha', 'close', 'unmount'])(
     'cleans private bytes and rejects a late original on %s change',
     async (change) => {
       const { create, revoke } = blobSpies()
@@ -488,8 +489,8 @@ describe('invoice and receipt originals', () => {
         await panel.setProps(
           change === 'project'
             ? { projectId: 2 }
-            : change === 'workspace'
-              ? { access: { ...props.access, workspace_ref: 'finance:two' } }
+            : change === 'source'
+              ? { access: { ...props.access, workspace_ref: 'finance:project:2' } }
               : change === 'generation'
                 ? { access: { ...props.access, generation: 2 } }
                 : change === 'record'
@@ -985,7 +986,7 @@ describe('canonical precision and correction history', () => {
     expect(vi.mocked(callOperation).mock.calls.at(-1)![1]).toMatchObject({
       record_ref: 'receipt:legacy',
       project_id: 1,
-      workspace_ref: 'finance:one',
+      workspace_ref: 'finance:project:1',
       access_generation: 1,
       expected_snapshot: { revision: 1, sha256: snapshot.sha256 },
     })

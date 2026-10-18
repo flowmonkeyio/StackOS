@@ -1,4 +1,4 @@
-# Finance Workspace Guide
+# Project Finance Guide
 
 Format: `local-json-v1` · Backend: `local-json`
 
@@ -11,8 +11,10 @@ it contains no business data. Original evidence may use `receipts/YYYY/MM/` or
 
 ## Start and resume
 
-Initialize once from the templates during authorized prerequisite setup, not
-infrastructure setup. On resume load existing JSON; never reset it.
+Opening Finance in an enabled StackOS project provisions only its never-initialized
+default store through authenticated `finance.status`. Infrastructure setup does
+not create records. On resume load existing JSON; missing or corrupt provisioned
+files require repair, never a template reset or standalone helper initialization.
 
 Follow the existing root instruction router and scoped finance rules. This guide
 routes to data and method; it does not own company facts or account settings.
@@ -58,9 +60,9 @@ preparation and resolve access before the affected write or provider action.
 
 ## Where records live
 
-For the local Finance console, select this existing private folder from the
-owning project and choose read, sourced-correction and export access. Selection
-and navigation never reset `finance.json`. **Overview**, **Expenses & income**
+Open Finance in the owning enabled StackOS project. Its private default directory
+is managed automatically; there is no folder, source or access-mode selection.
+Opening and navigation never reset provisioned data. **Overview**, **Expenses & income**
 and **Reports** share the chosen period/basis/filters. Inspect an original and
 current history, preview a supported correction, then save or cancel. A stale
 source requires refresh/rebase; an unknown save requires same-request reconciliation.
@@ -76,13 +78,14 @@ does not grant an agent host filesystem access.
 Clear search text and apply filters before requesting agent analysis. Queueing
 stores a request, not a model result. A capable host executes
 `finance.management-review`, independently reviews the exact result and readable
-report hash, then publishes in the external root. Pending/blocked/unavailable and
+report hash, then publishes in the project Finance directory. Pending/blocked/unavailable and
 stale results stay honest. Reports/CSV remain derived, non-authoritative views;
 recommendations need separate adoption decisions. Use the canonical
 `finance-plugin:references/workflow-handoffs.md` management-review protocol.
 
-Keep one financial master per business, standalone or agency-root, across its
-client engagements. Agency setup is optional and grants no cross-project access.
+Keep one managed financial master per StackOS project. Files for other projects
+remain separate; never infer sharing from an agency or customer relationship.
+Agency setup is optional and grants no cross-project access.
 Optional `external_project_ref` labels only source-backed single-project billing
 or bookkeeping; leave company-wide/uncertain costs unassigned. The local contract
 owns attribution verification/corrections; never duplicate or allocate amounts
@@ -176,10 +179,12 @@ sourced additive records/superseding versions, not rewritten history. Resolve
 report conflicts from original/provider evidence. The operator owns backup,
 restore, retention, permissions, encryption and secure disposal.
 
-For StackOS encrypted backups, explicitly enroll this entire workspace folder
-and its existing `.writer.lock` through local backup setup. A workflow
-`workspace_ref` does not register coverage. Include the master, original
-receipts, schemas and reviews together; check backup status and verify recovery
-with the separately stored private recovery key. Automatic backups require
+StackOS encrypted backups automatically include this project's master, invoices,
+receipts, schemas, reviews and identity metadata. No external-folder enrollment
+is required. Persistent project/Finance writer locks fence snapshots, and an
+unfinished publication blocks the archive. Check backup status and verify recovery
+with the separately stored private recovery key. Recovered project-ID directories
+remain separate and inert until operator-controlled adoption; Finance validates
+their ownership before refreshing storage generation. Automatic schedules require
 explicit opt-in. See the installed StackOS backup documentation or
 `stackos backups --help`. Credentials and recovery keys never belong here.

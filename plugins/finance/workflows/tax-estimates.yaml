@@ -2,7 +2,7 @@ schema_version: stackos.workflow-template.v1
 key: finance.tax-estimates
 name: Finance Tax Estimates
 version: 0.3.2
-description: Prepare a current-source US/California tax-estimate packet in the selected external backend, distinguish projected annual liability from the current installment, and require CPA/EA then owner approval before it is relied on.
+description: Prepare a current-source US/California tax-estimate packet in the selected project-local backend, distinguish projected annual liability from the current installment, and require CPA/EA then owner approval before it is relied on.
 domain: finance
 owner:
   team: StackOS
@@ -37,7 +37,7 @@ public:
   audience: "US/California solo LLC or S-Corp owners preparing advisor-reviewed tax estimate packets"
   setup: project-adapter-required
   prerequisites:
-    - "An external workspace, tax year and estimate-as-of date; the agent resolves business and taxpayer profiles during preparation"
+    - "Project Finance files, tax year and estimate-as-of date; the agent resolves business and taxpayer profiles during preparation"
     - "Current official sources are gathered during the run; a named qualified advisor is needed only at review"
   proof:
     - "Safe current-source, external packet, CPA/EA, owner-approval, exception, and cashflow-handoff refs"
@@ -66,7 +66,7 @@ skill_requirements:
 skill_preset_requirements:
   - skill_preset_ref: stackos.finance.department-orchestrator
     requirement: required
-    purpose: Coordinate current-source checks, advisor/owner gates, external backend custody, exception recovery, and cashflow handoff.
+    purpose: Coordinate current-source checks, advisor/owner gates, project-local backend custody, exception recovery, and cashflow handoff.
     applies_to_steps: [preflight, validate-current-sources, prepare-external-packet, cpa-ea-review, owner-review-and-handoff]
 inputs:
   - key: goal
@@ -82,10 +82,10 @@ inputs:
     default: local-json
     schema: {type: string, const: local-json}
   - key: workspace_ref
-    name: External Workspace Ref
+    name: Project Finance Source Ref
     type: string
     required: true
-    description: One selected business financial master, usable from a standalone business directory or agency root. Agency/project setup is optional; descriptive associations never grant cross-project access. Follow the backend contract's business/project scope guidance.
+    description: The owning StackOS project's opaque Finance source identity, derived automatically from its permanent project ID. Each project has separate managed files; descriptive associations never grant cross-project access.
     schema: {type: string, minLength: 1}
   - key: recording_mode
     name: Recording Mode
@@ -103,7 +103,7 @@ inputs:
     name: Operator Policy Ref
     type: string
     required: false
-    description: Optional override of the durable external workspace policy; the agent resolves it during preflight.
+    description: Optional override of the durable project Finance files policy; the agent resolves it during preflight.
     schema: {type: string, minLength: 1}
   - key: trigger_kind
     name: Trigger Kind
@@ -150,7 +150,7 @@ policies:
     description: For local-json, finance.json is the sole authoritative local financial record, including mutable setup. Packet refs resolve to record_id in that document; approved proposals also bind an immutable version/digest, not separate editable files. FINANCE.md is guidance/navigation; CSV is import/export, never a second master. Original evidence stays immutable; provider state stays provider-owned and JSON stores dated observations. Follow the packaged local workspace contract.
   - key: external-backend-is-authoritative
     kind: boundary
-    description: The selected external backend owns tax packet content, source records, advice, calculations, approvals, and handoffs; StackOS holds only workflow state and safe refs.
+    description: The selected project-local backend owns tax packet content, source records, advice, calculations, approvals, and handoffs; StackOS holds only workflow state and safe refs.
   - key: current-official-sources-required
     kind: integrity
     description: The packet must name current official IRS and California FTB source refs appropriate to the stated period/entity. Do not hardcode rates, deadlines, thresholds, or source conclusions in this reusable workflow.
@@ -201,7 +201,7 @@ steps:
     policy_refs: [external-backend-is-authoritative, separate-annual-liability-and-installment, no-tax-action-or-advice]
     output_refs: [tax_estimate_summary]
     instructions:
-      - "Write calculations, amounts, source content, and advice only where the selected external backend and qualified reviewer process own them; StackOS receives safe refs and state only."
+      - "Write calculations, amounts, source content, and advice only where the selected project-local backend and qualified reviewer process own them; StackOS receives safe refs and state only."
       - "Build annual inputs independently of the thirteen-week cash forecast: year-to-date and projected remaining-year business income/expenses, owner filing status and household income, spouse income where relevant, prior-year return/tax, withholding, prior estimates, deductions/credits and sourced accounting adjustments. Missing material taxpayer facts produce packet-incomplete, not a precise estimate."
       - "Create an obligation matrix separating taxpayer and authority: federal individual estimates, California individual estimates, California entity annual tax/fee where applicable, S-Corp entity obligations, and relevant payroll inputs. Verify applicability, exclusions, current forms and due-date rules from official sources; do not apply every listed obligation to every LLC."
       - "For each applicable obligation, record annual projected liability, calculation method/source, prior payments/withholding, current installment and remaining planning reserve separately. Use sourced current worksheets and deterministic arithmetic, with assumptions and uncertainty explicit. A cash forecast is optional corroboration, never taxable income."

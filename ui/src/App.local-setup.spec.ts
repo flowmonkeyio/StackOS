@@ -43,6 +43,7 @@ it.each([null, 7])(
       interval_hours: 24,
       keep_last: 30,
       targets: [],
+      project_ids: [],
       destination: '/synthetic/backups',
       recipient_fingerprint: 'fixture',
       last_attempt: null,
@@ -124,7 +125,7 @@ it.each([null, 7])(
     expect(localSetup.attributes('aria-current')).toBe('page')
     const backups = wrapper.get('[aria-label="Local backups"]')
     expect(backups.text()).toContain(
-      'This StackOS install and explicitly enrolled folders across projects.',
+      'This StackOS installation, project Finance data, and enrolled external folders.',
     )
     expect(backups.text()).toContain('Automatic backups are enabled.')
     await backups.get('input[type="checkbox"]').setValue(false)

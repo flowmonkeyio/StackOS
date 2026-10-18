@@ -40,10 +40,12 @@ Configuration stores a public recovery key, explicit external folder targets,
 destination and opt-in schedule. Partial configuration preserves omitted
 fields. Status and creation return safe coverage, time, path, size, checksum
 and failure metadata; no archive bytes, private recovery key, credential or
-financial contents are returned. Creation includes all enrolled targets and
+financial contents are returned. Status includes covered managed project IDs,
+or null when coverage could not be verified. Creation includes all managed
+project files and enrolled targets and
 rejects unsafe destinations. Recovery private key generation and verified
 restore remain host-local CLI operations. See [backup and recovery](./backups.md)
-for setup, finance enrollment and key custody.
+for setup, automatic project coverage and key custody.
 
 ## Agent Documentation
 
@@ -362,14 +364,13 @@ for the UI.
 
 ## Finance local console operations
 
-Finance registers these exact REST/CLI operations over the one authorized external
+Finance registers these exact REST/CLI operations over one project-owned
 `local-json-v1` master. They are disabled on MCP; agents perform finance method
 through existing host/workflow contracts, not domain MCP primitives.
 
 | Operation | Behavior | Authority/response |
 | --- | --- | --- |
-| `financeWorkspace.select` / `financeWorkspace.revoke` | Deliberately associate/revoke a private existing root, modes and access generation. No master initialization. | `local-admin-console-write`; handler-owned retry validation; compact/raw safe receipt. |
-| `financeWorkspace.status` | Inspect authorization and actual external readiness/snapshot. | `local-admin-console-read`; compact/raw. |
+| `finance.status` | Prepare the enabled project's default Finance store and inspect readiness/snapshot. Never replace missing or corrupt existing records. No caller-selected root. | `local-admin-console-write`; handler-owned retry validation; compact/raw safe receipt. |
 | `finance.query` / `finance.record.get` | Bounded filters, source coverage, current facts/history and undated record refs. | Current project/root/read mode; compact/raw. |
 | `finance.record.preview` | Validate a sourced draft against its source snapshot without writing. | Current correction mode; compact/raw. |
 | `finance.record.commit` | Guarded additive correction/create/proposal, exact preview and revision/hash, actual readback. | `local-admin-console-write`; handler-owned retry and under-lock authority recheck. |

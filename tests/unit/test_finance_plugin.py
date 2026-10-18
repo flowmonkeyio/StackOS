@@ -46,8 +46,10 @@ def test_finance_scope_remains_standalone_with_optional_agency_context() -> None
         inputs = _by_key(workflow["inputs"])
         assert inputs["workspace_ref"]["required"] is True
         assert (
-            "standalone business directory or agency root" in inputs["workspace_ref"]["description"]
+            "owning StackOS project" in inputs["workspace_ref"]["description"]
+            or "owning StackOS project's" in inputs["workspace_ref"]["description"]
         )
+        assert inputs["workspace_ref"]["name"] == "Project Finance Source Ref"
         assert not any(
             "agency" in item["key"] for item in workflow.get("capability_requirements", [])
         )
@@ -1179,7 +1181,7 @@ def test_finalized_pdf_is_available_before_customer_send_without_draft_issuance(
     assert "no customer send approval or send attempt is needed" in send
     assert "PDF action rejects drafts" in send
     assert (
-        "Verify custody in the external finance workspace before stripe_invoice_pdf_cleanup" in send
+        "Verify custody in the project Finance directory before stripe_invoice_pdf_cleanup" in send
     )
     assert "do not authorize a review-email route" in send
 

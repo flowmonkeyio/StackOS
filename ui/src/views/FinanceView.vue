@@ -15,7 +15,6 @@ import type {
   SchemaFinanceContentOut,
   SchemaFinanceProjectionOut,
   SchemaFinanceStatusOut,
-  SchemaFinanceWorkspaceSelectInput,
   SchemaLocalAgentChatMessageOut,
 } from '@/api'
 import DataTable from '@/components/DataTable.vue'
@@ -30,9 +29,7 @@ import { aiCategory, insightsModel } from './finance/insightsViewModel'
 import {
   UiButton,
   UiCallout,
-  UiCheckbox,
   UiFormField,
-  UiInput,
   UiPageShell,
   UiSectionHeader,
   UiSelect,
@@ -41,6 +38,7 @@ import type { DataTableColumn } from '@/components/types'
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
 import { callOperation } from '@/lib/operations'
+import { ApiError } from '@/lib/client'
 import {
   contentBlob,
   contentText,
@@ -63,16 +61,9 @@ const section = ref('overview'),
   loading = ref(false),
   error = ref(''),
   message = ref('')
-const accessRows = ref<SchemaFinanceStatusOut['access']>([]),
-  access = ref<SchemaFinanceAccessOut | null>(null),
-  selectedWorkspaceRef = ref<string | null>(null)
+const access = ref<SchemaFinanceAccessOut | null>(null)
 const projection = ref<SchemaFinanceProjectionOut | null>(null)
 const query = ref<FinanceQuery>(initialQuery())
-const configuring = ref(false),
-  root = ref(''),
-  workspace = ref('finance:local'),
-  allowCorrection = ref(true),
-  allowExport = ref(true)
 const panelOpen = ref(false),
   recordRef = ref<string | null>(null),
   selectedRow = ref<Record<string, unknown>>({}),
@@ -183,7 +174,7 @@ const statusText = computed(() => {
         failed: 'Analysis failed',
         ignored: 'Request ignored',
         claim_expired: 'Agent claim expired',
-        historical_access: 'Historical workspace authorization',
+        historical_access: 'Historical project Finance data',
         historical_source: 'Analysis request is historical — source changed',
         source_unavailable: 'Request source unavailable — request new analysis',
         result_unavailable: 'Reviewed result unavailable',
@@ -205,8 +196,6 @@ function clearScope() {
   analysisSequence++
   releaseReport()
   access.value = null
-  selectedWorkspaceRef.value = null
-  accessRows.value = []
   projection.value = null
   requests.value = []
   selectedRequest.value = null
@@ -215,11 +204,76 @@ function clearScope() {
   panelOpen.value = false
   selectedRow.value = {}
   includedRefs.value = []
-  root.value = ''
   error.value = ''
   message.value = ''
-  configuring.value = false
   loading.value = false
+}
+function financeStatusMessage(code: string): string {
+  if (code === 'storage_owner_mismatch')
+    return "These Finance files belong to another project. Restore this project's matching files from a verified backup, then refresh. No existing records were replaced."
+  if (code === 'atomic_publication_unavailable')
+    return 'Project Finance data could not be safely initialized. Repair the local StackOS installation, then refresh. Existing files are preserved.'
+  if (
+    [
+      'migration_required',
+      'legacy_access_corrupt',
+      'legacy_history_requires_recovery',
+      'legacy_project_identity_ambiguous',
+      'legacy_root_changed',
+      'legacy_root_overlap',
+      'legacy_root_shared',
+      'legacy_mapping_changed',
+      'legacy_source_changed',
+      'migration_too_large',
+    ].includes(code)
+  )
+    return 'Existing Finance data needs a one-time migration or repair before this project can open it. Ask an agent to inspect the existing source records and project ownership, then refresh. No existing records were replaced.'
+  if (['not_configured', 'storage_missing', 'storage_metadata_missing'].includes(code))
+    return 'Project Finance data is missing. Restore a verified backup if records already exist, then refresh. No existing records were replaced.'
+  if (
+    [
+      'corrupt_workspace',
+      'storage_metadata_corrupt',
+      'publication_metadata_corrupt',
+      'storage_custody_requires_repair',
+      'storage_requires_repair',
+      'storage_not_ready',
+      'unreadable_or_invalid_workspace',
+    ].includes(code)
+  )
+    return 'Project Finance data needs repair. Preserve the existing files and repair the records or restore a verified backup, then refresh. No existing records were replaced.'
+  if (
+    [
+      'root_changed',
+      'storage_identity_mismatch',
+      'unsafe_storage_metadata',
+      'unsafe_storage_alias',
+      'unsafe_storage_lock',
+      'unsafe_or_changing_storage',
+      'storage_lock_changed',
+      'storage_changed',
+      'storage_publication_incomplete',
+      'storage_publication_conflict',
+      'storage_outcome_unknown',
+    ].includes(code)
+  )
+    return 'Project Finance storage could not be safely verified. Check the existing records and project ownership, or restore a verified backup, then refresh. No existing records were replaced.'
+  const messages: Record<string, string> = {
+    unreadable: 'Project Finance data cannot be read. Check local file permissions, then refresh.',
+    unsupported_version:
+      'Project Finance data uses an unsupported version. Use a compatible StackOS version and preserve the existing files.',
+    denied: 'Project Finance data access was denied. Check local permissions, then refresh.',
+    access_denied: 'Project Finance data access was denied. Check local permissions, then refresh.',
+    invalid_root:
+      'Project Finance storage could not be safely read. Check local permissions and preserve the existing files, then refresh.',
+    plugin_not_enabled:
+      'Finance is not enabled for this project. Enable Finance in Plugins, then refresh.',
+    writer_busy:
+      'Project Finance data is busy. Wait for the current write or backup to finish, then refresh.',
+  }
+  return Object.prototype.hasOwnProperty.call(messages, code)
+    ? messages[code]!
+    : 'Project Finance data is unavailable. Refresh or check the local storage.'
 }
 async function loadStatus() {
   const sequence = ++scopeSequence,
@@ -229,54 +283,39 @@ async function loadStatus() {
   analysis.value = null
   loading.value = true
   error.value = ''
+  access.value = null
   projection.value = null
   panelOpen.value = false
   releaseReport()
   try {
-    const response = await callOperation<{ data: SchemaFinanceStatusOut }>(
-      'financeWorkspace.status',
-      { project_id: id, response_mode: 'compact' },
-    )
+    const response = await callOperation<{ data: SchemaFinanceStatusOut }>('finance.status', {
+      project_id: id,
+      response_mode: 'compact',
+    })
     if (!active || sequence !== scopeSequence || id !== projectId.value) return
-    accessRows.value = response.data.access
-    const prior = access.value?.workspace_ref || selectedWorkspaceRef.value
-    const chosen =
-      response.data.access.find((row) => row.workspace_ref === prior) ||
-      response.data.access.find((row) => row.readiness === 'ready') ||
-      response.data.access[0]
-    if (chosen) selectedWorkspaceRef.value = text(chosen.workspace_ref)
+    if (
+      response.data.project_id !== id ||
+      response.data.access.length > 1 ||
+      response.data.access.some((row) => row.project_id !== id)
+    ) {
+      error.value = 'Project Finance data could not be verified for this project. Refresh to retry.'
+      return
+    }
+    const chosen = response.data.access[0]
     access.value = chosen?.readiness === 'ready' ? (chosen as SchemaFinanceAccessOut) : null
     if (!access.value) {
       const readiness = text(chosen?.readiness || response.data.readiness)
-      error.value =
-        (
-          {
-            not_configured: chosen
-              ? 'The selected finance workspace is missing finance.json. Restore the existing master or deliberately select another existing workspace.'
-              : 'No finance workspace is configured. Select an existing external master.',
-            unreadable:
-              'The selected finance workspace cannot be read. Check local file permissions, then refresh.',
-            corrupt_workspace:
-              'The selected finance workspace is corrupt or invalid. Repair the existing master or restore a verified backup, then refresh. Do not initialize a replacement over it.',
-            unsupported_version:
-              'The selected finance workspace uses an unsupported version. Use a compatible StackOS version or supported master; preserve the existing files.',
-            revoked:
-              'Finance workspace authorization was revoked. Deliberately reselect the existing workspace to authorize access again.',
-            denied:
-              'Finance workspace access was denied. Check local permissions and authorization; deliberately reselect if the folder moved or changed.',
-            root_changed:
-              'The selected finance workspace folder changed. Verify the existing external master, then deliberately reselect it to renew authorization.',
-          } as Record<string, string>
-        )[readiness] || 'Finance workspace is not ready. Refresh or inspect its workspace access.'
+      error.value = financeStatusMessage(readiness)
       return
     }
     await loadQuery(query.value)
     if (active && sequence === scopeSequence) await loadRequests()
-  } catch {
+  } catch (cause) {
     if (active && sequence === scopeSequence) {
       access.value = null
       projection.value = null
-      error.value = 'Finance workspace unavailable. Refresh or repair its authorization.'
+      const code = cause instanceof ApiError ? text(object(cause.data).finance_code) : ''
+      error.value = financeStatusMessage(code)
     }
   } finally {
     if (active && sequence === scopeSequence) loading.value = false
@@ -314,7 +353,7 @@ async function loadQuery(value: FinanceQuery) {
   } catch {
     if (active && sequence === querySequence)
       error.value =
-        'Selected finance data is unavailable. Check dates, basis, sources and current workspace authorization.'
+        'Selected finance data is unavailable. Check dates, basis, sources and project Finance storage.'
   } finally {
     if (active && sequence === querySequence) loading.value = false
   }
@@ -327,85 +366,6 @@ const { refresh } = useProjectScopedLoader({
     clearScope()
   },
 })
-function selectWorkspace(value: string | number | null) {
-  const next = accessRows.value.find(
-    (row) => row.workspace_ref === value && row.readiness === 'ready',
-  )
-  querySequence++
-  analysisSequence++
-  releaseReport()
-  projection.value = null
-  panelOpen.value = false
-  analysis.value = null
-  selectedRequest.value = null
-  requests.value = []
-  access.value = next ? (next as SchemaFinanceAccessOut) : null
-  if (next) selectedWorkspaceRef.value = text(next.workspace_ref)
-  if (access.value) {
-    void loadQuery(query.value)
-    void loadRequests()
-  }
-}
-async function authorizeWorkspace() {
-  if (!root.value.trim() || !workspace.value.trim()) {
-    error.value = 'Supply the existing external finance folder and a workspace reference.'
-    return
-  }
-  const sequence = scopeSequence,
-    requestedWorkspace = workspace.value
-  error.value = ''
-  try {
-    const modes: SchemaFinanceWorkspaceSelectInput['modes'] = [
-      'read' as SchemaFinanceWorkspaceSelectInput['modes'][number],
-    ]
-    if (allowCorrection.value)
-      modes.push('correct' as SchemaFinanceWorkspaceSelectInput['modes'][number])
-    if (allowExport.value)
-      modes.push('export' as SchemaFinanceWorkspaceSelectInput['modes'][number])
-    await callOperation('financeWorkspace.select', {
-      project_id: projectId.value,
-      workspace_ref: requestedWorkspace,
-      root: root.value,
-      modes,
-      authority_ref: 'local-user:operator',
-      idempotency_key: newIntentId(),
-      response_mode: 'compact',
-    })
-    if (active && sequence === scopeSequence) {
-      selectedWorkspaceRef.value = requestedWorkspace
-      access.value = null
-      root.value = ''
-      configuring.value = false
-      await refresh()
-    }
-  } catch {
-    if (active && sequence === scopeSequence)
-      error.value =
-        'Workspace selection failed. Use an existing supported master within authorized local storage; no files were initialized here.'
-  }
-}
-async function revoke() {
-  if (!access.value) return
-  const selected = {
-    ...base(),
-    expected_generation: access.value.generation,
-    response_mode: 'compact',
-  }
-  const sequence = scopeSequence
-  error.value = ''
-  try {
-    await callOperation('financeWorkspace.revoke', selected)
-    if (active && sequence === scopeSequence) {
-      clearScope()
-      selectedWorkspaceRef.value = text(selected.workspace_ref)
-      await refresh()
-    }
-  } catch {
-    if (active && sequence === scopeSequence)
-      error.value =
-        'Revocation could not be verified. Refresh authorization before further changes.'
-  }
-}
 function inspect(refValue: string, row: Record<string, unknown> = {}) {
   recordRef.value = refValue
   selectedRow.value = row
@@ -489,7 +449,7 @@ async function loadRequests() {
       : undefined
     if (verified) {
       analysisSubmissions.delete(projectId.value)
-      message.value = `Original analysis request ${verified.id} verified in Agent requests. It retains its original workspace, window and source.`
+      message.value = `Original analysis request ${verified.id} verified in Agent requests. It retains its original project, window and source.`
     }
     requests.value = page.items.filter(
       (row) =>
@@ -524,7 +484,7 @@ async function requestAnalysis() {
   if (submission) {
     if (!retryAllowed.value) {
       error.value =
-        'The original submission is still unverified. Inspect Agent requests or return to its original workspace authorization before retrying.'
+        'The original submission is still unverified and its project data identity has changed. Refresh to reconcile it in Agent requests before retrying.'
       return
     }
   } else {
@@ -586,7 +546,7 @@ async function requestAnalysis() {
     analysisSubmissions.delete(id)
     if (!active || id !== projectId.value) return
     if (identity !== JSON.stringify(base())) {
-      message.value = `Original analysis request ${request.id} saved. Inspect Agent requests for its original workspace, window and source.`
+      message.value = `Original analysis request ${request.id} saved. Inspect Agent requests for its original project, window and source.`
       return
     }
     selectedRequest.value = request as unknown as Record<string, unknown>
@@ -645,7 +605,7 @@ async function refreshAnalysis() {
   } catch {
     if (active && sequence === analysisSequence)
       error.value =
-        'Analysis result unavailable, mismatched or unsupported. Inspect its original request and current authorization.'
+        'Analysis result unavailable, mismatched or unsupported. Inspect its original request and current project Finance data.'
   } finally {
     if (active && sequence === analysisSequence) analysisLoading.value = false
   }
@@ -661,19 +621,21 @@ onBeforeUnmount(() => {
     <ProjectPageHeader
       :project-id="projectId"
       title="Finance"
-      description="Sourced expenses, income and reports from your selected external master."
+      description="Expenses, income and documents stored with this project."
     >
-      <template #actions
-        ><UiButton data-test="refresh-finance" @click="refresh">Refresh</UiButton
-        ><UiButton @click="configuring = !configuring">Workspace access</UiButton></template
-      >
+      <template #actions>
+        <UiButton data-test="refresh-finance" @click="refresh">Refresh</UiButton>
+      </template>
     </ProjectPageHeader>
     <UiCallout v-if="error" variant="danger" role="alert">{{ error }}</UiCallout>
+    <p v-if="loading && !access" role="status" class="text-sm text-fg-muted">
+      Loading project Finance data…
+    </p>
     <p v-if="message" role="status" class="text-sm text-fg-muted">{{ message }}</p>
     <UiCallout v-if="pendingAnalysis" variant="warning" role="status">
       <p>
         {{ pendingAnalysis.inFlight ? 'Submitting' : 'Unverified submission for' }}
-        {{ text(pendingMetadata.workspace_ref) }} ·
+        this project ·
         {{ text(object(pendingMetadata.query).start) }} through
         {{ text(object(pendingMetadata.query).end) }} · {{ text(pendingMetadata.analysis_kind) }} ·
         source revision {{ object(pendingMetadata.source_snapshot).revision }}. Retry retains this
@@ -687,53 +649,11 @@ onBeforeUnmount(() => {
         >Inspect Agent requests</RouterLink
       >
       <p v-if="!retryAllowed" class="text-sm">
-        Return to the original workspace authorization to retry, or refresh to reconcile its
-        persisted request in Agent requests.
+        The original project data identity has changed. Refresh to reconcile its persisted request
+        in Agent requests before retrying.
       </p>
     </UiCallout>
-    <form
-      v-if="configuring || !access"
-      class="space-y-3 rounded-md border border-default p-4"
-      @submit.prevent="authorizeWorkspace"
-    >
-      <h2 class="t-h2">Select an existing finance workspace</h2>
-      <p class="text-sm text-fg-muted">
-        Authorize this project to use an existing folder containing finance.json. Selection does not
-        initialize or replace financial records.
-      </p>
-      <div class="grid grid-cols-2 gap-3">
-        <UiFormField label="External finance folder" required
-          ><UiInput v-model="root" placeholder="Existing local folder" /></UiFormField
-        ><UiFormField label="Workspace reference" required
-          ><UiInput v-model="workspace"
-        /></UiFormField>
-      </div>
-      <div class="flex gap-4">
-        <UiCheckbox v-model="allowCorrection" label="Allow sourced corrections" /><UiCheckbox
-          v-model="allowExport"
-          label="Allow private exports"
-        />
-      </div>
-      <UiButton type="submit" variant="primary">Authorize existing workspace</UiButton>
-      <UiButton v-if="access" variant="danger" @click="revoke">Revoke current access</UiButton>
-    </form>
     <template v-if="access">
-      <UiFormField v-if="accessRows.length > 1" label="Selected workspace"
-        ><UiSelect
-          :model-value="access.workspace_ref"
-          :options="
-            accessRows.map((row) => ({
-              value: text(row.workspace_ref),
-              label: text(row.workspace_ref),
-              disabled: row.readiness !== 'ready',
-            }))
-          "
-          @update:model-value="selectWorkspace"
-      /></UiFormField>
-      <p class="text-xs text-fg-muted">
-        {{ access.workspace_ref }} · access generation {{ access.generation }} ·
-        {{ access.modes.join(', ') }}
-      </p>
       <FinanceFilters :query="query" :disabled="loading" @apply="loadQuery" />
       <div class="mt-4 grid min-w-0 grid-cols-[180px_minmax(0,1fr)] gap-5">
         <SubNav
