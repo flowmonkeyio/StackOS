@@ -124,9 +124,14 @@ database, seed and token together, and retain the existing installation until
 the recovered copy passes health and credential checks. Stop all host finance
 writers before replacing or adopting a recovered finance folder; stopping the
 StackOS daemon does not stop those independent writers. Recovery excludes
-coordination `.writer.lock` files. After operator-controlled adoption of the
-complete recovered data and matching database, opening Finance safely recreates
-its locks, verifies project identity and retained data, and refreshes the storage
+coordination `.writer.lock` files from the archive. After all archive, file,
+database and seed checks pass, verified recovery creates fresh private regular
+coordination locks in the inert project hierarchy before publication, including
+retained deleted or disabled project stores. This requires no active Finance
+project and allows a subsequent backup after adoption. Live storage with missing
+or unsafe locks still fails validation. After operator-controlled adoption of the
+complete recovered data and matching database, opening Finance verifies project
+identity and retained data and refreshes the storage
 generation. Old queued requests remain historical. Missing or mismatched data
 requires repair and is never replaced with a fresh empty master. Automatic backups
 remain opt-in on the adopted installation; managed project files need no enrollment.

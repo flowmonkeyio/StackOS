@@ -478,6 +478,11 @@ def _coverage(
             if not accounts:
                 issues.append("missing_account_scope")
             mapping = current.account_map()
+            if q.get("account_ref"):
+                selected = mapping.get(q["account_ref"])
+                approved_ids = {mapping[ref]["record_id"] for ref in accounts if ref in mapping}
+                if not selected or selected["record_id"] not in approved_ids:
+                    issues.append("unapproved_account_scope")
             for account in accounts:
                 identity = mapping.get(account)
                 sources = (
@@ -684,6 +689,7 @@ def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
     current = CurrentRecords(d)
     settings, policies = _method(current)
     coverage = _coverage(current, policies, q)
+    account_map = current.account_map()
     # Economic ambiguity is a property of the current master, not the visible
     # subset. Basis stays in the key; presentation dates/accounts/projects never
     # revive one representation of a globally conflicting event/component.
@@ -755,7 +761,12 @@ def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
                     if key == "counterparty_ref" and reporting
                     else record.get(key)
                 )
-                if q.get(key) and value != q[key]:
+                if key == "account_ref" and q.get(key):
+                    selected = account_map.get(q[key])
+                    matches = account_map.get(value) == selected if selected else value == q[key]
+                else:
+                    matches = not q.get(key) or value == q[key]
+                if not matches:
                     break
             else:
                 evidence_refs = list(record.get("attachment_refs", []))
@@ -817,8 +828,6 @@ def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
                     "reporting": reporting,
                     "metric_exclusion": reason,
                 }
-                if q.get("needs_review") and not review:
-                    continue
                 identities = [
                     {
                         k: current.records[linked].get(k)
@@ -864,7 +873,17 @@ def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
         if row["record_ref"] in exclusion_by_ref:
             row["metric_exclusion"] = exclusion_by_ref[row["record_ref"]]
             row["needs_review"] = True
-    account_map = current.account_map()
+    if q.get("needs_review"):
+        population_refs = {r["record_ref"] for r in rows}
+        rows = [r for r in rows if r["needs_review"]]
+        selected_refs = {r["record_ref"] for r in rows}
+        recognized = [r for r in recognized if r["record_ref"] in selected_refs]
+        undated = [ref for ref in undated if ref in selected_refs]
+        excluded = [
+            item
+            for item in excluded
+            if item["record_ref"] not in population_refs or item["record_ref"] in selected_refs
+        ]
     approved_accounts = set((policy or {}).get("scope_accounts", []))
     unscoped_accounts = any(
         row["collection"] == "bookkeeping"
@@ -1141,6 +1160,7 @@ def record_detail(snapshot: dict[str, Any], ref: str) -> dict[str, Any]:
         "collection": collection,
         "record": copy.deepcopy(row),
         "amount": display_amount,
+        "reporting": copy.deepcopy(reporting),
         "original": copy.deepcopy(current.records[current.root(ref)]),
         "lineage": lineage,
         "correction_history": history,

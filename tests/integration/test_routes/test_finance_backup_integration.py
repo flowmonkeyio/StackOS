@@ -3,7 +3,9 @@
 import hashlib
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
+from sqlmodel import Session
 
 from stackos.backups import (
     BackupPolicy,
@@ -14,6 +16,7 @@ from stackos.backups import (
 )
 from stackos.config import Settings
 from stackos.plugins.builtin_finance import helpers
+from stackos.repositories.projects import ProjectRepository
 from stackos.server import create_app
 from tests.helpers.finance_workspace import record
 from tests.unit.test_finance_management import QUERY, fixture_document
@@ -175,7 +178,7 @@ def test_two_projects_finance_roundtrip_and_restored_incarnation_are_isolated(
         assert {
             file.relative_to(directory).as_posix(): file.read_bytes()
             for file in directory.rglob("*")
-            if file.is_file()
+            if file.is_file() and file.name != ".writer.lock"
         } == originals[pid]
     recovered_settings = Settings(
         _env_file=None,
@@ -217,3 +220,50 @@ def test_two_projects_finance_roundtrip_and_restored_incarnation_are_isolated(
                 for file in directory.rglob("*")
                 if file.is_file() and file.name != ".writer.lock"
             } == originals[pid]
+
+
+@pytest.mark.parametrize("retained", ["deleted", "plugin-disabled"])
+def test_retained_finance_can_be_backed_up_again_after_inert_restore(
+    api, project_id, settings, tmp_path, retained
+):
+    def status(client):
+        token = client.get("/api/v1/auth/ui-token").json()["token"]
+        return client.post(
+            "/api/v1/operations/finance.status/call",
+            json={"arguments": {"project_id": project_id}},
+            headers={"Authorization": "Bearer " + token},
+        )
+
+    assert api.post(f"/api/v1/projects/{project_id}/plugins/finance/enable").status_code == 200
+    assert status(api).status_code == 200
+    root = settings.data_dir / "projects" / str(project_id) / "finance"
+    master = root / "finance.json"
+    document = fixture_document()
+    document["revision"] = 1
+    helpers().workspace.write_document(master, document, helpers().workspace.digest(master))
+    original = master.read_bytes()
+    if retained == "deleted":
+        with Session(api.app.state.engine) as session:
+            ProjectRepository(session).delete(project_id, hard=True)
+        expected_denial = 404
+    else:
+        assert api.post(f"/api/v1/projects/{project_id}/plugins/finance/disable").status_code == 200
+        expected_denial = 403
+
+    private, public = tmp_path / "keys/private.pem", tmp_path / "keys/public.pem"
+    generate_recovery_key(settings, private, public)
+    save_policy(settings, BackupPolicy(recipient_public_key=public.read_text()))
+    first = Path(create_backup(settings)["path"])
+    output = tmp_path / "retained-recovery"
+    assert restore_backup(settings, first, private, output)["project_ids"] == [project_id]
+    adopted = Settings(_env_file=None, data_dir=output / "data", state_dir=output / "state")
+    with TestClient(create_app(adopted), base_url="http://127.0.0.1:5180") as client:
+        assert status(client).status_code == expected_denial
+        save_policy(adopted, BackupPolicy(recipient_public_key=public.read_text()))
+        second = Path(create_backup(adopted)["path"])
+    second_output = tmp_path / "retained-second-recovery"
+    result = restore_backup(adopted, second, private, second_output)
+    assert result["project_ids"] == [project_id]
+    assert (
+        second_output / "data/projects" / str(project_id) / "finance/finance.json"
+    ).read_bytes() == original

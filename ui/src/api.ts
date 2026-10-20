@@ -4186,6 +4186,13 @@ export interface components {
             record: {
                 [key: string]: unknown;
             };
+            /**
+             * Reporting
+             * @default null
+             */
+            reporting: {
+                [key: string]: unknown;
+            } | null;
             /** Requested Ref */
             requested_ref: string;
             /** Source Refs */

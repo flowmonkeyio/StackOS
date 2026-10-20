@@ -236,6 +236,26 @@ specialized editor is clearly justified.
 
 ### Project Finance files
 
+The Finance console is a bounded presentation decision for the operator's
+project-finance inspection and correction needs. Generic resource tables cannot
+show invoice-versus-payment evidence, exact-money period comparisons, or a
+revision-bound correction preview over the existing project file. Artifact
+previews can display a saved report but cannot provide that live inspection and
+correction flow. Moving the financial master into generic resource rows would
+introduce a competing ledger. Those alternatives do not meet this operator
+outcome, so the existing console presents the plugin's read models and explicit
+writer operations using shared UI primitives.
+
+This decision does not make a specialized page the default for a workflow or
+plugin. Future domains start with generic plugin/resource/artifact surfaces;
+another specialized presentation requires its own demonstrated gap, rejected
+native alternatives and explicit product decision. Finance method, financial
+query validation and analysis envelopes remain Finance-owned. The core owns
+project scope, generic human ingress, request persistence, dispatch, replay,
+permissions and audit. No domain presentation may add hidden business decisions
+or a second agent/model runtime. A general plugin-page extension framework is
+not needed to repair or justify this existing bounded surface.
+
 Finance contributes one registered local console, reachable at
 `/projects/:id/finance`, with Overview, Expenses & income and Reports. The plugin
 owns reporting method, typed metadata and external helpers; the existing operation
@@ -253,6 +273,13 @@ creation does not execute a model: an actual available host runs the plugin's
 `finance.management-review` and independent report/result review. Findings and
 readable report bytes stay in that project's Finance files; StackOS retains safe completion
 refs/status. See [the finance contract](../plugins/finance/references/local-workspace-contract.md#local-management-console).
+
+Browser chat retains generic inbound-human identity and bounded-content guards.
+Its Finance analysis metadata is delegated to the registered Finance operation
+owner: operation calls and analysis intake share the same query-field contract,
+and the packaged helper validates periods and reporting scope. Nonempty private
+search text is rejected before request persistence. The same guard runs before
+generic replay, so an earlier successful key cannot bypass current validation.
 
 ## Delivery Invariants
 

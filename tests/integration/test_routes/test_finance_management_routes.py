@@ -319,6 +319,46 @@ def test_undated_legacy_receipt_keeps_ref_and_supported_rows_without_rewriting_m
     assert finance["path"].read_bytes() == before
 
 
+@pytest.mark.parametrize("entry", ["row", "evidence-reference", "off-page-reference"])
+def test_detail_date_edit_preserves_reporting_for_every_entry(api, finance, entry):
+    listing = body(
+        call(
+            api,
+            "finance.query",
+            {
+                **finance["common"],
+                **QUERY,
+                "offset": 9 if entry == "off-page-reference" else 0,
+            },
+        )
+    )
+    if entry == "row":
+        assert any(row["record_ref"] == "book:expense" for row in listing["rows"])
+    elif entry == "off-page-reference":
+        assert all(row["record_ref"] != "book:expense" for row in listing["rows"])
+    detail = body(
+        call(api, "finance.record.get", {**finance["common"], "record_ref": "book:expense"})
+    )
+    assert detail["reporting"]["treatment"] == "expense"
+    request = {
+        **edit(finance, "canonical-detail-" + entry),
+        "fields": {"date": "2026-09-04", "reporting": detail["reporting"]},
+    }
+    preview = call(api, "finance.record.preview", request)
+    assert preview.status_code == 200, preview.text
+    committed = call(
+        api, "finance.record.commit", {**request, "preview_digest": body(preview)["preview_digest"]}
+    )
+    assert committed.status_code == 200, committed.text
+    projected = body(call(api, "finance.query", {**finance["common"], **QUERY}))
+    usd = next(item for item in projected["metrics_by_currency"] if item["currency"] == "USD")
+    assert usd["spend"]["amount"]["minor"] == "11000"
+    reopened = body(
+        call(api, "finance.record.get", {**finance["common"], "record_ref": "book:expense"})
+    )
+    assert reopened["reporting"] == detail["reporting"]
+
+
 def test_preview_cancel_commit_replay_conflict_and_revocation(api, finance, settings):
     intent = edit(finance)
     before = finance["path"].read_bytes()
@@ -1335,6 +1375,50 @@ def test_browser_request_is_inbound_human_refs_only(api, finance, update):
     )
     assert response.status_code in {403, 422}, response.text
     assert "/secret" not in response.text
+
+
+@pytest.mark.parametrize(
+    "query_update",
+    [
+        {"q": "private-search-material"},
+        {"q": []},
+        {"limit": 201},
+        {"needs_review": "true"},
+        {"start": "2026-09-31"},
+        {"recognition_basis": "invented"},
+        {"sort": "invented"},
+        {"comparison": {"start": "2026-09-02", "end": "2026-09-01"}},
+        {
+            "comparison": {
+                "start": "2025-09-01",
+                "end": "2025-09-30",
+                "private": "private-search-material",
+            }
+        },
+        {"unrecognized_filter": "ignored"},
+    ],
+)
+def test_finance_intake_uses_canonical_query_validation_before_replay(api, finance, query_update):
+    args = {
+        "project_id": finance["project_id"],
+        "thread_key": "canonical-query",
+        "message_key": "canonical-query",
+        "idempotency_key": "canonical-query",
+        "sender_ref": "local-user:operator",
+        "text": "Review supported records.",
+        "metadata_json": {"query": QUERY, "analysis_kind": "spending"},
+    }
+    assert call(api, "localAgentChat.createMessage", args).status_code == 200
+    rejected = call(
+        api,
+        "localAgentChat.createMessage",
+        {
+            **args,
+            "metadata_json": {"query": {**QUERY, **query_update}, "analysis_kind": "spending"},
+        },
+    )
+    assert rejected.status_code == 422
+    assert "private-search-material" not in rejected.text
 
 
 def test_dispatcher_config_replay_never_bypasses_current_authority(api, finance):

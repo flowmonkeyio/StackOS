@@ -1026,7 +1026,7 @@ def _read_contained(root: Path, relative: Path, cap: int, identity: tuple[int, i
             child = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
             os.close(fd)
             fd = child
-        child = os.open(relative.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=fd)
+        child = os.open(relative.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
         with os.fdopen(child, "rb") as stream:
             before = os.fstat(stream.fileno())
             if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > cap:

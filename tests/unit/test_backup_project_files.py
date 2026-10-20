@@ -4,7 +4,9 @@ import fcntl
 import hashlib
 import json
 import os
+import shutil
 import sqlite3
+import stat
 import zipfile
 from io import BytesIO
 from pathlib import Path
@@ -59,6 +61,8 @@ def project_files(tmp_path):
 
 def test_project_files_and_originals_roundtrip_without_enrollment(project_files, tmp_path):
     settings, private = project_files
+    for lock in (settings.data_dir / "projects").rglob(".writer.lock"):
+        lock.write_bytes(b"old coordination state is not recovered")
     status = backup_status(settings)
     assert status["targets"] == []
     assert status["project_ids"] == [1, 2]
@@ -79,7 +83,17 @@ def test_project_files_and_originals_roundtrip_without_enrollment(project_files,
         for source in expected.rglob("*"):
             if source.is_file() and source.name != ".writer.lock":
                 assert (restored / source.relative_to(expected)).read_bytes() == source.read_bytes()
-        assert not list(restored.rglob(".writer.lock"))
+        assert {
+            lock.relative_to(restored).as_posix() for lock in restored.rglob(".writer.lock")
+        } == {
+            ".writer.lock",
+            "finance/.writer.lock",
+        }
+        for lock in restored.rglob(".writer.lock"):
+            info = lock.lstat()
+            assert stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+            assert info.st_mode & 0o777 == 0o600
+            assert lock.read_bytes() == b""
     assert (output / "data/projects/1/finance/originals/invoice.pdf").read_bytes() != (
         output / "data/projects/2/finance/originals/invoice.pdf"
     ).read_bytes()
@@ -106,6 +120,41 @@ def test_missing_lock_never_silently_omits_project(project_files, lock):
     assert backup_status(settings)["project_ids"] is None
     with pytest.raises(BackupError, match="coordination lock is missing"):
         create_backup(settings)
+
+
+@pytest.mark.parametrize(
+    "component", ["data", "data/projects", "data/projects/1", "data/projects/1/finance"]
+)
+def test_recovered_project_coordination_rejects_path_aliases(tmp_path, component):
+    output = tmp_path / "recovered"
+    (output / "data/projects/1/finance").mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    target = output / component
+    shutil.rmtree(target)
+    target.symlink_to(outside, target_is_directory=True)
+    with pytest.raises((OSError, BackupError)):
+        recovery._initialize_project_locks(output, [1])
+    assert not (outside / ".writer.lock").exists()
+
+
+@pytest.mark.parametrize("existing", ["regular", "symlink", "fifo"])
+def test_recovery_requires_fresh_coordination_locks(tmp_path, existing):
+    output = tmp_path / "recovered"
+    container = output / "data/projects/1/plugin-data"
+    container.mkdir(parents=True)
+    lock = container / ".writer.lock"
+    outside = tmp_path / "outside-file"
+    outside.write_bytes(b"preserve outside bytes")
+    if existing == "regular":
+        lock.write_bytes(b"untrusted old coordination")
+    elif existing == "symlink":
+        lock.symlink_to(outside)
+    else:
+        os.mkfifo(lock)
+    with pytest.raises((OSError, BackupError)):
+        recovery._initialize_project_locks(output, [1])
+    assert outside.read_bytes() == b"preserve outside bytes"
 
 
 @pytest.mark.parametrize("kind", ["symlink", "hardlink"])

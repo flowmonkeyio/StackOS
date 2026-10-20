@@ -201,6 +201,63 @@ def _extract_verified(archive: zipfile.ZipFile, output: Path) -> dict[str, Any]:
     return manifest
 
 
+def _initialize_project_locks(output: Path, project_ids: list[int]) -> None:
+    """Fresh coordination for verified retained stores, independent of live projects."""
+    if not project_ids:
+        return
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+
+    def fresh_lock(directory: int) -> None:
+        fd = os.open(
+            ".writer.lock",
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_NONBLOCK,
+            0o600,
+            dir_fd=directory,
+        )
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise BackupError(
+                    "unsafe_lock", "Recovered coordination locks must be regular files."
+                )
+            os.fchmod(fd, 0o600)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.fsync(directory)
+
+    output_fd = os.open(output, directory_flags)
+    try:
+        data_fd = os.open("data", directory_flags, dir_fd=output_fd)
+        try:
+            projects_fd = os.open("projects", directory_flags, dir_fd=data_fd)
+            try:
+                for project_id in project_ids:
+                    project_fd = os.open(str(project_id), directory_flags, dir_fd=projects_fd)
+                    try:
+                        fresh_lock(project_fd)
+                        for entry in sorted(os.scandir(project_fd), key=lambda item: item.name):
+                            info = entry.stat(follow_symlinks=False)
+                            if stat.S_ISDIR(info.st_mode):
+                                child_fd = os.open(entry.name, directory_flags, dir_fd=project_fd)
+                                try:
+                                    fresh_lock(child_fd)
+                                finally:
+                                    os.close(child_fd)
+                            elif not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                                raise BackupError(
+                                    "unsafe_file", "Recovered project storage is unsafe."
+                                )
+                    finally:
+                        os.close(project_fd)
+            finally:
+                os.close(projects_fd)
+        finally:
+            os.close(data_fd)
+    finally:
+        os.close(output_fd)
+
+
 def restore_backup(
     settings: Settings, archive: Path, private_key_path: Path, output_dir: Path
 ) -> dict[str, Any]:
@@ -237,6 +294,7 @@ def restore_backup(
             private_directory(recovered)
             with zipfile.ZipFile(plaintext) as payload:
                 manifest = _extract_verified(payload, recovered)
+            _initialize_project_locks(recovered, manifest.get("project_ids", []))
             # Reserve without overwriting another recovery. Only validated files are moved.
             os.mkdir(output, mode=0o700)
             reserved = True

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
@@ -16,8 +17,8 @@ from stackos.operations.spec import (
     OperationSurface,
     OperationSurfaces,
 )
-from stackos.plugins.builtin_finance import FinanceConsole
-from stackos.repositories.base import RepositoryError
+from stackos.plugins.builtin_finance import FinanceConsole, call_helper, helpers
+from stackos.repositories.base import RepositoryError, ValidationError
 
 
 class SnapshotRef(BaseModel):
@@ -57,12 +58,16 @@ class FinanceStatusInput(MCPInput):
 
 class FinanceComparisonInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid")
     start: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     end: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     clamped: bool | None = None
 
 
-class FinanceQueryInput(FinanceAccessInput):
+class FinanceQueryFilters(BaseModel):
+    """Canonical query fields shared by operations and Finance request intake."""
+
+    model_config = ConfigDict(extra="forbid")
     start: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     end: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     comparison: FinanceComparisonInput | None = None
@@ -83,6 +88,9 @@ class FinanceQueryInput(FinanceAccessInput):
     offset: StrictInt = Field(default=0, ge=0)
     limit: StrictInt = Field(default=50, ge=1, le=200)
     expected_snapshot: SnapshotRef | None = None
+
+
+class FinanceQueryInput(FinanceAccessInput, FinanceQueryFilters):
     idempotency_key: None = None
 
     def query_arguments(self):
@@ -94,6 +102,81 @@ class FinanceQueryInput(FinanceAccessInput):
             "expected_etag",
         }
         return self.model_dump(mode="json", include=fields, exclude_none=True)
+
+
+def _console_ref(value: Any) -> bool:
+    return isinstance(value, str) and bool(
+        re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,239}", value)
+    )
+
+
+def validate_console_metadata(metadata: dict[str, Any]) -> None:
+    """Finance owns the bounded, reference-only browser analysis envelope."""
+    allowed = {
+        "workspace_ref",
+        "access_generation",
+        "source_snapshot",
+        "query",
+        "analysis_kind",
+        "record_refs",
+        "source_refs",
+        "intent_key",
+    }
+    if set(metadata) - allowed:
+        raise ValidationError("Browser local chat metadata must contain safe references")
+    for key, value in metadata.items():
+        if key == "source_snapshot":
+            try:
+                SnapshotRef.model_validate(value, strict=True)
+            except PydanticValidationError:
+                raise ValidationError("Invalid source snapshot reference") from None
+        elif key == "access_generation":
+            if type(value) is not int or value < 1:
+                raise ValidationError("Invalid access generation")
+        elif key in {"record_refs", "source_refs"}:
+            if (
+                not isinstance(value, list)
+                or len(value) > 200
+                or not all(_console_ref(x) for x in value)
+            ):
+                raise ValidationError("Invalid record references")
+        elif key == "query":
+            _validate_console_query(value)
+        elif key == "analysis_kind":
+            if not isinstance(value, str) or value not in {
+                "spending",
+                "opportunities",
+                "collections",
+                "cashflow",
+                "review-records",
+            }:
+                raise ValidationError("Invalid analysis kind")
+        elif not _console_ref(value):
+            raise ValidationError("Invalid safe request reference")
+
+
+def _validate_console_query(value: Any) -> None:
+    if not isinstance(value, dict):
+        raise ValidationError("Request filters must contain safe scope references")
+    # Search text is private console state, never persisted as request metadata.
+    if value.get("q") is not None and value.get("q") != "":
+        raise ValidationError("Clear private search before requesting Finance analysis")
+    query = dict(value)
+    workspace_ref = query.pop("workspace_ref", None)
+    generation = query.pop("access_generation", None)
+    if workspace_ref is not None and not _console_ref(workspace_ref):
+        raise ValidationError("Invalid safe request reference")
+    if generation is not None and (type(generation) is not int or generation < 1):
+        raise ValidationError("Invalid access generation")
+    try:
+        parsed = FinanceQueryFilters.model_validate(query, strict=True)
+    except PydanticValidationError:
+        raise ValidationError("Invalid Finance request filters") from None
+    for key in ("account_ref", "category_ref", "counterparty_ref", "external_project_ref"):
+        item = getattr(parsed, key)
+        if item is not None and not _console_ref(item):
+            raise ValidationError("Invalid filter reference")
+    call_helper(helpers().normalize_query, parsed.model_dump(mode="json", exclude_none=True))
 
 
 class FinanceRecordGetInput(FinanceAccessInput):
@@ -225,6 +308,7 @@ class FinanceRecordOut(BaseModel):
     record: dict[str, Any]
     original: dict[str, Any]
     amount: FinanceMoneyOut | None = None
+    reporting: dict[str, Any] | None = None
     lineage: list[str]
     correction_history: list[FinanceCorrectionHistoryItemOut] = Field(default_factory=list)
     source_refs: list[str]

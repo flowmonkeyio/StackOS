@@ -682,6 +682,160 @@ describe('canonical precision and correction history', () => {
       attachTo: document.body,
       global: { stubs: { teleport: true } },
     })
+  const canonicalReporting = {
+    treatment: 'expense',
+    economic_event_ref: 'event:approved',
+    component_ref: 'component:principal',
+    recognition_basis: 'accrual',
+    date_basis: 'posting',
+    currency_exponent: 2,
+    source_refs: ['source:classification'],
+    policy_ref: 'policy:approved',
+    related_event_ref: 'event:related',
+    counterparty_ref: 'vendor:approved',
+    counterparty_label: 'Approved vendor',
+  }
+  const staleReporting = {
+    ...canonicalReporting,
+    treatment: 'revenue',
+    economic_event_ref: 'event:stale-row',
+    recognition_basis: 'cash',
+    date_basis: 'transaction',
+    source_refs: ['source:stale-row'],
+    policy_ref: 'policy:stale-row',
+  }
+
+  it.each([
+    ['row', canonicalReporting],
+    ['reference', undefined],
+    ['off-page AI inspection', {}],
+    ['stale row', staleReporting],
+  ])(
+    'preserves canonical reporting for a date-only correction from %s',
+    async (_entryPoint, rowReporting) => {
+      vi.mocked(callOperation).mockImplementation(async (name) => {
+        if (name === 'finance.record.get')
+          return { data: { ...knownDetail, reporting: canonicalReporting } }
+        if (name === 'finance.record.preview') return previewResult
+        return {
+          data: {
+            request_id: 'synthetic',
+            changed_refs: ['bookkeeping:replacement'],
+            snapshot: { ...snapshot, revision: 2 },
+            reread_result: 'verified',
+            idempotency_replay: false,
+          },
+        }
+      })
+      const panel = mountPanel({ reporting: rowReporting })
+      await flushPromises()
+      await panel.get('[data-test="edit-record"]').trigger('click')
+      await panel.get('[data-test="date"]').setValue('2026-09-01')
+      await panel.get('[data-test="reason"]').setValue('Correct only the sourced date')
+      await panel.get('form').trigger('submit')
+      await flushPromises()
+      const previewIntent = vi
+        .mocked(callOperation)
+        .mock.calls.find(([name]) => name === 'finance.record.preview')![1]
+      expect(previewIntent.fields).toEqual({ date: '2026-09-01', reporting: canonicalReporting })
+      expect(previewIntent.source_refs).toEqual(['source:synthetic'])
+      await panel.get('[data-test="save-edit"]').trigger('click')
+      await flushPromises()
+      const commitIntent = vi
+        .mocked(callOperation)
+        .mock.calls.find(([name]) => name === 'finance.record.commit')![1]
+      expect(commitIntent.fields).toEqual(previewIntent.fields)
+      expect(panel.emitted('saved')).toHaveLength(1)
+      panel.unmount()
+    },
+  )
+
+  it.each([undefined, null])(
+    'does not restore stale row classification when canonical reporting is %s',
+    async (reporting) => {
+      vi.mocked(callOperation).mockImplementation(async (name) =>
+        name === 'finance.record.get' ? { data: { ...knownDetail, reporting } } : previewResult,
+      )
+      const panel = mountPanel({ reporting: staleReporting })
+      await flushPromises()
+      await panel.get('[data-test="edit-record"]').trigger('click')
+      await panel.get('[data-test="date"]').setValue('2026-09-01')
+      await panel.get('[data-test="reason"]').setValue('Correct a date without classification')
+      await panel.get('form').trigger('submit')
+      await flushPromises()
+      expect(vi.mocked(callOperation).mock.calls.at(-1)![1].fields).toEqual({ date: '2026-09-01' })
+      panel.unmount()
+    },
+  )
+
+  it('uses explicitly edited sources for canonical reporting under existing validation', async () => {
+    vi.mocked(callOperation).mockImplementation(async (name) =>
+      name === 'finance.record.get'
+        ? { data: { ...knownDetail, reporting: canonicalReporting } }
+        : previewResult,
+    )
+    const panel = mountPanel()
+    await flushPromises()
+    await panel.get('[data-test="edit-record"]').trigger('click')
+    const sourceField = panel
+      .findAllComponents({ name: 'UiFormField' })
+      .find((field) => field.props('label') === 'Supporting source references')!
+    await sourceField.get('textarea').setValue('source:replacement')
+    await panel.get('[data-test="date"]').setValue('2026-09-01')
+    await panel.get('[data-test="reason"]').setValue('Correct the supporting source')
+    await panel.get('form').trigger('submit')
+    await flushPromises()
+    const intent = vi.mocked(callOperation).mock.calls.at(-1)![1]
+    expect(intent.fields).toEqual({
+      date: '2026-09-01',
+      reporting: { ...canonicalReporting, source_refs: ['source:replacement'] },
+    })
+    expect(intent.source_refs).toEqual(['source:replacement'])
+    panel.unmount()
+  })
+
+  it('reloads canonical reporting after a changed snapshot before the next correction', async () => {
+    let reporting = canonicalReporting
+    let currentSnapshot = snapshot
+    vi.mocked(callOperation).mockImplementation(async (name) =>
+      name === 'finance.record.get'
+        ? { data: { ...knownDetail, reporting } }
+        : { data: { ...previewResult.data, source_snapshot: currentSnapshot } },
+    )
+    const panel = mountPanel({ reporting: staleReporting })
+    await flushPromises()
+    await panel.get('[data-test="edit-record"]').trigger('click')
+    await panel.get('[data-test="date"]').setValue('2026-09-01')
+    await panel.get('[data-test="reason"]').setValue('Original correction before source change')
+    await panel.get('form').trigger('submit')
+    await flushPromises()
+    reporting = {
+      ...canonicalReporting,
+      economic_event_ref: 'event:latest',
+      policy_ref: 'policy:latest',
+    }
+    const latestSnapshot = { ...snapshot, revision: 2, sha256: 'c'.repeat(64) }
+    currentSnapshot = latestSnapshot
+    await panel.setProps({ snapshot: latestSnapshot })
+    await flushPromises()
+    expect(panel.find('[data-test="save-edit"]').exists()).toBe(false)
+    await panel.get('[data-test="edit-record"]').trigger('click')
+    await panel.get('[data-test="date"]').setValue('2026-09-02')
+    await panel.get('[data-test="reason"]').setValue('Correction against latest canonical metadata')
+    await panel.get('form').trigger('submit')
+    await flushPromises()
+    const intent = vi
+      .mocked(callOperation)
+      .mock.calls.filter(([name]) => name === 'finance.record.preview')
+      .at(-1)![1]
+    expect(intent.expected_snapshot).toEqual({ revision: 2, sha256: latestSnapshot.sha256 })
+    expect(intent.fields).toEqual({ date: '2026-09-02', reporting })
+    expect(panel.find('[data-test="save-edit"]').exists()).toBe(true)
+    expect(
+      vi.mocked(callOperation).mock.calls.some(([name]) => name === 'finance.record.commit'),
+    ).toBe(false)
+    panel.unmount()
+  })
 
   it.each([
     ['[data-test="date"]', '2026-08-01', '2026-07-01'],
@@ -863,15 +1017,12 @@ describe('canonical precision and correction history', () => {
 
   it('does not re-adopt an existing classification when only display precision changes', async () => {
     vi.mocked(callOperation).mockImplementation(async (name) =>
-      name === 'finance.record.get' ? { data: knownDetail } : previewResult,
+      name === 'finance.record.get'
+        ? { data: { ...knownDetail, reporting: canonicalReporting } }
+        : previewResult,
     )
     const panel = mountPanel({
-      reporting: {
-        treatment: 'expense',
-        economic_event_ref: 'event:one',
-        component_ref: 'component:one',
-        currency_exponent: 2,
-      },
+      reporting: staleReporting,
     })
     await flushPromises()
     await panel.get('[data-test="edit-record"]').trigger('click')

@@ -178,6 +178,140 @@ def snapshot(document):
     }
 
 
+@pytest.mark.parametrize("case", ["covered", "uncovered", "unknown", "partial"])
+def test_selected_empty_account_coverage_is_independent_of_rows(case):
+    module = management()
+    document = fixture_document()
+    selected = "bank:one" if case == "covered" else "bank:two"
+    if case in {"uncovered", "partial"}:
+        document["operating_settings"].append(
+            record(
+                "account:two",
+                "confirmed",
+                version=1,
+                scope="account",
+                decision_refs=["fixture:decision"],
+                account_identity={"display_name": "Second account", "aliases": ["bank:two"]},
+            )
+        )
+        document["sources"].append(
+            record(
+                "source:other",
+                "observed",
+                source_kind="bank-export",
+                source_identity="synthetic:other",
+                account_ref="bank:two",
+                attachment_refs=[],
+                coverage_state="partial" if case == "partial" else "complete",
+                available_window={
+                    "start": "2026-09-01",
+                    "end": "2026-09-01" if case == "partial" else "2026-09-30",
+                },
+            )
+        )
+        if case == "partial":
+            policy = next(
+                s for s in document["operating_settings"] if s["record_id"] == "policy:reporting"
+            )
+            payload = json.loads(policy["policy_text"])
+            payload["scope_accounts"].append("account:two")
+            policy["policy_text"] = json.dumps(payload)
+            next(r for r in document["reviews"] if r["target_ref"] == policy["record_id"])[
+                "target_digest_sha256"
+            ] = module.workspace.material_record_digest(policy, "operating_settings")
+    module.workspace.validate(document)
+    projected = module.query(
+        snapshot(document), {**QUERY, "end": "2026-09-02", "account_ref": selected}
+    )
+    assert projected["rows"] == []
+    if case == "covered":
+        assert projected["coverage"]["state"] == "complete"
+        assert projected["metrics_by_currency"][0]["profit"]["amount"]["minor"] == "0"
+    else:
+        assert projected["coverage"]["state"] != "complete"
+        assert projected["metrics_by_currency"][0]["profit"]["amount"] is None
+
+
+def test_selected_account_identity_and_alias_have_identical_population():
+    module = management()
+    document = fixture_document()
+    by_alias = module.query(snapshot(document), {**QUERY, "account_ref": "bank:one"})
+    by_identity = module.query(snapshot(document), {**QUERY, "account_ref": "account:one"})
+    assert by_identity["rows"] == by_alias["rows"]
+    assert by_identity["metrics_by_currency"] == by_alias["metrics_by_currency"]
+
+
+@pytest.mark.parametrize("conflict", ["policy", "cross-record"])
+def test_needs_review_finds_precision_conflicts_before_pagination(conflict):
+    module = management()
+    document = fixture_document()
+    for row in document["bookkeeping"]:
+        row["category"] = {"state": "reviewed"}
+    if conflict == "policy":
+        policy = next(
+            s for s in document["operating_settings"] if s["record_id"] == "policy:reporting"
+        )
+        payload = json.loads(policy["policy_text"])
+        payload["currency_precision"][0]["exponent"] = 3
+        policy["policy_text"] = json.dumps(payload)
+    else:
+        row = document["bookkeeping"][0]
+        metadata_row = next(
+            s
+            for s in document["operating_settings"]
+            if s.get("scope") == "finance-management-record:" + row["record_id"]
+        )
+        payload = json.loads(metadata_row["policy_text"])
+        payload["reporting"]["currency_exponent"] = 3
+        metadata_row["policy_text"] = json.dumps(payload)
+    for setting_row in document["operating_settings"]:
+        if setting_row.get("scope", "").startswith("finance-management-record:"):
+            payload = json.loads(setting_row["policy_text"])
+            target = next(
+                r for r in document["bookkeeping"] if r["record_id"] == payload["target_ref"]
+            )
+            payload["target_digest_sha256"] = module.workspace.material_record_digest(
+                target, "bookkeeping"
+            )
+            setting_row["policy_text"] = json.dumps(payload)
+        for review in document["reviews"]:
+            if review.get("target_ref") == setting_row["record_id"]:
+                review["target_digest_sha256"] = module.workspace.material_record_digest(
+                    setting_row, "operating_settings"
+                )
+    module.workspace.validate(document)
+    unfiltered = module.query(snapshot(document), QUERY)
+    expected = [r for r in unfiltered["rows"] if r["needs_review"]]
+    assert len(expected) == 8
+    filtered = module.query(snapshot(document), {**QUERY, "needs_review": True})
+    assert filtered["rows"] == expected
+    assert filtered["metrics_by_currency"] == unfiltered["metrics_by_currency"]
+    page = module.query(
+        snapshot(document), {**QUERY, "needs_review": True, "offset": 1, "limit": 2}
+    )
+    assert page["rows"] == expected[1:3]
+
+
+def test_record_detail_reporting_preserves_classification_on_date_correction(tmp_path):
+    module, path = save_fixture(tmp_path)
+    current = module.read_snapshot(path)
+    detail = module.record_detail(current, "book:expense")
+    reporting = detail["reporting"]
+    assert reporting["treatment"] == "expense"
+    correction = intent(current, fields={"date": "2026-09-04", "reporting": reporting})
+    preview = module.preview(current, correction)
+    module.commit(path, correction, preview["preview_digest"])
+    result = module.query(module.read_snapshot(path), QUERY)
+    assert result["metrics_by_currency"][0]["spend"]["amount"]["minor"] == "11000"
+    reopened = module.record_detail(module.read_snapshot(path), "book:expense")
+    assert reopened["reporting"] == reporting
+    reopened["reporting"]["treatment"] = "unknown"
+    assert (
+        module.record_detail(module.read_snapshot(path), "book:expense")["reporting"]["treatment"]
+        == "expense"
+    )
+
+
 def document_original(document, name, kind, *, filename=None, status="retained"):
     source_ref, attachment_ref = f"source:{name}", f"attachment:{name}"
     document["sources"].append(

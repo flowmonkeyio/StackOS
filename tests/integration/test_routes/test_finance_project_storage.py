@@ -44,6 +44,92 @@ def common(project_id, access):
     }
 
 
+@pytest.mark.parametrize("replacement", ["preexisting", "during-open"])
+def test_evidence_fifo_is_rejected_in_a_bounded_subprocess(tmp_path, replacement):
+    import subprocess
+    import sys
+    import textwrap
+
+    script = textwrap.dedent(
+        """
+        import hashlib
+        import json
+        import os
+        import signal
+        import sys
+        from pathlib import Path
+        from types import SimpleNamespace
+
+        from stackos.config import Settings
+        from stackos.plugins import builtin_finance
+        from stackos.plugins.builtin_finance import FinanceConsole, helpers
+        from tests.helpers.finance_workspace import record
+        from tests.unit.test_finance_management import fixture_document
+
+        root = Path(sys.argv[1])
+        replacement = sys.argv[2]
+        module = helpers()
+        master = module.workspace.initialize(root)
+        relative = 'attachments/2026/10/original.txt'
+        target = root / relative
+        target.parent.mkdir(parents=True)
+        payload = b'synthetic evidence'
+        target.write_bytes(payload)
+        document = fixture_document()
+        document['revision'] = 1
+        document['attachments'].append(record(
+            'attachment:fifo', 'retained', source_ref='source:bank', role='original',
+            relative_path=relative, sha256=hashlib.sha256(payload).hexdigest(),
+            bytes=len(payload), media_type='text/plain', original_filename='original.txt',
+        ))
+        document['sources'][0]['attachment_refs'] = ['attachment:fifo']
+        module.workspace.write_document(master, document, module.workspace.digest(master))
+        settings = Settings(
+            _env_file=None, data_dir=root.parent/'data', state_dir=root.parent/'state'
+        )
+        console = FinanceConsole(None, settings)
+        console.snapshot = lambda inp: (module.read_snapshot(master), master)
+        info = root.stat()
+        state = {'root_device': info.st_dev, 'root_inode': info.st_ino}
+        console.authorize = lambda inp: (state, master)
+        original_open = os.open
+
+        def swapped(path, flags, *args, **kwargs):
+            if replacement == 'during-open' and path == target.name and 'dir_fd' in kwargs:
+                target.unlink()
+                os.mkfifo(target)
+            return original_open(path, flags, *args, **kwargs)
+
+        if replacement == 'preexisting':
+            target.unlink()
+            os.mkfifo(target)
+        builtin_finance.os.open = swapped
+
+        def blocked(*args):
+            raise AssertionError('Evidence open blocked on FIFO')
+
+        signal.signal(signal.SIGALRM, blocked)
+        signal.alarm(2)
+        try:
+            inp = SimpleNamespace(expected_snapshot=None, attachment_ref='attachment:fifo')
+            result = console.evidence(inp)
+        finally:
+            signal.alarm(0)
+        assert result['state'] == 'unavailable', result
+        assert 'content_base64' not in result
+        print(json.dumps({'state': result['state'], 'replacement': replacement}))
+        """
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(tmp_path / "finance"), replacement],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["state"] == "unavailable"
+
+
 def _original(root, state="retained"):
     original = root / "attachments/2026/10/synthetic-retained.txt"
     original.parent.mkdir(parents=True, exist_ok=True)

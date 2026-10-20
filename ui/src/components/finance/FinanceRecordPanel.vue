@@ -193,7 +193,7 @@ function beginEdit() {
   uncertain.value = false
   const record = detail.value?.record ?? {},
     money = object(currentAmount.value),
-    reporting = props.reporting ?? {}
+    reporting = object(detail.value?.reporting)
   const exponent = props.recordRef === null ? 2 : money.exponent
   const minor = text(money.minor) || text(money.amount_minor)
   draft.value = {
@@ -345,15 +345,18 @@ function buildIntent(): Record<string, unknown> {
       throw new Error(
         'Classification needs supporting sources, transaction/component identity and confirmed currency precision.',
       )
+    const reporting = object(detail.value?.reporting),
+      reportingSources = refs(reporting.source_refs)
     fields.reporting = {
-      ...props.reporting,
+      ...reporting,
       economic_event_ref: d.event,
       component_ref: d.component,
       treatment: d.treatment,
-      recognition_basis: text(props.reporting?.recognition_basis) || 'cash',
-      date_basis: text(props.reporting?.date_basis) || 'transaction',
+      recognition_basis: text(reporting.recognition_basis) || 'cash',
+      date_basis: text(reporting.date_basis) || 'transaction',
       currency_exponent: Number(d.precision),
-      source_refs: sources,
+      source_refs:
+        d.sources === initial.sources && reportingSources.length ? reportingSources : sources,
     }
   }
   if (!Object.keys(fields).length) throw new Error('Change a supported fact before previewing.')
