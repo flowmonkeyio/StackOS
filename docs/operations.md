@@ -40,10 +40,12 @@ Configuration stores a public recovery key, explicit external folder targets,
 destination and opt-in schedule. Partial configuration preserves omitted
 fields. Status and creation return safe coverage, time, path, size, checksum
 and failure metadata; no archive bytes, private recovery key, credential or
-financial contents are returned. Creation includes all enrolled targets and
+financial contents are returned. Status includes covered managed project IDs,
+or null when coverage could not be verified. Creation includes all managed
+project files and enrolled targets and
 rejects unsafe destinations. Recovery private key generation and verified
 restore remain host-local CLI operations. See [backup and recovery](./backups.md)
-for setup, finance enrollment and key custody.
+for setup, automatic project coverage and key custody.
 
 ## Agent Documentation
 
@@ -359,6 +361,38 @@ UI-friendly resource routes still exist separately, for example
 `GET /api/v1/projects/{project_id}/action-calls`. The operation endpoint is the
 generic callable surface; resource routes remain the ergonomic query/read model
 for the UI.
+
+## Finance local console operations
+
+Finance registers these exact REST/CLI operations over one project-owned
+`local-json-v1` master. They are disabled on MCP; agents perform finance method
+through existing host/workflow contracts, not domain MCP primitives.
+
+| Operation | Behavior | Authority/response |
+| --- | --- | --- |
+| `finance.status` | Prepare the enabled project's default Finance store and inspect readiness/snapshot. Never replace missing or corrupt existing records. No caller-selected root. | `local-admin-console-write`; handler-owned retry validation; compact/raw safe receipt. |
+| `finance.query` / `finance.record.get` | Bounded filters, source coverage, current facts/history and undated record refs. | Current project/root/read mode; compact/raw. |
+| `finance.record.preview` | Validate a sourced draft against its source snapshot without writing. | Current correction mode; compact/raw. |
+| `finance.record.commit` | Guarded additive correction/create/proposal, exact preview and revision/hash, actual readback. | `local-admin-console-write`; handler-owned retry and under-lock authority recheck. |
+| `finance.evidence.read` / `finance.report.render` | Registered private original or derived period/independently reviewed analysis result. | Raw-only bounded content with exact hash/state; no ack/compact. |
+
+The generic endpoint is `/api/v1/operations/{name}/call`; CLI `ops call {name}`
+uses the same authenticated REST owner. Trusted local context requires the exact
+registered path, browser-safe surface, MCP-disabled spec and matching read/write
+policy. Headers, caller actor/admin fields and run tokens cannot widen it.
+`OperationSpec.idempotency_policy` defaults to `dispatcher`; finance writes opt
+into `handler` so every retry revalidates current root authority and original
+external intent. Descriptions expose that metadata. Existing dispatcher raw/ack
+replay remains unchanged for its default consumers.
+
+Private evidence/report responses are bare `FinanceContentOut` in raw mode;
+other default compact console calls return the normal `data` envelope.
+Exact minor-unit strings and source revision/hash survive shaping. Registry models
+generate UI contracts through `scripts/write-openapi.py`, without a second schema.
+Browser `localAgentChat.createMessage` is a separate bounded inbound human intent:
+safe refs/query/snapshot only, no actor/outbound spoofing, provider work or model
+execution. Clear private search text and apply filters before analysis; read
+[the actual host and result protocol](../plugins/finance/references/workflow-handoffs.md#management-review-request-and-result).
 
 ## CLI Calls
 

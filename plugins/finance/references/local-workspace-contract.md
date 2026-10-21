@@ -1,16 +1,19 @@
-# Local JSON Finance Workspace Contract
+# Project Finance File Contract
 
 Format version: `local-json-v1`. Backend key: `local-json`.
 
 ## Layout and setup
 
-`finance/finance.json` is the **single authoritative local financial record**.
+`data/projects/<project-id>/finance/finance.json` is the **single authoritative
+local financial record for that project**. StackOS derives this private location
+from the permanent project ID. There is no Finance folder selection; other projects
+use different directories and cannot share or select this master.
 It owns financial facts, sourced mutable setup, decisions, versions, links and
 corrections. `FINANCE.md` is an operating guide, not a financial table or setup
 form. Originals may use `receipts/YYYY/MM/`, `attachments/YYYY/MM/`, or
 `attachments/<type>/YYYY/MM/`. The schema defines data shape,
-not facts. This is a host-owned convention, not a StackOS filesystem connector,
-schema registry, ledger or financial database.
+not facts. The Finance plugin owns these files inside generic managed project storage,
+without adding a financial ledger to the core database.
 
 ```text
 finance/
@@ -22,11 +25,14 @@ finance/
 └── attachments/[type/]YYYY/MM/  # originals: emails, statements, exports
 ```
 
-Copy the [JSON template](../templates/finance-workspace/finance.json),
+Opening Finance calls authenticated `finance.status`, which initializes only a
+never-provisioned enabled project's default store from the packaged
+[JSON template](../templates/finance-workspace/finance.json),
 [schema](../templates/finance-workspace/schemas/finance-v1.schema.json) and
-[guide](../templates/finance-workspace/FINANCE.md) only when initializing an
-authorized new, empty workspace. Initialize once; subsequent runs load the
-existing JSON rather than resetting it from the template. Empty collections are intentional.
+[guide](../templates/finance-workspace/FINANCE.md). Initialization is private,
+locked and atomic. Subsequent calls load existing data. Missing or corrupt
+provisioned files require repair and are never reset from the template.
+Empty collections are intentional.
 Fill only sourced facts; unknown does not mean zero. Apply the
 [selected-workflow setup matrix](backend-contract.md#setup-and-execution):
 receipt custody does not require taxpayer/advisor/bank setup. Complete only
@@ -43,11 +49,11 @@ location; dated research references and one-time outputs are distinct from that
 method. Do not turn a historical setup report, browser session or prior review
 into current readiness. A new session resolves its own binding and capabilities.
 
-Initialize financial storage only during explicitly authorized prerequisite
-setup, not infrastructure setup or preset materialization. Preserve an existing
-master and existing guidance. A future `projects/` directory is optional
-navigation: it creates no StackOS binding or inherited access and no additional
-business financial master.
+Infrastructure setup and preset materialization do not create financial records.
+Opening the enabled project's Finance console calls authenticated `finance.status`
+to provision only a never-initialized default store. Preserve existing masters and
+guidance; missing or damaged provisioned data needs repair. The managed directory
+path itself grants no StackOS binding, inherited access or host filesystem capability.
 
 ## Structured records and views
 
@@ -258,8 +264,11 @@ compares the generated files with the current master. None proves economic
 matching, policy adoption or complete reconciliation. These are confidential
 host-side outputs; do not copy their financial contents into StackOS results.
 
-Explicit prerequisite initialization uses `finance_workspace.py initialize`
-with the same `--finance-dir`; it refuses existing contents. For authorized
+Production provisioning uses `finance.status`, which creates the managed state,
+ownership marker and default files together. Standalone
+`finance_workspace.py initialize --finance-dir` remains a mechanical helper for
+isolated fixtures or explicitly separate file preparation; it does not provision
+a StackOS project's managed store. Never use it to repair or replace one. For authorized
 record updates, import the shipped module and use
 `writer(path, expected_hash, expected_revision)` as a context manager. Its
 session owns the current document, `retain_original` and `commit`; inspect the
@@ -449,6 +458,240 @@ review or handoff evidence.
 
 A document change never automatically grants or revokes a StackOS technical gate.
 
+## Local management console
+
+The existing `local-json-v1` master remains authoritative and immediately
+inspectable. Finance management adds typed, versioned method metadata in
+`operating_settings.scope`/`policy_text`, sourced provenance and exact decision
+bindings, validated by the packaged `management-v1.schema.json`. It does not
+require a master schema migration. Unsupported treatment, dates, account scope
+or coverage remain gaps; operators/agents supply and review those facts.
+
+Project-local `finance-state.json` next to `finance/` records safe storage
+incarnation/migration metadata. An opaque project-derived source ref and generation
+fence stale requests; they cannot select a root. Every call rechecks the enabled
+plugin, database project identity, derived private path and current incarnation.
+Commit rechecks inside the existing writer lock. Only `finance.status` prepares a
+never-provisioned store or validates an adopted restored store before refreshing
+generation. Ordinary reads never initialize or rebind files. Run tokens and caller
+actor/admin fields cannot establish authority.
+
+The physical `finance/.finance-owner.json` sidecar binds project ID,
+project creation time and the existing storage access ID to `finance-state.json`.
+Validate it before both ordinary access and restored inode rebinding. Copying
+another project's valid directory into the derived path fails this ownership
+check. Backup includes both markers. Missing or intentionally unavailable
+originals remain explicit document gaps and do not make otherwise valid records
+unreadable; unsafe aliases, escaped paths or retained-byte integrity failures
+still require repair.
+
+Legacy adoption requires exactly one unambiguous, currently authorized source
+not shared or overlapping with another project's historical roots. Copy the full
+validated tree under source and project locks, verify exact bytes and publish
+atomically without overwrite; retain originals. Ambiguous, revoked, unavailable
+or damaged legacy data needs repair instead of an empty bootstrap. Legacy
+`plugin-state/finance/access.json` serves only migration, not new selection.
+The project-parent `.publication-pending` marker is persisted before staging and
+pending metadata, and cleared only after ready state and migration retirement
+are durable. Backups refuse incomplete publications, including the crash window
+before or after the Finance directory rename.
+
+Console corrections preserve original observations and additive history. Preview
+and cancel do not write. Commit uses an opaque stable request, exact source
+revision/hash, source refs or explicit operator attestation for manual creation,
+reason, preview digest and verified reread receipt. Provider fields remain owned
+by their providers; billing changes are proposals where material approval is
+required. Do not guess missing dates or resurrect cancelled corrections.
+Handler-owned retries revalidate current authority and original intent through
+the external writer; generic operation cache replay does not bypass that check.
+An outcome-unknown receipt requires reconciliation of the same request.
+
+Query rows expose `documents` and separate invoice/receipt `document_summary`
+groups. Detail enriches its existing `evidence` items with the same metadata and
+returns an optional summary; legacy detail output may omit it. Only explicit
+`source_kind` declarations `invoice`/`purchase-invoice` and
+`receipt`/`payment-receipt` type each exact attachment. Conflicting or unknown
+declarations remain unidentified. Filenames, attachment roles, receipt membership
+and provider invoice refs never establish document type.
+
+Document inspection follows declared sources and bookkeeping `receipt_refs`,
+including the exact requested and current source/receipt versions. Historical
+originals retain their own kind and identity; a newer source cannot relabel them.
+Exact attachment refs deduplicate. `source_context` and `receipt_context` retain
+requested/current refs, the inspected version and a historical flag. Added
+document inspection does not contribute to economic evidence, recognition,
+exclusions or filtering; document metadata is attached after population selection.
+
+Each original has a bounded, control-free basename from `original_filename`, media
+type, byte size, exact attachment/source refs and independent retention and
+availability states. Only retained originals actually verified in the snapshot
+are available. Quarantine, disposal and concrete custody failures are unavailable;
+collapsed missing/changed/unreadable failures share the safe `unavailable` reason.
+Absent verification remains `not_verified`. No filesystem path is a document
+locator in this projection; opening uses the existing scoped `finance.evidence.read`.
+Its `too_large` outcome means the file cannot be opened here, independently of
+snapshot availability; the projection does not duplicate the reader's size policy.
+
+For each type, unique typed originals partition into available, unavailable and
+not-verified counts. A uniform group uses that availability state; mixed groups
+are `partial`. Zero typed originals with linked unidentified files is
+`unidentified`; otherwise it is `not_linked`. Known typed groups keep their counts
+when unidentified files also exist. These states describe inspectable originals,
+not document completeness, payment or posted books. Identify untyped files from
+their named originals and source details; repair or link sources through the
+existing external finance/receipt-intake workflow, then refresh the console.
+
+### Display precision
+
+The native edit contract accepts `fields.amount` with required exact `minor`
+string and `currency`, plus an optional strict integer `exponent` from 0 through
+6. Boolean, string, float and out-of-range exponents are rejected. Omitting
+the exponent remains a supported legacy input; callers must not invent units to
+make an edit valid. Canonical v1 money still stores only integer `amount_minor`
+and currency. There is no money-schema migration or precision backfill.
+
+Explicit display units use the existing versioned `operating_settings` owner:
+scope `finance-management-precision:<target_ref>` and typed `policy_text` with
+`kind=record-precision`, `management_schema_version=finance-management-v1`,
+`target_ref`, exact `target_digest_sha256`, matching `currency`, `exponent` and
+current `source_refs`. A separate exact review of this formatting setting binds
+its version/material digest and the `finance-management` / `amount-precision`
+scopes. It approves formatting only, independently of economic reporting:
+precision cannot establish treatment, category, event identity, recognition
+basis, dates, coverage, allocation or supported totals. An unclassified entry
+may have known display units while remaining excluded from those metrics.
+
+The existing preview/commit writer persists money, formatting setting and its
+review together under the same lock, snapshot, authority and reread checks.
+The exponent participates in the intent and preview digests; changing it on a
+retry conflicts with the original request. Original records and prior settings
+remain intact. A nonamount correction may carry forward only exact currently
+verified formatting when amount/currency and required source/decision bindings
+remain valid. A money/currency correction without supplied precision does not
+inherit old formatting or stale reporting units.
+
+Query rows and `record_detail.amount` expose derived
+`{minor: string, currency: string, exponent: integer | null}`; detail amount is
+null when there is no monetary value. The original/current record dictionaries
+retain their canonical fields, with exact minor-unit strings on the native
+transport. Unsupported, proposed, stale, unapproved or conflicting formatting
+keeps precision unknown with a named gap. Valid reporting precision is a fallback
+only when there is no stale/proposed/conflicting formatting candidate. A valid
+formatting/reporting disagreement yields `currency_precision_conflict`, unknown
+display precision and metric exclusion; no implicit USD/two-decimal fallback or
+rounding is applied.
+
+### Derived correction history
+
+`record_detail` and native `finance.record.get` return `lineage` as ordered string
+refs and `correction_history` as a list, defaulting to empty. Both come from the
+existing validated `CurrentRecords` chain. They introduce no stored history or
+second lifecycle. Opening a current or superseded ref retains its original and
+the same complete applied correction chain, with canonical `current_ref`.
+
+Each history item has exactly these fields:
+
+| Field | Observed value |
+| --- | --- |
+| `correction_ref` | Existing correction record ID. |
+| `status` | `applied`. |
+| `superseded_ref` | Exact stored prior record ref. |
+| `replacement_ref` | Exact stored replacement ref. |
+| `reason` | Exact stored correction reason. |
+| `actor` | Actor from the last stored applied event, or null. |
+| `at` | Time from that same applied event, or null; never a transaction date. |
+| `decision_ref` | Exact stored decision ref, or null; no synthesized approval. |
+| `evidence_refs` | String refs retained on that applied event. |
+| `source_refs` | Unique historical source refs from correction-evidence provenance. |
+
+Items follow the canonical original-to-current chain order, preserving distinct
+applied correction records rather than sorting by time, array position or ID.
+Proposed/rejected/withdrawn corrections and supersedes-only versions do not
+become fabricated applied items. Missing actor/time stays unavailable; do not
+substitute the current user, approval actor or creation time. Label a replacement
+current only when it equals the returned `current_ref`. Current record status
+history remains a separate observation. Existing unknown/cycle/fork/merge and
+cross-collection failures still require repair. These private detail fields use
+the existing project/root/generation/snapshot guards and never belong in generic
+resources, run results, tracker notes or chat.
+
+Original transport accepts only a registered attachment ref from the current
+snapshot. It verifies contained no-follow paths, root/file identity, bytes and
+SHA-256; unavailable/disposed/quarantined/oversize originals have explicit states.
+Responses use no-store and private bounded content. HTML/SVG and unknown active
+types are download-only. Originals never become generated public assets.
+Inline preview is browser-dependent; a verified original download remains the
+fallback when a PDF cannot render inside the browser.
+
+Overview, Expenses & income and Reports share one filtered population and source
+snapshot. Money crosses the UI as exact minor-unit strings, with explicit currency
+precision. Revenue/profit stay unavailable when evidence cannot support them;
+project contributions are before shared/unallocated costs. Period reports and
+formula-safe CSV are derived downloads with filters/basis/coverage/IDs and source
+revision/hash; editing a download never updates the master. Undated/period-only
+record refs stay visible instead of receiving guessed dates.
+
+`scripts/finance_management.py` is shipped with the plugin's scripts, templates
+and schemas. The fixed first-party loader uses installed package assets, or the
+source package in a checkout, never scripts from the business root. It exposes
+snapshot/query/detail/preview/commit and source-bound report/result functions.
+An installed app must contain the matching runtime and UI bundle; source changes
+alone do not activate them. The existing writer/CurrentRecords owners are reused.
+See [the management host/result protocol](workflow-handoffs.md#management-review-request-and-result).
+
+Reviewed management results may carry an optional `taxonomy_proposal`,
+`category_proposals`, `proposal_coverage` and original `selection`. Categorization
+material supplies all four together. Taxonomy categories are result-local proposed
+organizational groups with readable labels, rationale, evidence and uncertainty;
+they do not adopt an external category policy. Every per-record proposal names its
+exact current bookkeeping or receipt target and material digest, proposed category,
+confidence, rationale, evidence and uncertainty. A null category explicitly leaves
+an item unassigned. Low confidence remains tentative; neither result publication
+nor control review changes source categories, recognition or financial treatment.
+
+Original `selection.record_refs` and `selection.source_refs` are bounded reviewed
+material. Nonempty selectors constrain the original filtered population and its
+evidence; empty selectors mean the full filtered population. The helper walks all
+query pages for target validation rather than treating offset/limit as scope.
+Record selector membership and root/opportunity evidence use all selected Finance
+rows, including bills supporting collection-timing concerns. Category targets and
+category evidence use only the selected bookkeeping/receipt subset and its scoped
+source/attachment evidence. A population containing only bills may therefore carry
+a truthful empty categorization bundle alongside supported concerns; bills never
+become category targets or category evidence.
+Unique considered targets partition into assigned or explicitly unassigned refs;
+null-category proposals must agree with that partition. Coverage and assignments
+are bounded to 200 items, and a larger or partially considered population requires
+explicit gaps. Unknown category membership, duplicate IDs/targets, mismatched
+digests, foreign targets/evidence and undeclared partial coverage reject.
+
+The existing guarded reader supplies `read_result(expected_selection=...)` with
+the original persisted selectors and verifies exact equality for new selection
+material. A legacy result without categorization remains compatible. All new
+material participates in `result_digest` and exact independent review; existing
+opportunities may add a bounded readable `title` and `attention_level` of `info`,
+`watch` or `high`. Concerns still use existing opportunity kinds and evidence,
+uncertainty and assumptions, without a separate concern store or automatic rules.
+No-supported-cost-opportunity may coexist with organizational category proposals.
+
+Matching snapshots validate current targets and eligible scope. Stale publications
+retain schema, material digest, independent review, request selectors and original
+file/report integrity checks, without comparing historical target digests to newer
+records or resolving an old proposal onto a replacement. `read_result` returns
+`state=stale` with the intact historical result; consumers must suppress current
+bucketing from it. Period report renderers and exports remain unchanged.
+
+Recovery preserves each project's master and originals. Rebase stale edits,
+reconcile unknown outcomes and restore only verified backups. Managed project
+Finance files and safe incarnation metadata are included automatically in encrypted
+backups, without external enrollment. Backup holds persistent project/Finance locks
+and refuses busy, unsafe or changing sources. Recovery retains project-ID paths in
+an inert directory. Operator-controlled adoption restores the matching database
+and files; `finance.status` then validates project identity and custody before
+refreshing generation. Old requests stay historical; missing masters are never
+replaced. Renames keep the location, disabling Finance preserves it, and deleted
+project files remain retained.
+
 ## Prepared bookkeeping
 
 Record bank/card/Stripe accounts, required windows, statements/exports, opening/
@@ -559,12 +802,10 @@ These are source families, not hardcoded reusable tax rules.
 The operator owns backup, restore, retention periods, access permissions,
 encryption and secure disposal. Credentials never belong here.
 
-StackOS local backup setup can explicitly enroll the entire external finance
-directory with its persistent `.writer.lock`. It takes a shared lock while
-copying and rejects a busy writer, missing or changing evidence and unsafe
-files. Register the directory through local administration; neither
-`workspace_ref` nor a project binding grants coverage. Manual and opted-in
-automatic backups then include the master, originals, schema, review packets
-and views in the same encrypted archive. Verify recovery into an inert folder
-with the separately stored private key before adopting restored financial
-records. No backup or restore changes posting or reconciliation decisions.
+Encrypted backups automatically include all managed project Finance directories
+and their safe incarnation metadata. Persistent writer locks fence snapshots;
+busy writers, missing locks, changed trees and unsafe files fail the archive.
+Manual and opted-in scheduled backups cover masters, originals, schemas, reviews
+and views separately by permanent project ID. Verify recovery into an inert
+folder with the separately stored private key before adoption. Neither backup nor
+restore changes posting or reconciliation decisions.

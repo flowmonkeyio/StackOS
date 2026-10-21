@@ -41,7 +41,7 @@ from .filesystem import (
     read_regular,
     source_lock,
 )
-from .format import MANIFEST_SCHEMA, allowed_member_name
+from .format import MANIFEST_SCHEMA, allowed_member_name, valid_project_id
 from .models import BackupError, BackupPolicy, BackupTarget, parse_public_key
 
 POLICY_FILE = "backup-policy.json"
@@ -93,6 +93,46 @@ def _exclusions(settings: Settings) -> list[Path]:
 
 def _destination(settings: Settings, policy: BackupPolicy) -> Path:
     return canonical(policy.destination or settings.state_dir / "backups")
+
+
+def _project_inventory(settings: Settings) -> tuple[Path, dict[str, tuple[int, ...]]]:
+    """Managed project files are always covered, independently of plugin enablement."""
+    root = canonical(settings.data_dir / "projects")
+    if not root.exists():
+        return root, {}
+    inventory = directory_inventory(root)
+    for relative in inventory:
+        if relative == "/":
+            continue
+        parts = Path(relative).parts
+        if not valid_project_id(parts[0]) or (len(parts) == 1 and not relative.endswith("/")):
+            raise BackupError("unsafe_file", "Managed project storage has an invalid project path.")
+        if not relative.endswith("/") and (root / relative).lstat().st_nlink != 1:
+            raise BackupError("unsafe_file", "Managed project files cannot be hard links.")
+    project_ids = {Path(name).parts[0] for name in inventory if name != "/"}
+    for project_id in project_ids:
+        if f"{project_id}/.publication-pending" in inventory:
+            raise BackupError(
+                "source_busy",
+                "Managed project data has an incomplete publication.",
+                "Finish or repair the project data migration before backing up.",
+            )
+        if f"{project_id}/.writer.lock" not in inventory:
+            raise BackupError(
+                "source_unavailable", "A project storage coordination lock is missing."
+            )
+        for relative in inventory:
+            parts = Path(relative).parts
+            if (
+                len(parts) == 2
+                and relative.endswith("/")
+                and parts[0] == project_id
+                and f"{relative}.writer.lock" not in inventory
+            ):
+                raise BackupError(
+                    "source_unavailable", "A project data coordination lock is missing."
+                )
+    return root, inventory
 
 
 def _validate_policy(
@@ -192,7 +232,12 @@ def backup_status(settings: Settings) -> dict[str, Any]:
     policy = load_policy(settings)
     ready = policy.recipient_public_key is not None
     readiness_error: dict[str, str] | None = None
+    project_ids: list[int] | None = None
     try:
+        _, project_inventory = _project_inventory(settings)
+        project_ids = sorted(
+            {int(Path(name).parts[0]) for name in project_inventory if name != "/"}
+        )
         policy = _validate_policy(settings, policy)
         for path in (settings.db_path, settings.seed_path, settings.token_path):
             fd = open_regular(path)
@@ -214,6 +259,7 @@ def backup_status(settings: Settings) -> dict[str, Any]:
         "keep_last": policy.keep_last,
         "destination": str(policy.destination or settings.state_dir / "backups"),
         "targets": [target.model_dump(mode="json") for target in policy.targets],
+        "project_ids": project_ids,
         "recipient_fingerprint": fingerprint(parse_public_key(policy.recipient_public_key))
         if policy.recipient_public_key
         else None,
@@ -407,6 +453,17 @@ def _snapshot(
         raise BackupError("invalid_seed", "The database encryption seed has an invalid size.")
     seed_identity = identity(settings.seed_path.lstat())
     with ExitStack() as locks:
+        projects_root, project_inventory = _project_inventory(settings)
+        project_lock_names = sorted(
+            name for name in project_inventory if Path(name).name == ".writer.lock"
+        )
+        for name in project_lock_names:
+            locks.enter_context(source_lock(projects_root / name))
+        # Discovery and lock acquisition must cover exactly the same tree.
+        if _project_inventory(settings)[1] != project_inventory:
+            raise BackupError(
+                "source_changed", "Project files changed while acquiring backup locks."
+            )
         for target in policy.targets:
             if target.lock_file is not None:
                 locks.enter_context(source_lock(target.lock_file))
@@ -460,6 +517,22 @@ def _snapshot(
         for target in policy.targets:
             if directory_inventory(target.path, target.lock_file) != inventories[target.id]:
                 raise BackupError("source_changed", "A registered folder changed during backup.")
+        if project_inventory:
+            project_payload = payload / "data" / "projects"
+            private_directory(project_payload)
+            for relative, expected in project_inventory.items():
+                if relative == "/" or relative in project_lock_names:
+                    continue
+                if relative.endswith("/"):
+                    private_directory(project_payload / relative)
+                    continue
+                fd = open_relative(projects_root, relative)
+                try:
+                    _copy_file(fd, project_payload / relative, expected, recipient)
+                finally:
+                    os.close(fd)
+        if _project_inventory(settings)[1] != project_inventory:
+            raise BackupError("source_changed", "Managed project files changed during backup.")
         if (
             rotation.exists()
             or rotation.is_symlink()
@@ -487,6 +560,9 @@ def _snapshot(
         "stackos_version": __version__,
         "source": {"data_dir": str(settings.data_dir), "state_dir": str(settings.state_dir)},
         "targets": [target.model_dump(mode="json") for target in policy.targets],
+        "project_ids": sorted(
+            {int(Path(name).parts[0]) for name in project_inventory if name != "/"}
+        ),
         "included": [
             {
                 "path": str(path.relative_to(payload)),

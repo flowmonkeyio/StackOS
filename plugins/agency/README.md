@@ -40,7 +40,7 @@ root. This is an association, not runtime nesting or inherited permissions.
 | --- | --- |
 | Workspace binding, enabled plugins, connections, workflow defaults and audit | Existing StackOS project primitives |
 | Nonfinancial agency/client-engagement context | The agency plugin's project-scoped resources |
-| Financial facts, mutable finance settings, approvals and project attribution | The selected external finance backend |
+| Financial facts, mutable finance settings, approvals and project attribution | Each project's managed file-backed Finance storage |
 | Actual provider state | The provider, with dated observations in the finance backend |
 | Agent operating method | Workflow/preset definitions and their host-local adaptations |
 
@@ -93,20 +93,21 @@ available resource query path or stop with the missing evidence.
 
 ## Finance with or without agency
 
-Finance is independently usable. In a standalone business folder, use the
-[finance package](../finance/README.md) directly. An agency may use the same
-finance department from its root:
+Finance is independently usable. Use the [finance package](../finance/README.md)
+in the owning StackOS project; agency setup is optional. Each StackOS project
+has its own managed files:
 
 ```text
-business or agency root
-  finance/finance.json        one authoritative local financial master
-  finance/attachments/        original financial evidence
-  client engagements         descriptive context, no financial master per project
+StackOS data/projects/
+  <business-project-id>/finance/finance.json
+  <business-project-id>/finance/attachments/
+  <other-project-id>/finance/   separate records and originals
 ```
 
-This illustrates ownership; neither agency workflow creates these folders.
-Finance initialization follows the authorized host-owned finance setup contract.
-Do not copy an empty template over existing financial files.
+Neither agency workflow creates Finance files or grants cross-project access.
+Opening Finance in an enabled project prepares only its never-provisioned store.
+Do not copy a master across projects or replace missing/corrupt existing records
+with an empty template. Company-wide work belongs to its chosen business project.
 
 The handoff names `setup_existing` and the selected existing workflow key(s):
 
@@ -132,7 +133,7 @@ the nonfinancial engagement identity and client/business ownership; do not infer
 it merely from a customer mapping. The same client can have multiple projects.
 Company-wide expenses remain unassigned; ambiguous/shared attribution stays
 absent with a gap. No automatic allocation, profitability engine, duplicated
-amount, or project-level financial master is introduced. Billing attribution is
+amount, or cross-project financial access is introduced. Billing attribution is
 part of the immutable approval digest. See the
 [business/project scope contract](../finance/references/backend-contract.md#business-and-project-scope).
 

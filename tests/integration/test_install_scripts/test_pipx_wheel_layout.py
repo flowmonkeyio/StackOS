@@ -87,6 +87,13 @@ def test_wheel_includes_finance_plugin_assets(built_wheel: Path) -> None:
         "workflows/payment-request-followups.yaml",
         "workflows/cashflow-management.yaml",
         "workflows/tax-estimates.yaml",
+        "workflows/management-review.yaml",
+        "scripts/finance_workspace.py",
+        "scripts/finance_records.py",
+        "scripts/finance_views.py",
+        "scripts/finance_management.py",
+        "schemas/management-v1.schema.json",
+        "schemas/management-result-v1.schema.json",
         "references/approval-matrix.md",
         "references/backend-contract.md",
         "references/imap-host-handoff-contract.md",
@@ -105,6 +112,17 @@ def test_wheel_assets_path_namespace_is_under_stackos(built_wheel: Path) -> None
     # All `_assets/...` entries live inside `stackos/`.
     stray = [n for n in names if "_assets/" in n and not n.startswith("stackos/_assets/")]
     assert stray == [], f"stray _assets entries outside stackos/: {stray}"
+
+
+def test_wheel_management_origin_read_query_and_guarded_edit(
+    built_wheel: Path, tmp_path: Path
+) -> None:
+    from tests.unit.test_finance_management_package import run_packaged_smoke
+
+    package = tmp_path / "installed"
+    with zipfile.ZipFile(built_wheel) as wheel:
+        wheel.extractall(package)
+    run_packaged_smoke(package, tmp_path)
 
 
 def test_wheel_no_duplicate_entries(built_wheel: Path) -> None:

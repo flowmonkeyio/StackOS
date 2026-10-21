@@ -2,7 +2,7 @@ schema_version: stackos.workflow-template.v1
 key: finance.bookkeeping-close
 name: Finance Bookkeeping Preparation and Reconciliation
 version: 0.4.2
-description: Prepare and reconcile a bounded bookkeeping close in the selected external backend without creating a StackOS ledger or claiming an authoritative posting.
+description: Prepare and reconcile a bounded bookkeeping close in the selected project-local backend without creating a StackOS ledger or claiming an authoritative posting.
 domain: finance
 owner:
   team: StackOS
@@ -11,20 +11,20 @@ experience:
   outcome: "A reviewed, externally recorded close packet marked prepared/unposted, with matched and exception refs that can be handed to later workflows."
   why_ai: "An agent can assemble bounded external evidence, surface gaps, and prepare a reconciled close packet while the owner retains accounting judgment and posting authority."
   operator_path:
-    - "Select the period; the agent reads source accounts, accounting basis and category rules from the external workspace."
+    - "Select the period; the agent reads source accounts, accounting basis and category rules from the project Finance files."
     - "Review classification, matching, reconciliation exceptions, and any external-backend finalization requested by a qualified professional."
     - "Accept a prepared/unposted close or return it for repair; no accounting period is closed in StackOS."
   agent_path:
     - "Read only the external records and optional safe Stripe lifecycle evidence needed for the selected period."
     - "Prepare, match, classify, and reconcile with uncertainty and exceptions visible."
-    - "Write only the selected external backend's prepared/unposted record and safe handoff refs."
+    - "Write only the selected project-local backend's prepared/unposted record and safe handoff refs."
   progress_signals: ["Period scoped", "Evidence matched", "Exceptions visible", "Prepared close reviewed", "Handoff recorded"]
   recovery:
     - "Isolate missing sources, ambiguous matches and unsupported categories while preparing supported records; show a consolidated decision list."
-    - "If Stripe evidence is unavailable, retain the bounded evidence gap and prepare only what the selected external backend can support."
+    - "If Stripe evidence is unavailable, retain the bounded evidence gap and prepare only what the selected project-local backend can support."
   safe_stopping_points:
     - "Return prepared work with open exceptions when evidence is incomplete; never label the period fully reconciled."
-    - "Stop at prepared/unposted after owner review; authoritative posting belongs to the external backend and separately authorized professional process."
+    - "Stop at prepared/unposted after owner review; authoritative posting belongs to the project-local backend and separately authorized professional process."
   handoffs:
     - workflow_key: finance.cashflow-management
       relationship: next
@@ -36,11 +36,11 @@ public:
   audience: "Solo entrepreneurs preparing a monthly or bounded-period bookkeeping close outside StackOS"
   setup: mixed
   prerequisites:
-    - "A selected external finance backend/workspace and explicit period reference"
+    - "Readable project Finance files and an explicit period reference"
     - "An external source-account register, accounting basis and category policy, resolved during preflight"
     - "Safe external evidence refs; Stripe access only if it is selected as a reconciliation source"
   proof:
-    - "Prepared/unposted close and reconciliation refs in the external backend"
+    - "Prepared/unposted close and reconciliation refs in the project-local backend"
     - "Safe external evidence/action-call refs and exception refs"
     - "Owner review state and downstream handoff refs"
   featured: true
@@ -62,7 +62,7 @@ agent_requirements:
 skill_requirements:
   - skill_ref: stackos:stackos
     requirement: required
-    purpose: Use StackOS grants and action audit while keeping all finance records in the selected external backend.
+    purpose: Use StackOS grants and action audit while keeping all finance records in the selected project-local backend.
     applies_to_steps: [preflight, collect-evidence, prepare-and-reconcile, review-prepared-close, handoff]
 skill_preset_requirements:
   - skill_preset_ref: stackos.finance.department-orchestrator
@@ -83,10 +83,10 @@ inputs:
     default: local-json
     schema: {type: string, const: local-json}
   - key: workspace_ref
-    name: External Workspace Ref
+    name: Project Finance Source Ref
     type: string
     required: true
-    description: One selected business financial master, usable from a standalone business directory or agency root. Agency/project setup is optional; descriptive associations never grant cross-project access. Follow the backend contract's business/project scope guidance.
+    description: The owning StackOS project's opaque Finance source identity, derived automatically from its permanent project ID. Each project has separate managed files; descriptive associations never grant cross-project access.
     schema: {type: string, minLength: 1}
   - key: recording_mode
     name: Recording Mode
@@ -104,7 +104,7 @@ inputs:
     name: Operator Policy Ref
     type: string
     required: false
-    description: Optional override of the durable external workspace policy; the agent resolves it during preflight.
+    description: Optional override of the durable project Finance files policy; the agent resolves it during preflight.
     schema: {type: string, minLength: 1}
   - key: trigger_kind
     name: Trigger Kind
@@ -214,7 +214,7 @@ policies:
     description: For local-json, finance.json is the sole authoritative local financial record, including mutable setup. Packet refs resolve to record_id in that document; approved proposals also bind an immutable version/digest, not separate editable files. FINANCE.md is guidance/navigation; CSV is import/export, never a second master. Original evidence stays immutable; provider state stays provider-owned and JSON stores dated observations. Follow the packaged local workspace contract.
   - key: external-backend-is-authoritative
     kind: boundary
-    description: The external backend owns all bookkeeping records, corrections, reconciliation, and posting status; StackOS holds only workflow/action audit.
+    description: The project-local backend owns all bookkeeping records, corrections, reconciliation, and posting status; StackOS holds only workflow/action audit.
   - key: prepared-not-posted
     kind: integrity
     description: Local-json work is always labeled prepared/unposted and must not claim authoritative ledger posting, settled allocation, period close, filing, or remittance.
@@ -227,7 +227,7 @@ policies:
 steps:
   - id: preflight
     title: Preflight Close Scope
-    purpose: Resolve the external workspace, period, source accounts, accounting basis and category policy.
+    purpose: Resolve the project Finance files, period, source accounts, accounting basis and category policy.
     input_refs: [goal, backend_key, workspace_ref, recording_mode, business_profile_ref, operator_policy_ref, trigger_kind, period_ref, accounting_basis, reconciliation_scope_ref]
     policy_refs: [external-backend-is-authoritative, local-json-single-source, prepared-not-posted, no-inferred-accounting-or-tax-policy]
     output_refs: [bookkeeping_close_summary]
@@ -251,7 +251,7 @@ steps:
       - "Evidence is either available by safe ref or recorded as a bounded gap."
   - id: prepare-and-reconcile
     title: Prepare And Reconcile External Close
-    purpose: Match, classify, reconcile, and write the selected external backend's prepared close and exception records.
+    purpose: Match, classify, reconcile, and write the selected project-local backend's prepared close and exception records.
     depends_on: [collect-evidence]
     policy_refs: [external-backend-is-authoritative, prepared-not-posted, no-inferred-accounting-or-tax-policy]
     output_refs: [bookkeeping_close_summary]

@@ -174,6 +174,7 @@ def test_defaults_opt_in_reload_due_interval_disable_and_status(workspace):
         "keep_last",
         "destination",
         "targets",
+        "project_ids",
         "recipient_fingerprint",
         "last_attempt",
         "last_success",

@@ -88,7 +88,7 @@ def checked_path(value: str | Path, within: Path | None = None) -> Path:
 
 def read_regular(path: str | Path) -> bytes:
     path = checked_path(path)
-    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(descriptor, "rb") as stream:
         before = os.fstat(stream.fileno())
         if not stat.S_ISREG(before.st_mode):

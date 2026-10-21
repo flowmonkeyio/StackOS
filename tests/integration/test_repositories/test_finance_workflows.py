@@ -20,6 +20,7 @@ FINANCE_WORKFLOW_KEYS = {
     "finance.payment-request-followups",
     "finance.cashflow-management",
     "finance.tax-estimates",
+    "finance.management-review",
 }
 COMMON_INPUTS = {
     "goal": "Prepare the selected finance workflow without a live provider side effect.",
@@ -33,6 +34,18 @@ COMMON_INPUTS = {
 
 def _strict_inputs() -> dict[str, dict[str, Any]]:
     return {
+        "finance.management-review": {
+            **COMMON_INPUTS,
+            "request_id": 1,
+            "source_snapshot": {"revision": 1, "sha256": "a" * 64},
+            "query": {
+                "start": "2026-09-01",
+                "end": "2026-09-30",
+                "recognition_basis": "cash",
+                "date_basis": "transaction",
+                "timezone": "UTC",
+            },
+        },
         "finance.receipt-intake": {
             **COMMON_INPUTS,
             "intake_channel": "imap",
@@ -134,6 +147,12 @@ def _tax_estimate_result(status: str) -> dict[str, Any]:
 
 def _preflight_result(workflow_key: str) -> dict[str, Any]:
     summaries: dict[str, dict[str, Any]] = {
+        "finance.management-review": {
+            "status": "scoped",
+            "request_id": 1,
+            "source_snapshot": {"revision": 1, "sha256": "a" * 64},
+            "exception_refs": [],
+        },
         "finance.receipt-intake": {
             "status": "scoped",
             "acknowledgement_state": "pending",
@@ -175,6 +194,7 @@ def _preflight_result(workflow_key: str) -> dict[str, Any]:
         "finance.tax-estimates": _tax_estimate_result("scoped")["tax_estimate_summary"],
     }
     output_keys = {
+        "finance.management-review": "management_summary",
         "finance.receipt-intake": "receipt_intake_summary",
         "finance.bookkeeping-close": "bookkeeping_close_summary",
         "finance.payment-request": "payment_request_summary",

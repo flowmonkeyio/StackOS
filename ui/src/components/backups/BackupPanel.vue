@@ -117,59 +117,36 @@ onMounted(refresh)
 </script>
 
 <template>
-  <UiCard
-    section
-    aria-label="Local backups"
-  >
+  <UiCard section aria-label="Local backups">
     <UiSectionHeader
       title="Local backups"
-      description="This StackOS install and explicitly enrolled folders across projects."
+      description="This StackOS installation, project Finance data, and enrolled external folders."
     >
       <template #actions>
-        <UiButton
-          variant="ghost"
-          size="sm"
-          :loading="loading"
-          :disabled="saving"
-          @click="refresh"
-        >
+        <UiButton variant="ghost" size="sm" :loading="loading" :disabled="saving" @click="refresh">
           Refresh backups
         </UiButton>
       </template>
     </UiSectionHeader>
-    <UiCallout
-      v-if="error"
-      tone="danger"
-      class="mt-3"
-      role="alert"
-    >
+    <UiCallout v-if="error" tone="danger" class="mt-3" role="alert">
       {{ error }}
     </UiCallout>
-    <p
-      v-if="confirmation"
-      role="status"
-      class="mt-3 text-sm text-fg-muted"
-    >
+    <p v-if="confirmation" role="status" class="mt-3 text-sm text-fg-muted">
       {{ confirmation }}
     </p>
-    <UiSkeleton
-      v-if="loading && !status"
-      shape="block"
-      height="8rem"
-      class="mt-3"
-    />
+    <UiSkeleton v-if="loading && !status" shape="block" height="8rem" class="mt-3" />
     <template v-else-if="status">
-      <UiCallout
-        v-if="status.last_error"
-        tone="warning"
-        class="mt-3"
-      >
+      <UiCallout v-if="status.last_error" tone="warning" class="mt-3">
         Backup needs attention: {{ status.last_error.message }} {{ status.last_error.next_action }}
       </UiCallout>
       <p class="mt-3 text-sm text-fg-muted">
         Automatic backups are {{ status.enabled ? 'enabled' : 'off' }}.
-        <span v-if="!status.configured">Set up a public recipient key before creating backups.</span>
-        <span v-else-if="!status.ready">The current configuration needs attention before a backup can run.</span>
+        <span v-if="!status.configured"
+          >Set up a public recipient key before creating backups.</span
+        >
+        <span v-else-if="!status.ready"
+          >The current configuration needs attention before a backup can run.</span
+        >
       </p>
       <p class="mt-2 text-xs text-fg-muted">
         Destination: <span class="break-all">{{ status.destination }}</span>
@@ -186,59 +163,48 @@ onMounted(refresh)
         Last attempt: {{ formatAbsoluteDateTime(status.last_attempt.started_at) }}
         <span v-if="status.last_attempt.status"> · {{ status.last_attempt.status }}</span>
       </p>
-      <p
-        v-if="status.last_success?.path"
-        class="mt-1 break-all text-xs text-fg-muted"
-      >
+      <p v-if="status.last_success?.path" class="mt-1 break-all text-xs text-fg-muted">
         {{ status.last_success.path }}
       </p>
-      <p
-        v-if="status.recipient_fingerprint"
-        class="mt-2 break-all text-2xs text-fg-subtle"
-      >
+      <p v-if="status.recipient_fingerprint" class="mt-2 break-all text-2xs text-fg-subtle">
         Recipient fingerprint: {{ status.recipient_fingerprint }}
       </p>
       <div class="mt-4 border-t border-subtle pt-3">
-        <p class="text-sm font-medium text-fg-strong">
-          Included external folders
-        </p>
-        <ul
-          v-if="status.targets.length"
-          class="mt-2 space-y-2 text-xs text-fg-muted"
-        >
-          <li
-            v-for="target in status.targets"
-            :key="target.id"
+        <p class="text-sm font-medium text-fg-strong">Project data</p>
+        <p class="mt-2 text-xs text-fg-muted">
+          Project Finance records, invoices, receipts and reports are included automatically. Each
+          project is stored and recovered separately.
+          <span v-if="status.project_ids?.length">
+            Covered project IDs: {{ status.project_ids.join(', ') }}.
+          </span>
+          <span v-else-if="status.project_ids">No managed project files are present yet.</span>
+          <span v-else
+            >Project coverage could not be verified. Resolve the backup error before relying on
+            coverage.</span
           >
+        </p>
+        <p class="text-sm font-medium text-fg-strong">Included external folders</p>
+        <ul v-if="status.targets.length" class="mt-2 space-y-2 text-xs text-fg-muted">
+          <li v-for="target in status.targets" :key="target.id">
             <span class="font-medium">{{ target.label }}</span> ·
             <span class="break-all">{{ target.path }}</span>
-            <p
-              v-if="target.lock_file"
-              class="break-all text-2xs"
-            >
+            <p v-if="target.lock_file" class="break-all text-2xs">
               Writer lock: {{ target.lock_file }}
             </p>
           </li>
         </ul>
-        <UiCallout
-          v-else
-          tone="warning"
-          class="mt-2"
-        >
-          No external folders are enrolled. Finance bills are included only when the entire finance
-          folder is enrolled.
+        <UiCallout v-else tone="info" class="mt-2">
+          No additional external folders are enrolled.
         </UiCallout>
         <p class="mt-2 text-xs text-fg-muted">
           Enroll a folder with the local CLI. Existing folders remain included when settings are
           saved here.
         </p>
         <pre class="mt-2 overflow-x-auto rounded-sm bg-bg-sunken p-2 text-2xs">
-stackos backups configure --target-id finance --target-path /absolute/finance --target-lock /absolute/finance/.writer.lock</pre>
+stackos backups configure --target-id finance --target-path /absolute/finance --target-lock /absolute/finance/.writer.lock</pre
+        >
       </div>
-      <form
-        class="mt-4 space-y-4 border-t border-subtle pt-3"
-        @submit.prevent="save"
-      >
+      <form class="mt-4 space-y-4 border-t border-subtle pt-3" @submit.prevent="save">
         <UiFormField
           label="Recipient public key"
           help="Paste only the X25519 PUBLIC KEY PEM. Keep the independent recovery private file separately and off-device."
@@ -252,8 +218,10 @@ stackos backups configure --target-id finance --target-path /absolute/finance --
         </UiFormField>
         <p class="text-xs text-fg-muted">
           Generate the key pair locally:
-          <code>stackos backups keygen --private-key-file /separate/recovery.pem --public-key-file
-            /separate/recipient.pem</code>
+          <code
+            >stackos backups keygen --private-key-file /separate/recovery.pem --public-key-file
+            /separate/recipient.pem</code
+          >
         </p>
         <UiCheckbox
           v-model="enabled"
@@ -263,30 +231,14 @@ stackos backups configure --target-id finance --target-path /absolute/finance --
         />
         <div class="grid gap-3 sm:grid-cols-2">
           <UiFormField label="Backup interval (hours)">
-            <UiInput
-              v-model="interval"
-              type="number"
-              min="1"
-              max="168"
-              :disabled="saving"
-            />
+            <UiInput v-model="interval" type="number" min="1" max="168" :disabled="saving" />
           </UiFormField>
           <UiFormField label="Successful automatic backups to keep">
-            <UiInput
-              v-model="keepLast"
-              type="number"
-              min="1"
-              max="365"
-              :disabled="saving"
-            />
+            <UiInput v-model="keepLast" type="number" min="1" max="365" :disabled="saving" />
           </UiFormField>
         </div>
         <div class="flex flex-wrap gap-2">
-          <UiButton
-            type="submit"
-            :loading="saving"
-            :disabled="loading"
-          >
+          <UiButton type="submit" :loading="saving" :disabled="loading">
             Save backup settings
           </UiButton>
           <UiButton

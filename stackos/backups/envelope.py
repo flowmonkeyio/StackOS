@@ -19,6 +19,7 @@ from .filesystem import CHUNK, identity, open_regular
 from .models import BackupError
 
 MAGIC = b"STACKOSB2\n"
+ENVELOPE_FORMAT = "stackos.local-backup.v2"
 MAX_HEADER = 4096
 ALGORITHM = "X25519-HKDF-SHA256-AES-256-GCM"
 DOMAIN = b"stackos.local-backup.v2"
@@ -61,7 +62,7 @@ def encrypt_payload(source: Path, output: BinaryIO, recipient: X25519PublicKey) 
     output.write(encryptor.finalize())
     output.write(encryptor.tag)
     return {
-        "format": "stackos.local-backup.v2",
+        "format": ENVELOPE_FORMAT,
         "algorithm": ALGORITHM,
         "recipient_fingerprint": fingerprint(recipient),
     }

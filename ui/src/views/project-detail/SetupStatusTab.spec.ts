@@ -26,7 +26,7 @@ describe('SetupStatusTab (calm readiness)', () => {
       if (url === '/api/v1/operations/backup.status/call') {
         return json({
           configured: false, ready: false, enabled: false, interval_hours: 24,
-          keep_last: 30, destination: '/private/backups', targets: [],
+          keep_last: 30, destination: '/private/backups', targets: [], project_ids: [],
           recipient_fingerprint: null, last_attempt: null, last_success: null, last_error: null,
         })
       }
@@ -117,7 +117,7 @@ describe('SetupStatusTab (calm readiness)', () => {
     const requests: Array<{ url: string; args: Record<string, unknown> }> = []
     const status = {
       configured: true, ready: true, enabled: false, interval_hours: 24,
-      keep_last: 30, destination: '/private/backups', targets: [],
+      keep_last: 30, destination: '/private/backups', targets: [], project_ids: [],
       recipient_fingerprint: 'synthetic-public-key',
       last_attempt: null, last_success: null, last_error: null,
     }
@@ -141,7 +141,7 @@ describe('SetupStatusTab (calm readiness)', () => {
     await flushPromises()
 
     const backups = wrapper.get('[aria-label="Local backups"]')
-    expect(backups.text()).toContain('This StackOS install and explicitly enrolled folders across projects.')
+    expect(backups.text()).toContain('This StackOS installation, project Finance data, and enrolled external folders.')
     await backups.get('input[type="checkbox"]').setValue(true)
     await backups.get('form').trigger('submit')
     await flushPromises()

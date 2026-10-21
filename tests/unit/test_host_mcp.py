@@ -7,6 +7,7 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
 import yaml
 
 import stackos.host_mcp.service as host_mcp_service
@@ -20,6 +21,12 @@ from stackos.host_mcp.service import (
     normalize_result,
     repair_all,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_default_host_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("STACKOS_DATA_DIR", raising=False)
+    monkeypatch.delenv("STACKOS_STATE_DIR", raising=False)
 
 
 def _write_token(home: Path) -> None:

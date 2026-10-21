@@ -244,7 +244,8 @@ create projects during local setup, and manage provider auth setup for a
 project (`account.start`, secret storage and edits, sanitized auth tests, and
 revoke). Provider-auth route definitions own method validity inside that
 namespace. Mutating operation calls are allowed only when the operation's REST
-surface declares `browser_safe=True` for explicit local setup. It cannot access
+surface declares `browser_safe=True` for explicit local setup or the bounded
+human finance console contract described below. It cannot access
 MCP, arbitrary mutating operation calls, tracker lifecycle writes, or general
 mutation routes. The
 installable MCP bridge keeps the daemon bearer inside the bridge process rather
@@ -269,6 +270,41 @@ arguments; template schema/secret checks and immutable version conflicts still
 apply. These operations do not create runs or grant actions, are not run-step
 tools, and remain unavailable to the browser console token. Their CLI path uses
 the ordinary authenticated operation route, not a caller-asserted admin bypass.
+
+### Private finance console
+
+The exact registered MCP-disabled Finance REST operations use
+`local-admin-console-read` or `local-admin-console-write` according to mutability.
+Only the authenticated exact-path policy establishes trusted REST context; an
+operation name prefix, run token, caller admin/actor field or CLI response header
+does not. Finance derives its private storage from the permanent project ID;
+callers cannot supply a root or associate another project's files. Each call checks
+the enabled plugin, project identity, canonical derived root and generation;
+writes recheck inside the existing Finance writer lock. Handler-owned replay validates current
+authority and intent instead of returning stale cached financial success.
+
+Financial originals remain in the owner-private project Finance directory. Registered
+attachment refs require containment, no-follow descriptor reads, size/hash checks
+and current snapshot. Console responses are no-store; active HTML/SVG is
+download-only, never a public generated asset. Private search text is refused in
+analysis intake until the operator clears it and applies filters. Browser local
+chat accepts only a bounded inbound human intent with safe query/snapshot refs;
+it cannot spoof an agent, send outbound content or run a model. Reviewed result
+reads bind original request/query/source and exact published result/report hashes.
+
+`finance.status` is an authenticated initialization write: it prepares one default
+store only for a never-provisioned enabled project. Missing or corrupt existing
+data never becomes an empty replacement. Legacy adoption accepts only an
+unambiguous, unshared source, preserves originals, and rejects unsafe aliases.
+Managed project files are automatically included in [encrypted backups](./backups.md).
+Recovery publishes an inert directory. After explicit adoption, Finance verifies
+the database project identity and file custody before refreshing its storage
+generation; restoring files never grants cross-project access or resumes old requests.
+The retained `finance/.finance-owner.json` marker binds the physical files to
+their project ID, creation identity and storage incarnation. A valid directory
+copied from another project cannot be adopted merely because it occupies the
+expected path. Known missing/disposed/quarantined originals remain inspectable
+availability gaps; unsafe links or altered retained evidence require repair.
 
 ## Daemon-Owned Browser Sessions
 
@@ -366,15 +402,16 @@ machines and want browser bootstrap removed can:
 ## Encrypted backup custody
 
 All newly created backups encrypt the complete database, matching seed, daemon
-token, manifest and enrolled external folders with an independent X25519
+token, manifest, managed project files and enrolled external folders with an independent X25519
 recovery key and authenticated AES-256-GCM encryption. The seed inside a backup
 cannot unlock its outer encryption. Creation and scheduling use only the
 public key; recovery private keys stay in operator-controlled files outside
 the sources and destination and never traverse REST, MCP or status responses.
 
 Backup setup is explicit local administration. Automatic execution starts
-disabled. Enroll the entire finance folder and its persistent writer lock;
-project bindings and workflow references imply no filesystem permission.
+disabled. Managed project files are included automatically under persistent
+initialization/writer locks. Only additional external folders need enrollment;
+project bindings and workflow references imply no agent-host filesystem permission.
 Missing, busy, unsafe or changing sources fail closed. Backup outputs cannot
 be placed in the publicly served generated-assets directory. Private key
 exclusions survive configuration changes and reject later enrollment or a

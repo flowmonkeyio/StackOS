@@ -49,6 +49,8 @@ StackOS uses one connected operating model:
 
 1. **Project**: the business/workspace boundary for durable context, setup,
    enabled plugins, account bindings, workflows, runs, records, and audit.
+   Plugin-owned files use private managed storage keyed by the permanent project
+   ID. Project files remain separate and are included in encrypted backup/recovery.
 2. **Plugin**: a domain package contributing capabilities, providers, actions,
    resource schemas, workflows, presets, and generic UI metadata.
 3. **Workflow template**: reusable operating setup for a valuable job,
@@ -104,6 +106,14 @@ Core stays domain-agnostic. Engineering, branding, SEO, media buying, GTM,
 publishing, communications, and other business methods belong in plugins. A
 domain need should become a core primitive only when it demonstrates an
 independently reusable platform gap with a clear owner and consumers.
+
+The existing project Finance console is a bounded presentation exception for
+operator inspection and sourced correction of project files. Its rationale,
+rejected generic alternatives and plugin ownership are recorded in
+[Project Finance files](architecture.md#project-finance-files). This does not
+authorize a custom core page for each domain or workflow; another exception
+requires its own demonstrated gap and explicit product decision. Shared scope,
+execution and audit remain generic, and Finance method stays with the plugin.
 
 ### Product-Aligned Delivery
 

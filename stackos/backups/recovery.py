@@ -19,7 +19,7 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from stackos.config import Settings
 
 from . import limits
-from .envelope import decrypt_payload
+from .envelope import ENVELOPE_FORMAT, decrypt_payload
 from .filesystem import (
     CHUNK,
     canonical,
@@ -28,7 +28,14 @@ from .filesystem import (
     private_directory,
     read_regular,
 )
-from .format import MANIFEST_SCHEMA, REQUIRED_NAMES, TARGET_ID, allowed_member_name
+from .format import (
+    LEGACY_MANIFEST_SCHEMA,
+    MANIFEST_SCHEMA,
+    REQUIRED_NAMES,
+    TARGET_ID,
+    allowed_member_name,
+    valid_project_id,
+)
 from .models import BackupError
 
 
@@ -78,7 +85,9 @@ def _inspect(archive: zipfile.ZipFile) -> tuple[dict[str, Any], list[zipfile.Zip
         raise BackupError("invalid_manifest", "The recovery archive has no valid bounded manifest.")
     try:
         manifest = json.loads(archive.read("manifest.json"))
-        if manifest["schema"] != MANIFEST_SCHEMA or not isinstance(manifest["included"], list):
+        if manifest["schema"] not in {MANIFEST_SCHEMA, LEGACY_MANIFEST_SCHEMA} or not isinstance(
+            manifest["included"], list
+        ):
             raise ValueError("unsupported manifest")
         declared: dict[str, dict[str, Any]] = {}
         for entry in manifest["included"]:
@@ -108,7 +117,25 @@ def _inspect(archive: zipfile.ZipFile) -> tuple[dict[str, Any], list[zipfile.Zip
             raise ValueError("invalid source IDs")
         if any(f"external/{target_id}" not in names for target_id in target_ids):
             raise ValueError("missing source directory")
+        project_ids = manifest["project_ids"] if manifest["schema"] == MANIFEST_SCHEMA else []
+        if manifest["schema"] == LEGACY_MANIFEST_SCHEMA and manifest.get("project_ids", []):
+            raise ValueError("legacy archives do not declare managed project coverage")
+        if (
+            not isinstance(project_ids, list)
+            or any(type(item) is not int or not valid_project_id(str(item)) for item in project_ids)
+            or len(project_ids) != len(set(project_ids))
+        ):
+            raise ValueError("invalid project IDs")
+        if any(f"data/projects/{project_id}" not in names for project_id in project_ids):
+            raise ValueError("missing project directory")
         for info in infos:
+            parts = PurePosixPath(info.filename).parts
+            if (
+                len(parts) >= 3
+                and parts[:2] == ("data", "projects")
+                and int(parts[2]) not in project_ids
+            ):
+                raise ValueError("undeclared managed project")
             if (
                 info.filename.startswith("external/")
                 and len(PurePosixPath(info.filename).parts) >= 2
@@ -174,6 +201,63 @@ def _extract_verified(archive: zipfile.ZipFile, output: Path) -> dict[str, Any]:
     return manifest
 
 
+def _initialize_project_locks(output: Path, project_ids: list[int]) -> None:
+    """Fresh coordination for verified retained stores, independent of live projects."""
+    if not project_ids:
+        return
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+
+    def fresh_lock(directory: int) -> None:
+        fd = os.open(
+            ".writer.lock",
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_NONBLOCK,
+            0o600,
+            dir_fd=directory,
+        )
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise BackupError(
+                    "unsafe_lock", "Recovered coordination locks must be regular files."
+                )
+            os.fchmod(fd, 0o600)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.fsync(directory)
+
+    output_fd = os.open(output, directory_flags)
+    try:
+        data_fd = os.open("data", directory_flags, dir_fd=output_fd)
+        try:
+            projects_fd = os.open("projects", directory_flags, dir_fd=data_fd)
+            try:
+                for project_id in project_ids:
+                    project_fd = os.open(str(project_id), directory_flags, dir_fd=projects_fd)
+                    try:
+                        fresh_lock(project_fd)
+                        for entry in sorted(os.scandir(project_fd), key=lambda item: item.name):
+                            info = entry.stat(follow_symlinks=False)
+                            if stat.S_ISDIR(info.st_mode):
+                                child_fd = os.open(entry.name, directory_flags, dir_fd=project_fd)
+                                try:
+                                    fresh_lock(child_fd)
+                                finally:
+                                    os.close(child_fd)
+                            elif not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                                raise BackupError(
+                                    "unsafe_file", "Recovered project storage is unsafe."
+                                )
+                    finally:
+                        os.close(project_fd)
+            finally:
+                os.close(projects_fd)
+        finally:
+            os.close(data_fd)
+    finally:
+        os.close(output_fd)
+
+
 def restore_backup(
     settings: Settings, archive: Path, private_key_path: Path, output_dir: Path
 ) -> dict[str, Any]:
@@ -210,6 +294,7 @@ def restore_backup(
             private_directory(recovered)
             with zipfile.ZipFile(plaintext) as payload:
                 manifest = _extract_verified(payload, recovered)
+            _initialize_project_locks(recovered, manifest.get("project_ids", []))
             # Reserve without overwriting another recovery. Only validated files are moved.
             os.mkdir(output, mode=0o700)
             reserved = True
@@ -223,8 +308,10 @@ def restore_backup(
             "archive_sha256": header["archive_sha256"],
             "created_at": manifest["created_at"],
             "target_ids": [target["id"] for target in manifest["targets"]],
+            "project_ids": manifest.get("project_ids", []),
+            "manifest_schema": manifest["schema"],
             "encryption": {
-                "format": MANIFEST_SCHEMA,
+                "format": ENVELOPE_FORMAT,
                 "algorithm": header["algorithm"],
                 "recipient_fingerprint": header["recipient_fingerprint"],
             },

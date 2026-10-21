@@ -308,7 +308,8 @@ database under `~/.local/share/stackos/` and daemon state under
 ## Backup
 
 Before serious upgrades or machine moves, configure an independent recovery
-key and enroll external finance folders using [backup setup](./backups.md).
+key using [backup setup](./backups.md). Managed project Finance files are covered
+automatically; enroll only additional external folders.
 Create an encrypted archive:
 
 ```bash

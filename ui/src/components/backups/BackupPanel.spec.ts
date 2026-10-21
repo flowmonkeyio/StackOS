@@ -17,6 +17,7 @@ function fixture(patch: Partial<BackupStatus> = {}): BackupStatus {
     keep_last: 30,
     destination: '/private/backups',
     targets: [],
+    project_ids: [],
     recipient_fingerprint: null,
     last_attempt: null,
     last_success: null,
@@ -42,12 +43,15 @@ describe('local backup console', () => {
     expect(configureBackups).not.toHaveBeenCalled()
     wrapper.unmount()
   })
-  it('starts with opt-in off, enrollment warning and no implied finance coverage', async () => {
+  it('starts with opt-in off and automatic project Finance coverage', async () => {
     const wrapper = mount(BackupPanel)
     expect(wrapper.find('.ui-skeleton').exists()).toBe(true)
     await flushPromises()
     expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(false)
-    expect(wrapper.text()).toContain('Finance bills are included only')
+    expect(wrapper.text()).toContain(
+      'Project Finance records, invoices, receipts and reports are included automatically.',
+    )
+    expect(wrapper.text()).toContain('No managed project files are present yet.')
     expect(wrapper.text()).toContain('None recorded')
     expect(wrapper.find('input[type="password"]').exists()).toBe(false)
     expect(wrapper.get('textarea').attributes('placeholder')).toBe('-----BEGIN PUBLIC KEY-----')
@@ -58,6 +62,34 @@ describe('local backup console', () => {
         .find((button) => button.text() === 'Back up now')
         ?.attributes('disabled'),
     ).toBeDefined()
+    wrapper.unmount()
+  })
+  it('shows separately covered projects without enrolling their files as external folders', async () => {
+    vi.mocked(loadBackupStatus).mockResolvedValue(
+      fixture({ configured: true, ready: true, project_ids: [1, 2] }),
+    )
+    const wrapper = mount(BackupPanel)
+    await flushPromises()
+    expect(wrapper.text()).toContain('Covered project IDs: 1, 2.')
+    expect(wrapper.text()).toContain('No additional external folders are enrolled.')
+    expect(configureBackups).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+  it('does not claim project files are absent when coverage inspection failed', async () => {
+    vi.mocked(loadBackupStatus).mockResolvedValue(
+      fixture({
+        project_ids: null,
+        last_error: {
+          code: 'source_unavailable',
+          message: 'A coordination lock is missing.',
+          next_action: 'Repair project storage.',
+        },
+      }),
+    )
+    const wrapper = mount(BackupPanel)
+    await flushPromises()
+    expect(wrapper.text()).toContain('Project coverage could not be verified.')
+    expect(wrapper.text()).not.toContain('No managed project files are present yet.')
     wrapper.unmount()
   })
   it('requires explicit save for enable/disable and preserves external coverage', async () => {

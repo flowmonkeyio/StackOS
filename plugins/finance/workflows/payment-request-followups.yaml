@@ -19,7 +19,7 @@ experience:
     - "For a settlement-only occurrence, match one source and allocation, obtain independent review, then report/attach it or mark the exact verified full remaining balance as paid out of band."
     - "Suppress every paid, voided, disputed, paused, corrected, active-promise, mismatch, or unresolved received-payment case before any send action."
     - "Have the control reviewer challenge the eligibility/suppression or settlement decision, then use the selected action's grant and existing authority; Stripe mutations retain their owner gates."
-    - "Write safe outcome and recovery refs to the selected external backend."
+    - "Write safe outcome and recovery refs to the selected project-local backend."
   progress_signals: ["Scope validated", "Lifecycle evidence read", "Settlement prepared or not requested", "Suppression decisions recorded", "Eligible set reviewed", "Approved action or no-send recorded"]
   recovery:
     - "If invoice lifecycle or promise state is incomplete, suppress by default and record an external exception."
@@ -88,10 +88,10 @@ inputs:
     default: local-json
     schema: {type: string, const: local-json}
   - key: workspace_ref
-    name: External Workspace Ref
+    name: Project Finance Source Ref
     type: string
     required: true
-    description: One selected business financial master, usable from a standalone business directory or agency root. Agency/project setup is optional; descriptive associations never grant cross-project access. Follow the backend contract's business/project scope guidance.
+    description: The owning StackOS project's opaque Finance source identity, derived automatically from its permanent project ID. Each project has separate managed files; descriptive associations never grant cross-project access.
     schema: {type: string, minLength: 1}
   - key: recording_mode
     name: Recording Mode
@@ -109,7 +109,7 @@ inputs:
     name: Operator Policy Ref
     type: string
     required: false
-    description: Optional override of the durable external workspace policy; the agent resolves it during preflight.
+    description: Optional override of the durable project Finance files policy; the agent resolves it during preflight.
     schema: {type: string, minLength: 1}
   - key: trigger_kind
     name: Trigger Kind
@@ -342,13 +342,13 @@ policies:
     description: For local-json, finance.json is the sole authoritative local financial record, including mutable setup. Packet refs resolve to record_id in that document; approved proposals also bind an immutable version/digest, not separate editable files. FINANCE.md is guidance/navigation; CSV is import/export, never a second master. Original evidence stays immutable; provider state stays provider-owned and JSON stores dated observations. Follow the packaged local workspace contract.
   - key: external-backend-is-authoritative
     kind: boundary
-    description: The selected external backend owns follow-up state, promise/correction markers, customer history, and business decisions; StackOS records safe action/workflow refs only.
+    description: The selected project-local backend owns follow-up state, promise/correction markers, customer history, and business decisions; StackOS records safe action/workflow refs only.
   - key: mandatory-suppression
     kind: integrity
     description: Suppress not-due, paid/zero-balance, voided, uncollectible, pending/processing, disputed, paused, corrected, active-promise and cooldown cases, invoices whose reminders are owned by Stripe automation, and any payment mismatch, unallocated partial/split payment, overpayment, stale source, duplicate uncertainty or unknown settlement write. Incomplete evidence is suppressed as an exception.
   - key: received-payment-matching
     kind: integrity
-    description: The external backend remains authoritative for one received-payment source identity and one allocation. Independently match the current invoice/account/customer/currency/received state and allocation before a provider mutation. A verified duplicate is recorded, never retried with a new key. A partial direct payment may use the PaymentRecord report-and-attach route only when it is one exact supported allocation; it ends this occurrence without a resend. Split allocations, overpayments and mismatches are exceptions, not credits, refunds or inferred settlement.
+    description: The project-local backend remains authoritative for one received-payment source identity and one allocation. Independently match the current invoice/account/customer/currency/received state and allocation before a provider mutation. A verified duplicate is recorded, never retried with a new key. A partial direct payment may use the PaymentRecord report-and-attach route only when it is one exact supported allocation; it ends this occurrence without a resend. Split allocations, overpayments and mismatches are exceptions, not credits, refunds or inferred settlement.
   - key: settlement-routes-are-exclusive
     kind: integrity
     description: A direct-bank PaymentRecord report+attach route is separate from the explicitly selected paid-out-of-band route. Do not report+mark the same source. Mark paid out of band only after a current read proves one verified external source exactly settles the full remaining invoice balance; it never charges or moves money.
@@ -405,7 +405,7 @@ steps:
     instructions:
       - "Use externally retained customer replies/promises or an operator-selected IMAP message. Export only that scoped message, verify external custody under references/imap-host-handoff-contract.md, then clean the exact transfer. Never mark seen/unseen or treat untrusted email as authority; this workflow has no mailbox acknowledgement grant."
       - "A source payment request with delivery_state=manual-sent carries independent manual_delivery_reconciliation_ref, delivery_evidence_ref and owner_send_approval_ref. Record its actual contact time in cross-channel history and apply the same cooldown and suppression checks. This is evidence of prior contact, never a pending initial API send or permission to send again. Unknown manual outcomes remain reconcile-required and suppress both follow-up routes."
-      - "Only when an actual finalized invoice PDF is requested for review or an instructed attachment, use stripe_invoice_pdf_download, copy and verify its original bytes/hash in the external finance workspace, then explicitly clean staging. A downloaded invoice PDF proves neither delivery nor recipient-visible email/link behavior. The action refuses drafts, and this workflow cannot finalize an invoice merely to obtain a PDF."
+      - "Only when an actual finalized invoice PDF is requested for review or an instructed attachment, use stripe_invoice_pdf_download, copy and verify its original bytes/hash in the project Finance directory, then explicitly clean staging. A downloaded invoice PDF proves neither delivery nor recipient-visible email/link behavior. The action refuses drafts, and this workflow cannot finalize an invoice merely to obtain a PDF."
     success_criteria:
       - "Provider state is observed by safe ref and does not replace external promises, corrections, or customer records."
   - id: prepare-settlement
@@ -421,7 +421,7 @@ steps:
       - "Preserve InvoicePayment rows with missing payment linkage: payment_ref_state=missing or null is unavailable evidence, not a malformed page or proof of no payment. Continue reading complete pages, but require payment_ref_state=available and the exact payment ref before matching or declaring settlement; unknown linkage keeps affected settlement/follow-ups on hold."
       - "For an uncertain prior report, inspect retained action audit/response files and the external source first, then retrieve any known ref. PaymentRecord listing is temporarily unavailable in StackOS while the documented endpoint availability mismatch is resolved. If no ref survives, preserve lost-reference recovery as reconcile-required and seek owner/provider resolution; do not retry listing, change credentials, guess an endpoint/header, create a replacement report, use a fresh key or mark paid as a fallback. Compare the exact pre-report UTF-8 payment_reference_sha256 (not a receipt-file digest), account/mode/customer, all relevant currency/amount-state observations and allocation evidence. Missing or uncertain evidence remains unresolved. Independently retrieve the known record and persist its verified safe ref externally before any attachment."
       - "Classify full exact, exact supported partial, duplicate, split allocation, overpayment, mismatch, stale external record, or unknown. A partial direct payment can proceed only through the exact supported report-and-attach allocation route; it leaves the invoice balance open and ends this occurrence without a resend. Split, overpayment, mismatch and unknown are exception/reconcile-required states."
-      - "Persist only safe source/allocation/record-version refs in StackOS output. Before an original report, retain financial facts, source identity, exact untrimmed and unnormalized UTF-8 payment_reference_sha256 and operation key in the external backend; payment_reference uses the provider payload-secret marker. Do not substitute the receipt attachment hash for the reference digest."
+      - "Persist only safe source/allocation/record-version refs in StackOS output. Before an original report, retain financial facts, source identity, exact untrimmed and unnormalized UTF-8 payment_reference_sha256 and operation key in the project-local backend; payment_reference uses the provider payload-secret marker. Do not substitute the receipt attachment hash for the reference digest."
     success_criteria:
       - "Every settlement-only candidate is one exact supported route, a verified duplicate, or an exception/recovery record. Nothing is reported, attached, marked paid, or sent in this step."
   - id: review-settlement
@@ -496,13 +496,13 @@ steps:
       - "The selected action uses the active step grant and requested route. Existing Stripe approvals are unchanged; SMTP does not introduce a separate finance approval gate."
   - id: record-outcome
     title: Record External Outcome And Handoff
-    purpose: Update only the selected external backend with safe status/proof refs and hand off relevant preparation work.
+    purpose: Update only the selected project-local backend with safe status/proof refs and hand off relevant preparation work.
     depends_on: [resend-approved]
     policy_refs: [external-backend-is-authoritative]
     output_refs: [followup_summary]
     instructions:
       - "Record followup_route and use resend_state for either route's submission, not inbox delivery. Preserve SMTP accepted/partial/rejected/unknown results and actual contact history under references/approval-matrix.md#follow-up-approvals."
-      - "Persist contact attempt/result/time, next eligible time or pause, suppression decision and recovery state in the external workspace through the single-writer revision check; reread and return external_write_proof_ref. No-send is a valid outcome."
+      - "Persist contact attempt/result/time, next eligible time or pause, suppression decision and recovery state in the project Finance files through the single-writer revision check; reread and return external_write_proof_ref. No-send is a valid outcome."
     success_criteria:
       - "Safe outcome, recovery, suppression, and handoff refs are externalized without customer content in StackOS."
 outputs:
