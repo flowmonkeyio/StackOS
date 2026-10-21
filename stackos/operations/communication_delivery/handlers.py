@@ -9,7 +9,7 @@ from stackos.operations.communication_platform import _default_action_ref
 from stackos.repositories.agent_requests import AgentRequestRepository
 
 from .errors import _reject
-from .execution import _execute_delivery
+from .execution import _durable_commit_guard, _execute_delivery
 from .payloads import _build_provider_payload, _reply_delivery
 from .policy import _ensure_reply_policy, _ensure_target_policy
 from .resolution import (
@@ -157,6 +157,9 @@ async def _send(
         input_json=payload["input_json"],
         credential_ref=actor["credential_ref"],
         idempotency_key=idempotency_key,
+        explicit_stable_intent=bool(
+            (inp.idempotency_key or "").strip() or (inp.intent_id or "").strip()
+        ),
         dry_run=inp.dry_run,
         metadata_json={
             "operation": operation,
@@ -178,6 +181,7 @@ async def _send(
         surface_ref=target.surface_ref,
         fallback=inp.fallback,
         delivery=inp.delivery,
+        commit_guard=_durable_commit_guard(ctx, operation, inp),
     )
 
 
@@ -286,6 +290,9 @@ async def communication_reply(
             intent_id=inp.intent_id,
             request_id=ctx.request_id,
         ),
+        explicit_stable_intent=bool(
+            (inp.idempotency_key or "").strip() or (inp.intent_id or "").strip()
+        ),
         dry_run=inp.dry_run,
         metadata_json={
             "operation": "communication.reply",
@@ -305,4 +312,5 @@ async def communication_reply(
         surface_ref=source.get("source_surface_ref"),
         fallback=inp.fallback,
         delivery=inp.delivery,
+        commit_guard=_durable_commit_guard(ctx, "communication.reply", inp),
     )

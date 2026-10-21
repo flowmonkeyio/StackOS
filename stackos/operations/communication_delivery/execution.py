@@ -2,17 +2,36 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from stackos.actions import ActionRepository
 from stackos.db.models import ActionCallStatus
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import WriteEnvelope
-from stackos.mcp.permissions import active_run_plan_step
+from stackos.mcp.permissions import active_run_plan_step, check_call_grant
 
 from .errors import _reject
 from .schemas import CommunicationDeliveryInput, CommunicationFallbackInput, CommunicationSendOut
 from .utils import _first_str
+
+
+def _durable_commit_guard(
+    ctx: MCPContext, operation: str, arguments: object
+) -> Callable[[], None] | None:
+    if ctx.run_token is None:
+        return None
+
+    def guard() -> None:
+        if ctx.run is not None:
+            ctx.session.refresh(ctx.run)
+        plan, step = active_run_plan_step(ctx, operation)
+        ctx.session.refresh(plan)
+        ctx.session.refresh(step)
+        check_call_grant(operation, ctx, arguments)
+        active_run_plan_step(ctx, operation)
+
+    return guard
 
 
 async def _execute_delivery(
@@ -24,6 +43,7 @@ async def _execute_delivery(
     input_json: dict[str, Any],
     credential_ref: str,
     idempotency_key: str,
+    explicit_stable_intent: bool,
     dry_run: bool,
     metadata_json: dict[str, Any],
     resolved: dict[str, Any],
@@ -32,6 +52,7 @@ async def _execute_delivery(
     surface_ref: str | None,
     fallback: CommunicationFallbackInput,
     delivery: CommunicationDeliveryInput,
+    commit_guard: Callable[[], None] | None = None,
 ) -> WriteEnvelope[CommunicationSendOut]:
     if fallback.mode != "reject":
         _reject(
@@ -56,11 +77,13 @@ async def _execute_delivery(
         run_plan_id=plan_id,
         run_plan_step_id=step_id,
         idempotency_key=idempotency_key,
+        _explicit_stable_intent=explicit_stable_intent,
         dry_run=dry_run,
         durable_due_at=delivery.due_at,
         durable_expires_at=delivery.expires_at,
         durable_account_interval_seconds=delivery.account_interval_seconds,
         durable_destination_interval_seconds=delivery.destination_interval_seconds,
+        _durable_commit_guard=commit_guard,
         metadata_json={
             **metadata_json,
             "dedupe_source": "communication-operation",

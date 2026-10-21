@@ -24,6 +24,7 @@ from stackos.actions.controlled_command import (
     _canonical_digest,
     _check_controlled_manifest,
     _controlled_host_settings,
+    _controlled_report_directory,
     _ControlledCommandInput,
     _ControlledNativeAudit,
     _resolve_controlled_command,
@@ -144,14 +145,15 @@ def _issue_controlled_authority(inp: ActionExecuteInput, ctx: MCPContext) -> _Co
     return _current_controlled_authority(inp, ctx)
 
 
-def _current_controlled_authority(
+def _current_owner_authority(
     inp: ActionExecuteInput,
     ctx: MCPContext,
+    request: Any,
     *,
     native_revision: int | None = None,
     charged: bool = False,
-) -> _ControlledAuthority:
-    _check_controlled_options(inp)
+) -> tuple[Any, Any, Any, Any, dict[str, Any]]:
+    """Canonical controller/grant/item/owner/budget fence shared by fixed actions."""
     if (
         current_context() is not ctx
         or ctx.extras.get("trusted_local_admin")
@@ -174,10 +176,6 @@ def _current_controlled_authority(
     plan, step = active_run_plan_step(ctx, "action.execute")
     if plan.id is None or step.id is None or run.id is None:
         raise ConflictError("controlled current scope is incomplete")
-    try:
-        request = _ControlledCommandInput.model_validate(inp.input_json)
-    except ModelValidationError as exc:
-        raise ValidationError("invalid controlled command binding") from exc
     TrackerRepository(ctx.session).require_owner_execution_binding(
         project_id=inp.project_id,
         canonical_item_id=request.canonical_item_id,
@@ -205,15 +203,37 @@ def _current_controlled_authority(
     for used, limit in (("attempts_used", "attempt_limit"), ("failures_used", "failure_limit")):
         value = continuity[used]
         floor = owner.continuity_json.get(used)
-        if native_revision is not None and type(floor) is int:
-            value = max(value, floor)
+        if type(floor) is not int or floor < 0:
+            raise ConflictError("controlled continuity is exhausted or regressed")
+        # The owner is the cumulative accounting writer. Tracker metadata is
+        # current policy and can lag a genuine native reservation's charge.
+        # Neither source may reduce the other's consumed budget.
+        value = max(value, floor)
         exhausted = (
             value > continuity[limit]
             if charged and used == "attempts_used"
             else value >= continuity[limit]
         )
-        if type(floor) is not int or value < floor or exhausted:
+        if exhausted:
             raise ConflictError("controlled continuity is exhausted or regressed")
+    return run, plan, step, owner, continuity
+
+
+def _current_controlled_authority(
+    inp: ActionExecuteInput,
+    ctx: MCPContext,
+    *,
+    native_revision: int | None = None,
+    charged: bool = False,
+) -> _ControlledAuthority:
+    _check_controlled_options(inp)
+    try:
+        request = _ControlledCommandInput.model_validate(inp.input_json)
+    except ModelValidationError as exc:
+        raise ValidationError("invalid controlled command binding") from exc
+    run, plan, step, owner, continuity = _current_owner_authority(
+        inp, ctx, request, native_revision=native_revision, charged=charged
+    )
     from stackos.actions import ActionRepository
 
     described = ActionRepository(ctx.session).describe(
@@ -228,7 +248,14 @@ def _current_controlled_authority(
         )
     ):
         raise ConflictError("controlled manifest is unavailable")
-    command = _resolve_controlled_command()
+    command = _resolve_controlled_command(
+        request.command_key,
+        report_directory=_controlled_report_directory(
+            _native_settings(ctx, require_enabled=False), project_id=inp.project_id, request=request
+        )
+        if request.command_key == "synthetic-status-report-v1"
+        else None,
+    )
     approval_id = 0
     approval_updated_at = None
     decision_digest = ""
@@ -772,6 +799,15 @@ def _resolve_controlled_readback(
         raise ConflictError("controlled original binding changed")
     if row.status == ActionCallStatus.RUNNING:
         raise ConflictError("controlled_call_in_flight", data={"action_call_id": row.id})
+    if (
+        row.status == ActionCallStatus.FAILED
+        and isinstance(row.response_json, dict)
+        and row.response_json.get("outcome_unknown") is True
+    ):
+        # Startup can recover an orphan before the final native audit exists.
+        # Its authenticated original identity is already checked above. Keep
+        # that unknown outcome attributable even after its owner has advanced.
+        raise ConflictError("controlled_history_unknown", data={"action_call_id": row.id})
     native_value = (row.metadata_json or {}).get("controlled_native")
     if native_value is None:
         # Historical no-dispatch results retain their exact initial fence.
@@ -798,7 +834,14 @@ def _resolve_controlled_readback(
     native = _ControlledNativeAudit.model_validate(native_value)
     settings = _native_settings(ctx, require_enabled=False)
     _storage, _seed, storage_digest = _native_storage(settings)
-    command = _resolve_controlled_command()
+    command = _resolve_controlled_command(
+        request.command_key,
+        report_directory=_controlled_report_directory(
+            settings, project_id=inp.project_id, request=request
+        )
+        if request.command_key == "synthetic-status-report-v1"
+        else None,
+    )
     runtime_digest = _canonical_digest(_native_manifest(command))
     owner = session.exec(
         select(WorkItemOwnership)

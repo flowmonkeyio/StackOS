@@ -57,7 +57,15 @@ def prepare(case, *, boot=BOOT, deadline=10_000_000_000, grace=1_000_000_000, at
     if not case.settings.seed_path.exists():
         case.settings.seed_path.write_bytes(b"C" * 32)
         case.settings.seed_path.chmod(0o600)
-    command = fixed._resolve_controlled_command()
+    request = fixed._ControlledCommandInput.model_validate(case.args["input_json"])
+    command = fixed._resolve_controlled_command(
+        request.command_key,
+        report_directory=fixed._controlled_report_directory(
+            case.settings, project_id=case.project, request=request
+        )
+        if request.command_key == "synthetic-status-report-v1"
+        else None,
+    )
     runtime = host._native_manifest(command)
     decision = dict(
         schema_version="stackos.controlled-host-approval.v1",

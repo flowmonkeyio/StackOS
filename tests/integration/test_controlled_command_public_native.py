@@ -258,6 +258,57 @@ def test_public_native_noop_completes_and_replays_without_second_launch(public_c
     case.settings.state_dir = original_state
 
 
+def test_public_native_report_produces_private_candidate_and_replays(
+    public_case, tmp_path, monkeypatch
+):
+    from tests.support.controlled_report import select_report, verify_report
+
+    case, observed = public_case
+    command = select_report(case)
+    input_path = (
+        command.source_root / "plugins/engineering/fixtures/controlled-status-input-v1.json"
+    )
+    original = input_path.read_bytes()
+    sentinel = tmp_path / "report-sentinel"
+    sentinel.write_bytes(b"unchanged sentinel\n")
+    directory = command.report_directory
+    assert not directory.exists()
+    key = "controlled:" + controlled._canonical_digest(
+        dict(
+            project_id=case.project,
+            controller_run_id=case.run,
+            canonical_item_id=case.args["input_json"]["canonical_item_id"],
+            epoch=case.args["input_json"]["expected_epoch"],
+            intent_ref=case.args["input_json"]["intent_ref"],
+            dry_run=False,
+        )
+    )
+    args = deepcopy(case.args) | {"idempotency_key": key}
+    output = asyncio.run(case.dispatch(args))
+    result = assert_accounted(observed)
+    assert result.terminal_owner.authenticated.fact.child_returns["worker"] == 0
+    raw = output["data"]["output_json"]
+    assert raw["status"] == "succeeded" and raw["work_accepted"] is False
+    assert raw["report"]["accepted"] is False
+    assert raw["report"]["candidate_ref"] == "controlled-report:" + directory.name
+    assert str(directory) not in json.dumps(output)
+    verify_report(directory, input_path, original, sentinel)
+    before = rows(case)
+
+    def forbid(*args, **kwargs):
+        raise AssertionError("report replay attempted another launch")
+
+    monkeypatch.setattr(host, "_run_native_control", forbid)
+    for request in (case.args, args):
+        replay = asyncio.run(case.dispatch(request))
+        assert replay["data"]["replayed"] is True
+        assert replay["data"]["output_json"] == raw
+        assert rows(case) == before and len(observed) == 1
+        assert str(directory) not in json.dumps(replay)
+        private_absent(replay)
+        verify_report(directory, input_path, original, sentinel)
+
+
 def test_public_native_task_stop_before_release_preserves_known_inert_cleanup(
     public_case, monkeypatch
 ):

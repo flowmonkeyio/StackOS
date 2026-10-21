@@ -584,6 +584,96 @@ describe('TaskTrackerView route integration', () => {
     wrapper.unmount()
   })
 
+  it('refreshes open task status and fences responses across close and reopen', async () => {
+    const task = trackerTask()
+    const pending: Array<(value: { status: Record<string, unknown> }) => void> = []
+    operationMocks.callOperation.mockImplementation((operation: string) => {
+      if (operation === 'tracker.get') return Promise.resolve(trackerSnapshot([task], [], true))
+      if (operation === 'run.ownerGet') return new Promise((resolve) => pending.push(resolve))
+      return Promise.resolve({ items: [], next_cursor: null, total_estimate: 0 })
+    })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/tasks', component: TaskTrackerView }],
+    })
+    await router.push('/projects/7/tasks?task=task-a')
+    await router.isReady()
+    const wrapper = mount(
+      { template: '<RouterView />' },
+      { global: { plugins: [router, createPinia()], stubs: trackerRouteStubs() } },
+    )
+    await vi.waitFor(() => expect(wrapper.get('[data-test="graph-state"]').text()).toBe('ready'))
+    await wrapper.get('[data-test="open-task-detail"]').trigger('click')
+    await vi.waitFor(() => expect(pending).toHaveLength(1))
+    pending[0]({ status: { state: 'running' } })
+    const dialog = wrapper.findComponent({ name: 'TrackerTaskDetailDialog' })
+    await vi.waitFor(() => expect(dialog.props('ownerStatus')).toEqual({ state: 'running' }))
+
+    const refresh = wrapper.findAll('button').find((button) => button.text() === 'Refresh')
+    expect(refresh).toBeDefined()
+    await refresh!.trigger('click')
+    await vi.waitFor(() => expect(pending).toHaveLength(2))
+    expect(dialog.props('ownerStatus')).toBeNull()
+    dialog.vm.$emit('update:modelValue', false)
+    await wrapper.vm.$nextTick()
+    expect(dialog.props('modelValue')).toBe(false)
+    await wrapper.get('[data-test="open-task-detail"]').trigger('click')
+    await vi.waitFor(() => expect(pending).toHaveLength(3))
+    pending[1]({ status: { state: 'stale' } })
+    await flushPromises()
+    expect(dialog.props('ownerStatus')).toBeNull()
+    pending[2]({ status: { state: 'production_succeeded' } })
+    await vi.waitFor(() =>
+      expect(dialog.props('ownerStatus')).toEqual({ state: 'production_succeeded' }),
+    )
+    wrapper.unmount()
+  })
+
+  it('refreshes ticket status on selection and fences responses across close and reopen', async () => {
+    const task = trackerTask()
+    const ticket = trackerTicket()
+    const pending: Array<(value: { status: Record<string, unknown> }) => void> = []
+    operationMocks.callOperation.mockImplementation((operation: string) => {
+      if (operation === 'tracker.get') {
+        return Promise.resolve(trackerSnapshot([task], [ticket], true))
+      }
+      if (operation === 'run.ownerGet') return new Promise((resolve) => pending.push(resolve))
+      return Promise.resolve({ items: [], next_cursor: null, total_estimate: 0 })
+    })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/tasks', component: TaskTrackerView }],
+    })
+    await router.push('/projects/7/tasks?view=tickets')
+    await router.isReady()
+    const wrapper = mount(
+      { template: '<RouterView />' },
+      { global: { plugins: [router, createPinia()], stubs: trackerRouteStubs() } },
+    )
+    await vi.waitFor(() =>
+      expect(wrapper.findComponent({ name: 'TrackerTicketTable' }).exists()).toBe(true),
+    )
+    const table = wrapper.findComponent({ name: 'TrackerTicketTable' })
+    table.vm.$emit('row-click', ticket)
+    await vi.waitFor(() => expect(pending).toHaveLength(1))
+    expect(operationMocks.callOperation).toHaveBeenCalledWith('run.ownerGet', {
+      project_id: 7,
+      canonical_item_id: 'ticket:11',
+    })
+    const panel = wrapper.findComponent({ name: 'TrackerTicketDetailPanel' })
+    panel.vm.$emit('update:modelValue', false)
+    await wrapper.vm.$nextTick()
+    expect(panel.props('modelValue')).toBe(false)
+    table.vm.$emit('row-click', ticket)
+    await vi.waitFor(() => expect(pending).toHaveLength(2))
+    pending[0]({ status: { state: 'stale' } })
+    await flushPromises()
+    expect(panel.props('ownerStatus')).toBeNull()
+    pending[1]({ status: { state: 'running' } })
+    await vi.waitFor(() => expect(panel.props('ownerStatus')).toEqual({ state: 'running' }))
+    wrapper.unmount()
+  })
+
   it('keeps task and ticket detail bindings mutually exclusive', async () => {
     const task = trackerTask()
     const ticket = trackerTicket({ id: 11, task_id: task.id, task_key: task.key })
@@ -698,6 +788,7 @@ function trackerRouteStubs() {
     TrackerTaskDetailDialog: {
       name: 'TrackerTaskDetailDialog',
       props: ['contexts', 'ownerStatus', 'modelValue'],
+      emits: ['update:modelValue'],
       template: '<aside>{{ contexts?.[0]?.name }}</aside>',
     },
   }

@@ -4,10 +4,8 @@ import errno
 import json
 import os
 import signal
-import sys
 import threading
 from dataclasses import asdict, replace
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -17,6 +15,7 @@ from stackos import controlled_process_host as host
 from stackos import controlled_process_identity as identity
 from stackos import controlled_process_receipt as receipt
 from stackos import controlled_process_shim as shim
+from stackos.actions.controlled_command import _resolve_controlled_command
 from stackos.repositories.runs import RunOut
 
 BOOT = "11111111-1111-4111-8111-111111111111"
@@ -1622,17 +1621,13 @@ def test_worker_startup_diagnostic_projects_only_fixed_safe_facts(fault):
     ],
 )
 def test_trampoline_startup_diagnostic_preserves_original_failure_and_cleanup(monkeypatch, fault):
+    command = _resolve_controlled_command("noop-v1").descriptor()
     config_read, config_write = os.pipe()
     barrier_read, barrier_write = os.pipe()
     evidence_read, evidence_write = os.pipe()
     protected = host._fd_observation("fixture", {"config": config_read})["handles"]["config"]
-    executable = str(Path(sys.executable).resolve())
     config = {
-        "command": {
-            "executable": executable,
-            "argv": [executable, "-I", "-c", "pass"],
-            "environment": {},
-        },
+        "command": command,
         "nonce": "n" * 64,
         "protected_objects": [protected],
         "closed_key_history": closed_key_copies(),

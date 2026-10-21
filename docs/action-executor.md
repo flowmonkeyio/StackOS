@@ -3,7 +3,7 @@
 ## Controlled Engineering Admission
 
 `engineering.controlled-proof.v1` is workflow-only and foreground. Its single
-`noop-v1` descriptor fixes the interpreter bytes, arguments, source hashes,
+`noop-v1` descriptor and optional fixed `synthetic-status-report-v1` descriptor fix the interpreter bytes, arguments, source hashes,
 working directory and four-entry environment; callers cannot supply a command,
 path, environment, credential or output policy. The current authenticated
 controller must pass the full step/action/argument grant, canonical item and
@@ -11,6 +11,29 @@ owner fences, known unstopped continuity, and an approved exact
 `decision_json.controlled_command` binding. Approval provenance and command
 bytes are reread at reservation and replay. Approved decisions are terminal;
 owner stops, scope changes and edited approved decision data invalidate admission.
+
+The synthetic report uses the standalone Engineering plugin producer and its
+fixed 186-byte input. Admission and original readback only reconstruct the
+descriptor. The first native attempt exclusively creates its private workspace
+under canonical `Settings.state_dir/controlled-reports/`, keyed by project,
+canonical item, scope and stable intent. Existing intent directories hold;
+symlinks, FIFOs and nonregular files reject. The producer creates `report.json`
+exclusively, checks the exact 227-byte output, and never overwrites it.
+Successful native output may include `report` with an opaque
+`controlled-report:<digest>` candidate reference, input/report SHA256 values,
+byte count and `accepted=false`. Private paths are absent from that result.
+No-op results omit the optional field entirely. Report generation grants no
+publication or work acceptance; `work_accepted` remains false. Both commands
+retain the same default-off capability, current grants, approval, native custody
+and original-intent readback boundaries.
+
+Terminal certificate and effect readback reconstruct the selected finite command
+for every original attempt from current source bytes and canonical Settings.
+Mixed no-op/report histories retain separate runtime identities; stored command
+paths, arguments and manifests cannot substitute for that reconstruction. Report
+workspace and result-readback descriptors have close-once owners. A failed close
+retains its owner in native custody or on the primary exception, and never retries
+the descriptor integer after its identity may have changed.
 
 The daemon's `Settings.controlled_host_enabled` capability defaults to false.
 With that default, successful admission records the
@@ -276,6 +299,18 @@ submits independent items asynchronously within a bounded in-flight window.
 It persists attempts, progress and receipts. Unattempted items survive restart;
 an expired dispatched attempt is held as an unknown outcome until a provider
 receipt reconciles it. It is never automatically resent.
+
+When a durable delivery runs under an actively granted plan step with one
+canonical supervised work item, acceptance binds the job to that item's current
+owner, epoch, scope, controller, stable intent and action. The durable job and
+private owner-effect registration commit together before the dispatcher can
+claim it. Claim rechecks that registration, the owner fence and the active step;
+missing, ambiguous, changed or stale bindings stop the effect. The registration
+is stored with the existing owner continuity record and is omitted from public
+owner responses. Generic work without a supervised item keeps the existing
+legacy path. Provider preflight may read provider state before acceptance, but
+provider delivery starts only after the durable write boundary. No provider
+credentials or delivery result are added to the owner record.
 
 Inspect a sealed job with `actionCall.items`; `actionCall.pause` and
 `actionCall.resume` control future claims, while `actionCall.cancel` cancels

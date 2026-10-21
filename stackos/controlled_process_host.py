@@ -384,6 +384,7 @@ class _OwnedFD:
             raise _ControlError("native_fd_invalid")
         self.fd = fd
         self.state: Literal["open", "attempted", "closed", "unknown"] = "open"
+        self.failure: BaseException | None = None
 
     def close(self) -> bool:
         if self.state == "closed":
@@ -393,11 +394,58 @@ class _OwnedFD:
         self.state = "attempted"
         try:
             os.close(self.fd)
-        except BaseException:
+        except BaseException as failure:
+            self.failure = failure
             self.state = "unknown"
             return False
         self.state = "closed"
         return True
+
+
+class _ReportFDs:
+    """Close-once owners retained by native custody or the original exception."""
+
+    def __init__(self, custody: list[_OwnedFD] | None = None):
+        self.owners: list[_OwnedFD] = []
+        self.custody = custody
+        self.transferred: _OwnedFD | None = None
+
+    def __enter__(self) -> _ReportFDs:
+        return self
+
+    def open(self, path: str, flags: int, *, directory: _OwnedFD | None = None) -> _OwnedFD:
+        owner = _OwnedFD(os.open(path, flags, dir_fd=directory.fd if directory else None))
+        self.owners.append(owner)
+        if self.custody is not None:
+            self.custody.append(owner)
+        return owner
+
+    def close(self, owner: _OwnedFD) -> None:
+        if not owner.close():
+            raise owner.failure or _ControlError("native_report_fd_close_unknown")
+
+    def transfer(self, owner: _OwnedFD) -> _OwnedFD:
+        self.transferred = owner
+        return owner
+
+    def __exit__(self, exc_type: object, primary: BaseException | None, tb: object) -> None:
+        # A transfer is valid only on a successful return. Every partial-failure
+        # capability is accounted here or held in its actual close-once owner.
+        for owner in reversed(self.owners):
+            if owner is not self.transferred or primary is not None:
+                owner.close()
+        unknown = [owner for owner in self.owners if owner.state == "unknown"]
+        if unknown:
+            failure = (
+                primary or unknown[0].failure or _ControlError("native_report_fd_close_unknown")
+            )
+            # Preserve a validation/open/close/interruption exception verbatim.
+            # The retained owners prohibit a retry against a recycled integer.
+            object.__setattr__(failure, "_report_fd_custody", self)
+            if primary is None:
+                if self.transferred is not None:
+                    self.transferred.close()
+                raise failure
 
 
 def _fd_observation(role: str, named: dict[str, int]) -> dict[str, Any]:
@@ -971,6 +1019,38 @@ def _open_arm_directory(state_dir: Path, project: int, attempt: int) -> tuple[in
     return fd, attempt_dir
 
 
+def _prepare_report_directory(
+    state: Path, directory: Path, *, custody: list[_OwnedFD] | None = None
+) -> _OwnedFD:
+    """Exclusive intent workspace; caller retains its returned FD in custody."""
+    if directory.parent.parent != state or directory.parent.name != "controlled-reports":
+        raise _ControlError("native_report_storage_invalid")
+    with _ReportFDs(custody) as owned:
+        parent = owned.open("/", os.O_RDONLY | os.O_DIRECTORY)
+        for part in state.parts[1:]:
+            child = owned.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, directory=parent)
+            owned.close(parent)
+            parent = child
+        with suppress(FileExistsError):
+            os.mkdir("controlled-reports", mode=0o700, dir_fd=parent.fd)
+        child = owned.open(
+            "controlled-reports", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, directory=parent
+        )
+        owned.close(parent)
+        parent = child
+        info = os.fstat(parent.fd)
+        if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700:
+            raise _ControlError("native_report_storage_unsafe")
+        os.mkdir(directory.name, mode=0o700, dir_fd=parent.fd)
+        child = owned.open(
+            directory.name,
+            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+            directory=parent,
+        )
+        owned.close(parent)
+        return owned.transfer(child)
+
+
 @dataclass(frozen=True)
 class _TerminalOriginal:
     binding: receipt._Binding
@@ -1357,10 +1437,10 @@ class _VerifiedQuiescence:
         from stackos.db.models import Run
         from stackos.repositories.runs import _parse_terminal_facts, _parse_terminal_slot
 
-        if (
-            not clock._valid_clock(self.observation)
-            or self.snapshot.effect.status != "known_no_effect"
-        ):
+        if not clock._valid_clock(self.observation) or self.snapshot.effect.status not in {
+            "known_no_effect",
+            "known_settled",
+        }:
             raise _ControlError("terminal_effect_unknown")
         if tuple(sorted(owner.original.binding.attempt_run_id for owner in self.owners)) != tuple(
             item.id for item in self.snapshot.attempts
@@ -2123,6 +2203,11 @@ async def _run_native_control(
             admission.state_dir, binding.project_id, binding.attempt_run_id
         )
         owned.append(_OwnedFD(directory))
+        if original.command.report_directory is not None:
+            guard()
+            _prepare_report_directory(
+                admission.state_dir, original.command.report_directory, custody=owned
+            )
         slot_ack(repository._reserve_receipt_slot(**slot_fence(0), binding=binding))
         allocated = receipt._allocate_receipt_slot(directory, binding)
         if isinstance(allocated, receipt._ReceiptHold):

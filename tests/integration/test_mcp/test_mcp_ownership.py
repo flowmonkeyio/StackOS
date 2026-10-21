@@ -20,6 +20,7 @@ from typer.testing import CliRunner
 import stackos.cli.operation_commands as operation_cli
 import stackos.operations.runs as run_operations
 from stackos import controlled_process_receipt as receipt
+from stackos.actions import ActionRepository
 from stackos.cli import app as cli_app
 from stackos.db.models import (
     ActionCall,
@@ -32,6 +33,7 @@ from stackos.db.models import (
     RunPlanStep,
     RunPlanStepStatus,
     RunStatus,
+    TrackerSourceKind,
     TrackerTask,
     TrackerTicket,
     WorkItemOwnership,
@@ -1105,6 +1107,237 @@ def _set_canonical_counter(mcp: MCPClient, owned: dict, counter: str, value: int
         },
     )
     assert updated["data"]["ticket"]["metadata_json"] == metadata
+
+
+def test_durable_action_uses_one_current_supervised_owner(
+    mcp_client: MCPClient, owned: dict
+) -> None:
+    row = _acquire(mcp_client, owned)["ownership"]
+    with Session(owned["engine"]) as session:
+        binding = ActionRepository(session)._supervised_durable_binding(
+            project_id=owned["project_id"],
+            run_id=owned["run_id"],
+            run_plan_id=owned["run_plan_id"],
+            run_plan_step_id=owned["step_id"],
+            action_ref="fixture.telegram.send",
+            idempotency_key="workflow:send:one",
+        )
+    assert binding is not None
+    assert binding["canonical_item_id"] == owned["canonical_item_id"]
+    assert binding["ownership_id"] == row["id"]
+    assert binding["owner_ref"] == owned["owner_ref"]
+    assert binding["intent_digest"]
+    with Session(owned["engine"]) as session:
+        registration = RunRepository(session).register_durable_action_effect(
+            binding=binding,
+            action_call_id=7001,
+            job_id=8001,
+        )
+        session.commit()
+        stored = session.get(WorkItemOwnership, row["id"])
+        assert stored is not None
+        assert stored.continuity_json["durable_action_registrations"]["8001"] == registration
+        projected = RunRepository(session).owner_get(
+            project_id=owned["project_id"], canonical_item_id=owned["canonical_item_id"]
+        )
+        assert "durable_action_registrations" not in projected.continuity_json
+
+
+def test_durable_action_rejects_ambiguous_supervised_items(
+    mcp_client: MCPClient, owned: dict
+) -> None:
+    _acquire(mcp_client, owned)
+    with Session(owned["engine"]) as session:
+        task = session.exec(
+            select(TrackerTask).where(TrackerTask.key == f"workflow-{owned['run_plan_id']}")
+        ).one()
+        ticket = (
+            TrackerRepository(session)
+            .create_ticket(
+                project_id=owned["project_id"],
+                task_key=task.key,
+                key="ownership-second-supervised",
+                title="Second supervised item",
+                run_plan_id=owned["run_plan_id"],
+                run_plan_step_id=owned["step_id"],
+                metadata_json={
+                    "ownership_continuity": {
+                        "scope_digest": SCOPE,
+                        "effect_identity": "effect:second",
+                        "stopped": False,
+                        "denied": False,
+                        "attempts_used": 0,
+                        "failures_used": 0,
+                    }
+                },
+            )
+            .data.ticket
+        )
+        assert ticket is not None
+        session.commit()
+        with pytest.raises(ConflictError, match="ambiguous supervised"):
+            ActionRepository(session)._supervised_durable_binding(
+                project_id=owned["project_id"],
+                run_id=owned["run_id"],
+                run_plan_id=owned["run_plan_id"],
+                run_plan_step_id=owned["step_id"],
+                action_ref="fixture.telegram.send",
+                idempotency_key="workflow:send:ambiguous",
+            )
+
+
+@pytest.mark.parametrize("change", ["remove", "rebind"])
+@pytest.mark.parametrize("acquired", [False, True])
+def test_tracker_patch_preserves_supervised_binding(
+    mcp_client: MCPClient, owned: dict, change: str, acquired: bool
+) -> None:
+    if acquired:
+        _acquire(mcp_client, owned)
+    with Session(owned["engine"]) as session:
+        ticket = session.get(TrackerTicket, int(owned["canonical_item_id"].split(":")[1]))
+        assert ticket is not None
+        before = deepcopy(ticket.metadata_json)
+    if change == "remove":
+        attempted = {key: value for key, value in before.items() if key != "ownership_continuity"}
+    else:
+        attempted = deepcopy(before)
+        attempted["ownership_continuity"]["effect_identity"] = "effect:rebound"
+    error = mcp_client.call_tool_error(
+        "tracker.updateTicket",
+        {
+            "project_id": owned["project_id"],
+            "ticket_key": "ownership-work",
+            "patch_json": {"metadata_json": attempted},
+            "response_mode": "raw",
+        },
+    )
+    assert error["code"] == -32008, error
+    with Session(owned["engine"]) as session:
+        after = session.get(TrackerTicket, int(owned["canonical_item_id"].split(":")[1]))
+        assert after is not None
+        assert after.metadata_json == before
+
+
+@pytest.mark.parametrize(
+    ("acquired", "parent_value"), [(False, None), (False, ""), (True, None), (True, "")]
+)
+def test_tracker_patch_cannot_turn_protected_workflow_child_into_mirror(
+    mcp_client: MCPClient,
+    owned: dict,
+    acquired: bool,
+    parent_value: str | None,
+) -> None:
+    with Session(owned["engine"]) as session:
+        # The default fixture's original marked ticket is unrelated to this child.
+        # Remove its marker so this test exercises one real producer candidate.
+        original_id = int(owned["canonical_item_id"].split(":", 1)[1])
+        original = session.get(TrackerTicket, original_id)
+        assert original is not None and type(original.metadata_json) is dict
+        original.metadata_json = {
+            key: value
+            for key, value in original.metadata_json.items()
+            if key != "ownership_continuity"
+        }
+        task = session.exec(
+            select(TrackerTask).where(TrackerTask.key == f"workflow-{owned['run_plan_id']}")
+        ).one()
+        parent = session.exec(
+            select(TrackerTicket).where(
+                TrackerTicket.key == f"workflow-{owned['run_plan_id']}-write"
+            )
+        ).one()
+        child = (
+            TrackerRepository(session)
+            .create_ticket(
+                project_id=owned["project_id"],
+                task_key=task.key,
+                key="supervised-workflow-child",
+                title="Supervised workflow child",
+                parent_ticket_key=parent.key,
+                source_kind=TrackerSourceKind.WORKFLOW,
+                run_plan_id=owned["run_plan_id"],
+                run_plan_step_id=owned["step_id"],
+                metadata_json={
+                    "ownership_continuity": {
+                        "budget_ref": "budget:workflow-child",
+                        "stop_scope_ref": "stop-scope:workflow-child",
+                        "history_ref": "history:workflow-child",
+                        "scope_digest": SCOPE,
+                        "effect_identity": "effect:workflow-child",
+                        "stopped": False,
+                        "denied": False,
+                        "attempts_used": 0,
+                        "failures_used": 0,
+                        "attempt_limit": 2,
+                        "failure_limit": 2,
+                    }
+                },
+            )
+            .data.ticket
+        )
+        assert child is not None and child.parent_ticket_key == parent.key
+        canonical_item_id = f"ticket:{child.id}"
+        plan = session.get(RunPlan, owned["run_plan_id"])
+        assert plan is not None and type(plan.grant_snapshot_json) is dict
+        updated_snapshot = deepcopy(plan.grant_snapshot_json)
+        grants = updated_snapshot.get("mcp_tool_grants")
+        assert type(grants) is list
+        for grant in grants:
+            if (
+                type(grant) is dict
+                and grant.get("tool") in RUN_PLAN_OWNER_TOOL_NAMES
+                and grant.get("step_id") == "write"
+            ):
+                targets = grant.setdefault("targets", [])
+                assert type(targets) is list
+                targets.append(canonical_item_id)
+        plan.grant_snapshot_json = updated_snapshot
+        session.add(original)
+        session.add(plan)
+        session.commit()
+
+    child_owned = owned | {"canonical_item_id": canonical_item_id}
+    if acquired:
+        _acquire(mcp_client, child_owned)
+
+    error = mcp_client.call_tool_error(
+        "tracker.updateTicket",
+        {
+            "project_id": owned["project_id"],
+            "ticket_key": "supervised-workflow-child",
+            "patch_json": {"parent_ticket_key": parent_value},
+            "response_mode": "raw",
+        },
+    )
+    assert error["code"] == -32008, error
+    assert "cannot be reclassified as a mirror" in json.dumps(error)
+
+    with Session(owned["engine"]) as session:
+        child = session.exec(
+            select(TrackerTicket).where(TrackerTicket.key == "supervised-workflow-child")
+        ).one()
+        assert child.parent_ticket_id is not None
+        if acquired:
+            binding = ActionRepository(session)._supervised_durable_binding(
+                project_id=owned["project_id"],
+                run_id=owned["run_id"],
+                run_plan_id=owned["run_plan_id"],
+                run_plan_step_id=owned["step_id"],
+                action_ref="fixture.telegram.send",
+                idempotency_key="workflow:child:explicit-intent",
+            )
+            assert binding is not None
+            assert binding["canonical_item_id"] == canonical_item_id
+        else:
+            with pytest.raises(ConflictError, match="requires current owner"):
+                ActionRepository(session)._supervised_durable_binding(
+                    project_id=owned["project_id"],
+                    run_id=owned["run_id"],
+                    run_plan_id=owned["run_plan_id"],
+                    run_plan_step_id=owned["step_id"],
+                    action_ref="fixture.telegram.send",
+                    idempotency_key="workflow:child:explicit-intent",
+                )
 
 
 def _blocked_owned_attempt(mcp: MCPClient, owned: dict, state: str = "blocked") -> tuple[dict, int]:

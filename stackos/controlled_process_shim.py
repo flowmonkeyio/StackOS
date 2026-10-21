@@ -52,6 +52,60 @@ from stackos.controlled_process_host import (
 )
 
 
+def _validate_literal_command(command: dict[str, Any]) -> None:
+    """Finite pinned commands only, shared by bootstrap and exec barrier."""
+    root = Path(command["source_root"])
+    executable = str(Path(sys.executable).resolve())
+    if (
+        not root.is_absolute()
+        or root != Path(os.path.abspath(root))
+        or command["executable"] != executable
+        or command["source_root"] != str(root)
+        or command["cwd"] != str(root)
+        or command["executable_sha256"] != hashlib.sha256(Path(executable).read_bytes()).hexdigest()
+        or command["environment"]
+        != {
+            "LANG": "C.UTF-8",
+            "PATH": "/usr/bin:/bin",
+            "PYTHONNOUSERSITE": "1",
+            "PYTHONDONTWRITEBYTECODE": "1",
+        }
+        or any(
+            hashlib.sha256((root / name).read_bytes()).hexdigest() != digest
+            for name, digest in command["source_files"].items()
+        )
+    ):
+        raise _ControlError("native_worker_command_invalid")
+    if command["command_key"] == "noop-v1":
+        if "report" in command or command["argv"] != [executable, "-I", "-c", "pass"]:
+            raise _ControlError("native_worker_command_invalid")
+        return
+    if command["command_key"] != "synthetic-status-report-v1":
+        raise _ControlError("native_worker_command_invalid")
+    report = command["report"]
+    directory = Path(report["directory"])
+    script = "plugins/engineering/scripts/controlled_status_report_v1.py"
+    input_name = "plugins/engineering/fixtures/controlled-status-input-v1.json"
+    if (
+        not directory.is_absolute()
+        or directory != Path(os.path.abspath(directory))
+        or directory.parent.name != "controlled-reports"
+        or len(directory.name) != 64
+        or any(c not in "0123456789abcdef" for c in directory.name)
+        or report
+        != {
+            "directory": str(directory),
+            "input_sha256": "37b752df834a883cf0ca9f83f1ab6df96ead1fcfd91d420b65c85f2201121d7f",
+            "report_sha256": "ed21d51f672f7c0110a6c256dadf5f7067d282d4fb0ae3a7c4fa37d8fddd760c",
+            "byte_count": 227,
+        }
+        or command["source_files"].get(input_name) != report["input_sha256"]
+        or script not in command["source_files"]
+        or command["argv"] != [executable, "-I", "-S", str(root / script), str(directory)]
+    ):
+        raise _ControlError("native_worker_command_invalid")
+
+
 def _key(fd: int) -> tuple[bytes, dict[str, Any]]:
     owned = _OwnedFD(fd)
     try:
@@ -136,20 +190,7 @@ def _bootstrap(fds: tuple[int, ...]) -> tuple[_Channel, dict[str, Any], _NativeP
         ):
             raise _ControlError("native_bootstrap_invalid")
         command = manifest["command"]
-        executable = str(Path(sys.executable).resolve())
-        if (
-            command["command_key"] != "noop-v1"
-            or command["executable"] != executable
-            or command["argv"] != [executable, "-I", "-c", "pass"]
-            or command["environment"]
-            != {
-                "LANG": "C.UTF-8",
-                "PATH": "/usr/bin:/bin",
-                "PYTHONNOUSERSITE": "1",
-                "PYTHONDONTWRITEBYTECODE": "1",
-            }
-        ):
-            raise _ControlError("native_worker_command_invalid")
+        _validate_literal_command(command)
         return channel, config, policy
     except (KeyError, TypeError, ValueError) as exc:
         raise _ControlError("native_bootstrap_invalid") from exc
@@ -819,11 +860,7 @@ def _trampoline(fds: tuple[int, ...]) -> int:
         phase = "command_validate"
         command = config["command"]
         executable = str(Path(sys.executable).resolve())
-        if (
-            command["argv"] != [executable, "-I", "-c", "pass"]
-            or command["executable"] != executable
-        ):
-            raise _ControlError("native_worker_command_invalid")
+        _validate_literal_command(command)
         phase = "fd_observe"
         observed = _worker_fd_observation(
             {"config": config_fd, "barrier": barrier_fd, "evidence": evidence_fd},
@@ -868,6 +905,9 @@ def _trampoline(fds: tuple[int, ...]) -> int:
         )
         if not evidence_owner.close():
             raise _ControlError("native_worker_evidence_close_unknown")
+        os.chdir(command["cwd"])
+        if _remaining(config["deadline_continuous_ns"], float("inf")) == 0:
+            return 3
         os.execve(executable, command["argv"], command["environment"])
         return 1
     except BaseException as failure:

@@ -27,6 +27,7 @@ from stackos.db.models import (
     DurableActionItem,
     DurableActionJob,
     IdempotencyKey,
+    WorkItemOwnership,
 )
 from stackos.generated_inventory import (
     generated_action_audit_key,
@@ -51,7 +52,7 @@ from .utils import _redact_for_audit, utcnow
 
 @dataclass(frozen=True)
 class _ControlledEffectSnapshot:
-    status: Literal["known_no_effect", "unknown"]
+    status: Literal["known_no_effect", "known_settled", "unknown"]
     effect_identity: str
     rows: tuple[dict[str, Any], ...]
     descriptor_digest: str
@@ -68,12 +69,13 @@ class ActionAuditMixin:
         bindings: tuple[_receipt._Binding, ...],
         effect_identity: str,
         command_manifests: tuple[dict[str, Any], ...],
-        _resolved_runtime: dict[str, Any] | None = None,
+        _resolved_runtimes: dict[int, dict[str, Any]] | None = None,
+        _owner_scope: tuple[str, str | None] | None = None,
     ) -> _ControlledEffectSnapshot:
         """Canonical read-only raw ledger scope. A reference/worker flag is not settlement."""
         from stackos.actions.controlled_command import (
             _canonical_digest,
-            _resolve_controlled_command,
+            _current_original_runtime,
         )
 
         if not _receipt._integer(project_id) or not _receipt._token(effect_identity, 1000):
@@ -84,11 +86,10 @@ class ActionAuditMixin:
             for binding in bindings
         ):
             raise ValidationError("invalid controlled effect bindings")
-        # Resolve actual immutable noop source/runtime. No caller-selected action
-        # or arbitrary manifest can declare itself effect-free.
-        from stackos.controlled_process_host import _native_manifest
-
-        if _resolved_runtime is None:
+        # Only the finite original selection is observed from stored data. The
+        # entire runtime is reconstructed from current sources and Settings;
+        # no arbitrary manifest can declare itself effect-free.
+        if _resolved_runtimes is None:
             connection = self._s.connection()
             if (
                 connection.dialect.name == "sqlite"
@@ -96,11 +97,19 @@ class ActionAuditMixin:
                 is not False
             ):
                 raise ConflictError("effect source resolution must precede writer interval")
-            actual = _native_manifest(_resolve_controlled_command())
+            actuals = {}
+            for original_binding, manifest in zip(bindings, command_manifests, strict=True):
+                try:
+                    actuals[original_binding.attempt_run_id] = _current_original_runtime(
+                        self._s, binding=original_binding, manifest=manifest
+                    )
+                except (ConflictError, ValueError):
+                    issues.add("effect_command_unknown")
         else:
-            actual = deepcopy(_resolved_runtime)
+            actuals = deepcopy(_resolved_runtimes)
         if any(
-            manifest != actual or _canonical_digest(manifest) != binding.manifest_digest
+            manifest != actuals.get(binding.attempt_run_id)
+            or _canonical_digest(manifest) != binding.manifest_digest
             for binding, manifest in zip(bindings, command_manifests, strict=True)
         ):
             issues.add("effect_command_unknown")
@@ -120,7 +129,70 @@ class ActionAuditMixin:
         }
         scopes = {(b.controller_run_id, b.run_plan_id, b.run_plan_step_id) for b in bindings}
         rows: list[dict[str, Any]] = []
+        published = False
+
+        def publication_in_scope(row: ActionCall) -> bool:
+            if (row.plugin_slug, row.action_key) != ("engineering", "publish-candidate.v1"):
+                return False
+            try:
+                from stackos.actions.controlled_command import _controlled_host_settings
+                from stackos.actions.controlled_publication import _verify_admission
+                from stackos.crypto.seed import load_seed
+
+                settings = _controlled_host_settings(self._s)
+                if settings is None:
+                    return True
+                request = _verify_admission(row, load_seed(settings.seed_path))
+                return _owner_scope is None or request.canonical_item_id == _owner_scope[0]
+            except Exception:
+                # Untrusted membership cannot make an unresolved row disappear.
+                return True
+
         with self._s.no_autoflush:
+            registered_calls: set[int] = set()
+            registered_jobs: set[int] = set()
+            if _owner_scope is not None:
+                owners = self._s.exec(
+                    select(WorkItemOwnership)
+                    .where(
+                        WorkItemOwnership.project_id == project_id,
+                        WorkItemOwnership.canonical_item_id == _owner_scope[0],
+                    )
+                    .execution_options(populate_existing=True)
+                ).all()
+                if len(owners) != 1:
+                    issues.add("effect_owner_registration_unknown")
+                else:
+                    continuity = owners[0].continuity_json
+                    registrations = (
+                        continuity.get("durable_action_registrations", {})
+                        if type(continuity) is dict
+                        else None
+                    )
+                    if registrations:
+                        rows.append(
+                            {"kind": "owner_durable_registrations", "rows": deepcopy(registrations)}
+                        )
+                    if type(registrations) is not dict:
+                        issues.add("effect_owner_registration_unknown")
+                    else:
+                        for key, registration in registrations.items():
+                            if type(registration) is not dict:
+                                issues.add("effect_owner_registration_unknown")
+                                continue
+                            job_id = registration.get("job_id")
+                            call_id = registration.get("action_call_id")
+                            if (
+                                type(job_id) is not int
+                                or job_id < 1
+                                or key != str(job_id)
+                                or type(call_id) is not int
+                                or call_id < 1
+                            ):
+                                issues.add("effect_owner_registration_unknown")
+                                continue
+                            registered_jobs.add(job_id)
+                            registered_calls.add(call_id)
             # Include contradictory key bindings as well as every row in the
             # bound original controller/step. No status-filtered absence proof.
             calls = self._s.exec(
@@ -130,6 +202,7 @@ class ActionAuditMixin:
                         col(ActionCall.project_id) == project_id,
                         col(ActionCall.idempotency_key).in_(tuple(keys)),
                         col(ActionCall.run_id).in_(tuple(b.controller_run_id for b in bindings)),
+                        col(ActionCall.id).in_(tuple(registered_calls)),
                     )
                 )
                 .order_by(col(ActionCall.id))
@@ -139,12 +212,21 @@ class ActionAuditMixin:
                 row
                 for row in calls
                 if row.idempotency_key in keys
+                or row.id in registered_calls
                 or (row.run_id, row.run_plan_id, row.run_plan_step_id) in scopes
+                or (row.project_id == project_id and publication_in_scope(row))
             ]
             # With no launches there are no original controllers; any project
             # controlled/durable row is unresolved, rather than inferred absent.
             if not bindings:
-                selected = list(calls)
+                selected = [
+                    row
+                    for row in calls
+                    if (
+                        (row.plugin_slug, row.action_key) != ("engineering", "publish-candidate.v1")
+                        or publication_in_scope(row)
+                    )
+                ]
             for row in selected:
                 rows.append(
                     {
@@ -177,6 +259,20 @@ class ActionAuditMixin:
                         },
                     }
                 )
+                if row.plugin_slug == "engineering" and row.action_key == "publish-candidate.v1":
+                    try:
+                        from stackos.actions.controlled_command import _controlled_host_settings
+                        from stackos.actions.controlled_publication import _verify_terminal
+                        from stackos.crypto.seed import load_seed
+
+                        settings = _controlled_host_settings(self._s)
+                        if settings is None or row.project_id != project_id:
+                            raise ConflictError("publication effect storage unknown")
+                        publication_result = _verify_terminal(row, load_seed(settings.seed_path))
+                        published = published or publication_result["outcome"] == "published"
+                    except Exception:
+                        issues.add("publication_effect_unknown")
+                    continue
                 binding = keys.get(row.idempotency_key or "")
                 if binding is None and row.status == ActionCallStatus.DRY_RUN:
                     binding = next(
@@ -216,6 +312,10 @@ class ActionAuditMixin:
                     from stackos.actions.controlled_command import _ControlledCommandInput
 
                     request = _ControlledCommandInput.model_validate(row.request_json)
+                    actual = actuals.get(binding.attempt_run_id)
+                    if actual is None:
+                        issues.add("effect_call_unknown")
+                        continue
                     if (
                         request.canonical_item_id != binding.canonical_item_id
                         or request.owner_ref != binding.owner_ref
@@ -246,6 +346,8 @@ class ActionAuditMixin:
                 except (ConflictError, ValueError):
                     issues.add("effect_call_unknown")
             call_ids = {row.id for row in selected}
+            if not registered_calls.issubset(call_ids):
+                issues.add("effect_owner_registration_unknown")
             jobs = self._s.exec(
                 select(DurableActionJob)
                 .where(
@@ -255,19 +357,23 @@ class ActionAuditMixin:
                             tuple(value for value in call_ids if value is not None)
                         ),
                         col(DurableActionJob.idempotency_key).in_(tuple(keys)),
+                        col(DurableActionJob.id).in_(tuple(registered_jobs)),
                     )
                 )
                 .order_by(col(DurableActionJob.id))
                 .execution_options(populate_existing=True)
             ).all()
+            if not registered_jobs.issubset({job.id for job in jobs}):
+                issues.add("effect_owner_registration_unknown")
             for job in jobs:
                 if (
                     not bindings
+                    or job.id in registered_jobs
                     or job.action_call_id in call_ids
                     or job.idempotency_key in keys
                     or (job.run_id, job.run_plan_id, job.run_plan_step_id) in scopes
                 ):
-                    # Fixed foreground noop has no durable producer. Any such
+                    # Fixed foreground commands have no durable producer. Any such
                     # job needs its real delivery owner; do not settle it here.
                     issues.add("effect_durable_unknown")
                     rows.append({"kind": "job", "row": job.model_dump(mode="json")})
@@ -295,7 +401,7 @@ class ActionAuditMixin:
             rows=rows,
         )
         return _ControlledEffectSnapshot(
-            "unknown" if issues else "known_no_effect",
+            "unknown" if issues else "known_settled" if published else "known_no_effect",
             effect_identity,
             tuple(rows),
             _canonical_digest(descriptor),
@@ -507,6 +613,7 @@ class ActionAuditMixin:
         durable_schedule_json: dict[str, Any] | None = None,
         commit_guard: Callable[[], None] | None = None,
         replay_guard: Callable[[ActionCall], None] | None = None,
+        commit: bool = True,
     ) -> tuple[ActionCall, bool]:
         fingerprint = _background_request_fingerprint(
             action_ref=manifest.action_ref,
@@ -559,10 +666,11 @@ class ActionAuditMixin:
                     )
                 )
             self._s.flush()
-            if commit_guard is not None:
-                commit_guard()
-            self._s.commit()
-            self._s.refresh(row)
+            if commit:
+                if commit_guard is not None:
+                    commit_guard()
+                self._s.commit()
+                self._s.refresh(row)
             return row, False
         except IntegrityError:
             self._s.rollback()
@@ -798,6 +906,8 @@ class ActionAuditMixin:
         action_key: str,
         metadata_json: dict[str, Any] | None,
     ) -> dict[str, Any] | None:
+        if (plugin_slug, action_key) == ("engineering", "publish-candidate.v1"):
+            return {}
         if (plugin_slug, action_key) != ("engineering", "controlled-proof.v1"):
             return metadata_json
         from stackos.actions.controlled_command import _ControlledCommandInput
@@ -839,6 +949,19 @@ class ActionAuditMixin:
         return {"controlled_admission": public}
 
     def _public_action_result(self, row: ActionCall) -> dict[str, Any] | None:
+        if (row.plugin_slug, row.action_key) == ("engineering", "publish-candidate.v1"):
+            if row.status == ActionCallStatus.RUNNING and row.response_json is None:
+                return None
+            from stackos.actions.controlled_command import _controlled_host_settings
+            from stackos.actions.controlled_publication import _verify_terminal
+            from stackos.crypto.seed import load_seed
+
+            settings = _controlled_host_settings(self._s)
+            if settings is None:
+                raise ConflictError("publication audit storage unavailable")
+            if row.error == "daemon-restart-orphan":
+                return {"outcome_unknown": True, "retry_safe": False}
+            return _verify_terminal(row, load_seed(settings.seed_path))
         if (row.plugin_slug, row.action_key) != ("engineering", "controlled-proof.v1"):
             return row.response_json
         if row.status == ActionCallStatus.RUNNING and row.response_json is None:

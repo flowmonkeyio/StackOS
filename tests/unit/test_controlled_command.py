@@ -150,6 +150,16 @@ def test_fixed_descriptor_has_no_caller_command_surface():
     }
     assert set(_ControlledCommandInput.model_fields) == set(payload())
     assert ControlledCommandConnector().validate(request()) == []
+    assert "report" not in command.descriptor()
+
+
+@pytest.mark.parametrize("field", ["argv", "environment", "report_directory", "path"])
+def test_report_input_has_no_caller_execution_surface(field):
+    value = payload() | {"command_key": "synthetic-status-report-v1", field: "arbitrary"}
+    with pytest.raises(ValidationError):
+        _ControlledCommandInput.model_validate(value)
+    with pytest.raises(ConflictError):
+        _resolve_controlled_command("other")
 
 
 @pytest.mark.parametrize("case", ["extra-argv", "bool-epoch", "null-intent", "wrong-command"])

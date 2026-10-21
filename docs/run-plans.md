@@ -1,5 +1,27 @@
 # Run Plans
 
+`engineering.publish-candidate.v1` promotes one independently provisioned,
+owned synthetic report repository under the daemon state directory to the fixed
+local `refs/heads/accepted-report`. It requires the current controller, exact
+item/owner/epoch/revision/scope and full action grant, a current Engineering
+review resource, and an authenticated approved decision binding every candidate,
+review, manifest and expected destination fact. The report commit contains only
+regular `report.json` and `manifest.json` blobs; no report producer or native
+worker is a prerequisite. There is no remote push or general repository target.
+
+The existing ActionCall and unique action reservation commit before Git. A fresh
+SQLite `BEGIN IMMEDIATE` writer repeats authority checks, holds canonical stop
+and reassignment behind the single Git expected-old CAS, reaps its directly owned
+child, reads the exact destination, and commits the original terminal audit.
+Failure after CAS but before final audit leaves that original intent unknown
+and blocks retry. Current ref equality cannot settle it. Lost acknowledgment
+after terminal commit returns the authenticated original receipt without Git.
+Publication audits enter the owner's complete effect readset independently of
+native launches and controllers. Success is `known_settled`, never
+`known_no_effect`; pending, unknown or contradictory records hold certification
+and reassignment. A new reservation invalidates the previous set fingerprint.
+Promotion success always retains `work_accepted=false`; Main owns acceptance.
+
 The opt-in `engineering.controlled-proof.v1` action requires an actual current
 controller token, the full `action.execute` grant and declared step action,
 canonical item/owner/epoch/revision/scope, known unstopped continuity, and the
@@ -333,9 +355,10 @@ tickets, dependencies, and verification.
 ## Private launch accounting source seam
 
 `RunRepository._reserve_owner_launch` is a private source seam for the
-cooperative host integration. Its only consumer currently is synthetic
-repository proof; there is no public operation or host launcher. It requires a
-matched running controller and the caller's existing authority commit guard.
+cooperative host integration. The admitted controlled-command host adapter and
+synthetic repository proof consume it; there is no standalone public reserve
+operation. It requires a matched running controller and the caller's existing
+authority commit guard.
 The host must independently verify the admitted manifest and actual current
 step/grant authority; an owner string, digest or callback's presence cannot
 establish those facts by itself.

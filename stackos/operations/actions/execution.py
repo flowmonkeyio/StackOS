@@ -13,7 +13,7 @@ from stackos.actions.repository.background import BACKGROUND_ACTION_TASKS
 from stackos.db.models import ActionCallStatus, ApprovalRequest, ApprovalRequestStatus
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import WriteEnvelope
-from stackos.mcp.permissions import active_run_plan_step
+from stackos.mcp.permissions import active_run_plan_step, check_call_grant
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.repositories.base import ConflictError, ValidationError
 
@@ -112,12 +112,28 @@ async def action_execute(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> WriteEnvelope[ActionExecutionOut]:
-    plan, step = active_run_plan_step(ctx, "action.execute")
     action_ref = inp.action_ref
     if action_ref is None and inp.plugin_slug and inp.action_key:
         action_ref = f"{inp.plugin_slug}.{inp.action_key}"
+    if action_ref == "engineering.publish-candidate.v1":
+        from .publication import _require_publication_session
+
+        _require_publication_session(ctx.session)
+    plan, step = active_run_plan_step(ctx, "action.execute")
     controlled_authority = None
-    if action_ref == "engineering.controlled-proof.v1":
+    publication_authority = None
+    idempotency_key: str | None
+    if action_ref == "engineering.publish-candidate.v1":
+        from stackos.actions.controlled_publication import _intent_key
+
+        from .publication import _issue_publication_authority, _resolve_publication_readback
+
+        original = _resolve_publication_readback(inp, ctx)
+        if original is not None:
+            return WriteEnvelope(data=original, run_id=ctx.run_id, project_id=inp.project_id)
+        publication_authority = _issue_publication_authority(inp, ctx)
+        idempotency_key = _intent_key(inp.project_id, publication_authority.request)
+    elif action_ref == "engineering.controlled-proof.v1":
         from .controlled import (
             _controlled_intent_key,
             _issue_controlled_authority,
@@ -142,7 +158,7 @@ async def action_execute(
             grant_snapshot=plan.grant_snapshot_json,
             action_ref=action_ref,
         )
-    if controlled_authority is None:
+    if controlled_authority is None and publication_authority is None:
         idempotency_key = inp.idempotency_key or _derive_workflow_idempotency_key(
             project_id=inp.project_id,
             run_id=ctx.run_id,
@@ -158,6 +174,25 @@ async def action_execute(
         )
     settings = ctx.extras.get("settings")
     asset_dir = getattr(settings, "generated_assets_dir", None)
+
+    def durable_commit_guard() -> None:
+        if ctx.run_token is None:
+            return
+        if ctx.run is not None:
+            ctx.session.refresh(ctx.run)
+        current_plan, current_step = active_run_plan_step(ctx, "action.execute")
+        ctx.session.refresh(current_plan)
+        ctx.session.refresh(current_step)
+        check_call_grant("action.execute", ctx, inp)
+        current_plan, _current_step = active_run_plan_step(ctx, "action.execute")
+        if not inp.dry_run:
+            _ensure_action_contract_approval(
+                ctx,
+                plan_id=current_plan.id,
+                grant_snapshot=current_plan.grant_snapshot_json,
+                action_ref=action_ref,
+            )
+
     env = await ActionRepository(ctx.session, asset_dir=asset_dir).execute(
         project_id=inp.project_id,
         action_ref=inp.action_ref,
@@ -175,18 +210,21 @@ async def action_execute(
         run_plan_id=plan.id,
         run_plan_step_id=step.id,
         idempotency_key=idempotency_key,
+        _explicit_stable_intent=bool(inp.idempotency_key and inp.idempotency_key.strip()),
         dry_run=inp.dry_run,
         durable_due_at=inp.due_at,
         durable_expires_at=inp.expires_at,
+        _durable_commit_guard=durable_commit_guard,
         durable_account_interval_seconds=inp.account_interval_seconds,
         durable_destination_interval_seconds=inp.destination_interval_seconds,
         metadata_json=None
-        if controlled_authority is not None
+        if controlled_authority is not None or publication_authority is not None
         else {
             **(inp.metadata_json or {}),
             "dedupe_source": "caller" if inp.idempotency_key else "workflow-step",
         },
         _controlled_authority=controlled_authority,
+        _publication_authority=publication_authority,
     )
     return WriteEnvelope[ActionExecutionOut](
         data=env.data,
@@ -213,10 +251,12 @@ def _ensure_action_contract_approval(
     if approval_ref is None:
         return
     approval = ctx.session.exec(
-        select(ApprovalRequest).where(
+        select(ApprovalRequest)
+        .where(
             col(ApprovalRequest.run_plan_id) == plan_id,
             col(ApprovalRequest.approval_key) == approval_ref,
         )
+        .execution_options(populate_existing=True)
     ).first()
     if approval is None or approval.status != ApprovalRequestStatus.APPROVED:
         raise ConflictError(

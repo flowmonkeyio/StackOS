@@ -11,6 +11,7 @@ import hashlib
 import json
 import math
 import re
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
@@ -162,6 +163,197 @@ class DurableActionMixin:
             normalized.append(_normalized_item(item, ordinal=index))
         return normalized
 
+    def _validate_supervised_durable_job(self, job: DurableActionJob) -> None:
+        """Fail closed at claim when a job was registered to a supervised item."""
+        metadata = job.metadata_json if type(job.metadata_json) is dict else {}
+        stored = metadata.get("supervised_owner")
+        if stored is None:
+            if (
+                job.run_id is not None
+                and job.run_plan_id is not None
+                and job.run_plan_step_id is not None
+            ):
+                resolver = getattr(self, "_supervised_durable_binding", None)
+                if callable(resolver):
+                    candidate = resolver(
+                        project_id=job.project_id,
+                        run_id=job.run_id,
+                        run_plan_id=job.run_plan_id,
+                        run_plan_step_id=job.run_plan_step_id,
+                        action_ref=job.action_ref,
+                        idempotency_key=job.idempotency_key,
+                    )
+                    if candidate is not None:
+                        raise ConflictError("historical supervised job has no owner registration")
+            return
+        if type(stored) is not dict or stored.keys() != {"binding", "registration"}:
+            raise ConflictError("supervised durable job registration shape is invalid")
+        binding = stored["binding"]
+        registration = stored["registration"]
+        if type(binding) is not dict or type(registration) is not dict:
+            raise ConflictError("supervised durable job registration is malformed")
+        binding_fields = {
+            "schema_version",
+            "project_id",
+            "canonical_item_id",
+            "ownership_id",
+            "owner_ref",
+            "epoch",
+            "revision",
+            "scope_digest",
+            "controller_run_id",
+            "run_plan_id",
+            "run_plan_step_id",
+            "intent_digest",
+            "grant_snapshot_digest",
+            "action_ref",
+        }
+        if binding.keys() != binding_fields or any(
+            type(binding.get(name)) is not int or binding[name] < 1
+            for name in (
+                "project_id",
+                "ownership_id",
+                "epoch",
+                "revision",
+                "controller_run_id",
+                "run_plan_id",
+                "run_plan_step_id",
+            )
+        ):
+            raise ConflictError("supervised durable owner binding shape is invalid")
+        if (
+            binding.get("schema_version") != "stackos.durable-owner-binding.v2"
+            or type(binding.get("canonical_item_id")) is not str
+            or not binding["canonical_item_id"].startswith(("task:", "ticket:"))
+            or type(binding.get("owner_ref")) is not str
+            or not binding["owner_ref"].strip()
+            or any(
+                type(binding.get(name)) is not str or not binding[name]
+                for name in ("scope_digest", "intent_digest", "action_ref")
+            )
+            or type(binding.get("grant_snapshot_digest")) is not str
+            or re.fullmatch(r"[0-9a-f]{64}", binding["grant_snapshot_digest"]) is None
+        ):
+            raise ConflictError("supervised durable owner binding values are invalid")
+        unsigned_record = dict(registration)
+        registration_fields = {
+            "schema_version",
+            "binding",
+            "action_call_id",
+            "job_id",
+            "registered_revision",
+            "registration_digest",
+        }
+        if registration.keys() != registration_fields or any(
+            type(registration.get(name)) is not int or registration[name] < 1
+            for name in ("action_call_id", "job_id", "registered_revision")
+        ):
+            raise ConflictError("supervised durable registration shape is invalid")
+        supplied_digest = unsigned_record.pop("registration_digest", None)
+        encoded_unsigned = json.dumps(unsigned_record, sort_keys=True, separators=(",", ":"))
+        if supplied_digest != hashlib.sha256(encoded_unsigned.encode("utf-8")).hexdigest():
+            raise ConflictError("supervised durable registration digest is invalid")
+        if (
+            binding.get("schema_version") != "stackos.durable-owner-binding.v2"
+            or registration.get("schema_version") != "stackos.durable-owner-registration.v2"
+            or registration.get("binding") != binding
+            or registration.get("action_call_id") != job.action_call_id
+            or registration.get("job_id") != job.id
+            or binding.get("project_id") != job.project_id
+            or binding.get("controller_run_id") != job.run_id
+            or binding.get("run_plan_id") != job.run_plan_id
+            or binding.get("run_plan_step_id") != job.run_plan_step_id
+            or binding.get("action_ref") != job.action_ref
+            or binding.get("intent_digest")
+            != hashlib.sha256((job.idempotency_key or "").encode("utf-8")).hexdigest()
+        ):
+            raise ConflictError("supervised durable job no longer matches its original binding")
+        from stackos.db.models import (
+            RunPlan,
+            RunPlanStatus,
+            RunPlanStep,
+            RunPlanStepStatus,
+            TrackerTask,
+            TrackerTicket,
+            WorkItemOwnership,
+        )
+        from stackos.repositories.runs import RunRepository, WorkItemOwnershipOut
+
+        owner = self._s.exec(
+            select(WorkItemOwnership)
+            .where(
+                WorkItemOwnership.project_id == job.project_id,
+                WorkItemOwnership.canonical_item_id == binding.get("canonical_item_id"),
+            )
+            .execution_options(populate_existing=True)
+        ).first()
+        if (
+            owner is None
+            or owner.id != binding.get("ownership_id")
+            or owner.owner_ref != binding.get("owner_ref")
+            or owner.epoch != binding.get("epoch")
+            or owner.scope_digest != binding.get("scope_digest")
+            or owner.revision < registration.get("registered_revision", 0)
+        ):
+            raise ConflictError("supervised durable job owner fence is no longer current")
+        continuity = owner.continuity_json if type(owner.continuity_json) is dict else {}
+        ledger = continuity.get("durable_action_registrations")
+        expected_registration = ledger.get(str(job.id)) if type(ledger) is dict else None
+        if expected_registration != registration:
+            raise ConflictError("supervised durable job is absent from owner registration history")
+        RunRepository(self._s).owner_authority(
+            project_id=job.project_id,
+            canonical_item_id=binding["canonical_item_id"],
+            ownership=WorkItemOwnershipOut.model_validate(owner),
+        )
+        plan = self._s.get(RunPlan, job.run_plan_id, populate_existing=True)
+        step = self._s.get(RunPlanStep, job.run_plan_step_id, populate_existing=True)
+        if (
+            plan is None
+            or plan.project_id != job.project_id
+            or plan.run_id != job.run_id
+            or plan.status != RunPlanStatus.STARTED
+            or step is None
+            or step.run_plan_id != plan.id
+            or step.status != RunPlanStepStatus.RUNNING
+        ):
+            raise ConflictError("supervised durable job controller is no longer active")
+        current_grant_digest = hashlib.sha256(
+            json.dumps(
+                plan.grant_snapshot_json,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+        ).hexdigest()
+        if binding["grant_snapshot_digest"] != current_grant_digest:
+            raise ConflictError("supervised durable job grant snapshot is no longer current")
+        kind, raw_item_id = binding["canonical_item_id"].split(":", maxsplit=1)
+        if kind not in {"task", "ticket"} or not raw_item_id.isdecimal():
+            raise ConflictError("supervised durable canonical item identity is invalid")
+        if kind == "ticket":
+            native_ticket = self._s.get(TrackerTicket, int(raw_item_id), populate_existing=True)
+            if native_ticket is None or native_ticket.project_id != job.project_id:
+                raise ConflictError("supervised durable work item is missing")
+            linked = (
+                native_ticket.run_plan_id == plan.id and native_ticket.run_plan_step_id == step.id
+            )
+        else:
+            native_task = self._s.get(TrackerTask, int(raw_item_id), populate_existing=True)
+            if native_task is None or native_task.project_id != job.project_id:
+                raise ConflictError("supervised durable work item is missing")
+            source = native_task.source_json if type(native_task.source_json) is dict else {}
+            linked = (
+                source.get("run_plan_id") == plan.id
+                and (
+                    source.get("run_plan_step_id") == step.id
+                    or source.get("step_id") == step.step_id
+                )
+                and native_task.key != f"workflow-{plan.id}"
+            )
+        if not linked:
+            raise ConflictError("supervised durable work item controller binding changed")
+
     def validate_durable_action_schedule(
         self,
         *,
@@ -194,9 +386,17 @@ class DurableActionMixin:
         destination_interval_multipliers: list[dict[str, Any]] | None = None,
         idempotency_key: str | None = None,
         metadata_json: dict[str, Any] | None = None,
+        supervised_owner_binding: dict[str, Any] | None = None,
+        commit_guard: Callable[[], None] | None = None,
     ) -> DurableActionJobOut:
         """Persist a sealed target snapshot before the first provider effect."""
 
+        if metadata_json and "supervised_owner" in metadata_json:
+            raise ValidationError("supervised_owner is reserved action metadata")
+        if supervised_owner_binding is not None and commit_guard is None:
+            raise ConflictError(
+                "supervised durable registration requires current operation authority"
+            )
         snapshot_items = self.validate_durable_action_items(items)
         if not action_ref.strip():
             raise ValidationError("durable action job requires action_ref")
@@ -266,7 +466,7 @@ class DurableActionMixin:
             idempotency_key=idempotency_key,
             input_digest=digest,
             input_snapshot_json=snapshot,
-            metadata_json=dict(metadata_json) if metadata_json else None,
+            metadata_json=({**metadata_json} if metadata_json else None),
             pacing_json=pacing,
             state=(
                 DurableActionJobStatus.SCHEDULED if due > now else DurableActionJobStatus.RUNNING
@@ -300,6 +500,26 @@ class DurableActionMixin:
                     updated_at=now,
                 )
             )
+        if supervised_owner_binding is not None:
+            from stackos.repositories.runs import RunRepository
+
+            try:
+                registration = RunRepository(self._s).register_durable_action_effect(
+                    binding=supervised_owner_binding,
+                    action_call_id=action_call_id,
+                    job_id=job_id,
+                )
+            except BaseException:
+                self._s.rollback()
+                raise
+            job.metadata_json = {
+                **(job.metadata_json or {}),
+                "supervised_owner": {
+                    "binding": dict(supervised_owner_binding),
+                    "registration": registration,
+                },
+            }
+            self._s.add(job)
         call.credential_id = _required_id(credential.id)
         call.credential_ref = credential_ref
         call.metadata_json = {
@@ -309,6 +529,9 @@ class DurableActionMixin:
         }
         self._s.add(call)
         try:
+            self._s.flush()
+            if commit_guard is not None:
+                commit_guard()
             self._s.commit()
         except IntegrityError as exc:
             self._s.rollback()
@@ -326,6 +549,9 @@ class DurableActionMixin:
                 "durable action idempotency key replayed with different input",
                 data={"idempotency_key": idempotency_key},
             ) from exc
+        except BaseException:
+            self._s.rollback()
+            raise
         self._s.refresh(job)
         return self._job_out(job)
 
@@ -508,12 +734,88 @@ class DurableActionMixin:
             raise ValidationError("durable action item lease_seconds must be positive")
         now = _as_naive_utc(now or utcnow())
         job = self._job(project_id=project_id, job_id=job_id)
+        metadata = job.metadata_json if type(job.metadata_json) is dict else {}
+        supervised = "supervised_owner" in metadata
+        if not supervised:
+            return self._claim_durable_action_items_locked(
+                project_id=project_id,
+                job_id=job_id,
+                job=job,
+                now=now,
+                limit=limit,
+                lease_seconds=lease_seconds,
+                account_interval_seconds=account_interval_seconds,
+                destination_interval_seconds=destination_interval_seconds,
+                overlap_account_leases=overlap_account_leases,
+                writer_owned=False,
+            )
+
+        self._begin_supervised_claim_writer()
+        try:
+            refreshed = self._s.get(DurableActionJob, job_id, populate_existing=True)
+            if refreshed is None or refreshed.project_id != project_id:
+                raise NotFoundError(
+                    f"durable action job {job_id} not found for project {project_id}"
+                )
+            refreshed_metadata = (
+                refreshed.metadata_json if type(refreshed.metadata_json) is dict else {}
+            )
+            if "supervised_owner" not in refreshed_metadata:
+                raise ConflictError("supervised durable claim binding changed before writer lock")
+            return self._claim_durable_action_items_locked(
+                project_id=project_id,
+                job_id=job_id,
+                job=refreshed,
+                now=now,
+                limit=limit,
+                lease_seconds=lease_seconds,
+                account_interval_seconds=account_interval_seconds,
+                destination_interval_seconds=destination_interval_seconds,
+                overlap_account_leases=overlap_account_leases,
+                writer_owned=True,
+            )
+        except BaseException:
+            self._s.rollback()
+            raise
+
+    def _begin_supervised_claim_writer(self) -> None:
+        if self._s.new or self._s.dirty or self._s.deleted or self._s._flushing:
+            raise ConflictError("supervised durable claim cannot consume pending caller work")
+        connection = self._s.connection()
+        if (
+            connection.dialect.name != "sqlite"
+            or getattr(connection.connection.driver_connection, "in_transaction", None) is not False
+        ):
+            raise ConflictError("supervised durable claim requires an unowned SQLite transaction")
+        connection.exec_driver_sql("BEGIN IMMEDIATE")
+
+    def _claim_durable_action_items_locked(
+        self,
+        *,
+        project_id: int,
+        job_id: int,
+        job: DurableActionJob,
+        now: datetime,
+        limit: int,
+        lease_seconds: int,
+        account_interval_seconds: float,
+        destination_interval_seconds: float,
+        overlap_account_leases: bool,
+        writer_owned: bool,
+    ) -> list[DurableActionItemOut]:
+        """Validate then lease while a supervised SQLite writer lock is held."""
+
+        self._validate_supervised_durable_job(job)
         if self._expire_durable_action_job(job, now=now):
             self._s.commit()
+            if writer_owned:
+                return []
         if job.state in {
             DurableActionJobStatus.CANCELLED,
             DurableActionJobStatus.UNKNOWN_HOLD,
         }:
+            if writer_owned:
+                self._s.rollback()
             return []
         if (
             job.state
@@ -524,6 +826,8 @@ class DurableActionMixin:
             }
             or job.due_at > now
         ):
+            if writer_owned:
+                self._s.rollback()
             return []
         items = list(
             self._s.exec(

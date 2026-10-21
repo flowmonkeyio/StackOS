@@ -8,6 +8,8 @@ agent and tool activity.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import stat
@@ -201,6 +203,7 @@ class WorkItemOwnershipOut(BaseModel):
         if isinstance(value, dict):
             value = deepcopy(value)
             value.pop("native_quiescence_certificate", None)
+            value.pop("durable_action_registrations", None)
         return value
 
 
@@ -864,6 +867,138 @@ class RunRepository:
         return WorkItemOwnershipOut.model_validate(
             self._owner_row(project_id=project_id, canonical_item_id=canonical_item_id)
         )
+
+    def register_durable_action_effect(
+        self,
+        *,
+        binding: dict[str, Any],
+        action_call_id: int,
+        job_id: int,
+    ) -> dict[str, Any]:
+        """Bind a durable job to the current canonical owner in its write transaction."""
+        from stackos.db.models import RunPlan, RunPlanStatus, RunPlanStep, RunPlanStepStatus
+
+        required = {
+            "schema_version",
+            "project_id",
+            "canonical_item_id",
+            "ownership_id",
+            "owner_ref",
+            "epoch",
+            "revision",
+            "scope_digest",
+            "controller_run_id",
+            "run_plan_id",
+            "run_plan_step_id",
+            "intent_digest",
+            "grant_snapshot_digest",
+            "action_ref",
+        }
+        if type(binding) is not dict or binding.keys() != required:
+            raise ConflictError("durable owner binding shape is invalid")
+        if (
+            binding["schema_version"] != "stackos.durable-owner-binding.v2"
+            or any(
+                type(binding[name]) is not int or binding[name] < 1
+                for name in (
+                    "project_id",
+                    "ownership_id",
+                    "epoch",
+                    "revision",
+                    "controller_run_id",
+                    "run_plan_id",
+                    "run_plan_step_id",
+                )
+            )
+            or type(binding["owner_ref"]) is not str
+            or not binding["owner_ref"].strip()
+            or type(binding["canonical_item_id"]) is not str
+            or type(binding["scope_digest"]) is not str
+            or type(binding["intent_digest"]) is not str
+            or type(binding["grant_snapshot_digest"]) is not str
+            or re.fullmatch(r"[0-9a-f]{64}", binding["grant_snapshot_digest"]) is None
+            or type(binding["action_ref"]) is not str
+        ):
+            raise ConflictError("durable owner binding primitives are invalid")
+        row = self._owner_row(
+            project_id=binding["project_id"],
+            canonical_item_id=binding["canonical_item_id"],
+        )
+        if (
+            row.id != binding["ownership_id"]
+            or row.owner_ref != binding["owner_ref"]
+            or row.epoch != binding["epoch"]
+            or row.revision != binding["revision"]
+            or row.scope_digest != binding["scope_digest"]
+        ):
+            raise ConflictError("durable action lost the original owner fence")
+        self.owner_authority(
+            project_id=row.project_id,
+            canonical_item_id=row.canonical_item_id,
+            ownership=WorkItemOwnershipOut.model_validate(row),
+        )
+        from stackos.repositories.tracker import TrackerRepository
+
+        TrackerRepository(self._s).require_owner_execution_binding(
+            project_id=binding["project_id"],
+            canonical_item_id=binding["canonical_item_id"],
+            run_plan_id=binding["run_plan_id"],
+            run_plan_step_id=binding["run_plan_step_id"],
+        )
+        plan = self._s.get(RunPlan, binding["run_plan_id"], populate_existing=True)
+        step = self._s.get(RunPlanStep, binding["run_plan_step_id"], populate_existing=True)
+        if (
+            plan is None
+            or plan.project_id != binding["project_id"]
+            or plan.run_id != binding["controller_run_id"]
+            or plan.status != RunPlanStatus.STARTED
+            or step is None
+            or step.run_plan_id != plan.id
+            or step.status != RunPlanStepStatus.RUNNING
+        ):
+            raise ConflictError("durable action controller changed before registration")
+        grant_snapshot_digest = hashlib.sha256(
+            json.dumps(
+                plan.grant_snapshot_json,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+        ).hexdigest()
+        if binding["grant_snapshot_digest"] != grant_snapshot_digest:
+            raise ConflictError("durable action grant snapshot changed before registration")
+        continuity = deepcopy(row.continuity_json)
+        registrations = continuity.get("durable_action_registrations", {})
+        if type(registrations) is not dict or any(type(key) is not str for key in registrations):
+            raise ConflictError("durable owner registration history is invalid")
+        registration = {
+            "schema_version": "stackos.durable-owner-registration.v2",
+            "binding": deepcopy(binding),
+            "action_call_id": action_call_id,
+            "job_id": job_id,
+            "registered_revision": row.revision + 1,
+        }
+        encoded = json.dumps(registration, sort_keys=True, separators=(",", ":"))
+        registration["registration_digest"] = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+        key = str(job_id)
+        prior = registrations.get(key)
+        if prior is not None:
+            if prior != registration:
+                raise ConflictError("durable owner registration contradicts its original job")
+            return registration
+        continuity["durable_action_registrations"] = {**registrations, key: registration}
+        self._owner_cas(
+            row,
+            owner_ref=row.owner_ref,
+            expected_epoch=row.epoch,
+            expected_revision=row.revision,
+            changes={"continuity_json": redact_secrets(continuity)},
+            event_type="WORK_ITEM_DURABLE_ACTION_REGISTERED",
+            admission_scope_digest=row.scope_digest,
+            event_metadata={"action_call_id": action_call_id, "job_id": job_id},
+            _commit=False,
+        )
+        return registration
 
     def owner_status_projection(
         self,
@@ -1686,7 +1821,9 @@ class RunRepository:
             snapshot.epoch,
         ):
             raise ConflictError("certificate verification belongs to another owner")
-        runtime = self._native_runtime_snapshot()
+        runtime = self._native_runtime_snapshot(
+            project_id=project_id, canonical_item_id=canonical_item_id
+        )
         self._terminal_writer_begin()
         try:
             row = self._owner_row(project_id=project_id, canonical_item_id=canonical_item_id)
@@ -1777,21 +1914,54 @@ class RunRepository:
             expected_revision,
         ):
             raise ConflictError("stale ownership fence")
-        return self._build_native_snapshot(row, runtime=self._native_runtime_snapshot())
+        return self._build_native_snapshot(
+            row,
+            runtime=self._native_runtime_snapshot(
+                project_id=project_id, canonical_item_id=canonical_item_id
+            ),
+        )
 
-    @staticmethod
-    def _native_runtime_snapshot() -> dict[str, Any]:
-        from stackos.actions.controlled_command import _resolve_controlled_command
-        from stackos.controlled_process_host import _native_manifest
+    def _native_runtime_snapshot(
+        self, *, project_id: int, canonical_item_id: str
+    ) -> dict[int, dict[str, Any]]:
+        """Read current per-attempt source bytes before entering the writer interval."""
+        from stackos.actions.controlled_command import _current_original_runtime
 
-        return _native_manifest(_resolve_controlled_command())
+        runtimes: dict[int, dict[str, Any]] = {}
+        with self._s.no_autoflush:
+            attempts = self._s.exec(
+                select(Run)
+                .where(Run.project_id == project_id, Run.kind == RunKind.SKILL_RUN)
+                .execution_options(populate_existing=True)
+            ).all()
+            for attempt in attempts:
+                metadata = attempt.metadata_json or {}
+                owner_binding = metadata.get("ownership_binding")
+                if (
+                    type(owner_binding) is not dict
+                    or owner_binding.get("canonical_item_id") != canonical_item_id
+                ):
+                    continue
+                slot = _parse_terminal_slot(metadata.get("native_terminal_slot"))
+                binding = _slot_binding(slot["binding"])
+                recovery = metadata.get("native_recovery_private")
+                if (
+                    attempt.id is None
+                    or type(recovery) is not dict
+                    or type(recovery.get("manifest")) is not dict
+                ):
+                    raise ConflictError("original native recovery snapshot missing")
+                runtimes[attempt.id] = _current_original_runtime(
+                    self._s, binding=binding, manifest=recovery["manifest"]
+                )
+        return runtimes
 
     def _build_native_snapshot(
         self,
         row: WorkItemOwnership,
         *,
         revision_override: int | None = None,
-        runtime: dict[str, Any],
+        runtime: dict[int, dict[str, Any]],
     ) -> _NativeSetSnapshot:
         from stackos.actions.controlled_command import _canonical_digest
         from stackos.actions.repository import ActionRepository
@@ -1889,7 +2059,8 @@ class RunRepository:
             bindings=tuple(item.binding for item in attempts),
             effect_identity=row.continuity_json["effect_identity"],
             command_manifests=tuple(item.manifest for item in attempts),
-            _resolved_runtime=runtime,
+            _resolved_runtimes=runtime,
+            _owner_scope=(row.canonical_item_id, row.owner_ref),
         )
         revision = row.revision if revision_override is None else revision_override
         basis = self._native_owner_basis(row, revision)
@@ -1912,7 +2083,9 @@ class RunRepository:
         from stackos.actions.controlled_command import _canonical_digest
 
         # Called by the existing consume owner immediately before its CAS.
-        runtime = self._native_runtime_snapshot()
+        runtime = self._native_runtime_snapshot(
+            project_id=row.project_id, canonical_item_id=row.canonical_item_id
+        )
         self._terminal_writer_begin()
         try:
             self._s.refresh(row)
@@ -1929,10 +2102,10 @@ class RunRepository:
             snapshot = self._build_native_snapshot(
                 row, revision_override=row.revision - 1, runtime=runtime
             )
-            if (
-                snapshot.digest != descriptor.get("set_digest")
-                or snapshot.effect.status != "known_no_effect"
-            ):
+            if snapshot.digest != descriptor.get("set_digest") or snapshot.effect.status not in {
+                "known_no_effect",
+                "known_settled",
+            }:
                 raise ConflictError("certificate registered set or effects changed")
         except BaseException:
             self._s.rollback()

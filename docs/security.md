@@ -1,5 +1,25 @@
 # StackOS Security Notes
 
+## Fixed local publication
+
+The Engineering publication action accepts no caller path, argv, environment,
+remote or credential. It requires an explicitly provisioned synthetic target,
+rejects symlinks, Git directory/alternate-store indirection and nonstandard local
+configuration, and pins the Git executable with a replacement local environment
+and disabled hooks/config/replace objects. The backend authenticates the exact
+review resource through the current actual approval decision; a passed label
+alone supplies no authority. Original terminal ActionCall facts are sealed with
+the daemon-held seed in a publication-specific domain. Public audit projection
+omits approval, storage, seed and private provenance.
+
+SQLite serializes cooperative canonical stop/reassignment through Git CAS and
+final audit. Git's expected-old update owns the destination. Raw shell/Git and
+hostile same-UID filesystem or database access can bypass this selected adapter;
+this is no hostile-UID sandbox or general distributed transaction. An uncertain
+CAS/audit interval preserves the committed intent and forbids automatic retry or
+rollback. Original terminal readback needs the original authenticated controller
+and read grant, and cannot issue new forward authority after replacement.
+
 ## Controlled Command Admission Boundary
 
 The private controlled-action authority is cooperative in-process data, never

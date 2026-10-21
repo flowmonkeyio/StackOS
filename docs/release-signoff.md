@@ -24,6 +24,19 @@ make signoff
 - UI unit tests
 - the UI production build into `stackos/ui_dist/`
 
+Supervision source signoff includes the portable controlled-command admission/public-
+action, publication, report/certificate and registered-effect suites, plus the portable
+host-authority/CAS and terminal-fact/certificate suites
+(`tests/integration/test_controlled_process_host.py` and
+`tests/integration/test_controlled_process_terminal.py`). Their fixture assertions do
+not establish native supervision. Capture the read-only native observation, actual
+Darwin role/public-action suites, and explicitly opted-in loaded-daemon scenarios
+separately against the reviewed candidate, with original-child custody and private
+synthetic state. Preserve each pytest/UI JUnit stage under a unique path, record exact
+source manifests before and after generated UI output (including deleted tracked
+assets), and review/reseal generated differences. A source signoff pass does not
+establish installed-runtime activation, live-provider behavior or human acceptance.
+
 AIGNC generation also exercises shared background acceptance, polling,
 idempotent submission replay, timeout failure, and terminal file/artifact
 results. `test_run_plan_pending_actions.py` covers pending-action completion

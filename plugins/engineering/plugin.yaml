@@ -5,9 +5,38 @@ description: First-party StackOS domain package for SDLC workflow templates, eng
 display_order: 10
 source: builtin
 actions:
+  - key: publish-candidate.v1
+    name: Publish owned synthetic report
+    description: Promote one exactly approved report commit to the fixed local owned synthetic Git ref through a writer-fenced compare-and-swap and original ActionCall audit.
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [canonical_item_id, owner_ref, expected_epoch, expected_revision, scope_digest, intent_ref, target_ref, candidate_commit_oid, candidate_report_sha256, expected_destination_oid, review_record_id, review_content_digest]
+      properties:
+        canonical_item_id: {type: string, pattern: '^(task|ticket):[1-9][0-9]*$', maxLength: 128}
+        owner_ref: {type: string, minLength: 1, maxLength: 160}
+        expected_epoch: {type: integer, minimum: 1, maximum: 9223372036854775807}
+        expected_revision: {type: integer, minimum: 1, maximum: 9223372036854775807}
+        scope_digest: {type: string, pattern: '^[0-9a-f]{64}$'}
+        intent_ref: {type: string, minLength: 1, maxLength: 240, pattern: '^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$'}
+        target_ref: {const: owned-synthetic-report-v1}
+        candidate_commit_oid: {type: string, pattern: '^[0-9a-f]{40}$'}
+        candidate_report_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        expected_destination_oid: {type: string, pattern: '^[0-9a-f]{40}$'}
+        review_record_id: {type: integer, minimum: 1, maximum: 9223372036854775807}
+        review_content_digest: {type: string, pattern: '^[0-9a-f]{64}$'}
+    config:
+      schema_version: stackos.action.v1
+      connector: controlled-publication
+      operation: publish-candidate.v1
+      execution_mode: foreground
+      direct_run: workflow-only
+      requires_credential: false
+      allows_credential: false
   - key: controlled-proof.v1
     name: Controlled proof admission
-    description: Execute one approved fixed noop through a daemon-owned default-disabled controlled host, with current workflow authority and original-bound audit.
+    description: Execute one approved fixed no-op or synthetic status report through a daemon-owned default-disabled controlled host, with current workflow authority and original-bound audit.
     risk_level: write
     input_schema:
       type: object
@@ -20,7 +49,7 @@ actions:
         expected_revision: {type: integer, minimum: 1, maximum: 9223372036854775807}
         scope_digest: {type: string, pattern: '^[0-9a-f]{64}$'}
         intent_ref: {type: string, minLength: 1, maxLength: 240, pattern: '^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$'}
-        command_key: {const: noop-v1}
+        command_key: {enum: [noop-v1, synthetic-status-report-v1]}
         command_digest: {type: string, pattern: '^[0-9a-f]{64}$'}
     config:
       schema_version: stackos.action.v1

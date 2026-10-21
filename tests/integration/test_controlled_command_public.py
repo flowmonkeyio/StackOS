@@ -167,6 +167,31 @@ def original_audit(case_factory, tmp_path):
         owner.custody.wait_accounted()
 
 
+def test_recovered_original_unknown_precedes_advanced_owner_fence(original_audit):
+    case, owner, row = original_audit
+    # Recreate the persisted pre-final-audit boundary observed on daemon loss.
+    row.status = ActionCallStatus.RUNNING
+    row.response_json = None
+    row.metadata_json = {"controlled_admission": row.metadata_json["controlled_admission"]}
+    row.error = None
+    case.session.add(row)
+    case.session.commit()
+    current = RunRepository(case.session).owner_get(
+        project_id=case.project, canonical_item_id=owner.original.binding.canonical_item_id
+    )
+    assert current.revision > case.args["input_json"]["expected_revision"]
+    assert ActionRepository(case.session).reconcile_running_calls() == 1
+    before = snapshot(case)
+    with pytest.raises(ConflictError, match=r"^controlled_history_unknown$") as caught:
+        asyncio.run(case.dispatch())
+    assert caught.value.data == {"action_call_id": row.id}
+    assert snapshot(case) == before
+    assert case.session.exec(select(ActionCall)).one().response_json == {
+        "outcome_unknown": True,
+        "retry_safe": False,
+    }
+
+
 @pytest.mark.parametrize(
     "case_id",
     [
@@ -391,6 +416,28 @@ def test_public_native_audit_projection(case_factory, case_id):
     for value in (direct.model_dump(mode="json"), raw.model_dump(mode="json"), got, queried):
         assert_private_absent(value)
     assert got["status"] == row.status.value
+
+
+def test_fixed_report_default_off_and_replay_create_no_workspace(case_factory, tmp_path):
+    from stackos.config import Settings
+    from tests.support.controlled_report import select_report
+
+    settings = Settings(
+        _env_file=None, state_dir=tmp_path / "report-state", data_dir=tmp_path / "report-data"
+    )
+    case = case_factory(settings=settings)
+    command = select_report(case)
+    assert not settings.state_dir.exists()
+    output = asyncio.run(case.dispatch())
+    assert output["data"]["output_json"]["code"] == "controlled_host_unavailable"
+    assert output["data"]["output_json"]["host_dispatched"] is False
+    assert "report" not in output["data"]["output_json"]
+    replay = asyncio.run(case.dispatch())
+    assert replay["data"]["replayed"] is True
+    assert replay["data"]["output_json"] == output["data"]["output_json"]
+    assert not settings.state_dir.exists() and not command.report_directory.exists()
+    assert_private_absent(output)
+    assert_private_absent(replay)
 
 
 READBACK_CASES = [
