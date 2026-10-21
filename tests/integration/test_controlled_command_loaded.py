@@ -35,7 +35,9 @@ from stackos.db.models import (
     ApprovalRequestStatus,
     Project,
     Run,
+    RunPlan,
     TrackerTask,
+    TrackerTicket,
     WorkItemOwnership,
 )
 from stackos.repositories.plugins import PluginRepository
@@ -78,8 +80,12 @@ def _reap_owned_daemon(process):
     _HELD_DAEMONS.remove(process)
 
 
-def _setup_case(settings, engine, *, publication=False):
+def _setup_case(
+    settings, engine, *, publication=False, feedback=False, feedback_filter_proof=False
+):
     """Fixture-only canonical setup; actual execution uses the loaded SDK client."""
+    assert not feedback or publication
+    assert not feedback_filter_proof or feedback
     with Session(engine) as session:
         PluginRepository(session).sync_builtin_plugins()
         project = Project(
@@ -91,10 +97,12 @@ def _setup_case(settings, engine, *, publication=False):
         session.add(project)
         session.commit()
         # Know the exact target before freezing grants. No running grant is edited.
-        TrackerRepository(session).create_task(
-            project_id=project.id, key="loaded-report", title="Synthetic report"
-        )
-        task = session.exec(select(TrackerTask).where(TrackerTask.key == "loaded-report")).one()
+        task = None
+        if not feedback:
+            TrackerRepository(session).create_task(
+                project_id=project.id, key="loaded-report", title="Synthetic report"
+            )
+            task = session.exec(select(TrackerTask).where(TrackerTask.key == "loaded-report")).one()
         action_refs = [REF]
         approvals = [{"key": "command", "title": "Exact synthetic command"}]
         contracts = [{"key": "controlled", "action": REF, "approval_ref": "command"}]
@@ -107,9 +115,55 @@ def _setup_case(settings, engine, *, publication=False):
             contracts.append(
                 {"key": "publish", "action": PUBLICATION_REF, "approval_ref": "review"}
             )
-            owner_grants.append(
-                {"step_id": "report", "tool": "run.ownerStop", "targets": [f"task:{task.id}"]}
-            )
+            if not feedback:
+                owner_grants.append(
+                    {"step_id": "report", "tool": "run.ownerStop", "targets": [f"task:{task.id}"]}
+                )
+        steps = [{"id": "report", "title": "Report", "action_refs": action_refs}]
+        feedback_grants = []
+        if feedback:
+            steps += [
+                {"id": "closeout", "title": "Reviewed closeout", "depends_on": ["report"]},
+                {
+                    "id": "reuse",
+                    "title": "Later admitted use",
+                    "depends_on": ["closeout"],
+                    "action_refs": [PUBLICATION_REF],
+                },
+            ]
+            feedback_grants = [
+                {"step_id": "report", "tool": "agentRequest.create"},
+                {"step_id": "report", "tool": "learning.create"},
+                {"step_id": "closeout", "tool": "learning.update"},
+                {"step_id": "closeout", "tool": "decision.record"},
+                {"step_id": "reuse", "tool": "decision.record"},
+                {"step_id": "reuse", "tool": "action.execute", "action_refs": [PUBLICATION_REF]},
+                *[
+                    {
+                        "step_id": step_id,
+                        "tool": "resource.upsert",
+                        "plugin_slug": "engineering",
+                        "resource_key": "engineering-evidence",
+                    }
+                    for step_id in ("report", "closeout", "reuse")
+                ],
+                {
+                    "step_id": "reuse",
+                    "tool": "context.query",
+                    "sources": ["learnings"],
+                    "fields": [
+                        "statement",
+                        "status",
+                        "review_state",
+                        "applies_to_json",
+                        "evidence_json",
+                    ],
+                },
+            ]
+            if feedback_filter_proof:
+                # A separate synthetic-only test proves storage/filter mechanics;
+                # this grant is absent from the retained actual-review scenario.
+                feedback_grants.append({"step_id": "report", "tool": "learning.update"})
         plans = RunPlanRepository(session)
         plan = plans.create(
             project_id=project.id,
@@ -122,19 +176,89 @@ def _setup_case(settings, engine, *, publication=False):
                     "mcp_tool_grants": [
                         {"step_id": "report", "tool": "action.execute", "action_refs": action_refs},
                         *owner_grants,
+                        *feedback_grants,
                     ],
                     "action_contracts": contracts,
                 },
-                "steps": [{"id": "report", "title": "Report", "action_refs": action_refs}],
+                "steps": steps,
             },
         ).data
-        started = plans.start(plan.id, project_id=project.id).data
         step = plans.get_step(plan.id, "report")
+        if feedback:
+            TrackerRepository(session).create_ticket(
+                project_id=project.id,
+                task_key=f"workflow-{plan.id}",
+                key="loaded-feedback-resolution",
+                title="Resolve one synthetic bounded publication occurrence",
+                parent_ticket_key=f"workflow-{plan.id}-report",
+                dependency_keys=[f"workflow-{plan.id}-report"],
+                run_plan_id=plan.id,
+                run_plan_step_id=step.id,
+                assignee="synthetic:lead",
+            )
+            task = session.exec(
+                select(TrackerTicket).where(TrackerTicket.key == "loaded-feedback-resolution")
+            ).one()
+            definition = session.get(RunPlan, plan.id)
+            # Same pre-start fixture pattern as ownership_case; no running grant changes.
+            definition.grant_snapshot_json = definition.grant_snapshot_json | {
+                "mcp_tool_grants": definition.grant_snapshot_json["mcp_tool_grants"]
+                + [
+                    {"step_id": "report", "tool": name, "targets": [f"ticket:{task.id}"]}
+                    for name in ("run.ownerConsume", "run.ownerCheckpoint")
+                ]
+            }
+            session.add(definition)
+            session.commit()
+            reuse_step = plans.get_step(plan.id, "reuse")
+            TrackerRepository(session).create_ticket(
+                project_id=project.id,
+                task_key=f"workflow-{plan.id}",
+                key="loaded-feedback-later-use",
+                title="One separately admitted use of the reviewed lesson",
+                parent_ticket_key=f"workflow-{plan.id}-reuse",
+                dependency_keys=[f"workflow-{plan.id}-reuse"],
+                run_plan_id=plan.id,
+                run_plan_step_id=reuse_step.id,
+                assignee="synthetic:main-controller",
+            )
+            reuse_ticket = session.exec(
+                select(TrackerTicket).where(TrackerTicket.key == "loaded-feedback-later-use")
+            ).one()
+            reuse_ticket.source_json = {"run_plan_id": plan.id, "run_plan_step_id": reuse_step.id}
+            reuse_ticket.metadata_json = {
+                "ownership_continuity": {
+                    "scope_digest": SCOPE,
+                    "budget_ref": "synthetic:separately-admitted-one-use",
+                    "stop_scope_ref": "synthetic:stop",
+                    "history_ref": "synthetic:feedback-later-use",
+                    "stopped": False,
+                    "denied": False,
+                    "attempts_used": 0,
+                    "failures_used": 0,
+                    "attempt_limit": 1,
+                    "failure_limit": 1,
+                }
+            }
+            definition.grant_snapshot_json = definition.grant_snapshot_json | {
+                "mcp_tool_grants": definition.grant_snapshot_json["mcp_tool_grants"]
+                + [
+                    {"step_id": "reuse", "tool": name, "targets": [f"ticket:{reuse_ticket.id}"]}
+                    for name in ("run.ownerAcquire", "run.ownerConsume", "run.ownerCheckpoint")
+                ]
+            }
+            session.add_all([reuse_ticket, definition])
+            session.commit()
+        assert task is not None
+        item = f"ticket:{task.id}" if feedback else f"task:{task.id}"
+        started = plans.start(plan.id, project_id=project.id).data
         task.source_json = {"run_plan_id": plan.id, "run_plan_step_id": step.id}
         task.metadata_json = {
             "ownership_continuity": {
                 "scope_digest": SCOPE,
-                "budget_ref": "synthetic:one-attempt",
+                "budget_ref": "synthetic:feedback-four-attempts"
+                if feedback
+                else "synthetic:one-attempt",
                 "stop_scope_ref": "synthetic:stop",
                 "history_ref": "synthetic:history",
                 "stopped": False,
@@ -142,8 +266,8 @@ def _setup_case(settings, engine, *, publication=False):
                 "attempts_used": 0,
                 "failures_used": 0,
                 # Report consumes one slot; publication still requires budget headroom.
-                "attempt_limit": 2 if publication else 1,
-                "failure_limit": 1,
+                "attempt_limit": 4 if feedback else (2 if publication else 1),
+                "failure_limit": 3 if feedback else 1,
             }
         }
         session.add(task)
@@ -152,7 +276,7 @@ def _setup_case(settings, engine, *, publication=False):
             RunRepository(session)
             .owner_acquire(
                 project_id=project.id,
-                canonical_item_id=f"task:{task.id}",
+                canonical_item_id=item,
                 owner_ref="synthetic:lead",
                 scope_digest=SCOPE,
             )
@@ -235,6 +359,7 @@ def _setup_case(settings, engine, *, publication=False):
             project=project.id,
             item=owner.canonical_item_id,
             task=task.id,
+            ticket_key=task.key if feedback else None,
             plan=plan.id,
             step=step.id,
             run=started.run_id,

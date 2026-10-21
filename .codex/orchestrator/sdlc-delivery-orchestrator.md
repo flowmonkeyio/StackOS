@@ -1,8 +1,8 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.4.1
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.4.2
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
-Workflow: `engineering.tracked-delivery` v0.4.0 source contract
+Workflow: `engineering.tracked-delivery` v0.4.1 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
 
 This is the StackOS repository adaptation, not a subagent. The main agent owns
@@ -66,7 +66,7 @@ tracker work applies only when no workflow lifecycle was invoked.
 
 ## Prepare Executable Work
 
-For new v0.4.0 plans the sequence is:
+For new v0.4.1 plans the sequence is:
 
 `scope-work -> define-requirements -> discover-impact -> design-approach ->
 design-tests -> plan-tickets -> review-design -> deliver-tickets ->
@@ -181,6 +181,29 @@ Use canonical evidence refs rather than duplicate ledgers or review matrices.
 Preserve existing JSON evidence/history when patching: fields replace rather
 than deep-merge. Quality determines proof depth; reuse current evidence and
 stop repeating checks once they answer the relevant risk.
+
+For feedback/resolution scope, read `docs/feedback-resolution-spec.md` and the
+current approved route from existing extension/run context. First handle routine
+failures within the active assignment when the repair shape is already admitted,
+effects are settled, authority is current and original budget remains. Preserve
+the failed action/attempt; use a fresh approved intent for changed arguments.
+Read back unknown effects instead of submitting again.
+
+After an ineffective repair or a need for another accountable actor, retain the
+unresolved disposition on the existing child. Use explicitly granted
+`resource.upsert` and `agentRequest.create` to persist the source occurrence and
+deduplicated resolution request, then claim/link it to the existing workflow.
+Record the responsible actor and next action through tracker operations. Do not
+create another objective, rewrite frozen grants, reset counters or treat a queue
+claim as canonical execution ownership. Missing authority remains a blocker.
+
+Require actual independent review and Main acceptance before resolving the
+request or completing the child. Record proposed learning with cause confidence,
+candidate-bound before/after proof, regression, applicability and limitations.
+Only after that review and Main decision may the granted closeout step promote
+it; a synthetic test reviewer or supplied review_state is not independent review.
+A later admitted step retrieves accepted applicable guidance and records what
+it used and the outcome. No lesson silently changes permissions or governance.
 
 ## Recovery And Closeout
 
