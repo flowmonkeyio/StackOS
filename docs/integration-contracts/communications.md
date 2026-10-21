@@ -1868,6 +1868,46 @@ Flow:
 12. The listener does not call Slack, does not call a model, does not use
     `response_url`, and does not infer business intent.
 
+For ordinary `message` and `app_mention` callbacks without a subtype, the
+listener records a bounded `source_occurrence_v1` object in the request metadata
+and its linked `communication-message`. It includes the normalized project
+profile/message bindings and a SHA-256 digest of the full normalized message
+text before redaction or preview truncation. The shared communication processor
+compares both stored copies before related writes when the request key already
+exists. A consistent occurrence remains `request_deduped`; a changed or
+inconsistent source is `source_occurrence_conflict`. A well-bound legacy
+request/message pair where both copies predate the digest is
+`source_occurrence_unverifiable`, regardless of preview length. A missing,
+malformed, or one-sided stored occurrence object is a conflict. If the selected
+incoming callback cannot produce a valid object, an existing same-key request
+is `source_occurrence_unverifiable` after its stored bindings are checked.
+Fixed raw request/message bindings, including Slack provider/content type and
+the request-to-message reference, are checked even when incoming text is
+unverifiable or both occurrence objects are absent. Existing diagnostic rows
+must retain exact JSON primitive types for idempotent replay; malformed
+diagnostic collisions fail without acknowledgement or overwrite.
+Occurrence raw-text validity and nullable team normalization apply to the
+selected object and linked message only. Other callback parsing keeps the
+existing display/policy normalization for text and team fields.
+
+Conflict and unverifiable results preserve the original request and linked
+message and store only a safe `communication-event` diagnostic containing fixed
+status/identity fields, hashes, and allowlisted mismatch field names. Raw text,
+preview text, payloads, and mismatch values are not stored in that diagnostic.
+The signed callback receives HTTP 200 only after the diagnostic write succeeds;
+diagnostic persistence errors propagate without a successful acknowledgement.
+This is a same-occurrence consistency check, not a Slack provenance attestation:
+matching resource fields do not prove who created them. Nonempty message
+subtypes, including `message_changed`, keep the existing route behavior and are
+outside this comparator. `decision.store=false` still returns before request
+lookup and writes. For this selected ordinary Slack path, first request/source
+lookup, comparison, and selected event/message/request/state persistence share
+one SQLite writer transaction, and success is returned only after commit. Other
+providers and subtypes, independent event writers, whole-pipeline transactional
+guarantees, and PostgreSQL concurrency remain outside this slice. Matching
+source fields do not add provider authenticity, issuer, team, or delegation
+authority.
+
 Rules:
 
 - Slack signing verification must use the raw request body and constant-time

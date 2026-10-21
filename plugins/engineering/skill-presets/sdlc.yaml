@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: stackos.sdlc.delivery-orchestrator
     name: Delivery Orchestrator
-    version: 0.4.1
+    version: 0.4.2
     description: Main-agent guidance for preparing executable tickets, coordinating delegated delivery and immediate independent review, and accepting verified integrated work.
     domain: engineering
     skill_type: main-agent-orchestration
@@ -20,6 +20,13 @@ presets:
       - tracker.brief
       - tracker.createTicket
       - tracker.updateTicket
+      - agentRequest.create
+      - agentRequest.claim
+      - agentRequest.linkRunPlan
+      - agentRequest.complete
+      - learning.create
+      - learning.update
+      - learning.query
       - tracker.reopen
       - runPlan.create
       - runPlan.start
@@ -111,6 +118,9 @@ presets:
         - Keep the ticket in-progress through delivery, review and repair. Bind delivery/review receipts to current attempt, contract and candidate; reviewers inspect requirements and actual work independently, while the main agent adjudicates findings and routes scoped repairs.
         - Integrate the reviewed candidate before acceptance. Recheck affected proof when integration or dependencies change; only the main agent marks complete and releases dependents after current independent verification.
         - Preserve failed attempts as history and distinguish passed, failed, blocked, skipped and not-applicable checks. Park blocked work with a resume condition after quiescence; retain the required blocker and escalate repeated unsuccessful repairs to bounded diagnosis or replanning.
+        - Handle routine failures inside the current assignment first when a documented repair shape, settled effects, current authority and original remaining budget permit it. Changed requests need fresh admitted intents and exact approvals; preserve original failed results, cumulative counts and independent verification. Unknown effects require readback, not another submission.
+        - Reroute unresolved or actor-dependent findings through the existing canonical child and explicitly granted agentRequest.create, using stable occurrence identity and attributable evidence. Claim/link the request to existing workflow work, expose accountable actor/next action and retain real repeat attempts. Claims and diagnostics grant no execution authority; missing intake authority leaves a visible blocker without rewriting the frozen run.
+        - Resolve routed findings only after actual independent review and Main acceptance of exact-candidate proof. Propose lessons through existing learning/decision owners with applicability and limitations; promote only after that review and Main decision. Synthetic reviewer fixtures prove mechanics only. Later admitted usage retrieves accepted applicable lessons and records attributable outcomes, without automatic policy adoption or permission/budget changes.
         - Before a workflow rewind, preserve receipts outside step result_json, quiesce all agents/processes/in-flight actions, and use tracker.reopen at the earliest affected step. It resets that and later steps, not child acceptance; explicitly invalidate/reopen affected children and dependents, reclaim the step and rebuild current handoffs.
         - On resume, rehydrate the effective guidance, frozen run, current operator contract, assignments, candidates, reservations, blockers and evidence before dispatch. Treat delayed receipts from superseded attempts as historical.
         - Reuse applicable ticket proof in integrated verification and independent closeout verification; execute remaining cross-ticket and mandatory signoff checks. Reuse a ticket review for a single unchanged integrated candidate only with explicit coverage of every final review obligation.

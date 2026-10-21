@@ -301,16 +301,28 @@ def _parse_slack_event(
         channel_id = _safe_text(event.get("channel"))
         message_ts = _safe_text(event.get("ts") or event.get("event_ts"))
         thread_ts = _safe_text(event.get("thread_ts") or message_ts)
-        text = _safe_text(event.get("text"))
+        raw_text = event.get("text")
+        # Keep the existing display/policy normalization for every callback.
+        # The selected occurrence contract separately rejects non-string raw text.
+        text = _safe_text(raw_text)
         user_id = _safe_text(event.get("user") or event.get("bot_id"))
         bot_id = _safe_text(event.get("bot_id"))
         subtype = _safe_text(event.get("subtype"))
         event_key = _safe_text(payload.get("event_id")) or body_hash
+        # Keep baseline provider-field fallback/display behavior outside the
+        # selected occurrence object, including missing values becoming "".
+        team_value = payload.get("team_id") or event.get("team")
+        raw_occurrence_team = payload.get("team_id")
+        if raw_occurrence_team is None:
+            raw_occurrence_team = event.get("team")
+        team_id_source_valid = raw_occurrence_team is None or isinstance(raw_occurrence_team, str)
         return {
             "payload": payload,
             "event": event,
             "event_key": event_key,
-            "team_id": _safe_text(payload.get("team_id") or event.get("team")),
+            "team_id": _safe_text(team_value),
+            "team_id_occurrence": _optional_safe_text(raw_occurrence_team),
+            "team_id_source_valid": team_id_source_valid,
             "update_type": event_type,
             "event_type": event_type,
             "source_kind": (
@@ -331,6 +343,7 @@ def _parse_slack_event(
             "user_ref": f"slack-user:{user_id}" if user_id else None,
             "bot_id": bot_id or None,
             "subtype": subtype or None,
+            "source_occurrence_text": raw_text,
             "is_self_message": _is_self_message_event(
                 profile,
                 event_type=event_type,
@@ -488,6 +501,46 @@ def _normalized_slack_event(
     retry_reason: str | None,
     mark_interaction_clicked: bool,
 ) -> NormalizedInboundEvent:
+    source_occurrence_check: str | None = None
+    source_occurrence: dict[str, Any] | None = None
+    if (
+        parsed.get("source_kind") == "slack-message"
+        and parsed.get("event_type") in {"message", "app_mention"}
+        and parsed.get("subtype") is None
+    ):
+        source_occurrence = _slack_source_occurrence(profile, parsed)
+        source_occurrence_check = "compare" if source_occurrence is not None else "unverifiable"
+    request_metadata: dict[str, Any] = {
+        "profile_key": profile.key,
+        "credential_ref": profile.credential_ref,
+        "interaction_ref": parsed.get("interaction_ref"),
+        "invoker_ref": parsed.get("user_ref"),
+        "surface_ref": parsed.get("surface_ref"),
+        "channel_ref": parsed.get("surface_ref"),
+        "thread_ref": parsed.get("thread_ref"),
+        "identity": profile.data.get("identity"),
+        "agent_guidance": profile.data.get("agent_guidance"),
+        "context_policy": profile.data.get("context_policy"),
+        "response_policy": profile.data.get("response_policy"),
+    }
+    if source_occurrence is not None:
+        request_metadata["source_occurrence_v1"] = source_occurrence
+    if source_occurrence_check is not None:
+        request_metadata["source_occurrence_check"] = source_occurrence_check
+    message_write = _slack_message_write(profile, parsed)
+    if message_write is not None and source_occurrence is not None:
+        message_write = NormalizedResourceWrite(
+            resource_key=message_write.resource_key,
+            external_id=message_write.external_id,
+            title=message_write.title,
+            data_json={
+                **message_write.data_json,
+                "team_id": source_occurrence["team_id"],
+                "source_occurrence_v1": source_occurrence,
+            },
+            provenance_json=message_write.provenance_json,
+            preserve_existing_on_dedupe=message_write.preserve_existing_on_dedupe,
+        )
     return NormalizedInboundEvent(
         provider_key="slack-bot",
         profile_key=profile.key,
@@ -521,32 +574,72 @@ def _normalized_slack_event(
             provenance_json={"source": "slack-ingress"},
             preserve_existing_on_dedupe=True,
         ),
-        message=_slack_message_write(profile, parsed),
+        message=message_write,
         interaction=_slack_interaction_write(profile, parsed),
         state_patches=(
             [_slack_click_patch(profile, parsed)]
             if mark_interaction_clicked and parsed["update_type"] == "block_actions"
             else []
         ),
-        request_metadata_json={
-            "profile_key": profile.key,
-            "credential_ref": profile.credential_ref,
-            "interaction_ref": parsed.get("interaction_ref"),
-            "invoker_ref": parsed.get("user_ref"),
-            "surface_ref": parsed.get("surface_ref"),
-            "channel_ref": parsed.get("surface_ref"),
-            "thread_ref": parsed.get("thread_ref"),
-            "identity": profile.data.get("identity"),
-            "agent_guidance": profile.data.get("agent_guidance"),
-            "context_policy": profile.data.get("context_policy"),
-            "response_policy": profile.data.get("response_policy"),
-        },
+        request_metadata_json=request_metadata,
         response_json={
             "profile_key": profile.key,
             "event_key": parsed.get("event_key"),
             "update_type": parsed.get("update_type"),
         },
     )
+
+
+def _slack_source_occurrence(
+    profile: SlackProfile,
+    parsed: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    raw_text = parsed.get("source_occurrence_text")
+    if raw_text is None:
+        normalized_text = ""
+    elif isinstance(raw_text, str):
+        normalized_text = raw_text
+    else:
+        return None
+    team_id = parsed.get("team_id_occurrence")
+    channel_id = parsed.get("channel_id")
+    message_ts = parsed.get("message_ts")
+    message_ref = parsed.get("message_ref")
+    surface_ref = parsed.get("surface_ref")
+    thread_ref = parsed.get("thread_ref")
+    invoker_ref = parsed.get("user_ref")
+    if (
+        not isinstance(profile.key, str)
+        or not profile.key
+        or parsed.get("team_id_source_valid") is not True
+        or (team_id is not None and not isinstance(team_id, str))
+        or not isinstance(channel_id, str)
+        or not channel_id
+        or not isinstance(message_ts, str)
+        or not message_ts
+        or not isinstance(message_ref, str)
+        or not message_ref
+        or not isinstance(surface_ref, str)
+        or not surface_ref
+        or (thread_ref is not None and not isinstance(thread_ref, str))
+        or (invoker_ref is not None and not isinstance(invoker_ref, str))
+    ):
+        return None
+    return {
+        "schema_version": 1,
+        "provider_key": "slack-bot",
+        "source_kind": "slack-message",
+        "profile_key": profile.key,
+        "team_id": team_id,
+        "channel_id": channel_id,
+        "surface_ref": surface_ref,
+        "message_ts": message_ts,
+        "message_ref": message_ref,
+        "thread_ref": thread_ref,
+        "invoker_ref": invoker_ref,
+        "content_type": "text",
+        "normalized_text_sha256": hashlib.sha256(normalized_text.encode("utf-8")).hexdigest(),
+    }
 
 
 def _slack_message_write(
@@ -744,6 +837,10 @@ def _safe_text(value: Any) -> str:
     if value is None:
         return ""
     return redact_secret_text(str(value))[:_MAX_PREVIEW]
+
+
+def _optional_safe_text(value: Any) -> str | None:
+    return None if value is None else _safe_text(value)
 
 
 __all__ = ["router"]

@@ -10,15 +10,19 @@ import subprocess
 import sys
 from collections.abc import Iterator
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 import sqlalchemy as sa
+from alembic import command
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 
 from stackos.browser.runtime import BROWSER_PROFILE_DIRNAME, browser_profile_dir
 from stackos.communication_surface_bindings import communication_surface_binding_external_id
+from stackos.config import Settings
 from stackos.db.connection import make_engine
+from stackos.db.migrate import alembic_config, current_alembic_version, upgrade_to_head
 
 EXPECTED_TABLES: frozenset[str] = frozenset(
     {
@@ -139,6 +143,48 @@ def isolated_alembic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterato
     yield data_dir / "stackos.db"
 
 
+@pytest.fixture
+def migration_crypto_binding(monkeypatch: pytest.MonkeyPatch) -> None:
+    from stackos.crypto import aes_gcm
+
+    # Restore original binding/cache objects without clearing another test's cache.
+    monkeypatch.setattr(aes_gcm, "_default_seed_path", None)
+    monkeypatch.setattr(aes_gcm, "_cache", {})
+
+
+def _explicit_migration_settings(db_path: Path) -> Settings:
+    settings = Settings(
+        data_dir=db_path.parent,
+        state_dir=db_path.parent.parent / "state",
+        _env_file=None,
+    )
+    settings.ensure_dirs()
+    return settings
+
+
+def _foreign_migration_defaults(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Settings, Mock]:
+    from stackos import config
+
+    foreign_home = tmp_path / "foreign-home"
+    foreign = Settings(
+        data_dir=foreign_home / ".local" / "share" / "stackos",
+        state_dir=foreign_home / ".local" / "state" / "stackos",
+        _env_file=None,
+    )
+    foreign.state_dir.mkdir(parents=True, mode=0o700)
+    foreign.seed_path.write_bytes(b"B" * 32)
+    foreign.seed_path.chmod(0o600)
+    monkeypatch.setenv("HOME", str(foreign_home))
+    monkeypatch.setenv("STACKOS_DATA_DIR", str(foreign.data_dir))
+    monkeypatch.setenv("STACKOS_STATE_DIR", str(foreign.state_dir))
+    fallback = Mock(return_value=foreign)
+    # migration_seed_path imports this exact lookup when no explicit binding exists.
+    monkeypatch.setattr(config, "get_settings", fallback)
+    return foreign, fallback
+
+
 def _run_alembic(args: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
     repo_root = Path(__file__).resolve().parents[2]
     return subprocess.run(
@@ -237,6 +283,258 @@ def _table_columns(db_path: Path, table_name: str) -> set[str]:
         conn.close()
 
 
+def test_programmatic_upgrade_keeps_explicit_seed_binding(
+    isolated_alembic: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    migration_crypto_binding: None,
+) -> None:
+    from stackos.crypto.aes_gcm import (
+        CryptoError,
+        configure_seed_path,
+        decrypt_account,
+        encrypt_account,
+    )
+    from stackos.crypto.seed import ensure_seed_file
+
+    explicit_settings = _explicit_migration_settings(isolated_alembic)
+    seed = ensure_seed_file(explicit_settings.seed_path)
+    configure_seed_path(explicit_settings.seed_path)
+    foreign, fallback = _foreign_migration_defaults(tmp_path, monkeypatch)
+
+    upgrade_to_head(explicit_settings)
+
+    assert current_alembic_version(explicit_settings) == "0034_work_item_ownership"
+    plaintext = b'{"api_key":"programmatic-fixture"}'
+    ciphertext, nonce = encrypt_account(
+        plaintext, credential_ref="cred_programmatic", provider_key="fixture"
+    )
+    assert (
+        decrypt_account(
+            ciphertext,
+            nonce=nonce,
+            credential_ref="cred_programmatic",
+            provider_key="fixture",
+            seed=seed,
+        )
+        == plaintext
+    )
+    fallback.assert_not_called()
+    assert foreign.seed_path.read_bytes() == b"B" * 32
+    assert seed != b"B" * 32
+    assert not foreign.db_path.exists()
+
+    with pytest.raises(
+        CryptoError,
+        match=(
+            r"^credential decryption failed \(account identity/provider mismatch, "
+            r"wrong seed, or tampered row\)$"
+        ),
+    ):
+        decrypt_account(
+            ciphertext,
+            nonce=nonce,
+            credential_ref="cred_programmatic",
+            provider_key="fixture",
+            seed=b"B" * 32,
+        )
+
+
+def test_bare_alembic_config_preserves_ambient_seed_policy(
+    isolated_alembic: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    migration_crypto_binding: None,
+) -> None:
+    """S6: an explicit database without seed context keeps the CLI seed policy."""
+    from stackos.crypto.aes_gcm import CryptoError, decrypt_account, encrypt_account
+    from stackos.crypto.seed import ensure_seed_file
+
+    explicit = _explicit_migration_settings(isolated_alembic)
+    seed_a = ensure_seed_file(explicit.seed_path)
+    foreign, fallback = _foreign_migration_defaults(tmp_path, monkeypatch)
+    assert seed_a != b"B" * 32
+    cfg = alembic_config(explicit)
+    del cfg.attributes["stackos_seed_path"]
+
+    command.upgrade(cfg, "head")
+
+    fallback.assert_called()
+    plaintext = b"synthetic bare-Config fixture"
+    ciphertext, nonce = encrypt_account(
+        plaintext, credential_ref="cred_bare_config", provider_key="fixture"
+    )
+    assert (
+        decrypt_account(
+            ciphertext,
+            nonce=nonce,
+            credential_ref="cred_bare_config",
+            provider_key="fixture",
+            seed=b"B" * 32,
+        )
+        == plaintext
+    )
+    with pytest.raises(
+        CryptoError,
+        match=(
+            r"^credential decryption failed \(account identity/provider mismatch, "
+            r"wrong seed, or tampered row\)$"
+        ),
+    ):
+        decrypt_account(
+            ciphertext,
+            nonce=nonce,
+            credential_ref="cred_bare_config",
+            provider_key="fixture",
+            seed=seed_a,
+        )
+    assert current_alembic_version(explicit) == "0034_work_item_ownership"
+    assert foreign.seed_path.read_bytes() == b"B" * 32
+    assert not foreign.db_path.exists()
+
+
+def test_wrong_explicit_seed_preflight_preserves_legacy_rows(
+    isolated_alembic: Path,
+    tmp_path: Path,
+    migration_crypto_binding: None,
+) -> None:
+    """S3: wrong explicit B must fail even though ambient A would decrypt."""
+    from stackos.crypto.aes_gcm import CryptoError, encrypt
+    from stackos.crypto.seed import ensure_seed_file
+
+    explicit = _explicit_migration_settings(isolated_alembic)
+    command.upgrade(alembic_config(explicit), "0025_visible_chromium_profiles")
+    seed_a = ensure_seed_file(explicit.seed_path)
+    ciphertext, nonce = encrypt(
+        b"synthetic legacy preflight", project_id=1, kind="openrouter", seed=seed_a
+    )
+    now = "2026-07-24 00:00:00"
+    with sqlite3.connect(isolated_alembic) as conn:
+        _insert_legacy_project(conn, project_id=1, now=now)
+        _insert_legacy_account(
+            conn,
+            integration_id=1,
+            credential_id=1,
+            project_id=1,
+            credential_ref="cred_wrong_explicit",
+            ciphertext=ciphertext,
+            nonce=nonce,
+            label="Wrong explicit seed",
+            now=now,
+        )
+    wrong = Settings(data_dir=explicit.data_dir, state_dir=tmp_path / "wrong-state", _env_file=None)
+    wrong.state_dir.mkdir(mode=0o700)
+    wrong.seed_path.write_bytes(b"B" * 32)
+    wrong.seed_path.chmod(0o600)
+    assert seed_a != b"B" * 32
+
+    with pytest.raises(CryptoError, match="auth tag mismatch"):
+        command.upgrade(alembic_config(wrong), "head")
+
+    with sqlite3.connect(isolated_alembic) as conn:
+        assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
+            "0025_visible_chromium_profiles",
+        )
+        assert conn.execute("SELECT credential_ref, project_id FROM credentials").fetchall() == [
+            ("cred_wrong_explicit", 1)
+        ]
+        assert conn.execute(
+            "SELECT encrypted_payload, nonce FROM integration_credentials"
+        ).fetchone() == (ciphertext, nonce)
+    assert "display_name" not in _table_columns(isolated_alembic, "credentials")
+    assert "project_credentials" not in _list_tables(isolated_alembic)
+
+
+def test_at_head_misbound_account_requires_its_matching_seed_without_rewrite(
+    isolated_alembic: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    migration_crypto_binding: None,
+) -> None:
+    """S7: propagation does not recover historical B-encrypted data using A."""
+    from fastapi.testclient import TestClient
+    from sqlmodel import Session
+
+    import stackos.crypto.seed as seed_module
+    from stackos.crypto.aes_gcm import CryptoError, encrypt_account
+    from stackos.crypto.seed import ensure_seed_file
+    from stackos.db.models import Credential, IntegrationCredential
+    from stackos.repositories.projects import IntegrationCredentialRepository
+    from stackos.server import create_app
+
+    explicit = _explicit_migration_settings(isolated_alembic)
+    seed_a = ensure_seed_file(explicit.seed_path)
+    upgrade_to_head(explicit)
+    foreign, _fallback = _foreign_migration_defaults(tmp_path, monkeypatch)
+    assert seed_a != b"B" * 32
+    plaintext = b"synthetic historical misbound account"
+    ciphertext, nonce = encrypt_account(
+        plaintext, credential_ref="cred_misbound", provider_key="fixture", seed=b"B" * 32
+    )
+    engine = make_engine(isolated_alembic)
+    try:
+        with Session(engine) as session:
+            backing = IntegrationCredential(encrypted_payload=ciphertext, nonce=nonce)
+            session.add(backing)
+            session.flush()
+            backing_id = backing.id
+            assert backing_id is not None
+            session.add(
+                Credential(
+                    integration_credential_id=backing_id,
+                    credential_ref="cred_misbound",
+                    provider_key="fixture",
+                    display_name="Synthetic misbound account",
+                    display_name_key="synthetic misbound account",
+                )
+            )
+            session.commit()
+    finally:
+        engine.dispose()
+
+    loaded_paths: list[Path] = []
+    original_load_seed = seed_module.load_seed
+
+    def load_owned_seed(path: Path) -> bytes:
+        assert path in (explicit.seed_path, foreign.seed_path)
+        loaded_paths.append(path)
+        return original_load_seed(path)
+
+    monkeypatch.setattr(seed_module, "load_seed", load_owned_seed)
+    app_a = create_app(explicit)
+    with (
+        TestClient(app_a, base_url="http://127.0.0.1:5180"),
+        Session(app_a.state.engine) as session,
+    ):
+        with pytest.raises(
+            CryptoError,
+            match=(
+                r"^credential decryption failed \(account identity/provider mismatch, "
+                r"wrong seed, or tampered row\)$"
+            ),
+        ):
+            IntegrationCredentialRepository(session).get_decrypted(backing_id)
+        backing = session.get(IntegrationCredential, backing_id)
+        assert backing is not None
+        assert (backing.encrypted_payload, backing.nonce) == (ciphertext, nonce)
+        assert loaded_paths and all(path == explicit.seed_path for path in loaded_paths)
+
+    # An explicit matching-B startup reads the same unchanged blob; A never tries B.
+    loaded_paths.clear()
+    matching = Settings(data_dir=explicit.data_dir, state_dir=foreign.state_dir, _env_file=None)
+    app_b = create_app(matching)
+    with (
+        TestClient(app_b, base_url="http://127.0.0.1:5180"),
+        Session(app_b.state.engine) as session,
+    ):
+        assert IntegrationCredentialRepository(session).get_decrypted(backing_id) == plaintext
+        backing = session.get(IntegrationCredential, backing_id)
+        assert backing is not None
+        assert (backing.encrypted_payload, backing.nonce) == (ciphertext, nonce)
+        assert loaded_paths and all(path == matching.seed_path for path in loaded_paths)
+    assert not foreign.db_path.exists()
+
+
 def test_global_account_schema_has_explicit_project_attachments(
     isolated_alembic: Path,
 ) -> None:
@@ -267,11 +565,15 @@ def test_global_account_schema_has_explicit_project_attachments(
 
 def test_global_account_migration_preserves_and_reencrypts_legacy_credentials(
     isolated_alembic: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    migration_crypto_binding: None,
 ) -> None:
-    from stackos.crypto.aes_gcm import decrypt_account, encrypt
+    from stackos.crypto.aes_gcm import CryptoError, decrypt_account, encrypt
     from stackos.crypto.seed import ensure_seed_file
 
-    _run_alembic(["upgrade", "0025_visible_chromium_profiles"])
+    explicit_settings = _explicit_migration_settings(isolated_alembic)
+    command.upgrade(alembic_config(explicit_settings), "0025_visible_chromium_profiles")
     seed_path = isolated_alembic.parent.parent / "state" / "seed.bin"
     seed = ensure_seed_file(seed_path)
     ciphertext, nonce = encrypt(
@@ -336,7 +638,12 @@ def test_global_account_migration_preserves_and_reencrypts_legacy_credentials(
     finally:
         conn.close()
 
-    _run_alembic(["upgrade", "head"])
+    foreign, fallback = _foreign_migration_defaults(tmp_path, monkeypatch)
+    command.upgrade(alembic_config(explicit_settings), "head")
+    fallback.assert_not_called()
+    assert foreign.seed_path.read_bytes() == b"B" * 32
+    assert seed != b"B" * 32
+    assert not foreign.db_path.exists()
 
     conn = sqlite3.connect(isolated_alembic)
     try:
@@ -376,6 +683,29 @@ def test_global_account_migration_preserves_and_reencrypts_legacy_credentials(
             )
             == b'{"api_key":"legacy-secret"}'
         )
+        assert (
+            decrypt_account(
+                encrypted[0],
+                nonce=encrypted[1],
+                credential_ref="cred_legacy",
+                provider_key="openrouter",
+            )
+            == b'{"api_key":"legacy-secret"}'
+        )
+        with pytest.raises(
+            CryptoError,
+            match=(
+                r"^credential decryption failed \(account identity/provider mismatch, "
+                r"wrong seed, or tampered row\)$"
+            ),
+        ):
+            decrypt_account(
+                encrypted[0],
+                nonce=encrypted[1],
+                credential_ref="cred_legacy",
+                provider_key="openrouter",
+                seed=b"B" * 32,
+            )
     finally:
         conn.close()
 
@@ -601,11 +931,15 @@ def test_global_account_backing_repair_is_a_healthy_noop(
 
 def test_telegram_application_migration_preserves_matching_sessions_and_flags_conflicts(
     isolated_alembic: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    migration_crypto_binding: None,
 ) -> None:
-    from stackos.crypto.aes_gcm import decrypt, decrypt_account, encrypt_account
+    from stackos.crypto.aes_gcm import CryptoError, decrypt, decrypt_account, encrypt_account
     from stackos.crypto.seed import ensure_seed_file
 
-    _run_alembic(["upgrade", "0031_retire_telegram_bot_api"])
+    explicit_settings = _explicit_migration_settings(isolated_alembic)
+    command.upgrade(alembic_config(explicit_settings), "0031_retire_telegram_bot_api")
     seed = ensure_seed_file(isolated_alembic.parent.parent / "state" / "seed.bin")
     native_database = isolated_alembic.parent / "telegram-tdlib" / "cred_telegram_2" / "database"
     native_database.mkdir(parents=True)
@@ -676,7 +1010,12 @@ def test_telegram_application_migration_preserves_matching_sessions_and_flags_co
     finally:
         conn.close()
 
-    _run_alembic(["upgrade", "head"])
+    foreign, fallback = _foreign_migration_defaults(tmp_path, monkeypatch)
+    command.upgrade(alembic_config(explicit_settings), "head")
+    fallback.assert_not_called()
+    assert foreign.seed_path.read_bytes() == b"B" * 32
+    assert seed != b"B" * 32
+    assert not foreign.db_path.exists()
     conn = sqlite3.connect(isolated_alembic)
     try:
         app_ciphertext, app_nonce = conn.execute(
@@ -692,6 +1031,25 @@ def test_telegram_application_migration_preserves_matching_sessions_and_flags_co
             )
         )
         assert application == {"api_id": 12345, "api_hash": "shared-app-hash"}
+        with pytest.raises(CryptoError, match="auth tag mismatch"):
+            decrypt(
+                app_ciphertext,
+                nonce=app_nonce,
+                project_id=None,
+                kind="telegram-application",
+                seed=b"B" * 32,
+            )
+        assert (
+            json.loads(
+                decrypt(
+                    app_ciphertext,
+                    nonce=app_nonce,
+                    project_id=None,
+                    kind="telegram-application",
+                )
+            )
+            == application
+        )
         for account_id in (1, 2):
             ref = f"cred_telegram_{account_id}"
             config_raw, ciphertext, nonce = conn.execute(
@@ -712,8 +1070,33 @@ def test_telegram_application_migration_preserves_matching_sessions_and_flags_co
                     seed=seed,
                 )
             )
+            with pytest.raises(
+                CryptoError,
+                match=(
+                    r"^credential decryption failed \(account identity/provider mismatch, "
+                    r"wrong seed, or tampered row\)$"
+                ),
+            ):
+                decrypt_account(
+                    ciphertext,
+                    nonce=nonce,
+                    credential_ref=ref,
+                    provider_key="telegram",
+                    seed=b"B" * 32,
+                )
             assert "api_id" not in config
             assert "api_hash" not in payload
+            assert (
+                json.loads(
+                    decrypt_account(
+                        ciphertext,
+                        nonce=nonce,
+                        credential_ref=ref,
+                        provider_key="telegram",
+                    )
+                )
+                == payload
+            )
             assert payload["_tdlib_database_encryption_key"] == f"saved-key-{account_id}"
             if account_id == 2:
                 assert config["telegram_desired_connected"] is True
@@ -739,6 +1122,17 @@ def test_telegram_application_migration_preserves_matching_sessions_and_flags_co
         assert config["telegram_desired_connected"] is False
         assert config["telegram_auth"]["state"] == "repair-required"
         assert payload["api_hash"] == "different-app-hash"
+        assert (
+            json.loads(
+                decrypt_account(
+                    ciphertext,
+                    nonce=nonce,
+                    credential_ref="cred_telegram_3",
+                    provider_key="telegram",
+                )
+            )
+            == payload
+        )
     finally:
         conn.close()
     from sqlmodel import Session
@@ -758,11 +1152,15 @@ def test_telegram_application_migration_preserves_matching_sessions_and_flags_co
 
 def test_global_account_backing_repair_restores_only_the_missing_backing_link(
     isolated_alembic: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    migration_crypto_binding: None,
 ) -> None:
-    from stackos.crypto.aes_gcm import decrypt_account, encrypt
+    from stackos.crypto.aes_gcm import CryptoError, decrypt_account, encrypt
     from stackos.crypto.seed import ensure_seed_file
 
-    _run_alembic(["upgrade", "0025_visible_chromium_profiles"])
+    explicit_settings = _explicit_migration_settings(isolated_alembic)
+    command.upgrade(alembic_config(explicit_settings), "0025_visible_chromium_profiles")
     seed = ensure_seed_file(isolated_alembic.parent.parent / "state" / "seed.bin")
     legacy_secret = b'{"api_key":"repair-me"}'
     ciphertext, nonce = encrypt(
@@ -790,7 +1188,7 @@ def test_global_account_backing_repair_restores_only_the_missing_backing_link(
     finally:
         conn.close()
 
-    _run_alembic(["upgrade", "0026_global_reusable_accounts"])
+    command.upgrade(alembic_config(explicit_settings), "0026_global_reusable_accounts")
 
     conn = sqlite3.connect(isolated_alembic)
     try:
@@ -818,12 +1216,20 @@ def test_global_account_backing_repair_restores_only_the_missing_backing_link(
             ],
         )
         before = conn.execute("SELECT status, updated_at FROM credentials WHERE id = 1").fetchone()
+        backing_before_repair = conn.execute(
+            "SELECT encrypted_payload, nonce FROM integration_credentials WHERE id = 1"
+        ).fetchone()
         conn.execute("UPDATE credentials SET integration_credential_id = NULL WHERE id = 1")
         conn.commit()
     finally:
         conn.close()
 
-    _run_alembic(["upgrade", "head"])
+    foreign, fallback = _foreign_migration_defaults(tmp_path, monkeypatch)
+    command.upgrade(alembic_config(explicit_settings), "head")
+    fallback.assert_not_called()
+    assert foreign.seed_path.read_bytes() == b"B" * 32
+    assert seed != b"B" * 32
+    assert not foreign.db_path.exists()
 
     conn = sqlite3.connect(isolated_alembic)
     try:
@@ -852,6 +1258,7 @@ def test_global_account_backing_repair_restores_only_the_missing_backing_link(
             "SELECT encrypted_payload, nonce FROM integration_credentials WHERE id = 1"
         ).fetchone()
         assert encrypted is not None
+        assert encrypted == backing_before_repair
         assert (
             decrypt_account(
                 encrypted[0],
@@ -862,7 +1269,30 @@ def test_global_account_backing_repair_restores_only_the_missing_backing_link(
             )
             == legacy_secret
         )
+        assert (
+            decrypt_account(
+                encrypted[0],
+                nonce=encrypted[1],
+                credential_ref="cred_repair",
+                provider_key="openrouter",
+            )
+            == legacy_secret
+        )
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        with pytest.raises(
+            CryptoError,
+            match=(
+                r"^credential decryption failed \(account identity/provider mismatch, "
+                r"wrong seed, or tampered row\)$"
+            ),
+        ):
+            decrypt_account(
+                encrypted[0],
+                nonce=encrypted[1],
+                credential_ref="cred_repair",
+                provider_key="openrouter",
+                seed=b"B" * 32,
+            )
     finally:
         conn.close()
 

@@ -1,5 +1,82 @@
 # StackOS Security Notes
 
+## Fixed local publication
+
+The Engineering publication action accepts no caller path, argv, environment,
+remote or credential. It requires an explicitly provisioned synthetic target,
+rejects symlinks, Git directory/alternate-store indirection and nonstandard local
+configuration, and pins the Git executable with a replacement local environment
+and disabled hooks/config/replace objects. The backend authenticates the exact
+review resource through the current actual approval decision; a passed label
+alone supplies no authority. Original terminal ActionCall facts are sealed with
+the daemon-held seed in a publication-specific domain. Public audit projection
+omits approval, storage, seed and private provenance.
+
+SQLite serializes cooperative canonical stop/reassignment through Git CAS and
+final audit. Git's expected-old update owns the destination. Raw shell/Git and
+hostile same-UID filesystem or database access can bypass this selected adapter;
+this is no hostile-UID sandbox or general distributed transaction. An uncertain
+CAS/audit interval preserves the committed intent and forbids automatic retry or
+rollback. Original terminal readback needs the original authenticated controller
+and read grant, and cannot issue new forward authority after replacement.
+
+## Controlled Command Admission Boundary
+
+The private controlled-action authority is cooperative in-process data, never
+a public permission token. Its repository and cache consumers repeat real
+authenticated controller, full grant, item/owner and exact approval checks;
+constructing an object, supplying IDs, or registering a callback grants nothing.
+Command/source/environment hashes are observations, not hostile same-UID file
+custody or atomic DB-to-OS revocation. The fixed Engineering admission action
+is disabled by default: the host remains unavailable and audit says FAILED,
+no-dispatch and uncertified. A native branch requires the exact enabled Settings
+instance installed by the daemon in canonical operation services, actual
+current admission and the existing native custody. An agent request, callback,
+plugin field or constructed private object cannot enable it. Private provenance cannot escape through envelope,
+audit/get/query or replay metadata. Unknown/corrupt histories fail closed.
+The private component implements OS identity, key/FD custody,
+release/barrier/timer and bounded signal/cleanup for its cooperative fixture
+model; bounded portable/native fixture proof passed independent technical
+review. This does not enable the public action host,
+prove loaded-host/end-to-end behavior, or certify terminal state, process set or
+effect. None is inferred from source availability, workspace binding or this
+action.
+
+The private host component separates forward authority from safety
+custody. It rechecks current authority at each forward canonical transition,
+while cancellation, cleanup and hold stay bound to the original reservation
+and remain possible after the controller or grant is lost. One reserved attempt
+is charged once; only a newly applied release transition can produce one
+one-use frame. Duplicate, lost or ambiguous results cannot release again or
+reconstruct authority from readback; uncertainty remains held.
+
+Host custody transfers one preallocated writer D→W→A through explicit receive
+and known-close acknowledgments before A may fill. Each owner attempts its close
+once and never retries an uncertain FD number. W's timer/cancel loop cannot
+wait on receipt I/O; W is armed before release and the inert barrier consumes
+one frame once. T has no writer, key, directory or control-write handle. The
+claim concerns live objects: keep acknowledged close history separate from the
+live protected-object set, and bind T's actual three fresh bindings against
+finite known slots and object identities. Device/inode tuple reuse after a
+closed lifetime is not itself a live handle; any currently live protected
+duplicate denies. The host generates a fresh key only after admission and
+reservation and wraps it
+using the existing daemon seed binding; missing production seed custody holds
+before spawn, and raw keys never enter public records. Bounded observations of
+boot, PID/birth, PGID and SID for directly owned processes gate signal actions; unknown identity means no signal
+and no certification. These intended cooperative-host boundaries do not claim
+hostile same-UID isolation or loaded-host attestation. The component does not
+certify terminal state, process-set completeness or effect disposition, and
+cannot promise hard real-time cleanup under OS scheduling or blocked syscalls.
+
+Cleanup may become known while execution remains `execution_unknown`; retain
+the original failure history. That cleanup fact requires exact owned T reaping,
+fresh strict corroboration of the remaining original A group, successful
+bounded permitted signaling, all owned FDs closed and owned processes reaped
+within the original deadline, and no other uncertainty. It grants no forward
+authority, new members or deadline extension and certifies no execution or
+effect.
+
 This document records security trade-offs and threat-model decisions that
 deviate from the simplest "lock everything down" posture. Each section
 explains *what* is loosened, *why*, and *what* still defends the surface.
@@ -435,3 +512,27 @@ state, plugin, and MCP bridge contract:
 The pipx + launchd path does not change the threat model: the daemon binds
 loopback only, the bearer token gates every call, and the seed encrypts
 integration credentials at rest. The only delta is installation ergonomics.
+
+Private controlled terminal receipts use a separate HMAC domain and original
+14-field binding. Supplied-key authentication alone proves neither host truth
+nor exit/custody. W cannot attest its own future exit or terminal writer close;
+D retains independent original read capabilities and exact process custody.
+Recovered read-only capabilities are explicitly new and cannot replace missing
+original writer-close/exit evidence. No writer reopen, retry fill, alternate key
+search, partial-file repair or silent history reset is permitted.
+
+The canonical owner certificate is backend-only continuity, protected from
+generic inputs and removed from all ordinary owner outputs. Its complete
+attempt/receipt/effect snapshots must remain exact at consumption; generic
+evidence references, safe public status DTOs and worker booleans cannot certify.
+Sampled D6/F9 checks do not establish hostile same-UID exclusion or detect every
+ABA change. The public controlled action remains unavailable by default.
+
+The public adapter seals its original ActionCall audit before certification;
+the audit is part of the certificate's authoritative readset and cannot later
+be rewritten to add a success/certificate claim. Strict native v2 results keep
+execution uncertainty separate from cleanup and `work_accepted=false`.
+Canonical original readback reaches a read-only context before strict
+new-launch authorization; it never supplies a forward admission, transition
+acknowledgment or frame. Unknown audit durability remains held. Source delivery
+and isolated proof do not activate a loaded daemon or grant OS permissions.

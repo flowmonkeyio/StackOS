@@ -3,6 +3,7 @@ import { nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import type { TrackerTask } from '@/lib/task-tracker/types'
+import { formatDateTime } from '@/lib/stackos/json'
 
 import TrackerTaskDetailDialog from './TrackerTaskDetailDialog.vue'
 
@@ -94,6 +95,48 @@ describe('TrackerTaskDetailDialog', () => {
 
     wrapper.unmount()
   })
+
+  it.each([
+    ['running', 'agent', 'inspect_attempt'],
+    ['production_succeeded', 'main_agent', 'review_acceptance'],
+    ['unknown', 'main_agent', 'reconcile_provenance'],
+    ['stale', 'operator', 'repair_authority'],
+  ])(
+    'renders owner status %s without acceptance inference',
+    async (state, nextActor, nextAction) => {
+      const wrapper = mount(TrackerTaskDetailDialog, {
+        props: {
+          modelValue: true,
+          task: task(),
+          ownerStatus: {
+            state,
+            next_actor: nextActor,
+            next_action: nextAction,
+            acceptance_state: 'not_evaluated',
+            captured_at: '2026-10-17T18:00:00Z',
+            freshness: 'fresh',
+            owner: { owner_ref: 'owner:current', epoch: 8, revision: 12 },
+            original_binding: {
+              owner_ref: 'owner:original',
+              epoch: 7,
+              reservation_ref: 'intent:original',
+            },
+            needs: ['attempt_running', 'host_unavailable'],
+          },
+        },
+        attachTo: document.body,
+      })
+      await nextTick()
+      const text = (document.body.textContent ?? '').replace(/\s+/g, ' ')
+      expect(text).toContain(state)
+      expect(text).toContain('acceptance not_evaluated')
+      expect(text).toContain(`Captured ${formatDateTime('2026-10-17T18:00:00Z')} · freshness fresh`)
+      expect(text).toContain('Current owner:current · epoch 8 · revision 12')
+      expect(text).toContain('Original owner:original · epoch 7 · reservation intent:original')
+      expect(text).toContain('Needs: attempt_running, host_unavailable')
+      wrapper.unmount()
+    },
+  )
 })
 
 function task(): TrackerTask {

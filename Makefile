@@ -115,6 +115,14 @@ signoff: lint typecheck test-transfer-connectors ## Before commit/release: setup
 		tests/integration/test_mcp/test_mcp_projects.py \
 		tests/integration/test_mcp/test_mcp_tracker.py \
 		tests/integration/test_mcp/test_mcp_communications.py \
+		tests/integration/test_controlled_command_admission.py \
+		tests/integration/test_controlled_command_public.py \
+		tests/integration/test_controlled_publication.py \
+		tests/integration/test_controlled_report_certificate.py \
+		tests/integration/test_controlled_process_host.py \
+		tests/integration/test_controlled_process_terminal.py \
+		tests/integration/test_supervision_registered_effects.py \
+		tests/integration/test_repositories/test_durable_action_dispatcher.py \
 		tests/integration/test_mcp/test_mcp_agent_presets.py \
 		tests/integration/test_mcp/test_mcp_seo_workflows.py \
 		tests/integration/test_mcp/test_mcp_agent_requests.py \

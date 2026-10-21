@@ -266,7 +266,19 @@ Extend existing T5/T6/T7 and pre-dispatch proof to match
   escalation routes. Freeze an explicitly approved operation-specific threshold
   before proof; add no universal timeout. Independently review detection/routing
   timestamps, authority and traces showing zero unintended dispatch/effects.
-  This acceptance case remains **not run** until that proof is performed.
+  This incident-specific proof passed in the isolated synthetic fixture on
+  2026-10-21; see the implementation and assertions in
+  [`test_supervision_incident_progress.py`](../tests/integration/test_supervision_incident_progress.py).
+  Actual MCP bookkeeping and decision readback covered missing controller
+  authority, stale observation under a frozen 750 ms fixture threshold,
+  incomplete evidence and incorrect source/item bindings, with zero unintended
+  dispatch or effects. Two companion cases changed a tracked Git diff: activity
+  neither accepted work nor renewed the original deadline, and the same verifier
+  rejected a deliberately weakened copied guard after its genuine report.
+  Independent review accepted three unique cases across the repaired attempts;
+  the original fixture failures remain in MYB-100 evidence. These are bounded
+  fixture results, not a general runtime classifier. Full candidate signoff and
+  installed activation have separate evidence and authority boundaries.
 
 The original binding/progress incident's verified evidence comprised project 14's draft plan 22,
 task 27, MYB-92 ticket 231 and pending delivery step 164, with controller

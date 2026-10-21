@@ -11,6 +11,8 @@ from threading import Event
 import httpx
 import pytest
 from pytest_httpx import HTTPXMock
+from sqlalchemy import event
+from sqlalchemy.exc import OperationalError
 from sqlmodel import Session, select
 from stackos_connectors.connectors.telegram.tdlib.native import TelegramTdlibNativeError
 
@@ -18,12 +20,32 @@ from stackos.actions import ActionRepository
 from stackos.actions.telegram import TelegramActionConnector
 from stackos.auth_providers import AuthRepository
 from stackos.auth_providers.repository.telegram_application import TelegramApplicationRepository
-from stackos.db.models import Action, ActionCall, Credential, CredentialAccount, CredentialScope
+from stackos.db.models import (
+    Action,
+    ActionCall,
+    Credential,
+    CredentialAccount,
+    CredentialScope,
+    DurableActionItem,
+    DurableActionJob,
+    IdempotencyKey,
+    ProjectEvent,
+    RunPlan,
+    RunPlanStep,
+    TrackerTask,
+    TrackerTicket,
+    WorkItemOwnership,
+)
 from stackos.integrations.telegram_tdlib.service import TelegramTdlibServiceError
 from stackos.operations import communication_platform
+from stackos.operations.communication_delivery import handlers as communication_delivery_handlers
 from stackos.repositories.agent_requests import AgentRequestRepository
+from stackos.repositories.base import ConflictError
 from stackos.repositories.provider_refs import ProviderObjectReferenceRepository
 from stackos.repositories.resources import ResourceRepository
+from stackos.repositories.runs import RunRepository
+from stackos.repositories.tracker import TrackerRepository
+from stackos.workflows.run_plan_grants import RUN_PLAN_OWNER_TOOL_NAMES
 from tests.integration.account_test_support import seed_test_account
 from tests.integration.test_repositories.test_telegram_actions import (
     DownloadTimeoutTelegram,
@@ -2440,6 +2462,882 @@ def test_telegram_communication_seals_schedule_and_rejects_changed_intent(
             },
         )
         assert "conflict" in changed_action["message"].lower()
+
+
+def test_supervised_telegram_enqueue_registers_owner_atomically_and_replays(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The real communication path binds one durable effect to its current owner."""
+    project_id = int(seeded_project["data"]["id"])
+    credential_ref = _seed_telegram_credential(
+        mcp_client, project_id, account_name="supervised-durable"
+    )
+    mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "supervised-durable",
+            "identity": {"display_name": "Supervised durable"},
+            "provider_facets": {"telegram": {"credential_ref": credential_ref}},
+        },
+    )
+    mcp_client.call_tool_structured(
+        "communicationTarget.upsert",
+        {
+            "project_id": project_id,
+            "key": "supervised-durable",
+            "provider_key": "telegram",
+            "surface_ref": "telegram-chat:12345",
+            "profile_ref": "communication-profile:supervised-durable",
+            "metadata_json": {"action_mode": "auto"},
+            "send_policy": {
+                "mode": "explicit-target",
+                "allowed_profile_refs": ["communication-profile:supervised-durable"],
+                "allowed_target_refs": ["communication-target:supervised-durable"],
+            },
+        },
+    )
+    plan = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {
+            "project_id": project_id,
+            "run_plan_json": {
+                "schema_version": "stackos.run-plan.v1",
+                "key": "supervised-durable-send.run",
+                "title": "Supervised durable send",
+                "steps": [{"id": "notify", "title": "Notify"}],
+            },
+            "response_mode": "raw",
+        },
+    )["data"]
+    engine = mcp_client.test_client.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        task = session.exec(
+            select(TrackerTask).where(TrackerTask.key == f"workflow-{plan['id']}")
+        ).one()
+        step = session.exec(
+            select(RunPlanStep).where(
+                RunPlanStep.run_plan_id == plan["id"],
+                RunPlanStep.step_id == "notify",
+            )
+        ).one()
+        step_id = int(step.id)
+        ticket = (
+            TrackerRepository(session)
+            .create_ticket(
+                project_id=project_id,
+                task_key=task.key,
+                key="supervised-durable-send",
+                title="Supervised durable send",
+                run_plan_id=plan["id"],
+                run_plan_step_id=step.id,
+                references_json=[{"ref_type": "external", "ref": "external:durable-send"}],
+            )
+            .data.ticket
+        )
+        assert ticket is not None
+        item_ref = f"ticket:{ticket.id}"
+        native_ticket = session.get(TrackerTicket, ticket.id)
+        assert native_ticket is not None
+        native_ticket.metadata_json = {
+            "ownership_continuity": {
+                "budget_ref": "budget:durable-send",
+                "stop_scope_ref": "stop-scope:durable-send",
+                "history_ref": "history:durable-send",
+                "scope_digest": "d" * 64,
+                "stopped": False,
+                "denied": False,
+                "attempts_used": 0,
+                "failures_used": 0,
+                "attempt_limit": 2,
+                "failure_limit": 2,
+                "effect_identity": "effect:durable-send",
+            }
+        }
+        native_plan = session.get(RunPlan, plan["id"])
+        assert native_plan is not None
+        native_plan.grant_snapshot_json = {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "notify",
+                    "tool": "communication.send",
+                    "targets": ["communication-target:supervised-durable"],
+                },
+                *[
+                    {"step_id": "notify", "tool": tool, "targets": [item_ref]}
+                    for tool in sorted(RUN_PLAN_OWNER_TOOL_NAMES)
+                ],
+            ]
+        }
+        session.add(native_ticket)
+        session.add(native_plan)
+        session.commit()
+
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": plan["id"], "response_mode": "raw"},
+    )["data"]
+    run_token = started["run_token"]
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "project_id": project_id,
+            "run_plan_id": plan["id"],
+            "step_id": "notify",
+            "run_token": run_token,
+            "response_mode": "raw",
+        },
+    )
+    acquired = mcp_client.call_tool_structured(
+        "run.ownerAcquire",
+        {
+            "project_id": project_id,
+            "canonical_item_id": item_ref,
+            "owner_ref": "fixture:durable-worker",
+            "scope_digest": "d" * 64,
+            "run_token": run_token,
+            "response_mode": "raw",
+        },
+    )
+    assert "error" not in acquired and "code" not in acquired, acquired
+    with Session(engine) as session:
+        owner_before_enqueue = RunRepository(session).owner_get(
+            project_id=project_id, canonical_item_id=item_ref
+        )
+        attempts_before_enqueue = owner_before_enqueue.continuity_json["attempts_used"]
+        failures_before_enqueue = owner_before_enqueue.continuity_json["failures_used"]
+
+    # Keep this queued effect available for the explicit grant-loss and claim
+    # serialization assertions below; the app's normal dispatcher polls every
+    # 10ms and could otherwise consume it between enqueue and those checks.
+    dispatcher = mcp_client.test_client.app.state.operation_services["durable_dispatcher"]
+
+    async def hold_queued_jobs(**_kwargs: object) -> int:
+        return 0
+
+    monkeypatch.setattr(dispatcher, "run_once", hold_queued_jobs)
+
+    arguments = {
+        "project_id": project_id,
+        "to": "supervised-durable",
+        "text": "Synthetic supervised durable notice.",
+        "intent_id": "durable-notice:one",
+        "run_token": run_token,
+    }
+
+    # Transport request ids are useful legacy replay keys, but they are not a
+    # caller's stable intent for supervised work. Repeated fresh requests must
+    # fail before persisting any supervised effect.
+    with Session(engine) as session:
+        calls_before_missing_intent = len(
+            session.exec(
+                select(ActionCall).where(
+                    ActionCall.project_id == project_id,
+                    ActionCall.run_plan_id == plan["id"],
+                )
+            ).all()
+        )
+        jobs_before_missing_intent = len(
+            session.exec(
+                select(DurableActionJob).where(
+                    DurableActionJob.project_id == project_id,
+                    DurableActionJob.run_plan_id == plan["id"],
+                )
+            ).all()
+        )
+    for _ in range(2):
+        missing_intent = mcp_client.call_tool_error(
+            "communication.send",
+            {key: value for key, value in arguments.items() if key != "intent_id"},
+        )
+        assert "caller-provided stable intent" in json.dumps(missing_intent)
+    with Session(engine) as session:
+        assert (
+            len(
+                session.exec(
+                    select(ActionCall).where(
+                        ActionCall.project_id == project_id,
+                        ActionCall.run_plan_id == plan["id"],
+                    )
+                ).all()
+            )
+            == calls_before_missing_intent
+        )
+        assert (
+            len(
+                session.exec(
+                    select(DurableActionJob).where(
+                        DurableActionJob.project_id == project_id,
+                        DurableActionJob.run_plan_id == plan["id"],
+                    )
+                ).all()
+            )
+            == jobs_before_missing_intent
+        )
+
+    # First exercise the stale-preparation fence before a durable registration
+    # protects this owner history from reassignment.
+    from tests.integration.test_controlled_process_terminal import certify_empty
+
+    prepare_delivery = TelegramActionConnector.prepare_delivery
+
+    async def reassign_during_preparation(connector, request):
+        prepared = await prepare_delivery(connector, request)
+        with Session(engine) as other:
+            repo = RunRepository(other)
+            current = repo.owner_get(project_id=project_id, canonical_item_id=item_ref)
+            certify_empty(repo, current)
+            current = repo.owner_get(project_id=project_id, canonical_item_id=item_ref)
+            repo.owner_reassign(
+                project_id=project_id,
+                canonical_item_id=item_ref,
+                owner_ref=current.owner_ref,
+                new_owner_ref="fixture:reassigned-during-prepare",
+                scope_digest=current.scope_digest,
+                expected_epoch=current.epoch,
+                expected_revision=current.revision,
+            )
+        return prepared
+
+    with Session(engine) as session:
+        before_race_calls = len(
+            session.exec(
+                select(ActionCall).where(
+                    ActionCall.project_id == project_id,
+                    ActionCall.run_plan_id == plan["id"],
+                )
+            ).all()
+        )
+        before_race_jobs = len(
+            session.exec(
+                select(DurableActionJob).where(
+                    DurableActionJob.project_id == project_id,
+                    DurableActionJob.run_plan_id == plan["id"],
+                )
+            ).all()
+        )
+    with monkeypatch.context() as patcher:
+        patcher.setattr(TelegramActionConnector, "prepare_delivery", reassign_during_preparation)
+        stale = mcp_client.call_tool_error(
+            "communication.send",
+            {**arguments, "intent_id": "durable-notice:stale-owner"},
+        )
+    assert stale.get("code", 0) < 0, stale
+    with Session(engine) as session:
+        assert (
+            len(
+                session.exec(
+                    select(ActionCall).where(
+                        ActionCall.project_id == project_id,
+                        ActionCall.run_plan_id == plan["id"],
+                    )
+                ).all()
+            )
+            == before_race_calls
+        )
+        assert (
+            len(
+                session.exec(
+                    select(DurableActionJob).where(
+                        DurableActionJob.project_id == project_id,
+                        DurableActionJob.run_plan_id == plan["id"],
+                    )
+                ).all()
+            )
+            == before_race_jobs
+        )
+        reassigned = RunRepository(session).owner_get(
+            project_id=project_id, canonical_item_id=item_ref
+        )
+        assert reassigned.epoch == 2
+        assert reassigned.owner_ref == "fixture:reassigned-during-prepare"
+
+    enqueue_commits: list[dict[str, object]] = []
+
+    def observe_enqueue_flush(session: Session, _flush_context, _instances) -> None:
+        for row in session.new:
+            request = row.request_json if isinstance(row, ActionCall) else None
+            if (
+                isinstance(row, ActionCall)
+                and row.run_plan_id == plan["id"]
+                and row.run_plan_step_id == step_id
+                and type(request) is dict
+                and type(request.get("content")) is dict
+                and request["content"].get("text") == arguments["text"]
+            ):
+                session.info["supervised_enqueue_call"] = row
+
+    def observe_enqueue_commit(session: Session) -> None:
+        call = session.info.pop("supervised_enqueue_call", None)
+        if not isinstance(call, ActionCall) or call.id is None:
+            return
+        jobs = session.exec(
+            select(DurableActionJob).where(DurableActionJob.action_call_id == call.id)
+        ).all()
+        job_ids = {job.id for job in jobs}
+        items = (
+            session.exec(
+                select(DurableActionItem).where(DurableActionItem.job_id.in_(job_ids))
+            ).all()
+            if job_ids
+            else []
+        )
+        keys = session.exec(
+            select(IdempotencyKey).where(
+                IdempotencyKey.project_id == project_id,
+                IdempotencyKey.run_id == started["run_id"],
+                IdempotencyKey.tool_name == "action.background",
+            )
+        ).all()
+        matching_keys = [
+            key for key in keys if (key.response_json or {}).get("action_call_id") == call.id
+        ]
+        owner = session.exec(
+            select(WorkItemOwnership).where(
+                WorkItemOwnership.project_id == project_id,
+                WorkItemOwnership.canonical_item_id == item_ref,
+            )
+        ).one()
+        registrations = owner.continuity_json["durable_action_registrations"]
+        enqueue_commits.append(
+            {
+                "transaction_id": id(session.get_transaction()),
+                "transaction_active": session.connection().in_transaction(),
+                "action_call_id": call.id,
+                "job_ids": job_ids,
+                "item_count": len(items),
+                "idempotency_call_ids": {
+                    key.response_json["action_call_id"] for key in matching_keys
+                },
+                "owner_registration_job_ids": {int(key) for key in registrations},
+            }
+        )
+
+    event.listen(Session, "before_flush", observe_enqueue_flush)
+    event.listen(Session, "before_commit", observe_enqueue_commit)
+    try:
+        sent = mcp_client.call_tool_structured("communication.send", arguments)
+    finally:
+        event.remove(Session, "before_flush", observe_enqueue_flush)
+        event.remove(Session, "before_commit", observe_enqueue_commit)
+    assert sent.get("data", {}).get("status") == "running", sent
+    assert len(enqueue_commits) == 1, enqueue_commits
+    commit = enqueue_commits[0]
+    assert commit["transaction_active"] is True, commit
+    assert commit["transaction_id"] is not None, commit
+    assert commit["action_call_id"] == sent["data"]["action_call_id"], commit
+    assert len(commit["job_ids"]) == 1, commit
+    assert commit["item_count"] > 0, commit
+    assert commit["idempotency_call_ids"] == {commit["action_call_id"]}, commit
+    assert commit["owner_registration_job_ids"] == commit["job_ids"], commit
+    assert "supervised_owner" not in json.dumps(sent)
+    replay = mcp_client.call_tool_structured("communication.send", arguments)
+    assert replay["data"]["action_call_id"] == sent["data"]["action_call_id"]
+    assert replay["data"]["replayed"] is True
+
+    with Session(engine) as session:
+        call_id = int(sent["data"]["action_call_id"])
+        call = session.get(ActionCall, call_id)
+        job = session.exec(
+            select(DurableActionJob).where(DurableActionJob.action_call_id == call_id)
+        ).one()
+        assert call is not None and call.run_plan_id == plan["id"]
+        private = job.metadata_json["supervised_owner"]
+        assert private["binding"]["canonical_item_id"] == item_ref
+        assert private["binding"]["intent_digest"]
+        owner = session.exec(
+            select(WorkItemOwnership).where(
+                WorkItemOwnership.project_id == project_id,
+                WorkItemOwnership.canonical_item_id == item_ref,
+            )
+        ).one()
+        registration = owner.continuity_json["durable_action_registrations"][str(job.id)]
+        assert registration["action_call_id"] == call_id
+        assert registration["binding"] == private["binding"]
+        assert owner.continuity_json["attempts_used"] == attempts_before_enqueue
+        assert owner.continuity_json["failures_used"] == failures_before_enqueue
+        assert (
+            session.exec(
+                select(IdempotencyKey).where(
+                    IdempotencyKey.project_id == project_id,
+                    IdempotencyKey.run_id == started["run_id"],
+                    IdempotencyKey.tool_name == "action.background",
+                )
+            ).first()
+            is not None
+        )
+        job_id = int(job.id)
+
+    # A pending durable effect has no quiescence certificate, so ownership
+    # cannot be reassigned while its delivery outcome is unresolved.
+    with Session(engine) as session:
+        repo = RunRepository(session)
+        current = repo.owner_get(project_id=project_id, canonical_item_id=item_ref)
+        with pytest.raises(ConflictError, match="quiescence"):
+            repo.owner_reassign(
+                project_id=project_id,
+                canonical_item_id=item_ref,
+                owner_ref=current.owner_ref,
+                new_owner_ref="fixture:cannot-reassign-pending-effect",
+                scope_digest=current.scope_digest,
+                expected_epoch=current.epoch,
+                expected_revision=current.revision,
+            )
+        unchanged = repo.owner_get(project_id=project_id, canonical_item_id=item_ref)
+        assert (unchanged.owner_ref, unchanged.epoch, unchanged.revision) == (
+            current.owner_ref,
+            current.epoch,
+            current.revision,
+        )
+
+    with Session(engine) as session:
+        plan_row = session.get(RunPlan, plan["id"])
+        assert plan_row is not None
+        original_grants = json.loads(json.dumps(plan_row.grant_snapshot_json))
+        plan_row.grant_snapshot_json = {"mcp_tool_grants": []}
+        session.add(plan_row)
+        session.commit()
+    with Session(engine) as session, pytest.raises(ConflictError, match="grant snapshot"):
+        ActionRepository(session).claim_durable_action_items(
+            project_id=project_id, job_id=job_id, limit=1
+        )
+    with Session(engine) as session:
+        untouched = session.exec(
+            select(DurableActionItem).where(DurableActionItem.job_id == job_id)
+        ).one()
+        assert untouched.attempt_count == 0
+        plan_row = session.get(RunPlan, plan["id"])
+        assert plan_row is not None
+        plan_row.grant_snapshot_json = original_grants
+        session.add(plan_row)
+        session.commit()
+
+    original_validation = ActionRepository._validate_supervised_durable_job
+    blocked_concurrent_stops: list[bool] = []
+
+    def validate_then_attempt_stop(repository, current_job) -> None:
+        original_validation(repository, current_job)
+        if current_job.id != job_id:
+            return
+        writer_connection = repository._s.connection()
+        writer_dbapi = writer_connection.connection.driver_connection
+        assert writer_dbapi.in_transaction is True
+        with Session(engine) as competing:
+            competing_connection = competing.connection()
+            assert competing_connection.connection.driver_connection is not writer_dbapi
+            competing_connection.exec_driver_sql("PRAGMA busy_timeout=0")
+            current_owner = RunRepository(competing).owner_get(
+                project_id=project_id, canonical_item_id=item_ref
+            )
+            with pytest.raises(OperationalError, match="locked"):
+                RunRepository(competing).owner_stop(
+                    project_id=project_id,
+                    canonical_item_id=item_ref,
+                    owner_ref=current_owner.owner_ref,
+                    expected_epoch=current_owner.epoch,
+                    expected_revision=current_owner.revision,
+                    reason_ref="fixture:stop-raced-with-durable-claim",
+                )
+            competing.rollback()
+        blocked_concurrent_stops.append(True)
+
+    with Session(engine) as session:
+        with monkeypatch.context() as patcher:
+            patcher.setattr(
+                ActionRepository,
+                "_validate_supervised_durable_job",
+                validate_then_attempt_stop,
+            )
+            claimed = ActionRepository(session).claim_durable_action_items(
+                project_id=project_id, job_id=job_id, limit=1
+            )
+        assert len(claimed) == 1
+        assert blocked_concurrent_stops == [True]
+        ActionRepository(session).complete_durable_action_item(
+            project_id=project_id,
+            item_id=claimed[0].id,
+            attempt_ref=claimed[0].attempt_ref,
+            result_json={"fixture": "provider-success"},
+        )
+
+    # Revoke the selected operation grant in the writer transaction immediately
+    # before the current-authority recheck. The reservation and its job must roll
+    # back instead of committing from the earlier permission snapshot.
+    guard_factory = communication_delivery_handlers._durable_commit_guard
+
+    def revoked_grant_guard(ctx, operation, operation_arguments):
+        guard = guard_factory(ctx, operation, operation_arguments)
+
+        def recheck_after_revocation() -> None:
+            current_plan = ctx.session.get(RunPlan, plan["id"])
+            assert current_plan is not None
+            current_plan.grant_snapshot_json = {"mcp_tool_grants": []}
+            ctx.session.add(current_plan)
+            ctx.session.flush()
+            assert guard is not None
+            guard()
+
+        return recheck_after_revocation
+
+    with Session(engine) as session:
+        before_revocation_calls = len(
+            session.exec(
+                select(ActionCall).where(
+                    ActionCall.project_id == project_id,
+                    ActionCall.run_plan_id == plan["id"],
+                )
+            ).all()
+        )
+        before_revocation_jobs = len(
+            session.exec(
+                select(DurableActionJob).where(
+                    DurableActionJob.project_id == project_id,
+                    DurableActionJob.run_plan_id == plan["id"],
+                )
+            ).all()
+        )
+    with monkeypatch.context() as patcher:
+        patcher.setattr(
+            communication_delivery_handlers,
+            "_durable_commit_guard",
+            revoked_grant_guard,
+        )
+        revoked = mcp_client.call_tool_error(
+            "communication.send",
+            {**arguments, "intent_id": "durable-notice:revoked-grant"},
+        )
+    assert revoked.get("code", 0) < 0, revoked
+    with Session(engine) as session:
+        assert (
+            len(
+                session.exec(
+                    select(ActionCall).where(
+                        ActionCall.project_id == project_id,
+                        ActionCall.run_plan_id == plan["id"],
+                    )
+                ).all()
+            )
+            == before_revocation_calls
+        )
+        assert (
+            len(
+                session.exec(
+                    select(DurableActionJob).where(
+                        DurableActionJob.project_id == project_id,
+                        DurableActionJob.run_plan_id == plan["id"],
+                    )
+                ).all()
+            )
+            == before_revocation_jobs
+        )
+        unchanged_plan = session.get(RunPlan, plan["id"])
+        assert unchanged_plan is not None
+        assert unchanged_plan.grant_snapshot_json["mcp_tool_grants"]
+
+    retry_arguments = {**arguments, "intent_id": "durable-notice:rollback"}
+    registration = RunRepository.register_durable_action_effect
+
+    def fail_after_registration(repo, **kwargs):
+        registration(repo, **kwargs)
+        raise RuntimeError("synthetic failure after owner registration was staged")
+
+    with Session(engine) as session:
+        before_calls = len(
+            session.exec(
+                select(ActionCall).where(
+                    ActionCall.project_id == project_id,
+                    ActionCall.run_plan_id == plan["id"],
+                )
+            ).all()
+        )
+        before_jobs = len(
+            session.exec(
+                select(DurableActionJob).where(
+                    DurableActionJob.project_id == project_id,
+                    DurableActionJob.run_plan_id == plan["id"],
+                )
+            ).all()
+        )
+        before_items = len(session.exec(select(DurableActionItem)).all())
+        before_idempotency = len(session.exec(select(IdempotencyKey)).all())
+        before_events = len(session.exec(select(ProjectEvent)).all())
+        before_owner = session.exec(
+            select(WorkItemOwnership).where(
+                WorkItemOwnership.project_id == project_id,
+                WorkItemOwnership.canonical_item_id == item_ref,
+            )
+        ).one()
+        before_owner_json = json.loads(json.dumps(before_owner.continuity_json))
+
+    monkeypatch.setattr(RunRepository, "register_durable_action_effect", fail_after_registration)
+    failed = mcp_client.call_tool_error("communication.send", retry_arguments)
+    assert failed.get("code", 0) < 0, failed
+    monkeypatch.undo()
+
+    with Session(engine) as session:
+        assert (
+            len(
+                session.exec(
+                    select(ActionCall).where(
+                        ActionCall.project_id == project_id,
+                        ActionCall.run_plan_id == plan["id"],
+                    )
+                ).all()
+            )
+            == before_calls
+        )
+        assert (
+            len(
+                session.exec(
+                    select(DurableActionJob).where(
+                        DurableActionJob.project_id == project_id,
+                        DurableActionJob.run_plan_id == plan["id"],
+                    )
+                ).all()
+            )
+            == before_jobs
+        )
+        assert len(session.exec(select(DurableActionItem)).all()) == before_items
+        assert len(session.exec(select(IdempotencyKey)).all()) == before_idempotency
+        assert len(session.exec(select(ProjectEvent)).all()) == before_events
+        owner_after_failure = session.exec(
+            select(WorkItemOwnership).where(
+                WorkItemOwnership.project_id == project_id,
+                WorkItemOwnership.canonical_item_id == item_ref,
+            )
+        ).one()
+        assert owner_after_failure.continuity_json == before_owner_json
+
+    retried = mcp_client.call_tool_structured("communication.send", retry_arguments)
+    assert retried.get("data", {}).get("status") == "running", retried
+    assert retried["data"]["action_call_id"] != sent["data"]["action_call_id"]
+    from datetime import UTC, datetime, timedelta
+
+    with Session(engine) as session:
+        retry_job = session.exec(
+            select(DurableActionJob).where(
+                DurableActionJob.action_call_id == retried["data"]["action_call_id"]
+            )
+        ).one()
+        retry_claim = ActionRepository(session).claim_durable_action_items(
+            project_id=project_id,
+            job_id=int(retry_job.id),
+            limit=1,
+            now=datetime.now(UTC) + timedelta(seconds=2),
+        )
+        assert len(retry_claim) == 1
+        ActionRepository(session).complete_durable_action_item(
+            project_id=project_id,
+            item_id=retry_claim[0].id,
+            attempt_ref=retry_claim[0].attempt_ref,
+            result_json={"fixture": "provider-success"},
+        )
+
+    with Session(engine) as session:
+        repo = RunRepository(session)
+        current = repo.owner_get(project_id=project_id, canonical_item_id=item_ref)
+        repo.owner_stop(
+            project_id=project_id,
+            canonical_item_id=item_ref,
+            owner_ref=current.owner_ref,
+            expected_epoch=current.epoch,
+            expected_revision=current.revision,
+            reason_ref="fixture:stop-after-durable-completion",
+        )
+
+    with (
+        Session(engine) as session,
+        pytest.raises(ConflictError, match=r"stop or denial remains binding"),
+    ):
+        ActionRepository(session).claim_durable_action_items(
+            project_id=project_id, job_id=int(retry_job.id), limit=1
+        )
+
+
+def test_action_execute_requires_caller_stable_intent_for_supervised_durable_work(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    credential_ref = _seed_telegram_credential(
+        mcp_client, project_id, account_name="supervised-action-execute"
+    )
+    mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "supervised-action-execute",
+            "identity": {"display_name": "Supervised action execute"},
+            "provider_facets": {"telegram": {"credential_ref": credential_ref}},
+            "response_mode": "raw",
+        },
+    )
+    action_ref = "communications.telegram.message.send"
+    plan = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {
+            "project_id": project_id,
+            "run_plan_json": {
+                "schema_version": "stackos.run-plan.v1",
+                "key": "supervised-action-execute.run",
+                "title": "Supervised action execute",
+                "steps": [{"id": "notify", "title": "Notify", "action_refs": [action_ref]}],
+            },
+            "response_mode": "raw",
+        },
+    )["data"]
+    engine = mcp_client.test_client.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        task = session.exec(
+            select(TrackerTask).where(TrackerTask.key == f"workflow-{plan['id']}")
+        ).one()
+        step = session.exec(
+            select(RunPlanStep).where(
+                RunPlanStep.run_plan_id == plan["id"],
+                RunPlanStep.step_id == "notify",
+            )
+        ).one()
+        ticket = (
+            TrackerRepository(session)
+            .create_ticket(
+                project_id=project_id,
+                task_key=task.key,
+                key="supervised-action-execute",
+                title="Supervised action execute",
+                run_plan_id=plan["id"],
+                run_plan_step_id=step.id,
+                metadata_json={
+                    "ownership_continuity": {
+                        "budget_ref": "budget:action-execute",
+                        "stop_scope_ref": "stop-scope:action-execute",
+                        "history_ref": "history:action-execute",
+                        "scope_digest": "e" * 64,
+                        "effect_identity": "effect:action-execute",
+                        "stopped": False,
+                        "denied": False,
+                        "attempts_used": 0,
+                        "failures_used": 0,
+                        "attempt_limit": 2,
+                        "failure_limit": 2,
+                    }
+                },
+            )
+            .data.ticket
+        )
+        assert ticket is not None
+        item_ref = f"ticket:{ticket.id}"
+        native_plan = session.get(RunPlan, plan["id"])
+        assert native_plan is not None
+        native_plan.grant_snapshot_json = {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "notify",
+                    "tool": "action.execute",
+                    "action_refs": [action_ref],
+                },
+                *[
+                    {"step_id": "notify", "tool": tool, "targets": [item_ref]}
+                    for tool in sorted(RUN_PLAN_OWNER_TOOL_NAMES)
+                ],
+            ]
+        }
+        session.add(native_plan)
+        session.commit()
+
+    started = mcp_client.call_tool_structured(
+        "runPlan.start", {"project_id": project_id, "run_plan_id": plan["id"]}
+    )["data"]
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "project_id": project_id,
+            "run_plan_id": plan["id"],
+            "step_id": "notify",
+            "run_token": started["run_token"],
+        },
+    )
+    acquired = mcp_client.call_tool_structured(
+        "run.ownerAcquire",
+        {
+            "project_id": project_id,
+            "canonical_item_id": item_ref,
+            "owner_ref": "fixture:action-execute-worker",
+            "scope_digest": "e" * 64,
+            "run_token": started["run_token"],
+            "response_mode": "raw",
+        },
+    )
+    assert "error" not in acquired and "code" not in acquired, acquired
+    assert acquired.get("data", {}).get("acquired") is True, acquired
+    with Session(engine) as session:
+        current_owner = session.exec(
+            select(WorkItemOwnership).where(
+                WorkItemOwnership.project_id == project_id,
+                WorkItemOwnership.canonical_item_id == item_ref,
+            )
+        ).one()
+        current_ticket = session.exec(
+            select(TrackerTicket).where(TrackerTicket.key == "supervised-action-execute")
+        ).one()
+        assert current_owner.owner_ref == "fixture:action-execute-worker"
+        assert type(current_ticket.metadata_json.get("ownership_continuity")) is dict
+    dispatcher = mcp_client.test_client.app.state.operation_services["durable_dispatcher"]
+
+    async def hold_queued_jobs(**_kwargs: object) -> int:
+        return 0
+
+    monkeypatch.setattr(dispatcher, "run_once", hold_queued_jobs)
+    arguments = {
+        "project_id": project_id,
+        "action_ref": action_ref,
+        "credential_ref": credential_ref,
+        "run_token": started["run_token"],
+        "input_json": {
+            "profile_ref": "communication-profile:supervised-action-execute",
+            "surface_ref": "telegram-chat:12345",
+            "content": {"kind": "text", "text": "Synthetic action.execute body."},
+        },
+    }
+    missing = mcp_client.call_tool_error("action.execute", arguments)
+    assert "caller-provided stable intent" in json.dumps(missing)
+    with Session(engine) as session:
+        assert not session.exec(
+            select(ActionCall).where(
+                ActionCall.project_id == project_id,
+                ActionCall.run_plan_id == plan["id"],
+            )
+        ).first()
+        assert not session.exec(
+            select(DurableActionJob).where(
+                DurableActionJob.project_id == project_id,
+                DurableActionJob.run_plan_id == plan["id"],
+            )
+        ).first()
+
+    explicit_key = "action-execute:supervised-notice:one"
+    sent = mcp_client.call_tool_structured(
+        "action.execute", {**arguments, "idempotency_key": explicit_key, "response_mode": "raw"}
+    )
+    assert "error" not in sent and "code" not in sent, sent
+    with Session(engine) as session:
+        call = session.get(ActionCall, sent["data"]["action_call"]["id"])
+        assert call is not None and call.idempotency_key == explicit_key
+        job = session.exec(
+            select(DurableActionJob).where(DurableActionJob.action_call_id == call.id)
+        ).one()
+        owner = session.exec(
+            select(WorkItemOwnership).where(
+                WorkItemOwnership.project_id == project_id,
+                WorkItemOwnership.canonical_item_id == item_ref,
+            )
+        ).one()
+        assert (
+            owner.continuity_json["durable_action_registrations"][str(job.id)]["action_call_id"]
+            == call.id
+        )
 
 
 def test_communication_reply_requires_matching_run_plan_source_grant(

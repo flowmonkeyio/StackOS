@@ -9,7 +9,7 @@ from typing import Any, cast, get_origin
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import delete
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from stackos.config import Settings
 from stackos.db.models import IdempotencyKey
@@ -91,6 +91,92 @@ class OperationDispatcher:
                 )
             if not trusted_local_admin or spec.name in RUN_PLAN_OWNER_TOOL_NAMES:
                 check_call_grant(spec.name, ctx, parsed)
+            if spec.name == "action.execute":
+                from stackos.actions import ActionRepository
+                from stackos.operations.actions.controlled import (
+                    _resolve_controlled_readback,
+                    _validate_controlled_cached_replay,
+                )
+                from stackos.operations.actions.schemas import ActionExecuteInput
+
+                if type(parsed) is ActionExecuteInput:
+                    from stackos.operations.actions.publication import (
+                        _resolve_publication_readback,
+                        _validate_publication_cached_replay,
+                    )
+
+                    publication = _resolve_publication_readback(parsed, ctx)
+                    if publication is not None:
+                        cached_publication = (
+                            session.exec(
+                                select(IdempotencyKey)
+                                .where(
+                                    IdempotencyKey.project_id == ctx.project_id,
+                                    IdempotencyKey.tool_name == spec.name,
+                                    IdempotencyKey.idempotency_key == ctx.idempotency_key,
+                                )
+                                .execution_options(populate_existing=True)
+                            ).first()
+                            if ctx.idempotency_key
+                            else None
+                        )
+                        if cached_publication is not None:
+                            if (
+                                cached_publication.run_id != ctx.run_id
+                                or type(cached_publication.response_json) is not dict
+                            ):
+                                raise ConflictError("publication cached history unknown")
+                            publication_payload = _validate_publication_cached_replay(
+                                parsed, ctx, cached_publication.response_json
+                            )
+                        else:
+                            publication_payload = WriteEnvelope(
+                                data=publication, project_id=ctx.project_id, run_id=ctx.run_id
+                            ).model_dump(mode="json")
+                        return OperationDispatchResult(
+                            payload=shape_operation_response(
+                                spec,
+                                publication_payload,
+                                response_mode=response_mode,
+                                idempotency_replay=True,
+                            ),
+                            duration_ms=0,
+                        )
+                    original = _resolve_controlled_readback(parsed, ctx)
+                    if original is not None:
+                        cached_row = None
+                        if ctx.idempotency_key is not None:
+                            cached_row = session.exec(
+                                select(IdempotencyKey)
+                                .where(
+                                    IdempotencyKey.project_id == ctx.project_id,
+                                    IdempotencyKey.tool_name == spec.name,
+                                    IdempotencyKey.idempotency_key == ctx.idempotency_key,
+                                )
+                                .execution_options(populate_existing=True)
+                            ).first()
+                        if cached_row is not None:
+                            if (
+                                type(cached_row.response_json) is not dict
+                                or cached_row.run_id != ctx.run_id
+                            ):
+                                raise ConflictError("controlled cached history is unknown")
+                            payload = _validate_controlled_cached_replay(
+                                parsed, ctx, cached_row.response_json
+                            )
+                        else:
+                            out = ActionRepository(session)._controlled_native_readback(
+                                readback=original
+                            )
+                            payload = WriteEnvelope(
+                                data=out, project_id=ctx.project_id, run_id=ctx.run_id
+                            ).model_dump(mode="json")
+                        return OperationDispatchResult(
+                            payload=shape_operation_response(
+                                spec, payload, response_mode=response_mode, idempotency_replay=True
+                            ),
+                            duration_ms=0,
+                        )
             if (
                 not spec.read_only
                 and ctx.idempotency_key is not None
@@ -170,6 +256,16 @@ class OperationDispatcher:
         except IdempotencyReplayError as exc:
             cached = exc.data.get("response_json")
             if cached is not None and isinstance(cached, dict):
+                if operation_name == "action.execute":
+                    from stackos.operations.actions.controlled import (
+                        _validate_controlled_cached_replay,
+                    )
+                    from stackos.operations.actions.publication import (
+                        _validate_publication_cached_replay,
+                    )
+
+                    cached = _validate_publication_cached_replay(parsed, ctx, cached)
+                    return _validate_controlled_cached_replay(parsed, ctx, cached)
                 if operation_name in RUN_PLAN_OWNER_TOOL_NAMES:
                     from stackos.operations.runs import validate_owner_replay
 

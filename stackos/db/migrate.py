@@ -25,7 +25,7 @@ def _alembic_ini_path() -> Path:
 
 
 def alembic_config(settings: Settings) -> Config:
-    """Build an Alembic config pinned to the configured SQLite database."""
+    """Bind the configured database and seed path to one migration invocation."""
     repo_root = Path(__file__).resolve().parents[2]
     cfg_path = _alembic_ini_path()
     migrations_path = Path(__file__).resolve().parent / "migrations"
@@ -33,7 +33,21 @@ def alembic_config(settings: Settings) -> Config:
     cfg.set_main_option("script_location", str(migrations_path))
     cfg.set_main_option("prepend_sys_path", str(repo_root))
     cfg.set_main_option("sqlalchemy.url", f"sqlite:///{settings.db_path}")
+    cfg.attributes["stackos_seed_path"] = settings.seed_path
     return cfg
+
+
+def migration_seed_path(config: Config | None) -> Path:
+    """Use an explicit migration seed path, or the direct-Alembic default."""
+    if config is not None and "stackos_seed_path" in config.attributes:
+        seed_path = config.attributes["stackos_seed_path"]
+        if not isinstance(seed_path, Path):
+            raise ValueError("migration seed path must be a Path")
+        return seed_path
+
+    from stackos.config import get_settings
+
+    return get_settings().seed_path
 
 
 def _stamp_create_all_schema_if_needed(settings: Settings, cfg: Config) -> bool:
@@ -110,5 +124,6 @@ __all__ = [
     "MigrationResult",
     "alembic_config",
     "current_alembic_version",
+    "migration_seed_path",
     "upgrade_to_head",
 ]

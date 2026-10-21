@@ -8,7 +8,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, StrictInt, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
 
 from stackos.db.model_enums import RunAttemptDisposition, RunObservationState
 from stackos.mcp.context import MCPContext
@@ -122,6 +122,136 @@ class OwnerInspectionOut(BaseModel):
     captured_at: datetime
     authority_valid: bool
     authority_issues: list[str]
+    status: OwnerStatusProjectionV1
+
+
+class OwnerStatusOwner(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    owner_ref: str | None = Field(max_length=160)
+    epoch: StrictInt = Field(ge=1)
+    revision: StrictInt = Field(ge=1)
+
+    @field_validator("owner_ref")
+    @classmethod
+    def bounded_owner_ref(cls, value: str | None) -> str | None:
+        if value is not None and not value:
+            raise ValueError("owner_ref must be nonempty when present")
+        return value
+
+
+class OwnerStatusBinding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    owner_ref: str = Field(min_length=1, max_length=160)
+    epoch: StrictInt = Field(gt=0)
+    scope_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    manifest_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    controller_run_id: StrictInt = Field(gt=0)
+    attempt_run_id: StrictInt = Field(gt=0)
+    reservation_ref: str = Field(min_length=1, max_length=160)
+
+
+class OwnerStatusAttempt(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: StrictInt = Field(gt=0)
+    status: Literal["running", "success", "failed", "aborted"]
+    started_at: datetime
+    ended_at: datetime | None
+    heartbeat_at: datetime | None
+    last_step_at: datetime | None
+
+    @field_validator("started_at", "ended_at", "heartbeat_at", "last_step_at")
+    @classmethod
+    def normalize_utc(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            raise ValueError("status timestamps must carry UTC timezone information")
+        return value.astimezone(UTC)
+
+
+class OwnerStatusControl(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: Literal["stackos.native-control.v1"]
+    phase: Literal[
+        "REGISTERED",
+        "ARMED",
+        "RELEASED",
+        "CANCEL_REQUESTED",
+        "CLEANUP_OBSERVED",
+        "UNKNOWN_HOLD",
+    ]
+    control_revision: StrictInt = Field(gt=0)
+    binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    manifest_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class OwnerStatusProjectionV1(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: Literal["stackos.owner-status.v1"] = "stackos.owner-status.v1"
+    state: Literal[
+        "not_reserved",
+        "running",
+        "production_succeeded",
+        "production_failed",
+        "stale",
+        "rejected",
+        "unknown",
+        "mixed",
+    ]
+    freshness: Literal["current_at_snapshot", "stale", "unknown"]
+    captured_at: datetime
+    owner: OwnerStatusOwner
+    original_binding: OwnerStatusBinding | None = None
+    attempt: OwnerStatusAttempt | None = None
+    control: OwnerStatusControl | None = None
+    needs: list[
+        Literal[
+            "missing_reservation",
+            "binding_mismatch",
+            "missing_attempt",
+            "execution_failed",
+            "authority_rejected",
+            "provenance_unknown",
+            "acceptance_review",
+        ]
+    ] = Field(max_length=7)
+
+    @model_validator(mode="after")
+    def unique_needs(self) -> OwnerStatusProjectionV1:
+        if len(self.needs) > 7 or len(set(self.needs)) != len(self.needs):
+            raise ValueError("needs must be a unique bounded list")
+        return self
+
+    next_actor: Literal["agent", "main_agent", "operator", "none"]
+    next_action: Literal[
+        "reserve_or_launch",
+        "inspect_attempt",
+        "repair_authority",
+        "reconcile_provenance",
+        "review_acceptance",
+        "none",
+    ]
+    acceptance_state: Literal["not_evaluated"] = "not_evaluated"
+
+    @field_validator("captured_at")
+    @classmethod
+    def captured_at_is_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("captured_at must carry UTC timezone information")
+        return value.astimezone(UTC)
+
+
+def _begin_owner_status_snapshot(session: Any) -> Any:
+    if session.new or session.dirty or session.deleted:
+        raise ConflictError("owner status snapshot requires a clean request session")
+    connection = session.connection()
+    if connection.dialect.name != "sqlite":
+        raise ConflictError("owner status snapshot requires SQLite transaction semantics")
+    driver = connection.connection.driver_connection
+    if driver is None or driver.in_transaction:
+        raise ConflictError("owner status snapshot cannot join an existing database transaction")
+    connection.exec_driver_sql("BEGIN")
+    return connection
 
 
 class OwnerMutationOut(BaseModel):
@@ -149,22 +279,43 @@ async def _owner_get(
     _emit: ProgressEmitter,
 ) -> OwnerInspectionOut:
     repo = RunRepository(ctx.session)
-    ownership = repo.owner_get(project_id=inp.project_id, canonical_item_id=inp.canonical_item_id)
-    issues = []
-    try:
-        repo.owner_authority(
-            project_id=inp.project_id,
-            canonical_item_id=inp.canonical_item_id,
-            ownership=ownership,
-            require_budget=True,
+    session = ctx.session
+    _begin_owner_status_snapshot(session)
+    with session.no_autoflush:
+        ownership = repo.owner_get(
+            project_id=inp.project_id, canonical_item_id=inp.canonical_item_id
         )
-    except (ConflictError, NotFoundError) as exc:
-        issues.append(str(exc))
+        issues: list[str] = []
+        try:
+            repo.owner_authority(
+                project_id=inp.project_id,
+                canonical_item_id=inp.canonical_item_id,
+                ownership=ownership,
+                require_budget=True,
+            )
+        except (ConflictError, NotFoundError) as exc:
+            issues.append(str(exc))
+            authority_state_valid = (
+                False
+                if isinstance(exc, ConflictError)
+                and exc.data.get("reason_code") == "authority_rejected"
+                else None
+            )
+        else:
+            authority_state_valid = True
+        projection_data = repo.owner_status_projection(
+            project_id=inp.project_id,
+            ownership=ownership,
+            authority_valid=authority_state_valid,
+            captured_at=datetime.now(UTC),
+        )
+    projection = OwnerStatusProjectionV1.model_validate(projection_data)
     return OwnerInspectionOut(
         ownership=ownership,
-        captured_at=datetime.now(UTC),
+        captured_at=projection.captured_at,
         authority_valid=not issues,
         authority_issues=issues,
+        status=projection,
     )
 
 
@@ -198,7 +349,14 @@ def _validate_owner_counter_floor(name: str, inp: OwnerAcquireInput, repo: RunRe
         isinstance(inp, OwnerRecordAttemptInput) and inp.clearance_ref is None
     ):
         return
-    row = repo.owner_get(project_id=inp.project_id, canonical_item_id=inp.canonical_item_id)
+    try:
+        row = repo.owner_get(project_id=inp.project_id, canonical_item_id=inp.canonical_item_id)
+    except NotFoundError:
+        if name == "run.ownerAcquire":
+            # A first acquisition has no stored floor yet. Its canonical
+            # counters, stop and budget were checked by the current preflight.
+            return
+        raise
     source = repo.owner_authority(
         project_id=inp.project_id,
         canonical_item_id=inp.canonical_item_id,
@@ -296,12 +454,33 @@ def validate_owner_replay(
     ctx: MCPContext,
     cached: dict[str, Any],
 ) -> dict[str, Any]:
+    if name == "run.ownerAcquire":
+        RunRepository(ctx.session)._require_native_clean_session()
     data = cached.get("data", {})
     if data.get("request_digest") != owner_request_digest(name, inp, ctx):
         raise ConflictError("ownership idempotency key belongs to another request/context")
     repo = _owner_preflight(name, inp, ctx)
     _validate_owner_counter_floor(name, inp, repo)
     current = repo.owner_get(project_id=inp.project_id, canonical_item_id=inp.canonical_item_id)
+    if name == "run.ownerAcquire":
+        from stackos.repositories.agent_requests import AgentRequestRepository
+
+        plan, _step = active_run_plan_step(ctx, name)
+        assert plan.id is not None
+        source = AgentRequestRepository(ctx.session)._owner_occurrence_for_plan(
+            project_id=inp.project_id,
+            run_plan_id=plan.id,
+        )
+        if (
+            source is not None
+            and repo._owner_request_occurrence_event(
+                source=source,
+                canonical_item_id=inp.canonical_item_id,
+                scope_digest=inp.scope_digest,
+            )
+            is None
+        ):
+            raise ConflictError("cached ownership has no original request occurrence")
     if current.model_dump(mode="json") != data.get("ownership"):
         raise ConflictError("cached ownership fence is stale; read current assignment")
     if isinstance(inp, OwnerRecordAttemptInput):
@@ -349,12 +528,17 @@ async def _owner_acquire(
     ctx: MCPContext,
     _emit: ProgressEmitter,
 ) -> WriteEnvelope[OwnerMutationOut]:
+    RunRepository(ctx.session)._require_native_clean_session()
     repo = _owner_preflight("run.ownerAcquire", inp, ctx)
+    plan, step = active_run_plan_step(ctx, "run.ownerAcquire")
+    assert plan.id is not None and step.id is not None
     result = repo.owner_acquire(
         project_id=inp.project_id,
         canonical_item_id=inp.canonical_item_id,
         owner_ref=inp.owner_ref,
         scope_digest=inp.scope_digest,
+        _request_run_plan_id=plan.id,
+        _request_step_id=step.id,
     )
     return _owner_receipt("run.ownerAcquire", inp, ctx, result.ownership, acquired=result.acquired)
 

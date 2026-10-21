@@ -8,13 +8,15 @@ state dir, both with mode 0600.
 from __future__ import annotations
 
 import asyncio
+import json
 import stat
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 import stackos.server as server_module
 from stackos import __milestone__, __version__
@@ -29,6 +31,100 @@ from stackos.server import create_app
 def _mode(p) -> int:  # type: ignore[no-untyped-def]
     """Return the permission bits of a Path."""
     return stat.S_IMODE(p.stat().st_mode)
+
+
+def test_explicit_settings_seed_survives_startup_and_restart(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    """S2/S8: migrations must keep the app's seed, including an at-head restart."""
+    import stackos.crypto.aes_gcm as crypto
+    import stackos.crypto.seed as seed_module
+    from stackos.db.models import Credential, IntegrationCredential
+
+    explicit = Settings(
+        data_dir=tmp_path / "explicit-data",
+        state_dir=tmp_path / "explicit-state",
+        _env_file=None,
+    )
+    ambient = Settings(
+        data_dir=tmp_path / "ambient-data",
+        state_dir=tmp_path / "ambient-state",
+        _env_file=None,
+    )
+    monkeypatch.setenv("STACKOS_DATA_DIR", str(ambient.data_dir))
+    monkeypatch.setenv("STACKOS_STATE_DIR", str(ambient.state_dir))
+    # Restore the previous binding/cache after the test without touching their files.
+    monkeypatch.setattr(crypto, "_default_seed_path", None)
+    monkeypatch.setattr(crypto, "_cache", {})
+    loaded_paths: list[Path] = []
+    original_load_seed = seed_module.load_seed
+
+    def load_owned_seed(path: Path) -> bytes:
+        assert path in (explicit.seed_path, ambient.seed_path)
+        loaded_paths.append(path)
+        return original_load_seed(path)
+
+    monkeypatch.setattr(seed_module, "load_seed", load_owned_seed)
+    secret = "S" * 40
+    app = create_app(explicit)
+    with TestClient(app, base_url="http://127.0.0.1:5180", raise_server_exceptions=False) as client:
+        response = client.post(
+            "/api/v1/auth/accounts/aws-s3",
+            headers={"Authorization": f"Bearer {explicit.token_path.read_text().strip()}"},
+            json={
+                "auth_method_key": "aws-access-key",
+                "display_name": "Synthetic seed-binding account",
+                "fields": {
+                    "access_key_id": "AKIA" + "A" * 16,
+                    "secret_access_key": secret,
+                    "bucket": "stackos-seed-binding-fixture",
+                    "region": "us-west-2",
+                },
+            },
+        )
+        assert response.status_code == 201, response.text
+        with Session(app.state.engine) as session:
+            account = session.exec(
+                select(Credential).where(Credential.provider_key == "aws-s3")
+            ).one()
+            backing = session.get(IntegrationCredential, account.integration_credential_id)
+            assert backing is not None
+            account_ref = account.credential_ref
+            backing_id = backing.id
+            encrypted_before = (bytes(backing.encrypted_payload), bytes(backing.nonce))
+        seed_a = explicit.seed_path.read_bytes()
+        plaintext = crypto.decrypt_account(
+            encrypted_before[0],
+            nonce=encrypted_before[1],
+            credential_ref=account_ref,
+            provider_key="aws-s3",
+            seed=seed_a,
+        )
+        assert json.loads(plaintext)["secret_access_key"] == secret
+        assert loaded_paths and all(path == explicit.seed_path for path in loaded_paths)
+        assert not ambient.seed_path.exists()
+        assert not ambient.db_path.exists()
+
+    restarted = create_app(explicit)
+    with (
+        TestClient(restarted, base_url="http://127.0.0.1:5180"),
+        Session(restarted.state.engine) as session,
+    ):
+        backing = session.get(IntegrationCredential, backing_id)
+        assert backing is not None
+        assert (bytes(backing.encrypted_payload), bytes(backing.nonce)) == encrypted_before
+        assert (
+            crypto.decrypt_account(
+                backing.encrypted_payload,
+                nonce=backing.nonce,
+                credential_ref=account_ref,
+                provider_key="aws-s3",
+            )
+            == plaintext
+        )
+        assert loaded_paths and all(path == explicit.seed_path for path in loaded_paths)
+        assert not ambient.seed_path.exists()
+        assert not ambient.db_path.exists()
 
 
 def test_seed_and_token_generated_with_mode_0600(settings: Settings) -> None:

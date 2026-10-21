@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from types import MappingProxyType
 from typing import Any
 
 from jsonschema import Draft202012Validator
@@ -37,6 +40,15 @@ from stackos.repositories.base import (
 
 ARTIFACT_ACTIVE_STATUSES = frozenset({"draft", "approved"})
 ARTIFACT_STATUSES = frozenset({"draft", "approved", "superseded", "archived"})
+
+
+@dataclass(frozen=True)
+class PreparedInboundResources:
+    """Ephemeral resource identities prepared for one inbound operation."""
+
+    session: Session
+    project_id: int
+    resource_ids: Mapping[tuple[str, str], tuple[int, int]]
 
 
 def _utcnow() -> datetime:
@@ -297,38 +309,151 @@ class ResourceRepository:
         self._sync_catalog()
         self._require_project(project_id)
         resource, plugin = self._get_resource_pair(key=resource_key, plugin_slug=plugin_slug)
-        row = self._find_record(
+        row = self._upsert_record_row(
             project_id=project_id,
-            resource_id=_required_id(resource.id),
+            resource=resource,
+            plugin=plugin,
+            data_json=data_json,
             record_id=record_id,
             external_id=external_id,
+            title=title,
+            provenance_json=provenance_json,
         )
-        now = _utcnow()
-        clean_data = redact_secrets(data_json)
-        clean_provenance = redact_secrets(provenance_json) if provenance_json is not None else None
-        self._validate_resource_data(resource=resource, plugin=plugin, data_json=clean_data)
-        if row is None:
-            row = ResourceRecord(
-                project_id=project_id,
-                resource_id=_required_id(resource.id),
-                external_id=external_id,
-                title=title,
-                data_json=clean_data,
-                provenance_json=clean_provenance,
-            )
-        else:
-            row.external_id = external_id if external_id is not None else row.external_id
-            row.title = title
-            row.data_json = clean_data
-            row.provenance_json = clean_provenance
-            row.updated_at = now
-        self._s.add(row)
         self._s.commit()
         self._s.refresh(row)
         return Envelope(
             data=self._record_out(row, resource, plugin),
             project_id=project_id,
         )
+
+    def prepare_inbound_resources(
+        self,
+        *,
+        project_id: int,
+        resource_keys: set[str],
+    ) -> PreparedInboundResources:
+        """Sync once, then bind required communications resources to this Session."""
+        self._sync_catalog()
+        self._require_project(project_id)
+        pairs: dict[tuple[str, str], tuple[int, int]] = {}
+        for key in sorted(resource_keys):
+            resource, plugin = self._get_resource_pair(key=key, plugin_slug="communications")
+            if type(plugin.id) is not int or type(resource.id) is not int:
+                raise ConflictError("communications resource identity is unavailable")
+            pairs[(plugin.slug, resource.key)] = (plugin.id, resource.id)
+        return PreparedInboundResources(self._s, project_id, MappingProxyType(pairs))
+
+    def _prepared_pair(
+        self,
+        prepared: PreparedInboundResources,
+        *,
+        project_id: int,
+        plugin_slug: str,
+        resource_key: str,
+    ) -> tuple[Resource, Plugin]:
+        if prepared.session is not self._s or prepared.project_id != project_id:
+            raise ConflictError("prepared resource refs belong to another Session or project")
+        pair = prepared.resource_ids.get((plugin_slug, resource_key))
+        if pair is None:
+            raise ConflictError("resource was not prepared for this inbound operation")
+        self._require_project(project_id)
+        row = self._s.exec(
+            select(Resource, Plugin)
+            .join(Plugin, col(Resource.plugin_id) == col(Plugin.id))
+            .where(
+                col(Resource.id) == pair[1],
+                col(Resource.plugin_id) == pair[0],
+                col(Resource.key) == resource_key,
+                col(Plugin.slug) == plugin_slug,
+            )
+            .execution_options(populate_existing=True)
+        ).first()
+        if row is None:
+            raise ConflictError("prepared resource binding is no longer current")
+        return row
+
+    def upsert_record_in_transaction(
+        self,
+        prepared: PreparedInboundResources,
+        *,
+        project_id: int,
+        plugin_slug: str,
+        resource_key: str,
+        data_json: dict[str, Any],
+        external_id: str | None = None,
+        title: str | None = None,
+        provenance_json: dict[str, Any] | None = None,
+    ) -> ResourceRecord:
+        """Add/flush one record under the caller-owned inbound transaction."""
+        resource, plugin = self._prepared_pair(
+            prepared,
+            project_id=project_id,
+            plugin_slug=plugin_slug,
+            resource_key=resource_key,
+        )
+        row = self._upsert_record_row(
+            project_id=project_id,
+            resource=resource,
+            plugin=plugin,
+            data_json=data_json,
+            record_id=None,
+            external_id=external_id,
+            title=title,
+            provenance_json=provenance_json,
+            fresh_lookup=True,
+        )
+        self._s.flush()
+        return row
+
+    def find_record_in_transaction(
+        self,
+        prepared: PreparedInboundResources,
+        *,
+        project_id: int,
+        plugin_slug: str,
+        resource_key: str,
+        external_id: str,
+    ) -> ResourceRecord | None:
+        resource, _plugin = self._prepared_pair(
+            prepared,
+            project_id=project_id,
+            plugin_slug=plugin_slug,
+            resource_key=resource_key,
+        )
+        return self._s.exec(
+            select(ResourceRecord)
+            .where(
+                col(ResourceRecord.project_id) == project_id,
+                col(ResourceRecord.resource_id) == resource.id,
+                col(ResourceRecord.external_id) == external_id,
+            )
+            .execution_options(populate_existing=True)
+        ).first()
+
+    def get_record_in_transaction(
+        self,
+        prepared: PreparedInboundResources,
+        *,
+        project_id: int,
+        plugin_slug: str,
+        resource_key: str,
+        record_id: int,
+    ) -> tuple[ResourceRecord, Resource, Plugin] | None:
+        self._prepared_pair(
+            prepared,
+            project_id=project_id,
+            plugin_slug=plugin_slug,
+            resource_key=resource_key,
+        )
+        return self._s.exec(
+            select(ResourceRecord, Resource, Plugin)
+            .join(Resource, col(ResourceRecord.resource_id) == col(Resource.id))
+            .join(Plugin, col(Resource.plugin_id) == col(Plugin.id))
+            .where(
+                col(ResourceRecord.id) == record_id,
+            )
+            .execution_options(populate_existing=True)
+        ).first()
 
     def _validate_resource_data(
         self,
@@ -389,6 +514,7 @@ class ResourceRepository:
         resource_id: int,
         record_id: int | None,
         external_id: str | None,
+        fresh: bool = False,
     ) -> ResourceRecord | None:
         if record_id is not None:
             row = self._s.get(ResourceRecord, record_id)
@@ -406,13 +532,57 @@ class ResourceRepository:
             return row
         if external_id is None:
             return None
-        return self._s.exec(
-            select(ResourceRecord).where(
-                ResourceRecord.project_id == project_id,
-                ResourceRecord.resource_id == resource_id,
-                ResourceRecord.external_id == external_id,
+        statement = select(ResourceRecord).where(
+            ResourceRecord.project_id == project_id,
+            ResourceRecord.resource_id == resource_id,
+            ResourceRecord.external_id == external_id,
+        )
+        if fresh:
+            statement = statement.execution_options(populate_existing=True)
+        return self._s.exec(statement).first()
+
+    def _upsert_record_row(
+        self,
+        *,
+        project_id: int,
+        resource: Resource,
+        plugin: Plugin,
+        data_json: dict[str, Any],
+        record_id: int | None,
+        external_id: str | None,
+        title: str | None,
+        provenance_json: dict[str, Any] | None,
+        fresh_lookup: bool = False,
+    ) -> ResourceRecord:
+        """Share canonical validation and row mutation across commit boundaries."""
+        resource_id = _required_id(resource.id)
+        row = self._find_record(
+            project_id=project_id,
+            resource_id=resource_id,
+            record_id=record_id,
+            external_id=external_id,
+            fresh=fresh_lookup,
+        )
+        clean_data = redact_secrets(data_json)
+        clean_provenance = redact_secrets(provenance_json) if provenance_json is not None else None
+        self._validate_resource_data(resource=resource, plugin=plugin, data_json=clean_data)
+        if row is None:
+            row = ResourceRecord(
+                project_id=project_id,
+                resource_id=resource_id,
+                external_id=external_id,
+                title=title,
+                data_json=clean_data,
+                provenance_json=clean_provenance,
             )
-        ).first()
+        else:
+            row.external_id = external_id if external_id is not None else row.external_id
+            row.title = title
+            row.data_json = clean_data
+            row.provenance_json = clean_provenance
+            row.updated_at = _utcnow()
+        self._s.add(row)
+        return row
 
     def _resource_rows(self, *, plugin_slug: str | None = None) -> list[tuple[Resource, Plugin]]:
         stmt = select(Resource, Plugin).join(Plugin, col(Resource.plugin_id) == col(Plugin.id))

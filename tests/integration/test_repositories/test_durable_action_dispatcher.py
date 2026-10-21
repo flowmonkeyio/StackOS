@@ -27,6 +27,7 @@ from stackos.db.models import (
     ActionCall,
     ActionCallStatus,
     Credential,
+    DurableActionJob,
     IntegrationCredential,
     Plugin,
     PluginSource,
@@ -293,6 +294,27 @@ def test_dispatcher_persists_progress_and_completes_parent_action_call(
         assert call.status == ActionCallStatus.SUCCESS
         assert call.response_json is not None
         assert call.response_json["completed_count"] == 1
+    engine.dispose()
+
+
+def test_durable_job_rejects_caller_supplied_supervised_owner_metadata(
+    tmp_path: Path, fake_credential_resolution: None
+) -> None:
+    engine, project_id, credential_ref, action_call_id = _seed_database(tmp_path)
+    with (
+        Session(engine) as session,
+        pytest.raises(ValidationError, match="supervised_owner is reserved"),
+    ):
+        ActionRepository(session).create_durable_action_job(
+            project_id=project_id,
+            action_call_id=action_call_id,
+            credential_ref=credential_ref,
+            action_ref="durable-dispatcher-test.message.send",
+            items=[{"destination_ref": "destination:spoof", "input_json": {"body": "x"}}],
+            metadata_json={"supervised_owner": {"binding": {}, "registration": {}}},
+        )
+    with Session(engine) as session:
+        assert session.exec(select(DurableActionJob)).all() == []
     engine.dispose()
 
 

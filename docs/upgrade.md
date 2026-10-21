@@ -150,6 +150,27 @@ preserve it.
 
 ## Schema migrations
 
+Programmatic migrations and app startup with explicit `Settings` use that
+instance's database and `seed_path` together. The migration configuration carries
+the explicit `Path`; a present malformed value fails instead of selecting another
+seed. Bare Alembic configurations and CLI invocation without this context retain
+their existing ambient settings policy. The database URL is never used to infer
+a seed location. This correction does not change seed generation, the encryption
+format, key derivation, cache policy or the existing data transformations in
+revisions 0026 and 0032.
+
+Keep a matching database and seed when upgrading custom installations. Older
+explicit-settings startups could select an ambient seed B during migration even
+when the app selected seed A. Rows subsequently encrypted under B cannot be
+decrypted merely by correcting propagation to A; an at-head restart could already
+expose the mismatch. This is a possible historical condition, not evidence that
+any particular installation is affected. The correction neither searches other
+keys nor rotates, repairs or re-encrypts historical misbound data. Such installations
+require a separately authorized assessment and rollout/recovery decision before
+adoption. Source rollback alone cannot undo data encrypted under either seed.
+Existing migration re-encryption can change nonces/ciphertext; untouched rows at
+head are not rewritten by this propagation repair.
+
 Migrations run automatically every time the daemon boots
 (`alembic upgrade head` is invoked from the lifespan). Operators do
 not normally need to run `make migrate` by hand. Down-migrations

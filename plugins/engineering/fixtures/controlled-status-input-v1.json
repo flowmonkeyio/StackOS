@@ -1,0 +1,1 @@
+{"records":[{"id":"synthetic-1","status":"ready"},{"id":"synthetic-2","status":"blocked"},{"id":"synthetic-3","status":"complete"}],"schema_version":"stackos.synthetic-status-input.v1"}

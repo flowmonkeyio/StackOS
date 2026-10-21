@@ -4,18 +4,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import math
 import re
 import time
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from stackos.action_availability import build_action_availability, build_action_exposure
 from stackos.action_output_contract import ACTION_OUTPUT_SCHEMA_REF, action_output_schema_hint
@@ -44,6 +46,14 @@ from .schema import ActionExecutionOut
 from .utils import _redact_for_audit, utcnow
 from .validation import RuntimeActionContext
 
+if TYPE_CHECKING:
+    from stackos.operations.actions.controlled import (
+        _ControlledAuthority,
+        _ControlledReadback,
+        _NativeAdmission,
+    )
+    from stackos.operations.actions.publication import _PublicationAuthority
+
 ACTION_OUTPUT_SCHEMA_VERSION = ACTION_OUTPUT_SCHEMA_REF
 MAX_TRANSIENT_OUTPUT_BYTES = 262_144
 
@@ -69,6 +79,212 @@ class _PreparedActionExecution:
 class ActionExecutionMixin:
     """Execute explicit actions through the canonical connector boundary."""
 
+    def _supervised_durable_binding(
+        self,
+        *,
+        project_id: int,
+        run_id: int | None,
+        run_plan_id: int | None,
+        run_plan_step_id: int | None,
+        action_ref: str,
+        idempotency_key: str | None,
+        explicit_stable_intent: bool = True,
+    ) -> dict[str, Any] | None:
+        """Resolve a real supervised work item from canonical ownership or marker state."""
+        if run_id is None or run_plan_id is None or run_plan_step_id is None:
+            return None
+        from stackos.db.models import (
+            DurableActionJob,
+            RunPlan,
+            RunPlanStatus,
+            RunPlanStep,
+            RunPlanStepStatus,
+            TrackerSourceKind,
+            TrackerTask,
+            TrackerTicket,
+            WorkItemOwnership,
+        )
+        from stackos.repositories.runs import RunRepository, WorkItemOwnershipOut
+        from stackos.repositories.tracker.workflow import is_workflow_step_mirror_ticket
+
+        plan = self._s.get(RunPlan, run_plan_id, populate_existing=True)
+        step = self._s.get(RunPlanStep, run_plan_step_id, populate_existing=True)
+        if (
+            plan is None
+            or plan.project_id != project_id
+            or plan.run_id != run_id
+            or plan.status != RunPlanStatus.STARTED
+            or step is None
+            or step.run_plan_id != plan.id
+            or step.status != RunPlanStepStatus.RUNNING
+        ):
+            raise ConflictError("durable action controller binding is stale")
+        rows = self._s.exec(
+            select(WorkItemOwnership)
+            .where(WorkItemOwnership.project_id == project_id)
+            .execution_options(populate_existing=True)
+        ).all()
+        owners = {row.canonical_item_id: row for row in rows}
+        registrations: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            continuity = row.continuity_json if type(row.continuity_json) is dict else {}
+            if "durable_action_registrations" not in continuity:
+                continue
+            history = continuity["durable_action_registrations"]
+            if type(history) is not dict or any(type(key) is not str for key in history):
+                raise ConflictError("durable owner registration history is malformed")
+            for registration in history.values():
+                if type(registration) is not dict or type(registration.get("binding")) is not dict:
+                    raise ConflictError("durable owner registration history is malformed")
+                binding = registration["binding"]
+                if (
+                    binding.get("run_plan_id") == run_plan_id
+                    and binding.get("run_plan_step_id") == run_plan_step_id
+                ):
+                    canonical = binding.get("canonical_item_id")
+                    if type(canonical) is not str:
+                        raise ConflictError("durable owner history has no canonical item")
+                    bucket = registrations.setdefault(canonical, [])
+                    if binding not in bucket:
+                        bucket.append(binding)
+        jobs = self._s.exec(
+            select(DurableActionJob)
+            .where(
+                DurableActionJob.project_id == project_id,
+                DurableActionJob.run_plan_id == run_plan_id,
+                DurableActionJob.run_plan_step_id == run_plan_step_id,
+            )
+            .execution_options(populate_existing=True)
+        ).all()
+        for job in jobs:
+            entry = (job.metadata_json or {}).get("supervised_owner")
+            if type(entry) is dict:
+                binding = entry.get("binding")
+                if type(binding) is not dict:
+                    raise ConflictError("historical durable owner binding is malformed")
+                item_id = binding.get("canonical_item_id")
+                if type(item_id) is not str:
+                    raise ConflictError("historical durable owner identity is missing")
+                bucket = registrations.setdefault(item_id, [])
+                if binding not in bucket:
+                    bucket.append(binding)
+
+        candidates: dict[str, Any] = {}
+        tickets = self._s.exec(
+            select(TrackerTicket)
+            .where(TrackerTicket.project_id == project_id)
+            .execution_options(populate_existing=True)
+        ).all()
+        for ticket in tickets:
+            canonical = f"ticket:{ticket.id}"
+            linked = (
+                ticket.run_plan_id == run_plan_id and ticket.run_plan_step_id == run_plan_step_id
+            )
+            source = ticket.source_json if type(ticket.source_json) is dict else {}
+            linked = linked or (
+                type(source.get("run_plan_id")) is int
+                and type(source.get("run_plan_step_id")) is int
+                and source.get("run_plan_id") == run_plan_id
+                and source.get("run_plan_step_id") == run_plan_step_id
+            )
+            if is_workflow_step_mirror_ticket(ticket, step):
+                linked = False
+            marked = "ownership_continuity" in (ticket.metadata_json or {})
+            if (linked and (marked or canonical in owners)) or canonical in registrations:
+                candidates[canonical] = ticket
+
+        tasks = self._s.exec(
+            select(TrackerTask)
+            .where(TrackerTask.project_id == project_id)
+            .execution_options(populate_existing=True)
+        ).all()
+        for task in tasks:
+            canonical = f"task:{task.id}"
+            source = task.source_json if type(task.source_json) is dict else {}
+            linked = (
+                type(source.get("run_plan_id")) is int
+                and source.get("run_plan_id") == run_plan_id
+                and (
+                    source.get("run_plan_step_id") == run_plan_step_id
+                    or source.get("step_id") == step.step_id
+                )
+            )
+            workflow_root = (
+                task.source_kind == TrackerSourceKind.WORKFLOW
+                and task.key == f"workflow-{run_plan_id}"
+            )
+            marked = "ownership_continuity" in (task.metadata_json or {})
+            if not workflow_root and (
+                (linked and (marked or canonical in owners)) or canonical in registrations
+            ):
+                candidates[canonical] = task
+
+        if not candidates:
+            return None
+        if len(candidates) != 1:
+            raise ConflictError("durable action has ambiguous supervised work-item binding")
+        canonical_item_id, native = next(iter(candidates.items()))
+        owner = owners.get(canonical_item_id)
+        marker = (native.metadata_json or {}).get("ownership_continuity")
+        if owner is None or type(marker) is not dict:
+            raise ConflictError("supervised durable action requires current owner and continuity")
+        repo = RunRepository(self._s)
+        current = repo.owner_authority(
+            project_id=project_id,
+            canonical_item_id=canonical_item_id,
+            ownership=WorkItemOwnershipOut.model_validate(owner),
+        )
+        if owner.owner_ref is None or current.get("stopped") or current.get("denied"):
+            raise ConflictError("supervised durable action authority is not current")
+        if not explicit_stable_intent or not idempotency_key or not idempotency_key.strip():
+            raise ValidationError(
+                "supervised durable action requires a caller-provided stable intent key"
+            )
+        intent_digest = hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()
+        grant_snapshot_digest = hashlib.sha256(
+            json.dumps(
+                plan.grant_snapshot_json,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+        ).hexdigest()
+        prior_matches = [
+            binding
+            for binding in registrations.get(canonical_item_id, [])
+            if binding.get("action_ref") == action_ref
+            and binding.get("intent_digest") == intent_digest
+        ]
+        if len(prior_matches) > 1:
+            raise ConflictError("durable replay has duplicate owner registrations")
+        if prior_matches:
+            prior = prior_matches[0]
+            if (
+                prior.get("owner_ref") != owner.owner_ref
+                or prior.get("epoch") != owner.epoch
+                or prior.get("scope_digest") != owner.scope_digest
+                or prior.get("controller_run_id") != run_id
+                or prior.get("grant_snapshot_digest") != grant_snapshot_digest
+            ):
+                raise ConflictError("durable replay no longer matches its original owner")
+            return prior
+        return {
+            "schema_version": "stackos.durable-owner-binding.v2",
+            "project_id": project_id,
+            "canonical_item_id": canonical_item_id,
+            "ownership_id": owner.id,
+            "owner_ref": owner.owner_ref,
+            "epoch": owner.epoch,
+            "revision": owner.revision,
+            "scope_digest": owner.scope_digest,
+            "controller_run_id": run_id,
+            "run_plan_id": run_plan_id,
+            "run_plan_step_id": run_plan_step_id,
+            "intent_digest": intent_digest,
+            "grant_snapshot_digest": grant_snapshot_digest,
+            "action_ref": action_ref,
+        }
+
     async def execute(
         self,
         *,
@@ -89,6 +305,7 @@ class ActionExecutionMixin:
         run_plan_id: int | None = None,
         run_plan_step_id: int | None = None,
         idempotency_key: str | None = None,
+        _explicit_stable_intent: bool | None = None,
         dry_run: bool = False,
         metadata_json: dict[str, Any] | None = None,
         durable_items: list[dict[str, Any]] | None = None,
@@ -96,7 +313,17 @@ class ActionExecutionMixin:
         durable_expires_at: datetime | None = None,
         durable_account_interval_seconds: float | None = None,
         durable_destination_interval_seconds: float | None = None,
+        _durable_commit_guard: Callable[[], None] | None = None,
+        _controlled_authority: _ControlledAuthority | None = None,
+        _publication_authority: _PublicationAuthority | None = None,
     ) -> Envelope[ActionExecutionOut]:
+        if action_ref == "engineering.publish-candidate.v1" or (plugin_slug, action_key) == (
+            "engineering",
+            "publish-candidate.v1",
+        ):
+            from stackos.operations.actions.publication import _require_publication_session
+
+            _require_publication_session(self._s)
         self._require_project(project_id)
         payload, resolved_ref = self._normalize_payload_and_ref(
             input_json or {},
@@ -110,6 +337,102 @@ class ActionExecutionMixin:
             context_ref=context_ref,
             credential_ref=resolved_ref,
         )
+        if manifest.action_ref == "engineering.publish-candidate.v1":
+            from stackos.actions.controlled_publication import _check_manifest, _intent_key
+            from stackos.operations.actions.publication import _PublicationAuthority
+
+            publication = _publication_authority
+            if (
+                type(publication) is not _PublicationAuthority
+                or publication.ctx.session is not self._s
+                or any(
+                    value is not None
+                    for value in (
+                        context_ref,
+                        provider_context_json,
+                        credential_ref,
+                        output_policy_json,
+                        metadata_json,
+                        durable_items,
+                        durable_due_at,
+                        durable_expires_at,
+                        durable_account_interval_seconds,
+                        durable_destination_interval_seconds,
+                    )
+                )
+            ):
+                raise ValidationError("publication requires current operation admission")
+            if (
+                project_id,
+                run_id,
+                run_plan_id,
+                run_plan_step_id,
+                payload,
+                dry_run,
+                idempotency_key,
+            ) != (
+                publication.fence.project_id,
+                publication.fence.controller_run_id,
+                publication.fence.run_plan_id,
+                publication.fence.run_plan_step_id,
+                publication.request.model_dump(),
+                False,
+                _intent_key(project_id, publication.request),
+            ):
+                raise ConflictError("publication repository binding changed")
+            _check_manifest(manifest)
+            publication.revalidate(publication.ctx)
+            return await self._execute_publication(authority=publication, manifest=manifest)
+        if manifest.action_ref == "engineering.controlled-proof.v1":
+            from stackos.actions.controlled_command import _check_controlled_manifest
+            from stackos.operations.actions.controlled import _ControlledAuthority
+
+            if (
+                type(_controlled_authority) is not _ControlledAuthority
+                or _controlled_authority._ctx.session is not self._s
+                or any(
+                    v is not None
+                    for v in (
+                        context_ref,
+                        provider_context_json,
+                        credential_ref,
+                        output_policy_json,
+                        metadata_json,
+                        durable_items,
+                        durable_due_at,
+                        durable_expires_at,
+                        durable_account_interval_seconds,
+                        durable_destination_interval_seconds,
+                    )
+                )
+            ):
+                raise ValidationError("controlled action requires current operation admission")
+            authority = _controlled_authority
+            if (
+                project_id != authority.fence.project_id
+                or run_id != authority.fence.controller_run_id
+                or run_plan_id != authority.fence.run_plan_id
+                or run_plan_step_id != authority.fence.run_plan_step_id
+                or payload != authority.request.model_dump()
+                or dry_run != authority._inp.dry_run
+            ):
+                raise ConflictError("controlled repository scope mismatch")
+            _check_controlled_manifest(manifest)
+            if self._plugin_disabled_for_project(
+                project_id=project_id, plugin_slug=manifest.plugin_slug
+            ):
+                raise ValidationError("controlled manifest is unavailable or incompatible")
+            return await self._execute_controlled_admission(
+                manifest=manifest,
+                payload=payload,
+                authority=authority,
+                idempotency_key=idempotency_key or "",
+            )
+        if (
+            manifest.connector_key in {"controlled-command", "controlled-publication"}
+            or manifest.config_json.get("controlled_host") is not None
+        ):
+            raise ValidationError("controlled namespace cannot be impersonated")
         explicit_provider_context = self._normalize_provider_context(provider_context_json)
         runtime_context = self._resolve_runtime_context(
             project_id=project_id,
@@ -237,6 +560,23 @@ class ActionExecutionMixin:
             manifest.config_json.get("durable_delivery")
         )
         durable_execution = durable_capable and not dry_run
+        supervised_binding = (
+            self._supervised_durable_binding(
+                project_id=project_id,
+                run_id=run_id,
+                run_plan_id=run_plan_id,
+                run_plan_step_id=run_plan_step_id,
+                action_ref=manifest.action_ref,
+                idempotency_key=idempotency_key,
+                explicit_stable_intent=(
+                    _explicit_stable_intent
+                    if _explicit_stable_intent is not None
+                    else bool(idempotency_key and idempotency_key.strip())
+                ),
+            )
+            if durable_execution
+            else None
+        )
         if effective_output_policy["mode"] == "transient":
             if not allow_transient_response:
                 raise ValidationError(
@@ -419,6 +759,126 @@ class ActionExecutionMixin:
             run_plan_step_id=run_plan_step_id,
             idempotency_key=idempotency_key,
         )
+        if durable_execution:
+            if not background_execution:
+                raise ValidationError(
+                    "durable delivery requires background execution",
+                    data={"action_ref": manifest.action_ref},
+                )
+            if run_plan_id is not None and _durable_commit_guard is None:
+                raise ConflictError(
+                    "workflow durable delivery requires current operation authority"
+                )
+            if resolved_ref is None:
+                raise ValidationError(
+                    "durable action dispatch requires an attached Account",
+                    data={"action_ref": manifest.action_ref},
+                )
+            credential = await self._resolve_credential(
+                project_id=project_id,
+                manifest=manifest,
+                credential_ref=resolved_ref,
+            )
+            if durable_items is not None:
+                normalized_durable_items = self.validate_durable_action_items(durable_items)
+            else:
+                prepare_delivery = getattr(connector, "prepare_delivery", None)
+                if not callable(prepare_delivery):
+                    raise ValidationError(
+                        "durable action manifest requires connector delivery preparation",
+                        data={
+                            "action_ref": manifest.action_ref,
+                            "connector": manifest.connector_key,
+                        },
+                    )
+                prepared_items = await prepare_delivery(
+                    self._connector_request(
+                        project_id=project_id,
+                        manifest=manifest,
+                        input_json=projected_payload,
+                        provider_context_json=provider_context,
+                        credential=credential,
+                        dry_run=False,
+                        idempotency_key=idempotency_key,
+                    )
+                )
+                normalized_durable_items = self.validate_durable_action_items(prepared_items)
+
+            row, replayed = self._reserve_background_call(
+                project_id=project_id,
+                manifest=manifest,
+                credential_ref=resolved_ref,
+                run_id=run_id,
+                run_plan_id=run_plan_id,
+                run_plan_step_id=run_plan_step_id,
+                idempotency_key=idempotency_key,
+                request_json=payload,
+                provider_context_json=provider_context_for_audit,
+                metadata_json=metadata_json,
+                estimated_cost_cents=estimated_cost_cents,
+                durable_schedule_json=durable_schedule,
+                commit_guard=_durable_commit_guard,
+                replay_guard=(
+                    (lambda _row: _durable_commit_guard())
+                    if _durable_commit_guard is not None
+                    else None
+                ),
+                commit=False,
+            )
+            assert row.id is not None
+            if replayed:
+                existing_job = self.get_durable_action_job_for_action_call(
+                    project_id=project_id,
+                    action_call_id=row.id,
+                )
+                if existing_job is None:
+                    raise ConflictError(
+                        "durable action reservation is terminal without a durable job",
+                        data={"action_call_id": row.id, "status": row.status.value},
+                    )
+            else:
+                self.create_durable_action_job(
+                    project_id=project_id,
+                    action_call_id=row.id,
+                    credential_ref=resolved_ref,
+                    action_ref=manifest.action_ref,
+                    items=normalized_durable_items,
+                    due_at=durable_due_at,
+                    expires_at=durable_expires_at,
+                    pacing_json=durable_pacing,
+                    pacing_units_input_field=manifest.config_json.get(
+                        "durable_pacing_units_input_field"
+                    ),
+                    destination_interval_multipliers=manifest.config_json.get(
+                        "durable_destination_interval_multipliers_json"
+                    ),
+                    idempotency_key=idempotency_key,
+                    metadata_json=metadata_json,
+                    supervised_owner_binding=supervised_binding,
+                    commit_guard=_durable_commit_guard,
+                )
+                self._s.refresh(row)
+            return Envelope(
+                data=ActionExecutionOut(
+                    action_call=self._call_audit_out(row),
+                    output_json=row.response_json or {},
+                    metadata_json=row.metadata_json,
+                    cost_cents=row.cost_cents,
+                    replayed=replayed,
+                    credential_ref=row.credential_ref,
+                    poll_operation=(
+                        "actionCall.get" if row.status == ActionCallStatus.RUNNING else None
+                    ),
+                    poll_arguments=(
+                        {"action_call_id": row.id}
+                        if row.status == ActionCallStatus.RUNNING
+                        else None
+                    ),
+                    next_poll_after_ms=500 if row.status == ActionCallStatus.RUNNING else None,
+                ),
+                project_id=project_id,
+                run_id=run_id,
+            )
         if background_execution:
             row, replayed = self._reserve_background_call(
                 project_id=project_id,
@@ -435,101 +895,6 @@ class ActionExecutionMixin:
                 durable_schedule_json=durable_schedule,
             )
             assert row.id is not None
-            if durable_execution:
-                existing_job = self.get_durable_action_job_for_action_call(
-                    project_id=project_id, action_call_id=row.id
-                )
-                if existing_job is None:
-                    if row.status != ActionCallStatus.RUNNING:
-                        raise ConflictError(
-                            "durable action reservation is terminal without a durable job",
-                            data={"action_call_id": row.id, "status": row.status.value},
-                        )
-                    if resolved_ref is None:
-                        raise ValidationError(
-                            "durable action dispatch requires an attached Account",
-                            data={"action_ref": manifest.action_ref},
-                        )
-                    try:
-                        credential = await self._resolve_credential(
-                            project_id=project_id,
-                            manifest=manifest,
-                            credential_ref=resolved_ref,
-                        )
-                        if durable_items is not None:
-                            normalized_durable_items = self.validate_durable_action_items(
-                                durable_items
-                            )
-                        else:
-                            prepare_delivery = getattr(connector, "prepare_delivery", None)
-                            if not callable(prepare_delivery):
-                                raise ValidationError(
-                                    "durable action manifest requires connector "
-                                    "delivery preparation",
-                                    data={
-                                        "action_ref": manifest.action_ref,
-                                        "connector": manifest.connector_key,
-                                    },
-                                )
-                            prepared_items = await prepare_delivery(
-                                self._connector_request(
-                                    project_id=project_id,
-                                    manifest=manifest,
-                                    input_json=payload,
-                                    provider_context_json=provider_context,
-                                    credential=credential,
-                                    dry_run=False,
-                                    idempotency_key=idempotency_key,
-                                )
-                            )
-                            normalized_durable_items = self.validate_durable_action_items(
-                                prepared_items
-                            )
-                        self.create_durable_action_job(
-                            project_id=project_id,
-                            action_call_id=row.id,
-                            credential_ref=resolved_ref,
-                            action_ref=manifest.action_ref,
-                            items=normalized_durable_items,
-                            due_at=durable_due_at,
-                            expires_at=durable_expires_at,
-                            pacing_json=durable_pacing,
-                            pacing_units_input_field=manifest.config_json.get(
-                                "durable_pacing_units_input_field"
-                            ),
-                            destination_interval_multipliers=manifest.config_json.get(
-                                "durable_destination_interval_multipliers_json"
-                            ),
-                            idempotency_key=idempotency_key,
-                            metadata_json=metadata_json,
-                        )
-                    except Exception as exc:
-                        self._record_durable_preparation_failure(
-                            action_call_id=row.id,
-                            error=redact_secret_text(str(exc)),
-                        )
-                        raise
-                return Envelope(
-                    data=ActionExecutionOut(
-                        action_call=self._call_audit_out(row),
-                        output_json=row.response_json or {},
-                        metadata_json=row.metadata_json,
-                        cost_cents=row.cost_cents,
-                        replayed=replayed,
-                        credential_ref=row.credential_ref,
-                        poll_operation=(
-                            "actionCall.get" if row.status == ActionCallStatus.RUNNING else None
-                        ),
-                        poll_arguments=(
-                            {"action_call_id": row.id}
-                            if row.status == ActionCallStatus.RUNNING
-                            else None
-                        ),
-                        next_poll_after_ms=500 if row.status == ActionCallStatus.RUNNING else None,
-                    ),
-                    project_id=project_id,
-                    run_id=run_id,
-                )
             if not replayed:
                 bind = self._s.get_bind()
                 repository_type = type(self)
@@ -585,6 +950,476 @@ class ActionExecutionMixin:
             project_id=project_id,
             run_id=run_id,
         )
+
+    def _controlled_metadata(self, authority: _ControlledAuthority) -> dict[str, Any]:
+        from stackos.actions.controlled_command import _canonical_digest
+
+        fence, request = authority.fence, authority.request
+        return {
+            "controlled_admission": {
+                "schema_version": "stackos.controlled-command-admission.v1",
+                "request_digest": _canonical_digest(request.model_dump()),
+                "command_digest": request.command_digest,
+                "scope_digest": request.scope_digest,
+                "intent_ref": request.intent_ref,
+                "epoch": request.expected_epoch,
+                "approval_id": fence.approval_id,
+                "approval_updated_at": fence.approval_updated_at.isoformat()
+                if fence.approval_updated_at
+                else None,
+                "approval_decision_digest": fence.approval_decision_digest,
+                "project_id": fence.project_id,
+                "controller_run_id": fence.controller_run_id,
+                "run_plan_id": fence.run_plan_id,
+                "run_plan_step_id": fence.run_plan_step_id,
+                "canonical_item_id": fence.canonical_item_id,
+                "owner_ref": fence.owner_ref,
+                "revision": fence.revision,
+                "continuity_digest": fence.continuity_digest,
+                "grant_digest": fence.grant_digest,
+                "step_actions_digest": fence.step_actions_digest,
+            }
+        }
+
+    def _controlled_replay_out(
+        self,
+        *,
+        row: ActionCall,
+        authority: _ControlledAuthority,
+    ) -> ActionExecutionOut:
+        from stackos.actions.controlled_command import _canonical_digest
+        from stackos.operations.actions.controlled import _controlled_intent_key
+
+        if (row.metadata_json or {}).get("controlled_native") is not None:
+            from stackos.operations.actions.controlled import _resolve_controlled_readback
+
+            readback = _resolve_controlled_readback(
+                authority._inp, authority._ctx, cached_action_call_id=row.id
+            )
+            if readback is None:
+                raise ConflictError("controlled original linkage is unknown")
+            return self._controlled_native_readback(readback=readback)
+        authority.revalidate()
+        if (
+            row.project_id != authority.fence.project_id
+            or (row.plugin_slug, row.action_key) != ("engineering", "controlled-proof.v1")
+            or row.run_id != authority.fence.controller_run_id
+            or row.run_plan_id != authority.fence.run_plan_id
+            or row.run_plan_step_id != authority.fence.run_plan_step_id
+            or row.idempotency_key != _controlled_intent_key(authority)
+            or _canonical_digest(row.request_json)
+            != _canonical_digest(authority.request.model_dump())
+            or row.metadata_json != self._controlled_metadata(authority)
+        ):
+            raise ConflictError("controlled replay binding changed")
+        if row.status == ActionCallStatus.RUNNING:
+            raise ConflictError("controlled_call_in_flight", data={"action_call_id": row.id})
+        output = self._public_action_result(row)
+        if row.status != ActionCallStatus.FAILED or output is None or output["outcome_unknown"]:
+            raise ConflictError("controlled_history_unknown", data={"action_call_id": row.id})
+        return ActionExecutionOut(
+            action_call=self._call_audit_out(row),
+            output_json=output,
+            metadata_json=self._public_action_metadata(
+                plugin_slug=row.plugin_slug,
+                action_key=row.action_key,
+                metadata_json=row.metadata_json,
+            ),
+            cost_cents=0,
+            replayed=True,
+        )
+
+    def _controlled_native_readback(self, *, readback: _ControlledReadback) -> ActionExecutionOut:
+        from stackos.actions.controlled_command import _canonical_digest
+        from stackos.operations.actions.controlled import (
+            _ControlledReadback,
+            _resolve_controlled_readback,
+        )
+
+        if type(readback) is not _ControlledReadback or readback.context.session is not self._s:
+            raise ConflictError("controlled readback context is invalid")
+        current = _resolve_controlled_readback(
+            readback.input, readback.context, cached_action_call_id=readback.original_action_call_id
+        )
+        if current is None or (
+            current.call_fingerprint,
+            current.current_owner_revision,
+            current.normalized_original_revision,
+        ) != (
+            readback.call_fingerprint,
+            readback.current_owner_revision,
+            readback.normalized_original_revision,
+        ):
+            raise ConflictError("controlled readback changed")
+        row = self._s.get(ActionCall, readback.original_action_call_id, populate_existing=True)
+        if (
+            row is None
+            or _canonical_digest(row.model_dump(mode="json")) != current.call_fingerprint
+        ):
+            raise ConflictError("controlled readback changed")
+        return ActionExecutionOut(
+            action_call=self._call_audit_out(row),
+            output_json=self._public_action_result(row) or {},
+            metadata_json=self._public_action_metadata(
+                plugin_slug=row.plugin_slug,
+                action_key=row.action_key,
+                metadata_json=row.metadata_json,
+            ),
+            cost_cents=0,
+            replayed=True,
+        )
+
+    async def _execute_controlled_native(
+        self,
+        *,
+        authority: _ControlledAuthority,
+        admission: _NativeAdmission,
+        action_call: ActionCall,
+    ) -> Envelope[ActionExecutionOut]:
+        from copy import deepcopy
+        from dataclasses import asdict
+
+        from stackos import controlled_process_host as host
+        from stackos import controlled_process_receipt as receipt
+        from stackos.actions.controlled_command import (
+            _canonical_digest,
+            _ControlledNativeAudit,
+            _ControlledNativeResult,
+            _ControlledReportResult,
+            _verified_report_result,
+        )
+        from stackos.db.models import Run, WorkItemOwnership
+        from stackos.repositories.runs import RunRepository
+
+        fence = authority.fence
+        if action_call.id is None:
+            raise ConflictError("controlled original identity is missing")
+        custody = host._NativeCustody(admission)
+        native = None
+        failure: BaseException | None = None
+        try:
+            with custody:
+                native = await host._run_native_control(admission, custody=custody)
+        except BaseException as caught:
+            failure = caught
+        owner = custody.terminal_owner
+        authenticated = owner.authenticated if owner is not None else None
+        fact = authenticated.fact if authenticated is not None else None
+        released = bool(
+            native is not None
+            and native.release_sent
+            and type(fact) is receipt._TerminalFact
+            and fact.child_returns.get("worker") == 0
+        )
+        unknown = (
+            bool(fact.execution_unknown)
+            if type(fact) is receipt._TerminalFact
+            else custody.ever_spawn_invoked and authenticated is None
+        )
+        cleanup = bool(native is not None and native.cleanup_known and custody.accounted)
+        completed = bool(
+            native is not None
+            and native.state == "cleaned"
+            and not native.issues
+            and released
+            and not unknown
+            and cleanup
+            and type(fact) is receipt._TerminalFact
+            and not fact.safety_blocked
+            and not fact.issues
+        )
+        report = None
+        if completed and authority.command.command_key == "synthetic-status-report-v1":
+            try:
+                report = _verified_report_result(authority.command)
+            except Exception as caught:
+                completed = False
+                failure = caught
+        output = _ControlledNativeResult(
+            schema_version="stackos.controlled-command-result.v2",
+            status="succeeded" if completed else "held" if custody.started else "failed",
+            code="controlled_command_completed"
+            if completed
+            else "controlled_outcome_unknown"
+            if unknown
+            else "controlled_execution_held",
+            admission_verified=True,
+            command_digest=authority.command.digest,
+            intent_ref=authority.request.intent_ref,
+            host_dispatched=True
+            if custody.process is not None
+            else None
+            if custody.ever_spawn_invoked
+            else False,
+            released=released,
+            provider_executed=False,
+            outcome_unknown=unknown,
+            cleanup_known=cleanup,
+            retry_safe=False,
+            work_accepted=False,
+            report=_ControlledReportResult.model_validate(report) if report is not None else None,
+        ).model_dump()
+        metadata = self._controlled_metadata(authority)
+        repo = RunRepository(self._s)
+        current_owner = None
+        if owner is not None:
+            binding = owner.original.binding
+            attempt = self._s.get(Run, binding.attempt_run_id, populate_existing=True)
+            current_owner = self._s.get(
+                WorkItemOwnership,
+                native.cursor.ownership.id
+                if native is not None
+                else repo.owner_get(
+                    project_id=fence.project_id, canonical_item_id=fence.canonical_item_id
+                ).id,
+                populate_existing=True,
+            )
+            if attempt is None or current_owner is None:
+                raise ConflictError("controlled original record is unknown")
+            terminal = (attempt.metadata_json or {}).get("native_terminal_slot", {})
+            control = (attempt.metadata_json or {}).get("native_control", {})
+            provenance = _ControlledNativeAudit(
+                schema_version="stackos.controlled-native-audit.v1",
+                action_call_id=action_call.id,
+                binding=asdict(binding),
+                command_digest=authority.command.digest,
+                runtime_digest=admission.runtime_digest,
+                storage_digest=admission.storage_digest,
+                owner_revision_at_finalize=current_owner.revision,
+                owner_basis_digest=_canonical_digest(
+                    repo._native_owner_basis(current_owner, current_owner.revision)
+                ),
+                terminal_receipt_digest=authenticated.digest if authenticated is not None else None,
+                terminal_slot_revision=terminal.get("revision", 0),
+                control_revision=control.get("control_revision", 0),
+                result_digest=_canonical_digest(output),
+            )
+            metadata = metadata | {"controlled_native": provenance.model_dump()}
+        # This terminal CAS is the only native ActionCall write. In particular,
+        # neither certificate completion nor a replay can rewrite this readset.
+        try:
+            row = self._finalize_running_call(
+                project_id=fence.project_id,
+                action_call_id=action_call.id,
+                credential=None,
+                response_json=output,
+                metadata_json=metadata,
+                status=ActionCallStatus.SUCCESS if completed else ActionCallStatus.FAILED,
+                cost_cents=0,
+                duration_ms=0,
+                error=None if completed else output["code"],
+                commit=True,
+            )
+        except BaseException:
+            self._s.rollback()
+            raise
+        if failure is not None:
+            if not isinstance(failure, Exception):
+                raise failure
+            raise ConflictError(
+                "controlled_execution_held", data={"action_call_id": row.id}
+            ) from failure
+        if owner is None or current_owner is None:
+            raise ConflictError("controlled_quiescence_held", data={"action_call_id": row.id})
+        try:
+            snapshot = repo._native_quiescence_snapshot(
+                project_id=fence.project_id,
+                canonical_item_id=fence.canonical_item_id,
+                owner_ref=fence.owner_ref,
+                expected_epoch=fence.epoch,
+                expected_revision=current_owner.revision,
+            )
+            verified = host._verify_native_quiescence(self._s, snapshot=snapshot, owners=(owner,))
+            if type(verified) is not host._VerifiedQuiescence:
+                raise ConflictError("controlled_quiescence_held")
+            repo._certify_owner_quiescence(
+                project_id=fence.project_id,
+                canonical_item_id=fence.canonical_item_id,
+                owner_ref=fence.owner_ref,
+                expected_epoch=fence.epoch,
+                expected_revision=current_owner.revision,
+                evidence_ref="native:public-action-terminal",
+                verified=verified,
+            )
+        except Exception as exc:
+            raise ConflictError(
+                "controlled_quiescence_held", data={"action_call_id": row.id}
+            ) from exc
+        return Envelope(
+            data=ActionExecutionOut(
+                action_call=self._call_audit_out(row),
+                output_json=deepcopy(output),
+                metadata_json=self._public_action_metadata(
+                    plugin_slug=row.plugin_slug,
+                    action_key=row.action_key,
+                    metadata_json=row.metadata_json,
+                ),
+                cost_cents=0,
+            ),
+            project_id=fence.project_id,
+            run_id=fence.controller_run_id,
+        )
+
+    async def _execute_controlled_admission(
+        self,
+        *,
+        manifest: ExecutableActionManifest,
+        payload: dict[str, Any],
+        authority: _ControlledAuthority,
+        idempotency_key: str,
+    ) -> Envelope[ActionExecutionOut]:
+        from stackos.mcp.errors import ToolNotGrantedError
+        from stackos.operations.actions.controlled import _controlled_intent_key
+
+        authority.revalidate()
+        fence = authority.fence
+        key = _controlled_intent_key(authority)
+        if idempotency_key and idempotency_key != key:
+            raise ConflictError("controlled intent key mismatch")
+        metadata = self._controlled_metadata(authority)
+        from stackos.actions.controlled_command import (
+            _controlled_host_settings,
+            _controlled_host_supported,
+        )
+        from stackos.operations.actions.controlled import _issue_native_admission
+
+        settings = _controlled_host_settings(self._s)
+        native_admission = None
+        if (
+            not authority._inp.dry_run
+            and settings is not None
+            and settings.controlled_host_enabled is True
+            and _controlled_host_supported()
+            and manifest.config_json.get("controlled_host") is None
+        ):
+            native_admission = _issue_native_admission(authority._inp, authority._ctx)
+
+        def result(code: str, *, verified: bool) -> dict[str, Any]:
+            return {
+                "schema_version": "stackos.controlled-command-result.v1",
+                "status": "failed",
+                "code": code,
+                "admission_verified": verified,
+                "command_digest": authority.request.command_digest,
+                "intent_ref": authority.request.intent_ref,
+                "host_dispatched": False,
+                "provider_executed": False,
+                "outcome_unknown": False,
+                "retry_safe": False,
+                "certified": False,
+            }
+
+        def envelope(row: ActionCall) -> Envelope[ActionExecutionOut]:
+            return Envelope(
+                data=ActionExecutionOut(
+                    action_call=self._call_audit_out(row),
+                    output_json=self._public_action_result(row) or {},
+                    metadata_json=self._public_action_metadata(
+                        plugin_slug=row.plugin_slug,
+                        action_key=row.action_key,
+                        metadata_json=row.metadata_json,
+                    ),
+                    cost_cents=0,
+                    dry_run=authority._inp.dry_run,
+                ),
+                project_id=fence.project_id,
+                run_id=fence.controller_run_id,
+            )
+
+        if authority._inp.dry_run:
+            row = self._record_call(
+                project_id=fence.project_id,
+                manifest=manifest,
+                credential=None,
+                credential_ref=None,
+                run_id=fence.controller_run_id,
+                run_plan_id=fence.run_plan_id,
+                run_plan_step_id=fence.run_plan_step_id,
+                idempotency_key=None,
+                request_json=payload,
+                provider_context_json=None,
+                response_json=result("controlled_host_unavailable", verified=False),
+                metadata_json=metadata,
+                status=ActionCallStatus.DRY_RUN,
+                dry_run=True,
+                cost_cents=0,
+                duration_ms=0,
+            )
+            return envelope(row)
+
+        def guard() -> None:
+            authority.revalidate()
+
+        def original_readback(row: ActionCall) -> None:
+            # The losing insert has rolled back before this point. It cannot
+            # require stale new-winner fences after genuine winner progress.
+            self._controlled_replay_out(row=row, authority=authority)
+
+        row, replayed = self._reserve_background_call(
+            project_id=fence.project_id,
+            manifest=manifest,
+            credential_ref=None,
+            run_id=fence.controller_run_id,
+            run_plan_id=fence.run_plan_id,
+            run_plan_step_id=fence.run_plan_step_id,
+            idempotency_key=key,
+            request_json=payload,
+            provider_context_json=None,
+            metadata_json=metadata,
+            estimated_cost_cents=0,
+            commit_guard=guard,
+            replay_guard=original_readback,
+        )
+        if replayed:
+            return Envelope(
+                data=self._controlled_replay_out(row=row, authority=authority),
+                project_id=fence.project_id,
+                run_id=fence.controller_run_id,
+            )
+        assert row.id is not None
+        if native_admission is not None:
+            return await self._execute_controlled_native(
+                authority=authority, admission=native_admission, action_call=row
+            )
+        try:
+            try:
+                authority.revalidate()
+                output = result("controlled_host_unavailable", verified=True)
+            except (ConflictError, ToolNotGrantedError, ValidationError):
+                output = result("authority_changed", verified=False)
+            row = self._finalize_running_call(
+                project_id=fence.project_id,
+                action_call_id=row.id,
+                credential=None,
+                response_json=output,
+                metadata_json=metadata,
+                status=ActionCallStatus.FAILED,
+                cost_cents=0,
+                duration_ms=0,
+                error=output["code"],
+                commit=True,
+            )
+            return envelope(row)
+        except BaseException as exc:
+            self._s.rollback()
+            # Settle this original no-dispatch record only; preserve the original
+            # cancellation/error even if evidence persistence is unavailable.
+            with suppress(Exception):
+                self._finalize_running_call(
+                    project_id=fence.project_id,
+                    action_call_id=row.id,
+                    credential=None,
+                    response_json=result("interrupted_before_dispatch", verified=False),
+                    metadata_json=metadata,
+                    status=ActionCallStatus.FAILED,
+                    cost_cents=0,
+                    duration_ms=0,
+                    error="interrupted_before_dispatch",
+                    commit=True,
+                )
+            if isinstance(exc, asyncio.CancelledError):
+                raise
+            raise
 
     async def _execute_prepared(
         self,

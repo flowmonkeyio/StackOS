@@ -12,6 +12,7 @@ from .audit import ActionAuditMixin
 from .catalog import ActionCatalogMixin
 from .durable import DurableActionMixin
 from .execution import ActionExecutionMixin
+from .publication import PublicationActionMixin
 from .run_scope import ActionRunScopeMixin
 from .validation import ActionValidationMixin
 
@@ -20,6 +21,7 @@ class ActionRepository(
     ActionCatalogMixin,
     ActionValidationMixin,
     ActionExecutionMixin,
+    PublicationActionMixin,
     ActionAuditMixin,
     ActionRunScopeMixin,
     DurableActionMixin,

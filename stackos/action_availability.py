@@ -439,6 +439,22 @@ def build_action_availability(
         status = "missing_connector"
         executable = False
         reasons.insert(0, "connector_not_registered")
+    elif manifest.action_ref == "engineering.controlled-proof.v1":
+        from stackos.actions.controlled_command import (
+            _controlled_host_settings,
+            _controlled_host_supported,
+        )
+
+        settings = _controlled_host_settings(session)
+        if (
+            settings is None
+            or settings.controlled_host_enabled is not True
+            or not _controlled_host_supported()
+            or manifest.config_json.get("controlled_host") is not None
+        ):
+            status = "not_executable"
+            executable = False
+            reasons.insert(0, "controlled_host_unavailable")
     elif credential_state == "unknown":
         status = "unknown"
         executable = False

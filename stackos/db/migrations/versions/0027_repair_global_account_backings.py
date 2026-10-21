@@ -58,10 +58,10 @@ def upgrade() -> None:
         ).all()
     ]
 
-    from stackos.config import get_settings
     from stackos.crypto.aes_gcm import CryptoError, configure_seed_path, decrypt_account
+    from stackos.db.migrate import migration_seed_path
 
-    configure_seed_path(get_settings().seed_path)
+    configure_seed_path(migration_seed_path(op.get_context().config))
     matches_by_account: dict[int, list[int]] = {}
     for account in accounts:
         account_id = int(account["id"])

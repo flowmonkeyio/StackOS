@@ -11,6 +11,7 @@ from sqlmodel import col, select
 from stackos.artifacts import redact_secrets
 from stackos.db.models import (
     TRACKER_ITEM_STATUS_TRANSITIONS,
+    DurableActionJob,
     Run,
     RunPlan,
     RunPlanStatus,
@@ -23,6 +24,7 @@ from stackos.db.models import (
     TrackerTicket,
     TrackerTicketDependency,
     TrackerTicketKind,
+    WorkItemOwnership,
 )
 from stackos.repositories.base import (
     ConflictError,
@@ -1044,7 +1046,83 @@ class TrackerMutationMixin:
                 },
             )
 
+    def _protect_supervised_item_patch(
+        self,
+        item: TrackerTask | TrackerTicket,
+        patch_json: dict[str, Any],
+        *,
+        canonical_item_id: str,
+    ) -> None:
+        """Keep generic tracker edits from turning protected items into legacy work."""
+        owner = self._s.exec(
+            select(WorkItemOwnership).where(
+                WorkItemOwnership.project_id == item.project_id,
+                WorkItemOwnership.canonical_item_id == canonical_item_id,
+            )
+        ).first()
+        registered = False
+        for job in self._s.exec(
+            select(DurableActionJob).where(DurableActionJob.project_id == item.project_id)
+        ).all():
+            stored = (job.metadata_json or {}).get("supervised_owner")
+            binding = stored.get("binding") if type(stored) is dict else None
+            if type(binding) is dict and binding.get("canonical_item_id") == canonical_item_id:
+                registered = True
+                break
+        old_metadata = item.metadata_json if type(item.metadata_json) is dict else {}
+        old_marker = old_metadata.get("ownership_continuity")
+        marker_present = "ownership_continuity" in old_metadata
+        if owner is None and not marker_present and not registered:
+            return
+
+        if (
+            isinstance(item, TrackerTicket)
+            and item.parent_ticket_id is not None
+            and "parent_ticket_key" in patch_json
+            and not patch_json["parent_ticket_key"]
+        ):
+            raise ConflictError("protected workflow child cannot be reclassified as a mirror")
+
+        if "metadata_json" in patch_json and marker_present:
+            new_metadata = patch_json["metadata_json"]
+            new_marker = (
+                new_metadata.get("ownership_continuity") if type(new_metadata) is dict else None
+            )
+            if type(old_marker) is not dict or type(new_marker) is not dict:
+                raise ConflictError("protected ownership continuity cannot be removed or malformed")
+            mutable = {"stopped", "denied", "attempts_used", "failures_used"}
+            if set(old_marker) - mutable - set(new_marker):
+                raise ConflictError("protected ownership binding cannot be removed")
+            for key, value in old_marker.items():
+                if key not in mutable and new_marker.get(key) != value:
+                    raise ConflictError(
+                        "protected ownership binding cannot be rebound",
+                        data={"canonical_item_id": canonical_item_id, "field": key},
+                    )
+            if (
+                type(new_marker.get("stopped")) is not bool
+                or type(new_marker.get("denied")) is not bool
+                or any(
+                    type(new_marker.get(key)) is not int or new_marker[key] < 0
+                    for key in ("attempts_used", "failures_used")
+                )
+            ):
+                raise ConflictError("protected ownership stop and counters must remain typed")
+
+        if "source_json" in patch_json:
+            old_source = item.source_json if type(item.source_json) is dict else {}
+            new_source = patch_json["source_json"]
+            if type(new_source) is not dict:
+                raise ConflictError("protected workflow binding cannot be removed")
+            for key in ("run_plan_id", "run_plan_step_id", "step_id"):
+                if key in old_source and new_source.get(key) != old_source[key]:
+                    raise ConflictError(
+                        "protected workflow binding cannot be removed or rebound",
+                        data={"canonical_item_id": canonical_item_id, "field": key},
+                    )
+
     def _apply_task_patch(self, task: TrackerTask, patch_json: dict[str, Any]) -> None:
+        self._protect_supervised_item_patch(task, patch_json, canonical_item_id=f"task:{task.id}")
         self._validate_task_patch_fields(patch_json)
         self._validate_workflow_task_patch(task, patch_json)
         now = _utcnow()
@@ -1118,6 +1196,9 @@ class TrackerMutationMixin:
         ticket: TrackerTicket,
         patch_json: dict[str, Any],
     ) -> None:
+        self._protect_supervised_item_patch(
+            ticket, patch_json, canonical_item_id=f"ticket:{ticket.id}"
+        )
         self._validate_ticket_patch_fields(patch_json)
         self._validate_workflow_mirror_ticket_patch_fields(ticket, patch_json)
         now = _utcnow()

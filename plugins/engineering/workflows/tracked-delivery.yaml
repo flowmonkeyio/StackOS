@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: engineering.tracked-delivery
 name: Engineering Tracked Delivery
-version: 0.4.0
+version: 0.4.1
 description: Reusable SDLC workflow for requirements, project-native design and proof planning, executable ticket breakdown, delegated delivery with immediate independent review, integrated verification, and truthful release closeout.
 domain: engineering
 owner:
@@ -1086,11 +1086,14 @@ outputs:
 
 learning_hooks:
   - key: engineering_reuse
-    prompt: During release closeout, capture reusable engineering lessons only when evidence is explicit and useful for future delivery; classify process_failure, missed_existing_rule, local_rule_candidate, workflow_change_candidate, and owning layer without adding another workflow step.
+    prompt: During release closeout, propose reusable lessons only from explicit useful evidence; preserve occurrence, candidate, cause confidence, before/after proof, regression, actual independent review, Main disposition, applicability and limitations. Classify process_failure, missed_existing_rule, local_rule_candidate, workflow_change_candidate and owning layer. Promote through the granted memory owner only after actual independent review and Main decision; synthetic test review does not qualify. Later admitted use retrieves accepted applicable guidance and records its source revision and outcome without automatic adoption or another workflow step.
     tags:
       - engineering
       - sdlc
 failure_handling:
+  - First classify a bounded failure in the current canonical child. When effects are settled, the repair shape is already authorized, current ownership/approvals/grants remain valid and original cumulative budget permits it, handle routine diagnosis and repair inside the active assignment before rerouting. Use a fresh admitted intent for a changed request, preserve the original failed result and independently verify the repair; never replay a failed intent as new work.
+  - If the routine repair is ineffective, uncertain, outside current authority or needs another accountable actor, retain its unresolved disposition and route through the existing child and queue owners. When explicitly granted, store evidence and call agentRequest.create with a stable source-occurrence key; duplicate observations reuse the same request while distinct attempts retain their own evidence. Claim/link that request to the existing workflow, expose accountable actor and next action on the child, and preserve the original owner/epoch and budgets. Queue claim is not execution authority. If intake is not granted, retain a visible blocker and resume condition rather than changing frozen grants.
+  - Resolve a feedback request and complete its child only after the actual independent reviewer and Main accept the current candidate under the original criterion. Link original failure, diagnosis, admitted repair, regression, review and disposition in existing evidence. Unknown cause, inconclusive proof and no reusable lesson are valid outcomes; never infer acceptance from a test fixture, review_state string or successful action.
   - If project guidance or host-agent format is missing, record the exact gap and ask for it before writing local agent files.
   - If tracker dependencies reveal blocked work, update ticket blockers instead of continuing with invisible chat-only state.
   - If verification fails, use root-cause debugging before broad reruns or speculative fixes.

@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
 
+    # Daemon-owned opt-in. Installing the fixed-command adapter never enables it.
+    controlled_host_enabled: bool = False
+
     # Paths (overridable via env for tests / non-default installs)
     data_dir: Path = _default_data_dir()
     state_dir: Path = _default_state_dir()

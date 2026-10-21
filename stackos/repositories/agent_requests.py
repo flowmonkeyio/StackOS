@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import secrets
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -66,6 +68,57 @@ def _clean_text(value: str | None) -> str:
     return redact_secret_text(str(value))
 
 
+def _occurrence_digest(value: object) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _occurrence_integer(value: object) -> bool:
+    return type(value) is int and 0 < value <= 9223372036854775807
+
+
+def _occurrence_birth(value: object) -> str:
+    if type(value) is not datetime:
+        raise ConflictError("request occurrence birth is invalid")
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).isoformat(timespec="microseconds")
+
+
+@dataclass(frozen=True)
+class _AgentRequestOccurrence:
+    """Canonical inbox observation, never an execution capability."""
+
+    project_id: int
+    request_id: int
+    created_at: str
+    source_fingerprint: str
+    run_plan_id: int
+    request_key_digest: str
+
+    def identity_digest(self) -> str:
+        return _occurrence_digest(
+            {
+                "schema_version": "stackos.agent-request-occurrence.v1",
+                "project_id": self.project_id,
+                "request_id": self.request_id,
+                "created_at": self.created_at,
+            }
+        )
+
+    def item_digest(self, canonical_item_id: str) -> str:
+        return _occurrence_digest(
+            {
+                "schema_version": "stackos.owner-request-key.v1",
+                "occurrence_digest": self.identity_digest(),
+                "canonical_item_id": canonical_item_id,
+            }
+        )
+
+
 class AgentRequestOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -113,6 +166,95 @@ class AgentRequestRepository:
     def __init__(self, session: Session) -> None:
         self._s = session
 
+    def _owner_occurrence_for_plan(
+        self, *, project_id: int, run_plan_id: int
+    ) -> _AgentRequestOccurrence | None:
+        """Resolve both canonical links without adopting caller-supplied provenance."""
+        if self._s.new or self._s.dirty or self._s.deleted or self._s._flushing:
+            raise ConflictError("request occurrence cannot consume pending caller work")
+        plan = self._s.exec(
+            select(RunPlan)
+            .where(RunPlan.id == run_plan_id, RunPlan.project_id == project_id)
+            .execution_options(populate_existing=True)
+        ).first()
+        if plan is None:
+            raise ConflictError("request occurrence plan is missing or foreign")
+        metadata = plan.metadata_json
+        if metadata is None:
+            return None
+        if type(metadata) is not dict:
+            raise ConflictError("request occurrence plan metadata is invalid")
+        if not {"agent_request_id", "agent_request_key"} & metadata.keys():
+            return None
+        request_id = metadata.get("agent_request_id")
+        request_key = metadata.get("agent_request_key")
+        if (
+            not _occurrence_integer(request_id)
+            or type(request_key) is not str
+            or not request_key.strip()
+            or len(request_key) > 200
+        ):
+            raise ConflictError("request occurrence metadata links are invalid")
+        row = self._s.exec(
+            select(AgentRequest)
+            .where(AgentRequest.id == request_id, AgentRequest.project_id == project_id)
+            .execution_options(populate_existing=True)
+        ).first()
+        if (
+            row is None
+            or type(row.request_key) is not str
+            or row.request_key != request_key
+            or not _occurrence_integer(row.run_plan_id)
+            or row.run_plan_id != plan.id
+        ):
+            raise ConflictError("request occurrence canonical links disagree")
+        if not _occurrence_integer(row.id) or not _occurrence_integer(row.project_id):
+            raise ConflictError("request occurrence identity is invalid")
+        for field, bound in (
+            ("request_key", 200),
+            ("title", 300),
+            ("body_preview", None),
+            ("source_provider", 160),
+            ("source_kind", 120),
+            ("source_resource_key", 160),
+            ("source_message_ref", 300),
+        ):
+            value = getattr(row, field)
+            if value is None and field.startswith("source_"):
+                continue
+            if type(value) is not str or (bound is not None and len(value) > bound):
+                raise ConflictError("request occurrence source fields are invalid")
+        if row.source_resource_record_id is not None and not _occurrence_integer(
+            row.source_resource_record_id
+        ):
+            raise ConflictError("request occurrence source record is invalid")
+        birth = _occurrence_birth(row.created_at)
+        projection = {
+            field: getattr(row, field)
+            for field in (
+                "id",
+                "project_id",
+                "request_key",
+                "title",
+                "body_preview",
+                "source_provider",
+                "source_kind",
+                "source_resource_key",
+                "source_resource_record_id",
+                "source_message_ref",
+            )
+        }
+        projection["created_at"] = birth
+        assert row.id is not None
+        return _AgentRequestOccurrence(
+            project_id=row.project_id,
+            request_id=row.id,
+            created_at=birth,
+            source_fingerprint=_occurrence_digest(projection),
+            run_plan_id=run_plan_id,
+            request_key_digest=hashlib.sha256(row.request_key.encode("utf-8")).hexdigest(),
+        )
+
     def create(
         self,
         *,
@@ -141,8 +283,78 @@ class AgentRequestRepository:
         if existing is not None:
             return Envelope(data=self._out(existing), project_id=project_id)
 
+        row = self._new_request_row(
+            project_id=project_id,
+            request_key=request_key,
+            title=title,
+            body_preview=body_preview,
+            source_provider=source_provider,
+            source_kind=source_kind,
+            source_resource_key=source_resource_key,
+            source_resource_record_id=source_resource_record_id,
+            source_message_ref=source_message_ref,
+            priority=priority,
+            metadata_json=metadata_json,
+        )
+        self._s.add(row)
+        self._s.commit()
+        self._s.refresh(row)
+        return Envelope(data=self._out(row), project_id=project_id)
+
+    def create_in_transaction(
+        self,
+        *,
+        project_id: int,
+        request_key: str,
+        title: str,
+        body_preview: str = "",
+        source_provider: str | None = None,
+        source_kind: str | None = None,
+        source_resource_key: str | None = None,
+        source_resource_record_id: int | None = None,
+        source_message_ref: str | None = None,
+        priority: int = 0,
+        metadata_json: dict[str, Any] | None = None,
+    ) -> AgentRequest:
+        """Add and flush a request without taking ownership of the transaction."""
+        self._require_project(project_id)
+        self._validate_source_record(project_id, source_resource_record_id)
+        if not request_key.strip():
+            raise ValidationError("request_key is required")
+        row = self._new_request_row(
+            project_id=project_id,
+            request_key=request_key,
+            title=title,
+            body_preview=body_preview,
+            source_provider=source_provider,
+            source_kind=source_kind,
+            source_resource_key=source_resource_key,
+            source_resource_record_id=source_resource_record_id,
+            source_message_ref=source_message_ref,
+            priority=priority,
+            metadata_json=metadata_json,
+        )
+        self._s.add(row)
+        self._s.flush()
+        return row
+
+    def _new_request_row(
+        self,
+        *,
+        project_id: int,
+        request_key: str,
+        title: str,
+        body_preview: str,
+        source_provider: str | None,
+        source_kind: str | None,
+        source_resource_key: str | None,
+        source_resource_record_id: int | None,
+        source_message_ref: str | None,
+        priority: int,
+        metadata_json: dict[str, Any] | None,
+    ) -> AgentRequest:
         now = _utcnow()
-        row = AgentRequest(
+        return AgentRequest(
             project_id=project_id,
             request_key=request_key,
             title=_clean_text(title),
@@ -159,10 +371,6 @@ class AgentRequestRepository:
             created_at=now,
             updated_at=now,
         )
-        self._s.add(row)
-        self._s.commit()
-        self._s.refresh(row)
-        return Envelope(data=self._out(row), project_id=project_id)
 
     def find_by_key(self, *, project_id: int, request_key: str) -> AgentRequestOut | None:
         """Return one request by stable provider key without changing lifecycle state."""
@@ -176,6 +384,22 @@ class AgentRequestRepository:
             )
         ).first()
         return self._out(row) if row is not None else None
+
+    def find_by_key_in_transaction(
+        self, *, project_id: int, request_key: str
+    ) -> AgentRequest | None:
+        """Fresh canonical request read for the caller-owned writer transaction."""
+        self._require_project(project_id)
+        if not request_key.strip():
+            raise ValidationError("request_key is required")
+        return self._s.exec(
+            select(AgentRequest)
+            .where(
+                AgentRequest.project_id == project_id,
+                AgentRequest.request_key == request_key,
+            )
+            .execution_options(populate_existing=True)
+        ).first()
 
     def get(self, *, project_id: int, request_id: int) -> AgentRequestOut:
         return self._out(self._fetch(project_id=project_id, request_id=request_id))

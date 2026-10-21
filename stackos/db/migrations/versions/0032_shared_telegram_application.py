@@ -67,11 +67,11 @@ def upgrade() -> None:
     if not accounts:
         return
 
-    from stackos.config import get_settings
     from stackos.crypto.aes_gcm import configure_seed_path, decrypt_account, encrypt
     from stackos.crypto.aes_gcm import encrypt_account as encrypt_credential
+    from stackos.db.migrate import migration_seed_path
 
-    configure_seed_path(get_settings().seed_path)
+    configure_seed_path(migration_seed_path(op.get_context().config))
     resolved: list[tuple[Any, dict[str, Any], dict[str, Any], tuple[int, str] | None]] = []
     for account in accounts:
         config = account["config_json"]

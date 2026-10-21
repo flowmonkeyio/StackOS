@@ -1,5 +1,114 @@
 # StackOS Action Executor
 
+## Controlled Engineering Admission
+
+`engineering.controlled-proof.v1` is workflow-only and foreground. Its single
+`noop-v1` descriptor and optional fixed `synthetic-status-report-v1` descriptor fix the interpreter bytes, arguments, source hashes,
+working directory and four-entry environment; callers cannot supply a command,
+path, environment, credential or output policy. The current authenticated
+controller must pass the full step/action/argument grant, canonical item and
+owner fences, known unstopped continuity, and an approved exact
+`decision_json.controlled_command` binding. Approval provenance and command
+bytes are reread at reservation and replay. Approved decisions are terminal;
+owner stops, scope changes and edited approved decision data invalidate admission.
+
+The synthetic report uses the standalone Engineering plugin producer and its
+fixed 186-byte input. Admission and original readback only reconstruct the
+descriptor. The first native attempt exclusively creates its private workspace
+under canonical `Settings.state_dir/controlled-reports/`, keyed by project,
+canonical item, scope and stable intent. Existing intent directories hold;
+symlinks, FIFOs and nonregular files reject. The producer creates `report.json`
+exclusively, checks the exact 227-byte output, and never overwrites it.
+Successful native output may include `report` with an opaque
+`controlled-report:<digest>` candidate reference, input/report SHA256 values,
+byte count and `accepted=false`. Private paths are absent from that result.
+No-op results omit the optional field entirely. Report generation grants no
+publication or work acceptance; `work_accepted` remains false. Both commands
+retain the same default-off capability, current grants, approval, native custody
+and original-intent readback boundaries.
+
+Terminal certificate and effect readback reconstruct the selected finite command
+for every original attempt from current source bytes and canonical Settings.
+Mixed no-op/report histories retain separate runtime identities; stored command
+paths, arguments and manifests cannot substitute for that reconstruction. Report
+workspace and result-readback descriptors have close-once owners. A failed close
+retains its owner in native custody or on the primary exception, and never retries
+the descriptor integer after its identity may have changed.
+
+The daemon's `Settings.controlled_host_enabled` capability defaults to false.
+With that default, successful admission records the
+original ActionCall as `FAILED/controlled_host_unavailable`, with
+`host_dispatched=false`, `retry_safe=false` and `certified=false`. No connector,
+process, Run attempt, key or FD is dispatched or charged. Dry-run records
+`DRY_RUN` and `admission_verified=false`; it is not admission. Direct execution,
+background/durable overrides and registry fallback fail closed. Stable intent
+deduplication retains the original failed audit; unknown histories hold rather
+than authorize retry. Controlled public metadata is allowlisted consistently
+in the initial envelope, audit/get/query and repository/operation replay;
+approval/owner provenance stays backend-only. Native custody, reserve/release,
+barrier/timer/cleanup are implemented in a private fixture-tested component.
+The component passed bounded portable/native fixture proof and independent
+technical review. This does not make the public action host available or
+establish loaded-host/end-to-end behavior; terminal/set/effect certification
+remains separate.
+
+The private native-control component consumes this admission in its bounded
+fixture path.
+The same fixed action has a daemon-owned adapter for an explicitly enabled,
+supported host. Installing source does not enable it. The exact `Settings`
+instance must come from the daemon's canonical operation services; request
+fields and connector calls cannot opt in. Native admission pins its state and
+seed paths and rechecks configuration at every forward transition.
+Key wrapping explicitly loads that canonical seed; original recovery requires
+the same private storage/seed context rather than ambient crypto configuration.
+Disabling the capability prevents new forward admission while preserving
+original-bound safety cleanup and authenticated immutable-result readback.
+
+The adapter reserves one original ActionCall, executes through the existing
+retained native custody, then commits its immutable terminal audit **before**
+the canonical owner certificate snapshot. The v2 result distinguishes execution
+uncertainty from known cleanup and always says `work_accepted=false`; it has no
+`certified` field. Historical v1 results retain `certified=false`. The owner is
+the sole quiescence certificate store. A certificate failure returns structured
+`controlled_quiescence_held` with the original call id without rewriting the
+known audit or retrying its effect.
+
+Existing original-intent readback precedes new-launch authorization in both
+repository and dispatcher-cache paths. Its read context cannot launch, charge,
+release or certify. Current grant, approval, source/runtime, configuration and
+stop checks still apply; only the exact final owner basis or its one genuine
+certificate increment can normalize revision for this read. Unknown, foreign
+or in-flight history holds. A lost acknowledgment never creates another host.
+
+Public-adapter validation exercises the configured fixed command through real
+native custody, immutable audit, certificate and original-result readback;
+portable cases also prove denied paths cannot dispatch. Enabling an installed daemon, its OS
+permissions, real grants and a useful pilot are separate lifecycle decisions.
+Forward transitions (reservation, registration, arm and
+release) revalidate the original authenticated controller, full current grant,
+approved command/runtime binding, and exact item/owner/epoch/scope/revision at
+the canonical write boundary. The cursor advances only from a successful
+canonical transition result; request IDs, stale snapshots and replay cannot
+manufacture authority. Original-bound cancellation, cleanup and hold remain
+available when forward authority disappears. A stop can race the final release
+observation and request cancellation; database state cannot atomically revoke
+an already released OS effect.
+
+Reservation consumes the one canonical attempt once. A newly applied release
+may create one in-memory release frame; duplicate transitions, replay or
+uncertain acknowledgments cannot create another frame or charge. Lost or
+contradictory results after reservation remain `UNKNOWN_HOLD`; never infer a
+release by readback or retry a possibly completed effect. Native custody,
+launch and release do not certify command completion or terminal effect.
+
+Readback also preserves the existing audit lifecycle: a legitimate `RUNNING`
+reservation has no response yet and remains inspectable through get/query.
+The canonical restart reconciler's `FAILED/daemon-restart-orphan` evidence
+exposes only `outcome_unknown=true` and `retry_safe=false`, with the same safe
+metadata projection. These pending/unknown states assert no admission or
+successful execution and cannot replay as a fresh dispatch. Other malformed
+terminal results still fail closed; the reconciler and public schemas are unchanged.
+
 The action executor is the daemon-side foundation for provider and utility
 calls. It is intentionally a substrate, not an agent decision layer.
 
@@ -190,6 +299,18 @@ submits independent items asynchronously within a bounded in-flight window.
 It persists attempts, progress and receipts. Unattempted items survive restart;
 an expired dispatched attempt is held as an unknown outcome until a provider
 receipt reconciles it. It is never automatically resent.
+
+When a durable delivery runs under an actively granted plan step with one
+canonical supervised work item, acceptance binds the job to that item's current
+owner, epoch, scope, controller, stable intent and action. The durable job and
+private owner-effect registration commit together before the dispatcher can
+claim it. Claim rechecks that registration, the owner fence and the active step;
+missing, ambiguous, changed or stale bindings stop the effect. The registration
+is stored with the existing owner continuity record and is omitted from public
+owner responses. Generic work without a supervised item keeps the existing
+legacy path. Provider preflight may read provider state before acceptance, but
+provider delivery starts only after the durable write boundary. No provider
+credentials or delivery result are added to the owner record.
 
 Inspect a sealed job with `actionCall.items`; `actionCall.pause` and
 `actionCall.resume` control future claims, while `actionCall.cancel` cancels
@@ -680,3 +801,15 @@ Actions are dumb execution units. They do not pick campaigns, choose variants,
 optimize budgets, interpret SEO opportunities, or decide next steps. Those
 decisions belong to the agent/person and are passed into StackOS as explicit
 payloads, run plans, resources, learnings, decisions, or approvals.
+
+Private controlled-host terminal reconciliation reads effect disposition from
+the existing ActionRepository ledger, scoped by original controller/step and
+stable intent keys, including contradictory bindings and linked durable rows.
+Only the exact fixed noop descriptor with absent or genuine terminal
+no-dispatch/DRY_RUN rows establishes known no-effect. Running/orphan/unknown,
+unmapped commands or durable delivery evidence hold certification for their
+canonical owner; no provider action is replayed or reconciled by this reader.
+The certificate repeats the full rowset under the same SQLite writer interval
+as owner CAS and consumption. Terminal receipt integrity and execution result
+are distinct from effect settlement, quiescence and work acceptance. The public
+controlled action retains its host-unavailable result and safe readback shapes.
