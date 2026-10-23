@@ -22,6 +22,28 @@ from stackos.mcp.bridge.protocol import BridgeProtocolError
 SECRET = "private-token-and-exception-sentinel"
 
 
+def test_attempt_identity_spans_failure_recovery_and_startup(bridge, monkeypatch):
+    _, install = bridge
+    attempt = "b" * 32
+    monkeypatch.setenv("STACKOS_BRIDGE_ATTEMPT_ID", attempt)
+    answer = json.dumps({"jsonrpc": "2.0", "id": 1, "result": {}})
+    install([httpx.ConnectError(SECRET), answer, httpx.ReadTimeout(SECRET)])
+    result = invoke(count=2)
+    receipts = events(result)
+    assert {e["attempt_id"] for e in receipts} == {attempt}
+    assert len({e["diagnostic_id"] for e in receipts}) == 3
+    assert json.loads(result.stdout.splitlines()[-1])["error"]["data"]["attempt_id"] == attempt
+
+
+def test_untrusted_attempt_value_is_not_logged(bridge, monkeypatch):
+    _, install = bridge
+    monkeypatch.setenv("STACKOS_BRIDGE_ATTEMPT_ID", SECRET)
+    install([httpx.ReadTimeout(SECRET), httpx.ReadTimeout(SECRET)])
+    result = invoke(count=2)
+    assert len({e["attempt_id"] for e in events(result)}) == 1
+    assert len(events(result)[0]["attempt_id"]) == 32
+
+
 class FakeClient:
     def __enter__(self):
         return self

@@ -272,11 +272,13 @@ def test_workspace_failure_log_id_is_returned_with_scope_protection(tmp_path):
         cwd="/project",
         deliberate_workspace_root=True,
         diagnostic_log_path=path,
+        attempt_id="c" * 32,
     )
     with httpx.Client(transport=httpx.MockTransport(fail)) as client:
         proxy._ensure_workspace_scope(client)
     receipt = json.loads(path.read_text())
     assert receipt["phase"] == "workspace_scope"
+    assert receipt["attempt_id"] == "c" * 32
     assert receipt["diagnostic_id"] in proxy.workspace_scope_error
     assert "persistence=persisted" in proxy.workspace_scope_error
     assert proxy.scoped_project_id is None
@@ -300,6 +302,7 @@ def test_internal_validation_failures_persist_and_clear_stale_grants(tmp_path):
         assert proxy._refresh_run_context(client, 1) is None
     receipts = [json.loads(line) for line in path.read_text().splitlines()]
     assert [receipt["phase"] for receipt in receipts] == ["project_validation", "run_context"]
+    assert {receipt["attempt_id"] for receipt in receipts} == {proxy.attempt_id}
     assert all(receipt["persistence"]["status"] == "persisted" for receipt in receipts)
     assert error["diagnostic_id"] == receipts[0]["diagnostic_id"]
     assert 1 not in proxy.allowed_by_run

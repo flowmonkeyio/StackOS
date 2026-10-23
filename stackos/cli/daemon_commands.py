@@ -17,6 +17,7 @@ from stackos.config import Settings, get_settings
 from stackos.host_mcp.bridge import WORKSPACE_ROOT_ENV
 from stackos.mcp.bridge import AgentBridgeProxy, bridge_error
 from stackos.mcp.bridge.diagnostics import (
+    bridge_attempt_id,
     bridge_failure_response,
     emit_bridge_diagnostic,
     emit_bridge_startup_completed,
@@ -632,6 +633,7 @@ def mcp_bridge(
     the user's StackOS state dir rather than from project files.
     """
     bridge_started_at = started_at = time.monotonic()
+    attempt_id = bridge_attempt_id(os.environ.get("STACKOS_BRIDGE_ATTEMPT_ID"))
     import httpx
 
     if data_dir is not None:
@@ -666,6 +668,7 @@ def mcp_bridge(
             client_session_id=f"stackos-bridge:{os.getpid()}",
             startup_timeout_seconds=settings.bridge_startup_timeout_seconds,
             diagnostic_log_path=diagnostic_log_path,
+            attempt_id=attempt_id,
             **workspace_hints,
         )
     except Exception as exc:
@@ -674,6 +677,7 @@ def mcp_bridge(
             started_at=started_at,
             original=exc,
             log_path=diagnostic_log_path,
+            attempt_id=attempt_id,
             bridge_started_at=bridge_started_at,
         )
         code = 7 if phase == "token_read" and isinstance(exc, FileNotFoundError) else 1
@@ -717,6 +721,7 @@ def mcp_bridge(
                         started_at=time.monotonic(),
                         original=exc,
                         log_path=diagnostic_log_path,
+                        attempt_id=attempt_id,
                         bridge_started_at=bridge_started_at,
                     )
                     phase = "response_write"
@@ -779,6 +784,7 @@ def mcp_bridge(
                         autostart=autostart,
                         outcome="recovered" if recovered else "failed",
                         log_path=diagnostic_log_path,
+                        attempt_id=attempt_id,
                         bridge_started_at=bridge_started_at,
                     )
                     if not recovered:
@@ -804,6 +810,7 @@ def mcp_bridge(
                             initialize_started_at=initialize_started_at,
                             response_write_started_at=started_at,
                             log_path=diagnostic_log_path,
+                            attempt_id=attempt_id,
                         )
                         startup_completed = True
             phase = "client"
@@ -814,6 +821,7 @@ def mcp_bridge(
             started_at=started_at,
             original=exc,
             log_path=diagnostic_log_path,
+            attempt_id=attempt_id,
             bridge_started_at=bridge_started_at,
         )
         raise typer.Exit(code=1) from None

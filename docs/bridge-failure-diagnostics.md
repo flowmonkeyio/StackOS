@@ -19,6 +19,13 @@ code `-32000` and include the diagnostic ID and safe details. They explicitly
 report uncertain effects and no automatic caller retry. Notification failures
 have stderr diagnostics but no unsolicited stdout response.
 
+Each bridge launch also has one `attempt_id`, shared by CLI and proxy failure
+events, startup completion, and bridge-generated error data. A supervising
+consumer can supply `STACKOS_BRIDGE_ATTEMPT_ID` as 32 lowercase hexadecimal
+characters (UUID hex). Missing or invalid values generate a new ID; arbitrary
+environment text never enters the log. This correlation ID is distinct from
+the per-event `diagnostic_id` and carries no request payload or authority.
+
 The CLI distinguishes `initialize` (daemon request handling) from
 `response_write` (writing or flushing stdout). A successful daemon response
 followed by a broken output pipe is a response-write failure; an earlier
@@ -134,6 +141,51 @@ guidance includes the diagnostic ID for lookup. Invalid input JSON is logged
 without retaining the request contents.
 
 ## Recorded incident and verification limit
+
+### Correlated lifecycle exercise
+
+`scripts/diagnostics/bridge_lifecycle.py` exercises the source candidate with
+an actual bridge process, a separate synthetic stdio consumer process, and an
+ephemeral loopback fixture. It uses private isolated home/data/state directories
+and a fixture token. It neither connects to the installed daemon nor modifies
+host registrations. Run it with the candidate's Python and a new output path:
+
+```bash
+python scripts/diagnostics/bridge_lifecycle.py /private/tmp/bridge-lifecycle-evidence
+```
+
+Every scenario gets a fresh attempt ID shared by both sides. `lifecycle.jsonl`
+records supervisor spawn, observed child exit codes/signals, consumer request,
+response, deadline and cancellation events, and fixture delivery. The producer's
+automatic events remain in `state/mcp-bridge.log`. Both use the existing private,
+fsynced rotating logger. No raw stderr, bodies, environment or exception text is
+retained. Preserve the JSONL and producer logs through existing incident evidence
+owners before temporary storage is removed.
+
+| Exercise | Evidence that distinguishes it |
+| --- | --- |
+| Success | Consumer received a result, producer flushed initialize, both exited zero |
+| Consumer timeout | Armed 200 ms consumer deadline expired before response; consumer exit 21 precedes producer write failure |
+| Cancellation | Supervisor sent cancellation, consumer acknowledged it and exited 20; producer later failed to write |
+| Abrupt consumer exit | Supervisor observed consumer SIGKILL, without a consumer completion receipt; producer later failed to write |
+| Bridge protocol failure | Producer classified invalid daemon response during initialize; consumer received an error, producer exited zero |
+| Bridge process exit | Producer retained token-read failure and exit 7; consumer observed EOF |
+| Bridge network timeout | Producer classified a 200 ms fixture read timeout; consumer received an error without expiring its deadline |
+
+The supervisor starts its clock before process launch, including interpreter and
+imports. Producer events retain `cli_entry` timing; these origins must not be
+subtracted as if they were the same interval. Each exercise has a 20-second
+overall deadline plus bounded cleanup (one second for terminate and one for kill
+per child). It signals and reaps only children it created. Cleanup still runs
+if recording fails; incomplete cleanup/persistence fails the exercise. The script
+returns nonzero for an overall deadline; scenario correctness is asserted by
+`tests/integration/test_mcp/test_bridge_lifecycle_exercise.py`, including cleanup
+after an unavailable log sink or a consumer spawn failure.
+
+These are deterministic synthetic observations, not historical root-cause proof.
+A broken pipe alone still cannot distinguish cancellation, timeout or consumer
+exit. Real hosts must supply their own matching attempt ID and lifecycle receipt;
+this change does not instrument Codex's host or retrieve its backend traces.
 
 The October 23 incident has two separate boundaries: upstream task-launch
 `UNKNOWN` results and a bridge initialization failure with no available leaf

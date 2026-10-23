@@ -21,7 +21,7 @@ from .constants import (
     _TOOLBOX_DESCRIBE_TOOL,
     _TOOLBOX_TOOL_NAMES,
 )
-from .diagnostics import emit_bridge_diagnostic
+from .diagnostics import bridge_attempt_id, emit_bridge_diagnostic
 from .protocol import (
     _bridge_as_int,
     _bridge_call_error,
@@ -80,6 +80,7 @@ class AgentBridgeProxy:
         deliberate_workspace_root: bool = False,
         startup_timeout_seconds: float = 15.0,
         diagnostic_log_path: Path | None = None,
+        attempt_id: str | None = None,
     ) -> None:
         self.url = url
         self.headers = headers
@@ -91,6 +92,7 @@ class AgentBridgeProxy:
         self.deliberate_workspace_root = deliberate_workspace_root
         self.startup_timeout_seconds = startup_timeout_seconds
         self.diagnostic_log_path = diagnostic_log_path
+        self.attempt_id = bridge_attempt_id(attempt_id)
         self.tool_catalog: dict[str, dict[str, Any]] = {}
         self.allowed_by_run: dict[int, set[str]] = {}
         self.tokens_by_run: dict[int, str] = {}
@@ -307,6 +309,7 @@ class AgentBridgeProxy:
                 started_at=started_at,
                 original=exc,
                 log_path=self.diagnostic_log_path,
+                attempt_id=self.attempt_id,
             )
             self.workspace_scope_error = (
                 "workspace.resolve failed; inspect bridge diagnostic "
@@ -478,6 +481,7 @@ class AgentBridgeProxy:
                 started_at=started_at,
                 original=exc,
                 log_path=self.diagnostic_log_path,
+                attempt_id=self.attempt_id,
             )
         return {
             "reason": "project_unavailable",
@@ -608,6 +612,7 @@ class AgentBridgeProxy:
                 started_at=started_at,
                 original=exc,
                 log_path=self.diagnostic_log_path,
+                attempt_id=self.attempt_id,
             )
             return None
 

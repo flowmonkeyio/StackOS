@@ -8,6 +8,7 @@ by third-party code, so only closed classifications are emitted.
 from __future__ import annotations
 
 import json
+import re
 import sys
 import time
 from datetime import UTC, datetime
@@ -41,6 +42,13 @@ _PHASES = frozenset(
 _PROTOCOL_REASONS = frozenset(
     {"empty_response", "invalid_json", "invalid_envelope", "mismatched_id"}
 )
+
+
+def bridge_attempt_id(value: str | None = None) -> str:
+    """Accept only an opaque UUID from the supervisor; never log arbitrary input."""
+    if value and re.fullmatch(r"[0-9a-f]{32}", value):
+        return value
+    return uuid4().hex
 
 
 def _failure_code(exc: BaseException) -> str:
@@ -118,11 +126,13 @@ def emit_bridge_diagnostic(
     outcome: str = "failed",
     log_path: Path | None = None,
     bridge_started_at: float | None = None,
+    attempt_id: str | None = None,
 ) -> dict[str, Any]:
     """Automatically persist a safe receipt, then mirror it to stderr."""
     event = {
         "event": "stackos.mcp_bridge.failure",
         "diagnostic_id": uuid4().hex,
+        "attempt_id": bridge_attempt_id(attempt_id),
         "observed_at": datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
         "phase": phase if phase in _PHASES else "unknown",
         "elapsed_ms": max(0, round((time.monotonic() - started_at) * 1000)),
@@ -147,6 +157,7 @@ def emit_bridge_startup_completed(
     initialize_started_at: float,
     response_write_started_at: float,
     log_path: Path | None = None,
+    attempt_id: str | None = None,
 ) -> dict[str, Any]:
     """Record the first successful initialize response flush, without payloads."""
     completed_at = time.monotonic()
@@ -154,6 +165,7 @@ def emit_bridge_startup_completed(
         {
             "event": "stackos.mcp_bridge.startup_completed",
             "diagnostic_id": uuid4().hex,
+            "attempt_id": bridge_attempt_id(attempt_id),
             "observed_at": datetime.now(UTC)
             .isoformat(timespec="milliseconds")
             .replace("+00:00", "Z"),
@@ -200,6 +212,7 @@ def bridge_failure_response(request_id: object, diagnostic: dict[str, Any]) -> s
                 "message": "Daemon request failed; inspect the matching bridge diagnostic.",
                 "data": {
                     "diagnostic_id": diagnostic["diagnostic_id"],
+                    "attempt_id": diagnostic["attempt_id"],
                     "phase": diagnostic["phase"],
                     "failure": diagnostic["original"],
                     "retry_failure": diagnostic["retry"],
