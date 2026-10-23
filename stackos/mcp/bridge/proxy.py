@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, cast
 
 from .catalog import (
@@ -19,6 +20,7 @@ from .constants import (
     _TOOLBOX_DESCRIBE_TOOL,
     _TOOLBOX_TOOL_NAMES,
 )
+from .diagnostics import emit_bridge_diagnostic
 from .protocol import (
     _bridge_as_int,
     _bridge_call_error,
@@ -31,6 +33,7 @@ from .protocol import (
     _bridge_response_text,
     _bridge_tool_call_arguments,
     _bridge_tool_call_name,
+    _bridge_validate_response_text,
 )
 from .response import (
     _bridge_compact_tool_response,
@@ -131,7 +134,9 @@ class AgentBridgeProxy:
         }
         response = client.post(self.url, content=body, headers=headers)
         response.raise_for_status()
-        response_text = _bridge_response_text(response.text)
+        response_text = _bridge_validate_response_text(
+            _bridge_response_text(response.text), request_payload=payload
+        )
         if isinstance(payload, dict) and payload.get("method") == "initialize":
             self.protocol_version = _bridge_negotiated_protocol_version(response_text)
         return response_text
@@ -257,6 +262,7 @@ class AgentBridgeProxy:
             }.items()
             if value
         }
+        started_at = time.monotonic()
         try:
             out = self.request_daemon(
                 client,
@@ -272,7 +278,8 @@ class AgentBridgeProxy:
             data = data.get("data", data)
             if not isinstance(data, dict) or "needs_connect" not in data:
                 raise ValueError("workspace.resolve returned an invalid resolution")
-        except Exception:
+        except Exception as exc:
+            emit_bridge_diagnostic(phase="workspace_scope", started_at=started_at, original=exc)
             self.workspace_scope_error = "workspace.resolve failed; retry startup diagnostics"
             return
         self.workspace_scope_checked = True
