@@ -1,0 +1,470 @@
+schema_version: stackos.workflow-template.v1
+key: support.internal-diagnostics
+name: Internal Diagnostics
+version: 0.1.0
+description: Resume a bounded internal incident, distinguish failure layers, preserve safe receipts, and verify an explicitly authorized packaged-runtime remedy or escalate without replaying uncertain effects.
+domain: support
+owner:
+  team: StackOS
+experience:
+  problem: Agents repeatedly reconstruct incidents, confuse upstream orchestration failures with local MCP failures, or retry actions whose effects are unknown.
+  outcome: One resumable incident with package provenance, bounded attempts, source-linked findings, a truthful effect receipt, and an exact next safe action.
+  operator_path:
+    - Select the incident, project, evidence scope, and live or recorded mode.
+    - Review missing evidence, uncertain effects, and any separate remediation authorization.
+    - Inspect the receipt and resume cursor instead of repeating discovery.
+  agent_path:
+    - Rehydrate the existing run, tracker, receipts, authority, and retry budgets before any probe.
+    - Verify published installed-package provenance before live diagnostics; otherwise stop or explicitly use recorded mode.
+    - Separate external orchestration, host registration, daemon, bridge, binding, and workflow evidence.
+    - Propose the smallest remedy, attempt only an authorized bounded action, then verify or escalate.
+  recovery:
+    - Resume the same incident and preserve original operation identities, denied attempts, unknown effects, cumulative budgets, and evidence refs.
+    - If MCP is down, use only separately authorized narrow packaged host-status and health reads; retain sanitized receipts for later import.
+    - A template revision never rewrites a frozen run or authorizes replay.
+  safe_stopping_points:
+    - Stop before live work when package origin, scope, authority, prior effect, or retry budget is unknown.
+    - Stop with an unresolved receipt when the leaf error, upstream result, access, or approval is missing.
+  handoffs:
+    - workflow_key: engineering.tracked-delivery
+      relationship: conditional
+      when: A source change is needed and the operator authorizes separately scoped engineering delivery.
+public:
+  audience: Operators and agents investigating internal StackOS runtime incidents
+  setup: project-adapter-required
+  prerequisites:
+    - A selected project, stable incident key, safe evidence refs, and bounded authority
+    - Verified published installed-package provenance for live mode; recorded mode makes no live runtime claim
+  proof:
+    - Schema-valid incident receipts and preserved prior-attempt outcomes
+    - Layer-specific evidence, retry disposition, and an exact resume cursor
+    - Verified remedy evidence or an explicit unresolved escalation
+  featured: false
+when_to_use:
+  - An internal installation, daemon, MCP, binding, or upstream orchestration incident must survive agent handoff without repeated ramp-up.
+  - Existing incident evidence can be investigated in recorded mode while the real runtime is inaccessible.
+when_not_to_use:
+  - Customer feedback needs the canonical Slack intake and investigation chain.
+  - The request is to implement or release a source change; use engineering.tracked-delivery.
+  - A repository build, virtualenv, or unknown package would substitute for the installed runtime.
+agent_requirements:
+  - role: project-memory-review
+    requirement: required
+    agent_preset_ref: stackos.workflow.project-memory-review
+    purpose: Rehydrate bounded incident state and distinguish current evidence from historical claims without assuming a Slack thread.
+    applies_to_steps: [resume-provenance, verify-escalate]
+  - role: codebase-explorer
+    requirement: recommended
+    agent_preset_ref: stackos.sdlc.codebase-explorer
+    purpose: Trace the affected source contracts and failure layers read-only; source review is not packaged-runtime execution proof.
+    applies_to_steps: [collect-classify, propose-remediation]
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: recommended
+    purpose: Operate existing workflow, run-plan, tracker, resource, artifact, and audit contracts.
+    setup_notes:
+      - Adapt existing roles to internal incident scope, privacy, installed-package policy, and no-live-repair boundaries.
+      - StackOS grants no host filesystem, shell, process, or computer access; check that authority independently.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Own binding, dispatch, one-writer durable state, approvals, bounded recovery, and truthful closeout.
+inputs:
+  - key: incident_key
+    name: Incident Key
+    type: string
+    required: true
+    schema: {type: string, pattern: '^[a-z][a-z0-9_.-]{2,119}$'}
+  - key: mode
+    name: Evidence Mode
+    type: string
+    required: true
+    schema: {type: string, enum: [live, recorded]}
+  - key: source_revision
+    name: Reviewed Source Revision
+    type: string
+    required: true
+    description: Exact source SHA used for contract review, not proof that the installed package was published from it.
+    schema: {type: string, pattern: '^[0-9a-f]{40}$'}
+  - key: incident_scope
+    name: Incident Scope
+    type: object
+    required: true
+    schema: &scope_schema
+      type: object
+      additionalProperties: false
+      required: [project_id, target_refs, authority_refs]
+      properties:
+        project_id: {type: integer, minimum: 1}
+        target_refs: &safe_refs
+          type: array
+          minItems: 1
+          maxItems: 40
+          items: {type: string, minLength: 1, maxLength: 240}
+        authority_refs: *safe_refs
+  - key: runtime_fingerprint
+    name: Installed Runtime Fingerprint
+    type: object
+    required: true
+    description: Safe published-package evidence or explicit unknown values; never a command, environment dump, or source-build substitution.
+    schema: &runtime_schema
+      type: object
+      additionalProperties: false
+      required: [installed_package, package_ref, executable_ref, version, package_source_revision, fingerprint_sha256, release_evidence_ref]
+      properties:
+        installed_package: {type: string, enum: [verified_published, unverified, local_build, unavailable]}
+        package_ref: &nullable_ref {type: [string, 'null'], minLength: 1, maxLength: 240}
+        executable_ref: *nullable_ref
+        version: {type: [string, 'null'], minLength: 1, maxLength: 80}
+        package_source_revision: {type: [string, 'null'], pattern: '^[0-9a-f]{40}$'}
+        fingerprint_sha256: {type: [string, 'null'], pattern: '^[0-9a-f]{64}$'}
+        release_evidence_ref: *nullable_ref
+  - key: prior_attempts
+    name: Prior Attempts
+    type: array
+    required: false
+    description: Include denied, failed, pending, and unknown attempts from every executor; absence of a result does not mean no effect.
+    schema: &attempts_schema
+      type: array
+      maxItems: 40
+      items:
+        type: object
+        additionalProperties: false
+        required: [attempt_key, layer, operation_ref, target_ref, observed_at, outcome, effect, attempt_count, attempt_limit, failure_count, failure_limit, retry_disposition, request_ref, evidence_refs]
+        properties:
+          attempt_key: {type: string, minLength: 1, maxLength: 120}
+          layer: &layer_schema {type: string, enum: [external_orchestration, host_registration, daemon, mcp_bridge, workspace_binding, workflow, unknown]}
+          operation_ref: {type: string, minLength: 1, maxLength: 160}
+          target_ref: {type: string, minLength: 1, maxLength: 240}
+          observed_at: &observation_time {type: [string, 'null'], pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$'}
+          outcome: {type: string, enum: [not_attempted, succeeded, failed, denied, pending, unknown]}
+          effect: {type: string, enum: [none, confirmed, unknown]}
+          attempt_count: {type: integer, minimum: 0}
+          attempt_limit: {type: integer, minimum: 0}
+          failure_count: {type: integer, minimum: 0}
+          failure_limit: {type: integer, minimum: 0}
+          retry_disposition: {type: string, enum: [no_retry, reconcile_first, eligible_after_new_evidence, exhausted]}
+          request_ref: *nullable_ref
+          evidence_refs: *safe_refs
+  - key: evidence_refs
+    name: Safe Evidence Refs
+    type: array
+    required: true
+    description: Authorized receipts, source/message refs, or sanitized artifacts, never raw sensitive contents.
+    schema: *safe_refs
+  - key: previous_receipt_ref
+    name: Previous Receipt Ref
+    type: string
+    required: false
+    schema: {type: string, minLength: 1, maxLength: 240}
+context_requirements:
+  - id: prior_incident_indexes
+    source: resources
+    purpose: Locate related support indexes, then read only the exact incident's existing run and tracker refs.
+    filters: {plugin_slug: support, resource_keys: [support-investigation]}
+    fields: [title, data_json, updated_at]
+    max_items: 10
+    return_mode: compact
+resource_contracts:
+  - key: incident_index
+    resource: support-investigation
+    purpose: Index safe incident conclusions and receipt refs; detailed attempts and cursor remain in run-step/tracker evidence.
+policies:
+  - key: packaged-runtime-only
+    kind: boundary
+    description: Live work requires independently verified published package origin and the exact installed executable. Build-info, version, buildId, or path alone is insufficient. Never use a repository virtualenv, python -m stackos from a checkout, uv run, dev server, or env/PATH fallback. Unknown provenance stops live work.
+  - key: preserve-effects-and-budgets
+    kind: recovery
+    description: Reconcile existing results before any retry. Unknown is not failed or safe. Preserve original request/action identity and monotonic attempt/failure counts across agents and resumes. Denials require materially new relevant authority; exhausted limits stop. Schema validation does not prove these semantic checks.
+  - key: minimum-safe-evidence
+    kind: privacy
+    description: Persist only bounded typed facts, safe refs, checksums, timestamps, and outcome codes. No raw authentication material, environment/configuration dumps, provider bodies, log strings, or ExceptionGroup contents. Sanitize and review before every durable write; schema shape is not a privacy guarantee.
+  - key: separate-failure-layers
+    kind: investigation
+    description: An external task create/send UNKNOWN result and a local bridge initialization error are separate observations. Correlate with request IDs, times, and matching evidence, not assumption. A missing leaf cause requires a precise evidence gap, not another blind initialization or process scan.
+  - key: explicit-action-boundary
+    kind: authority
+    description: Diagnosis does not authorize repair, restart, installation, process discovery, credential/configuration changes, external sends, or source delivery. This template issues no provider-action grants. Use exact current authority, host permissions, and separately validated grants for an authorized remedy; otherwise propose and stop.
+  - key: recorded-is-not-live
+    kind: evidence
+    description: Recorded mode reasons over existing authorized evidence only. It runs no live probes or repairs, never labels an operation observed now, and cannot conclude verified_resolved.
+steps:
+  - id: resume-provenance
+    title: Resume Incident And Provenance
+    purpose: Resolve the existing incident, scope, authority, installed runtime, prior effects, and remaining budgets before discovery.
+    input_refs: [incident_key, mode, source_revision, incident_scope, runtime_fingerprint, prior_attempts, evidence_refs, previous_receipt_ref]
+    context_refs: [prior_incident_indexes]
+    policy_refs: [packaged-runtime-only, preserve-effects-and-budgets, minimum-safe-evidence, explicit-action-boundary, recorded-is-not-live]
+    instructions:
+      - Read the current effective workflow/extension/presets and exact prior runPlan.get, runPlan.checkConsistency, tracker.brief, and targeted runPlan.getStep evidence. Do not create a duplicate incident/run to escape a blocker.
+      - Prior incident context is bounded and resource.query is paginated. Absence from the first page is not absence of an incident. Follow returned next_cursor/after_id pages or a known tracker/run reference to locate the exact incident key before creating a new run.
+      - If this step is already running, continue its existing state and frozen grants only with valid recovered controller authority; do not claim it again. If the existing run/controller capability is unavailable, stop with that exact blocker. Do not start an already started run again or create a replacement incident to obtain authority.
+      - Verify project and target identity independently. If a previous tracker revision exists, drain tracker.changed using each last returned change revision; current_rev is the head and may exceed a bounded page.
+      - Revalidate when installed package/executable/fingerprint, target/project identity, authority/grants, or relevant workflow contract changes. Preserve historical observations but invalidate dependent current-evidence claims and repeat only the smallest still-authorized necessary probes. Use identity/evidence changes, not an arbitrary TTL, to decide freshness.
+      - Preserve failures, denials, pending and unknown effects, consumed counts, limits, authorization refs, and named stop/resume conditions. Reconcile a potentially executed action before retry or reassignment.
+      - For live mode, attest the installed executable and published release evidence separately from reviewed source SHA. A timestamp buildId is not release proof. If unavailable, record the blocker; use recorded mode only as an explicitly labeled evidence analysis, never silently downgrade.
+    output_refs: [incident_resume]
+    success_criteria:
+      - The receipt identifies this incident and current authority without asserting unverified runtime or effect state.
+  - id: collect-classify
+    title: Collect And Classify Evidence
+    purpose: Use the smallest authorized observations to separate failure layers and identify exactly what evidence is missing.
+    depends_on: [resume-provenance]
+    resource_refs: [incident_index]
+    policy_refs: [packaged-runtime-only, preserve-effects-and-budgets, minimum-safe-evidence, separate-failure-layers, explicit-action-boundary, recorded-is-not-live]
+    instructions:
+      - In recorded mode, inspect only supplied refs and prior receipts; classify each finding as observed, inferred, eliminated, or unknown and retain its original capture time/source. Use observed_at=null if the original time is genuinely unavailable; do not substitute this analysis time. Evidence refs must retain their source's time when known.
+      - In live mode, describe exact available operations first. Prefer narrow packaged mcp-host-status --json --host <selected-host> and the configured unauthenticated /api/v1/health read when separately permitted. Neither needs a functioning MCP bridge; neither authorizes repair. Do not infer daemon ownership from port reachability alone.
+      - If MCP/daemon is unavailable, preserve a minimal sanitized receipt through already authorized host-file access and stop dependent writes. There is no dedicated diagnostic collector/import operation. Rehydrate and import through existing granted operations later, preserving original mode, capture time, and evidence identity.
+      - For running StackOS action calls, use actionCall.get with the returned polling arguments; inspect stored terminal status and output refs before claiming an effect or replaying a call. Upstream task APIs require their own exact read/list reconciliation, not StackOS actionCall.get.
+      - Upsert only the existing support/support-investigation schema with stable external_id equal to incident_key. Keep attempts and cursors in step/tracker evidence; do not add undeclared resource fields. Intentionally preserved sanitized files may be referenced by artifact.create, which does not itself copy or upload a file.
+    output_refs: [diagnostic_findings]
+  - id: propose-remediation
+    title: Bound Remediation And Effects
+    purpose: Propose the smallest evidence-backed next action, or record one separately authorized attempt and its actual effect without guessing.
+    depends_on: [collect-classify]
+    policy_refs: [packaged-runtime-only, preserve-effects-and-budgets, minimum-safe-evidence, separate-failure-layers, explicit-action-boundary, recorded-is-not-live]
+    instructions:
+      - Before an attempt, compare exact action/target/authority, original request identity, current effect, remaining cumulative attempt/failure budgets, and new evidence. Serialize execution; do not race another worker or extend a budget.
+      - Default to proposal_only. Recorded mode is not_attempted. With no live-remediation authority, no mounted capability, or unknown prior effect, record the precise approval/evidence blocker and stop the dependent action.
+      - A separately authorized packaged-runtime remedy requires a current independently checked action contract and host authority, and any required run-step grant/approval. This template has no provider action contracts and cannot implicitly authorize an external action.
+      - Preserve the attempt and request refs plus outcome/effect as confirmed, none, or unknown. An uncertain outcome forces reconcile_first and prohibits another attempt. Do not convert a denial into failure or a failed attempt into not_attempted.
+    output_refs: [remediation_receipt]
+  - id: verify-escalate
+    title: Verify Or Escalate With Cursor
+    purpose: Compare against the original symptom, preserve the receipt/index, and leave an exact next action when resolution cannot be verified.
+    depends_on: [propose-remediation]
+    resource_refs: [incident_index]
+    policy_refs: [packaged-runtime-only, preserve-effects-and-budgets, minimum-safe-evidence, separate-failure-layers, explicit-action-boundary, recorded-is-not-live]
+    instructions:
+      - Verify the original user-visible/agent-visible symptom against independent current evidence. Health alone is not host initialization or external orchestration recovery. Recorded evidence and an unreproduced error are not a live fix. Match verification.runtime_fingerprint_sha256 to the current runtime fingerprint and scoped target/authority; retain the original symptom observation time separately from receipt capture time.
+      - Before verified_resolved, reconcile the current effect of every in-scope uncertain request/action using its own authoritative evidence. Historical unknown attempts remain unchanged; verification.current_effect_status describes the current reconciled disposition, not a rewrite. Missing current-effect evidence, unknown cause, or absent current symptom/runtime proof leaves the incident unresolved or escalated.
+      - Persist the final receipt in runPlan.recordStep and retained tracker evidence, and upsert the compact incident index with receipt refs. Only successful schema-valid step completion advances workflow mirrors. A blocked step is a recoverable pause; failed means a terminal attempted failure.
+      - Missing leaf cause, unknown upstream effect, denied access, unsupported tooling, or insufficient authority must produce an unresolved/escalated receipt naming the exact evidence/permission needed, target, and safe resume condition. Raise it with the operator promptly.
+      - Record next_action and cursor to the existing run/step/ticket and last consumed tracker revision. Use runPlan.recover only for documented system-recoverable lifecycle errors; normal follow-up uses tracker.reopen. Never patch mirror status as a second execution path.
+      - For adaptation, validate/save a new template version and read it back. Review workflow_contract mismatch; existing snapshot/grants/results stay frozen. Reuse valid evidence and create linked follow-up work only when the new scope cannot fit the existing run. No repeated side effect to make old evidence look current.
+    output_refs: [incident_receipt]
+outputs:
+  - key: incident_resume
+    name: Incident Resume Receipt
+    description: Durable incident identity, current scope, runtime provenance, prior attempts, and the exact next safe action.
+    type: object
+    required: true
+    schema:
+      type: object
+      additionalProperties: false
+      required: [schema_version, incident_key, mode, stage, source_revision, scope, runtime, attempts, evidence_refs, boundaries, next_action, cursor, status]
+      properties: &receipt_properties
+        schema_version: {const: stackos.internal-diagnostics-receipt.v1}
+        incident_key: {type: string, pattern: '^[a-z][a-z0-9_.-]{2,119}$'}
+        mode: {type: string, enum: [live, recorded]}
+        stage: {const: resume-provenance}
+        source_revision: {type: string, pattern: '^[0-9a-f]{40}$'}
+        scope: *scope_schema
+        runtime: *runtime_schema
+        attempts: *attempts_schema
+        evidence_refs: *safe_refs
+        boundaries:
+          type: object
+          additionalProperties: false
+          required: [packaged_only, blind_replay_allowed, live_repair_authorized, authority_ref, raw_data_retained]
+          properties:
+            packaged_only: {const: true}
+            blind_replay_allowed: {const: false}
+            live_repair_authorized: {type: boolean}
+            authority_ref: *nullable_ref
+            raw_data_retained: {const: false}
+        next_action:
+          type: object
+          additionalProperties: false
+          required: [disposition, operation_ref, target_ref, condition_code]
+          properties:
+            disposition: {type: string, enum: [continue, await_evidence, await_authorization, reconcile_unknown, escalate, close]}
+            operation_ref: *nullable_ref
+            target_ref: *nullable_ref
+            condition_code: {type: string, pattern: '^[a-z][a-z0-9_.-]{0,119}$'}
+        cursor:
+          type: object
+          additionalProperties: false
+          required: [run_plan_id, step_id, ticket_ref, tracker_revision, previous_receipt_ref, captured_at]
+          properties:
+            run_plan_id: {type: [integer, 'null'], minimum: 1}
+            step_id: {type: [string, 'null'], enum: [resume-provenance, collect-classify, propose-remediation, verify-escalate, null]}
+            ticket_ref: *nullable_ref
+            tracker_revision: {type: [integer, 'null'], minimum: 0}
+            previous_receipt_ref: *nullable_ref
+            captured_at: {type: string, pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$'}
+        status: {type: string, enum: [investigating, unresolved, escalated]}
+      allOf: &receipt_conditions
+        - if:
+            properties: {mode: {const: live}}
+          then:
+            properties:
+              runtime:
+                properties:
+                  installed_package: {const: verified_published}
+                  package_ref: {type: string, minLength: 1}
+                  executable_ref: {type: string, minLength: 1}
+                  version: {type: string, minLength: 1}
+                  fingerprint_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+                  release_evidence_ref: {type: string, minLength: 1}
+        - if:
+            properties: {mode: {const: recorded}}
+          then:
+            properties:
+              status: {enum: [investigating, unresolved, escalated]}
+              boundaries:
+                properties: {live_repair_authorized: {const: false}}
+              remediation:
+                properties: {disposition: {const: not_attempted}}
+        - if:
+            properties:
+              boundaries:
+                properties: {live_repair_authorized: {const: true}}
+          then:
+            properties:
+              boundaries:
+                properties: {authority_ref: {type: string, minLength: 1}}
+  - key: diagnostic_findings
+    name: Layered Diagnostic Findings
+    description: Layer-specific findings with original observation times, retained evidence, explicit uncertainty, and the resume cursor.
+    type: object
+    required: true
+    schema:
+      type: object
+      additionalProperties: false
+      required: [schema_version, incident_key, mode, stage, source_revision, scope, runtime, attempts, evidence_refs, boundaries, next_action, cursor, status, findings]
+      properties:
+        <<: *receipt_properties
+        stage: {const: collect-classify}
+        findings:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [finding_code, layer, classification, observed_at, evidence_refs]
+            properties:
+              finding_code: {type: string, pattern: '^[a-z][a-z0-9_.-]{0,119}$'}
+              layer: *layer_schema
+              classification: {type: string, enum: [observed, inferred, eliminated, unknown]}
+              observed_at: *observation_time
+              evidence_refs: *safe_refs
+      allOf: *receipt_conditions
+  - key: remediation_receipt
+    name: Bounded Remediation Receipt
+    description: A bounded proposal or separately authorized attempt with its actual effect and retained operation identity.
+    type: object
+    required: true
+    schema:
+      type: object
+      additionalProperties: false
+      required: [schema_version, incident_key, mode, stage, source_revision, scope, runtime, attempts, evidence_refs, boundaries, next_action, cursor, status, remediation]
+      properties:
+        <<: *receipt_properties
+        stage: {const: propose-remediation}
+        remediation:
+          type: object
+          additionalProperties: false
+          required: [disposition, operation_ref, target_ref, attempt_ref, effect, evidence_refs]
+          properties:
+            disposition: {type: string, enum: [not_attempted, proposal_only, attempted, blocked]}
+            operation_ref: *nullable_ref
+            target_ref: *nullable_ref
+            attempt_ref: *nullable_ref
+            effect: {type: string, enum: [none, confirmed, unknown]}
+            evidence_refs: *safe_refs
+      allOf:
+        - allOf: *receipt_conditions
+        - if:
+            properties:
+              remediation:
+                properties: {disposition: {const: attempted}}
+          then:
+            properties:
+              mode: {const: live}
+              boundaries:
+                properties: {live_repair_authorized: {const: true}}
+              attempts: {minItems: 1}
+              remediation:
+                properties:
+                  operation_ref: {type: string, minLength: 1}
+                  target_ref: {type: string, minLength: 1}
+                  attempt_ref: {type: string, minLength: 1}
+        - if:
+            properties:
+              remediation:
+                properties: {effect: {const: unknown}}
+          then:
+            properties:
+              next_action:
+                properties: {disposition: {enum: [reconcile_unknown, escalate]}}
+  - key: incident_receipt
+    name: Verified Or Escalated Incident Receipt
+    description: Verified current symptom and effect evidence, or an unresolved conclusion with exact gaps and escalation conditions.
+    type: object
+    required: true
+    schema:
+      type: object
+      additionalProperties: false
+      required: [schema_version, incident_key, mode, stage, source_revision, scope, runtime, attempts, evidence_refs, boundaries, next_action, cursor, status, verification]
+      properties:
+        <<: *receipt_properties
+        stage: {const: verify-escalate}
+        status: {type: string, enum: [unresolved, escalated, verified_resolved]}
+        verification:
+          type: object
+          additionalProperties: false
+          required: [symptom_check, cause_status, current_effect_status, observed_at, runtime_fingerprint_sha256, evidence_refs, gap_codes]
+          properties:
+            symptom_check: {type: string, enum: [not_run, passed, failed, unknown]}
+            cause_status: {type: string, enum: [verified, bounded_uncertainty, unknown]}
+            current_effect_status: {type: string, enum: [reconciled, unresolved, unknown]}
+            observed_at: *observation_time
+            runtime_fingerprint_sha256: {type: [string, 'null'], pattern: '^[0-9a-f]{64}$'}
+            evidence_refs: *safe_refs
+            gap_codes:
+              type: array
+              maxItems: 20
+              items: {type: string, pattern: '^[a-z][a-z0-9_.-]{0,119}$'}
+      allOf:
+        - allOf: *receipt_conditions
+        - if:
+            properties: {status: {const: verified_resolved}}
+          then:
+            properties:
+              mode: {const: live}
+              verification:
+                properties:
+                  symptom_check: {const: passed}
+                  cause_status: {enum: [verified, bounded_uncertainty]}
+                  current_effect_status: {const: reconciled}
+                  observed_at: {type: string}
+                  runtime_fingerprint_sha256: {type: string}
+                  gap_codes: {maxItems: 0}
+              next_action:
+                properties: {disposition: {const: close}}
+        - if:
+            properties: {status: {enum: [unresolved, escalated]}}
+          then:
+            properties:
+              verification:
+                properties: {gap_codes: {minItems: 1}}
+              next_action:
+                properties: {disposition: {enum: [await_evidence, await_authorization, reconcile_unknown, escalate]}}
+failure_handling:
+  - Preserve an exact blocked action, target, reason, existing work, outcome certainty, and resume condition; notify the operator rather than silently working around denial.
+  - Never retry an UNKNOWN create/send, failed bridge initialization, or denied process read without reconciling its effect and satisfying current authority and remaining budgets.
+  - Keep offline receipts minimal and sanitized under existing host authorization; import later through an active granted step, not direct database edits or a fabricated collector endpoint.
+  - A schema-valid recorded demonstration proves workflow execution over saved evidence, not live packaged-runtime diagnosis, remediation, or incident resolution.
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan
+  workflow_family: internal_diagnostics
+  artifact_grant_policy: explicit
+  mcp_tool_grants:
+    - step_id: collect-classify
+      tool: artifact.create
+    - step_id: verify-escalate
+      tool: artifact.create
