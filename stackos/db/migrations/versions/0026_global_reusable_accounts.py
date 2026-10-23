@@ -119,10 +119,10 @@ def _prepare_accounts(bind: Any) -> list[dict[str, Any]]:
     """Preflight every legacy decryption before any schema/data mutation."""
     rows = _legacy_rows(bind)
 
-    from stackos.config import get_settings
     from stackos.crypto.aes_gcm import configure_seed_path, decrypt
+    from stackos.db.migrate import migration_settings
 
-    settings = get_settings()
+    settings = migration_settings()
     configure_seed_path(settings.seed_path)
 
     orphan_rows = bind.execute(

@@ -8,17 +8,73 @@ import os
 import sqlite3
 import subprocess
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
+from alembic import command
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 
 from stackos.browser.runtime import BROWSER_PROFILE_DIRNAME, browser_profile_dir
 from stackos.communication_surface_bindings import communication_surface_binding_external_id
+from stackos.config import Settings
 from stackos.db.connection import make_engine
+from stackos.db.migrate import alembic_config, upgrade_to_head
+
+
+@pytest.fixture(params=["standalone", "explicit-settings"])
+def migration_upgrade(
+    request,
+    isolated_alembic: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Callable[[], None]:
+    """Exercise legacy ciphertext with CLI settings and a conflicting ambient install."""
+
+    def upgrade() -> None:
+        if request.param == "standalone":
+            _run_alembic(["upgrade", "head"])
+            return
+        from stackos.crypto.seed import ensure_seed_file
+
+        selected = Settings()
+        assert selected.db_path == isolated_alembic
+        ambient = isolated_alembic.parent.parent / "ambient-state"
+        ambient_seed = ensure_seed_file(ambient / "seed.bin")
+        with monkeypatch.context() as patch:
+            patch.setenv("STACKOS_STATE_DIR", str(ambient))
+            patch.setenv("STACKOS_DATA_DIR", str(ambient / "data"))
+            command.upgrade(alembic_config(selected), "head")
+        assert (ambient / "seed.bin").read_bytes() == ambient_seed
+        assert not (ambient / "data").exists()
+
+    return upgrade
+
+
+def test_programmatic_migration_preserves_selected_seed_for_subsequent_requests(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from stackos.crypto.aes_gcm import configure_seed_path, decrypt, encrypt
+    from stackos.crypto.seed import ensure_seed_file
+
+    selected = Settings(data_dir=tmp_path / "selected-data", state_dir=tmp_path / "selected-state")
+    selected.ensure_dirs()
+    seed = ensure_seed_file(selected.seed_path)
+    configure_seed_path(selected.seed_path)
+    ambient = tmp_path / "unrelated-missing-state"
+    monkeypatch.setenv("STACKOS_STATE_DIR", str(ambient))
+    for _ in range(2):
+        upgrade_to_head(selected)
+        ciphertext, nonce = encrypt(b"fixture secret", project_id=1, kind="fixture")
+        assert (
+            decrypt(ciphertext, nonce=nonce, project_id=1, kind="fixture", seed=seed)
+            == b"fixture secret"
+        )
+    assert selected.seed_path.read_bytes() == seed
+    assert not ambient.exists()
+
 
 EXPECTED_TABLES: frozenset[str] = frozenset(
     {
@@ -267,6 +323,7 @@ def test_global_account_schema_has_explicit_project_attachments(
 
 def test_global_account_migration_preserves_and_reencrypts_legacy_credentials(
     isolated_alembic: Path,
+    migration_upgrade: Callable[[], None],
 ) -> None:
     from stackos.crypto.aes_gcm import decrypt_account, encrypt
     from stackos.crypto.seed import ensure_seed_file
@@ -336,7 +393,7 @@ def test_global_account_migration_preserves_and_reencrypts_legacy_credentials(
     finally:
         conn.close()
 
-    _run_alembic(["upgrade", "head"])
+    migration_upgrade()
 
     conn = sqlite3.connect(isolated_alembic)
     try:
@@ -534,6 +591,7 @@ def test_global_account_migration_preserves_credential_foreign_key_children(
 
 def test_global_account_backing_repair_is_a_healthy_noop(
     isolated_alembic: Path,
+    migration_upgrade: Callable[[], None],
 ) -> None:
     from stackos.crypto.aes_gcm import encrypt
     from stackos.crypto.seed import ensure_seed_file
@@ -579,7 +637,7 @@ def test_global_account_backing_repair_is_a_healthy_noop(
     finally:
         conn.close()
 
-    _run_alembic(["upgrade", "head"])
+    migration_upgrade()
 
     conn = sqlite3.connect(isolated_alembic)
     try:
@@ -601,6 +659,7 @@ def test_global_account_backing_repair_is_a_healthy_noop(
 
 def test_telegram_application_migration_preserves_matching_sessions_and_flags_conflicts(
     isolated_alembic: Path,
+    migration_upgrade: Callable[[], None],
 ) -> None:
     from stackos.crypto.aes_gcm import decrypt, decrypt_account, encrypt_account
     from stackos.crypto.seed import ensure_seed_file
@@ -676,7 +735,7 @@ def test_telegram_application_migration_preserves_matching_sessions_and_flags_co
     finally:
         conn.close()
 
-    _run_alembic(["upgrade", "head"])
+    migration_upgrade()
     conn = sqlite3.connect(isolated_alembic)
     try:
         app_ciphertext, app_nonce = conn.execute(
@@ -758,6 +817,7 @@ def test_telegram_application_migration_preserves_matching_sessions_and_flags_co
 
 def test_global_account_backing_repair_restores_only_the_missing_backing_link(
     isolated_alembic: Path,
+    migration_upgrade: Callable[[], None],
 ) -> None:
     from stackos.crypto.aes_gcm import decrypt_account, encrypt
     from stackos.crypto.seed import ensure_seed_file
@@ -823,7 +883,7 @@ def test_global_account_backing_repair_restores_only_the_missing_backing_link(
     finally:
         conn.close()
 
-    _run_alembic(["upgrade", "head"])
+    migration_upgrade()
 
     conn = sqlite3.connect(isolated_alembic)
     try:
