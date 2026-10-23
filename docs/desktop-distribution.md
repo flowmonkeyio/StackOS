@@ -47,7 +47,7 @@ Build machines need:
 | `uv` | Build the StackOS wheel and install locked Python dependencies into the payload | all desktop builds |
 | `bash` + `rsync` | Build/copy the standalone Python runtime | all desktop builds |
 | `file`, `lipo`, `otool`, `codesign`, `security` | Inspect/thin/sign bundled Mach-O runtime files | all desktop builds |
-| Pinned TDLib proof artifact, or `git` + CMake + static OpenSSL | Stage the exact ARM64 `libtdjson` asset and prove its source/build identity | all desktop payload builds |
+| Pinned TDLib proof artifact (see acquisition below) | Stage the exact ARM64 `libtdjson` asset and prove its source/build identity | all desktop payload builds |
 | `xcrun notarytool` + `xcrun stapler` | Submit, staple, and validate notarization | public release |
 | Developer ID Application certificate | Sign the app and DMG | signed/release builds |
 | Apple notarization credentials | Apple malware/trust ticket for non-App-Store distribution | public release |
@@ -94,19 +94,81 @@ Run the Electron shell from the repo:
 make desktop-dev
 ```
 
-Build the Python payload for the app resources:
+### Obtain the pinned TDLib build input
+
+The upstream source is [TDLib at commit
+`d1085f9cebc5a62379991ae1652673954f229c1f`](https://github.com/tdlib/td/tree/d1085f9cebc5a62379991ae1652673954f229c1f),
+version **1.8.67**. That source link is not a download of the exact binary
+required by the StackOS payload builder. The builder pins this SHA-256 for the
+ARM64 library before StackOS app signing:
+
+```text
+c397db26e7596eaf4a37ffb6d9400f2a34d764a26f388e4f4b9bfd41b070d5af
+```
+
+**There is currently no recorded, verified download URL for that exact build
+input.** The existing build setup relies on a retained local proof artifact.
+The retained library contains local StackOS build paths, consistent with a
+local source build. A fresh build machine needs a copy of this exact artifact
+from a release/build owner, verified against the hash above. Publishing a
+versioned build-input archive with provenance and checksums remains an open
+distribution requirement.
+
+Do not substitute a package merely because it reports TDLib 1.8.67. The
+`@prebuilt-tdlib/darwin-arm64@0.1008067.0` npm package and the
+`tdjson-1.8.67-cp312-cp312-macosx_11_0_arm64.whl` PyPI wheel were checked on
+2026-10-23; neither contains the pinned library bytes.
+
+On a build machine that still has a matching staged payload, preserve it before
+rebuilding. From the repository root:
 
 ```bash
-TDLIB_LIBRARY_PATH=/absolute/path/to/libtdjson.1.8.67.dylib make desktop-payload
+TDLIB_INPUT_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/stackos/build-inputs/tdlib-1.8.67-arm64"
+mkdir -p "$TDLIB_INPUT_DIR"
+cp desktop/payload/stackos/telegram-tdlib-runtime/lib/libtdjson.dylib \
+  "$TDLIB_INPUT_DIR/libtdjson.1.8.67.dylib"
+export TDLIB_LIBRARY_PATH="$TDLIB_INPUT_DIR/libtdjson.1.8.67.dylib"
+printf '%s  %s\n' \
+  c397db26e7596eaf4a37ffb6d9400f2a34d764a26f388e4f4b9bfd41b070d5af \
+  "$TDLIB_LIBRARY_PATH" | shasum -a 256 -c -
+```
+
+Continue only when the checksum check reports `OK`. For a supplied artifact,
+copy that file into the same input directory instead and run the same check.
+Keep the input outside both `desktop/payload/stackos` and
+`desktop/payload-build`: the payload builder deletes both before staging TDLib.
+An installed or packaged app's library may have a different hash after signing
+and does not replace this original build input.
+
+### Build the payload
+
+With `TDLIB_LIBRARY_PATH` set to the verified input above, build the Python
+payload for the app resources:
+
+```bash
+make desktop-payload
 ```
 
 `desktop/scripts/build-tdlib-runtime-mac.sh` stages only the pinned proof
 artifact with its expected SHA-256, ARM64-only slice, system-library-only
-dependencies, TDLib JSON ABI smoke, and source archive digest. It writes the
+dependencies, and TDLib JSON ABI smoke. It writes the pinned source identity
+and source archive digest into the
 payload-local `telegram-tdlib-runtime/manifest.json` beside the verified
-library. A source build is available only when the build machine provides an
-explicit CMake executable and static OpenSSL root; it must produce the same
-pinned library digest. The native asset remains outside the pure-Python wheel.
+library. Prebuilt staging does not download or independently rebuild that
+source. The native asset remains outside the pure-Python wheel.
+
+The script also has a source-build branch requiring `git`, CMake, and an
+explicit static OpenSSL root. It checks a `git archive` digest before compiling
+and still requires the exact library hash above afterward. A clean fetch of
+the pinned commit checked on 2026-10-23 with Git 2.49.0 produced archive SHA-256
+`95da0cdae15b90abe54117499187c66380e5bed6ef760f11e01ce94ee44b4508`,
+which differs from the script's pinned
+`5f5ebdb7f658b1a71ba6cb4f823017ad6649352427ce2a274cebc4b0dd2216e9`.
+This digest mismatch makes the fallback stop before compilation. It is not a
+verified way for a fresh machine to reproduce the pinned artifact; compiler, SDK, OpenSSL,
+and build-path inputs are not fully pinned either. Do not bypass either hash
+check to unblock a build. Repairing and proving source reproducibility is
+separate from obtaining the existing build input.
 
 The after-pack hook owns the final TDLib library signature and refreshes its
 manifest digest afterward. Electron-builder excludes only that exact library
