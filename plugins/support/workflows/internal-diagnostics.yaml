@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: support.internal-diagnostics
 name: Internal Diagnostics
-version: 0.1.0
+version: 0.2.0
 description: Resume a bounded internal incident, distinguish failure layers, preserve safe receipts, and verify an explicitly authorized packaged-runtime remedy or escalate without replaying uncertain effects.
 domain: support
 owner:
@@ -15,7 +15,7 @@ experience:
     - Inspect the receipt and resume cursor instead of repeating discovery.
   agent_path:
     - Rehydrate the existing run, tracker, receipts, authority, and retry budgets before any probe.
-    - Verify published installed-package provenance before live diagnostics; otherwise stop or explicitly use recorded mode.
+    - Verify published installed-package provenance or an explicitly authorized installed local build before live diagnostics; otherwise stop or explicitly use recorded mode.
     - Separate external orchestration, host registration, daemon, bridge, binding, and workflow evidence.
     - Propose the smallest remedy, attempt only an authorized bounded action, then verify or escalate.
   recovery:
@@ -34,7 +34,7 @@ public:
   setup: project-adapter-required
   prerequisites:
     - A selected project, stable incident key, safe evidence refs, and bounded authority
-    - Verified published installed-package provenance for live mode; recorded mode makes no live runtime claim
+    - Verified published installed-package provenance or explicit authorization and build evidence for an installed local package in live mode; recorded mode makes no live runtime claim
   proof:
     - Schema-valid incident receipts and preserved prior-attempt outcomes
     - Layer-specific evidence, retry disposition, and an exact resume cursor
@@ -46,7 +46,7 @@ when_to_use:
 when_not_to_use:
   - Customer feedback needs the canonical Slack intake and investigation chain.
   - The request is to implement or release a source change; use engineering.tracked-delivery.
-  - A repository build, virtualenv, or unknown package would substitute for the installed runtime.
+  - A repository virtualenv or unknown package would substitute for the identified installed runtime.
 agent_requirements:
   - role: project-memory-review
     requirement: required
@@ -106,7 +106,7 @@ inputs:
     name: Installed Runtime Fingerprint
     type: object
     required: true
-    description: Safe published-package evidence or explicit unknown values; never a command, environment dump, or source-build substitution.
+    description: Safe installed-package evidence or explicit unknown values. Local builds retain their origin and require build evidence and explicit authorization for live work; never a command or environment dump.
     schema: &runtime_schema
       type: object
       additionalProperties: false
@@ -119,6 +119,8 @@ inputs:
         package_source_revision: {type: [string, 'null'], pattern: '^[0-9a-f]{40}$'}
         fingerprint_sha256: {type: [string, 'null'], pattern: '^[0-9a-f]{64}$'}
         release_evidence_ref: *nullable_ref
+        local_build_evidence_ref: *nullable_ref
+        local_build_authority_ref: *nullable_ref
   - key: prior_attempts
     name: Prior Attempts
     type: array
@@ -172,7 +174,7 @@ resource_contracts:
 policies:
   - key: packaged-runtime-only
     kind: boundary
-    description: Live work requires independently verified published package origin and the exact installed executable. Build-info, version, buildId, or path alone is insufficient. Never use a repository virtualenv, python -m stackos from a checkout, uv run, dev server, or env/PATH fallback. Unknown provenance stops live work.
+    description: Live work requires the exact installed executable and independently verified published package origin, or an installed local build with explicit operator authorization, build evidence, source revision and fingerprint. Keep installed_package=local_build and release_evidence_ref=null for the local path; authorization is not publication proof or repair authority. Check that authorization and build evidence name this fingerprint/executable and current project/target scope. Build-info, version, buildId, path or a nonempty ref alone is insufficient. Never use a repository virtualenv, python -m stackos from a checkout, uv run, dev server, or env/PATH fallback. Unknown provenance stops live work.
   - key: preserve-effects-and-budgets
     kind: recovery
     description: Reconcile existing results before any retry. Unknown is not failed or safe. Preserve original request/action identity and monotonic attempt/failure counts across agents and resumes. Denials require materially new relevant authority; exhausted limits stop. Schema validation does not prove these semantic checks.
@@ -202,7 +204,7 @@ steps:
       - Verify project and target identity independently. If a previous tracker revision exists, drain tracker.changed using each last returned change revision; current_rev is the head and may exceed a bounded page.
       - Revalidate when installed package/executable/fingerprint, target/project identity, authority/grants, or relevant workflow contract changes. Preserve historical observations but invalidate dependent current-evidence claims and repeat only the smallest still-authorized necessary probes. Use identity/evidence changes, not an arbitrary TTL, to decide freshness.
       - Preserve failures, denials, pending and unknown effects, consumed counts, limits, authorization refs, and named stop/resume conditions. Reconcile a potentially executed action before retry or reassignment.
-      - For live mode, attest the installed executable and published release evidence separately from reviewed source SHA. A timestamp buildId is not release proof. If unavailable, record the blocker; use recorded mode only as an explicitly labeled evidence analysis, never silently downgrade.
+      - For live mode, attest the installed executable and published release evidence separately from reviewed source SHA. Alternatively, retain installed_package=local_build, release_evidence_ref=null, package_source_revision, fingerprint_sha256, local_build_evidence_ref and local_build_authority_ref. Read those refs and verify the operator authorized diagnostics of this exact installed build and scope; a generic build/install approval is not automatically diagnostic authority. Revalidate authorization when build identity or scope changes. A timestamp buildId is not release or build provenance proof. If evidence is unavailable, record the blocker; use recorded mode only as explicitly labeled evidence analysis, never silently downgrade. Local-build admission grants no repair authority and never rewrites an earlier recorded receipt.
     output_refs: [incident_resume]
     success_criteria:
       - The receipt identifies this incident and current authority without asserting unverified runtime or effect state.
@@ -302,12 +304,21 @@ outputs:
             properties:
               runtime:
                 properties:
-                  installed_package: {const: verified_published}
                   package_ref: {type: string, minLength: 1}
                   executable_ref: {type: string, minLength: 1}
                   version: {type: string, minLength: 1}
                   fingerprint_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
-                  release_evidence_ref: {type: string, minLength: 1}
+                oneOf:
+                  - properties:
+                      installed_package: {const: verified_published}
+                      release_evidence_ref: {type: string, minLength: 1}
+                  - required: [local_build_evidence_ref, local_build_authority_ref]
+                    properties:
+                      installed_package: {const: local_build}
+                      package_source_revision: {type: string, pattern: '^[0-9a-f]{40}$'}
+                      release_evidence_ref: {type: 'null'}
+                      local_build_evidence_ref: {type: string, minLength: 1}
+                      local_build_authority_ref: {type: string, minLength: 1}
         - if:
             properties: {mode: {const: recorded}}
           then:

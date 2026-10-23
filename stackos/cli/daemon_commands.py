@@ -16,7 +16,11 @@ import typer
 from stackos.config import Settings, get_settings
 from stackos.host_mcp.bridge import WORKSPACE_ROOT_ENV
 from stackos.mcp.bridge import AgentBridgeProxy, bridge_error
-from stackos.mcp.bridge.diagnostics import bridge_failure_response, emit_bridge_diagnostic
+from stackos.mcp.bridge.diagnostics import (
+    bridge_failure_response,
+    emit_bridge_diagnostic,
+    emit_bridge_startup_completed,
+)
 from stackos.workspace_identity import (
     is_usable_workspace_root,
     normalize_path,
@@ -627,26 +631,29 @@ def mcp_bridge(
     credentials stay in the daemon. The bridge reads the daemon token from
     the user's StackOS state dir rather than from project files.
     """
+    bridge_started_at = started_at = time.monotonic()
     import httpx
 
     if data_dir is not None:
         os.environ["STACKOS_DATA_DIR"] = str(data_dir)
     if state_dir is not None:
         os.environ["STACKOS_STATE_DIR"] = str(state_dir)
-    started_at = time.monotonic()
     phase = "configuration"
     diagnostic_log_path: Path | None = None
     try:
         settings = get_settings()
         diagnostic_log_path = settings.bridge_log_path
         phase = "state_setup"
+        started_at = time.monotonic()
         settings.ensure_dirs()
         bridge_host = host or settings.host
         bridge_port = port or settings.port
         url = f"http://{bridge_host}:{bridge_port}/mcp"
         phase = "token_read"
+        started_at = time.monotonic()
         token = settings.token_path.read_text(encoding="utf-8").strip()
         phase = "workspace_hints"
+        started_at = time.monotonic()
         workspace_hints = _mcp_bridge_workspace_hints(Path.cwd(), workspace_root=workspace_root)
         proxy = AgentBridgeProxy(
             url=url,
@@ -667,12 +674,15 @@ def mcp_bridge(
             started_at=started_at,
             original=exc,
             log_path=diagnostic_log_path,
+            bridge_started_at=bridge_started_at,
         )
         code = 7 if phase == "token_read" and isinstance(exc, FileNotFoundError) else 1
         raise typer.Exit(code=code) from None
 
     autostart_attempted = False
+    startup_completed = False
     phase = "client"
+    started_at = time.monotonic()
     try:
         # Tool responses can be long-running; connection and startup/control
         # requests still get a finite network inactivity timeout.
@@ -683,7 +693,13 @@ def mcp_bridge(
                 pool=settings.bridge_startup_timeout_seconds,
             )
         ) as client:
-            for raw in sys.stdin:
+            input_lines = iter(sys.stdin)
+            while True:
+                phase = "request_read"
+                started_at = time.monotonic()
+                raw = next(input_lines, None)
+                if raw is None:
+                    break
                 line = raw.strip()
                 if not line:
                     continue
@@ -701,12 +717,15 @@ def mcp_bridge(
                         started_at=time.monotonic(),
                         original=exc,
                         log_path=diagnostic_log_path,
+                        bridge_started_at=bridge_started_at,
                     )
+                    phase = "response_write"
+                    started_at = time.monotonic()
                     sys.stdout.write(bridge_error(None, -32700, f"Parse error: {exc.msg}") + "\n")
                     sys.stdout.flush()
                     continue
 
-                started_at = time.monotonic()
+                initialize_started_at = started_at = time.monotonic()
                 method = payload.get("method") if isinstance(payload, dict) else None
                 phase = "initialize" if method == "initialize" else "request"
                 try:
@@ -760,6 +779,7 @@ def mcp_bridge(
                         autostart=autostart,
                         outcome="recovered" if recovered else "failed",
                         log_path=diagnostic_log_path,
+                        bridge_started_at=bridge_started_at,
                     )
                     if not recovered:
                         if not has_request_id:
@@ -767,15 +787,33 @@ def mcp_bridge(
                         out = bridge_failure_response(request_id, diagnostic)
 
                 if out:
+                    phase = "response_write"
+                    started_at = time.monotonic()
                     sys.stdout.write(out)
                     if not out.endswith("\n"):
                         sys.stdout.write("\n")
                     sys.stdout.flush()
+                    if (
+                        method == "initialize"
+                        and has_request_id
+                        and not startup_completed
+                        and "result" in json.loads(out)
+                    ):
+                        emit_bridge_startup_completed(
+                            bridge_started_at=bridge_started_at,
+                            initialize_started_at=initialize_started_at,
+                            response_write_started_at=started_at,
+                            log_path=diagnostic_log_path,
+                        )
+                        startup_completed = True
+            phase = "client"
+            started_at = time.monotonic()
     except Exception as exc:
         emit_bridge_diagnostic(
             phase=phase,
             started_at=started_at,
             original=exc,
             log_path=diagnostic_log_path,
+            bridge_started_at=bridge_started_at,
         )
         raise typer.Exit(code=1) from None

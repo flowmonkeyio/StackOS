@@ -5,8 +5,10 @@ The stdio MCP bridge automatically persists bounded JSON diagnostics in
 stdout exclusively JSON-RPC. Capture does not depend on an agent, a running
 daemon, a workflow, or the host retaining stderr. This is source-level observability and failure
 handling, not evidence that a particular reported installation has been fixed.
-Activation requires a reviewed supported release; do not substitute a checkout
-virtualenv or locally built runtime for a published installation.
+Activation requires a reviewed release or an explicitly authorized installed
+local build with retained build identity and evidence. Local builds remain
+labeled as such; do not substitute a checkout virtualenv for the installed
+executable or claim that local authorization proves publication.
 
 ## Receipt and privacy contract
 
@@ -16,6 +18,26 @@ retry, and recovery failure classifications. Request errors retain JSON-RPC
 code `-32000` and include the diagnostic ID and safe details. They explicitly
 report uncertain effects and no automatic caller retry. Notification failures
 have stderr diagnostics but no unsolicited stdout response.
+
+The CLI distinguishes `initialize` (daemon request handling) from
+`response_write` (writing or flushing stdout). A successful daemon response
+followed by a broken output pipe is a response-write failure; an earlier
+initialization error remains its own event. Write failures terminate the bridge
+without a replay or an attempt to write another error to the broken sink.
+Input-stream failures use `request_read` rather than inheriting the prior phase.
+
+CLI failure events include `bridge_elapsed_ms` from command entry alongside
+the failure interval's `elapsed_ms`. Once per bridge, after the first successful
+initialize response is flushed, a persistent `stackos.mcp_bridge.startup_completed`
+event records `startup_elapsed_ms` (command entry through flush),
+`initialize_elapsed_ms` (request handling, including any eligible recovery), and
+`response_write_elapsed_ms`. The same private rotating log and explicit
+persistence-failure reporting apply. An error response or failed flush never
+produces this success event; a flush does not establish that the host consumed it.
+All these measurements declare `timing_origin=cli_entry`: they exclude Python
+interpreter/module import time and host queueing before command entry. True
+host-to-child startup duration and child exit status require the host's retained
+receipt; bridge timings must not be presented as that missing historical proof.
 
 The log location follows the existing `--state-dir`, `STACKOS_STATE_DIR`, and
 Settings dotenv configuration. Its default is

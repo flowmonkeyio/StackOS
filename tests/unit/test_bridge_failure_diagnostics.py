@@ -1,4 +1,4 @@
-"""Failure-only bridge diagnostics must preserve privacy and replay boundaries."""
+"""Bridge diagnostics must preserve privacy, timing and replay boundaries."""
 
 from __future__ import annotations
 
@@ -154,7 +154,10 @@ def test_connect_failure_can_recover_once_without_logging_helper_text(bridge, me
     output = [json.loads(line) for line in result.stdout.splitlines()]
     assert output[0]["result"] == {}
     assert output[1]["error"]["code"] == -32000
-    assert [event["outcome"] for event in events(result)] == ["recovered", "failed"]
+    assert [event["outcome"] for event in events(result) if "outcome" in event] == [
+        "recovered",
+        "failed",
+    ]
 
 
 def test_retry_failure_preserves_original_and_retry_classifications(bridge) -> None:
@@ -220,6 +223,117 @@ def test_preloop_errors_have_safe_phase_and_no_protocol_noise(
 
 def fail(*_args, **_kwargs):
     raise PermissionError(SECRET)
+
+
+@pytest.mark.parametrize("sink_failure", ["write", "flush"])
+@pytest.mark.parametrize("daemon_failure", [False, True])
+def test_response_sink_failure_is_not_initialization_failure(
+    bridge, monkeypatch, sink_failure, daemon_failure
+) -> None:
+    settings, install = bridge
+    calls = install(
+        [
+            httpx.ReadTimeout(SECRET)
+            if daemon_failure
+            else json.dumps({"jsonrpc": "2.0", "id": 1, "result": {}})
+        ]
+    )
+
+    class Sink(io.StringIO):
+        def write(self, value):
+            if sink_failure == "write":
+                raise BrokenPipeError(SECRET)
+            return super().write(value)
+
+        def flush(self):
+            if sink_failure == "flush":
+                raise BrokenPipeError(SECRET)
+
+    monkeypatch.setattr("sys.stdin", io.StringIO('{"id":1,"method":"initialize"}\n'))
+    monkeypatch.setattr("sys.stdout", Sink())
+    monkeypatch.setattr("sys.stderr", io.StringIO())
+    with pytest.raises(cli.typer.Exit) as exc:
+        cli.mcp_bridge()
+    assert exc.value.exit_code == 1
+    saved = [json.loads(line) for line in settings.bridge_log_path.read_text().splitlines()]
+    assert [event["phase"] for event in saved] == (
+        ["initialize", "response_write"] if daemon_failure else ["response_write"]
+    )
+    assert saved[-1]["original"]["code"] == "broken_pipe"
+    assert saved[-1]["bridge_elapsed_ms"] >= saved[-1]["elapsed_ms"]
+    assert SECRET not in json.dumps(saved)
+    assert calls == {"handled": 1, "autostart": 0, "probes": 0}
+
+
+def test_startup_timing_includes_setup_and_flush_and_persists_once(bridge, monkeypatch) -> None:
+    settings, _ = bridge
+    clock = [1.0]
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+
+    def hints(*_args, **_kwargs):
+        clock[0] = 2.0
+        return {}
+
+    class Proxy:
+        def __init__(self, **_kwargs):
+            pass
+
+        def handle(self, *_args, **_kwargs):
+            clock[0] += 2.0
+            return '{"jsonrpc":"2.0","id":1,"result":{}}'
+
+    class Sink(io.StringIO):
+        def flush(self):
+            clock[0] += 2.0
+
+    monkeypatch.setattr(cli, "_mcp_bridge_workspace_hints", hints)
+    monkeypatch.setattr(cli, "AgentBridgeProxy", Proxy)
+    monkeypatch.setattr("sys.stdin", io.StringIO('{"id":1,"method":"initialize"}\n' * 2))
+    output = Sink()
+    monkeypatch.setattr("sys.stdout", output)
+    monkeypatch.setattr("sys.stderr", io.StringIO())
+    cli.mcp_bridge()
+    saved = [json.loads(line) for line in settings.bridge_log_path.read_text().splitlines()]
+    assert len(saved) == 1
+    event = saved[0]
+    assert event["event"] == "stackos.mcp_bridge.startup_completed"
+    assert event["timing_origin"] == "cli_entry"
+    assert event["startup_elapsed_ms"] == 5000
+    assert event["initialize_elapsed_ms"] == 2000
+    assert event["response_write_elapsed_ms"] == 2000
+    assert len(output.getvalue().splitlines()) == 2
+    assert settings.bridge_log_path.stat().st_mode & 0o777 == 0o600
+
+
+def test_daemon_error_response_does_not_claim_startup_completed(bridge) -> None:
+    settings, install = bridge
+    install(['{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"safe"}}'])
+    result = invoke()
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["error"]["code"] == -32603
+    assert result.stderr == ""
+    assert not settings.bridge_log_path.exists()
+
+
+def test_read_error_after_initialize_does_not_inherit_initialize_phase(bridge, monkeypatch) -> None:
+    settings, install = bridge
+    calls = install(['{"jsonrpc":"2.0","id":1,"result":{}}'])
+
+    def broken_input():
+        yield '{"id":1,"method":"initialize"}\n'
+        raise OSError(SECRET)
+
+    monkeypatch.setattr("sys.stdin", broken_input())
+    monkeypatch.setattr("sys.stdout", io.StringIO())
+    monkeypatch.setattr("sys.stderr", io.StringIO())
+    with pytest.raises(cli.typer.Exit):
+        cli.mcp_bridge()
+    saved = [json.loads(line) for line in settings.bridge_log_path.read_text().splitlines()]
+    assert saved[0]["event"] == "stackos.mcp_bridge.startup_completed"
+    assert saved[1]["phase"] == "request_read"
+    assert saved[1]["original"]["code"] == "os_error"
+    assert SECRET not in json.dumps(saved)
+    assert calls == {"handled": 1, "autostart": 0, "probes": 0}
 
 
 def test_missing_token_preserves_exit_seven_without_private_path(bridge) -> None:
@@ -308,7 +422,7 @@ def test_valid_multiline_sse_is_one_stdout_json_rpc_line(bridge, monkeypatch) ->
     assert result.exit_code == 0
     assert len(result.stdout.splitlines()) == 1
     assert json.loads(result.stdout.splitlines()[0])["result"] == {}
-    assert result.stderr == ""
+    assert [event["event"] for event in events(result)] == ["stackos.mcp_bridge.startup_completed"]
 
 
 def test_nested_oversized_group_reports_dropped_causes() -> None:

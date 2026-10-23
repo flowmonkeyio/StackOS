@@ -32,7 +32,7 @@ Implementation and release work belong in separately authorized
 
 | Stage | Required output | Purpose |
 | --- | --- | --- |
-| `resume-provenance` | `incident_resume` | Rehydrate scope, authority, published package provenance, existing effects, and cumulative budgets. |
+| `resume-provenance` | `incident_resume` | Rehydrate scope, authority, installed package provenance, existing effects, and cumulative budgets. |
 | `collect-classify` | `diagnostic_findings` | Collect only authorized narrow observations and distinguish failure layers. |
 | `propose-remediation` | `remediation_receipt` | Propose a bounded remedy, or record a separately authorized attempt and its effect. |
 | `verify-escalate` | `incident_receipt` | Verify the original symptom or escalate with an exact evidence gap and resume cursor. |
@@ -42,7 +42,8 @@ Each output has a strict object schema. The shared receipt carries:
 - Stable incident key, mode, stage, and reviewed source revision.
 - Explicit project/target scope and current authority refs.
 - Installed package identity, executable ref, version, fingerprint, optional
-  package source revision, and independent published-release evidence.
+  package source revision, and independent published-release evidence or explicit
+  authorization and build evidence for an installed local build.
 - Prior attempts, request refs, outcomes, effect certainty, cumulative
   attempt/failure counts, limits, retry disposition, and original observation
   time. `observed_at=null` explicitly means the original time is unavailable;
@@ -65,18 +66,29 @@ The main agent checks those against actual evidence before writing or acting.
 
 ## Live versus recorded
 
-`live` means actual current observations from a verified published installed
-package. Its successful receipts require `runtime.installed_package` to be
-`verified_published`, with a nonempty package/executable/version, SHA-256
-fingerprint, and release-evidence ref. The reviewed `source_revision` is not
+`live` means actual current observations from an identified installed package.
+For `runtime.installed_package=verified_published`, receipts require a nonempty
+package/executable/version, SHA-256 fingerprint, and release-evidence ref.
+Workflow version 0.2.0 also admits `local_build`, requiring those identity fields,
+the exact `package_source_revision`, `local_build_evidence_ref`, and
+`local_build_authority_ref`, with `release_evidence_ref=null`. Read and verify
+the referenced build evidence and operator authorization against this exact
+installed executable, fingerprint, project and target scope. A nonempty ref
+alone proves neither provenance nor authority. Build/install approval alone
+does not automatically authorize diagnostics; current diagnostic authorization
+may already exist in the session. Revalidate if identity or scope changes.
+Local admission grants no repair authority and makes no publication claim.
+The reviewed `source_revision` is not
 the installed package revision. A version string, app path, build-info file,
 or timestamp-like `buildId` alone does not prove published origin.
 
 Resolve the exact installed executable from independently checked package
 context before any live invocation. Do not use a repository `.venv`, checkout
 `python -m stackos`, `uv run`, development server, or fallback through `env`
-or `PATH`. Unknown, local-build, mismatched, or unverifiable provenance blocks
-live execution. Preserve the blocker instead of manufacturing release proof.
+or `PATH`. Unknown, unauthorized local-build, mismatched, or unverifiable
+provenance blocks live execution. Preserve the blocker instead of manufacturing
+release proof. Version 0.2.0 does not rewrite frozen 0.1.0 runs or relabel recorded
+evidence as live. Reuse their valid evidence and retain the original escalation.
 
 `recorded` means analysis of already authorized observations. Runtime fields
 may remain explicitly null/unverified. It performs no current runtime probes

@@ -267,12 +267,12 @@ def test_adaptation_preserves_frozen_snapshot_and_existing_evidence(
         loader.save_project_template(
             project_id=project_id, spec=WorkflowTemplateSpec.model_validate(changed)
         )
-    changed["version"] = "0.1.1"
+    changed["version"] = "0.2.1"
     loader.save_project_template(
         project_id=project_id, spec=WorkflowTemplateSpec.model_validate(changed)
     )
     current = repo.get(plan.id)
-    assert current.template_snapshot_json["version"] == "0.1.0"
+    assert current.template_snapshot_json["version"] == workflow()["version"]
     assert current.workflow_contract.status == "mismatch"
     assert current.steps[0].result_json["incident_resume"] == prior
 

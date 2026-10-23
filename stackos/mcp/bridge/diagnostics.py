@@ -30,6 +30,8 @@ _PHASES = frozenset(
         "workspace_hints",
         "client",
         "request",
+        "request_read",
+        "response_write",
         "initialize",
         "workspace_scope",
         "project_validation",
@@ -115,6 +117,7 @@ def emit_bridge_diagnostic(
     autostart: str = "not_attempted",
     outcome: str = "failed",
     log_path: Path | None = None,
+    bridge_started_at: float | None = None,
 ) -> dict[str, Any]:
     """Automatically persist a safe receipt, then mirror it to stderr."""
     event = {
@@ -132,6 +135,43 @@ def emit_bridge_diagnostic(
         "recovery_failure": bridge_failure_details(recovery) if recovery is not None else None,
         "persistence": {"status": "persisted", "log": "mcp-bridge.log"},
     }
+    if bridge_started_at is not None:
+        event["bridge_elapsed_ms"] = max(0, round((time.monotonic() - bridge_started_at) * 1000))
+        event["timing_origin"] = "cli_entry"
+    return _persist_bridge_event(event, log_path)
+
+
+def emit_bridge_startup_completed(
+    *,
+    bridge_started_at: float,
+    initialize_started_at: float,
+    response_write_started_at: float,
+    log_path: Path | None = None,
+) -> dict[str, Any]:
+    """Record the first successful initialize response flush, without payloads."""
+    completed_at = time.monotonic()
+    return _persist_bridge_event(
+        {
+            "event": "stackos.mcp_bridge.startup_completed",
+            "diagnostic_id": uuid4().hex,
+            "observed_at": datetime.now(UTC)
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z"),
+            "timing_origin": "cli_entry",
+            "startup_elapsed_ms": max(0, round((completed_at - bridge_started_at) * 1000)),
+            "initialize_elapsed_ms": max(
+                0, round((response_write_started_at - initialize_started_at) * 1000)
+            ),
+            "response_write_elapsed_ms": max(
+                0, round((completed_at - response_write_started_at) * 1000)
+            ),
+            "persistence": {"status": "persisted", "log": "mcp-bridge.log"},
+        },
+        log_path,
+    )
+
+
+def _persist_bridge_event(event: dict[str, Any], log_path: Path | None) -> dict[str, Any]:
     try:
         append_json_log(log_path or get_state_dir() / "mcp-bridge.log", event)
     except Exception as exc:

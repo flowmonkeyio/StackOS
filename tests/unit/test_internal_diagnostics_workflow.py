@@ -60,6 +60,48 @@ def test_live_receipt_rejects_unverified_or_source_runtime(origin: str) -> None:
     assert list(Draft202012Validator(output_schema("incident_resume")).iter_errors(packet))
 
 
+@pytest.mark.parametrize("stage,key", STAGES)
+def test_explicitly_authorized_installed_local_build_has_distinct_live_admission(
+    stage, key
+) -> None:
+    packet = receipt(stage)
+    packet["mode"] = "live"
+    packet["runtime"] = {
+        "installed_package": "local_build",
+        "package_ref": "test-only:installed-local-app",
+        "executable_ref": "test-only:installed-executable",
+        "version": "test-version",
+        "package_source_revision": "b" * 40,
+        "fingerprint_sha256": "a" * 64,
+        "release_evidence_ref": None,
+        "local_build_evidence_ref": "test-only:verified-build-receipt",
+        "local_build_authority_ref": "test-only:operator-diagnostic-authorization",
+    }
+    validator = Draft202012Validator(output_schema(key))
+    validator.validate(packet)
+    for field in (
+        "local_build_evidence_ref",
+        "local_build_authority_ref",
+        "package_source_revision",
+        "fingerprint_sha256",
+        "executable_ref",
+    ):
+        for value in (None, ""):
+            broken = deepcopy(packet)
+            broken["runtime"][field] = value
+            assert list(validator.iter_errors(broken)), (field, value)
+        missing = deepcopy(packet)
+        del missing["runtime"][field]
+        assert list(validator.iter_errors(missing)), field
+    falsely_published = deepcopy(packet)
+    falsely_published["runtime"]["release_evidence_ref"] = "test-only:not-published"
+    assert list(validator.iter_errors(falsely_published))
+    # Local provenance authorization alone cannot authorize a repair.
+    if stage == "propose-remediation":
+        packet["remediation"]["disposition"] = "attempted"
+        assert list(validator.iter_errors(packet))
+
+
 def test_attempted_live_remediation_requires_authority_and_identity() -> None:
     packet = receipt("propose-remediation")
     packet["mode"] = "live"
