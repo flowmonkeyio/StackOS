@@ -168,6 +168,15 @@ Check existing receipt identity/digest before creating another artifact.
 
 ## When MCP is down
 
+Bridge failure capture is automatic runtime behavior: sanitized, classified
+events are written to the rotating state-directory `mcp-bridge.log` before
+being mirrored to stderr. No agent decision or working MCP connection is
+required to save them. See [persistent bridge diagnostics](./bridge-failure-diagnostics.md)
+for configuration, retention, persistence-failure reporting and ID lookup.
+Agent judgment applies to interpretation and scoped incident association,
+not to whether a failure is recorded. A log event alone cannot establish that
+the original action had no effect or that the incident is resolved.
+
 Do not require the failing bridge to diagnose itself. If separately authorized
 host access and verified package provenance are available, the exact installed
 executable can run narrow `mcp-host-status --json --host <selected-host>`.
@@ -176,8 +185,9 @@ report liveness/version. Neither is a repair, neither needs the bridge, and
 neither proves that host initialization or external task creation succeeds.
 Do not guess another local port or attribute a reachable listener to StackOS.
 
-If those reads are unavailable, stop with the precise gap. There is no
-dedicated collector or automatic offline import in this slice. Under existing
+If those reads are unavailable, stop with the precise gap. The persistent
+bridge log does not automatically import records into a project or incident.
+Under existing
 host-file authorization, retain only a minimal sanitized receipt with original
 capture time, mode, incident/request identity, safe refs/digest, and resume
 condition. It is an evidence transfer copy, not a competing incident master.

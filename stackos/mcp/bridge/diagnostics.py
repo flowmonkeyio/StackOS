@@ -11,10 +11,14 @@ import json
 import sys
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 import httpx
+
+from stackos.config import get_state_dir
+from stackos.logging import append_json_log
 
 from .protocol import BridgeProtocolError
 
@@ -28,6 +32,8 @@ _PHASES = frozenset(
         "request",
         "initialize",
         "workspace_scope",
+        "project_validation",
+        "run_context",
     }
 )
 _PROTOCOL_REASONS = frozenset(
@@ -108,8 +114,9 @@ def emit_bridge_diagnostic(
     recovery: BaseException | None = None,
     autostart: str = "not_attempted",
     outcome: str = "failed",
+    log_path: Path | None = None,
 ) -> dict[str, Any]:
-    """Return a safe receipt and best-effort write exactly one stderr event."""
+    """Automatically persist a safe receipt, then mirror it to stderr."""
     event = {
         "event": "stackos.mcp_bridge.failure",
         "diagnostic_id": uuid4().hex,
@@ -123,7 +130,16 @@ def emit_bridge_diagnostic(
         "original": bridge_failure_details(original),
         "retry": bridge_failure_details(retry) if retry is not None else None,
         "recovery_failure": bridge_failure_details(recovery) if recovery is not None else None,
+        "persistence": {"status": "persisted", "log": "mcp-bridge.log"},
     }
+    try:
+        append_json_log(log_path or get_state_dir() / "mcp-bridge.log", event)
+    except Exception as exc:
+        event["persistence"] = {
+            "status": "failed",
+            "log": "mcp-bridge.log",
+            "failure": bridge_failure_details(exc),
+        }
     try:
         sys.stderr.write(json.dumps(event, sort_keys=True) + "\n")
         sys.stderr.flush()
@@ -149,6 +165,7 @@ def bridge_failure_response(request_id: object, diagnostic: dict[str, Any]) -> s
                     "retry_failure": diagnostic["retry"],
                     "recovery_failure": diagnostic["recovery_failure"],
                     "autostart": diagnostic["autostart"],
+                    "persistence": diagnostic["persistence"],
                     "effect": "unknown",
                     "retry_automatically": False,
                 },

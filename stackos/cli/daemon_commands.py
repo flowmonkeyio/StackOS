@@ -635,8 +635,10 @@ def mcp_bridge(
         os.environ["STACKOS_STATE_DIR"] = str(state_dir)
     started_at = time.monotonic()
     phase = "configuration"
+    diagnostic_log_path: Path | None = None
     try:
         settings = get_settings()
+        diagnostic_log_path = settings.bridge_log_path
         phase = "state_setup"
         settings.ensure_dirs()
         bridge_host = host or settings.host
@@ -655,19 +657,32 @@ def mcp_bridge(
             },
             runtime=runtime or "codex",
             client_session_id=f"stackos-bridge:{os.getpid()}",
+            startup_timeout_seconds=settings.bridge_startup_timeout_seconds,
+            diagnostic_log_path=diagnostic_log_path,
             **workspace_hints,
         )
     except Exception as exc:
-        emit_bridge_diagnostic(phase=phase, started_at=started_at, original=exc)
+        emit_bridge_diagnostic(
+            phase=phase,
+            started_at=started_at,
+            original=exc,
+            log_path=diagnostic_log_path,
+        )
         code = 7 if phase == "token_read" and isinstance(exc, FileNotFoundError) else 1
         raise typer.Exit(code=code) from None
 
     autostart_attempted = False
     phase = "client"
     try:
-        # Tool calls may legitimately be long-running. This patch deliberately
-        # preserves timeout policy; failure classification is not a deadline.
-        with httpx.Client(timeout=None) as client:
+        # Tool responses can be long-running; connection and startup/control
+        # requests still get a finite network inactivity timeout.
+        with httpx.Client(
+            timeout=httpx.Timeout(
+                None,
+                connect=settings.bridge_startup_timeout_seconds,
+                pool=settings.bridge_startup_timeout_seconds,
+            )
+        ) as client:
             for raw in sys.stdin:
                 line = raw.strip()
                 if not line:
@@ -681,6 +696,12 @@ def mcp_bridge(
                         request_id = payload.get("id")
                         has_request_id = "id" in payload
                 except json.JSONDecodeError as exc:
+                    emit_bridge_diagnostic(
+                        phase="request",
+                        started_at=time.monotonic(),
+                        original=exc,
+                        log_path=diagnostic_log_path,
+                    )
                     sys.stdout.write(bridge_error(None, -32700, f"Parse error: {exc.msg}") + "\n")
                     sys.stdout.flush()
                     continue
@@ -738,6 +759,7 @@ def mcp_bridge(
                         recovery=recovery_failure,
                         autostart=autostart,
                         outcome="recovered" if recovered else "failed",
+                        log_path=diagnostic_log_path,
                     )
                     if not recovered:
                         if not has_request_id:
@@ -750,5 +772,10 @@ def mcp_bridge(
                         sys.stdout.write("\n")
                     sys.stdout.flush()
     except Exception as exc:
-        emit_bridge_diagnostic(phase=phase, started_at=started_at, original=exc)
+        emit_bridge_diagnostic(
+            phase=phase,
+            started_at=started_at,
+            original=exc,
+            log_path=diagnostic_log_path,
+        )
         raise typer.Exit(code=1) from None

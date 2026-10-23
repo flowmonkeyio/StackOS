@@ -1,7 +1,9 @@
 # Bridge failure diagnostics
 
-The stdio MCP bridge emits bounded JSON diagnostics to **stderr**, keeping
-stdout exclusively JSON-RPC. This is source-level observability and failure
+The stdio MCP bridge automatically persists bounded JSON diagnostics in
+`Settings.state_dir/mcp-bridge.log` and mirrors them to **stderr**, keeping
+stdout exclusively JSON-RPC. Capture does not depend on an agent, a running
+daemon, a workflow, or the host retaining stderr. This is source-level observability and failure
 handling, not evidence that a particular reported installation has been fixed.
 Activation requires a reviewed supported release; do not substitute a checkout
 virtualenv or locally built runtime for a published installation.
@@ -14,6 +16,39 @@ retry, and recovery failure classifications. Request errors retain JSON-RPC
 code `-32000` and include the diagnostic ID and safe details. They explicitly
 report uncertain effects and no automatic caller retry. Notification failures
 have stderr diagnostics but no unsolicited stdout response.
+
+The log location follows the existing `--state-dir`, `STACKOS_STATE_DIR`, and
+Settings dotenv configuration. Its default is
+`~/.local/state/stackos/mcp-bridge.log`. Persistence uses the existing
+`stackos.logging` owner and its 10 MiB file / five-backup retention policy.
+Each JSON line is flushed and synced before the error response; separate
+bridge processes serialize append and rotation with a bounded file lock.
+Files are mode 0600; symlink/non-regular targets are rejected. The bridge does
+not reconfigure the daemon logger or persist arbitrary library messages.
+
+Every receipt includes `persistence.status`: `persisted` or `failed`. Disk,
+permission, or lock failures preserve the original error and report a safe
+persistence failure classification in stderr and the JSON-RPC error data.
+They never silently claim a saved record or trigger a request replay. If all
+output/storage sinks are unavailable, no software guarantee of retention is
+possible. Configuration failures still resolve the state path independently
+of unrelated invalid runtime settings.
+
+Use the returned `diagnostic_id` to locate the same JSON event in the current
+log or `.1` through `.5` rotations with authorized host file tools. For example:
+
+```bash
+rg --fixed-strings '<diagnostic_id>' ~/.local/state/stackos/mcp-bridge.log*
+```
+
+Use the configured state directory for a non-default install. These are local
+runtime logs, not project-scoped MCP resources: the bridge may fail before a
+project is bound. Do not expose all local logs through an unscoped agent tool.
+The existing diagnostics workflow can reference the saved event through
+tracker evidence, granted `artifact.create` / `resource.upsert`, and step
+results. That association requires incident scope; automatic capture does not.
+Rotation is bounded retention, so evidence needed longer should be retained
+through those existing owners. Neither capture nor retention permits a repair.
 
 Classifications are a closed vocabulary. Exception text, arbitrary exception
 class names, tracebacks, paths, URLs, headers, authentication, configuration,
@@ -43,9 +78,16 @@ an earlier request had no effect. A reachable listener is not restarted, and
 no process scan or new repair route is added. Caller-level retries of unknown
 effects still require authoritative reconciliation.
 
-The HTTP client's existing `timeout=None` policy is unchanged. Selecting an
-initialization deadline without truncating long-running tool calls is separate
-work, not an unexplained timeout adjustment in this patch.
+Initialization, ping, tool discovery, initialized acknowledgements, and
+workspace/project/run metadata reads default to a **15-second network
+inactivity timeout**. Set `STACKOS_BRIDGE_STARTUP_TIMEOUT_SECONDS` (or the same
+Settings dotenv key) to a positive number up to 300 seconds; invalid, infinite,
+and NaN values fail configuration. The setting also bounds connection/pool
+waits for ordinary tool requests, whose response reads remain unlimited.
+It applies to each eligible request, including the single permitted retry.
+HTTPX measures each connect/read/write/pool wait, not total wall-clock duration;
+continuous response bytes or several startup requests can take longer. A read
+timeout is an uncertain failure and never authorizes autostart/replay.
 
 ## Response validation
 
@@ -64,6 +106,10 @@ silently choosing one. A full streaming implementation is outside this patch.
 Workspace-resolution exceptions now emit the same safe diagnostic while
 retaining the existing fail-closed scope behavior. A failed resolution does
 not select a project or downgrade explicit workspace intent to global scope.
+Project-validation and run-context failures also persist automatically; a
+failed grant refresh still clears stale permissions. Workspace/project error
+guidance includes the diagnostic ID for lookup. Invalid input JSON is logged
+without retaining the request contents.
 
 ## Recorded incident and verification limit
 

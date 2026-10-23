@@ -21,7 +21,9 @@ class _Client:
         )
         self.calls: list[dict[str, Any]] = []
 
-    def post(self, _url: str, *, content: str, headers: dict[str, str]) -> httpx.Response:
+    def post(
+        self, _url: str, *, content: str, headers: dict[str, str], timeout: float | None = None
+    ) -> httpx.Response:
         del headers
         self.calls.append(json.loads(content))
         return self.response
@@ -253,7 +255,10 @@ def test_malformed_scope_resolution_preserves_workspace_protection(
     proxy._ensure_workspace_scope(client)
 
     assert proxy.workspace_scope_checked is False
-    assert proxy.workspace_scope_error == "workspace.resolve failed; retry startup diagnostics"
+    assert proxy.workspace_scope_error is not None
+    assert proxy.workspace_scope_error.startswith(
+        "workspace.resolve failed; inspect bridge diagnostic "
+    )
     assert proxy.scoped_project_id == (7 if already_bound else None)
     assert proxy.global_session is (False if already_bound else None)
     _, error = proxy._scope_workspace_arguments("workspace.startSession", {"global_session": True})

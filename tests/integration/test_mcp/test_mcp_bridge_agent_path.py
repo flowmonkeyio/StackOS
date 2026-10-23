@@ -35,7 +35,9 @@ class _BridgeHttpClient:
     def __init__(self, mcp: MCPClient) -> None:
         self._mcp = mcp
 
-    def post(self, _url: str, *, content: str, headers: dict[str, str]) -> Any:
+    def post(
+        self, _url: str, *, content: str, headers: dict[str, str], timeout: float | None = None
+    ) -> Any:
         return self._mcp.test_client.post("/mcp", content=content, headers=headers)
 
 
