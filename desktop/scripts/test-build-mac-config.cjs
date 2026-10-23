@@ -39,6 +39,7 @@ function runBuild(env, options = {}) {
       APPLE_TEAM_ID: "",
       APPLE_KEYCHAIN_PROFILE: "",
       APPLE_KEYCHAIN: "",
+      TDLIB_INPUT_VARIANT: "",
       ...env,
       STACKOS_DESKTOP_BUILD_DRY_RUN: "1",
       STACKOS_DESKTOP_DRY_RUN_WRITE_CONFIG: writeConfig ? "1" : ""
@@ -49,6 +50,19 @@ function runBuild(env, options = {}) {
 
 cleanup();
 try {
+  const packagedLocal = { TDLIB_INPUT_VARIANT: "stackos-2.1.38-packaged-local", STACKOS_UNSIGNED_DEV: "1" };
+  assert.equal(runBuild(packagedLocal, { writeConfig: false }).status, 0);
+  for (const overrides of [
+    { STACKOS_UNSIGNED_DEV: "" },
+    { STACKOS_REQUIRE_SIGNING: "1", STACKOS_ALLOW_UNSIGNED_RELEASE: "1" },
+    { STACKOS_REQUIRE_UPDATE_URL: "1", STACKOS_ALLOW_UNSIGNED_RELEASE: "1" },
+    { STACKOS_UPDATE_URL: "https://updates.example.com/stackos", STACKOS_ALLOW_UNSIGNED_RELEASE: "1" },
+    { STACKOS_UPDATE_URL: "http://127.0.0.1:8765/stackos" }
+  ]) {
+    const result = runBuild({ ...packagedLocal, ...overrides }, { writeConfig: false });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Packaged TDLib reuse is limited/);
+  }
   const noUrl = runBuild({ STACKOS_UPDATE_URL: "" });
   assert.equal(noUrl.status, 0, noUrl.stderr);
   assert.match(noUrl.stdout, /desktop mac build config dry run ok/);
