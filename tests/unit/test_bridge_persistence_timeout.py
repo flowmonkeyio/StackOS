@@ -223,7 +223,11 @@ def test_real_stalled_initialize_times_out_once_and_persists_after_process_exit(
         thread.join(2)
     assert result.returncode == 0, result.stderr
     assert len(received) == 1
-    receipt = json.loads(settings.bridge_log_path.read_text())
+    receipt = next(
+        event
+        for line in settings.bridge_log_path.read_text().splitlines()
+        if (event := json.loads(line))["event"] == "stackos.mcp_bridge.failure"
+    )
     assert receipt["original"]["code"] == "read_timeout"
     assert receipt["autostart"] == "skipped"
     assert receipt["persistence"]["status"] == "persisted"
@@ -255,7 +259,11 @@ def test_parse_error_is_automatically_logged_without_request_contents():
     result = CliRunner().invoke(app, ["mcp-bridge"], input='{"secret":"SECRET",invalid}\n')
     assert result.exit_code == 0
     assert json.loads(result.stdout)["error"]["code"] == -32700
-    receipt = json.loads(settings.bridge_log_path.read_text())
+    receipt = next(
+        event
+        for line in settings.bridge_log_path.read_text().splitlines()
+        if (event := json.loads(line))["event"] == "stackos.mcp_bridge.failure"
+    )
     assert receipt["phase"] == "request"
     assert receipt["persistence"]["status"] == "persisted"
     assert "SECRET" not in settings.bridge_log_path.read_text()

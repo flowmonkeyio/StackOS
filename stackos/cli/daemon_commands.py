@@ -17,6 +17,7 @@ from stackos.config import Settings, get_settings
 from stackos.host_mcp.bridge import WORKSPACE_ROOT_ENV
 from stackos.mcp.bridge import AgentBridgeProxy, bridge_error
 from stackos.mcp.bridge.diagnostics import (
+    BridgeLifecycle,
     bridge_attempt_id,
     bridge_failure_response,
     emit_bridge_diagnostic,
@@ -640,21 +641,27 @@ def mcp_bridge(
         os.environ["STACKOS_DATA_DIR"] = str(data_dir)
     if state_dir is not None:
         os.environ["STACKOS_STATE_DIR"] = str(state_dir)
+    lifecycle = BridgeLifecycle(attempt_id, bridge_started_at)
     phase = "configuration"
     diagnostic_log_path: Path | None = None
     try:
         settings = get_settings()
         diagnostic_log_path = settings.bridge_log_path
+        lifecycle.log_path = diagnostic_log_path
+        lifecycle.stage(phase)
         phase = "state_setup"
+        lifecycle.stage(phase)
         started_at = time.monotonic()
         settings.ensure_dirs()
         bridge_host = host or settings.host
         bridge_port = port or settings.port
         url = f"http://{bridge_host}:{bridge_port}/mcp"
         phase = "token_read"
+        lifecycle.stage(phase)
         started_at = time.monotonic()
         token = settings.token_path.read_text(encoding="utf-8").strip()
         phase = "workspace_hints"
+        lifecycle.stage(phase)
         started_at = time.monotonic()
         workspace_hints = _mcp_bridge_workspace_hints(Path.cwd(), workspace_root=workspace_root)
         proxy = AgentBridgeProxy(
@@ -665,7 +672,7 @@ def mcp_bridge(
                 "Content-Type": "application/json",
             },
             runtime=runtime or "codex",
-            client_session_id=f"stackos-bridge:{os.getpid()}",
+            client_session_id=f"stackos-bridge:{attempt_id}",
             startup_timeout_seconds=settings.bridge_startup_timeout_seconds,
             diagnostic_log_path=diagnostic_log_path,
             attempt_id=attempt_id,
@@ -686,6 +693,7 @@ def mcp_bridge(
     autostart_attempted = False
     startup_completed = False
     phase = "client"
+    lifecycle.stage(phase)
     started_at = time.monotonic()
     try:
         # Tool responses can be long-running; connection and startup/control
@@ -700,9 +708,11 @@ def mcp_bridge(
             input_lines = iter(sys.stdin)
             while True:
                 phase = "request_read"
+                lifecycle.stage(phase)
                 started_at = time.monotonic()
                 raw = next(input_lines, None)
                 if raw is None:
+                    lifecycle.stage("stdin_eof")
                     break
                 line = raw.strip()
                 if not line:
@@ -733,6 +743,7 @@ def mcp_bridge(
                 initialize_started_at = started_at = time.monotonic()
                 method = payload.get("method") if isinstance(payload, dict) else None
                 phase = "initialize" if method == "initialize" else "request"
+                lifecycle.stage(phase)
                 try:
                     out = proxy.handle(client, payload=payload, line=line, request_id=request_id)
                 except Exception as original_exc:
@@ -794,6 +805,7 @@ def mcp_bridge(
 
                 if out:
                     phase = "response_write"
+                    lifecycle.stage(phase)
                     started_at = time.monotonic()
                     sys.stdout.write(out)
                     if not out.endswith("\n"):
@@ -825,3 +837,5 @@ def mcp_bridge(
             bridge_started_at=bridge_started_at,
         )
         raise typer.Exit(code=1) from None
+    finally:
+        lifecycle.stage("cleanup_reached")

@@ -37,10 +37,20 @@ def test_lifecycle_evidence_distinguishes_observed_causes(tmp_path: Path, scenar
     if scenario == "success":
         assert result["consumer_returncode"] == result["producer_returncode"] == 0
         assert consumer_events[-1] == "response_received"
-        assert producer[0]["event"] == "stackos.mcp_bridge.startup_completed"
+        assert any(e["event"] == "stackos.mcp_bridge.startup_completed" for e in producer)
         assert not failures
-    elif scenario in {"consumer_timeout", "cancellation", "consumer_exit"}:
-        expected = {"consumer_timeout": 21, "cancellation": 20, "consumer_exit": -signal.SIGKILL}
+    elif scenario in {
+        "consumer_timeout",
+        "cancellation",
+        "consumer_exit",
+        "cancellation_ack_pending",
+    }:
+        expected = {
+            "consumer_timeout": 21,
+            "cancellation": 20,
+            "consumer_exit": -signal.SIGKILL,
+            "cancellation_ack_pending": 20,
+        }
         assert result["consumer_returncode"] == expected[scenario]
         assert result["producer_returncode"] != 0
         assert failures[-1]["phase"] == "response_write"
@@ -54,14 +64,32 @@ def test_lifecycle_evidence_distinguishes_observed_causes(tmp_path: Path, scenar
         if scenario == "consumer_timeout":
             assert consumer_events[-2:] == ["deadline_armed", "deadline_expired"]
             assert "cancellation_received" not in consumer_events
-        elif scenario == "cancellation":
+        elif scenario in {"cancellation", "cancellation_ack_pending"}:
             assert consumer_events[-1] == "cancellation_received"
             assert "deadline_expired" not in consumer_events
+            if scenario == "cancellation_ack_pending":
+                assert "cancellation_acknowledged" in consumer_events
+                alive = next(
+                    i
+                    for i, e in enumerate(events)
+                    if e["event"] == "acknowledged_child_still_running"
+                )
+                assert events[alive]["running"] is True
+                assert alive < exited
         else:
             assert consumer_events[-1] == "request_written"
             assert any(
                 e.get("signal") == signal.SIGKILL for e in events if e["event"] == "child_exited"
             )
+    elif scenario == "cancellation_response_race":
+        assert any(e["event"] == "cancellation_sent" for e in events)
+        assert result["consumer_returncode"] in {0, 20}
+        if result["consumer_returncode"] == 0:
+            assert consumer_events[-1] == "response_received"
+            assert "cancellation_received" not in consumer_events
+        else:
+            assert consumer_events[-1] == "cancellation_received"
+        assert result["producer_returncode"] in {0, 1}
     elif scenario == "bridge_exit":
         assert result["producer_returncode"] == 7
         assert result["consumer_returncode"] == 22

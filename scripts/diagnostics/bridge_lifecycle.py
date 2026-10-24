@@ -8,6 +8,7 @@ The supervisor owns both subprocesses; it never discovers or signals other PIDs.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import selectors
@@ -26,6 +27,8 @@ SCENARIOS = (
     "success",
     "consumer_timeout",
     "cancellation",
+    "cancellation_ack_pending",
+    "cancellation_response_race",
     "consumer_exit",
     "bridge_failure",
     "bridge_exit",
@@ -89,6 +92,9 @@ def consumer(path: Path, attempt: str, origin: float, control_fd: int) -> int:
                     if command == b"C":
                         emit("cancellation_received")
                         return 20
+                    if command == b"A":
+                        # Acknowledged receipt, deliberately still running until C.
+                        emit("cancellation_acknowledged")
                     if command == b"T":
                         deadline = min(deadline, time.monotonic() + CONSUMER_TIMEOUT_SECONDS)
                         emit("deadline_armed", timeout_ms=round(CONSUMER_TIMEOUT_SECONDS * 1000))
@@ -169,6 +175,8 @@ def exercise(destination: Path, scenario: str) -> dict:
             if scenario in {
                 "consumer_timeout",
                 "cancellation",
+                "cancellation_ack_pending",
+                "cancellation_response_race",
                 "consumer_exit",
                 "bridge_timeout",
             } and not release.wait(max(0, deadline - time.monotonic())):
@@ -306,6 +314,7 @@ def exercise(destination: Path, scenario: str) -> dict:
         os.close(control_read)
         control_read = -1
         triggered = False
+        ack_observed = False
         while time.monotonic() < deadline:
             observe("consumer")
             observe("producer")
@@ -314,16 +323,42 @@ def exercise(destination: Path, scenario: str) -> dict:
                 break
             if received.is_set() and not triggered:
                 triggered = True
-                if scenario in {"consumer_timeout", "cancellation"}:
-                    command = b"T" if scenario == "consumer_timeout" else b"C"
+                if scenario in {
+                    "consumer_timeout",
+                    "cancellation",
+                    "cancellation_ack_pending",
+                    "cancellation_response_race",
+                }:
+                    command = (
+                        b"T"
+                        if scenario == "consumer_timeout"
+                        else b"A"
+                        if scenario == "cancellation_ack_pending"
+                        else b"C"
+                    )
                     os.write(control_write, command)
                     emit(
                         "supervisor",
                         "deadline_arm_sent" if command == b"T" else "cancellation_sent",
                     )
+                    if scenario == "cancellation_response_race":
+                        release.set()
                 elif scenario == "consumer_exit":
                     reader.kill()
                     emit("supervisor", "consumer_kill_sent", signal=9)
+            if scenario == "cancellation_ack_pending" and triggered and not ack_observed:
+                # Read only this exercise's bounded private receipt, never host logs.
+                for line in log.read_text().splitlines():
+                    # A writer may still be appending the last line.
+                    with contextlib.suppress(ValueError):
+                        ack_observed |= json.loads(line).get("event") == "cancellation_acknowledged"
+                if ack_observed:
+                    emit(
+                        "supervisor",
+                        "acknowledged_child_still_running",
+                        running=reader.poll() is None,
+                    )
+                    os.write(control_write, b"C")
             if "consumer" in observed_exits:
                 release.set()
             time.sleep(0.01)

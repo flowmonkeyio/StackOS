@@ -111,7 +111,19 @@ def invoke(
 
 
 def events(result) -> list[dict]:
-    return [json.loads(line) for line in result.stderr.splitlines()]
+    return [
+        e
+        for line in result.stderr.splitlines()
+        if (e := json.loads(line))["event"] != "stackos.mcp_bridge.lifecycle"
+    ]
+
+
+def retained_events(path: Path) -> list[dict]:
+    return [
+        e
+        for line in path.read_text().splitlines()
+        if (e := json.loads(line))["event"] != "stackos.mcp_bridge.lifecycle"
+    ]
 
 
 @pytest.mark.parametrize(
@@ -277,7 +289,7 @@ def test_response_sink_failure_is_not_initialization_failure(
     with pytest.raises(cli.typer.Exit) as exc:
         cli.mcp_bridge()
     assert exc.value.exit_code == 1
-    saved = [json.loads(line) for line in settings.bridge_log_path.read_text().splitlines()]
+    saved = retained_events(settings.bridge_log_path)
     assert [event["phase"] for event in saved] == (
         ["initialize", "response_write"] if daemon_failure else ["response_write"]
     )
@@ -315,7 +327,7 @@ def test_startup_timing_includes_setup_and_flush_and_persists_once(bridge, monke
     monkeypatch.setattr("sys.stdout", output)
     monkeypatch.setattr("sys.stderr", io.StringIO())
     cli.mcp_bridge()
-    saved = [json.loads(line) for line in settings.bridge_log_path.read_text().splitlines()]
+    saved = retained_events(settings.bridge_log_path)
     assert len(saved) == 1
     event = saved[0]
     assert event["event"] == "stackos.mcp_bridge.startup_completed"
@@ -333,8 +345,8 @@ def test_daemon_error_response_does_not_claim_startup_completed(bridge) -> None:
     result = invoke()
     assert result.exit_code == 0
     assert json.loads(result.stdout)["error"]["code"] == -32603
-    assert result.stderr == ""
-    assert not settings.bridge_log_path.exists()
+    assert not events(result)
+    assert not retained_events(settings.bridge_log_path)
 
 
 def test_read_error_after_initialize_does_not_inherit_initialize_phase(bridge, monkeypatch) -> None:
@@ -350,7 +362,7 @@ def test_read_error_after_initialize_does_not_inherit_initialize_phase(bridge, m
     monkeypatch.setattr("sys.stderr", io.StringIO())
     with pytest.raises(cli.typer.Exit):
         cli.mcp_bridge()
-    saved = [json.loads(line) for line in settings.bridge_log_path.read_text().splitlines()]
+    saved = retained_events(settings.bridge_log_path)
     assert saved[0]["event"] == "stackos.mcp_bridge.startup_completed"
     assert saved[1]["phase"] == "request_read"
     assert saved[1]["original"]["code"] == "os_error"

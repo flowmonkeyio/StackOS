@@ -26,6 +26,49 @@ characters (UUID hex). Missing or invalid values generate a new ID; arbitrary
 environment text never enters the log. This correlation ID is distinct from
 the per-event `diagnostic_id` and carries no request payload or authority.
 
+The actual bridge passes `stackos-bridge:<attempt_id>` as the **AgentSession**
+`client_session_id`. A native `workspace.startSession` receipt exposes that
+same value, linking the host's observed tool response to producer evidence.
+It does not identify a Codex thread, turn, admission request, or prove that an
+AgentSession was created before that response exists. Do not export arbitrary
+`client_session_id` fields: the similarly named **Run** field is a secret
+controller capability.
+
+Automatic `stackos.mcp_bridge.lifecycle` events record the stage before state
+setup, token read, workspace discovery, input read, request handling and output
+write. They also record stdin EOF and cleanup reached. They use the same log,
+attempt ID and command-entry timing origin. The producer's package version and,
+when present, validated `build-info.json` build ID/hash accompany these events.
+A build timestamp/hash identifies bytes; it does not attest a source revision
+or public release. Stages before CLI entry, host queueing, approval waits and
+execution progress remain outside this producer's observation boundary.
+
+Inspect or export one retained attempt through the existing local doctor:
+
+```bash
+/Applications/StackOS.app/Contents/Resources/stackos/bin/stackos doctor --json --bridge-attempt <32-character-attempt-id>
+```
+
+This mode only reads the selected attempt's evidence, including rotations; it
+does not run doctor health, credential, registration or process probes. JSON
+can be redirected to a private file and retained through the incident's
+existing artifact/index owners. It reconstructs allowlisted fields, bounds
+file/line/event counts, rejects unsafe file targets, and reports partial or
+missing retention. The human output shows the last confirmed stage, awaited
+evidence and milliseconds since observation. These are observations of the
+producer, not proof it is still alive. A missing event is not a failure;
+cleanup reached is not proof of process exit; response flush is not consumer
+acknowledgment. Host request/thread/turn IDs remain null until separately
+observed through a supported host API. Reconcile uncertain host outcomes
+before any replacement launch; do not clear ownership to make progress.
+
+The mounted Codex task API and public App Server protocol are different
+capability surfaces. Public documentation of status notifications or
+`turn/interrupt` does not make those hooks accessible in a running desktop
+session. Record the actual mounted capability, owner, missing trace and
+blocked acceptance criterion. Keep original cloud launch, bridge handshake
+and writer-state observations separate until their identities are correlated.
+
 The CLI distinguishes `initialize` (daemon request handling) from
 `response_write` (writing or flushing stdout). A successful daemon response
 followed by a broken output pipe is a response-write failure; an earlier
@@ -167,6 +210,8 @@ owners before temporary storage is removed.
 | Success | Consumer received a result, producer flushed initialize, both exited zero |
 | Consumer timeout | Armed 200 ms consumer deadline expired before response; consumer exit 21 precedes producer write failure |
 | Cancellation | Supervisor sent cancellation, consumer acknowledged it and exited 20; producer later failed to write |
+| Cancellation acknowledgment pending termination | Consumer acknowledged cancellation; supervisor confirmed it was still running before observing termination separately |
+| Cancellation/response race | Consumer cancellation raced the response; actual consumer and producer exits are recorded independently, including producer success with consumer cancellation |
 | Abrupt consumer exit | Supervisor observed consumer SIGKILL, without a consumer completion receipt; producer later failed to write |
 | Bridge protocol failure | Producer classified invalid daemon response during initialize; consumer received an error, producer exited zero |
 | Bridge process exit | Producer retained token-read failure and exit 7; consumer observed EOF |
@@ -187,14 +232,75 @@ A broken pipe alone still cannot distinguish cancellation, timeout or consumer
 exit. Real hosts must supply their own matching attempt ID and lifecycle receipt;
 this change does not instrument Codex's host or retrieve its backend traces.
 
-The October 23 incident has two separate boundaries: upstream task-launch
-`UNKNOWN` results and a bridge initialization failure with no available leaf
-exception. These changes fix inspected source weaknesses; they do not identify
-that missing leaf or establish a common cause. No upstream create is retried.
+### Retained findings and claim limits
+
+The October 23 investigation keeps three observations separate. Exact request
+IDs, original timestamps and private evidence refs belong to its existing
+incident record and receipts, not reusable workflow defaults.
+
+| Observation | Established evidence | Still needed |
+| --- | --- | --- |
+| Upstream task launch returned `UNKNOWN` | Two failure receipts; an overlapping host queue-full event is a lead only | Backend correlation, admission/delivery/acknowledgment, any created thread/turn IDs and authoritative final effects |
+| Repository-Python bridge initialization failed | Caller reported an outer exception group after 4.116 seconds; caller exit does not prove child exit | Original executable/argv/runtime, sanitized exception leaf, deadline origin and child spawn/exit receipt |
+| Active-writer/completed contradiction was reported | No exact attributable item/epoch/thread/turn pair was retained | The affected identity, authoritative ownership and terminal result, plus an attributable subsequent write; heartbeat alone is insufficient |
+
+The installed local update passed restart, doctor, retained-evidence export and
+source-to-installed file checks. Source regressions and independent review
+passed. The existing host session still used an older loaded bridge, so those
+results did not establish fresh-host attempt correlation or recovery of the
+original routes. The observation improvements do not establish a historical
+cause. Original uncertain attempts remain unreplayed.
 
 Source tests exercise synthetic failures, stdout purity, redaction, bounded
 causal preservation, retry eligibility/budget, protocol compatibility and
 workspace protection. The diagnostics workflow can retain these as explicitly
-source-test evidence while the real incident stays unresolved. Its prior
-attempt ledger and missing installed-package/handshake/backend evidence are
-unchanged. A completed source test is not a live symptom check or deployment.
+source-test evidence while the real incident stays unresolved. Preserve the
+historical attempt ledger and append newer installed/host observations with
+their own identity and capture time. A completed source test is not a live
+symptom check or deployment.
+
+## When upstream traces are unavailable
+
+The investigating agent owns a usable escalation handoff. Identify the component
+that owns each missing observation, the exact trace or supported hook required,
+and the acceptance criterion it blocks. Separate a local filesystem permission
+from provider-internal trace access and from permission for a new reproduction.
+Do not ask an operator who lacks internal access to find an unspecified platform
+contact. Verify the current official reporting route, prepare the sanitized
+report, and provide concrete submission steps. Continue independent local work
+that remains authorized. A report requests investigation; it does not grant
+backend access or guarantee trace retention or a response.
+
+For Codex, the [official feedback and logs guidance](https://learn.chatgpt.com/docs/reference/troubleshooting#feedback-and-logs)
+describes selecting feedback from `/` in the app composer. It offers optional
+session sharing and returns a session ID after submission. This route was
+checked for the October 23 investigation; recheck current instructions before
+using it later. If the agent cannot operate the feedback panel, provide a ready
+to paste message and the retained sanitized packet. Review any optional full
+conversation or log sharing separately. Do not send or post the report without
+authorization, or silently substitute a public issue for the chosen route.
+
+The report should include the failing operation, exact available request IDs,
+original timestamps with their meaning (request, returned error, or later
+readback), runtime/configuration facts that were actually retained, observed
+versus expected behavior, unknown effects, and specific questions. For a lost
+launch acknowledgment, ask whether the request was admitted, delivered and
+executed, which task/thread/turn it created, and its authoritative final outcome.
+Keep an uncorrelated queue rejection as a hypothesis rather than naming it the
+cause. Ask for sanitized exception and child lifecycle evidence separately.
+
+Store the route, source URL/check time, prepared report and follow-up condition
+in existing incident evidence. Track **prepared**, **submitted**,
+**acknowledged**, and **response received** separately using actual receipts.
+Record a report/session ID only when returned; a prepared draft or unavailable
+UI is not proof of submission. Preserve the prior receipt before adding the
+submission or response. Reconcile an uncertain send before retrying it. A reply
+must be checked against the original request identities and effects before any
+replacement launch or causal conclusion.
+
+Keep the same run, incident index and attached ticket. A blocked final step can
+leave the plan started and audit run running; these are workflow states, not
+proof of an active writer or process termination. Keep the incident unresolved
+while required causal or real-host verification is missing. Preserve the frozen
+workflow snapshot and distinguish source guidance updates from the installed
+template and the host's already loaded process.
