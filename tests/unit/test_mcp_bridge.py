@@ -130,7 +130,9 @@ class _HeaderCapturingClient:
     def __init__(self) -> None:
         self.headers: dict[str, str] = {}
 
-    def post(self, _url: str, *, content: str, headers: dict[str, str]) -> _Response:
+    def post(
+        self, _url: str, *, content: str, headers: dict[str, str], timeout: float | None = None
+    ) -> _Response:
         body = json.loads(content)
         self.headers = headers
         return _Response({"jsonrpc": "2.0", "id": body.get("id"), "result": {}})
@@ -140,7 +142,9 @@ class _LegacyNegotiationClient:
     def __init__(self) -> None:
         self.headers: list[dict[str, str]] = []
 
-    def post(self, _url: str, *, content: str, headers: dict[str, str]) -> _Response:
+    def post(
+        self, _url: str, *, content: str, headers: dict[str, str], timeout: float | None = None
+    ) -> _Response:
         body = json.loads(content)
         self.headers.append(headers)
         if body.get("method") == "initialize":
@@ -158,7 +162,9 @@ class _ModernInternalClient:
     def __init__(self) -> None:
         self.calls: list[tuple[dict[str, Any], dict[str, str]]] = []
 
-    def post(self, _url: str, *, content: str, headers: dict[str, str]) -> _Response:
+    def post(
+        self, _url: str, *, content: str, headers: dict[str, str], timeout: float | None = None
+    ) -> _Response:
         body = json.loads(content)
         self.calls.append((body, headers))
         if body.get("method") == "tools/call":
@@ -281,7 +287,9 @@ class _FakeClient:
         self.calls: list[dict[str, Any]] = []
         self.allowed_tools = allowed_tools if allowed_tools is not None else ["resource.upsert"]
 
-    def post(self, _url: str, *, content: str, headers: dict[str, str]) -> _Response:
+    def post(
+        self, _url: str, *, content: str, headers: dict[str, str], timeout: float | None = None
+    ) -> _Response:
         del headers
         body = json.loads(content)
         self.calls.append(body)
@@ -372,7 +380,9 @@ class _RefreshingCatalogClient:
         self.calls: list[dict[str, Any]] = []
         self.tool_list_calls = 0
 
-    def post(self, _url: str, *, content: str, headers: dict[str, str]) -> _Response:
+    def post(
+        self, _url: str, *, content: str, headers: dict[str, str], timeout: float | None = None
+    ) -> _Response:
         del headers
         body = json.loads(content)
         self.calls.append(body)
@@ -407,7 +417,9 @@ class _RunPlanControllerRefreshClient:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
 
-    def post(self, _url: str, *, content: str, headers: dict[str, str]) -> _Response:
+    def post(
+        self, _url: str, *, content: str, headers: dict[str, str], timeout: float | None = None
+    ) -> _Response:
         del headers
         body = json.loads(content)
         self.calls.append(body)
@@ -508,7 +520,9 @@ class _RunPlanControllerRefreshClient:
 
 
 class _RunPlanControllerListFallbackClient(_RunPlanControllerRefreshClient):
-    def post(self, _url: str, *, content: str, headers: dict[str, str]) -> _Response:
+    def post(
+        self, _url: str, *, content: str, headers: dict[str, str], timeout: float | None = None
+    ) -> _Response:
         del headers
         body = json.loads(content)
         self.calls.append(body)

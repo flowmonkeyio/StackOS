@@ -374,6 +374,7 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
 
     assert [item.key for item in support_listing.templates] == [
         "support.delivery-task-handoff",
+        "support.internal-diagnostics",
         "support.issue-investigation",
     ]
     assert support_investigation_described.summary.plugin_slug == "support"

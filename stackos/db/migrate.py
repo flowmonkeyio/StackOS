@@ -9,7 +9,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import inspect, text
 
-from stackos.config import Settings
+from stackos.config import Settings, get_settings
 from stackos.db.connection import make_engine
 
 
@@ -33,7 +33,26 @@ def alembic_config(settings: Settings) -> Config:
     cfg.set_main_option("script_location", str(migrations_path))
     cfg.set_main_option("prepend_sys_path", str(repo_root))
     cfg.set_main_option("sqlalchemy.url", f"sqlite:///{settings.db_path}")
+    cfg.attributes["stackos_settings"] = settings
     return cfg
+
+
+def migration_settings() -> Settings:
+    """Use the same installation for migration data and crypto as for its DB.
+
+    Programmatic startup/CLI callers pin Settings on the Alembic config.
+    Standalone Alembic retains its normal environment-based configuration.
+    Never reread ambient paths when the caller selected an installation.
+    """
+    from alembic import context
+
+    config = getattr(context, "config", None)
+    if config is not None and "stackos_settings" in config.attributes:
+        settings = config.attributes["stackos_settings"]
+        if not isinstance(settings, Settings):
+            raise TypeError("Migration settings must be a Settings instance.")
+        return settings
+    return get_settings()
 
 
 def _stamp_create_all_schema_if_needed(settings: Settings, cfg: Config) -> bool:

@@ -151,6 +151,13 @@ preserve it.
 
 ## Schema migrations
 
+Programmatic startup and CLI upgrades carry the selected `Settings` through
+Alembic, including the state directory used by credential migrations. An
+ambient `STACKOS_STATE_DIR` must not redirect the selected database to another
+installation's encryption seed. Standalone Alembic commands continue to use
+their environment configuration. This changes no seed, credential identity,
+or schema revision; existing encrypted records retain their matching seed.
+
 Migrations run automatically every time the daemon boots
 (`alembic upgrade head` is invoked from the lifespan). Operators do
 not normally need to run `make migrate` by hand. Down-migrations
