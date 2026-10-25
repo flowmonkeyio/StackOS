@@ -1,0 +1,100 @@
+{
+  "case_id": "launch-handshake-2026-10-23",
+  "evidence_mode": "recorded",
+  "source_revision": "964db9c2db18b8bd48327912b44c9ab0e0de0c6b",
+  "authority": [
+    "we need to introduce an internal diagnostics flow in stackos to help identify and resolve such issues. agents should not ramp up anew each time.",
+    "do it. ensure we're not using a local build.",
+    "we should build that flow and have it investigate the issue, while we adapt the flow as we go. I want a real life running example as part of the results for this erorr diagnostics.",
+    "skip the session. just run an agent to do it."
+  ],
+  "description": "Recorded evidence from a real reported incident, not a live packaged-runtime reproduction. The installed package identity and the handshake leaf exception are not available.",
+  "observations": [
+    {
+      "ref": "incident:launch-handshake-2026-10-23:external-create-explicit",
+      "boundary": "external_task_launch",
+      "operation": "cloud_threads.create",
+      "request_id": "wfr_01a169938e1d7b618c8d06644898005e",
+      "observed_at": "2026-10-23T16:24:54Z",
+      "request_shape": {"environment_selection": "explicit", "cwd_ref": "repo_path", "service_tier": "fast", "model_override": false},
+      "result": "AppServerBackendRequestError UNKNOWN before a confirmed session",
+      "outcome": "uncertain",
+      "reconciliation": "Subsequent task listing did not reveal a new task. This is not proof of an internal backend cause.",
+      "retry_remaining": 0
+    },
+    {
+      "ref": "incident:launch-handshake-2026-10-23:external-create-implicit",
+      "boundary": "external_task_launch",
+      "operation": "cloud_threads.create",
+      "request_id": "wfr_01a16996c2eb763ba553668c2284e8cc",
+      "observed_at": "2026-10-23T16:28:11Z",
+      "request_shape": {"environment_selection": "default", "cwd_ref": null, "service_tier": "fast", "model_override": false},
+      "result": "AppServerBackendRequestError UNKNOWN before a confirmed session",
+      "outcome": "uncertain",
+      "reconciliation": "The explicit and implicit desktop selections both failed; read/list remained available.",
+      "retry_remaining": 0
+    },
+    {
+      "ref": "incident:launch-handshake-2026-10-23:external-create-defaults",
+      "boundary": "external_task_launch",
+      "operation": "cloud_threads.create",
+      "request_id": "wfr_01a169571f937e268889ac52459fd149",
+      "observed_at": null,
+      "request_shape": {"environment_selection": "default", "cwd_ref": null, "service_tier": null, "model_override": false},
+      "result": "An earlier request without model or service-tier overrides also failed",
+      "outcome": "uncertain",
+      "reconciliation": "Changing model/tier options is not supported as the cause or fix.",
+      "retry_remaining": 0
+    },
+    {
+      "ref": "incident:launch-handshake-2026-10-23:bridge-initialize",
+      "boundary": "stackos_mcp_initialize",
+      "operation": "session.initialize",
+      "request_id": null,
+      "observed_at": null,
+      "result": "Harness exited 1 after 4.116 seconds with a nested ExceptionGroup; leaf cause and bridge stderr were not captured in the available evidence",
+      "outcome": "uncertain",
+      "reconciliation": "No workspace.startSession occurred. Harness exit status does not establish bridge-child exit status. The failed invocation used a project virtual environment, not a verified published package.",
+      "retry_remaining": 0
+    },
+    {
+      "ref": "incident:launch-handshake-2026-10-23:denied-process-inspection",
+      "boundary": "host_access",
+      "operation": "process inspection",
+      "request_id": null,
+      "observed_at": null,
+      "result": "The follow-up /bin/ps operation was denied",
+      "outcome": "denied",
+      "reconciliation": "Do not retry through another route. The old bridge-child state remains unknown.",
+      "retry_remaining": 0
+    },
+    {
+      "ref": "incident:launch-handshake-2026-10-23:manual-host-report",
+      "boundary": "host_session",
+      "operation": "manual host session",
+      "request_id": null,
+      "observed_at": null,
+      "result": "The user reported a working manually started host session with StackOS MCP available",
+      "outcome": "reported_success",
+      "reconciliation": "The working session's installed package, command and environment have not been independently inspected. This does not prove it matches the failed invocation.",
+      "retry_remaining": 0
+    }
+  ],
+  "validated_source_findings": [
+    {
+      "ref": "https://github.com/flowmonkeyio/StackOS/blob/964db9c2db18b8bd48327912b44c9ab0e0de0c6b/stackos/mcp/bridge/proxy.py#L99-L158",
+      "finding": "initialize forwards to HTTP before workspace resolution; workspace setup is not established as this failure's cause"
+    },
+    {
+      "ref": "https://github.com/flowmonkeyio/StackOS/blob/964db9c2db18b8bd48327912b44c9ab0e0de0c6b/stackos/cli/daemon_commands.py#L592-L712",
+      "finding": "Startup/transport diagnostics are incomplete, the HTTP client has no timeout, and a broad retry catch can overwrite the original exception"
+    }
+  ],
+  "expected_disposition": "unresolved",
+  "missing_evidence": [
+    "Verified published installed package identity and runtime fingerprint",
+    "Already-captured innermost handshake exception and sanitized bridge stderr",
+    "External launch-service trace for the recorded request IDs"
+  ],
+  "next_action": "Preserve both failure boundaries, request the missing existing evidence, and escalate the external launch-service request IDs. Do not repeat create, initialize, or the denied process inspection."
+}

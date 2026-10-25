@@ -374,6 +374,16 @@ the bridge attempts a loopback-only auto-start and logs to:
 ~/.local/state/stackos/mcp-bridge-autostart.log
 ```
 
+Sanitized bridge failures are also saved automatically to
+`~/.local/state/stackos/mcp-bridge.log` (10 MiB plus five rotated backups), even
+when the daemon is unavailable. A non-default state directory relocates both
+logs. Match the JSON-RPC error's `diagnostic_id` against the persistent log.
+Initialization and startup discovery default to a 15-second network inactivity
+timeout, adjustable with `STACKOS_BRIDGE_STARTUP_TIMEOUT_SECONDS` (positive,
+at most 300). Long-running tool response reads remain unlimited. See
+[bridge diagnostics](./bridge-failure-diagnostics.md) for retry boundaries,
+automatic persistence and lookup.
+
 Project context is directory-first and host-dependent. StackOS does not require
 a Git checkout to identify a workspace. The bridge accepts an explicit
 `--workspace-root` argument or `STACKOS_WORKSPACE_ROOT` environment value,
@@ -523,6 +533,7 @@ Default paths:
 | Auth token | `~/.local/state/stackos/auth.token` |
 | Credential seed | `~/.local/state/stackos/seed.bin` |
 | Daemon log | `~/.local/state/stackos/daemon.log` |
+| Persistent bridge diagnostics | `~/.local/state/stackos/mcp-bridge.log` |
 | PID file | `~/.local/state/stackos/daemon.pid` |
 | Codex skill mirror | `~/.codex/skills/stackos/SKILL.md` |
 | Claude Code skill mirror | `~/.claude/skills/stackos/SKILL.md` |

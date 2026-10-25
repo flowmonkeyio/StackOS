@@ -138,7 +138,36 @@ copy that file into the same input directory instead and run the same check.
 Keep the input outside both `desktop/payload/stackos` and
 `desktop/payload-build`: the payload builder deletes both before staging TDLib.
 An installed or packaged app's library may have a different hash after signing
-and does not replace this original build input.
+and does not replace this original build input for default or release builds.
+
+#### Explicit local reuse of the existing 2.1.38 runtime
+
+For an operator-authorized local development build, the retained StackOS
+2.1.38 payload built at `20261015T194308Z` is also an accepted, separately
+pinned input. Its packaged library SHA-256 is
+`25959b20294cd194a77a3f392718b518fc1c0ff12ed8eaf8c555845146da3739`.
+Copy that library outside the payload/build directories, then use:
+
+```bash
+TDLIB_LIBRARY_PATH=/absolute/path/to/retained/libtdjson.dylib \
+TDLIB_INPUT_VARIANT=stackos-2.1.38-packaged-local \
+  pnpm --dir desktop run dist:mac:dev
+```
+
+This variant requires `STACKOS_UNSIGNED_DEV=1` (set by `dist:mac:dev`) and
+rejects signing/update release requirements and any update URL, even when
+unsigned-release bypass flags are present. The default still requires the
+original `c397db26…` input. No caller-supplied checksum override is supported.
+
+The builder checks the exact packaged input digest before inspecting or loading
+it, preserves the supplied file, and ad hoc signs and verifies only its staged
+copy. This replaces the retained artifact's unusable signature; it does not
+establish publisher identity. Architecture, system-only dependencies, TDLib
+version and native JSON ABI checks still run. The manifest retains the original
+input digest separately from the newly signed library digest and identifies
+source provenance as inherited from the packaged artifact, not independently
+rebuilt or verified from source. This local reuse path does not satisfy public
+release provenance or fix the source-build reproducibility gap.
 
 ### Build the payload
 

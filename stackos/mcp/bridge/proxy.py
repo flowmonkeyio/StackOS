@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import time
+from pathlib import Path
 from typing import Any, cast
 
 from .catalog import (
@@ -19,6 +21,7 @@ from .constants import (
     _TOOLBOX_DESCRIBE_TOOL,
     _TOOLBOX_TOOL_NAMES,
 )
+from .diagnostics import bridge_attempt_id, emit_bridge_diagnostic
 from .protocol import (
     _bridge_as_int,
     _bridge_call_error,
@@ -31,6 +34,7 @@ from .protocol import (
     _bridge_response_text,
     _bridge_tool_call_arguments,
     _bridge_tool_call_name,
+    _bridge_validate_response_text,
 )
 from .response import (
     _bridge_compact_tool_response,
@@ -74,6 +78,9 @@ class AgentBridgeProxy:
         git_remote_url: str | None = None,
         client_session_id: str | None = None,
         deliberate_workspace_root: bool = False,
+        startup_timeout_seconds: float = 15.0,
+        diagnostic_log_path: Path | None = None,
+        attempt_id: str | None = None,
     ) -> None:
         self.url = url
         self.headers = headers
@@ -83,6 +90,9 @@ class AgentBridgeProxy:
         self.git_remote_url = git_remote_url
         self.client_session_id = client_session_id
         self.deliberate_workspace_root = deliberate_workspace_root
+        self.startup_timeout_seconds = startup_timeout_seconds
+        self.diagnostic_log_path = diagnostic_log_path
+        self.attempt_id = bridge_attempt_id(attempt_id)
         self.tool_catalog: dict[str, dict[str, Any]] = {}
         self.allowed_by_run: dict[int, set[str]] = {}
         self.tokens_by_run: dict[int, str] = {}
@@ -129,9 +139,29 @@ class AgentBridgeProxy:
             **negotiated_headers,
             **_bridge_mcp_request_headers(payload),
         }
-        response = client.post(self.url, content=body, headers=headers)
+        # These startup/control reads must not wait indefinitely for a wedged
+        # daemon. Tool execution keeps the client's unbounded read timeout.
+        bounded = isinstance(payload, dict) and (
+            payload.get("method")
+            in ("initialize", "ping", "tools/list", "notifications/initialized")
+            or (
+                payload.get("method") == "tools/call"
+                and _bridge_tool_call_name(payload)
+                in {
+                    "workspace.resolve",
+                    "project.get",
+                    "run.get",
+                    "runPlan.get",
+                    "runPlan.list",
+                }
+            )
+        )
+        request_options = {"timeout": self.startup_timeout_seconds} if bounded else {}
+        response = client.post(self.url, content=body, headers=headers, **request_options)
         response.raise_for_status()
-        response_text = _bridge_response_text(response.text)
+        response_text = _bridge_validate_response_text(
+            _bridge_response_text(response.text), request_payload=payload
+        )
         if isinstance(payload, dict) and payload.get("method") == "initialize":
             self.protocol_version = _bridge_negotiated_protocol_version(response_text)
         return response_text
@@ -257,6 +287,7 @@ class AgentBridgeProxy:
             }.items()
             if value
         }
+        started_at = time.monotonic()
         try:
             out = self.request_daemon(
                 client,
@@ -272,8 +303,18 @@ class AgentBridgeProxy:
             data = data.get("data", data)
             if not isinstance(data, dict) or "needs_connect" not in data:
                 raise ValueError("workspace.resolve returned an invalid resolution")
-        except Exception:
-            self.workspace_scope_error = "workspace.resolve failed; retry startup diagnostics"
+        except Exception as exc:
+            diagnostic = emit_bridge_diagnostic(
+                phase="workspace_scope",
+                started_at=started_at,
+                original=exc,
+                log_path=self.diagnostic_log_path,
+                attempt_id=self.attempt_id,
+            )
+            self.workspace_scope_error = (
+                "workspace.resolve failed; inspect bridge diagnostic "
+                f"{diagnostic['diagnostic_id']} (persistence={diagnostic['persistence']['status']})"
+            )
             return
         self.workspace_scope_checked = True
         self.workspace_scope_error = None
@@ -418,6 +459,8 @@ class AgentBridgeProxy:
             return None
         if not isinstance(project_id, int) or isinstance(project_id, bool) or project_id <= 0:
             return {"reason": "project_required"}
+        started_at = time.monotonic()
+        diagnostic = None
         try:
             response = self.request_daemon(
                 client,
@@ -432,11 +475,25 @@ class AgentBridgeProxy:
                 data = data.get("data", data)
             if isinstance(data, dict) and data.get("id") == project_id:
                 return None
-        except Exception:
-            pass
+        except Exception as exc:
+            diagnostic = emit_bridge_diagnostic(
+                phase="project_validation",
+                started_at=started_at,
+                original=exc,
+                log_path=self.diagnostic_log_path,
+                attempt_id=self.attempt_id,
+            )
         return {
             "reason": "project_unavailable",
             "project_id": project_id,
+            **(
+                {
+                    "diagnostic_id": diagnostic["diagnostic_id"],
+                    "persistence": diagnostic["persistence"],
+                }
+                if diagnostic is not None
+                else {}
+            ),
             "hint": (
                 "Confirm an existing project explicitly; no replacement or fallback is selected."
             ),
@@ -477,6 +534,7 @@ class AgentBridgeProxy:
                 raise ValueError("Invalid run context")
             return out, data
 
+        started_at = time.monotonic()
         try:
             plan_response = None
             plan = None
@@ -546,9 +604,16 @@ class AgentBridgeProxy:
             )
             self.projects_by_run[run_id] = project_id
             return run_id
-        except Exception:
+        except Exception as exc:
             if run_id is not None:
                 self._clear_run_context(run_id)
+            emit_bridge_diagnostic(
+                phase="run_context",
+                started_at=started_at,
+                original=exc,
+                log_path=self.diagnostic_log_path,
+                attempt_id=self.attempt_id,
+            )
             return None
 
     def _handle_toolbox_describe(
