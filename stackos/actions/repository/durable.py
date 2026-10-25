@@ -488,6 +488,18 @@ class DurableActionMixin:
             )
         return progress
 
+    def validate_durable_action_workflow(self, *, project_id: int, job_id: int) -> None:
+        """Re-read lifecycle eligibility, not original-owner or grant authority."""
+        job = self._job(project_id=project_id, job_id=job_id)
+        self._s.refresh(job)
+        self._check_run_scope(  # type: ignore[attr-defined]  # ActionRepository mixin
+            project_id=project_id,
+            run_id=job.run_id,
+            run_plan_id=job.run_plan_id,
+            run_plan_step_id=job.run_plan_step_id,
+            require_active_workflow=True,
+        )
+
     def claim_durable_action_items(
         self,
         *,
@@ -524,6 +536,15 @@ class DurableActionMixin:
             }
             or job.due_at > now
         ):
+            return []
+        try:
+            self.validate_durable_action_workflow(project_id=project_id, job_id=job_id)
+        except (ConflictError, NotFoundError) as exc:
+            job.metadata_json = {
+                **(job.metadata_json or {}),
+                "delivery_pause": {"reason": str(exc), "at": now.isoformat()},
+            }
+            self.pause_durable_action_job(project_id=project_id, job_id=job_id, now=now)
             return []
         items = list(
             self._s.exec(
@@ -925,9 +946,11 @@ class DurableActionMixin:
         self._s.commit()
         return self._item_out(item)
 
-    def pause_durable_action_job(self, *, project_id: int, job_id: int) -> DurableActionJobOut:
+    def pause_durable_action_job(
+        self, *, project_id: int, job_id: int, now: datetime | None = None
+    ) -> DurableActionJobOut:
         job = self._job(project_id=project_id, job_id=job_id)
-        now = utcnow()
+        now = _as_naive_utc(now or utcnow())
         if self._expire_durable_action_job(job, now=now):
             self._s.commit()
         if job.state in {

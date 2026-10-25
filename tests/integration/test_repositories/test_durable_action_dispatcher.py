@@ -26,16 +26,26 @@ from stackos.db.models import (
     Action,
     ActionCall,
     ActionCallStatus,
+    ActionDeliveryAdmission,
     Credential,
+    DurableActionAttempt,
+    DurableActionJob,
     IntegrationCredential,
     Plugin,
     PluginSource,
     ProjectCredential,
     Provider,
+    Run,
+    RunKind,
+    RunPlan,
+    RunPlanStep,
+    RunPlanStepStatus,
+    RunStatus,
 )
 from stackos.repositories.base import ValidationError
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.resources import ArtifactRepository
+from stackos.repositories.run_plans import RunPlanRepository
 
 
 class _DispatchConnector:
@@ -269,6 +279,309 @@ def _dispatcher(
         poll_interval_seconds=0.01,
         max_inflight=max_inflight,
     )
+
+
+def _workflow_scope(engine: Engine, project_id: int, action_call_id: int) -> tuple[int, int, int]:
+    with Session(engine) as session:
+        repo = RunPlanRepository(session)
+        plan = repo.create(
+            project_id=project_id,
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "durable-lifecycle",
+                "title": "Deliver queued work",
+                "steps": [{"id": "send", "title": "Send"}],
+            },
+        ).data
+        started = repo.start(plan.id, project_id=project_id).data
+        repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="send")
+        step = session.exec(select(RunPlanStep).where(RunPlanStep.run_plan_id == plan.id)).one()
+        call = session.get(ActionCall, action_call_id)
+        assert call is not None and started.run_id is not None and step.id is not None
+        call.run_id, call.run_plan_id, call.run_plan_step_id = started.run_id, plan.id, step.id
+        session.add(call)
+        session.commit()
+        return started.run_id, plan.id, step.id
+
+
+def _stop_workflow(engine: Engine, project_id: int, plan_id: int, *, abort: bool = False) -> None:
+    with Session(engine) as session:
+        repo = RunPlanRepository(session)
+        if abort:
+            repo.abort(run_plan_id=plan_id, project_id=project_id, reason="Operator stopped work")
+        else:
+            plan = session.get(RunPlan, plan_id)
+            assert plan is not None
+            repo.record_step(
+                run_plan_id=plan_id,
+                run_id=plan.run_id,
+                step_id="send",
+                status=RunPlanStepStatus.BLOCKED,
+                error="Operator paused work",
+            )
+
+
+@pytest.mark.parametrize("abort", [False, True], ids=["blocked", "aborted"])
+def test_workflow_claim_reads_current_controller_before_any_lease(
+    tmp_path: Path, abort: bool
+) -> None:
+    engine, project_id, credential_ref, call_id = _seed_database(tmp_path)
+    run_id, plan_id, step_id = _workflow_scope(engine, project_id, call_id)
+    now = datetime(2026, 9, 22, 18)
+    job_id = _job(engine, project_id, credential_ref, call_id, now)
+    with Session(engine) as session:
+        # Keep stale identity-map objects alive; another session changes the controller.
+        before = [
+            session.get(Run, run_id),
+            session.get(RunPlan, plan_id),
+            session.get(RunPlanStep, step_id),
+        ]
+        _stop_workflow(engine, project_id, plan_id, abort=abort)
+        repo = ActionRepository(session)
+        assert repo.claim_durable_action_items(project_id=project_id, job_id=job_id, now=now) == []
+        job = repo.get_durable_action_job(project_id=project_id, job_id=job_id)
+        assert job.state == "paused" and job.pause_reason
+        assert (
+            repo.list_durable_action_items(project_id=project_id, job_id=job_id)[0].attempt_count
+            == 0
+        )
+        assert session.exec(select(DurableActionAttempt)).all() == []
+        assert session.exec(select(ActionDeliveryAdmission)).all() == []
+        assert all(before)
+    engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "broken",
+    [
+        "run-ref",
+        "plan-ref",
+        "step-ref",
+        "workflow-refs",
+        "run-project",
+        "plan-project",
+        "plan-run",
+        "step-plan",
+        "run-status",
+        "run-kind",
+    ],
+)
+def test_workflow_claim_rejects_incomplete_or_inconsistent_scope(
+    tmp_path: Path, broken: str
+) -> None:
+    engine, project_id, credential_ref, call_id = _seed_database(tmp_path)
+    run_id, plan_id, step_id = _workflow_scope(engine, project_id, call_id)
+    now = datetime(2026, 9, 22, 18)
+    job_id = _job(engine, project_id, credential_ref, call_id, now)
+    with Session(engine) as session:
+        job = session.get(DurableActionJob, job_id)
+        run = session.get(Run, run_id)
+        plan = session.get(RunPlan, plan_id)
+        step = session.get(RunPlanStep, step_id)
+        assert job is not None and run is not None and plan is not None and step is not None
+        if broken == "run-ref":
+            job.run_id = None
+        elif broken == "plan-ref":
+            job.run_plan_id = None
+        elif broken == "step-ref":
+            job.run_plan_step_id = None
+        elif broken == "workflow-refs":
+            job.run_plan_id = job.run_plan_step_id = None
+        elif broken in {"run-project", "plan-project"}:
+            other = (
+                ProjectRepository(session)
+                .create(slug="other", name="Other", domain="other.example.test", locale="en-US")
+                .data
+            )
+            if broken == "run-project":
+                run.project_id = other.id
+            else:
+                plan.project_id = other.id
+        elif broken == "plan-run":
+            plan.run_id = None
+        elif broken == "step-plan":
+            other_plan = (
+                RunPlanRepository(session)
+                .create(
+                    project_id=project_id,
+                    run_plan_json={
+                        "schema_version": "stackos.run-plan.v1",
+                        "key": "other",
+                        "title": "Other",
+                        "steps": [{"id": "other", "title": "Other"}],
+                    },
+                )
+                .data
+            )
+            step.run_plan_id = other_plan.id
+        elif broken == "run-status":
+            run.status = RunStatus.FAILED
+        else:
+            run.kind = RunKind.ACTION
+        session.add_all([job, run, plan, step])
+        session.commit()
+        repo = ActionRepository(session)
+        assert repo.claim_durable_action_items(project_id=project_id, job_id=job_id, now=now) == []
+        assert repo.get_durable_action_job(project_id=project_id, job_id=job_id).pause_reason
+        assert session.exec(select(DurableActionAttempt)).all() == []
+        assert session.exec(select(ActionDeliveryAdmission)).all() == []
+    engine.dispose()
+
+
+@pytest.mark.parametrize("abort", [False, True], ids=["blocked", "aborted"])
+def test_workflow_rechecked_after_awaited_credentials_before_provider(
+    tmp_path: Path, fake_credential_resolution: None, monkeypatch: pytest.MonkeyPatch, abort: bool
+) -> None:
+    engine, project_id, credential_ref, call_id = _seed_database(tmp_path)
+    run_id, plan_id, step_id = _workflow_scope(engine, project_id, call_id)
+    now = datetime(2026, 9, 22, 18)
+    job_id = _job(engine, project_id, credential_ref, call_id, now, destinations=("one", "two"))
+    connector = _DispatchConnector()
+    resolve = ActionRepository._resolve_credential
+
+    async def scenario() -> None:
+        waiting, release = asyncio.Event(), asyncio.Event()
+
+        async def delayed(repo: ActionRepository, **kwargs):
+            stale = [
+                repo._s.get(Run, run_id),
+                repo._s.get(RunPlan, plan_id),
+                repo._s.get(RunPlanStep, step_id),
+            ]
+            credential = await resolve(repo, **kwargs)
+            waiting.set()
+            await release.wait()
+            assert all(stale)
+            return credential
+
+        monkeypatch.setattr(ActionRepository, "_resolve_credential", delayed)
+        dispatcher = _dispatcher(engine, connector)
+        task = asyncio.create_task(dispatcher.run_once(now=now))
+        await asyncio.wait_for(waiting.wait(), timeout=5)
+        _stop_workflow(engine, project_id, plan_id, abort=abort)
+        release.set()
+        assert await asyncio.wait_for(task, timeout=5) == 1
+        assert connector.requests == []
+        assert await dispatcher.run_once(now=now + timedelta(minutes=1)) == 0
+
+    asyncio.run(scenario())
+    with Session(engine) as session:
+        repo = ActionRepository(session)
+        job = repo.get_durable_action_job(project_id=project_id, job_id=job_id)
+        assert job.state == "paused" and job.pause_reason
+        failed, pending = repo.list_durable_action_items(project_id=project_id, job_id=job_id)
+        assert failed.state == "failed" and failed.can_retry
+        assert failed.result_json == {"provider_executed": False, "retry_safe": True}
+        assert failed.lease_ref is None
+        assert pending.state == "pending" and pending.attempt_count == 0
+        attempt = session.exec(select(DurableActionAttempt)).one()
+        assert attempt.state == "failed" and attempt.receipt_json == failed.result_json
+    engine.dispose()
+
+
+def test_workflow_explicit_recovery_rechecks_same_binding(
+    tmp_path: Path, fake_credential_resolution: None
+) -> None:
+    engine, project_id, credential_ref, call_id = _seed_database(tmp_path)
+    run_id, plan_id, step_id = _workflow_scope(engine, project_id, call_id)
+    now = datetime(2026, 9, 22, 18)
+    job_id = _job(engine, project_id, credential_ref, call_id, now)
+    connector = _DispatchConnector()
+    dispatcher = _dispatcher(engine, connector)
+    for _ in range(2):
+        _stop_workflow(engine, project_id, plan_id)
+        assert asyncio.run(dispatcher.run_once(now=now)) == 0
+        with Session(engine) as session:
+            RunPlanRepository(session).claim_step(
+                run_plan_id=plan_id, run_id=run_id, step_id="send"
+            )
+            repo = ActionRepository(session)
+            repo.resume_durable_action_job(project_id=project_id, job_id=job_id, now=now)
+            job = session.get(DurableActionJob, job_id)
+            assert job is not None
+            assert (job.run_id, job.run_plan_id, job.run_plan_step_id) == (run_id, plan_id, step_id)
+    assert asyncio.run(dispatcher.run_once(now=now)) == 1
+    assert len(connector.requests) == 1
+    engine.dispose()
+
+
+@pytest.mark.parametrize("direct_run", [False, True])
+def test_workflow_denial_does_not_prevent_unrelated_direct_dispatch(
+    tmp_path: Path, fake_credential_resolution: None, direct_run: bool
+) -> None:
+    engine, project_id, credential_ref, call_id = _seed_database(tmp_path)
+    _, plan_id, _ = _workflow_scope(engine, project_id, call_id)
+    now = datetime(2026, 9, 22, 18)
+    _job(engine, project_id, credential_ref, call_id, now)
+    with Session(engine) as session:
+        call = ActionCall(
+            project_id=project_id,
+            action_key="message.send",
+            plugin_slug="durable-dispatcher-test",
+            operation="message.send",
+            status=ActionCallStatus.RUNNING,
+        )
+        if direct_run:
+            run = Run(project_id=project_id, kind=RunKind.ACTION, status=RunStatus.SUCCESS)
+            session.add(run)
+            session.flush()
+            call.run_id = run.id
+        session.add(call)
+        session.commit()
+        assert call.id is not None
+        direct_id = call.id
+    _job(engine, project_id, credential_ref, direct_id, now)
+    _stop_workflow(engine, project_id, plan_id)
+    connector = _DispatchConnector()
+    assert asyncio.run(_dispatcher(engine, connector).run_once(now=now)) == 1
+    assert [request.action_call_id for request in connector.requests] == [direct_id]
+    engine.dispose()
+
+
+@pytest.mark.parametrize("outcome", ["success", "unknown", "cancelled"])
+def test_workflow_stop_after_provider_entry_preserves_receipt(
+    tmp_path: Path, fake_credential_resolution: None, outcome: str
+) -> None:
+    engine, project_id, credential_ref, call_id = _seed_database(tmp_path)
+    _, plan_id, _ = _workflow_scope(engine, project_id, call_id)
+    now = datetime(2026, 9, 22, 18)
+    job_id = _job(engine, project_id, credential_ref, call_id, now)
+
+    async def scenario() -> None:
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        class EnteredConnector(_DispatchConnector):
+            async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
+                entered.set()
+                await release.wait()
+                return await super().execute(request)
+
+        connector = EnteredConnector(mode=outcome)
+        dispatcher = _dispatcher(engine, connector)
+        task = asyncio.create_task(dispatcher.run_once(now=now))
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        _stop_workflow(engine, project_id, plan_id)
+        if outcome == "cancelled":
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        else:
+            release.set()
+            assert await asyncio.wait_for(task, timeout=5) == 1
+        assert await dispatcher.run_once(now=now + timedelta(minutes=1)) == 0
+
+    asyncio.run(scenario())
+    with Session(engine) as session:
+        item = ActionRepository(session).list_durable_action_items(
+            project_id=project_id, job_id=job_id
+        )[0]
+        assert item.state == ("succeeded" if outcome == "success" else "unknown-hold")
+        assert not item.can_retry
+        if outcome == "success":
+            assert item.result_json == {"message_ref": "provider-message:1"}
+        else:
+            assert item.result_json is not None and item.result_json["outcome_unknown"] is True
+    engine.dispose()
 
 
 def test_dispatcher_persists_progress_and_completes_parent_action_call(

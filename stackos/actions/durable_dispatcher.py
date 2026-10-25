@@ -224,6 +224,7 @@ class DurableActionDispatcher:
     ) -> None:
         attempt_ref = _required_attempt_ref(item.attempt_ref)
         entered_connector = False
+        pause_remaining_reason = None
         sensitive_values: tuple[str, ...] = ()
         try:
             with self._session_factory() as session:
@@ -282,6 +283,13 @@ class DurableActionDispatcher:
                     correlation_ref=item.correlation_ref,
                     delivery_item_id=item.id,
                 )
+                # Credential preparation can yield while the controller is blocked/aborted.
+                # Keep this fresh check after all preparation, with no await before execute.
+                try:
+                    repo.validate_durable_action_workflow(project_id=project_id, job_id=job_id)
+                except (ConflictError, NotFoundError) as exc:
+                    pause_remaining_reason = str(exc)
+                    raise
             entered_connector = True
             result = await connector.execute(request)
             self._complete(
@@ -355,6 +363,7 @@ class DurableActionDispatcher:
                 attempt_ref=attempt_ref,
                 error=_safe_error(str(exc), sensitive_values),
                 result_json={"provider_executed": False, "retry_safe": True},
+                pause_remaining_reason=pause_remaining_reason,
                 now=_transition_now(now),
             )
 

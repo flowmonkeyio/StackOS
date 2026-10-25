@@ -59,7 +59,7 @@ normal grants, credentials, and audit boundaries still apply after approval.
 
 Run-plan execution has one canonical lifecycle. A started run plan is durable
 workflow state, not a five-minute daemon job. The stale-run reaper preserves
-live started run plans and refreshes the linked audit heartbeat so normal
+live started run plans and leaves the linked audit heartbeat unchanged so normal
 long-running agent work, browser checks, or local tests do not get aborted just
 because no run-plan operation was called for a few minutes. If a linked audit
 run is already terminal, StackOS reconciles the linked run plan, unfinished
@@ -69,9 +69,13 @@ not leave `run_plans.status='started'` while the run is `aborted`.
 and `runPlan.checkConsistency` returns the same diagnostics as a compact
 agent-facing check.
 
-`runPlan.claimStep` and `runPlan.recordStep` still refresh the linked audit run
-heartbeat, but agents do not need to keep calling `run.heartbeat` during normal
-workflow-backed delivery.
+`runPlan.claimStep`, `runPlan.recordStep`, and recovery refresh the linked audit
+run heartbeat, but agents do not need to keep calling `run.heartbeat` during
+normal workflow-backed delivery. Run detail shows this recorded audit activity;
+neither the heartbeat nor a recorded status verifies worker progress, success,
+termination, or settled effects. Preserving an old timestamp does not abort a
+resumable plan, and historical heartbeats refreshed by older maintenance sweeps
+cannot establish when actual work last occurred.
 
 ### Workflow contract changes on upgrade or resume
 

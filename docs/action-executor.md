@@ -191,6 +191,21 @@ It persists attempts, progress and receipts. Unattempted items survive restart;
 an expired dispatched attempt is held as an unknown outcome until a provider
 receipt reconciles it. It is never automatically resent.
 
+Workflow-linked durable jobs recheck their complete project/run/plan/step linkage
+and current lifecycle before claiming an item and immediately before connector
+entry, after credential preparation. The original run must be running, its plan
+started and its step running. A blocked, aborted or inconsistent controller
+pauses future work with a reason; refusal before claiming creates no attempt or
+rate lease. Refusal after claiming but before connector entry records a failed
+item with proof of no provider effect and pauses remaining items. Recovery uses
+the existing explicit resume/retry controls, which do not bypass the next
+lifecycle check. Direct jobs retain their existing behavior.
+
+This is an admission check, not continuous cancellation or proof that the
+original owner and grants are unchanged. It does not recall an entered provider
+effect or replace its receipt with an inferred outcome. Unknown effects still
+require reconciliation before retry.
+
 Inspect a sealed job with `actionCall.items`; `actionCall.pause` and
 `actionCall.resume` control future claims, while `actionCall.cancel` cancels
 remaining pending or safely deferred items. An in-flight provider effect cannot be recalled by those

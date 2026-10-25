@@ -702,8 +702,9 @@ def test_reap_stale_preserves_started_run_plan(session: Session, project_id: int
     run = session.get(Run, started.run_id)
     plan_row = session.get(RunPlan, plan.id)
     assert run is not None and plan_row is not None
-    run.heartbeat_at = _now() - timedelta(minutes=10)
-    plan_row.updated_at = _now() - timedelta(minutes=10)
+    stale_at = _now() - timedelta(minutes=10)
+    run.heartbeat_at = stale_at
+    plan_row.updated_at = stale_at
     session.add(run)
     session.add(plan_row)
     session.commit()
@@ -715,8 +716,10 @@ def test_reap_stale_preserves_started_run_plan(session: Session, project_id: int
     assert run is not None
     assert run.status == RunStatus.RUNNING
     assert run.error is None
-    assert run.heartbeat_at is not None
-    assert run.heartbeat_at > _now() - timedelta(minutes=1)
+    assert run.heartbeat_at == stale_at
+    assert RunRepository(session).reap_stale(stale_after_seconds=300) == 0
+    session.refresh(run)
+    assert run.heartbeat_at == stale_at
     plan_row = session.get(RunPlan, plan.id)
     assert plan_row is not None
     assert plan_row.status == "started"
@@ -748,7 +751,8 @@ def test_reap_stale_preserves_started_run_plan_with_recent_activity(
     run = session.get(Run, started.run_id)
     plan_row = session.get(RunPlan, plan.id)
     assert run is not None and plan_row is not None
-    run.heartbeat_at = _now() - timedelta(minutes=10)
+    stale_at = _now() - timedelta(minutes=10)
+    run.heartbeat_at = stale_at
     plan_row.updated_at = _now()
     session.add(run)
     session.add(plan_row)
@@ -759,8 +763,7 @@ def test_reap_stale_preserves_started_run_plan_with_recent_activity(
     assert reaped == 0
     run_out = RunRepository(session).get(started.run_id)
     assert run_out.status == RunStatus.RUNNING
-    assert run_out.heartbeat_at is not None
-    assert run_out.heartbeat_at > _now() - timedelta(minutes=1)
+    assert run_out.heartbeat_at == stale_at
 
 
 def test_reap_stale_preserves_started_run_plan_with_blocked_step(
@@ -802,14 +805,76 @@ def test_reap_stale_preserves_started_run_plan_with_blocked_step(
     assert run is not None
     assert run.status == RunStatus.RUNNING
     assert run.error is None
-    assert run.heartbeat_at is not None
-    assert run.heartbeat_at > stale_at
+    assert run.heartbeat_at == stale_at
+    assert RunRepository(session).reap_stale(stale_after_seconds=300) == 0
+    session.refresh(run)
+    assert run.heartbeat_at == stale_at
     recovered_plan = repo.get(plan.id)
     assert recovered_plan.status == "started"
     assert recovered_plan.steps[0].status == RunPlanStepStatus.BLOCKED
     tracker_snapshot = TrackerRepository(session).get(project_id=project_id, run_plan_id=plan.id)
     assert tracker_snapshot.tasks[0].status == "in-progress"
     assert tracker_snapshot.tickets[0].status == "in-progress"
+
+
+@pytest.mark.parametrize("operation", ["claim", "record", "recover"])
+def test_workflow_activity_refreshes_heartbeat_after_stale_sweep(
+    session: Session, project_id: int, operation: str
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": f"heartbeat.{operation}.after-sweep",
+            "title": "Workflow activity after maintenance",
+            "steps": [{"id": "work", "title": "Work"}],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    if operation != "claim":
+        repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="work")
+    if operation == "recover":
+        repo.record_step(
+            run_plan_id=plan.id,
+            run_id=started.run_id,
+            step_id="work",
+            status=RunPlanStepStatus.BLOCKED,
+            result_json={"blocking_issue": "operator input needed"},
+            error="operator input needed",
+        )
+
+    run = session.get(Run, started.run_id)
+    assert run is not None
+    stale_at = _now() - timedelta(minutes=10)
+    run.heartbeat_at = stale_at
+    session.add(run)
+    session.commit()
+    assert RunRepository(session).reap_stale(stale_after_seconds=300) == 0
+    session.refresh(run)
+    assert run.heartbeat_at == stale_at
+
+    if operation == "claim":
+        repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="work")
+    elif operation == "record":
+        repo.record_step(
+            run_plan_id=plan.id,
+            run_id=started.run_id,
+            step_id="work",
+            status=RunPlanStepStatus.SUCCESS,
+            result_json={"summary": "completed"},
+        )
+    else:
+        repo.recover(
+            run_plan_id=plan.id,
+            project_id=project_id,
+            step_id="work",
+            step_status=RunPlanStepStatus.PENDING,
+            reason="operator input supplied",
+        )
+    session.refresh(run)
+    assert run.heartbeat_at is not None
+    assert run.heartbeat_at > stale_at
 
 
 def test_reap_stale_parent_reconciles_child_run_plan(
