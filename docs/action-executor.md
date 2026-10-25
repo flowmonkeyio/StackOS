@@ -191,7 +191,17 @@ It persists attempts, progress and receipts. Unattempted items survive restart;
 an expired dispatched attempt is held as an unknown outcome until a provider
 receipt reconciles it. It is never automatically resent.
 
-Workflow-linked durable jobs recheck their complete project/run/plan/step linkage
+All durable jobs refresh their persisted controls before claim eligibility. After
+credential preparation, immediately before connector entry with no intervening
+await, the dispatcher rechecks current job state, the cancellation marker, the
+job deadline at that boundary, and the exact active leased item/attempt. A mixed
+job can still be running after cancellation, so the cancellation marker also
+blocks entry. Lost or superseded attempts preserve their authoritative receipts.
+The item's lease deadline must be present and later than the final entry clock;
+a missing or expired lease refuses entry. This check applies only before entry:
+an already-entered provider's late receipt can still settle after lease expiry.
+
+Workflow-linked durable jobs also recheck their complete project/run/plan/step linkage
 and current lifecycle before claiming an item and immediately before connector
 entry, after credential preparation. The original run must be running, its plan
 started and its step running. A blocked, aborted or inconsistent controller
@@ -199,15 +209,18 @@ pauses future work with a reason; refusal before claiming creates no attempt or
 rate lease. Refusal after claiming but before connector entry records a failed
 item with proof of no provider effect and pauses remaining items. Recovery uses
 the existing explicit resume/retry controls, which do not bypass the next
-lifecycle check. Direct jobs retain their existing behavior.
+lifecycle check. Direct jobs use the same job-control and attempt checks while
+retaining their existing permission gates.
 
 This is an admission check, not continuous cancellation or proof that the
 original owner and grants are unchanged. It does not recall an entered provider
 effect or replace its receipt with an inferred outcome. Unknown effects still
-require reconciliation before retry.
+require reconciliation before retry. The final local read is not an atomic
+cross-process fence: a concurrent control can still arrive after that read.
 
 Inspect a sealed job with `actionCall.items`; `actionCall.pause` and
-`actionCall.resume` control future claims, while `actionCall.cancel` cancels
+`actionCall.resume` control future claims; observed pause, cancellation and expiry
+also stop claimed work that has not entered its connector. `actionCall.cancel` cancels
 remaining pending or safely deferred items. An in-flight provider effect cannot be recalled by those
 controls. Item results preserve partial success, final provider IDs, deferral
 times and retry guidance. `due_at`, optional `expires_at`, and pacing are sealed

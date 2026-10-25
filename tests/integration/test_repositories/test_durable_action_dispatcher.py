@@ -29,6 +29,7 @@ from stackos.db.models import (
     ActionDeliveryAdmission,
     Credential,
     DurableActionAttempt,
+    DurableActionItem,
     DurableActionJob,
     IntegrationCredential,
     Plugin,
@@ -237,6 +238,7 @@ def _job(
     now: datetime,
     *,
     destinations: tuple[str, ...] = ("destination:1",),
+    expires_at: datetime | None = None,
     pacing_json: dict[str, float] | None = None,
     item_input: dict[str, object] | None = None,
     pacing_units_input_field: str | None = None,
@@ -256,6 +258,7 @@ def _job(
                 for destination in destinations
             ],
             due_at=now,
+            expires_at=expires_at,
             pacing_json=pacing_json,
             pacing_units_input_field=pacing_units_input_field,
             destination_interval_multipliers=destination_interval_multipliers,
@@ -479,6 +482,188 @@ def test_workflow_rechecked_after_awaited_credentials_before_provider(
     engine.dispose()
 
 
+@pytest.mark.parametrize("workflow", [False, True], ids=["direct", "workflow"])
+@pytest.mark.parametrize("control", ["pause", "cancel", "expiry", "lease-missing", "lease-expired"])
+def test_job_control_during_preparation_refuses_connector_entry(
+    tmp_path: Path,
+    fake_credential_resolution: None,
+    monkeypatch: pytest.MonkeyPatch,
+    workflow: bool,
+    control: str,
+) -> None:
+    engine, project_id, credential_ref, call_id = _seed_database(tmp_path)
+    if workflow:
+        _workflow_scope(engine, project_id, call_id)
+    now = datetime(2099, 9, 22, 18)
+    deadline = now + timedelta(seconds=30)
+    job_id = _job(
+        engine,
+        project_id,
+        credential_ref,
+        call_id,
+        now,
+        destinations=("one", "two"),
+        expires_at=deadline if control == "expiry" else None,
+    )
+    connector = _DispatchConnector()
+    resolve = ActionRepository._resolve_credential
+    current = now
+    monkeypatch.setattr(durable_dispatcher_module, "_as_naive_utc", lambda value: value or current)
+
+    async def scenario() -> None:
+        nonlocal current
+        waiting, release = asyncio.Event(), asyncio.Event()
+
+        async def delayed(repo: ActionRepository, **kwargs):
+            cached = repo._s.get(DurableActionJob, job_id)
+            credential = await resolve(repo, **kwargs)
+            waiting.set()
+            await release.wait()
+            assert cached is not None
+            return credential
+
+        monkeypatch.setattr(ActionRepository, "_resolve_credential", delayed)
+        dispatcher = _dispatcher(engine, connector)
+        task = asyncio.create_task(dispatcher.run_once())
+        await asyncio.wait_for(waiting.wait(), timeout=5)
+        replacement_admissions = None
+        if control == "expiry":
+            current = deadline  # No expiry sweep: entry must evaluate the fresh clock.
+        elif control in {"lease-missing", "lease-expired"}:
+            with Session(engine) as session:
+                leased = session.exec(
+                    select(DurableActionItem).where(DurableActionItem.ordinal == 0)
+                ).one()
+                assert leased.lease_expires_at == now + timedelta(seconds=90)
+                if control == "lease-missing":
+                    leased.lease_expires_at = None
+                    session.add(leased)
+                    session.commit()
+                else:
+                    current = leased.lease_expires_at  # Equality is already expired.
+                    replacement = ActionRepository(session).admit_delivery(
+                        project_id=project_id,
+                        credential_ref=credential_ref,
+                        destination_ref=leased.destination_ref,
+                        now=current,
+                        lease_seconds=90,
+                    )
+                    assert replacement.admitted and replacement.lease_ref != leased.lease_ref
+                    replacement_admissions = [
+                        row.model_dump() for row in session.exec(select(ActionDeliveryAdmission))
+                    ]
+        else:
+            with Session(engine) as session:
+                repo = ActionRepository(session)
+                operation = getattr(repo, f"{control}_durable_action_job")
+                controlled = operation(project_id=project_id, job_id=job_id, now=current)
+                if control == "cancel":
+                    assert controlled.state == "running"
+                    cancelled_job = session.get(DurableActionJob, job_id)
+                    assert cancelled_job is not None and cancelled_job.cancelled_at == current
+        release.set()
+        assert await asyncio.wait_for(task, timeout=5) == 1
+        assert connector.requests == []
+        with Session(engine) as session:
+            repo = ActionRepository(session)
+            refused = repo.list_durable_action_items(project_id=project_id, job_id=job_id)[0]
+            assert refused.state == "failed"
+            assert refused.result_json == {"provider_executed": False, "retry_safe": True}
+            assert refused.lease_ref is None
+            attempt = session.exec(select(DurableActionAttempt)).one()
+            assert attempt.state == "failed" and attempt.receipt_json == refused.result_json
+            if replacement_admissions is not None:
+                assert [
+                    row.model_dump() for row in session.exec(select(ActionDeliveryAdmission))
+                ] == replacement_admissions
+        assert await dispatcher.run_once() == 0
+        assert connector.requests == []
+
+    asyncio.run(scenario())
+    engine.dispose()
+
+
+@pytest.mark.parametrize("workflow", [False, True], ids=["direct", "workflow"])
+@pytest.mark.parametrize("transition", ["complete", "unknown", "supersede"])
+def test_attempt_lost_during_preparation_preserves_authoritative_receipt(
+    tmp_path: Path,
+    fake_credential_resolution: None,
+    monkeypatch: pytest.MonkeyPatch,
+    workflow: bool,
+    transition: str,
+) -> None:
+    engine, project_id, credential_ref, call_id = _seed_database(tmp_path)
+    if workflow:
+        _workflow_scope(engine, project_id, call_id)
+    now = datetime(2026, 9, 22, 18)
+    job_id = _job(engine, project_id, credential_ref, call_id, now)
+    connector = _DispatchConnector()
+    resolve = ActionRepository._resolve_credential
+
+    async def scenario() -> None:
+        waiting, release = asyncio.Event(), asyncio.Event()
+
+        async def delayed(repo: ActionRepository, **kwargs):
+            # Retain stale job/item/attempt objects across the other session's settlement.
+            cached = [
+                repo._s.get(DurableActionJob, job_id),
+                repo._s.exec(select(DurableActionItem)).one(),
+                repo._s.exec(select(DurableActionAttempt)).one(),
+            ]
+            credential = await resolve(repo, **kwargs)
+            waiting.set()
+            await release.wait()
+            assert all(cached)
+            return credential
+
+        monkeypatch.setattr(ActionRepository, "_resolve_credential", delayed)
+        task = asyncio.create_task(_dispatcher(engine, connector).run_once(now=now))
+        await asyncio.wait_for(waiting.wait(), timeout=5)
+        with Session(engine) as session:
+            repo = ActionRepository(session)
+            item = repo.list_durable_action_items(project_id=project_id, job_id=job_id)[0]
+            assert item.attempt_ref is not None
+            args = dict(
+                project_id=project_id, item_id=item.id, attempt_ref=item.attempt_ref, now=now
+            )
+            if transition == "complete":
+                repo.complete_durable_action_item(**args, result_json={"receipt": "authoritative"})
+            elif transition == "unknown":
+                repo.hold_durable_action_item_unknown(**args, reason="authoritative uncertainty")
+            else:
+                repo.fail_durable_action_item(
+                    **args,
+                    error="no effect",
+                    result_json={"provider_executed": False, "retry_safe": True},
+                )
+                later = now + timedelta(seconds=2)
+                repo.retry_durable_action_items(
+                    project_id=project_id, job_id=job_id, item_ids=[item.id], now=later
+                )
+                replacement = repo.claim_durable_action_items(
+                    project_id=project_id, job_id=job_id, now=later
+                )[0]
+                assert replacement.attempt_ref != item.attempt_ref
+                assert replacement.state == "leased"
+            expected_items = [row.model_dump() for row in session.exec(select(DurableActionItem))]
+            expected_attempts = [
+                row.model_dump() for row in session.exec(select(DurableActionAttempt))
+            ]
+        release.set()
+        assert await asyncio.wait_for(task, timeout=5) == 1
+        assert connector.requests == []
+        with Session(engine) as session:
+            assert [
+                row.model_dump() for row in session.exec(select(DurableActionItem))
+            ] == expected_items
+            assert [
+                row.model_dump() for row in session.exec(select(DurableActionAttempt))
+            ] == expected_attempts
+
+    asyncio.run(scenario())
+    engine.dispose()
+
+
 def test_workflow_explicit_recovery_rechecks_same_binding(
     tmp_path: Path, fake_credential_resolution: None
 ) -> None:
@@ -538,16 +723,44 @@ def test_workflow_denial_does_not_prevent_unrelated_direct_dispatch(
     engine.dispose()
 
 
-@pytest.mark.parametrize("outcome", ["success", "unknown", "cancelled"])
-def test_workflow_stop_after_provider_entry_preserves_receipt(
-    tmp_path: Path, fake_credential_resolution: None, outcome: str
+@pytest.mark.parametrize(
+    ("workflow", "control"),
+    [
+        (True, "workflow"),
+        (False, "pause"),
+        (True, "pause"),
+        (False, "cancel"),
+        (True, "cancel"),
+        (False, "lease-expiry"),
+        (True, "lease-expiry"),
+    ],
+)
+@pytest.mark.parametrize("outcome", ["success", "flood_final", "unknown", "cancelled"])
+def test_stop_after_provider_entry_preserves_receipt(
+    tmp_path: Path,
+    fake_credential_resolution: None,
+    monkeypatch: pytest.MonkeyPatch,
+    outcome: str,
+    workflow: bool,
+    control: str,
 ) -> None:
     engine, project_id, credential_ref, call_id = _seed_database(tmp_path)
-    _, plan_id, _ = _workflow_scope(engine, project_id, call_id)
+    if workflow:
+        _, plan_id, _ = _workflow_scope(engine, project_id, call_id)
     now = datetime(2026, 9, 22, 18)
-    job_id = _job(engine, project_id, credential_ref, call_id, now)
+    job_id = _job(
+        engine,
+        project_id,
+        credential_ref,
+        call_id,
+        now,
+        destinations=("one",) if control == "lease-expiry" else ("one", "two"),
+    )
+    current = now
+    monkeypatch.setattr(durable_dispatcher_module, "_as_naive_utc", lambda value: value or current)
 
     async def scenario() -> None:
+        nonlocal current
         entered, release = asyncio.Event(), asyncio.Event()
 
         class EnteredConnector(_DispatchConnector):
@@ -558,9 +771,19 @@ def test_workflow_stop_after_provider_entry_preserves_receipt(
 
         connector = EnteredConnector(mode=outcome)
         dispatcher = _dispatcher(engine, connector)
-        task = asyncio.create_task(dispatcher.run_once(now=now))
+        task = asyncio.create_task(dispatcher.run_once())
         await asyncio.wait_for(entered.wait(), timeout=5)
-        _stop_workflow(engine, project_id, plan_id)
+        if control == "workflow":
+            _stop_workflow(engine, project_id, plan_id)
+        elif control == "lease-expiry":
+            current = now + timedelta(seconds=91)
+            with Session(engine) as session:
+                leased = session.exec(select(DurableActionItem)).one()
+                assert leased.lease_expires_at is not None and leased.lease_expires_at < current
+        else:
+            with Session(engine) as session:
+                operation = getattr(ActionRepository(session), f"{control}_durable_action_job")
+                operation(project_id=project_id, job_id=job_id, now=now)
         if outcome == "cancelled":
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
@@ -575,10 +798,17 @@ def test_workflow_stop_after_provider_entry_preserves_receipt(
         item = ActionRepository(session).list_durable_action_items(
             project_id=project_id, job_id=job_id
         )[0]
-        assert item.state == ("succeeded" if outcome == "success" else "unknown-hold")
+        expected_state = {"success": "succeeded", "flood_final": "failed"}.get(
+            outcome, "unknown-hold"
+        )
+        assert item.state == expected_state
         assert not item.can_retry
         if outcome == "success":
             assert item.result_json == {"message_ref": "provider-message:1"}
+        elif outcome == "flood_final":
+            assert item.result_json is not None
+            assert item.result_json["provider_executed"] is True
+            assert item.result_json["retry_safe"] is False
         else:
             assert item.result_json is not None and item.result_json["outcome_unknown"] is True
     engine.dispose()
@@ -732,13 +962,19 @@ def test_dispatcher_bases_flood_deferral_on_the_provider_transition_time(
     job_id = _job(engine, project_id, credential_ref, action_call_id, due)
     scan_at = due + timedelta(seconds=1)
     transition_at = due + timedelta(seconds=45)
-    clock = iter([scan_at, scan_at, transition_at])
+    current = scan_at
 
     def clock_now(value: datetime | None) -> datetime:
-        return value if value is not None else next(clock)
+        return value if value is not None else current
+
+    class TimedFloodConnector(_DispatchConnector):
+        async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
+            nonlocal current
+            current = transition_at
+            return await super().execute(request)
 
     monkeypatch.setattr(durable_dispatcher_module, "_as_naive_utc", clock_now)
-    assert asyncio.run(_dispatcher(engine, _DispatchConnector(mode="flood")).run_once()) == 1
+    assert asyncio.run(_dispatcher(engine, TimedFloodConnector(mode="flood")).run_once()) == 1
 
     with Session(engine) as session:
         repo = ActionRepository(session)

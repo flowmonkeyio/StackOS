@@ -283,10 +283,16 @@ class DurableActionDispatcher:
                     correlation_ref=item.correlation_ref,
                     delivery_item_id=item.id,
                 )
-                # Credential preparation can yield while the controller is blocked/aborted.
+                # Preparation can yield while controls or the exact claim change.
                 # Keep this fresh check after all preparation, with no await before execute.
                 try:
-                    repo.validate_durable_action_workflow(project_id=project_id, job_id=job_id)
+                    repo.validate_durable_action_entry(
+                        project_id=project_id,
+                        job_id=job_id,
+                        item_id=item.id,
+                        attempt_ref=attempt_ref,
+                        now=_transition_now(now),
+                    )
                 except (ConflictError, NotFoundError) as exc:
                     pause_remaining_reason = str(exc)
                     raise

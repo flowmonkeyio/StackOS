@@ -500,6 +500,55 @@ class DurableActionMixin:
             require_active_workflow=True,
         )
 
+    def validate_durable_action_entry(
+        self,
+        *,
+        project_id: int,
+        job_id: int,
+        item_id: int,
+        attempt_ref: str,
+        now: datetime,
+    ) -> None:
+        """Check current controls and the exact claim after awaited preparation.
+
+        This is a local admission read, not an atomic fence or evidence about
+        an already-entered provider. Settlement still requires the same attempt.
+        """
+
+        current = _as_naive_utc(now)
+        self._s.expire_all()
+        job, item, attempt = self._active_attempt(
+            project_id=project_id, item_id=item_id, attempt_ref=attempt_ref
+        )
+        if job.id != job_id or attempt.ordinal != item.attempt_count or item.lease_ref is None:
+            raise ConflictError(
+                "durable action claim is no longer current",
+                data={"job_id": job_id, "item_id": item_id, "attempt_ref": attempt_ref},
+            )
+        if item.lease_expires_at is None or item.lease_expires_at <= current:
+            raise ConflictError(
+                "durable action lease missing or expired before connector entry",
+                data={"job_id": job_id, "item_id": item_id, "attempt_ref": attempt_ref},
+            )
+        if (
+            job.state
+            not in {
+                DurableActionJobStatus.RUNNING,
+                DurableActionJobStatus.SCHEDULED,
+            }
+            or job.cancelled_at is not None
+        ):
+            raise ConflictError(
+                "durable action job stopped before connector entry",
+                data={"job_id": job_id, "state": job.state.value},
+            )
+        if job.expires_at is not None and job.expires_at <= current:
+            raise ConflictError(
+                "durable action deadline passed before connector entry",
+                data={"job_id": job_id, "expires_at": job.expires_at.isoformat()},
+            )
+        self.validate_durable_action_workflow(project_id=project_id, job_id=job_id)
+
     def claim_durable_action_items(
         self,
         *,
@@ -520,12 +569,17 @@ class DurableActionMixin:
             raise ValidationError("durable action item lease_seconds must be positive")
         now = _as_naive_utc(now or utcnow())
         job = self._job(project_id=project_id, job_id=job_id)
+        self._s.refresh(job)
         if self._expire_durable_action_job(job, now=now):
             self._s.commit()
-        if job.state in {
-            DurableActionJobStatus.CANCELLED,
-            DurableActionJobStatus.UNKNOWN_HOLD,
-        }:
+        if (
+            job.state
+            in {
+                DurableActionJobStatus.CANCELLED,
+                DurableActionJobStatus.UNKNOWN_HOLD,
+            }
+            or job.cancelled_at is not None
+        ):
             return []
         if (
             job.state
