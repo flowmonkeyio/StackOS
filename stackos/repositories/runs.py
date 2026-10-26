@@ -1054,7 +1054,7 @@ class RunRepository:
         and transitions process-bound stale rows to ``aborted`` with
         ``error='daemon-restart-orphan'``. Live run plans are durable workflow
         state, not daemon jobs; if the stale row is linked to a started run
-        plan, the audit heartbeat is refreshed and the plan remains resumable.
+        plan, its last audit heartbeat is preserved and the plan remains resumable.
         Returns the number of rows reaped. Cascade abort is applied to each
         reaped run so live-orphan child chains are cleaned in the same sweep.
         """
@@ -1075,8 +1075,6 @@ class RunRepository:
         reaped = 0
         for row in rows:
             if reconciler.should_preserve_live_run_plan(row):
-                row.heartbeat_at = _utcnow()
-                self._s.add(row)
                 continue
             row.status = RunStatus.ABORTED
             row.error = STALE_RUN_ERROR

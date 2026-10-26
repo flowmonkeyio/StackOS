@@ -5,8 +5,8 @@ at daemon startup) we sweep ``runs`` for rows whose ``status='running'``
 and ``heartbeat_at`` is older than 5 minutes. Process-bound stale rows
 flip to ``aborted`` with ``error='daemon-restart-orphan'`` and any live
 child runs cascade-abort. Live started run plans are durable workflow
-state, so the sweep preserves them and refreshes the linked audit
-heartbeat instead of aborting normal long-running agent work.
+state, so the sweep preserves them and their last audit heartbeat.
+Maintenance does not establish fresh workflow activity or worker liveness.
 
 The ``RunRepository.reap_stale`` method is the canonical implementation
 (M1.B); this module is the *job wrapper* that APScheduler invokes.

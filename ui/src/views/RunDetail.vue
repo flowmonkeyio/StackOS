@@ -132,15 +132,19 @@ const summary = computed<DLItem[]>(() => {
   if (!r) return []
   const duration =
     !r.ended_at && r.status === 'running'
-      ? 'Running…'
+      ? 'Not ended in audit record'
       : formatDurationBetween(r.started_at, r.ended_at)
   return [
     { label: 'Run id', value: `#${r.id}`, mono: true },
     { label: 'Kind', value: r.kind },
-    { label: 'Status', value: resolveStatus('run', r.status).label },
+    { label: 'Recorded status', value: resolveStatus('run', r.status).label },
     { label: 'Started', value: formatAbsoluteDateTime(r.started_at) },
     { label: 'Ended', value: r.ended_at ? formatAbsoluteDateTime(r.ended_at) : null },
     { label: 'Duration', value: duration },
+    {
+      label: 'Last audit heartbeat',
+      value: r.heartbeat_at ? formatAbsoluteDateTime(r.heartbeat_at) : 'Not recorded',
+    },
     {
       label: 'Parent run',
       value: r.parent_run_id !== null ? `#${r.parent_run_id}` : null,
@@ -275,6 +279,10 @@ onMounted(load)
         :items="summary"
         aria-label="Run summary"
       />
+      <p class="mt-3 text-sm text-fg-muted">
+        Status and heartbeat record audit activity. They do not verify worker progress,
+        success, termination, or settled effects.
+      </p>
     </UiCard>
 
     <section
