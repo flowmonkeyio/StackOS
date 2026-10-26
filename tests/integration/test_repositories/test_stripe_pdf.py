@@ -24,6 +24,8 @@ from tests.integration.test_repositories.test_stripe_actions import (
     _stripe_credential_ref,
 )
 
+pytestmark = pytest.mark.usefixtures("integration_clock")
+
 PDF_URL = "https://pay.stripe.com/invoice/acct_fixture/opaque-fixture/pdf?s=private-link"
 PDF_REDIRECT_HOST = "stripe-upload-api.s3.us-west-1.amazonaws.com"
 PDF_REDIRECT_URL = f"https://{PDF_REDIRECT_HOST}/private-invoice.pdf?signature=private-token"

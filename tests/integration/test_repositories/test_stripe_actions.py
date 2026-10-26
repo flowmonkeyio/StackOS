@@ -6,7 +6,6 @@ import asyncio
 import hashlib
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock
 from urllib.parse import parse_qs
 
 import httpx
@@ -45,6 +44,8 @@ from tests.helpers.stripe import (
     stripe_refund,
 )
 from tests.integration.account_test_support import store_test_account_with_identity
+
+pytestmark = pytest.mark.usefixtures("integration_clock")
 
 STRIPE_ROOT = "https://api.stripe.com/v1"
 STRIPE_SECRET = "sk_test_stripe_connector_sentinel"
@@ -1854,10 +1855,8 @@ def test_stripe_invoice_list_keeps_safe_provider_errors(
     project_id: int,
     httpx_mock: HTTPXMock,
     status_code: int,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     credential_ref = _stripe_credential_ref(session, project_id)
-    monkeypatch.setattr("stackos_connectors.shared.base.asyncio.sleep", AsyncMock())
     httpx_mock.add_response(
         method="GET",
         url=f"{STRIPE_ROOT}/invoices?limit=25",
@@ -2222,15 +2221,11 @@ def test_stripe_account_probe_preserves_safe_failure_diagnostics_and_audit(
     session: Session,
     project_id: int,
     httpx_mock: HTTPXMock,
-    monkeypatch: pytest.MonkeyPatch,
     status_code: int | None,
     claimable: bool,
     reason_code: str,
     retryable: bool,
 ) -> None:
-    # Exercise the real retry loop without sleeping or sharing rate-bucket time.
-    monkeypatch.setattr("stackos_connectors.shared.base.asyncio.sleep", AsyncMock())
-    monkeypatch.setattr("stackos_connectors.shared.base.TokenBucket.acquire", AsyncMock())
     PluginRepository(session).get_plugin("finance")
     repo = AuthRepository(session)
     credential_ref = repo.store_credential(

@@ -20,6 +20,8 @@ from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.provider_refs import ProviderObjectReferenceRepository
 from tests.integration.account_test_support import seed_test_account
 
+pytestmark = pytest.mark.usefixtures("integration_clock")
+
 READ_ACTIONS = {
     "viewer.get",
     "teams.list",

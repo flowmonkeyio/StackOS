@@ -13,14 +13,13 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from sqlmodel import Session
 
 from stackos.crypto.aes_gcm import configure_seed_path
 from stackos.crypto.seed import ensure_seed_file
-from stackos.integrations._rate_limit import reset_buckets
+from tests.helpers.integration_clock import IntegrationClock
 from tests.helpers.sqlite_schema import make_test_memory_engine
 
 
@@ -32,51 +31,6 @@ def _crypto_seed(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
     ensure_seed_file(seed_path)
     configure_seed_path(seed_path)
     yield seed_path
-
-
-@pytest.fixture(autouse=True)
-def _reset_rate_limit_buckets() -> Iterator[None]:
-    """Drop every token bucket before each test (state is process-level)."""
-    reset_buckets()
-    yield
-    reset_buckets()
-
-
-class IntegrationClock:
-    """Advance connector time when it waits, while still yielding to asyncio."""
-
-    def __init__(self, real_sleep):
-        self.now = 0.0
-        self.sleeps: list[float] = []
-        self._real_sleep = real_sleep
-
-    def monotonic(self) -> float:
-        return self.now
-
-    async def sleep(self, seconds: float) -> None:
-        self.sleeps.append(seconds)
-        self.now += max(seconds, 0.0)
-        await self._real_sleep(0)
-
-
-@pytest.fixture
-def integration_clock(monkeypatch: pytest.MonkeyPatch) -> IntegrationClock:
-    """Keep retry, polling and token refill on the same deterministic clock.
-
-    A no-op sleep with a real refill clock busy-spins for each QPS wait. Patch
-    only the rate-limit modules' clock references, never asyncio's loop clock.
-    """
-    import asyncio as asyncio_module
-
-    from stackos_connectors.shared import rate_limit as connector_rate_limit
-
-    from stackos.integrations import _rate_limit as host_rate_limit
-
-    clock = IntegrationClock(asyncio_module.sleep)
-    for module in (connector_rate_limit, host_rate_limit):
-        monkeypatch.setattr(module, "time", SimpleNamespace(monotonic=clock.monotonic))
-    monkeypatch.setattr(asyncio_module, "sleep", clock.sleep)
-    return clock
 
 
 @pytest.fixture(autouse=True)

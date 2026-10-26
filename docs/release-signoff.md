@@ -133,6 +133,14 @@ database adapter. Source changes, malformed references, secret fields, current
 database rows and caller isolation remain covered. Profile timings include
 instrumentation overhead and are not runtime claims.
 
+The wait audit also found two auth-history error cases spending seven seconds
+in real retry delays, and Linear/Stripe consumer cases sharing rate buckets
+across otherwise independent databases. Those modules explicitly reuse the
+deterministic connector clock, with bucket reset and clock restoration on both
+boundaries. Real limiter/retry code still runs, including Stripe's previously
+mocked acquire path. Positive sub-float-resolution waits advance time to avoid
+a refill spin. Application lifecycle and concurrency tests keep their clocks.
+
 | Python suite | Cases | Serial time, including fixtures |
 | --- | ---: | ---: |
 | Repositories | 1,724 | 710.809s |

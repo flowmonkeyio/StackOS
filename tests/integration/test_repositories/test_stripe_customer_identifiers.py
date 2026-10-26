@@ -21,6 +21,8 @@ from tests.integration.test_repositories.test_stripe_actions import (
     _stripe_credential_ref,
 )
 
+pytestmark = pytest.mark.usefixtures("integration_clock")
+
 
 def _digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
