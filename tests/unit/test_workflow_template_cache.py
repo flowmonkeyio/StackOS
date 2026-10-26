@@ -140,6 +140,45 @@ def test_cached_plugin_does_not_shadow_new_or_changed_repo_override(loader, tmp_
     )
 
 
+def test_point_lookup_preserves_shadowed_sources_and_list_result_isolation(loader, tmp_path):
+    _write(tmp_path / "plugins/sample/workflows/review.yaml")
+    _write(tmp_path / ".stackos/workflows/review.yaml", TEMPLATE.replace("First", "Repo"))
+    _write(
+        tmp_path / "plugins/sample/workflows/other.yaml",
+        TEMPLATE.replace("sample.review", "sample.other"),
+    )
+    listed = loader.list_templates(repo_root=str(tmp_path), include_shadowed=True)
+    review_sources = [item for item in listed.templates if item.key == "sample.review"]
+    assert {(item.source, item.shadowed_by) for item in review_sources} == {
+        ("repo", None),
+        ("plugin", "repo"),
+    }
+    for summary in review_sources:
+        described = loader.describe_template(
+            key="sample.review", source=summary.source, repo_root=str(tmp_path)
+        )
+        assert described.summary == summary
+        described.spec.steps[0].instructions.append("Caller mutation")
+        summary.name = "Caller summary"
+
+    assert loader.describe_template(key="sample.review").summary.shadowed_by is None
+    assert loader.describe_template(key="sample.other").summary.name == "First"
+    assert loader.describe_template(key="sample.review").spec.steps[0].instructions == [
+        "Read the evidence."
+    ]
+    assert {
+        (item.key, item.name) for item in loader.list_templates(repo_root=str(tmp_path)).templates
+    } == {("sample.review", "Repo"), ("sample.other", "First")}
+
+
+def test_point_lookup_still_rejects_an_invalid_unrelated_source(loader, tmp_path):
+    _write(tmp_path / "plugins/sample/workflows/review.yaml")
+    _write(tmp_path / "plugins/sample/workflows/other.yaml", "key: [")
+
+    with pytest.raises(yaml.YAMLError):
+        loader.describe_template(key="sample.review")
+
+
 def test_cached_source_keeps_project_extensions_independent_and_current(
     loader, parsed_sources, tmp_path
 ):
