@@ -36,8 +36,13 @@ class IntegrationClock:
 
 
 @contextmanager
-def isolated_integration_clock(monkeypatch: pytest.MonkeyPatch) -> Iterator[IntegrationClock]:
-    """Keep retry and token refill on one clock without leaking bucket state."""
+def isolated_provider_clock(monkeypatch: pytest.MonkeyPatch) -> Iterator[IntegrationClock]:
+    """Virtualize provider pacing/retries without changing app or polling clocks.
+
+    Each module gets its own sleep reference; asyncio.sleep and the event loop
+    remain real. Use only with mocked transports and no real-time polling proof.
+    """
+    from stackos_connectors.shared import base as connector_base
     from stackos_connectors.shared import rate_limit as connector_rate_limit
 
     from stackos.integrations import _rate_limit as host_rate_limit
@@ -50,10 +55,19 @@ def isolated_integration_clock(monkeypatch: pytest.MonkeyPatch) -> Iterator[Inte
     with monkeypatch.context() as patch:
         for module in modules:
             patch.setattr(module, "time", SimpleNamespace(monotonic=clock.monotonic))
-        # Patch the wait, not the event loop's clock. Real scheduling still
-        # occurs through sleep(0); token refill sees the elapsed virtual wait.
-        patch.setattr(asyncio, "sleep", clock.sleep)
+        for module in (*modules, connector_base):
+            patch.setattr(module, "asyncio", SimpleNamespace(sleep=clock.sleep))
         try:
             yield clock
         finally:
             host_rate_limit.reset_buckets()
+
+
+@contextmanager
+def isolated_integration_clock(monkeypatch: pytest.MonkeyPatch) -> Iterator[IntegrationClock]:
+    """Keep all connector waits on one clock for explicitly opted-in pure tests."""
+    with isolated_provider_clock(monkeypatch) as clock, monkeypatch.context() as patch:
+        # Pure connector tests also cover provider-specific waits. App tests
+        # use isolated_provider_clock so their background scheduling stays real.
+        patch.setattr(asyncio, "sleep", clock.sleep)
+        yield clock
