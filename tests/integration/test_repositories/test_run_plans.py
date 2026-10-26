@@ -22,7 +22,7 @@ from stackos.db.models import (
 )
 from stackos.mcp.errors import ToolNotGrantedError
 from stackos.mcp.permissions import active_run_plan_step
-from stackos.repositories.base import ConflictError, ValidationError
+from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
 from stackos.repositories.tracker.events import (
@@ -2107,6 +2107,168 @@ def test_run_plan_late_writes_reject_secrets(session: Session, project_id: int) 
     assert "must not contain secrets" in str(meta_exc.value)
     assert "must not contain secrets" in str(decision_exc.value)
     assert "must not contain secrets" in str(result_exc.value)
+
+
+@pytest.mark.parametrize(
+    "decision",
+    [
+        {field: value}
+        for field in ("prior_tokens", "cumulative_planning_exposure_tokens")
+        for value in (0, 1, 9007199254740991)
+    ]
+    + [
+        {"prior_tokens": 21525, "cumulative_planning_exposure_tokens": 53525},
+        {"prior_tokens": 9007199254740991, "cumulative_planning_exposure_tokens": 0},
+    ],
+)
+def test_approval_accounting_preserves_exact_integers(
+    session: Session, project_id: int, decision: dict
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(project_id=project_id, run_plan_json=_run_plan_json()).data
+    decision = {**decision, "evidence_ref": "operator-decision:fixture"}
+
+    updated = repo.update(
+        run_plan_id=plan.id,
+        approval_key="launch-review",
+        approval_status=ApprovalRequestStatus.APPROVED,
+        decided_by="operator:fixture",
+        decision_json=decision,
+    ).data
+
+    assert updated.approval_requests[0].decision_json == decision
+    session.expire_all()
+    saved = repo.get(plan.id).approval_requests[0]
+    assert saved == updated.approval_requests[0]
+    assert saved.decision_json is not None
+    for key, value in decision.items():
+        assert type(saved.decision_json[key]) is type(value)
+
+
+@pytest.mark.parametrize("field", ["prior_tokens", "cumulative_planning_exposure_tokens"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        -1,
+        9007199254740992,
+        True,
+        False,
+        1.0,
+        float("nan"),
+        float("inf"),
+        float("-inf"),
+        "21525",
+        "Bearer fixture-credential-value",
+        None,
+        [],
+        {},
+        {"$secret_ref": "secret_" + "a" * 32},
+    ],
+)
+def test_approval_accounting_rejection_is_atomic(
+    session: Session, project_id: int, field: str, value: object
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(project_id=project_id, run_plan_json=_run_plan_json()).data
+    before = repo.get(plan.id).model_dump()
+
+    with pytest.raises(ValidationError) as exc_info:
+        repo.update(
+            run_plan_id=plan.id,
+            metadata_json={"must_not_commit": True},
+            approval_key="launch-review",
+            approval_status=ApprovalRequestStatus.APPROVED,
+            decided_by="operator:fixture",
+            decision_json={field: value},
+        )
+
+    assert exc_info.value.data == {"paths": [f"$.{field}"]}
+    assert "fixture-credential-value" not in str(exc_info.value)
+    session.commit()
+    session.expire_all()
+    assert repo.get(plan.id).model_dump() == before
+
+
+@pytest.mark.parametrize(
+    ("decision", "path"),
+    [
+        ({"access_token": 7}, "$.access_token"),
+        ({"api_key": "fixture-credential-value"}, "$.api_key"),
+        ({"prior-tokens": 7}, "$.prior-tokens"),
+        ({"PRIOR_TOKENS": 7}, "$.PRIOR_TOKENS"),
+        ({"prefix_prior_tokens": 7}, "$.prefix_prior_tokens"),
+        ({"prior_tokens_extra": 7}, "$.prior_tokens_extra"),
+        ({"nested": {"prior_tokens": 7}}, "$.nested.prior_tokens"),
+        (
+            {"nested": [{"cumulative_planning_exposure_tokens": 7}]},
+            "$.nested[0].cumulative_planning_exposure_tokens",
+        ),
+        ({"note": "Bearer fixture-credential-value"}, "$.note"),
+    ],
+)
+def test_approval_accounting_does_not_exempt_other_secret_paths(
+    session: Session, project_id: int, decision: dict, path: str
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(project_id=project_id, run_plan_json=_run_plan_json()).data
+    before = repo.get(plan.id).model_dump()
+
+    with pytest.raises(ValidationError) as exc_info:
+        repo.update(
+            run_plan_id=plan.id,
+            metadata_json={"must_not_commit": True},
+            approval_key="launch-review",
+            approval_status=ApprovalRequestStatus.APPROVED,
+            decided_by="operator:fixture",
+            decision_json={"prior_tokens": 21525, **decision},
+        )
+
+    assert path in exc_info.value.data["paths"]
+    assert "fixture-credential-value" not in str(exc_info.value)
+    session.commit()
+    session.expire_all()
+    assert repo.get(plan.id).model_dump() == before
+
+
+@pytest.mark.parametrize(
+    "failure", ["key_only", "status_only", "missing_approval", "transition", "metadata"]
+)
+def test_approval_update_validates_complete_patch_before_mutating(
+    session: Session, project_id: int, failure: str
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(project_id=project_id, run_plan_json=_run_plan_json()).data
+    if failure == "transition":
+        repo.update(
+            run_plan_id=plan.id,
+            approval_key="launch-review",
+            approval_status=ApprovalRequestStatus.REJECTED,
+            decided_by="original:fixture",
+            decision_json={"reason": "Original decision"},
+        )
+    before = repo.get(plan.id).model_dump()
+    patch = {
+        "metadata_json": {"must_not_commit": True},
+        "approval_key": "launch-review",
+        "approval_status": ApprovalRequestStatus.APPROVED,
+        "decided_by": "operator:fixture",
+        "decision_json": {"approved": True},
+    }
+    if failure == "key_only":
+        del patch["approval_status"]
+    elif failure == "status_only":
+        del patch["approval_key"]
+    elif failure == "missing_approval":
+        patch["approval_key"] = "missing"
+    elif failure == "metadata":
+        patch["metadata_json"] = {"prior_tokens": 21525}
+
+    with pytest.raises((ValidationError, NotFoundError, ConflictError)):
+        repo.update(run_plan_id=plan.id, **patch)
+
+    session.commit()
+    session.expire_all()
+    assert repo.get(plan.id).model_dump() == before
 
 
 def test_explicit_step_claim_enforces_dependencies(session: Session, project_id: int) -> None:

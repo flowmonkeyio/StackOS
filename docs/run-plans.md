@@ -50,6 +50,18 @@ Recording a decision does not invent authority or broaden what the operator
 approved. If a decision is missing or its scope is unclear, the gate stays
 unresolved.
 
+Approval `decision_json` may include the optional root fields `prior_tokens` and
+`cumulative_planning_exposure_tokens`. Each must be an integer from `0` through
+`9007199254740991` inclusive; booleans, floats, strings, null, containers, and
+secret-reference markers are rejected. Either field may be supplied alone, and
+no relationship between them is enforced. This bound preserves exact JSON/JavaScript
+integer representation; it does not authorize execution or define a token budget.
+Accepted numbers are preserved in raw update/get responses and new idempotent
+replays. Other keys, nested copies, spelling variants, and other run-plan payloads
+retain the existing secret checks. The complete update is validated before changing
+approval state or accompanying metadata, so rejected patches leave both unchanged.
+This write validation does not sanitize pre-existing rows or cached responses.
+
 This uses the existing approval writer and status transitions. A controller
 token scopes the mutation to its project before any write; direct daemon MCP
 calls without a token must supply `project_id`. No active step grant, new run,

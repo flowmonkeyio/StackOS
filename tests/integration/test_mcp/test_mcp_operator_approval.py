@@ -93,6 +93,82 @@ def test_existing_operator_approval_can_be_recorded_by_mcp_before_claim(
     assert _get(mcp_client, plan_id, project_id)["approval_requests"][0] == approval
 
 
+@pytest.mark.parametrize("controller", [True, False])
+def test_approval_accounting_survives_raw_read_and_idempotent_replay(
+    mcp_client: MCPClient, seeded_project: dict, controller: bool
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    plan_id, token = _approval_run(mcp_client, project_id)
+    decision = {
+        "prior_tokens": 21525,
+        "cumulative_planning_exposure_tokens": 53525,
+        "evidence_ref": "operator-decision:fixture",
+    }
+    scope = {"run_token": token} if controller else {"project_id": project_id}
+    arguments = {
+        **scope,
+        "project_id": project_id,
+        "run_plan_id": plan_id,
+        "approval_key": "owner-release",
+        "approval_status": "approved",
+        "decided_by": "operator:fixture",
+        "decision_json": decision,
+        "idempotency_key": "approval-accounting-fixture",
+        "response_mode": "raw",
+    }
+    recorded = mcp_client.call_tool_structured("runPlan.update", arguments)
+    approval = recorded["data"]["approval_requests"][0]
+    replay = mcp_client.call_tool_structured("runPlan.update", arguments)
+
+    assert approval["decision_json"] == decision
+    assert type(approval["decision_json"]["prior_tokens"]) is int
+    assert type(approval["decision_json"]["cumulative_planning_exposure_tokens"]) is int
+    assert replay["idempotency_replay"] is True
+    assert replay["data"] == recorded["data"]
+    assert _get(mcp_client, plan_id, project_id)["approval_requests"][0] == approval
+
+
+@pytest.mark.parametrize(
+    ("decision", "path"),
+    [
+        ({"prior_tokens": True}, "$.prior_tokens"),
+        (
+            {"cumulative_planning_exposure_tokens": {"$secret_ref": "secret_" + "a" * 32}},
+            "$.cumulative_planning_exposure_tokens",
+        ),
+        ({"note": "Bearer fixture-credential-value"}, "$.note"),
+    ],
+)
+def test_failed_idempotent_approval_accounting_update_preserves_full_state(
+    mcp_client: MCPClient, seeded_project: dict, decision: dict, path: str
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    plan_id, token = _approval_run(mcp_client, project_id)
+    before = _get(mcp_client, plan_id, project_id)
+    arguments = {
+        "run_token": token,
+        "project_id": project_id,
+        "run_plan_id": plan_id,
+        "approval_key": "owner-release",
+        "approval_status": "approved",
+        "decided_by": "operator:fixture",
+        "metadata_json": {"must_not_commit": True},
+        "decision_json": decision,
+        "idempotency_key": "rejected-accounting-fixture",
+        "response_mode": "raw",
+    }
+
+    denied = mcp_client.call_tool_error("runPlan.update", arguments)
+
+    assert denied["code"] == -32602
+    assert denied["data"]["paths"] == [path]
+    assert "fixture-credential-value" not in str(denied)
+    assert _get(mcp_client, plan_id, project_id) == before
+    arguments["decision_json"] = {"prior_tokens": 0}
+    corrected = mcp_client.call_tool_structured("runPlan.update", arguments)
+    assert corrected["data"]["approval_requests"][0]["decision_json"] == {"prior_tokens": 0}
+
+
 def test_controller_omitted_project_cannot_commit_foreign_approval_or_metadata(
     mcp_client: MCPClient, seeded_project: dict
 ) -> None:

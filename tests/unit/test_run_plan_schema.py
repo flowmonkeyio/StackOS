@@ -8,6 +8,7 @@ from stackos.plugins.manifest import BUILTIN_PLUGIN_MANIFESTS
 from stackos.workflows import run_plan_schema as run_plan_schema_module
 from stackos.workflows.run_plan_schema import (
     RunPlanSpec,
+    find_run_plan_secret_paths,
     run_plan_from_template,
     validate_run_plan_obj,
 )
@@ -79,6 +80,16 @@ def test_run_plan_schema_rejects_unknown_step_tool_grant() -> None:
 
     assert result.valid is False
     assert "unknown step" in result.errors[0].message
+
+
+@pytest.mark.parametrize("field", ["prior_tokens", "cumulative_planning_exposure_tokens"])
+def test_approval_accounting_names_remain_secrets_in_generic_run_plan_input(field: str) -> None:
+    assert find_run_plan_secret_paths({field: 21525}) == [f"$.{field}"]
+    data = _plan_dict()
+    data["steps"][0]["action_payloads"][field] = 21525
+    result = validate_run_plan_obj(data)
+    assert result.valid is False
+    assert field in result.errors[0].message
 
 
 @pytest.mark.parametrize("tool_name", ["account.start", "connection.attach", "connection.detach"])
