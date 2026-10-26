@@ -5,7 +5,7 @@ from __future__ import annotations
 import weakref
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session, col, select
@@ -327,17 +327,29 @@ class PluginRepository:
         self.sync_builtin_plugins()
         if project_id is not None:
             self._require_project(project_id)
-        stmt = (
-            select(Action, Plugin, Provider)
-            .join(Plugin, col(Action.plugin_id) == col(Plugin.id))
-            .outerjoin(Provider, col(Action.provider_id) == col(Provider.id))
-        )
+        stmt = select(Action).join(Plugin, col(Action.plugin_id) == col(Plugin.id))
         if plugin_slug is not None:
             stmt = stmt.where(col(Plugin.slug) == plugin_slug)
-        rows = cast(
-            list[tuple[Action, Plugin, Provider | None]],
-            list(self._s.exec(stmt.order_by(col(Action.key).asc())).all()),
-        )
+        actions = self._s.exec(stmt.order_by(col(Action.key).asc())).all()
+        # A joined catalog repeats the entire plugin manifest JSON for every
+        # action. Read each parent once while retaining current database state.
+        plugin_ids = {action.plugin_id for action in actions}
+        plugins = {
+            plugin.id: plugin
+            for plugin in self._s.exec(select(Plugin).where(col(Plugin.id).in_(plugin_ids))).all()
+        }
+        provider_ids = {action.provider_id for action in actions if action.provider_id is not None}
+        providers = {
+            provider.id: provider
+            for provider in self._s.exec(
+                select(Provider).where(col(Provider.id).in_(provider_ids))
+            ).all()
+        }
+        rows = [
+            (action, plugins[action.plugin_id], providers.get(action.provider_id))
+            for action in actions
+            if action.plugin_id in plugins
+        ]
         rows = self._filter_project_enabled(rows, project_id=project_id)
         rows = [
             row
