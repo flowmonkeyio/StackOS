@@ -39,6 +39,53 @@ transport, and MCP tests remain separate where they detect distinct failures,
 including grants, credential handling, response files, and audit persistence.
 Do not remove those assertions or skip slow tests to meet the runtime budget.
 
+## Test Runtime And Maintenance
+
+The complete automated signoff should stay comfortably below ten minutes on a
+prepared development machine. Dependency downloads on a new machine and live
+provider/manual release proofs are separate setup and release activities. The
+six-worker cap is a throughput setting, not a substitute for fixing slow tests.
+Use `uv run pytest <files> -n0 --durations=20` to measure focused changes without
+parallelism hiding their cost.
+
+The October 2026 audit identified these sources of repeated work:
+
+| Bottleneck or redundancy | Adjustment and retained proof |
+| --- | --- |
+| Mocked sleep returned immediately while token refill used real time, causing CPU spin | Advance a scoped test clock, yield to the event loop, and assert requested waits and token balances for both rate-limit implementations. |
+| Repository, connector, and job fixtures rebuilt identical schemas; two also duplicated the model's unique idempotency index | Copy immutable empty schema bytes into a fresh normal engine per test. Differential schema/PRAGMA, transaction, DDL, foreign-key, cascade, and uniqueness checks protect isolation. |
+| Six discovery tests repeated the same app startup and catalog request | Check names, namespaces, schemas, descriptions and streaming together. Keep legacy and modern wire protocols distinct, and compare exact names to the canonical registry instead of stale magic counts. |
+| Clean startup and empty-to-head migration assertions repeated identical setup | Combine assertions for each scenario; retain every recovery, failure, historical-data and downgrade/upgrade scenario. |
+| Every app rebuilt the same operation JSON schemas; workflow lookup reparsed unchanged YAML | Bounded caches preserve deep-copy isolation, rebuilt-model freshness, source edits, overrides, and current project extensions. |
+| Wheel tests provisioned another build environment from the network | Build the real wheel with the locked development backend and keep every packaged-asset assertion. |
+| The curated gate omitted stale plugin inventories and a retired SEO evidence fixture; four checks always skipped against the removed `skills/` tree | Keep one source-based transport inventory assertion, validate current durable artifact evidence with precise rejection paths, and check the actual packaged skill's frontmatter. Existing installer and permission tests retain runtime delivery and grants coverage. |
+
+Serial measurements on macOS / Python 3.13.11 (18 logical CPUs) distinguish
+actual work removed from worker concurrency:
+
+| Measured slice | Before | After |
+| --- | ---: | ---: |
+| Google Veo, BytePlus Seedance, Ahrefs and rate-limit tests | 32 tests, 21.50s | 35 tests, 0.21s; additional rate-limit cases |
+| 25 REST operation tests under the same profiler | 42.77s | 21.42s |
+| Five repeated workflow descriptions, including cold parsing | 2.592s | 0.897s |
+| Ten empty metadata-schema fixtures | 0.1090s | 0.00213s warm; 0.01049s one-time initialization |
+| Repeated discovery/startup/clean-schema scenarios | 11 setups, 3.69s, two stale-count failures | 3 setups, 1.48s, passing |
+
+Final validation on 2026-10-26, candidate `6e47e90`: `make signoff` completed
+successfully in **356.52 seconds (5m 57s)**. The complete Python suite passed
+**3,983 tests with zero skips** in 335.29 seconds; lint, mypy, UI unit tests and
+the UI production build also passed. This includes the previously omitted
+Python modules and the repaired stale checks. Timings are measurements on this
+machine, not a hardware-independent guarantee. No tests were excluded for speed.
+
+The audit found no identical substantive Python test bodies. Retain separate
+transport, repository, grant, audit and protocol checks when their failure
+modes differ. Consolidate repeated setup and identical scenarios, and repair
+stale expectations against their authoritative contract. Do not use fewer
+tests or a higher worker count as the quality or performance success metric.
+
+## Included Contract Coverage
+
 AIGNC generation also exercises shared background acceptance, polling,
 idempotent submission replay, timeout failure, and terminal file/artifact
 results. `test_run_plan_pending_actions.py` covers pending-action completion
