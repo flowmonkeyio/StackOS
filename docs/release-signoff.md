@@ -71,7 +71,7 @@ actual work removed from worker concurrency:
 | Ten empty metadata-schema fixtures | 0.1090s | 0.00213s warm; 0.01049s one-time initialization |
 | Repeated discovery/startup/clean-schema scenarios | 11 setups, 3.69s, two stale-count failures | 3 setups, 1.48s, passing |
 
-Final validation on 2026-10-26, candidate `6e47e90`: `make signoff` completed
+Initial parallel validation on 2026-10-26, candidate `6e47e90`: `make signoff` completed
 successfully in **356.52 seconds (5m 57s)**. The complete Python suite passed
 **3,983 tests with zero skips** in 335.29 seconds; lint, mypy, UI unit tests and
 the UI production build also passed. This includes the previously omitted
@@ -140,6 +140,16 @@ deterministic connector clock, with bucket reset and clock restoration on both
 boundaries. Real limiter/retry code still runs, including Stripe's previously
 mocked acquire path. Positive sub-float-resolution waits advance time to avoid
 a refill spin. Application lifecycle and concurrency tests keep their clocks.
+
+The [complete serial checkpoint](benchmarks/2026-10-26-serial-tests-checkpoint.json)
+at `96a961b` passed 4,009 Python tests in 532.433s and all 427 UI tests in
+45.53s. The full gate took 598.880s. Its 1.12s margin below ten minutes was too
+small, so the saved result drove a final cleanup rather than another baseline
+run: pure UI tests use Node instead of jsdom, unchanged agent/skill source
+bundles reuse validated parsing with independent returned objects, and selected
+media/timeout tests use the same deterministic provider clock. Browser/component
+tests retain jsdom, and source freshness, adaptation rules and secret rejection
+remain covered. The checkpoint saves every Python case and UI file timing.
 
 | Python suite | Cases | Serial time, including fixtures |
 | --- | ---: | ---: |
