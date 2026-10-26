@@ -655,14 +655,12 @@ class RunPlanRepository:
     ) -> Envelope[RunPlanOut]:
         row = self._fetch_plan(run_plan_id)
         self._require_plan_project(row, project_id)
-        changed = False
-        now = _utcnow()
+        # Validate the complete patch before dirtying ORM rows. A caller may commit
+        # this session after a rejection, including operation idempotency cleanup.
         if metadata_json is not None:
             _ensure_no_secrets(metadata_json, label="run plan metadata")
-            current = dict(row.metadata_json or {})
-            current.update(_jsonable(metadata_json))
-            row.metadata_json = current
-            changed = True
+            metadata_json = _jsonable(metadata_json)
+        approval = None
         if approval_key is not None or approval_status is not None:
             if approval_key is None or approval_status is None:
                 raise ValidationError("approval_key and approval_status must be passed together")
@@ -674,12 +672,48 @@ class RunPlanRepository:
                     APPROVAL_REQUEST_STATUS_TRANSITIONS,
                     label="approval_request.status",
                 )
+            if decision_json is not None:
+                accounting_fields = ("prior_tokens", "cumulative_planning_exposure_tokens")
+                invalid_paths = [
+                    f"$.{key}"
+                    for key in accounting_fields
+                    if key in decision_json
+                    and (
+                        type(decision_json[key]) is not int
+                        or not 0 <= decision_json[key] <= 2**53 - 1
+                    )
+                ]
+                if invalid_paths:
+                    raise ValidationError(
+                        "approval accounting fields must be integers from 0 through "
+                        "9007199254740991",
+                        data={"paths": invalid_paths},
+                    )
+                _ensure_no_secrets(
+                    {
+                        key: value
+                        for key, value in decision_json.items()
+                        if key not in accounting_fields
+                    },
+                    label="approval decision",
+                )
+                decision_json = _jsonable(decision_json)
+
+        changed = False
+        now = _utcnow()
+        if metadata_json is not None:
+            current = dict(row.metadata_json or {})
+            current.update(metadata_json)
+            row.metadata_json = current
+            changed = True
+        if approval is not None:
+            assert approval_status is not None
+            if approval.status != approval_status:
                 approval.status = approval_status
                 approval.decided_at = now
                 approval.decided_by = decided_by
             if decision_json is not None:
-                _ensure_no_secrets(decision_json, label="approval decision")
-                approval.decision_json = _jsonable(decision_json)
+                approval.decision_json = decision_json
             approval.updated_at = now
             self._s.add(approval)
             changed = True
