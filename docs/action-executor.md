@@ -200,6 +200,8 @@ blocks entry. Lost or superseded attempts preserve their authoritative receipts.
 The item's lease deadline must be present and later than the final entry clock;
 a missing or expired lease refuses entry. This check applies only before entry:
 an already-entered provider's late receipt can still settle after lease expiry.
+The final read refreshes only admission authority records; prepared credential
+metadata remains loaded for connector use after the preparation session closes.
 
 Workflow-linked durable jobs also recheck their complete project/run/plan/step linkage
 and current lifecycle before claiming an item and immediately before connector

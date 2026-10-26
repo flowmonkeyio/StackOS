@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from sqlalchemy import inspect
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, select
 
@@ -20,6 +21,8 @@ from stackos.actions import (
     ActionValidationIssue,
 )
 from stackos.actions.durable_dispatcher import DurableActionDispatcher
+from stackos.actions.package_bridge import resolved_auth
+from stackos.actions.telegram import TelegramActionConnector
 from stackos.auth_providers import AuthRepository, ResolvedCredential
 from stackos.db.connection import make_engine
 from stackos.db.models import (
@@ -483,7 +486,9 @@ def test_workflow_rechecked_after_awaited_credentials_before_provider(
 
 
 @pytest.mark.parametrize("workflow", [False, True], ids=["direct", "workflow"])
-@pytest.mark.parametrize("control", ["pause", "cancel", "expiry", "lease-missing", "lease-expired"])
+@pytest.mark.parametrize(
+    "control", ["pause", "cancel", "expiry", "lease-missing", "lease-expired", "attempt-ordinal"]
+)
 def test_job_control_during_preparation_refuses_connector_entry(
     tmp_path: Path,
     fake_credential_resolution: None,
@@ -515,11 +520,15 @@ def test_job_control_during_preparation_refuses_connector_entry(
         waiting, release = asyncio.Event(), asyncio.Event()
 
         async def delayed(repo: ActionRepository, **kwargs):
-            cached = repo._s.get(DurableActionJob, job_id)
+            cached = [
+                repo._s.get(DurableActionJob, job_id),
+                repo._s.exec(select(DurableActionItem).where(DurableActionItem.ordinal == 0)).one(),
+                repo._s.exec(select(DurableActionAttempt)).one(),
+            ]
             credential = await resolve(repo, **kwargs)
             waiting.set()
             await release.wait()
-            assert cached is not None
+            assert all(cached)
             return credential
 
         monkeypatch.setattr(ActionRepository, "_resolve_credential", delayed)
@@ -529,6 +538,12 @@ def test_job_control_during_preparation_refuses_connector_entry(
         replacement_admissions = None
         if control == "expiry":
             current = deadline  # No expiry sweep: entry must evaluate the fresh clock.
+        elif control == "attempt-ordinal":
+            with Session(engine) as session:
+                attempt = session.exec(select(DurableActionAttempt)).one()
+                attempt.ordinal += 1
+                session.add(attempt)
+                session.commit()
         elif control in {"lease-missing", "lease-expired"}:
             with Session(engine) as session:
                 leased = session.exec(
@@ -812,6 +827,62 @@ def test_stop_after_provider_entry_preserves_receipt(
         else:
             assert item.result_json is not None and item.result_json["outcome_unknown"] is True
     engine.dispose()
+
+
+@pytest.mark.parametrize("workflow", [False, True], ids=["direct", "workflow"])
+@pytest.mark.parametrize("consumer", ["telegram", "package-bridge"])
+def test_prepared_credentials_survive_admission_and_session_close(
+    tmp_path: Path, fake_credential_resolution: None, workflow: bool, consumer: str
+) -> None:
+    engine, project_id, credential_ref, call_id = _seed_database(tmp_path)
+    if workflow:
+        _workflow_scope(engine, project_id, call_id)
+    now = datetime(2026, 9, 22, 18)
+    job_id = _job(engine, project_id, credential_ref, call_id, now)
+    metadata_errors: list[str] = []
+
+    class NoNetworkRuntime:
+        def active_generation(self, *, account_ref: str) -> int:
+            assert account_ref == credential_ref
+            return 1
+
+    class CredentialConsumer(_DispatchConnector):
+        async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
+            assert request.credential is not None
+            # These are the actual prepared ORM objects, after the dispatcher
+            # closes its preparation session, not plain stand-ins for metadata.
+            assert inspect(request.credential.credential).detached
+            assert inspect(request.credential.integration).detached
+            try:
+                if consumer == "telegram":
+                    client = TelegramActionConnector(
+                        runtime=NoNetworkRuntime()  # type: ignore[arg-type]
+                    )._client(request)
+                    assert client.account_ref == credential_ref and client.generation == 1
+                else:
+                    auth = resolved_auth(request.credential, payload_format="none")
+                    assert auth is not None and auth.method == "native"
+            except Exception as exc:
+                metadata_errors.append(type(exc).__name__)
+                raise
+            # The synthetic transport records an effect only after real connector
+            # metadata consumers have succeeded. It performs no provider call.
+            return await super().execute(request)
+
+    connector = CredentialConsumer()
+    try:
+        assert asyncio.run(_dispatcher(engine, connector).run_once(now=now)) == 1
+        with Session(engine) as session:
+            repo = ActionRepository(session)
+            job = repo.get_durable_action_job(project_id=project_id, job_id=job_id)
+            item = repo.list_durable_action_items(project_id=project_id, job_id=job_id)[0]
+            observed = (metadata_errors, len(connector.requests), job.state, item.state)
+            assert observed == ([], 1, "completed", "succeeded")
+            call = session.get(ActionCall, call_id)
+            assert call is not None and call.status == ActionCallStatus.SUCCESS
+            assert item.result_json == {"message_ref": "provider-message:1"}
+    finally:
+        engine.dispose()
 
 
 def test_dispatcher_persists_progress_and_completes_parent_action_call(

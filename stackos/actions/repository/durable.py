@@ -516,9 +516,10 @@ class DurableActionMixin:
         """
 
         current = _as_naive_utc(now)
-        self._s.expire_all()
+        # Refresh authority records without expiring prepared credentials that
+        # connectors consume after the preparation session closes.
         job, item, attempt = self._active_attempt(
-            project_id=project_id, item_id=item_id, attempt_ref=attempt_ref
+            project_id=project_id, item_id=item_id, attempt_ref=attempt_ref, refresh=True
         )
         if job.id != job_id or attempt.ordinal != item.attempt_count or item.lease_ref is None:
             raise ConflictError(
@@ -1535,11 +1536,12 @@ class DurableActionMixin:
         project_id: int,
         item_id: int,
         attempt_ref: str,
+        refresh: bool = False,
     ) -> tuple[DurableActionJob, DurableActionItem, DurableActionAttempt]:
-        item = self._s.get(DurableActionItem, item_id)
+        item = self._s.get(DurableActionItem, item_id, populate_existing=refresh)
         if item is None:
             raise NotFoundError(f"durable action item {item_id} not found")
-        job = self._s.get(DurableActionJob, item.job_id)
+        job = self._s.get(DurableActionJob, item.job_id, populate_existing=refresh)
         if job is None or job.project_id != project_id:
             raise NotFoundError(f"durable action item {item_id} not found for project {project_id}")
         if item.state != DurableActionItemStatus.LEASED:
@@ -1548,11 +1550,13 @@ class DurableActionMixin:
                 data={"item_id": item_id, "state": item.state.value},
             )
         attempt = self._s.exec(
-            select(DurableActionAttempt).where(
+            select(DurableActionAttempt)
+            .where(
                 col(DurableActionAttempt.item_id) == item_id,
                 col(DurableActionAttempt.attempt_ref) == attempt_ref,
                 col(DurableActionAttempt.state) == DurableActionAttemptStatus.LEASED,
             )
+            .execution_options(populate_existing=refresh)
         ).first()
         if attempt is None:
             raise ConflictError(
