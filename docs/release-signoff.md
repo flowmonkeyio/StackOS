@@ -110,6 +110,13 @@ remeasure an unchanged candidate. Keep generated timing dumps out of repository
 history. The history cleanup removed only generated evidence; production and
 test contents are unchanged. The rewritten serial code candidate is `c1d0ccc`.
 
+The default gate at `2d09580` also passed in **120.395s (2m 00s)** with
+automatic pytest workers capped at six and normal UI settings: 4,017 Python
+tests (102.31s), 427 UI tests in 101 files (4.89s), lint, formatting, types and
+build all passed. The default and serial runs contain identical Python case
+identities. These measurements use the task branch based on `c76238b`; they
+do not establish results for later changes on remote `main`.
+
 ## Included Contract Coverage
 
 AIGNC generation also exercises shared background acceptance, polling,
