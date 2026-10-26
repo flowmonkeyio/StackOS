@@ -14,7 +14,10 @@ from functools import lru_cache
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import pytest
+
 from stackos.config import Settings
+from stackos.crypto import aes_gcm
 from stackos.db import migrate
 from stackos.db.connection import make_engine
 from tests.helpers.sqlite_schema import (
@@ -49,15 +52,26 @@ def _migrated_schema_snapshot(
 ) -> SQLiteSnapshot:
     # Retaining the actual callable in the key also honors tests that replace
     # the migration entry point. No app, connection, or mutable rows are cached.
-    with TemporaryDirectory(prefix="stackos-test-migrations-") as directory:
+    with (
+        pytest.MonkeyPatch.context() as crypto_context,
+        TemporaryDirectory(prefix="stackos-test-migrations-") as directory,
+    ):
+        # Real migrations select their installation's seed path. The temporary
+        # schema builder must restore the calling test's crypto configuration,
+        # including an unconfigured None, on both success and failure.
+        crypto_context.setattr(aes_gcm, "_default_seed_path", aes_gcm._default_seed_path)
         root = Path(directory)
         settings = Settings(data_dir=root / "data", state_dir=root / "state")
-        upgrade(settings)
-        engine = make_engine(settings.db_path)
         try:
-            snapshot = capture_database_snapshot(engine)
+            upgrade(settings)
+            engine = make_engine(settings.db_path)
+            try:
+                snapshot = capture_database_snapshot(engine)
+            finally:
+                engine.dispose()
         finally:
-            engine.dispose()
+            with aes_gcm._lock:
+                aes_gcm._cache.clear()
     if source_identity != _migration_source_identity():
         raise RuntimeError("migration sources changed while preparing the test database")
     return snapshot

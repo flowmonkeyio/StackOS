@@ -20,7 +20,9 @@ make signoff
 - the UI production build into `stackos/ui_dist/`
 
 Python tests choose worker processes automatically, capped at six, with each test file
-kept on one worker. The signoff UI build waits for all checks to finish because
+kept on one worker. Vitest also caps workers at six, with a minimum of one so
+machines with more CPU cores do not produce conflicting pool limits.
+The signoff UI build waits for all checks to finish because
 it rewrites the committed bundle that wheel packaging tests read. UI dependency
 preparation uses the frozen lockfile and runs once per Make invocation, shared
 by the UI test and build targets. Standalone UI targets also prepare their deps.
@@ -68,6 +70,9 @@ The 2026-10-26 audit removed these costs while retaining distinct failure checks
 | Repeated MCP registration and discarded schemas | One operation registry per app; response-policy metadata uses the existing summary API. Tool contracts and app isolation remain checked. |
 | Repeated decoding of joined catalog parents | Load each plugin/provider once per action listing; preserve live state, visibility, ordering and availability, including concurrent parent deletion. |
 | Daemon imports during standalone bridge startup | Lazy package exports retain canonical objects and static types; real subprocess, cancellation and persistence tests remain. |
+| Revalidating native connector catalogs per action call | Reuse the package's canonical client; credentials, transports, execution context and native implementations remain separate per call. Dynamic Trackbooth catalogs stay separate. |
+| Repeated migration and GraphQL test preparation | Reuse pristine pre-upgrade schema bytes and one schema for fixed-document validation; tested upgrades, failure paths, ciphertext and schema-drift variants remain independent. |
+| Process state leaking between isolated tests | Reset host rate buckets between integration cases and restore crypto configuration after temporary migration setup; repository cases bind their own seed before use. |
 
 ### Historical Evidence And Serial Verification
 
@@ -81,10 +86,36 @@ serial; its UI runner used the prior default settings. A separate default-worker
 gate (automatic, capped at six) at `2d09580` passed in 120.395s. These timings
 and case counts do not establish results for the merged candidate.
 
-The complete `tests/` gate also includes upstream's new backup recovery,
-Google Indexing, MCP ownership and run-repository checks without adding a
-second curated pytest invocation. Run the serial gate after integration and
-record its actual revision, case counts and elapsed time:
+After integrating current main `7884de2`, complete serial signoff at `9e7503d`
+passed in **578.586s (9m 39s)**, down from the saved **631.888s (10m 32s)**
+checkpoint. It passed **5,427 Python tests with no skips** and **675 UI tests in
+113 files**, plus lint, formatting, mypy and the production build. This is the
+accepted serial audit result; the default uses the worker caps above.
+
+Final default parallel signoff passed in **130.481s (2m 10s)** with **5,433
+Python tests and 675 UI tests**, plus all static checks and the production
+build. The run recorded exactly six Python workers; Vitest used its configured
+six-worker cap. The six additional Python cases verify crypto-state restoration
+after temporary migration setup succeeds or fails. This fixture repair and the
+UI pool bounds were verified by the final parallel gate; the serial measurement
+above remains pinned to its original candidate.
+
+| Serial suite | Cases | Seconds |
+| --- | ---: | ---: |
+| MCP | 680 | 161.934 |
+| Repositories | 1,985 | 148.630 |
+| REST | 306 | 66.571 |
+| Unit | 1,940 | 65.996 |
+| Migrations/schema | 28 | 22.068 |
+| Connectors | 426 | 20.064 |
+| Install/packaging | 45 | 17.398 |
+| Lifecycle, jobs and backup recovery | 17 | 2.025 |
+| Complete Python runner | 5,427 | 506.863 |
+| UI runner | 675 | 45.720 |
+
+Suite rows sum individual case durations; runner and complete-gate times also
+include their own overhead. The complete gate includes dependency preparation,
+static checks and the production build. Reproduce serial verification with:
 
 ```bash
 PYTEST_ADDOPTS='-n0 --junitxml=/tmp/stackos-serial.xml' make -j1 signoff UI_TEST_ARGS='--maxWorkers=1 --minWorkers=1 --no-file-parallelism'

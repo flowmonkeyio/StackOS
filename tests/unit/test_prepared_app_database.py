@@ -11,6 +11,8 @@ from sqlmodel import Session, select
 
 import stackos.server as server_module
 from stackos.config import Settings
+from stackos.crypto import aes_gcm
+from stackos.crypto.seed import ensure_seed_file
 from stackos.db import migrate
 from stackos.db.connection import make_engine
 from stackos.db.model_core import ActionCall, Plugin, Project
@@ -272,3 +274,64 @@ def test_preparation_refuses_to_overwrite_an_existing_database(tmp_path):
     with pytest.raises(FileExistsError, match="refusing to replace"):
         prepared_app.prepare_app_database(settings)
     assert settings.db_path.read_bytes() == b"existing test state"
+
+
+@pytest.mark.parametrize("configured", [False, True], ids=["unconfigured", "existing-seed"])
+@pytest.mark.parametrize("failure_stage", [None, "migration", "capture"])
+def test_migration_snapshot_restores_callers_crypto_configuration(
+    tmp_path, monkeypatch, configured, failure_stage
+):
+    seed_path = tmp_path / "existing-install" / "seed.bin" if configured else None
+    monkeypatch.setattr(aes_gcm, "_default_seed_path", seed_path)
+    if seed_path is not None:
+        ensure_seed_file(seed_path)
+        ciphertext, nonce = aes_gcm.encrypt(b"before snapshot", project_id=1, kind="fixture")
+
+    temporary_seed_paths = []
+
+    def observed_upgrade(settings):
+        result = migrate.upgrade_to_head(settings)
+        temporary_seed_paths.append(settings.seed_path)
+        assert aes_gcm._default_seed_path == settings.seed_path
+        ensure_seed_file(settings.seed_path)
+        aes_gcm.encrypt(b"temporary migration state", project_id=1, kind="fixture")
+        assert aes_gcm._cache
+        if failure_stage == "migration":
+            raise RuntimeError("migration failed after selecting its temporary seed")
+        return result
+
+    if failure_stage == "capture":
+
+        def failed_capture(_engine):
+            raise RuntimeError("capture failed after selecting its temporary seed")
+
+        monkeypatch.setattr(prepared_app, "capture_database_snapshot", failed_capture)
+
+    if failure_stage is not None:
+        with pytest.raises(RuntimeError, match=f"{failure_stage} failed after selecting"):
+            prepared_app._migrated_schema_snapshot(
+                prepared_app._migration_source_identity(), observed_upgrade
+            )
+    else:
+        snapshot = prepared_app._migrated_schema_snapshot(
+            prepared_app._migration_source_identity(), observed_upgrade
+        )
+        assert snapshot.data
+
+    assert len(temporary_seed_paths) == 1
+    assert not temporary_seed_paths[0].parent.exists()
+    assert aes_gcm._default_seed_path == seed_path
+    assert aes_gcm._cache == {}
+    if seed_path is None:
+        with pytest.raises(aes_gcm.CryptoError, match="seed path not configured"):
+            aes_gcm.encrypt(b"still unconfigured", project_id=1, kind="fixture")
+    else:
+        assert (
+            aes_gcm.decrypt(ciphertext, nonce=nonce, project_id=1, kind="fixture")
+            == b"before snapshot"
+        )
+        after, after_nonce = aes_gcm.encrypt(b"after snapshot", project_id=1, kind="fixture")
+        assert (
+            aes_gcm.decrypt(after, nonce=after_nonce, project_id=1, kind="fixture")
+            == b"after snapshot"
+        )

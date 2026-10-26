@@ -8,8 +8,8 @@ migration flow which has its own coverage in ``test_schema.py``).
 The schema/catalog are initialized once per source generation and copied into
 independent engines. Tests of catalog initialization or mutation use the
 ``fresh_catalog`` marker to start from empty metadata instead. A session-scoped
-fixture wires ``configure_seed_path`` to a temporary seed file so encrypted
-credential storage can be tested without leaking real secrets.
+fixture creates a temporary seed file, and every repository session binds it
+again so intervening app or migration tests cannot change its crypto scope.
 """
 
 from __future__ import annotations
@@ -27,23 +27,17 @@ from tests.helpers.sqlite_schema import make_test_memory_engine
 
 @pytest.fixture(scope="session", autouse=True)
 def _crypto_seed(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
-    """Configure a deterministic per-session seed file.
-
-    M4: ``IntegrationCredentialRepository.set`` now calls into
-    ``stackos.crypto.aes_gcm.encrypt``. That helper requires
-    ``configure_seed_path`` to have been called at daemon startup. The
-    autouse fixture mirrors what ``server.create_app`` does.
-    """
+    """Create one seed per worker; each repository session configures its use."""
     seed_dir = tmp_path_factory.mktemp("crypto-seed")
     seed_path = seed_dir / "seed.bin"
     ensure_seed_file(seed_path)
-    configure_seed_path(seed_path)
     yield seed_path
 
 
 @pytest.fixture
-def session(request: pytest.FixtureRequest) -> Iterator[Session]:
+def session(request: pytest.FixtureRequest, _crypto_seed: Path) -> Iterator[Session]:
     """Yield a fresh ``Session`` bound to an in-memory SQLite engine."""
+    configure_seed_path(_crypto_seed)
     engine = make_test_memory_engine(
         catalog=request.node.get_closest_marker("fresh_catalog") is None
     )

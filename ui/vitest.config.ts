@@ -12,6 +12,8 @@ export default defineConfig({
     alias: { '@': path.resolve(__dirname, 'src') },
   },
   test: {
+    minWorkers: 1,
+    maxWorkers: 6,
     environment: 'jsdom',
     globals: true,
     include: ['src/**/*.spec.ts'],
