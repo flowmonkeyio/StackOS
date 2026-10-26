@@ -8,6 +8,7 @@ agent and tool activity.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
@@ -31,6 +32,8 @@ from stackos.db.models import (
     IdempotencyKey,
     Run,
     RunKind,
+    RunPlan,
+    RunPlanStep,
     RunStatus,
     RunStep,
     RunStepCall,
@@ -174,6 +177,212 @@ class RunRepository:
         return WorkItemOwnershipOut.model_validate(
             self._owner_row(project_id=project_id, canonical_item_id=canonical_item_id)
         )
+
+    def owner_restart_context(self, ownership: WorkItemOwnershipOut) -> dict[str, Any]:
+        """Derived inspection only: neither an admission check nor a termination receipt."""
+        from stackos.repositories.run_plan_views import bounded_step_payload
+        from stackos.repositories.tracker import TrackerRepository
+
+        project_id, canonical_id = ownership.project_id, ownership.canonical_item_id
+        tracker = TrackerRepository(self._s)
+        item = tracker.resolve_owner_item(project_id=project_id, canonical_item_id=canonical_id)
+        native = (
+            self._s.get(TrackerTicket, item.item_id, populate_existing=True)
+            if item.item_kind == "ticket"
+            else self._s.get(TrackerTask, item.item_id, populate_existing=True)
+        )
+        assert native is not None
+        recovery = f"run.ownerGet(project_id={project_id}, canonical_item_id={canonical_id!r})"
+        item_selector = (
+            f"ticket_ids=[{item.item_id}]"
+            if item.item_kind == "ticket"
+            else f"task_key={native.key!r}"
+        )
+        item_recovery = redact_secrets(
+            f"tracker.get(project_id={project_id}, {item_selector}, response_mode='raw')"
+        )
+        omitted = ["dependencies", "approvals", "external_state", "unbound_attempts"]
+
+        def bounded(name: str, value: dict[str, Any] | None, ref: str) -> dict[str, Any] | None:
+            payload, truncated = bounded_step_payload(
+                redact_secrets(deepcopy(value)), recovery=ref, max_bytes=1024
+            )
+            if truncated:
+                omitted.append(name)
+                # The shared helper's available_keys list can itself be unbounded.
+                return {"payload_truncated": True, "recovery": ref}
+            return payload
+
+        def continuity(value: Any, name: str) -> dict[str, Any] | None:
+            if not isinstance(value, dict):
+                omitted.append(name)
+                return None
+            result: dict[str, Any] = {}
+            for key in (
+                "stopped",
+                "denied",
+                "attempts_used",
+                "failures_used",
+                "attempt_limit",
+                "failure_limit",
+                "scope_digest",
+                "budget_ref",
+                "stop_scope_ref",
+                "history_ref",
+                "effect_identity",
+                "deadline_ref",
+            ):
+                field = redact_secrets({key: value.get(key)})
+                if len(json.dumps(field).encode()) > 256:
+                    omitted.append(f"{name}.{key}")
+                    result[key] = None
+                else:
+                    result[key] = field[key]
+            return result
+
+        source = native.source_json or {}
+        plan_id = (
+            native.run_plan_id if isinstance(native, TrackerTicket) else source.get("run_plan_id")
+        )
+        step_id = (
+            native.run_plan_step_id
+            if isinstance(native, TrackerTicket)
+            else source.get("run_plan_step_id")
+        )
+        plan = (
+            self._s.get(RunPlan, plan_id, populate_existing=True)
+            if type(plan_id) is int and 0 < plan_id < 2**63
+            else None
+        )
+        step = (
+            self._s.get(RunPlanStep, step_id, populate_existing=True)
+            if type(step_id) is int and 0 < step_id < 2**63
+            else None
+        )
+        issues = []
+        workflow = None
+        recovery_refs = [recovery, item_recovery]
+        if (
+            plan is None
+            or step is None
+            or plan.project_id != project_id
+            or step.run_plan_id != plan.id
+        ):
+            issues.append("native plan/step binding missing or inconsistent; no workflow inferred")
+        else:
+            assert plan.id is not None and step.id is not None
+            tracker.require_owner_execution_binding(
+                project_id=project_id,
+                canonical_item_id=canonical_id,
+                run_plan_id=plan.id,
+                run_plan_step_id=step.id,
+            )
+            run = self._s.get(Run, plan.run_id, populate_existing=True) if plan.run_id else None
+            if (plan.run_id and (run is None or run.project_id != project_id)) or (
+                isinstance(native, TrackerTicket) and native.run_id not in (None, plan.run_id)
+            ):
+                issues.append("native/plan run binding inconsistent; no workflow inferred")
+            else:
+                workflow = {
+                    "run_plan_id": plan.id,
+                    "run_plan_step_id": step.id,
+                    "run_id": plan.run_id,
+                    "plan_status": plan.status.value,
+                    "step_status": step.status.value,
+                    "run_status": run.status.value if run else None,
+                    "plan_updated_at": plan.updated_at.isoformat(),
+                    "step_updated_at": step.updated_at.isoformat(),
+                }
+                recovery_refs.append(
+                    f"runPlan.getStep(project_id={project_id}, run_plan_id={plan.id}, "
+                    f"step_id={step.step_id!r})"
+                )
+
+        # Query only attempts explicitly bound to this item, with a bounded lookahead.
+        attempts = self._s.exec(
+            select(Run)
+            .where(
+                Run.project_id == project_id,
+                col(Run.metadata_json)["ownership_binding"]["canonical_item_id"].as_string()
+                == canonical_id,
+            )
+            .order_by(col(Run.id).desc())
+            .limit(9)
+        ).all()
+        if len(attempts) > 8:
+            omitted.append("attempts")
+        attempt_context = []
+        for attempt in attempts[:8]:
+            metadata = attempt.metadata_json or {}
+            attempt_context.append(
+                {
+                    "run_id": attempt.id,
+                    "parent_run_id": attempt.parent_run_id,
+                    "status": attempt.status.value,
+                    "heartbeat_at": attempt.heartbeat_at.isoformat()
+                    if attempt.heartbeat_at
+                    else None,
+                    "ended_at": attempt.ended_at.isoformat() if attempt.ended_at else None,
+                    "reported": bounded(
+                        f"attempts.{attempt.id}",
+                        {
+                            key: metadata.get(key)
+                            for key in (
+                                "ownership_binding",
+                                "ownership_observation",
+                                "ownership_disposition",
+                            )
+                        },
+                        f"run.get(project_id={project_id}, run_id={attempt.id})",
+                    ),
+                }
+            )
+        packet = {
+            "context_only": True,
+            "revalidation_required": True,
+            "canonical_item_id": canonical_id,
+            "item": {
+                "status": native.status.value,
+                "updated_at": native.updated_at.isoformat(),
+                "source": bounded("item.source", source, item_recovery),
+            },
+            "stored_continuity": continuity(ownership.continuity_json, "stored_continuity"),
+            "current_continuity": continuity(
+                (native.metadata_json or {}).get("ownership_continuity"), "current_continuity"
+            ),
+            "workflow": workflow,
+            "binding_issues": issues,
+            "attempts": attempt_context,
+            "checkpoint": bounded(
+                "checkpoint",
+                {"revision": ownership.checkpoint_revision, "ref": ownership.checkpoint_ref},
+                recovery,
+            ),
+            "quiescence": bounded(
+                "quiescence",
+                {"revision": ownership.quiescence_revision, "ref": ownership.quiescence_ref},
+                recovery,
+            ),
+            "external_freshness": "not_checked",
+            "effect_status": "not_established_by_run_audit",
+            "process_termination": "not_established_by_run_audit",
+            "omitted": omitted,
+            "recovery_refs": recovery_refs,
+        }
+        # All ordinary sections are bounded; retain a hard total bound even for legacy refs.
+        if len(json.dumps(packet).encode()) > 16384:
+            return {
+                "context_only": True,
+                "revalidation_required": True,
+                "canonical_item_id": canonical_id,
+                "payload_truncated": True,
+                "external_freshness": "not_checked",
+                "effect_status": "not_established_by_run_audit",
+                "process_termination": "not_established_by_run_audit",
+                "omitted": ["restart_context"],
+                "recovery_refs": [recovery],
+            }
+        return packet
 
     def owner_acquire(
         self,

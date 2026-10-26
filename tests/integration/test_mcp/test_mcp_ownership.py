@@ -289,6 +289,219 @@ def _fence(row: dict) -> dict:
     return {"expected_epoch": row["epoch"], "expected_revision": row["revision"]}
 
 
+def _restart_context(mcp: MCPClient, owned: dict, **changes) -> dict:
+    result = mcp.call_tool_structured(
+        "run.ownerGet",
+        {
+            "project_id": owned["project_id"],
+            "canonical_item_id": owned["canonical_item_id"],
+            "include_restart_context": True,
+            "response_mode": "raw",
+        }
+        | changes,
+    )
+    assert "error" not in result, result
+    if changes.get("response_mode") == "compact":
+        result = result["data"]
+    assert "restart_context" in result, result
+    return result
+
+
+@pytest.mark.parametrize("response_mode", ["raw", "compact"])
+def test_owner_restart_context_is_opt_in_and_read_only(
+    mcp_client: MCPClient, owned: dict, response_mode: str
+) -> None:
+    row = _acquire(mcp_client, owned)["ownership"]
+    with Session(owned["engine"]) as session:
+        before = [event.model_dump(mode="json") for event in session.exec(select(ProjectEvent))]
+    default = mcp_client.call_tool_structured(
+        "run.ownerGet",
+        {
+            "project_id": owned["project_id"],
+            "canonical_item_id": owned["canonical_item_id"],
+            "response_mode": response_mode,
+        },
+    )
+    if response_mode == "compact":
+        assert set(default) == {"ok", "operation", "status", "project_id", "run_id", "data"}
+        default = default["data"]
+    assert set(default) == {"ownership", "captured_at", "authority_valid", "authority_issues"}
+    result = _restart_context(mcp_client, owned, response_mode=response_mode)
+    packet = result["restart_context"]
+    assert packet["context_only"] is True
+    assert packet["canonical_item_id"] == owned["canonical_item_id"]
+    assert packet["workflow"]["run_plan_id"] == owned["run_plan_id"]
+    assert packet["workflow"]["run_plan_step_id"] == owned["step_id"]
+    assert packet["workflow"]["run_id"] == owned["run_id"]
+    assert packet["workflow"]["step_status"] == "running"
+    assert packet["stored_continuity"]["history_ref"] == "history:original"
+    assert packet["current_continuity"]["attempts_used"] == 0
+    assert packet["external_freshness"] == "not_checked"
+    assert packet["process_termination"] == "not_established_by_run_audit"
+    assert packet["quiescence"]["revision"] is None
+    assert len(json.dumps(packet).encode()) <= 16384
+    assert result["ownership"] == row
+    with Session(owned["engine"]) as session:
+        assert [
+            event.model_dump(mode="json") for event in session.exec(select(ProjectEvent))
+        ] == before
+        assert (
+            RunRepository(session)
+            .owner_get(project_id=owned["project_id"], canonical_item_id=owned["canonical_item_id"])
+            .model_dump(mode="json")
+            == row
+        )
+
+
+@pytest.mark.parametrize("flag", ["stopped", "denied"])
+def test_owner_restart_context_preserves_changed_current_controls(
+    mcp_client: MCPClient, owned: dict, flag: str
+) -> None:
+    row = _acquire(mcp_client, owned)["ownership"]
+    with Session(owned["engine"]) as session:
+        native = session.get(TrackerTicket, int(owned["canonical_item_id"].split(":")[1]))
+        metadata = deepcopy(native.metadata_json)
+        metadata["ownership_continuity"].update(
+            {flag: True, "failures_used": 2, "deadline_ref": "deadline:original"}
+        )
+        native.metadata_json = metadata
+        native.source_json = {"revision": "changed-source"}
+        session.add(native)
+        session.commit()
+    result = _restart_context(mcp_client, owned)
+    assert result["authority_valid"] is False
+    assert result["ownership"] == row
+    packet = result["restart_context"]
+    assert packet["current_continuity"][flag] is True
+    assert packet["current_continuity"]["failures_used"] == 2
+    assert packet["current_continuity"]["deadline_ref"] == "deadline:original"
+    assert packet["stored_continuity"][flag] is False
+    assert packet["stored_continuity"]["failures_used"] == 0
+    assert packet["item"]["source"]["revision"] == "changed-source"
+    assert packet["revalidation_required"] is True
+
+
+def test_owner_restart_context_bounds_redacts_and_retains_uncertain_attempts(
+    mcp_client: MCPClient, owned: dict
+) -> None:
+    row = _acquire(mcp_client, owned)["ownership"]
+    with Session(owned["engine"]) as session:
+        native = session.get(TrackerTicket, int(owned["canonical_item_id"].split(":")[1]))
+        native.source_json = {"secret": "fixture-secret-value", "details": "x" * 30000}
+        session.add(native)
+        session.commit()
+        repo = RunRepository(session)
+        for _ in range(10):
+            attempt = repo.start(
+                project_id=owned["project_id"],
+                kind=RunKind.SKILL_RUN,
+                parent_run_id=owned["run_id"],
+                metadata_json={
+                    "ownership_binding": {
+                        "canonical_item_id": owned["canonical_item_id"],
+                        "owner_ref": row["owner_ref"],
+                        "epoch": row["epoch"],
+                        "scope_digest": row["scope_digest"],
+                    },
+                    "unrelated": "must-not-be-copied",
+                },
+            ).data
+            repo.finish(attempt.id, status=RunStatus.SUCCESS)
+    packet = _restart_context(mcp_client, owned)["restart_context"]
+    assert len(packet["attempts"]) == 8
+    assert "attempts" in packet["omitted"]
+    assert "item.source" in packet["omitted"]
+    assert packet["process_termination"] == "not_established_by_run_audit"
+    assert packet["quiescence"]["revision"] is None
+    assert all(attempt["status"] == "success" for attempt in packet["attempts"])
+    encoded = json.dumps(packet)
+    assert "fixture-secret-value" not in encoded
+    assert "must-not-be-copied" not in encoded
+    assert len(encoded.encode()) <= 16384
+    assert packet["recovery_refs"]
+
+
+@pytest.mark.parametrize("binding", ["missing", "wrong-step"])
+def test_owner_restart_context_does_not_invent_workflow_binding(
+    mcp_client: MCPClient, owned: dict, binding: str
+) -> None:
+    _acquire(mcp_client, owned)
+    with Session(owned["engine"]) as session:
+        native = session.get(TrackerTicket, int(owned["canonical_item_id"].split(":")[1]))
+        if binding == "missing":
+            native.run_plan_id = None
+            native.run_plan_step_id = None
+        else:
+            # A real step from another plan must not be silently replaced by this plan's step.
+            original = session.get(RunPlan, owned["run_plan_id"])
+            other = RunPlan(
+                project_id=owned["project_id"],
+                key="other-plan",
+                title="Other",
+                status=original.status,
+            )
+            session.add(other)
+            session.flush()
+            other_step = RunPlanStep(
+                run_plan_id=other.id,
+                step_id="other-step",
+                title="Other",
+                position=0,
+                status=RunPlanStepStatus.PENDING,
+            )
+            session.add(other_step)
+            session.flush()
+            native.run_plan_step_id = other_step.id
+        session.add(native)
+        session.commit()
+    packet = _restart_context(mcp_client, owned)["restart_context"]
+    assert packet["workflow"] is None
+    assert packet["binding_issues"]
+    assert packet["revalidation_required"] is True
+
+
+def test_owner_restart_context_remains_project_scoped(mcp_client: MCPClient, owned: dict) -> None:
+    _acquire(mcp_client, owned)
+    error = mcp_client.call_tool_error(
+        "run.ownerGet",
+        {
+            "project_id": owned["project_id"] + 1000,
+            "canonical_item_id": owned["canonical_item_id"],
+            "include_restart_context": True,
+        },
+    )
+    assert error["code"] == -32004
+
+
+def test_owner_restart_context_redacts_source_and_marks_unknown_controls(
+    mcp_client: MCPClient, owned: dict
+) -> None:
+    _acquire(mcp_client, owned)
+    with Session(owned["engine"]) as session:
+        native = session.get(TrackerTicket, int(owned["canonical_item_id"].split(":")[1]))
+        native.source_json = {"revision": "current", "api_key": "fixture-secret-value"}
+        native.metadata_json = {}
+        session.add(native)
+        session.commit()
+    result = _restart_context(mcp_client, owned)
+    assert result["authority_valid"] is False
+    packet = result["restart_context"]
+    assert packet["item"]["source"] == {"revision": "current", "api_key": "[redacted]"}
+    assert packet["current_continuity"] is None
+    assert "current_continuity" in packet["omitted"]
+    assert packet["stored_continuity"]["history_ref"] == "history:original"
+
+
+def test_owner_restart_context_option_does_not_extend_mutating_contract(
+    mcp_client: MCPClient, owned: dict
+) -> None:
+    error = mcp_client.call_tool_error(
+        "run.ownerAcquire", _arguments(owned, include_restart_context=True)
+    )
+    assert error["code"] == -32602
+    assert error["data"]["errors"][0]["loc"] == ["include_restart_context"]
+
+
 def _start_owned_attempt(mcp: MCPClient, owned: dict, row: dict) -> int:
     started = mcp.call_tool_structured(
         "run.start",

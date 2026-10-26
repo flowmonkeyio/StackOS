@@ -21,6 +21,7 @@ from stackos.db.models import (
     RunPlanStepStatus,
     RunStatus,
     TrackerLinkKind,
+    TrackerTask,
     TrackerTicket,
     TrackerTicketLink,
     TrackerTicketReference,
@@ -201,6 +202,51 @@ def _acquire(repo: RunRepository, project_id: int, item: str, owner: str = "sess
         owner_ref=owner,
         scope_digest=OWNER_SCOPE,
     ).ownership
+
+
+@pytest.mark.parametrize("binding", ["valid", "missing", "boolean", "overflow"])
+def test_owner_restart_context_task_uses_exact_bounded_source_binding(
+    session: Session, project_id: int, binding: str
+) -> None:
+    item = _continuity_ticket(session, project_id)
+    ticket = session.get(TrackerTicket, int(item.split(":")[1]))
+    task = session.get(TrackerTask, ticket.task_id)
+    plan = RunPlan(
+        project_id=project_id, key="restart", title="Restart", status=RunPlanStatus.DRAFT
+    )
+    session.add(plan)
+    session.flush()
+    step = RunPlanStep(
+        run_plan_id=plan.id,
+        step_id="work",
+        title="Work",
+        position=0,
+        status=RunPlanStepStatus.PENDING,
+    )
+    session.add(step)
+    session.flush()
+    task.metadata_json = ticket.metadata_json
+    task.source_json = {
+        "valid": {"run_plan_id": plan.id, "run_plan_step_id": step.id},
+        "missing": {},
+        "boolean": {"run_plan_id": True, "run_plan_step_id": True},
+        "overflow": {"run_plan_id": 2**100, "run_plan_step_id": 2**100},
+    }[binding]
+    session.add(task)
+    session.commit()
+    repo = RunRepository(session)
+    owner = _acquire(repo, project_id, f"task:{task.id}")
+    context = repo.owner_restart_context(owner)
+    assert context["context_only"] is True
+    assert context["stored_continuity"]["attempts_used"] == 2
+    assert context["current_continuity"]["failures_used"] == 1
+    if binding == "valid":
+        assert context["workflow"]["run_plan_id"] == plan.id
+        assert context["workflow"]["run_plan_step_id"] == step.id
+        assert context["workflow"]["run_id"] is None
+    else:
+        assert context["workflow"] is None
+        assert context["binding_issues"]
 
 
 def _checkpoint(repo: RunRepository, row, **overrides):

@@ -67,12 +67,19 @@ class OwnerResolveInput(MCPInput):
     alias_ref: str | None = None
 
 
-class OwnerGetInput(MCPInput):
+class OwnerItemInput(MCPInput):
     project_id: StrictInt = Field(gt=0)
     canonical_item_id: str = Field(pattern=r"^(task|ticket):[1-9][0-9]*$")
 
 
-class OwnerAcquireInput(OwnerGetInput):
+class OwnerGetInput(OwnerItemInput):
+    include_restart_context: bool = Field(
+        default=False,
+        description="Include bounded read-only recovery context; never execution authority.",
+    )
+
+
+class OwnerAcquireInput(OwnerItemInput):
     owner_ref: str = Field(min_length=1, max_length=160)
     scope_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
@@ -122,6 +129,9 @@ class OwnerInspectionOut(BaseModel):
     captured_at: datetime
     authority_valid: bool
     authority_issues: list[str]
+    restart_context: dict[str, Any] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class OwnerMutationOut(BaseModel):
@@ -165,6 +175,9 @@ async def _owner_get(
         captured_at=datetime.now(UTC),
         authority_valid=not issues,
         authority_issues=issues,
+        restart_context=(
+            repo.owner_restart_context(ownership) if inp.include_restart_context else None
+        ),
     )
 
 

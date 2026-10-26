@@ -195,6 +195,22 @@ current run. Ownership writes revalidate current grants and canonical continuity
 inside their transaction before audit/commit. Read-only `run.ownerResolve` and
 `run.ownerGet` require no started workflow and grant no execution.
 
+For recovery inspection, opt in with `run.ownerGet(include_restart_context=true)`.
+Its additive `restart_context` is a read-only view of the native item's current
+source and exact plan/step/run binding, stored versus current continuity, and
+the latest eight explicitly item-bound run audits. It retains checkpoint and
+quiescence references without treating terminal audit status as process
+termination. Both compact and raw responses carry the context; calls without
+the flag keep their existing response shape.
+
+The context has a 16 KiB JSON bound, redacted payload sections capped at 1 KiB,
+and continuity fields capped at 256 bytes. Oversized or unavailable fields are
+explicitly omitted with recovery references; they are never reset to safe
+defaults. Dependencies, approvals, unbound attempts and external state are not
+assembled. External freshness remains unchecked. This view grants no admission,
+retry or replacement authority: re-read canonical policy, ownership, approvals,
+dependencies and effect/termination evidence before any execution decision.
+
 ## Validation Warnings
 
 `runPlan.validate` separates structural validity from executable readiness.
