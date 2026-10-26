@@ -45,7 +45,10 @@ async def action_call_get(
     )
     running = call.status == ActionCallStatus.RUNNING
     output_json = call.response_json
-    progress = BACKGROUND_ACTION_TASKS.progress(call.id) if running else None
+    background_tasks = ctx.session.info.get("operation_services", {}).get(
+        "background_action_tasks", BACKGROUND_ACTION_TASKS
+    )
+    progress = background_tasks.progress(call.id) if running else None
     if progress is None and running:
         progress = ActionRepository(ctx.session).durable_action_progress(action_call_id=call.id)
     return ActionCallGetOut(

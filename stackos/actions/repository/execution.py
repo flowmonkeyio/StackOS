@@ -718,7 +718,10 @@ class ActionExecutionMixin:
                 asset_dir = self._asset_dir
                 operation_services = dict(self._s.info.get("operation_services", {}))
                 action_call_id = row.id
-                BACKGROUND_ACTION_TASKS.start(
+                background_tasks = operation_services.get(
+                    "background_action_tasks", BACKGROUND_ACTION_TASKS
+                )
+                background_tasks.start(
                     action_call_id,
                     lambda report: _execute_background_action(
                         repository_type=repository_type,

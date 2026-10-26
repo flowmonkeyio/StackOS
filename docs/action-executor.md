@@ -14,6 +14,23 @@ denies before acquisition; the fresh worker Session rechecks it before consuming
 an attempt. Caller action metadata cannot grant unknown spend. This source
 contract grants no live profile, model invocation or billing estimate.
 
+The private `_build_action_connectors` composition seam accepts an explicitly
+reviewed Codex profile/transport for isolated acceptance. Installed startup omits
+that profile and remains fail-closed. `operation_services.background_action_tasks`
+owns both the actual background task and its command custody; the existing daemon
+owner remains the default.
+
+`tests/integration/test_codex_action_runtime.py` exercises the real operation
+dispatcher, project/tracker/run-plan lifecycle, scoped grants and approval,
+owner fences/attempt accounting, ActionRepository and original ActionCall reads
+against a new owned SQLite database. Its process and pipe boundaries are doubles;
+its fixture operator decisions authorize no model work. The lifecycle helper
+requires explicit source, useful prompt, scope/history, owner and approval facts.
+The separately prepared real-process entrypoint remains held until a lead release
+binds the final reviewed clean source and private profile. It preserves original
+unknown effect/cost/termination receipts and retains its owner on unknown cleanup;
+neither a useful model result nor local CLI/FD closure proves remote quiescence.
+
 The action executor is the daemon-side foundation for provider and utility
 calls. It is intentionally a substrate, not an agent decision layer.
 

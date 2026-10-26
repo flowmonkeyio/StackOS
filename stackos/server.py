@@ -30,9 +30,9 @@ from starlette.types import Scope
 
 from stackos import __milestone__, __version__
 from stackos.actions import DEFAULT_ACTION_CONNECTORS, ActionConnectorRegistry, ActionRepository
-from stackos.actions.codex_worker import CodexWorkerConnector
+from stackos.actions.codex_worker import CodexProfile, CodexTransport, CodexWorkerConnector
 from stackos.actions.durable_dispatcher import DurableActionDispatcher
-from stackos.actions.repository.background import BACKGROUND_ACTION_TASKS
+from stackos.actions.repository.background import BACKGROUND_ACTION_TASKS, BackgroundActionTasks
 from stackos.actions.telegram import TelegramActionConnector
 from stackos.api import register_routers
 from stackos.auth import BearerTokenMiddleware, derive_ui_token, ensure_token
@@ -249,6 +249,29 @@ async def _shutdown_background_commands(owner, persist):
     return disposition
 
 
+def _build_action_connectors(
+    *,
+    background_tasks: BackgroundActionTasks,
+    telegram_connector: TelegramActionConnector | None = None,
+    codex_profile: CodexProfile | None = None,
+    codex_transport: CodexTransport | None = None,
+) -> ActionConnectorRegistry:
+    """Private composition seam; callers cannot supply profiles through action input."""
+    connectors = ActionConnectorRegistry()
+    for key in DEFAULT_ACTION_CONNECTORS.list_keys():
+        connectors.register(DEFAULT_ACTION_CONNECTORS.get(key))
+    if telegram_connector is not None:
+        connectors.register(telegram_connector)
+    connectors.register(
+        CodexWorkerConnector(
+            background_tasks,
+            profile=codex_profile,
+            transport=codex_transport,
+        )
+    )
+    return connectors
+
+
 def _build_lifespan(
     settings: Settings,
 ) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
@@ -284,13 +307,12 @@ def _build_lifespan(
         app.state.started_at = time.monotonic()
 
         telegram_runtime = build_telegram_runtime(engine, settings)
-        connectors = ActionConnectorRegistry()
-        for key in DEFAULT_ACTION_CONNECTORS.list_keys():
-            connectors.register(DEFAULT_ACTION_CONNECTORS.get(key))
-        connectors.register(TelegramActionConnector(telegram_runtime))
         BACKGROUND_ACTION_TASKS.activate()
         # Production transport is wired, but no reviewed deployment pins are installed.
-        connectors.register(CodexWorkerConnector(BACKGROUND_ACTION_TASKS))
+        connectors = _build_action_connectors(
+            background_tasks=BACKGROUND_ACTION_TASKS,
+            telegram_connector=TelegramActionConnector(telegram_runtime),
+        )
         delivery = DurableActionDispatcher(
             session_factory=lambda: Session(engine),
             connectors=connectors,
