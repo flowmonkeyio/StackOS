@@ -15,12 +15,54 @@ from sqlmodel import Session, col, select
 
 from stackos.auth_providers import AuthRepository
 from stackos.auth_providers.repository.utils import credential_ref as new_credential_ref
-from stackos.db.models import AuthProvider, Credential, ProjectCredential
+from stackos.db.models import AuthProvider, Credential, CredentialAccount, ProjectCredential
 from stackos.repositories.base import Envelope
 from stackos.repositories.projects import (
     IntegrationCredentialOut,
     IntegrationCredentialRepository,
 )
+
+
+def store_test_account_with_identity(
+    session: Session,
+    *,
+    project_id: int,
+    provider_key: str,
+    auth_method_key: str,
+    display_name: str,
+    fields: dict[str, str],
+    provider_account_id: str,
+) -> str:
+    """Store a real encrypted credential with an already acquired test identity.
+
+    Consumer tests begin after provider account discovery. Probe tests exercise
+    ``AuthRepository.test`` separately; action execution still resolves this
+    credential, project attachment and account through the real repositories.
+    """
+    credential_ref = (
+        AuthRepository(session)
+        .store_credential(
+            provider_key=provider_key,
+            auth_method_key=auth_method_key,
+            display_name=display_name,
+            fields=fields,
+            attach_project_id=project_id,
+        )
+        .data.credential_ref
+    )
+    credential = session.exec(
+        select(Credential).where(Credential.credential_ref == credential_ref)
+    ).one()
+    assert credential.id is not None
+    session.add(
+        CredentialAccount(
+            credential_id=credential.id,
+            provider_account_id=provider_account_id,
+            display_name=display_name,
+        )
+    )
+    session.commit()
+    return credential_ref
 
 
 def seed_test_account(

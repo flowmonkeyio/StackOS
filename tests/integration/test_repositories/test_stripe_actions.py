@@ -23,6 +23,7 @@ from stackos.db.models import (
     ActionCall,
     ActionCallStatus,
     Credential,
+    CredentialAccount,
     CredentialUsageEvent,
     ProviderObjectReference,
 )
@@ -43,6 +44,7 @@ from tests.helpers.stripe import (
     stripe_product,
     stripe_refund,
 )
+from tests.integration.account_test_support import store_test_account_with_identity
 
 STRIPE_ROOT = "https://api.stripe.com/v1"
 STRIPE_SECRET = "sk_test_stripe_connector_sentinel"
@@ -68,7 +70,7 @@ def test_stripe_send_rejects_unsupported_delivery_controls_before_http(
     session: Session, project_id: int, httpx_mock: HTTPXMock, unsupported: str
 ) -> None:
     """The published send API has no recipient, attachment or no-link control."""
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     invoice_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -108,7 +110,7 @@ def test_stripe_catalog_action_contract_is_executable(kind: str, verb: str) -> N
 def test_stripe_catalog_invoice_effective_date_round_trip(
     session: Session, project_id: int, httpx_mock: HTTPXMock
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     customer_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -146,7 +148,7 @@ def test_stripe_catalog_invoice_effective_date_round_trip(
 def test_stripe_catalog_price_line_preserves_provider_pricing_and_quantity(
     session: Session, project_id: int, httpx_mock: HTTPXMock, quantity: int, with_details: bool
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     refs = {
         kind: _safe_ref(
             session,
@@ -233,7 +235,7 @@ def test_stripe_catalog_reads_keep_typed_refs_filters_and_opt_in_details(
     verb: str,
     include: bool | None,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     singular = "product" if kind == "products" else "price"
     details = (
         {
@@ -332,7 +334,7 @@ def test_stripe_catalog_reads_keep_typed_refs_filters_and_opt_in_details(
 def test_stripe_catalog_price_complex_and_sparse_shapes_preserve_observations(
     session: Session, project_id: int, httpx_mock: HTTPXMock, sparse: bool
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     price_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -418,7 +420,7 @@ def test_stripe_catalog_price_complex_and_sparse_shapes_preserve_observations(
 def test_stripe_catalog_price_rejects_malformed_present_observations(
     session: Session, project_id: int, httpx_mock: HTTPXMock, field: str, value: object
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     price_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -445,7 +447,7 @@ def test_stripe_catalog_price_rejects_malformed_present_observations(
 def test_stripe_catalog_effective_date_read_preserves_null_and_zero(
     session: Session, project_id: int, httpx_mock: HTTPXMock, value: int | str | None
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     invoice_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -489,7 +491,7 @@ def test_stripe_catalog_selectors_reject_wrong_binding_before_http(
     expected_type: str,
     wrong_binding: str,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     selected_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -534,7 +536,7 @@ def test_stripe_catalog_selectors_reject_wrong_binding_before_http(
             if action_suffix == "invoice-items.create"
             else None,
         )
-    assert len(httpx_mock.get_requests()) == 1
+    assert httpx_mock.get_requests() == []
 
 
 @pytest.mark.parametrize(
@@ -558,7 +560,7 @@ def test_stripe_catalog_selectors_reject_wrong_binding_before_http(
 def test_stripe_catalog_write_inputs_reject_ambiguity_before_http(
     session: Session, project_id: int, httpx_mock: HTTPXMock, case: str, patch: dict
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     refs = {
         kind: _safe_ref(
             session,
@@ -597,14 +599,14 @@ def test_stripe_catalog_write_inputs_reject_ambiguity_before_http(
             input_json=payload,
             idempotency_key="catalog-invalid-input-fixture",
         )
-    assert len(httpx_mock.get_requests()) == 1
+    assert httpx_mock.get_requests() == []
 
 
 @pytest.mark.parametrize("mode", ["transformed", "custom", "free", "decimal", "currencies"])
 def test_stripe_catalog_price_alternate_amount_modes_are_not_flattened(
     session: Session, project_id: int, httpx_mock: HTTPXMock, mode: str
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     price_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -660,7 +662,7 @@ def test_stripe_catalog_price_alternate_amount_modes_are_not_flattened(
 def test_stripe_catalog_invoice_item_missing_price_linkage_is_not_invented(
     session: Session, project_id: int, httpx_mock: HTTPXMock, pricing: dict | None
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     invoice_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -699,7 +701,7 @@ def test_stripe_catalog_invoice_item_missing_price_linkage_is_not_invented(
 def test_stripe_catalog_invoice_item_price_details_reject_unavailable_required_refs(
     session: Session, project_id: int, httpx_mock: HTTPXMock, invalid: dict
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     invoice_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -726,7 +728,7 @@ def test_stripe_catalog_invoice_item_price_details_reject_unavailable_required_r
 def test_stripe_catalog_price_preserves_deleted_product_reference(
     session: Session, project_id: int, httpx_mock: HTTPXMock
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     price_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -832,7 +834,7 @@ def test_stripe_business_details_are_opt_in_and_never_sent_upstream(
     details: dict,
     include: bool | None,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     body = builder(
         **details,
         metadata={"private": "UNREVIEWED METADATA"},
@@ -908,7 +910,7 @@ def test_stripe_business_details_preserve_missing_and_null_draft_links(
     httpx_mock: HTTPXMock,
     present_null: bool,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     invoice_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -955,7 +957,7 @@ def test_stripe_business_details_identify_unavailable_malformed_invoice_links(
     httpx_mock: HTTPXMock,
     url: object,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     invoice_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -992,7 +994,7 @@ def test_stripe_business_details_redacted_links_are_explicitly_unavailable(
     httpx_mock: HTTPXMock,
     url: str,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     invoice_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -1037,7 +1039,7 @@ def test_stripe_business_details_reject_malformed_text(
     builder,
     details: dict,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     body = builder(**{**details, "description": {"unreviewed": "payload"}})
     safe_ref = _safe_ref(
         session,
@@ -1261,7 +1263,7 @@ def test_stripe_pinned_required_observation_missing_is_failed_action(
     object_type: str,
     missing: str,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     body = builder()
     del body[missing]
     safe_ref = _safe_ref(
@@ -1298,7 +1300,7 @@ def test_stripe_invoice_payment_unavailable_link_preserves_page(
     selected: str,
     null_link: bool,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     invoice_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -1346,7 +1348,7 @@ def test_stripe_reconciliation_source_and_adjustment_links_are_safe(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     transaction = stripe_balance_transaction(source=stripe_charge(id="ch_source"))
     httpx_mock.add_response(
         method="GET", json={"object": "list", "has_more": False, "data": [transaction]}
@@ -1431,7 +1433,7 @@ def test_stripe_reviewed_lifecycle_values_reject_unknown_enum(
     field: str,
     bad: str,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     body = builder(**{field: bad})
     kind = {
         "invoices": "invoice",
@@ -1468,7 +1470,7 @@ def test_stripe_payment_record_rejects_unknown_selected_enum(
     httpx_mock: HTTPXMock,
     field: str,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     record_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -1498,7 +1500,7 @@ def test_stripe_payment_record_customer_is_not_an_expandable_field(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     record_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -1537,7 +1539,7 @@ def test_stripe_balance_source_states_never_invent_linkage(
     source: object,
     state: str,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     httpx_mock.add_response(
         method="GET",
         json={
@@ -1572,7 +1574,7 @@ def test_stripe_dispute_rejects_malformed_balance_transaction_array(
     httpx_mock: HTTPXMock,
     transactions: object,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     dispute_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -1626,7 +1628,7 @@ def test_stripe_payment_record_known_ref_recovery_preserves_safe_evidence(
     session: Session, project_id: int, httpx_mock: HTTPXMock
 ) -> None:
     """A ref recovered from retained evidence permits retrieval, never a replacement report."""
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     record_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -1655,7 +1657,7 @@ def test_stripe_payment_record_known_ref_recovery_preserves_safe_evidence(
         record["payment_reference_sha256"]
         == hashlib.sha256(" bank-e\u0301-001 ".encode()).hexdigest()
     )
-    requests = httpx_mock.get_requests()[1:]
+    requests = httpx_mock.get_requests()
     assert len(requests) == 1
     assert requests[0].method == "GET"
     assert requests[0].headers["Stripe-Version"] == "2026-08-26.dahlia"
@@ -1691,7 +1693,7 @@ def test_stripe_payment_record_known_ref_recovery_preserves_safe_evidence(
 def test_stripe_payment_record_retrieve_preserves_missing_or_empty_reference(
     session: Session, project_id: int, httpx_mock: HTTPXMock, payment_reference: str | None
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     record_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -1719,7 +1721,7 @@ def test_stripe_payment_record_retrieve_preserves_missing_or_empty_reference(
 def test_stripe_payment_record_retrieve_rejects_wrong_ref_before_http(
     session: Session, project_id: int, httpx_mock: HTTPXMock, wrong_binding: str
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     cursor = _safe_ref(
         session,
         project_id=project_id,
@@ -1744,7 +1746,7 @@ def test_stripe_payment_record_retrieve_rejects_wrong_ref_before_http(
             action_ref="finance.stripe.payment-records.retrieve",
             input_json={"payment_record_ref": cursor},
         )
-    assert len(httpx_mock.get_requests()) == 1  # Only the isolated fixture account probe.
+    assert httpx_mock.get_requests() == []
 
 
 @pytest.mark.parametrize(
@@ -1794,7 +1796,7 @@ def test_stripe_payment_record_list_stays_deferred_for_unsupported_inputs(
 def test_stripe_enabled_reads_reject_malformed_response_without_empty_success(
     session: Session, project_id: int, httpx_mock: HTTPXMock, malformation: str
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     if malformation in {"amount", "reference"}:
         record_ref = _safe_ref(
             session,
@@ -1854,7 +1856,7 @@ def test_stripe_invoice_list_keeps_safe_provider_errors(
     status_code: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     monkeypatch.setattr("stackos_connectors.shared.base.asyncio.sleep", AsyncMock())
     httpx_mock.add_response(
         method="GET",
@@ -1882,13 +1884,14 @@ def test_stripe_invoice_list_keeps_safe_provider_errors(
     ).one()
     assert call.response_json["provider_status_code"] == status_code
     assert "PRIVATE ERROR" not in json.dumps(call.response_json)
-    assert len(httpx_mock.get_requests()) == (2 if status_code == 403 else 5)
+    assert len(httpx_mock.get_requests()) == (1 if status_code == 403 else 4)
+    assert all(request.url.path == "/v1/invoices" for request in httpx_mock.get_requests())
 
 
 def test_stripe_unknown_endpoint_preserves_diagnostic_and_log_in_error_and_audit(
     session: Session, project_id: int, httpx_mock: HTTPXMock
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     log_url = (
         "https://dashboard.stripe.com/acct_Fixture/test/workbench/logs?object=req_route_fixture"
     )
@@ -1931,7 +1934,7 @@ def test_stripe_unknown_endpoint_preserves_diagnostic_and_log_in_error_and_audit
     assert STRIPE_SECRET not in json.dumps(
         {"error": failure.value.data, "audit": call.response_json}
     )
-    assert len(httpx_mock.get_requests()) == 2  # Credential probe plus exactly one failed GET.
+    assert len(httpx_mock.get_requests()) == 1  # Exactly one failed business GET.
 
 
 @pytest.mark.parametrize(
@@ -2011,7 +2014,7 @@ def test_stripe_invoice_read_distinguishes_frozen_and_current_recipient_and_chan
     httpx_mock: HTTPXMock,
     tmp_path: Path,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     invoice_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -2097,7 +2100,7 @@ def test_stripe_invoice_read_does_not_invent_missing_current_recipient_or_due_te
     httpx_mock: HTTPXMock,
     customer: object,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     invoice_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -2134,9 +2137,25 @@ def test_stripe_invoice_read_does_not_invent_missing_current_recipient_or_due_te
 def _stripe_credential_ref(
     session: Session,
     project_id: int,
-    httpx_mock: HTTPXMock,
 ) -> str:
-    """Store/test a fake key so account-bound refs have a verified account."""
+    """Start consumer scenarios after account discovery, with real encrypted storage."""
+    return store_test_account_with_identity(
+        session,
+        project_id=project_id,
+        provider_key="stripe",
+        auth_method_key="api_key",
+        display_name="Stripe test account",
+        fields={"api_key": STRIPE_SECRET},
+        provider_account_id="acct_test_finance",
+    )
+
+
+def test_stripe_account_probe_persists_verified_identity_and_safe_audit(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    """Keep discovery proof once; consumer scenarios test subsequent business calls."""
 
     PluginRepository(session).get_plugin("finance")
     credential_ref = (
@@ -2167,7 +2186,23 @@ def _stripe_credential_ref(
     assert tested.ok is True
     assert tested.metadata["evidence"]["account"]["provider_account_id"] == "acct_test_finance"
     assert "livemode" not in tested.metadata["evidence"]["account"]
-    return credential_ref
+    credential = session.exec(
+        select(Credential).where(Credential.credential_ref == credential_ref)
+    ).one()
+    account = session.exec(
+        select(CredentialAccount).where(CredentialAccount.credential_id == credential.id)
+    ).one()
+    assert account.provider_account_id == "acct_test_finance"
+    requests = httpx_mock.get_requests()
+    assert len(requests) == 1
+    assert requests[0].method == "GET"
+    assert str(requests[0].url) == f"{STRIPE_ROOT}/account"
+    usage = session.exec(
+        select(CredentialUsageEvent).where(CredentialUsageEvent.operation == "account.test")
+    ).one()
+    assert usage.metadata_json["result"] == tested.model_dump(mode="json")
+    assert usage.metadata_json["ok"] is True
+    assert STRIPE_SECRET not in json.dumps(usage.metadata_json)
 
 
 @pytest.mark.parametrize(
@@ -2281,7 +2316,7 @@ def test_stripe_action_auth_failure_is_actionable_without_changing_write_recover
     claimable: bool,
     reason_code: str,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     message = "PRIVATE ACTION ERROR https://dashboard.stripe.com/claim/fixture-claim-secret"
     if claimable:
         message = f"This is a claimable sandbox key with limited permissions. {message}"
@@ -2440,7 +2475,7 @@ def test_stripe_action_success_request_id_uses_same_safe_diagnostic_boundary(
     request_id: str,
     expected: str | None,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     httpx_mock.add_response(
         method="GET",
         url=f"{STRIPE_ROOT}/balance",
@@ -2483,7 +2518,7 @@ def test_stripe_action_success_retry_after_is_bounded_numeric_metadata(
     retry_after: str,
     expected: str | None,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     httpx_mock.add_response(
         method="GET",
         url=f"{STRIPE_ROOT}/balance",
@@ -2560,7 +2595,7 @@ def test_stripe_invoice_recovery_filters_correlation_and_manual_finalization(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     customer_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -2673,7 +2708,7 @@ def test_stripe_invoice_items_read_uses_exact_digest_and_typed_pagination(
     httpx_mock: HTTPXMock,
     description: str,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     invoice_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -2726,7 +2761,7 @@ def test_stripe_dispute_reads_are_scoped_and_exclude_evidence(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     charge_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -2843,7 +2878,7 @@ def test_stripe_post_normalization_failure_preserves_unknown_outcome(
     httpx_mock: HTTPXMock,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     email = _payload_secret_marker(session, project_id, "private@example.test")
     httpx_mock.add_response(
         method="POST",
@@ -2891,7 +2926,7 @@ def test_stripe_short_description_recovers_from_independent_read_without_repeati
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     customer_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -2960,7 +2995,7 @@ def test_stripe_item_description_stays_out_of_response_file_and_reference_names(
     httpx_mock: HTTPXMock,
     tmp_path: Path,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     invoice_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -3020,7 +3055,7 @@ def test_stripe_recovery_cursor_rejects_other_account_or_object_type_before_http
     httpx_mock: HTTPXMock,
     wrong_binding: str,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     charge_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -3052,7 +3087,7 @@ def test_stripe_recovery_cursor_rejects_other_account_or_object_type_before_http
             action_ref="finance.stripe.disputes.list",
             input_json={"charge_ref": charge_ref, "page_cursor": cursor},
         )
-    assert len(httpx_mock.get_requests()) == 1  # Account probe only.
+    assert httpx_mock.get_requests() == []
 
 
 @pytest.mark.parametrize(
@@ -3109,7 +3144,7 @@ def test_stripe_draft_invoice_lifecycle_uses_safe_refs_and_idempotency(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     payload_secrets = PayloadSecretRepository(session)
     email_ref = payload_secrets.set(project_id=project_id, value="customer@example.test").secret_ref
     name_ref = payload_secrets.set(project_id=project_id, value="Customer").secret_ref
@@ -3282,7 +3317,7 @@ def test_stripe_pagination_reuses_final_typed_reference_and_payment_evidence(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     httpx_mock.add_response(
         method="GET",
         url=f"{STRIPE_ROOT}/balance_transactions?expand%5B%5D=data.source&limit=1",
@@ -3341,7 +3376,7 @@ def test_stripe_invoice_number_never_enters_safe_output_audit_or_reference_displ
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     customer_identifying_invoice_number = "ACME-CUSTOMER-JANE-2026-0001"
     invoice_ref = _safe_ref(
         session,
@@ -3399,7 +3434,7 @@ def test_stripe_read_surface_covers_customer_invoice_payment_charge_refund_and_b
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     customer_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -3743,7 +3778,7 @@ def test_stripe_invoice_payment_requires_typed_allocation_evidence(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     invoice_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -3995,7 +4030,7 @@ def test_stripe_safe_projections_reject_malformed_present_values(
     url: str,
     body: dict[str, object],
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     safe_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -4028,7 +4063,7 @@ def test_stripe_remaining_selected_projections_reject_malformed_present_values(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     invoice_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -4121,7 +4156,7 @@ def test_stripe_post_rejects_missing_idempotency_and_ambiguous_failure_is_safe(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     with pytest.raises(ValidationError) as missing_key:
         _execute(
             session,
@@ -4297,7 +4332,7 @@ def test_stripe_invoice_item_requires_explicit_invoice_and_description(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     validation = ActionRepository(session).validate(
         project_id=project_id,
         action_ref="finance.stripe.invoice-items.create",
@@ -4314,7 +4349,7 @@ def test_stripe_rejects_malformed_read_shapes_without_inventing_empty_results(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     httpx_mock.add_response(
         method="GET",
         url=f"{STRIPE_ROOT}/customers?limit=1&email=existing%40example.test",
@@ -4372,7 +4407,7 @@ def test_stripe_settlement_supports_full_and_partial_verified_bank_deposits(
     distinct Stripe transport calls and safe reconciliation projections.
     """
 
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     customer_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -4753,7 +4788,7 @@ def test_stripe_settlement_attach_unknown_recovers_known_report_without_repeatin
 ) -> None:
     """A failed attach is reconciled through reads, never a second report POST."""
 
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     customer_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -4905,7 +4940,7 @@ def test_stripe_settlement_actions_read_safe_evidence_and_mark_only_full_paid_ou
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     customer_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -5048,7 +5083,7 @@ def test_stripe_payment_intent_allows_sparse_response_and_rejects_malformed_pres
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     payment_intent_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -5194,7 +5229,7 @@ def test_stripe_settlement_post_normalization_failure_is_outcome_unknown(
     url: str,
     body: dict[str, str],
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     invoice_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -5261,7 +5296,7 @@ def test_stripe_customer_update_maps_only_reviewed_fields_and_independent_readba
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     customer_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -5398,7 +5433,7 @@ def test_invoice_customer_snapshot_digests_expose_stale_finalized_details(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     invoice_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -5456,7 +5491,7 @@ def test_stripe_invoice_update_maps_footer_and_payment_types_without_sending(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     invoice_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -5584,7 +5619,7 @@ def test_stripe_invoice_readback_reports_document_link_state_and_payment_setting
     expected_hosted_state: str,
     expected_settings: dict[str, object],
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     invoice_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -5621,7 +5656,7 @@ def test_stripe_update_readback_distinguishes_missing_and_null_fields(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     customer_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -5774,7 +5809,7 @@ def test_stripe_updates_reject_other_account_refs_before_http(
     action_ref: str,
     input_field: str,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     target_ref = _safe_ref(
         session,
         project_id=project_id,
@@ -5813,7 +5848,7 @@ def test_stripe_customer_update_checks_materialized_country_before_http(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    credential_ref = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential_ref = _stripe_credential_ref(session, project_id)
     customer_ref = _safe_ref(
         session,
         project_id=project_id,

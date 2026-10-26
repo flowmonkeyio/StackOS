@@ -32,7 +32,7 @@ PDF = b"%PDF-1.7\nfixture invoice contains private billing details\n%%EOF"
 
 @pytest.fixture
 def pdf_target(session: Session, project_id: int, httpx_mock: HTTPXMock) -> tuple[str, str]:
-    credential = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential = _stripe_credential_ref(session, project_id)
     invoice = _safe_ref(
         session,
         project_id=project_id,

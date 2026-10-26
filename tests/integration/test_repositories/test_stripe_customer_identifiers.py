@@ -44,7 +44,7 @@ def _tax_id(**changes: object) -> dict:
 def _setup(
     session: Session, project_id: int, httpx_mock: HTTPXMock, kind: str = "customer"
 ) -> tuple[str, str]:
-    credential = _stripe_credential_ref(session, project_id, httpx_mock)
+    credential = _stripe_credential_ref(session, project_id)
     ref = _safe_ref(
         session,
         project_id=project_id,
