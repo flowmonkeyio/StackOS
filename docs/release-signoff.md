@@ -78,6 +78,37 @@ the UI production build also passed. This includes the previously omitted
 Python modules and the repaired stale checks. Timings are measurements on this
 machine, not a hardware-independent guarantee. No tests were excluded for speed.
 
+### Saved Single-Process Baseline
+
+The follow-up measurement at `6b114b6` disabled pytest workers with `-n0`.
+Python took **1,325.088 seconds (22m 05s)** for 3,983 passing tests with zero
+skips. The complete signoff took 1,350.936 seconds (22m 31s), with the existing
+UI runner settings. The six-worker result above does **not** meet the operator's
+serial runtime target.
+
+The [saved baseline](benchmarks/2026-10-26-serial-tests.json) contains the result,
+environment, every suite/file total, and all 3,983 case timings. Use this data
+for optimization; do not repeat the broad suite merely to remeasure the same
+candidate. Run the complete single-process verification after the optimization
+changes are finished.
+
+| Python suite | Cases | Serial time, including fixtures |
+| --- | ---: | ---: |
+| Repositories | 1,724 | 710.809s |
+| MCP | 476 | 388.917s |
+| Unit | 1,245 | 89.579s |
+| REST routes | 134 | 68.631s |
+| Install scripts and packaging | 44 | 33.931s |
+| Database migrations/schema | 20 | 19.424s |
+| Connectors | 326 | 10.328s |
+| Application lifecycle | 6 | 1.725s |
+| Background jobs | 8 | 0.017s |
+
+Shared collection/runner overhead was 1.727s. Repository and MCP tests account
+for approximately 83% of the Python total. Changes must preserve distinct
+credential, permission, transport, audit, lifecycle and recovery obligations;
+the saved timings identify where to investigate, not which checks to remove.
+
 The audit found no identical substantive Python test bodies. Retain separate
 transport, repository, grant, audit and protocol checks when their failure
 modes differ. Consolidate repeated setup and identical scenarios, and repair
