@@ -117,7 +117,7 @@ def test_make_uninstall_removes_integrations_and_preserves_local_state(
         "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
     }
     result = subprocess.run(
-        ["make", "uninstall"],
+        ["make", "uninstall", f"PYTHON={sys.executable}"],
         cwd=repo_root,
         capture_output=True,
         text=True,
@@ -168,7 +168,7 @@ def test_make_uninstall_fails_before_claiming_completion_on_launchd_failure(
     plist.write_text("<plist><dict /></plist>\n", encoding="utf-8")
 
     result = subprocess.run(
-        ["make", "uninstall"],
+        ["make", "uninstall", f"PYTHON={sys.executable}"],
         cwd=repo_root,
         capture_output=True,
         text=True,

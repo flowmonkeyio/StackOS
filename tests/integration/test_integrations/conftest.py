@@ -13,14 +13,15 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
-from sqlmodel import Session, SQLModel
+from sqlmodel import Session
 
 from stackos.crypto.aes_gcm import configure_seed_path
 from stackos.crypto.seed import ensure_seed_file
-from stackos.db.connection import make_memory_engine
 from stackos.integrations._rate_limit import reset_buckets
+from tests.helpers.sqlite_schema import make_test_memory_engine
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -41,32 +42,57 @@ def _reset_rate_limit_buckets() -> Iterator[None]:
     reset_buckets()
 
 
-@pytest.fixture(autouse=True)
-def _fast_backoff(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """Replace ``asyncio.sleep`` inside the integration retry loop with a no-op.
+class IntegrationClock:
+    """Advance connector time when it waits, while still yielding to asyncio."""
 
-    The base class' exponential backoff is 0.5s → 1s → 2s → 4s; with
-    real sleeps a 4-retry test runs ~7.5s which blows the 35s budget
-    fast. We're not testing wall-clock semantics — tests assert that
-    the loop *runs the right number of HTTP calls* — so the sleeps are
-    safe to no-op.
+    def __init__(self, real_sleep):
+        self.now = 0.0
+        self.sleeps: list[float] = []
+        self._real_sleep = real_sleep
+
+    def monotonic(self) -> float:
+        return self.now
+
+    async def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += max(seconds, 0.0)
+        await self._real_sleep(0)
+
+
+@pytest.fixture
+def integration_clock(monkeypatch: pytest.MonkeyPatch) -> IntegrationClock:
+    """Keep retry, polling and token refill on the same deterministic clock.
+
+    A no-op sleep with a real refill clock busy-spins for each QPS wait. Patch
+    only the rate-limit modules' clock references, never asyncio's loop clock.
     """
     import asyncio as asyncio_module
 
-    async def _zero_sleep(_seconds: float) -> None:
-        return None
+    from stackos_connectors.shared import rate_limit as connector_rate_limit
 
-    monkeypatch.setattr(asyncio_module, "sleep", _zero_sleep)
-    yield
+    from stackos.integrations import _rate_limit as host_rate_limit
+
+    clock = IntegrationClock(asyncio_module.sleep)
+    for module in (connector_rate_limit, host_rate_limit):
+        monkeypatch.setattr(module, "time", SimpleNamespace(monotonic=clock.monotonic))
+    monkeypatch.setattr(asyncio_module, "sleep", clock.sleep)
+    return clock
+
+
+@pytest.fixture(autouse=True)
+def _fast_backoff(integration_clock: IntegrationClock) -> None:
+    """Use virtual waits for mocked provider transports, retaining real scheduling."""
 
 
 @pytest.fixture
 def session() -> Iterator[Session]:
     """Yield a fresh SQLModel ``Session`` bound to an in-memory engine."""
-    engine = make_memory_engine()
-    SQLModel.metadata.create_all(engine)
-    with Session(engine) as s:
-        yield s
+    engine = make_test_memory_engine()
+    try:
+        with Session(engine) as s:
+            yield s
+    finally:
+        engine.dispose()
 
 
 @pytest.fixture

@@ -416,15 +416,9 @@ def test_mutation_rate_limit_is_not_retried_and_is_a_known_rejection() -> None:
 
 
 def test_read_retries_transient_failures_then_preserves_success_metadata(
-    monkeypatch: pytest.MonkeyPatch,
+    integration_clock,
 ) -> None:
     requests: list[httpx.Request] = []
-    sleeps: list[float] = []
-
-    async def no_wait(delay: float) -> None:
-        sleeps.append(delay)
-
-    monkeypatch.setattr("stackos_connectors.shared.base.asyncio.sleep", no_wait)
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
@@ -439,7 +433,7 @@ def test_read_retries_transient_failures_then_preserves_success_metadata(
     result = _run(handler, lambda client: client.list_zones(params={"page": 1, "per_page": 5}))
 
     assert len(requests) == 3
-    assert sleeps == [0.5, 1.0]
+    assert integration_clock.sleeps == [0.5, 1.0]
     assert result.metadata["cf_ray"] == "success-ray-LAX"
 
 
