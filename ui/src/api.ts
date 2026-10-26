@@ -1677,7 +1677,7 @@ export interface components {
             /** Connector Key */
             connector_key: string | null;
             /** Cost Cents */
-            cost_cents: number;
+            cost_cents: number | null;
             /**
              * Created At
              * Format: date-time

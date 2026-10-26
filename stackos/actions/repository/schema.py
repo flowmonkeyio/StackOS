@@ -37,7 +37,7 @@ class ActionCallOut(BaseModel):
     provider_context_json: dict[str, Any] | None
     response_json: dict[str, Any] | None
     metadata_json: dict[str, Any] | None
-    cost_cents: int
+    cost_cents: int | None
     duration_ms: int | None
     error: str | None
     created_at: datetime
@@ -69,7 +69,7 @@ class ActionCallAuditOut(BaseModel):
     provider_context_json: dict[str, Any] | None
     response_json: dict[str, Any] | None
     metadata_json: dict[str, Any] | None
-    cost_cents: int
+    cost_cents: int | None
     duration_ms: int | None
     error: str | None
     created_at: datetime
@@ -100,7 +100,7 @@ class ActionExecutionOut(BaseModel):
     action_call: ActionCallAuditOut
     output_json: dict[str, Any]
     metadata_json: dict[str, Any] | None = None
-    cost_cents: int = 0
+    cost_cents: int | None = 0
     dry_run: bool = False
     replayed: bool = False
     credential_ref: str | None = None

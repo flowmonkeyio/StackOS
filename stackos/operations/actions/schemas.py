@@ -460,7 +460,7 @@ class ActionRunOut(BaseModel):
     provider_key: str | None = None
     operation: str
     credential_ref: str | None = None
-    cost_cents: int = 0
+    cost_cents: int | None = 0
     dry_run: bool = False
     compact: dict[str, Any] = Field(default_factory=dict)
     action_call: dict[str, Any] | None = None

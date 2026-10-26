@@ -119,7 +119,7 @@ class ActionConnector(Protocol):
         """Return connector-specific payload issues without making provider calls."""
         ...
 
-    def estimate_cost_cents(self, request: ActionConnectorRequest) -> int:
+    def estimate_cost_cents(self, request: ActionConnectorRequest) -> int | None:
         """Return the best pre-call cost estimate in cents."""
         ...
 

@@ -255,7 +255,7 @@ const headerFacts = computed<UiMetadataStripItem[]>(() => {
     { label: 'Run', value: call.run_id ? `#${call.run_id}` : null },
     { label: 'Run plan', value: call.run_plan_id ? `#${call.run_plan_id}` : null },
     { label: 'Step', value: call.run_plan_step_id ? `#${call.run_plan_step_id}` : null },
-    { label: 'Cost', value: `${call.cost_cents} cents` },
+    { label: 'Cost', value: call.cost_cents === null ? 'Unknown cost' : `${call.cost_cents} cents` },
     { label: 'Duration', value: formatDuration(call.duration_ms) },
     { label: 'Dry run', value: call.dry_run },
     { label: 'Created', value: formatDateTime(call.created_at) },
@@ -304,7 +304,7 @@ const advancedGroups = computed<UiFactGroup[]>(() => {
         ? 'Validation-only execution.'
         : 'Recorded provider execution result.',
       items: [
-        { label: 'Cost', value: `${call.cost_cents} cents` },
+        { label: 'Cost', value: call.cost_cents === null ? 'Unknown cost' : `${call.cost_cents} cents` },
         { label: 'Duration', value: formatDuration(call.duration_ms) },
         {
           label: 'Dry run',

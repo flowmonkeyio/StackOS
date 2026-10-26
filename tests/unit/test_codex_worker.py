@@ -451,13 +451,32 @@ def test_fresh_admission_reuses_current_canonical_helpers_and_owner_cas(monkeypa
         def get(self, _model, identity, **kwargs):
             assert kwargs == {"populate_existing": True}
             seen.append(("fresh", identity))
-            return {2: call, 4: controller, 3: attempt}[identity]
+            return {
+                2: call,
+                4: controller,
+                3: attempt,
+                5: SimpleNamespace(
+                    grant_snapshot_json={
+                        "action_contracts": [
+                            {"action": request().action_ref, "approval_ref": "review:sealed"}
+                        ]
+                    }
+                ),
+            }[identity]
 
         def __init__(self):
             self.info = {}
 
         def exec(self, _statement):
-            return []
+            class Rows(list):
+                def first(self):
+                    return SimpleNamespace(
+                        status="approved",
+                        run_plan_step_id=6,
+                        decision_json={"unknown_cost": "admitted"},
+                    )
+
+            return Rows()
 
     class Runs:
         def __init__(self, session, audit_run_id):
@@ -491,13 +510,16 @@ def test_fresh_admission_reuses_current_canonical_helpers_and_owner_cas(monkeypa
         "_ensure_action_contract_approval",
         lambda *_args, **_kwargs: seen.append("current-approval"),
     )
-    codex.fresh_admission(replace(request(), session=fresh), original)
+    codex.fresh_admission(
+        replace(request(), session=fresh), original, cost_approval_ref="review:sealed"
+    )
     assert seen == [
         ("fresh", 2),
         ("fresh", 4),
         ("fresh", 3),
         "current-grant",
         "current-approval",
+        ("fresh", 5),
         "admissible",
         "canonical-consume-CAS",
     ]
@@ -560,7 +582,8 @@ def test_connector_uses_private_fresh_session_and_keeps_completed_unknown_receip
         get=lambda *_args, **_kwargs: SimpleNamespace(run_id=4, run_plan_id=5, run_plan_step_id=6),
     )
 
-    def admission(fresh, original):
+    def admission(fresh, original, *, cost_approval_ref):
+        assert cost_approval_ref == profile().approval_ref
         assert fresh.session is not caller_session and fresh.session is sessions[0]
         assert fresh.session.info["operation_services"]["background_action_tasks"] is owner
         assert scope_open and original.action_call_id == 2
@@ -990,13 +1013,32 @@ def test_prior_unknown_codex_command_blocks_fresh_daemon_admission(monkeypatch, 
 
     class Session:
         def get(self, _model, identity, **_kwargs):
-            return {2: current, 4: controller, 3: attempt}[identity]
+            return {
+                2: current,
+                4: controller,
+                3: attempt,
+                5: SimpleNamespace(
+                    grant_snapshot_json={
+                        "action_contracts": [
+                            {"action": request().action_ref, "approval_ref": "review:sealed"}
+                        ]
+                    }
+                ),
+            }[identity]
 
         def __init__(self):
             self.info = {}
 
         def exec(self, _statement):
-            return [prior]
+            class Rows(list):
+                def first(self):
+                    return SimpleNamespace(
+                        status="approved",
+                        run_plan_step_id=6,
+                        decision_json={"unknown_cost": "admitted"},
+                    )
+
+            return Rows([prior])
 
     class Runs:
         def __init__(self, *_args, **_kwargs):
@@ -1022,7 +1064,9 @@ def test_prior_unknown_codex_command_blocks_fresh_daemon_admission(monkeypatch, 
     # A new in-memory daemon owner has no slot; persisted original state must still deny.
     assert BackgroundActionTasks()._commands == {}
     with pytest.raises(ConflictError, match="prior Codex command"):
-        codex.fresh_admission(replace(request(), session=Session()), binding())
+        codex.fresh_admission(
+            replace(request(), session=Session()), binding(), cost_approval_ref="review:sealed"
+        )
     assert consumed == []
 
 

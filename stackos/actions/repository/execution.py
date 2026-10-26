@@ -38,6 +38,7 @@ from stackos.secret_refs import (
     redact_secret_values,
 )
 
+from .audit import _public_cost_cents
 from .background import BACKGROUND_ACTION_TASKS
 from .durable import durable_action_schedule_snapshot
 from .schema import ActionExecutionOut
@@ -46,6 +47,47 @@ from .validation import RuntimeActionContext
 
 ACTION_OUTPUT_SCHEMA_VERSION = ACTION_OUTPUT_SCHEMA_REF
 MAX_TRANSIENT_OUTPUT_BYTES = 262_144
+
+
+def _require_unknown_cost_approval(
+    session: Session,
+    *,
+    project_id: int,
+    run_plan_id: int | None,
+    run_plan_step_id: int | None,
+    action_ref: str,
+    profile_ref: str | None,
+) -> None:
+    from sqlmodel import select
+
+    from stackos.db.models import ApprovalRequest, ApprovalRequestStatus, RunPlan
+    from stackos.operations.actions.execution import _approval_ref_for_action
+
+    plan = (
+        session.get(RunPlan, run_plan_id, populate_existing=True)
+        if run_plan_id is not None
+        else None
+    )
+    snapshot = plan.grant_snapshot_json if plan is not None else None
+    approval_ref = (
+        _approval_ref_for_action(snapshot, action_ref) if isinstance(snapshot, dict) else None
+    )
+    if not approval_ref or profile_ref != approval_ref:
+        raise ConflictError("unknown cost requires the profile's scoped action approval")
+    approval = session.exec(
+        select(ApprovalRequest).where(
+            ApprovalRequest.project_id == project_id,
+            ApprovalRequest.run_plan_id == run_plan_id,
+            ApprovalRequest.approval_key == approval_ref,
+        )
+    ).first()
+    if (
+        approval is None
+        or approval.status != ApprovalRequestStatus.APPROVED
+        or approval.run_plan_step_id not in {None, run_plan_step_id}
+        or (approval.decision_json or {}).get("unknown_cost") != "admitted"
+    ):
+        raise ConflictError("scoped approval must explicitly admit unknown cost")
 
 
 def _codex_usage_projection(output: dict[str, Any]) -> dict[str, Any]:
@@ -82,7 +124,7 @@ class _PreparedActionExecution:
     runtime_context: RuntimeActionContext
     effective_output_policy: dict[str, Any]
     metadata_json: dict[str, Any] | None
-    estimated_cost_cents: int
+    estimated_cost_cents: int | None
     run_id: int | None
     run_plan_id: int | None
     run_plan_step_id: int | None
@@ -91,6 +133,36 @@ class _PreparedActionExecution:
 
 class ActionExecutionMixin:
     """Execute explicit actions through the canonical connector boundary."""
+
+    def _require_unknown_cost_admission(
+        self,
+        *,
+        manifest: ExecutableActionManifest,
+        connector: Any,
+        request: ActionConnectorRequest,
+        run_plan_id: int | None,
+        run_plan_step_id: int | None,
+        dry_run: bool = False,
+    ) -> None:
+        if getattr(connector, "key", None) != "codex-worker":
+            raise ConflictError("unknown cost is unsupported for this connector")
+        if dry_run:
+            return
+        if manifest.enforce_budget and manifest.budget_kind:
+            raise ConflictError("unknown action cost cannot satisfy a priced budget")
+        profile_reader = getattr(connector, "unknown_cost_approval_ref", None)
+        try:
+            profile_ref = profile_reader(request) if callable(profile_reader) else None
+        except ValueError as exc:
+            raise ConflictError("unknown cost requires a reviewed private profile") from exc
+        _require_unknown_cost_approval(
+            self._s,
+            project_id=request.project_id,
+            run_plan_id=run_plan_id,
+            run_plan_step_id=run_plan_step_id,
+            action_ref=manifest.action_ref,
+            profile_ref=profile_ref,
+        )
 
     def require_codex_prior_clear(
         self,
@@ -419,7 +491,7 @@ class ActionExecutionMixin:
                         action_call=self._call_audit_out(replay),
                         output_json=replay.response_json or {},
                         metadata_json=replay.metadata_json,
-                        cost_cents=replay.cost_cents,
+                        cost_cents=_public_cost_cents(replay),
                         replayed=True,
                         credential_ref=replay.credential_ref,
                         poll_operation=(
@@ -465,7 +537,17 @@ class ActionExecutionMixin:
             dry_run=True,
             idempotency_key=idempotency_key,
         )
-        estimated_cost_cents = max(0, connector.estimate_cost_cents(dry_request))
+        estimate = connector.estimate_cost_cents(dry_request)
+        estimated_cost_cents = None if estimate is None else max(0, estimate)
+        if estimated_cost_cents is None:
+            self._require_unknown_cost_admission(
+                manifest=manifest,
+                connector=connector,
+                request=dry_request,
+                run_plan_id=run_plan_id,
+                run_plan_step_id=run_plan_step_id,
+                dry_run=dry_run,
+            )
         if dry_run:
             row = self._record_call(
                 project_id=project_id,
@@ -494,7 +576,7 @@ class ActionExecutionMixin:
                     action_call=self._call_audit_out(row),
                     output_json=row.response_json or {},
                     metadata_json=row.metadata_json,
-                    cost_cents=row.cost_cents,
+                    cost_cents=_public_cost_cents(row),
                     dry_run=True,
                     credential_ref=row.credential_ref,
                 ),
@@ -613,7 +695,7 @@ class ActionExecutionMixin:
                         action_call=self._call_audit_out(row),
                         output_json=row.response_json or {},
                         metadata_json=row.metadata_json,
-                        cost_cents=row.cost_cents,
+                        cost_cents=_public_cost_cents(row),
                         replayed=replayed,
                         credential_ref=row.credential_ref,
                         poll_operation=(
@@ -654,7 +736,7 @@ class ActionExecutionMixin:
                     action_call=self._call_audit_out(row),
                     output_json=row.response_json or {},
                     metadata_json=row.metadata_json,
-                    cost_cents=row.cost_cents,
+                    cost_cents=_public_cost_cents(row),
                     replayed=replayed,
                     credential_ref=row.credential_ref,
                     poll_operation=(
@@ -679,7 +761,7 @@ class ActionExecutionMixin:
                     transient_output if transient_output is not None else row.response_json or {}
                 ),
                 metadata_json=row.metadata_json,
-                cost_cents=row.cost_cents,
+                cost_cents=_public_cost_cents(row),
                 dry_run=False,
                 credential_ref=row.credential_ref,
             ),
@@ -906,10 +988,12 @@ class ActionExecutionMixin:
             if result.metadata_json
             else None
         )
-        actual_cost_cents = max(0, result.cost_cents)
+        actual_cost_cents = None if estimated_cost_cents is None else max(0, result.cost_cents)
         if (
             manifest.enforce_budget
             and manifest.budget_kind
+            and actual_cost_cents is not None
+            and estimated_cost_cents is not None
             and actual_cost_cents > estimated_cost_cents
         ):
             IntegrationBudgetRepository(self._s).record_call(
@@ -1241,7 +1325,7 @@ class ActionExecutionMixin:
                 "action_ref": manifest.action_ref,
                 "provider_key": manifest.provider_key,
                 "operation": manifest.operation,
-                "cost_cents": row.cost_cents,
+                "cost_cents": _public_cost_cents(row),
                 "duration_ms": row.duration_ms,
             },
         }
@@ -1586,7 +1670,7 @@ def _action_output_envelope(
         "response": {
             "output_json": _redact_for_audit(output_json),
             "metadata_json": _redact_for_audit(row.metadata_json),
-            "cost_cents": row.cost_cents,
+            "cost_cents": _public_cost_cents(row),
             "duration_ms": row.duration_ms,
             "dry_run": row.dry_run,
         },

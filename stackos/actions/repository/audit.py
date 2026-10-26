@@ -38,6 +38,25 @@ from .schema import (
 from .utils import _redact_for_audit, utcnow
 
 
+def _cost_metadata(metadata: dict[str, Any] | None, amount: int | None) -> dict[str, Any]:
+    """The writer owns this reserved posture; caller metadata cannot set it."""
+    return {
+        **(metadata or {}),
+        "execution_cost": {"state": "unknown" if amount is None else "known"},
+    }
+
+
+def _public_cost_cents(row: ActionCall) -> int | None:
+    posture = (row.metadata_json or {}).get("execution_cost")
+    if (
+        row.connector_key == "codex-worker"
+        and isinstance(posture, dict)
+        and posture.get("state") == "unknown"
+    ):
+        return None
+    return row.cost_cents
+
+
 class ActionAuditMixin:
     """Persist action-call audit rows with public-safe output shapes."""
 
@@ -130,12 +149,13 @@ class ActionAuditMixin:
         metadata_json: dict[str, Any] | None,
         status: ActionCallStatus,
         dry_run: bool,
-        cost_cents: int,
+        cost_cents: int | None,
         duration_ms: int | None,
         error: str | None = None,
         commit: bool = True,
         action_call_id: int | None = None,
     ) -> ActionCall:
+        metadata_json = _cost_metadata(metadata_json, cost_cents)
         if action_call_id is not None:
             return self._finalize_running_call(
                 project_id=project_id,
@@ -172,7 +192,7 @@ class ActionAuditMixin:
             else None,
             response_json=_redact_for_audit(response_json) if response_json is not None else None,
             metadata_json=_redact_for_audit(metadata_json) if metadata_json is not None else None,
-            cost_cents=cost_cents,
+            cost_cents=cost_cents if cost_cents is not None else 0,
             duration_ms=duration_ms,
             error=redact_secret_text(error) if error is not None else None,
             created_at=now,
@@ -199,7 +219,7 @@ class ActionAuditMixin:
         request_json: dict[str, Any],
         provider_context_json: dict[str, Any] | None,
         metadata_json: dict[str, Any] | None,
-        estimated_cost_cents: int,
+        estimated_cost_cents: int | None,
         durable_schedule_json: dict[str, Any] | None = None,
     ) -> tuple[ActionCall, bool]:
         fingerprint = _background_request_fingerprint(
@@ -336,11 +356,12 @@ class ActionAuditMixin:
         response_json: dict[str, Any] | None,
         metadata_json: dict[str, Any] | None,
         status: ActionCallStatus,
-        cost_cents: int,
+        cost_cents: int | None,
         duration_ms: int | None,
         error: str | None,
         commit: bool,
     ) -> ActionCall:
+        metadata_json = _cost_metadata(metadata_json, cost_cents)
         if status not in {ActionCallStatus.SUCCESS, ActionCallStatus.FAILED}:
             raise ValueError("a running action call can only finalize to success or failed")
         result = self._s.execute(
@@ -359,7 +380,7 @@ class ActionAuditMixin:
                     _redact_for_audit(metadata_json) if metadata_json is not None else None
                 ),
                 status=status,
-                cost_cents=cost_cents,
+                cost_cents=cost_cents if cost_cents is not None else 0,
                 duration_ms=duration_ms,
                 error=redact_secret_text(error) if error is not None else None,
                 completed_at=utcnow(),
@@ -429,7 +450,7 @@ class ActionAuditMixin:
             provider_context_json=_redact_for_audit(row.provider_context_json),
             response_json=_redact_for_audit(row.response_json),
             metadata_json=_redact_for_audit(row.metadata_json),
-            cost_cents=row.cost_cents,
+            cost_cents=_public_cost_cents(row),
             duration_ms=row.duration_ms,
             error=redact_secret_text(row.error) if row.error is not None else None,
             created_at=row.created_at,
@@ -457,7 +478,7 @@ class ActionAuditMixin:
             provider_context_json=_redact_for_audit(row.provider_context_json),
             response_json=_redact_for_audit(row.response_json),
             metadata_json=_redact_for_audit(metadata_json),
-            cost_cents=row.cost_cents,
+            cost_cents=_public_cost_cents(row),
             duration_ms=row.duration_ms,
             error=redact_secret_text(row.error) if row.error is not None else None,
             created_at=row.created_at,
@@ -507,7 +528,7 @@ class ActionAuditMixin:
             action_call=self._call_audit_out(row),
             output_json=row.response_json or {},
             metadata_json=row.metadata_json,
-            cost_cents=row.cost_cents,
+            cost_cents=_public_cost_cents(row),
             dry_run=row.dry_run,
             replayed=True,
             credential_ref=row.credential_ref,

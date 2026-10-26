@@ -11,6 +11,29 @@ import ActionCallsView from './ActionCallsView.vue'
 const ORIG_FETCH = globalThis.fetch
 
 describe('ActionCallsView', () => {
+  it.each([[null, 'Unknown cost'], [0, '0 cents']] as const)(
+    'renders monetary cost %s truthfully', async (cost, label) => {
+      const row = { ...actionCall({ id: 1, status: 'success' }), cost_cents: cost }
+      globalThis.fetch = vi.fn(async (input) => {
+        const url = String(input)
+        if (url.includes('/action-calls')) return json(page([row]))
+        return catalogJson(url) ?? json({})
+      }) as typeof fetch
+      const router = createRouter({
+        history: createMemoryHistory(),
+        routes: [{ path: '/projects/:id/action-calls', component: ActionCallsView }],
+      })
+      await router.push('/projects/1/action-calls')
+      await router.isReady()
+      const wrapper = mount(ActionCallsView, { global: { plugins: [router] } })
+      await vi.waitFor(() => expect(wrapper.text()).toContain('#1'))
+      await emitRowClick(wrapper, row)
+      await vi.waitFor(() => expect(document.body.textContent).toContain(label))
+      expect(document.body.textContent).not.toContain('null cents')
+      wrapper.unmount()
+    },
+  )
+
   beforeEach(() => {
     setActivePinia(createPinia())
   })

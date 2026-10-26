@@ -969,7 +969,7 @@ def _compact_action_execution(data: dict[str, Any]) -> dict[str, Any]:
         out["output"] = _compact_mapping(output_json) if output_json else {}
     if summary:
         out["summary"] = _compact_mapping(summary)
-    return {key: value for key, value in out.items() if value is not None}
+    return {key: value for key, value in out.items() if value is not None or key == "cost_cents"}
 
 
 def _compact_action_call_get(data: dict[str, Any]) -> dict[str, Any]:

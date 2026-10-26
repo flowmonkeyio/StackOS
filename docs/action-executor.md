@@ -1,5 +1,19 @@
 # StackOS Action Executor
 
+Codex monetary cost is unknown. Public execution, audit, replay and compact
+responses expose `cost_cents: null`; the UI displays “Unknown cost”. The existing
+integer audit storage uses a private placeholder plus a runtime-owned
+`execution_cost.state` posture. That placeholder is not a price or a free turn.
+Known integer costs, including zero, retain their existing meaning.
+
+Unknown cost cannot satisfy a priced budget. Execution requires the reviewed
+private profile's `approval_ref` to match the resolved action contract and its
+approved scoped `ApprovalRequest`, whose operator decision explicitly records
+`decision_json.unknown_cost = "admitted"`. Missing, mismatched or revoked posture
+denies before acquisition; the fresh worker Session rechecks it before consuming
+an attempt. Caller action metadata cannot grant unknown spend. This source
+contract grants no live profile, model invocation or billing estimate.
+
 The action executor is the daemon-side foundation for provider and utility
 calls. It is intentionally a substrate, not an agent decision layer.
 

@@ -13,6 +13,40 @@ class _Input(MCPInput):
     project_id: int | None = None
 
 
+def test_compact_action_cost_preserves_explicit_unknown_and_known_zero():
+    from stackos.operations.responses import _compact_action_execution
+
+    for amount in (None, 0, 7):
+        compact = _compact_action_execution({"cost_cents": amount})
+        assert "cost_cents" in compact
+        assert compact["cost_cents"] == amount
+
+
+@pytest.mark.parametrize("mode", ["raw", "compact"])
+@pytest.mark.parametrize("amount", [0, 17])
+def test_non_codex_caller_posture_cannot_change_known_replay_cost(mode, amount):
+    original = {
+        "data": {
+            "cost_cents": amount,
+            "action_call": {
+                "id": 7,
+                "connector_key": "example",
+                "cost_cents": amount,
+                "metadata_json": {"execution_cost": {"state": "unknown"}},
+            },
+        }
+    }
+    shaped = shape_operation_response(
+        _spec("action.execute"),
+        original,
+        response_mode=mode,
+        idempotency_replay=True,
+    )
+    assert shaped["data"]["cost_cents"] == amount
+    assert original["data"]["cost_cents"] == amount
+    assert shaped["idempotency_replay"] is True
+
+
 async def _handler(*_args: object, **_kwargs: object) -> dict[str, object]:
     return {}
 

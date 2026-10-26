@@ -435,7 +435,12 @@ class CodexProcessTransport:
             )
 
 
-def fresh_admission(request: ActionConnectorRequest, binding: CommandBinding) -> None:
+def fresh_admission(
+    request: ActionConnectorRequest,
+    binding: CommandBinding,
+    *,
+    cost_approval_ref: str | None = None,
+) -> None:
     """Worker-owned fresh Session only; reuse current grants/approval/owner CAS."""
     from stackos.db.models import ActionCall, ActionCallStatus, Run, RunKind, RunStatus
     from stackos.mcp.context import MCPContext
@@ -506,6 +511,16 @@ def fresh_admission(request: ActionConnectorRequest, binding: CommandBinding) ->
     _ensure_action_contract_approval(
         ctx, plan_id=plan.id, grant_snapshot=plan.grant_snapshot_json, action_ref=request.action_ref
     )
+    from stackos.actions.repository.execution import _require_unknown_cost_approval
+
+    _require_unknown_cost_approval(
+        session,
+        project_id=binding.project_id,
+        run_plan_id=plan.id,
+        run_plan_step_id=step.id,
+        action_ref=request.action_ref,
+        profile_ref=cost_approval_ref,
+    )
     from stackos.actions import ActionRepository
 
     ActionRepository(session).require_codex_prior_clear(
@@ -551,9 +566,18 @@ class CodexWorkerConnector:
             return [ActionValidationIssue(path="input_json", message="invalid fixed Codex input")]
         return []
 
-    def estimate_cost_cents(self, _request: ActionConnectorRequest) -> int:
-        # No actual billing claim; unknown cost remains explicit in the receipt.
-        return 0
+    def estimate_cost_cents(self, _request: ActionConnectorRequest) -> None:
+        return None
+
+    def unknown_cost_approval_ref(self, request: ActionConnectorRequest) -> str | None:
+        """Private reviewed profile, never a caller-supplied spend posture."""
+        if self.profile is None:
+            return None
+        self.profile.argv()
+        payload = CodexInput.model_validate(request.input_json)
+        if payload.source_revision != self.profile.source_revision:
+            return None
+        return self.profile.approval_ref
 
     async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
         from stackos.db.models import ActionCall
@@ -602,13 +626,18 @@ class CodexWorkerConnector:
         bind = request.session.get_bind()
         services = dict(request.session.info.get("operation_services", {}))
         primitive_request = replace(request, session=None, progress_callback=None)
+        cost_approval_ref = self.profile.approval_ref
 
         def authorize() -> None:
             from sqlmodel import Session
 
             with Session(bind) as session:
                 session.info["operation_services"] = services
-                fresh_admission(replace(primitive_request, session=session), binding)
+                fresh_admission(
+                    replace(primitive_request, session=session),
+                    binding,
+                    cost_approval_ref=cost_approval_ref,
+                )
 
         result = await self.owner.command(
             slot,
