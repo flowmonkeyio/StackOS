@@ -2366,6 +2366,7 @@ def test_ideogram_image_actions_reject_invalid_contract_controls(
     assert any(issue.path == "$.input_image_ref" for issue in traversal_validation.issues)
 
 
+@pytest.mark.usefixtures("integration_clock")
 def test_ideogram_image_generate_action_executes_and_registers_artifact(
     session: Session,
     project_id: int,
@@ -2459,6 +2460,7 @@ def test_ideogram_image_generate_action_executes_and_registers_artifact(
     assert path_2.read_bytes() == b"ideogram-image-2"
 
 
+@pytest.mark.usefixtures("integration_clock")
 def test_ideogram_image_remix_action_executes_and_registers_artifact(
     session: Session,
     project_id: int,
@@ -4205,6 +4207,7 @@ def test_dataforseo_keyword_and_serp_limits_match_live_contracts(
     )
 
 
+@pytest.mark.usefixtures("integration_clock")
 def test_dataforseo_paa_action_uses_explicit_action_contract(
     session: Session,
     project_id: int,
