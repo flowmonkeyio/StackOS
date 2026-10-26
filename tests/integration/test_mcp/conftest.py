@@ -20,6 +20,8 @@ from fastapi.testclient import TestClient
 
 from stackos.config import Settings
 from stackos.server import create_app
+from tests.helpers.prepared_app import prepare_app_database
+from tests.helpers.sqlite_schema import SQLiteSnapshot, mark_snapshot_catalog
 
 MODERN_PROTOCOL_VERSION = "2026-07-28"
 _PROTOCOL_VERSION_META_KEY = "io.modelcontextprotocol/protocolVersion"
@@ -208,7 +210,13 @@ def mcp_settings(tmp_path: Path) -> Settings:
 
 
 @pytest.fixture
-def mcp_app(mcp_settings: Settings) -> Any:
+def mcp_database(mcp_settings: Settings) -> SQLiteSnapshot:
+    """Independent installed DB; the app still runs its complete real lifespan."""
+    return prepare_app_database(mcp_settings)
+
+
+@pytest.fixture
+def mcp_app(mcp_settings: Settings, mcp_database: SQLiteSnapshot) -> Any:
     """Build a FastAPI app with MCP mounted."""
     return create_app(mcp_settings)
 
@@ -220,9 +228,12 @@ def mcp_token(mcp_settings: Settings) -> str:
 
 
 @pytest.fixture
-def mcp_client(mcp_app: Any, mcp_token: str) -> Iterator[MCPClient]:
+def mcp_client(
+    mcp_app: Any, mcp_token: str, mcp_database: SQLiteSnapshot
+) -> Iterator[MCPClient]:
     """JSON-RPC wrapper over a TestClient bound to the MCP app."""
     with TestClient(mcp_app, base_url="http://127.0.0.1:5180") as test_client:
+        mark_snapshot_catalog(mcp_app.state.engine, mcp_database)
         yield MCPClient(test_client=test_client, auth_token=mcp_token)
 
 
