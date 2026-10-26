@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN = ROOT / "plugins" / "stackos"
 
@@ -29,6 +31,14 @@ def test_plugin_mcp_uses_local_bridge_not_project_env() -> None:
 
 def test_plugin_skill_preserves_repo_local_files_by_default() -> None:
     text = (PLUGIN / "skills" / "stackos" / "SKILL.md").read_text()
+
+    assert text.startswith("---\n"), "Packaged skill must have YAML frontmatter"
+    frontmatter, separator, _body = text[4:].partition("\n---\n")
+    assert separator, "Packaged skill frontmatter must have a closing delimiter"
+    metadata = yaml.safe_load(frontmatter)
+    assert isinstance(metadata, dict), "Packaged skill frontmatter must be a mapping"
+    assert metadata["name"] == "stackos"
+    assert isinstance(metadata["description"], str) and metadata["description"].strip()
 
     assert "Do not create `.env`, `.mcp.json`, `AGENTS.md`, `CLAUDE.md`" in text
     assert "workspace.connect" in text
