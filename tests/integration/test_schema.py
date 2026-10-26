@@ -231,34 +231,6 @@ def _table_columns(db_path: Path, table_name: str) -> set[str]:
         conn.close()
 
 
-def test_global_account_schema_has_explicit_project_attachments(
-    isolated_alembic: Path,
-) -> None:
-    _run_alembic(["upgrade", "head"])
-
-    credential_columns = _table_columns(isolated_alembic, "credentials")
-    integration_columns = _table_columns(isolated_alembic, "integration_credentials")
-    attachment_columns = _table_columns(isolated_alembic, "project_credentials")
-
-    assert "display_name" in credential_columns
-    assert "project_id" not in credential_columns
-    assert "profile_key" not in credential_columns
-    assert integration_columns == {
-        "id",
-        "encrypted_payload",
-        "nonce",
-        "created_at",
-        "updated_at",
-    }
-    assert attachment_columns == {
-        "id",
-        "project_id",
-        "credential_id",
-        "attached_at",
-        "attached_by",
-    }
-
-
 def test_global_account_migration_preserves_and_reencrypts_legacy_credentials(
     isolated_alembic: Path,
 ) -> None:
@@ -1613,6 +1585,7 @@ def test_telegram_cutover_retires_active_bindings_preserves_history(isolated_ale
 
 
 def test_alembic_upgrade_creates_expected_stackos_tables(isolated_alembic: Path) -> None:
+    """One fresh migration proves the table inventory and global Account layout."""
     _run_alembic(["upgrade", "head"])
     tables = _list_tables(isolated_alembic)
 
@@ -1621,6 +1594,28 @@ def test_alembic_upgrade_creates_expected_stackos_tables(isolated_alembic: Path)
         f"Missing: {EXPECTED_TABLES - tables}; Extra: {tables - EXPECTED_TABLES}"
     )
     assert not (tables & LEGACY_TABLES)
+
+    credential_columns = _table_columns(isolated_alembic, "credentials")
+    integration_columns = _table_columns(isolated_alembic, "integration_credentials")
+    attachment_columns = _table_columns(isolated_alembic, "project_credentials")
+
+    assert "display_name" in credential_columns
+    assert "project_id" not in credential_columns
+    assert "profile_key" not in credential_columns
+    assert integration_columns == {
+        "id",
+        "encrypted_payload",
+        "nonce",
+        "created_at",
+        "updated_at",
+    }
+    assert attachment_columns == {
+        "id",
+        "project_id",
+        "credential_id",
+        "attached_at",
+        "attached_by",
+    }
 
 
 def test_alembic_downgrade_then_upgrade_idempotent(isolated_alembic: Path) -> None:
