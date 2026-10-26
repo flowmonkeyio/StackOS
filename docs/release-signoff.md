@@ -19,7 +19,7 @@ make signoff
 - UI unit tests
 - the UI production build into `stackos/ui_dist/`
 
-Python tests use separate worker processes, capped at six, with each test file
+Python tests choose worker processes automatically, capped at six, with each test file
 kept on one worker. The signoff UI build waits for all checks to finish because
 it rewrites the committed bundle that wheel packaging tests read. UI dependency
 preparation uses the frozen lockfile and runs once per Make invocation, shared
@@ -150,6 +150,46 @@ bundles reuse validated parsing with independent returned objects, and selected
 media/timeout tests use the same deterministic provider clock. Browser/component
 tests retain jsdom, and source freshness, adaptation rules and secret rejection
 remain covered. The checkpoint saves every Python case and UI file timing.
+
+### Final Single-Worker Verification
+
+The final code candidate `6396d5c` passed complete serial signoff on 2026-10-26
+in **536.476s (8m 56s)**, with Make sequential, pytest workers disabled and
+Vitest limited to one worker. That is **60.3% less wall time** than the saved
+22m 31s baseline. The default `-n auto --maxprocesses=6 --dist=loadfile`
+configuration was not used for this measurement. Pass `-n0` to repeat the
+single-process Python check.
+
+All **4,017 Python tests passed with zero failures, errors or skips** in
+483.717s (8m 04s), versus 1,325.088s for the baseline's 3,983 tests. All
+**427 UI tests in 101 files passed** in 33.89s. Lint, formatting, mypy and the
+production UI build passed as well. The generated UI bundle was unchanged.
+
+| Python suite | Baseline serial | Final serial, including fixtures |
+| --- | ---: | ---: |
+| Repositories | 710.809s | 156.890s |
+| MCP | 388.917s | 176.105s |
+| Unit | 89.579s | 57.461s |
+| REST routes | 68.631s | 29.279s |
+| Install scripts and packaging | 33.931s | 32.666s |
+| Database migrations/schema | 19.424s | 17.950s |
+| Connectors | 10.328s | 9.981s |
+| Application lifecycle | 1.725s | 1.707s |
+| Background jobs | 0.017s | 0.015s |
+
+Python collection/shared overhead adds 1.663s. The remainder of the full gate
+outside pytest and Vitest is 18.869s for lint, types, dependency preparation,
+build and process startup. UI setup now uses jsdom for 65 browser/component
+specs and Node for 36 pure specs; no test bodies or assertions were removed by
+that change.
+
+The [final timing artifact](benchmarks/2026-10-26-serial-tests-after.json)
+preserves every Python case, every UI file, suite/file totals, environment,
+candidate, commands and outcomes. Keep the baseline, interrupted attempt and
+checkpoint as dated evidence; use these saved measurements for later analysis
+instead of rerunning the suite merely to collect the same data. Independent
+review accepted the implementation, isolation/validation boundaries and
+assertion preservation. No tests were excluded to reach the budget.
 
 | Python suite | Cases | Serial time, including fixtures |
 | --- | ---: | ---: |
