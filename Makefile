@@ -17,7 +17,7 @@ endif
         install-agent-assets install-skills-codex install-skills-claude \
         install-plugins desktop-install desktop-dev desktop-payload \
         desktop-dist desktop-doctor \
-        install-launchd doctor test test-transfer-connectors test-ui-unit test-ui-e2e migrate lint \
+        install-launchd doctor test test-python test-transfer-connectors ui-deps test-ui-unit test-ui-e2e migrate lint \
         format typecheck gen-types clean uninstall backup restore \
         rotate-seed rotate-token
 
@@ -61,8 +61,11 @@ serve: ## Run the daemon foreground on 127.0.0.1:5180
 dev-ui: ## Run Vite dev server alongside the daemon
 	@if [ -d ui ]; then cd ui && pnpm dev; else echo "ui/ not available in this checkout"; exit 0; fi
 
-build-ui: ## Build Vue UI into stackos/ui_dist/
-	@if [ -d ui ]; then cd ui && pnpm install && pnpm build; else echo "ui/ not available in this checkout"; exit 0; fi
+ui-deps: ## Prepare locked UI dependencies once for all requested UI targets
+	@if [ -d ui ]; then cd ui && pnpm install --frozen-lockfile --silent; else echo "ui/ not available in this checkout"; exit 0; fi
+
+build-ui: ui-deps ## Build Vue UI into stackos/ui_dist/
+	@if [ -d ui ]; then cd ui && pnpm build; else echo "ui/ not available in this checkout"; exit 0; fi
 
 desktop-install: ## Install Electron desktop dependencies
 	@if [ -d desktop ]; then cd desktop && pnpm install; else echo "desktop/ not available in this checkout"; exit 0; fi
@@ -79,76 +82,8 @@ desktop-dist: build-ui ## Build unsigned macOS development artifacts
 desktop-doctor: ## Validate desktop scaffold, updater contracts, and lifecycle smoke tests
 	@if [ -d desktop ]; then cd desktop && pnpm run check; else echo "desktop/ not available in this checkout"; exit 0; fi
 
-signoff: lint typecheck test-transfer-connectors ## Before commit/release: setup docs, actions, MCP/REST/CLI, and UI checks
-	$(UV) run pytest tests/unit \
-		tests/integration/test_routes/test_operations_routes.py \
-		tests/integration/test_routes/test_actions_routes.py \
-		tests/integration/test_routes/test_auth_provider_routes.py \
-		tests/integration/test_routes/test_action_validate_idempotency_routes.py \
-		tests/integration/test_routes/test_cli_mock_provider.py \
-		tests/integration/test_routes/test_telegram_setup_to_action_routes.py \
-		tests/integration/test_mcp/test_mcp_actions.py \
-		tests/integration/test_mcp/test_mcp_aignc_actions.py \
-		tests/integration/test_mcp/test_mcp_execution_overviews.py \
-		tests/integration/test_mcp/test_mcp_host_status.py \
-		tests/integration/test_mcp/test_mcp_action_validate_idempotency.py \
-		tests/integration/test_mcp/test_mcp_finance_receipt_workflow.py \
-		tests/integration/test_mcp/test_mcp_imap_custom_ca.py \
-		tests/integration/test_mcp/test_mcp_imap_output.py \
-		tests/integration/test_mcp/test_mcp_slack_history.py \
-		tests/integration/test_mcp/test_mcp_google_ads_pagination.py \
-		tests/integration/test_mcp/test_mcp_google_service_accounts.py \
-		tests/integration/test_mcp/test_mcp_auth.py \
-		tests/integration/test_mcp/test_mcp_auth_provider_wrappers.py \
-		tests/integration/test_mcp/test_mcp_finance_billing_workflow.py \
-		tests/integration/test_mcp/test_mcp_finance_email_followups.py \
-		tests/integration/test_mcp/test_mcp_bridge_agent_path.py \
-		tests/integration/test_mcp/test_mcp_readiness.py \
-		tests/integration/test_mcp/test_mcp_run_plans.py \
-		tests/integration/test_mcp/test_mcp_workspaces.py \
-		tests/integration/test_mcp/test_mcp_projects.py \
-		tests/integration/test_mcp/test_mcp_tracker.py \
-		tests/integration/test_mcp/test_mcp_communications.py \
-		tests/integration/test_mcp/test_mcp_agent_presets.py \
-		tests/integration/test_mcp/test_mcp_seo_workflows.py \
-		tests/integration/test_mcp/test_mcp_agent_requests.py \
-		tests/integration/test_mcp/test_mcp_stripe_actions.py \
-		tests/integration/test_repositories/test_tracker.py \
-		tests/integration/test_repositories/test_workspaces.py \
-		tests/integration/test_repositories/test_actions.py \
-		tests/integration/test_repositories/test_aignc_actions.py \
-		tests/integration/test_repositories/test_aignc_auth.py \
-		tests/integration/test_repositories/test_action_background_execution.py \
-		tests/integration/test_repositories/test_run_plan_pending_actions.py \
-		tests/integration/test_repositories/test_execution_overviews.py \
-		tests/integration/test_repositories/test_ticket_overviews.py \
-		tests/integration/test_repositories/test_plugins.py \
-		tests/integration/test_repositories/test_finance_workflows.py \
-		tests/integration/test_repositories/test_finance_workflow_lifecycles.py \
-		tests/integration/test_repositories/test_stripe_actions.py \
-		tests/integration/test_repositories/test_video_provider_actions.py \
-		tests/integration/test_repositories/test_agent_requests.py \
-		tests/integration/test_repositories/test_auth_providers.py \
-		tests/integration/test_repositories/test_google_service_accounts.py \
-		tests/integration/test_repositories/test_google_service_account_actions.py \
-		tests/integration/test_repositories/test_auth_test_history.py \
-		tests/integration/test_repositories/test_smtp_actions.py \
-		tests/integration/test_repositories/test_imap_actions.py \
-		tests/integration/test_repositories/test_slack_bot_actions.py \
-		tests/integration/test_repositories/test_imap_custom_ca.py \
-		tests/integration/test_repositories/test_telegram_actions.py \
-		tests/integration/test_repositories/test_telegram_account_lifecycle.py \
-		tests/integration/test_repositories/test_telegram_native_authorization.py \
-		tests/integration/test_repositories/test_telegram_account_session_operations.py \
-		tests/integration/test_app_lifespan.py \
-		tests/integration/test_repositories/test_telegram_delivery_payloads.py \
-		tests/integration/test_repositories/test_telegram_receipt_recovery.py \
-		tests/integration/test_repositories/test_workflow_templates.py \
-		tests/integration/test_schema.py \
-		tests/integration/test_integrations \
-		-q
-	$(MAKE) test-ui-unit
-	$(MAKE) build-ui
+signoff: lint typecheck test-python test-ui-unit ## Before commit/release: lint, types, complete Python suite, UI tests and build
+	@if [ -d ui ]; then cd ui && pnpm build; else echo "ui/ not available in this checkout"; exit 0; fi
 
 test-transfer-connectors: ## Verify Amazon S3 and FTP contracts, auth, actions, MCP/audit, and packaging
 	$(UV) run pytest \
@@ -168,14 +103,16 @@ test-transfer-connectors: ## Verify Amazon S3 and FTP contracts, auth, actions, 
 migrate: ## Run alembic migrations forward
 	$(UV) run alembic upgrade head
 
-test: test-ui-unit ## Run pytest + UI unit tests
-	$(UV) run pytest
+test: test-python test-ui-unit ## Run the complete Python suite and UI unit tests
 
-test-ui-unit: ## Run UI unit tests
-	@if [ -d ui ]; then cd ui && pnpm install --silent && pnpm test; else echo "ui/ not available in this checkout"; exit 0; fi
+test-python: ## Run every Python test once and report the slowest tests
+	$(UV) run pytest tests -q --durations=20
 
-test-ui-e2e: ## Run UI E2E tests
-	@if [ -d ui ]; then cd ui && pnpm install --silent && pnpm e2e; else echo "ui/ not available in this checkout"; exit 0; fi
+test-ui-unit: ui-deps ## Run UI unit tests
+	@if [ -d ui ]; then cd ui && pnpm test; else echo "ui/ not available in this checkout"; exit 0; fi
+
+test-ui-e2e: ui-deps ## Run UI E2E tests
+	@if [ -d ui ]; then cd ui && pnpm e2e; else echo "ui/ not available in this checkout"; exit 0; fi
 
 lint: ## Run ruff check + format-check
 	$(UV) run ruff check .

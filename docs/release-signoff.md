@@ -13,16 +13,31 @@ make signoff
 
 - `make lint`
 - `make typecheck`
-- `make test-transfer-connectors` for Amazon S3 and FTP manifest, auth,
-  integration, action, MCP/grant/audit, response-file, regression, and wheel
-  packaging proof
-- targeted pytest coverage for unit contracts, REST operations, CLI mock
-  provider execution, REST/CLI/MCP operation parity, auth setup, Telegram TDLib
-  Account setup-to-action flow, Slack signed-ingress/action flow, SMTP/IMAP mocked
-  connectors, MCP action, tracker, and communication setup execution, workflow
-  template loading, and action/auth/tracker repositories
+- `make test-python`: the complete `tests/` suite, including unit contracts,
+  repositories, REST/CLI/MCP parity, integrations, migrations, app lifespan,
+  install scripts, and wheel packaging; the 20 slowest tests are reported
 - UI unit tests
 - the UI production build into `stackos/ui_dist/`
+
+Python tests use separate worker processes, capped at six, with each test file
+kept on one worker. The signoff UI build waits for all checks to finish because
+it rewrites the committed bundle that wheel packaging tests read. UI dependency
+preparation uses the frozen lockfile and runs once per Make invocation, shared
+by the UI test and build targets. Standalone UI targets also prepare their deps.
+
+Use one complete gate for an unchanged candidate. `make test` runs the same
+Python suite and UI unit tests; running it and then `make signoff` in separate
+invocations repeats that work. Use focused checks during editing and one final
+`make signoff`. Repeat affected checks when code or relevant inputs change.
+
+The previous signoff ran the transfer-connector slice separately before a
+curated suite. This repeated six files: connector contract docs, plugin
+manifests, operation responses, S3 transport, FTP transport, and auth providers.
+Those tests now run once as part of the complete Python suite. Keep
+`make test-transfer-connectors` as a focused iteration command. Repository,
+transport, and MCP tests remain separate where they detect distinct failures,
+including grants, credential handling, response files, and audit persistence.
+Do not remove those assertions or skip slow tests to meet the runtime budget.
 
 AIGNC generation also exercises shared background acceptance, polling,
 idempotent submission replay, timeout failure, and terminal file/artifact
@@ -128,6 +143,14 @@ required independent review; fixture/schema assertions alone do not prove agent
 behavior or real provider delivery.
 
 ## Focused Checks
+
+For a single test or small file, pass `-n0` to avoid worker startup and simplify
+debugging. This overrides the default parallel configuration without changing
+the selected tests:
+
+```bash
+uv run pytest -n0 tests/unit/test_operations_registry.py -q --durations=20
+```
 
 For a faster local check while iterating on action execution, run the mock
 provider and connector-contract slice directly:
