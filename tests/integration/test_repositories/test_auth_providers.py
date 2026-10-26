@@ -19,10 +19,95 @@ from stackos.db.models import (
     CredentialScope,
     CredentialUsageEvent,
     IntegrationCredential,
+    Plugin,
+    PluginSource,
+    Provider,
 )
 from stackos.mcp.errors import IntegrationDownError
-from stackos.repositories.base import ConflictError, ValidationError
+from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 from stackos.repositories.projects import IntegrationCredentialRepository
+
+
+def test_provider_lookup_refreshes_every_matching_source_without_projecting_other_keys(
+    session: Session,
+) -> None:
+    sources = []
+    for slug in ("projection-first", "projection-second"):
+        plugin = Plugin(slug=slug, name=slug, source=PluginSource.PROJECT)
+        session.add(plugin)
+        session.flush()
+        assert plugin.id is not None
+        source = Provider(
+            plugin_id=plugin.id,
+            key="projection-shared",
+            name=slug,
+            config_json={"scopes": ["old.read"]},
+        )
+        sources.append(source)
+        session.add(source)
+    unrelated = Provider(
+        plugin_id=sources[0].plugin_id,
+        key="projection-unrelated",
+        name="Unrelated before refresh",
+    )
+    session.add(unrelated)
+    session.commit()
+    repo = AuthRepository(session)
+
+    assert repo._get_provider("projection-shared") is not None
+    projected = session.exec(select(AuthProvider)).all()
+    assert {(row.plugin_id, row.key) for row in projected} == {
+        (source.plugin_id, "projection-shared") for source in sources
+    }
+
+    for source in sources:
+        source.name += " changed"
+        source.config_json = {"scopes": ["new.read"], "setup_note": "Current setup"}
+        session.add(source)
+    session.commit()
+    assert repo._get_provider("projection-shared") is not None
+    selected = repo.list_providers(provider_key="projection-shared")
+    assert {row.name for row in selected} == {source.name for source in sources}
+    assert all(row.scopes == ["new.read"] for row in selected)
+    assert all(row.config_json["setup_note"] == "Current setup" for row in selected)
+    assert {row.key for row in session.exec(select(AuthProvider)).all()} == {"projection-shared"}
+
+    repo.sync_providers()
+    unrelated_projection = session.exec(
+        select(AuthProvider).where(AuthProvider.key == unrelated.key)
+    ).one()
+    assert unrelated_projection.name == "Unrelated before refresh"
+    unrelated.name = "Unrelated after refresh"
+    session.add(unrelated)
+    session.commit()
+    repo.list_providers(provider_key="projection-shared")
+    session.refresh(unrelated_projection)
+    assert unrelated_projection.name == "Unrelated before refresh"
+    all_providers = repo.list_providers()
+    assert next(row for row in all_providers if row.key == unrelated.key).name == unrelated.name
+
+
+def test_provider_lookup_preserves_current_custom_provider_and_missing_key_errors(
+    session: Session,
+) -> None:
+    custom = AuthProvider(key="custom-auth-only", name="Custom provider", auth_type="none")
+    session.add(custom)
+    session.commit()
+    repo = AuthRepository(session)
+
+    assert repo._get_provider(custom.key) is custom
+    custom.name = "Changed custom provider"
+    custom.config_json = {"setup_note": "Updated custom guidance"}
+    session.add(custom)
+    session.commit()
+    selected = repo.list_providers(provider_key=custom.key)
+    assert len(selected) == 1
+    assert selected[0].name == "Changed custom provider"
+    assert selected[0].config_json == {"setup_note": "Updated custom guidance"}
+    assert repo.list_providers(provider_key="missing-provider") == []
+    assert repo._get_provider("missing-provider", required=False) is None
+    with pytest.raises(NotFoundError, match="missing-provider"):
+        repo._get_provider("missing-provider")
 
 
 def test_status_wraps_existing_credentials_with_opaque_refs(

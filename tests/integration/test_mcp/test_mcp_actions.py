@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -15,8 +16,18 @@ from stackos.actions.repository.background import BACKGROUND_ACTION_TASKS
 from stackos.config import Settings
 from stackos.db.connection import make_engine
 from stackos.db.models import Action, ActionCall, ActionCallStatus, IdempotencyKey, PayloadSecret
+from tests.helpers.integration_clock import IntegrationClock, isolated_provider_clock
 
 from .conftest import MCPClient
+
+
+@pytest.fixture
+def _media_provider_clock(
+    mcp_client: MCPClient, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[IntegrationClock]:
+    """Only mocked provider pacing is virtual; the app is already started."""
+    with isolated_provider_clock(monkeypatch) as clock:
+        yield clock
 
 
 def _png_header(width: int, height: int) -> bytes:
@@ -1724,6 +1735,7 @@ def test_action_execute_xai_video_grant_returns_sanitized_artifact_refs(
     assert any(row["id"] == item["artifact_id"] for row in artifacts["items"])
 
 
+@pytest.mark.usefixtures("_media_provider_clock")
 def test_action_execute_provider_video_grants_return_sanitized_artifact_refs(
     mcp_client: MCPClient,
     seeded_project: dict,
@@ -2339,6 +2351,7 @@ def test_action_execute_google_gemini_image_grant_returns_sanitized_artifact_ref
     assert artifact_ids.issubset({row["id"] for row in artifacts["items"]})
 
 
+@pytest.mark.usefixtures("_media_provider_clock")
 def test_action_execute_ideogram_image_grant_returns_sanitized_artifact_refs(
     mcp_client: MCPClient,
     seeded_project: dict,
@@ -2498,6 +2511,7 @@ def test_action_execute_ideogram_image_grant_returns_sanitized_artifact_refs(
     assert artifact_ids.issubset({row["id"] for row in artifacts["items"]})
 
 
+@pytest.mark.usefixtures("_media_provider_clock")
 def test_action_execute_byteplus_seedream_image_grant_returns_sanitized_artifact_refs(
     mcp_client: MCPClient,
     seeded_project: dict,

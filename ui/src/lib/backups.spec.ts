@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { callOperation } from '@/lib/operations'
 import { configureBackups, createBackup, loadBackupStatus } from './backups'

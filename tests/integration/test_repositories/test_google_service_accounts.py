@@ -21,6 +21,7 @@ from stackos.db.models import (
     CredentialScope,
     CredentialUsageEvent,
     IntegrationCredential,
+    Provider,
 )
 from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 from stackos.repositories.projects import IntegrationCredentialRepository
@@ -47,10 +48,14 @@ def service_key() -> str:
     )
 
 
+def _provider_source(session: Session, key: str) -> Provider:
+    return session.exec(select(Provider).where(Provider.key == key)).one()
+
+
 @pytest.fixture
-def repo(session: Session, monkeypatch: pytest.MonkeyPatch) -> AuthRepository:
-    repo = AuthRepository(session)
-    repo.sync_providers()
+def repo(session: Session) -> AuthRepository:
+    # Synthetic methods belong to the catalog source. Keep the real auth
+    # projection active so lookups exercise current provider metadata.
     for key in (
         "google-search-console",
         "google-analytics",
@@ -58,7 +63,7 @@ def repo(session: Session, monkeypatch: pytest.MonkeyPatch) -> AuthRepository:
         "google-ads",
         "google-workspace",
     ):
-        provider = repo._get_provider(key, sync=False)
+        provider = _provider_source(session, key)
         config = dict(provider.config_json or {})
         methods = [m for m in config["auth_methods"] if m["key"] != "service-account"]
         methods.append(
@@ -91,8 +96,7 @@ def repo(session: Session, monkeypatch: pytest.MonkeyPatch) -> AuthRepository:
         provider.config_json = config
         session.add(provider)
     session.commit()
-    monkeypatch.setattr(AuthRepository, "sync_providers", lambda self: None)
-    return repo
+    return AuthRepository(session)
 
 
 @pytest.mark.asyncio
@@ -565,7 +569,7 @@ async def test_missing_service_account_method_denies_before_use(
         httpx_mock.add_response(url=TOKEN_URL, json=TOKEN)
         await resolve(repo, ref, project_id)
     calls_before = len(httpx_mock.get_requests())
-    provider = repo._get_provider("google-search-console", sync=False)
+    provider = _provider_source(session, "google-search-console")
     config = dict(provider.config_json)
     config["auth_methods"] = [
         method for method in config["auth_methods"] if method["key"] != "service-account"
@@ -573,6 +577,7 @@ async def test_missing_service_account_method_denies_before_use(
     provider.config_json = config
     session.add(provider)
     session.commit()
+    repo.sync_providers(provider_key="google-search-console")
     # Optional response makes a regressed exchange observable without unused-mock noise.
     httpx_mock.add_response(url=TOKEN_URL, json=TOKEN, is_optional=True)
     with pytest.raises(ValidationError, match="saved service-account method is unavailable"):
@@ -589,8 +594,8 @@ def test_injected_service_account_method_cannot_enable_unsupported_provider(
     service_key,
     httpx_mock,
 ):
-    google = repo._get_provider("google-search-console", sync=False)
-    provider = repo._get_provider("firecrawl", sync=False)
+    google = _provider_source(session, "google-search-console")
+    provider = _provider_source(session, "firecrawl")
     method = next(
         method
         for method in google.config_json["auth_methods"]

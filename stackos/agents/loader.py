@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
@@ -17,6 +18,12 @@ from stackos.repositories.base import ConflictError, NotFoundError
 PLUGIN_AGENT_PRESET_PRECEDENCE = 10
 REPO_AGENT_PRESET_PRECEDENCE = 30
 MAX_AGENT_PRESET_FILE_BYTES = 256_000
+
+
+@lru_cache(maxsize=128)
+def _parsed_bundle(text: str) -> tuple[AgentPresetSpec, ...]:
+    """Reuse validated source content; resolution owns copies exposed to callers."""
+    return tuple(parse_agent_preset_bundle_yaml(text))
 
 
 def _package_parent() -> Path:
@@ -131,7 +138,12 @@ class AgentPresetLoader:
         source: str | None = None,
     ) -> LoadedAgentPreset:
         candidates = self._load_candidates(repo_root=repo_root, plugin_slug=plugin_slug)
-        resolved = self._resolve_candidates(candidates, include_shadowed=True)
+        # Every source is read/validated before filtering; unrelated malformed
+        # sources still reject, but point lookup only copies matching presets.
+        resolved = self._resolve_candidates(
+            [item for item in candidates if item.preset.summary.key == key],
+            include_shadowed=True,
+        )
         matches = [
             item
             for item in resolved
@@ -176,11 +188,11 @@ class AgentPresetLoader:
         resolved: list[LoadedAgentPreset] = []
         for candidate in candidates:
             winner = by_key[candidate.preset.summary.key]
+            if candidate is not winner and not include_shadowed:
+                continue
             preset = candidate.preset.model_copy(deep=True)
             if candidate is not winner:
                 preset.summary.shadowed_by = winner.preset.summary.source
-                if not include_shadowed:
-                    continue
             resolved.append(preset)
         resolved.sort(
             key=lambda item: (
@@ -241,7 +253,7 @@ class AgentPresetLoader:
         if path.stat().st_size > MAX_AGENT_PRESET_FILE_BYTES:
             raise ConflictError("agent preset file is too large", data={"path": str(path)})
         plugin_slug = path.relative_to(clone_root).parts[0]
-        specs = parse_agent_preset_bundle_yaml(path.read_text(encoding="utf-8"))
+        specs = _parsed_bundle(path.read_text(encoding="utf-8"))
         return [
             self._loaded(
                 spec,
@@ -259,7 +271,7 @@ class AgentPresetLoader:
         *,
         plugin_slug: str,
     ) -> list[LoadedAgentPreset]:
-        specs = parse_agent_preset_bundle_yaml(node.read_text(encoding="utf-8"))
+        specs = _parsed_bundle(node.read_text(encoding="utf-8"))
         return [
             self._loaded(
                 spec,
@@ -274,7 +286,7 @@ class AgentPresetLoader:
     def _loaded_from_repo_path(self, path: Path) -> list[LoadedAgentPreset]:
         if path.stat().st_size > MAX_AGENT_PRESET_FILE_BYTES:
             raise ConflictError("agent preset file is too large", data={"path": str(path)})
-        specs = parse_agent_preset_bundle_yaml(path.read_text(encoding="utf-8"))
+        specs = _parsed_bundle(path.read_text(encoding="utf-8"))
         return [
             self._loaded(
                 spec,
@@ -294,7 +306,9 @@ class AgentPresetLoader:
         plugin_slug: str | None = None,
         origin_path: str | None = None,
     ) -> LoadedAgentPreset:
-        return LoadedAgentPreset(
+        # Source adapters already validated the spec. Keep cached values private
+        # until _resolve_candidates deep-copies them, without rerunning guards.
+        return LoadedAgentPreset.model_construct(
             summary=AgentPresetSummaryOut(
                 key=preset.key,
                 name=preset.name,

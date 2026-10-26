@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { describe, expect, it } from 'vitest'
 
 import type { TrackerSnapshot, TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'

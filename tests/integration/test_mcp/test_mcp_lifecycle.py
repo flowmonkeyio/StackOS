@@ -1,72 +1,94 @@
-"""``tools/list`` returns the full catalog with stable shape and counts.
+"""``tools/list`` returns the operation registry's full MCP catalog.
 
-Per the M3 deliverables, the registered tool list is the canonical
-contract; this test pins both the namespace counts and the JSON-Schema
-well-formedness so a future refactor can't silently drop a tool or
-break a tool's input/output schema.
+One discovery scenario verifies adapter completeness, critical domains,
+JSON-Schema well-formedness, descriptions, and streaming metadata. Legacy
+handshake and modern self-contained requests remain separate protocol checks.
 """
 
 from __future__ import annotations
 
+import pytest
+
+from stackos.operations.registry import build_operation_registry
+
 from .conftest import MODERN_PROTOCOL_VERSION, MCPClient
 
-# Per-namespace expected counts — derived from the clean StackOS core catalog.
-# Update intentionally when adding generic StackOS MCP tools.
-EXPECTED_NAMESPACE_COUNTS = {
-    "action": 5,
-    "actionCall": 2,
-    "agentPreset": 3,
-    "agentRequest": 9,
-    "artifact": 7,
-    "account": 4,
-    "browser": 8,
-    "budget": 4,
-    "catalog": 2,
-    "capability": 2,
-    "communication": 2,
-    "communicationContact": 2,
-    "communicationContext": 1,
-    "communicationMembership": 2,
-    "communicationProfile": 4,
-    "communicationRoute": 2,
-    "communicationSurface": 2,
-    "communicationTarget": 3,
-    "connection": 3,
-    "context": 3,
-    "cost": 2,
-    "decision": 2,
-    "executionContext": 10,
-    "experiment": 4,
-    "guide": 1,
-    "hostMcp": 1,
-    "ingressEndpoint": 5,
-    "integration": 1,
-    "learning": 3,
-    "localAgentChat": 1,
-    "meta": 1,
-    "plugin": 3,
-    "operation": 2,
-    "project": 6,
-    "provider": 2,
-    "resource": 3,
-    "run": 12,
-    "readiness": 1,
-    "runPlan": 13,
-    "schedule": 4,
-    "schema": 1,
-    "secret": 1,
-    "sitemap": 1,
-    "skillPreset": 3,
-    "toolProfile": 1,
-    "tracker": 23,
-    "workflowExtension": 5,
-    "workflowTemplate": 6,
-    "workspace": 6,
+# Keep the domain contract explicit; exact operation names come from their
+# canonical owner rather than a second set of stale namespace totals.
+EXPECTED_NAMESPACES = {
+    "action",
+    "actionCall",
+    "agentPreset",
+    "agentRequest",
+    "artifact",
+    "account",
+    "browser",
+    "budget",
+    "catalog",
+    "capability",
+    "communication",
+    "communicationContact",
+    "communicationContext",
+    "communicationMembership",
+    "communicationProfile",
+    "communicationRoute",
+    "communicationSurface",
+    "communicationTarget",
+    "connection",
+    "context",
+    "cost",
+    "decision",
+    "executionContext",
+    "experiment",
+    "guide",
+    "hostMcp",
+    "ingressEndpoint",
+    "integration",
+    "learning",
+    "localAgentChat",
+    "meta",
+    "plugin",
+    "operation",
+    "project",
+    "provider",
+    "resource",
+    "run",
+    "readiness",
+    "runPlan",
+    "schedule",
+    "schema",
+    "secret",
+    "sitemap",
+    "skillPreset",
+    "toolProfile",
+    "tracker",
+    "workflowExtension",
+    "workflowTemplate",
+    "workspace",
 }
 
-# Total = sum of values; locked here to flag accidental drops.
-EXPECTED_TOTAL = sum(EXPECTED_NAMESPACE_COUNTS.values())
-# Total follows EXPECTED_NAMESPACE_COUNTS; update intentionally when adding tools.
+CRITICAL_OPERATION_NAMES = {
+    "account.session.connect",
+    "account.session.disconnect",
+    "account.session.status",
+    "action.execute",
+    "action.run",
+    "actionCall.cancel",
+    "actionCall.items",
+    "actionCall.pause",
+    "actionCall.resume",
+    "actionCall.retry",
+    "browser.session.start",
+    "browser.session.stop",
+    "communication.send",
+    "communication.sendBatch",
+    "operation.list",
+    "operation.describe",
+    "secret.set",
+    "workspace.startSession",
+    "workspace.resolve",
+}
+
 FORBIDDEN_LEGACY_NAMESPACES = {
     "article",
     "asset",
@@ -96,6 +118,12 @@ FORBIDDEN_LEGACY_NAMESPACES = {
 }
 
 
+@pytest.fixture(scope="module")
+def expected_mcp_names() -> set[str]:
+    """MCP has no extra tools outside the canonical operation registry."""
+    return {operation.name for operation in build_operation_registry().by_surface("mcp")}
+
+
 def test_initialize_handshake_succeeds(mcp_client: MCPClient) -> None:
     """The ``initialize`` JSON-RPC method returns the server info."""
     result = mcp_client.initialize()
@@ -116,10 +144,13 @@ def test_modern_discovery_succeeds_without_initialize(mcp_client: MCPClient) -> 
     assert result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] == "stackos"
 
 
-def test_modern_tool_list_and_call_are_self_contained(mcp_client: MCPClient) -> None:
+def test_modern_tool_list_and_call_are_self_contained(
+    mcp_client: MCPClient, expected_mcp_names: set[str]
+) -> None:
     """Modern list/call requests work without session or handshake state."""
     tools = mcp_client.modern_list_tools()
-    assert len(tools) == EXPECTED_TOTAL
+    assert {tool["name"] for tool in tools} == expected_mcp_names
+    assert len(tools) == len(expected_mcp_names), "Modern catalog contains duplicate tools"
 
     envelope = mcp_client.modern_call_tool("meta.enums", {"response_mode": "raw"})
     result = envelope["result"]
@@ -129,58 +160,36 @@ def test_modern_tool_list_and_call_are_self_contained(mcp_client: MCPClient) -> 
     assert result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] == "stackos"
 
 
-def test_tools_list_returns_full_catalog(mcp_client: MCPClient) -> None:
-    """The ``tools/list`` method returns every registered tool."""
+def test_tools_list_catalog_contract(mcp_client: MCPClient, expected_mcp_names: set[str]) -> None:
+    """One wire response proves catalog completeness and every tool's contract."""
     tools = mcp_client.list_tools()
-    assert len(tools) == EXPECTED_TOTAL
+    names = {tool["name"] for tool in tools}
+    assert names == expected_mcp_names, (
+        f"Missing MCP operations: {expected_mcp_names - names}; "
+        f"unexpected tools: {names - expected_mcp_names}"
+    )
+    assert len(tools) == len(names), "Legacy catalog contains duplicate tools"
+    assert names >= CRITICAL_OPERATION_NAMES
+    namespaces = {name.split(".", 1)[0] for name in names}
+    assert namespaces == EXPECTED_NAMESPACES
+    assert FORBIDDEN_LEGACY_NAMESPACES.isdisjoint(namespaces)
 
-
-def test_tools_list_namespace_counts_are_stable(mcp_client: MCPClient) -> None:
-    """Per-namespace tool counts match the locked expectations."""
-    tools = mcp_client.list_tools()
-    counts: dict[str, int] = {}
-    for t in tools:
-        ns = t["name"].split(".", 1)[0]
-        counts[ns] = counts.get(ns, 0) + 1
-    assert counts == EXPECTED_NAMESPACE_COUNTS
-    assert FORBIDDEN_LEGACY_NAMESPACES.isdisjoint(counts)
-
-
-def test_every_tool_has_well_formed_input_schema(mcp_client: MCPClient) -> None:
-    """Every tool's ``inputSchema`` is a valid JSON Schema object."""
-    tools = mcp_client.list_tools()
     for t in tools:
         schema = t["inputSchema"]
-        assert isinstance(schema, dict)
+        assert isinstance(schema, dict), f"{t['name']!r} input schema is not an object"
         assert "type" in schema or "$ref" in schema or "properties" in schema, (
             f"{t['name']!r} input schema malformed: {schema}"
         )
-
-
-def test_every_tool_has_well_formed_output_schema(mcp_client: MCPClient) -> None:
-    """Every tool's ``outputSchema`` is a valid JSON Schema object."""
-    tools = mcp_client.list_tools()
-    for t in tools:
         schema = t["outputSchema"]
-        assert isinstance(schema, dict)
+        assert isinstance(schema, dict), f"{t['name']!r} output schema is not an object"
         # Must have at least one of ``type``, ``$ref``, ``properties``,
         # ``items`` (list returns), or ``$defs``.
         keys = set(schema.keys())
         assert keys & {"type", "$ref", "properties", "items", "$defs", "anyOf", "oneOf"}, (
             f"{t['name']!r} output schema malformed: {schema}"
         )
-
-
-def test_every_tool_has_description(mcp_client: MCPClient) -> None:
-    """Every tool's description is non-empty (becomes MCP description)."""
-    tools = mcp_client.list_tools()
-    for t in tools:
         assert t.get("description"), f"{t['name']!r} has no description"
         assert len(t["description"]) > 5, f"{t['name']!r} description is too short"
 
-
-def test_streaming_meta_matches_registered_core_tools(mcp_client: MCPClient) -> None:
-    """No removed SEO/content streaming tool remains advertised."""
-    tools = mcp_client.list_tools()
     streaming_names = {t["name"] for t in tools if (t.get("_meta") or {}).get("streaming") is True}
-    assert not streaming_names
+    assert not streaming_names, f"Unexpected streaming tools: {streaming_names}"

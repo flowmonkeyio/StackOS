@@ -13,16 +13,122 @@ make signoff
 
 - `make lint`
 - `make typecheck`
-- `make test-transfer-connectors` for Amazon S3 and FTP manifest, auth,
-  integration, action, MCP/grant/audit, response-file, regression, and wheel
-  packaging proof
-- targeted pytest coverage for unit contracts, REST operations, CLI mock
-  provider execution, REST/CLI/MCP operation parity, auth setup, Telegram TDLib
-  Account setup-to-action flow, Slack signed-ingress/action flow, SMTP/IMAP mocked
-  connectors, MCP action, tracker, and communication setup execution, workflow
-  template loading, and action/auth/tracker repositories
+- `make test-python`: the complete `tests/` suite, including unit contracts,
+  repositories, REST/CLI/MCP parity, integrations, migrations, app lifespan,
+  install scripts, and wheel packaging; the 20 slowest tests are reported
 - UI unit tests
 - the UI production build into `stackos/ui_dist/`
+
+Python tests choose worker processes automatically, capped at six, with each test file
+kept on one worker. Vitest also caps workers at six, with a minimum of one so
+machines with more CPU cores do not produce conflicting pool limits.
+The signoff UI build waits for all checks to finish because
+it rewrites the committed bundle that wheel packaging tests read. UI dependency
+preparation uses the frozen lockfile and runs once per Make invocation, shared
+by the UI test and build targets. Standalone UI targets also prepare their deps.
+
+Use one complete gate for an unchanged candidate. `make test` runs the same
+Python suite and UI unit tests; running it and then `make signoff` in separate
+invocations repeats that work. Use focused checks during editing and one final
+`make signoff`. Repeat affected checks when code or relevant inputs change.
+
+The previous signoff ran the transfer-connector slice separately before a
+curated suite. This repeated six files: connector contract docs, plugin
+manifests, operation responses, S3 transport, FTP transport, and auth providers.
+Those tests now run once as part of the complete Python suite. Keep
+`make test-transfer-connectors` as a focused iteration command. Repository,
+transport, and MCP tests remain separate where they detect distinct failures,
+including grants, credential handling, response files, and audit persistence.
+Do not remove those assertions or skip slow tests to meet the runtime budget.
+
+## Test Runtime And Maintenance
+
+The complete automated signoff should stay below ten minutes on a prepared
+development machine. Dependency downloads and live-provider/manual release
+proofs are separate setup and release activities.
+
+The default pytest configuration chooses workers automatically, capped at six,
+and keeps each test file on one worker:
+
+```toml
+addopts = ["-ra", "--strict-markers", "-n", "auto", "--maxprocesses=6", "--dist=loadfile"]
+```
+
+Concurrency is a throughput setting, not a substitute for fixing repeated work.
+The 2026-10-26 audit removed these costs while retaining distinct failure checks:
+
+| Bottleneck or redundancy | Change and retained proof |
+| --- | --- |
+| Duplicate signoff slices, dependency setup and catalog/startup scenarios | One complete Python gate; combined repeated assertions; separate protocols, historical migrations and recovery paths remain. |
+| Rebuilding schemas and builtin catalogs for consumer tests | Clone immutable results of real initialization into independent databases; dedicated bootstrap tests still start empty. Isolation, constraints, PRAGMAs and source changes are checked. |
+| Repeated successful account probes in Stripe business tests | Real encrypted credentials with an acquired account identity; named success/failure probe tests retain identity and audit proof. |
+| Real retry delays, shared rate buckets and no-op-sleep busy loops | Explicit virtual provider clocks retain real limiter/retry loops and scheduling; lifecycle/concurrency clocks remain unchanged. |
+| Repeated schema/YAML parsing, deep copies and nested validation | Bounded source caches and one ownership copy; changed sources, malformed references, secrets, adaptation rules and caller mutation remain checked. |
+| Full provider metadata scans for a known provider | Refresh the requested provider; full listing/sync still refreshes all providers. Credentials, permissions and auth results are not cached. |
+| Browser environments for pure UI tests | 40 audited source/data/state specs use Node; browser/component specs retain jsdom. All test bodies and assertions remain. |
+| Stale inventories and always-skipped retired skill checks | Current authoritative catalogs, precise rejection checks and mandatory packaged-skill validation replace obsolete expectations. |
+| Repeated MCP registration and discarded schemas | One operation registry per app; response-policy metadata uses the existing summary API. Tool contracts and app isolation remain checked. |
+| Repeated decoding of joined catalog parents | Load each plugin/provider once per action listing; preserve live state, visibility, ordering and availability, including concurrent parent deletion. |
+| Daemon imports during standalone bridge startup | Lazy package exports retain canonical objects and static types; real subprocess, cancellation and persistence tests remain. |
+| Revalidating native connector catalogs per action call | Reuse the package's canonical client; credentials, transports, execution context and native implementations remain separate per call. Dynamic Trackbooth catalogs stay separate. |
+| Repeated migration and GraphQL test preparation | Reuse pristine pre-upgrade schema bytes and one schema for fixed-document validation; tested upgrades, failure paths, ciphertext and schema-drift variants remain independent. |
+| Process state leaking between isolated tests | Reset host rate buckets between integration cases and restore crypto configuration after temporary migration setup; repository cases bind their own seed before use. |
+
+### Historical Evidence And Serial Verification
+
+Before integrating `origin/main` at `7884de2`, serial signoff for the task
+branch based on `c76238b` passed in **536.476s (8m 56s)** against a saved
+1,350.936s (22m 31s) baseline. The verified code candidate, rewritten as
+`c1d0ccc`, passed 4,017 Python tests with no skips and 427 UI tests in 101 files,
+plus lint, formatting, mypy and the production build. Make ran sequentially,
+pytest used `-n0`, and Vitest used one worker. The baseline's Python run was
+serial; its UI runner used the prior default settings. A separate default-worker
+gate (automatic, capped at six) at `2d09580` passed in 120.395s. These timings
+and case counts do not establish results for the merged candidate.
+
+After integrating current main `7884de2`, complete serial signoff at `9e7503d`
+passed in **578.586s (9m 39s)**, down from the saved **631.888s (10m 32s)**
+checkpoint. It passed **5,427 Python tests with no skips** and **675 UI tests in
+113 files**, plus lint, formatting, mypy and the production build. This is the
+accepted serial audit result; the default uses the worker caps above.
+
+Final default parallel signoff passed in **130.481s (2m 10s)** with **5,433
+Python tests and 675 UI tests**, plus all static checks and the production
+build. The run recorded exactly six Python workers; Vitest used its configured
+six-worker cap. The six additional Python cases verify crypto-state restoration
+after temporary migration setup succeeds or fails. This fixture repair and the
+UI pool bounds were verified by the final parallel gate; the serial measurement
+above remains pinned to its original candidate.
+
+| Serial suite | Cases | Seconds |
+| --- | ---: | ---: |
+| MCP | 680 | 161.934 |
+| Repositories | 1,985 | 148.630 |
+| REST | 306 | 66.571 |
+| Unit | 1,940 | 65.996 |
+| Migrations/schema | 28 | 22.068 |
+| Connectors | 426 | 20.064 |
+| Install/packaging | 45 | 17.398 |
+| Lifecycle, jobs and backup recovery | 17 | 2.025 |
+| Complete Python runner | 5,427 | 506.863 |
+| UI runner | 675 | 45.720 |
+
+Suite rows sum individual case durations; runner and complete-gate times also
+include their own overhead. The complete gate includes dependency preparation,
+static checks and the production build. Reproduce serial verification with:
+
+```bash
+PYTEST_ADDOPTS='-n0 --junitxml=/tmp/stackos-serial.xml' make -j1 signoff UI_TEST_ARGS='--maxWorkers=1 --minWorkers=1 --no-file-parallelism'
+```
+
+Detailed measurements, case/file timings, profiles, logs and the history-rewrite
+map are saved outside Git at
+`/Users/sergeyrura/.local/share/tpf/stackos-test-audit-20261026/`.
+Use saved results to analyze the historical candidate; changed code or gate
+scope requires new verification. Keep generated timing dumps out of repository
+history.
+
+## Included Contract Coverage
 
 AIGNC generation also exercises shared background acceptance, polling,
 idempotent submission replay, timeout failure, and terminal file/artifact
@@ -138,6 +244,14 @@ required independent review; fixture/schema assertions alone do not prove agent
 behavior or real provider delivery.
 
 ## Focused Checks
+
+For a single test or small file, pass `-n0` to avoid worker startup and simplify
+debugging. This overrides the default parallel configuration without changing
+the selected tests:
+
+```bash
+uv run pytest -n0 tests/unit/test_operations_registry.py -q --durations=20
+```
 
 Encrypted backup changes require service, CLI, operation-authority and
 assembled finance recovery proof with synthetic inputs:

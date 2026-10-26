@@ -96,7 +96,7 @@ def register_mcp(app: FastAPI) -> None:
 
     operation_registry = build_operation_registry()
     registry = ToolRegistry()
-    register_all(registry)
+    register_all(registry, operation_registry=operation_registry)
     assert_envelope_discipline(registry)
     _log.info("mcp.server.registered", tool_count=len(registry))
 

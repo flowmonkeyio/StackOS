@@ -1156,14 +1156,22 @@ def test_generic_workflow_author_preset_teaches_workflow_generation_boundary() -
 
 
 def test_agent_preset_required_refs_do_not_assume_stackos_docs_in_customer_repo() -> None:
-    loader = AgentPresetLoader()
-
-    for summary in loader.list_presets().presets:
-        preset = loader.describe_preset(key=summary.key).preset
+    # This is a contract over every shipped preset's content. Parse each bundle
+    # once instead of rediscovering and reparsing every bundle for each key.
+    presets = [
+        preset
+        for path in sorted((REPO_ROOT / "plugins").glob("*/agent-presets/*.yaml"))
+        for preset in parse_agent_preset_bundle_yaml(path.read_text(encoding="utf-8"))
+    ]
+    assert len({preset.key for preset in presets}) == len(presets)
+    assert {preset.key for preset in presets} == {
+        summary.key for summary in AgentPresetLoader().list_presets().presets
+    }
+    for preset in presets:
         refs = [item.ref for item in preset.project_adaptation.required_context_refs]
         assert "stackos:stackos" in refs
         assert all(not ref.startswith("docs/") for ref in refs), (
-            f"{summary.key} requires repo-local StackOS docs: {refs}"
+            f"{preset.key} requires repo-local StackOS docs: {refs}"
         )
 
 

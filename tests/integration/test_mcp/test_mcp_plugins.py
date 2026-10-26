@@ -2,27 +2,14 @@
 
 from __future__ import annotations
 
+from tests.helpers.plugin_catalog import assert_builtin_plugin_catalog
+
 from .conftest import MCPClient
 
 
 def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
     plugins = mcp_client.call_tool_structured("plugin.list", {})["items"]
-    assert [p["slug"] for p in plugins] == [
-        "engineering",
-        "support",
-        "communications",
-        "gtm",
-        "marketing",
-        "branding",
-        "media-buying",
-        "trackbooth",
-        "shopify",
-        "linear",
-        "publishing",
-        "seo",
-        "core",
-        "utils",
-    ]
+    assert_builtin_plugin_catalog(plugins)
 
     catalog = mcp_client.call_tool_structured(
         "catalog.describe",

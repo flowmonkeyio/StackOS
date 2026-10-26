@@ -19,6 +19,8 @@ from stackos.repositories.base import NotFoundError
 from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.projects import IntegrationBudgetRepository
 
+pytestmark = pytest.mark.fresh_catalog
+
 
 def test_builtin_plugins_sync_and_list(session: Session) -> None:
     repo = PluginRepository(session)

@@ -38,17 +38,18 @@ def test_pipedrive_and_salesloft_publish_their_exact_auth_evidence_postures(
         methods = {method.key: method for method in providers[provider_key].auth_methods}
         assert set(methods) == set(method_expectations)
         for method_key, (evidence_source, enforcement) in method_expectations.items():
-            posture = methods[method_key].permission_verification
+            method = methods[method_key]
+            posture = method.permission_verification
             assert posture is not None
             assert (posture.evidence_source, posture.enforcement) == (
                 evidence_source,
                 enforcement,
             )
-
-    assert "fails closed" in providers["pipedrive"].auth_methods[1].description
-    assert "enforces permissions" in providers["pipedrive"].auth_methods[2].description
-    assert "fails closed" in providers["salesloft"].auth_methods[1].description
-    assert "enforces permissions" in providers["salesloft"].auth_methods[2].description
+            # Probe policy branches on these structured fields, not setup
+            # prose or method list positions. The denial tests below prove
+            # unavailable/unsupported evidence stops before any native HTTP.
+            assert method.interactive is (method_key == "oauth2_authorization_code")
+            assert (method.auth_type == "oauth") is (enforcement == "local_required")
 
 
 @pytest.mark.parametrize(

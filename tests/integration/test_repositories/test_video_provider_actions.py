@@ -6,6 +6,7 @@ import asyncio
 import json
 from pathlib import Path
 
+import pytest
 from pytest_httpx import HTTPXMock
 from sqlmodel import Session
 
@@ -15,6 +16,8 @@ from stackos.repositories.projects import (
     IntegrationBudgetRepository,
 )
 from tests.integration.account_test_support import seed_test_account
+
+pytestmark = pytest.mark.usefixtures("integration_clock")
 
 
 def _credential_ref(

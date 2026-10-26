@@ -30,8 +30,7 @@ from typing import Any
 from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
 
 import httpx
-from stackos_connectors import ConnectorClient
-from stackos_connectors.catalog import load_registry
+from stackos_connectors import get_default_client
 
 from stackos.actions.connectors import (
     ActionConnectorError,
@@ -5050,7 +5049,7 @@ __all__ = ["HubSpotActionConnector"]
 
 
 async def _native_call(request, operation, data, *, redact_values=(), receipt=None):
-    client = ConnectorClient(registry=load_registry("connectors/hubspot/catalog.json"))
+    client = get_default_client()
     adapter = PackageActionConnector("hubspot", client=client)
     try:
         result = await adapter.execute_native(

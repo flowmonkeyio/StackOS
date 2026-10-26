@@ -1,4 +1,4 @@
-// Polyfills + globals for the jsdom test environment.
+// Shared test setup; browser cleanup applies only to jsdom specs.
 
 import { afterAll, afterEach } from 'vitest'
 
@@ -19,11 +19,13 @@ console.warn = (...args: unknown[]) => {
   originalConsoleWarn(...args)
 }
 
-afterEach(() => {
-  // Reset any DOM state between tests (Vitest unmounts the test wrapper
-  // already, but if anything leaked into <head>, scrub here).
-  document.head.querySelectorAll('style[data-vitest]').forEach((el) => el.remove())
-})
+if (typeof document !== 'undefined') {
+  afterEach(() => {
+    // Reset any DOM state between browser tests (Vitest unmounts the test
+    // wrapper already, but if anything leaked into <head>, scrub here).
+    document.head.querySelectorAll('style[data-vitest]').forEach((el) => el.remove())
+  })
+}
 
 afterAll(() => {
   console.warn = originalConsoleWarn

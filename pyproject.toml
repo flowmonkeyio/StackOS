@@ -64,6 +64,8 @@ dev = [
     # layout test (`tests/integration/test_install_scripts/test_pipx_wheel_layout.py`).
     "build>=1.2",
     "graphql-core>=3.2,<3.4",
+    "pytest-xdist>=3.6",
+    "hatchling>=1.32.4",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -140,7 +142,8 @@ exclude = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = ["-ra", "--strict-markers"]
+addopts = ["-ra", "--strict-markers", "-n", "auto", "--maxprocesses=6", "--dist=loadfile"]
 markers = [
     "benchmark: marks acceptance benchmarks (audit B-07 100x set_draft, etc.)",
+    "fresh_catalog: build an empty catalog for catalog bootstrap, synchronization, and manifest-mutation tests",
 ]

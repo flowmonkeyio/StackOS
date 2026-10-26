@@ -23,19 +23,22 @@ class ProviderMetadataMixin:
 
     # mypy cannot see the repository facade's session attribute on mixins.
 
-    def sync_providers(self) -> None:
-        """Mirror plugin provider auth metadata into auth_providers."""
+    def sync_providers(self, *, provider_key: str | None = None) -> None:
+        """Refresh current auth metadata for one provider key or the full catalog."""
         from stackos.repositories.plugins import PluginRepository
 
         PluginRepository(self._s).sync_builtin_plugins()
-        rows = self._s.exec(
+        source_stmt = (
             select(Provider, Plugin)
             .join(Plugin, col(Provider.plugin_id) == col(Plugin.id))
             .order_by(col(Plugin.slug).asc(), col(Provider.key).asc())
-        ).all()
-        existing = {
-            (row.plugin_id, row.key): row for row in self._s.exec(select(AuthProvider)).all()
-        }
+        )
+        existing_stmt = select(AuthProvider)
+        if provider_key is not None:
+            source_stmt = source_stmt.where(col(Provider.key) == provider_key)
+            existing_stmt = existing_stmt.where(col(AuthProvider.key) == provider_key)
+        rows = self._s.exec(source_stmt).all()
+        existing = {(row.plugin_id, row.key): row for row in self._s.exec(existing_stmt).all()}
         now = utcnow()
         changed = False
         for provider, plugin in rows:
@@ -73,7 +76,7 @@ class ProviderMetadataMixin:
             self._s.commit()
 
     def list_providers(self, *, provider_key: str | None = None) -> list[AuthProviderOut]:
-        self.sync_providers()
+        self.sync_providers(provider_key=provider_key)
         stmt = select(AuthProvider, Plugin).outerjoin(
             Plugin, col(AuthProvider.plugin_id) == col(Plugin.id)
         )
@@ -123,7 +126,7 @@ class ProviderMetadataMixin:
         sync: bool = True,
     ) -> AuthProvider | None:
         if sync:
-            self.sync_providers()
+            self.sync_providers(provider_key=provider_key)
         row = self._s.exec(
             select(AuthProvider).where(col(AuthProvider.key) == provider_key)
         ).first()

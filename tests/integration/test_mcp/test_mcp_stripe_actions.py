@@ -12,8 +12,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 from sqlmodel import Session, select
 
-from stackos.auth_providers import AuthRepository
-from stackos.db.models import Credential, CredentialAccount
+from stackos.db.models import Credential
 from stackos.repositories.provider_refs import ProviderObjectReferenceRepository
 from tests.helpers.stripe import (
     stripe_charge,
@@ -24,6 +23,7 @@ from tests.helpers.stripe import (
     stripe_price,
     stripe_product,
 )
+from tests.integration.account_test_support import store_test_account_with_identity
 
 from .conftest import MCPClient
 
@@ -620,30 +620,15 @@ def _seed_stripe_credential(
         else "Stripe MCP other-account fixture"
     )
     with Session(engine) as session:
-        credential_ref = (
-            AuthRepository(session)
-            .store_credential(
-                provider_key="stripe",
-                auth_method_key="api_key",
-                display_name=display_name,
-                fields={"api_key": STRIPE_SECRET},
-                attach_project_id=project_id,
-            )
-            .data.credential_ref
+        return store_test_account_with_identity(
+            session,
+            project_id=project_id,
+            provider_key="stripe",
+            auth_method_key="api_key",
+            display_name=display_name,
+            fields={"api_key": STRIPE_SECRET},
+            provider_account_id=provider_account_id,
         )
-        credential = session.exec(
-            select(Credential).where(Credential.credential_ref == credential_ref)
-        ).one()
-        assert credential.id is not None
-        session.add(
-            CredentialAccount(
-                credential_id=credential.id,
-                provider_account_id=provider_account_id,
-                display_name=display_name,
-            )
-        )
-        session.commit()
-        return credential_ref
 
 
 def _seed_stripe_object_ref(

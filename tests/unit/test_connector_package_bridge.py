@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import fields, replace
 from types import SimpleNamespace
@@ -10,6 +11,7 @@ import pytest
 from stackos_connectors import (
     ActionDefinition,
     AuthMethodDefinition,
+    CallOptions,
     ConnectorClient,
     ConnectorError,
     ConnectorFile,
@@ -215,6 +217,70 @@ async def test_execute_passes_plain_auth_native_data_and_reserved_route(fixture_
     assert result.output_json == {"id": "native-123"}
     assert result.metadata_json == {"request_id": "provider-receipt"}
     assert result.cost_cents == 7
+
+
+@pytest.mark.asyncio
+async def test_shared_catalog_keeps_concurrent_requests_and_implementations_independent(
+    fixture_bridge, monkeypatch, tmp_path
+):
+    from stackos.actions import package_bridge
+
+    template, _ = fixture_bridge
+    calls = []
+    implementations = []
+    both_started = asyncio.Event()
+
+    class ConcurrentConnector(FixtureConnector):
+        async def execute(self, value):
+            calls.append(value)
+            if len(calls) == 2:
+                both_started.set()
+            await both_started.wait()
+            return ConnectorResult(output_json={"id": value.input_json["object_id"]})
+
+    def factory():
+        implementation = ConcurrentConnector()
+        implementations.append(implementation)
+        return implementation
+
+    shared = ConnectorClient(
+        registry=ConnectorRegistry(
+            actions=template.client.registry.actions.values(),
+            implementations={"fixture": factory},
+        )
+    )
+    monkeypatch.setattr(package_bridge, "get_default_client", lambda: shared)
+    bridges = [PackageActionConnector("fixture", options=CallOptions()) for _ in range(2)]
+    values = [
+        request(
+            project_id=index + 1,
+            input_json={"object_id": f"object-{index}"},
+            credential=credential(payload=json.dumps({"access_token": f"token-{index}"}).encode()),
+            idempotency_key=f"intent-{index}",
+            correlation_ref=f"call-{index}",
+            provider_context_json={"tenant": f"tenant-{index}"},
+            asset_dir=tmp_path / str(index),
+        )
+        for index in range(2)
+    ]
+    results = await asyncio.wait_for(
+        asyncio.gather(
+            *(bridge.execute(value) for bridge, value in zip(bridges, values, strict=True))
+        ),
+        timeout=2,
+    )
+    assert bridges[0].client is bridges[1].client is shared
+    assert len(implementations) == 2 and implementations[0] is not implementations[1]
+    for index, (value, result) in enumerate(zip(calls, results, strict=True)):
+        assert value.auth.fields == {"access_token": f"token-{index}"}
+        assert value.options.idempotency_key == f"intent-{index}"
+        assert value.options.correlation_id == f"call-{index}"
+        assert value.options.provider_context == {"tenant": f"tenant-{index}"}
+        assert value.options.output_dir == tmp_path / str(index)
+        assert result.output_json == {"id": f"object-{index}"}
+    assert all(bridge.options.provider_context == {} for bridge in bridges)
+    assert all(bridge.options.idempotency_key is None for bridge in bridges)
+    assert shared.registry.action("fixture", "fixture.lookup").config == {"path": "/fixed"}
 
 
 @pytest.mark.asyncio

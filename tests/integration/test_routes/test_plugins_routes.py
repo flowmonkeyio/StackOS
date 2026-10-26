@@ -4,25 +4,13 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from tests.helpers.plugin_catalog import assert_builtin_plugin_catalog
+
 
 def test_plugin_catalog_routes(api: TestClient) -> None:
     plugins = api.get("/api/v1/plugins")
     assert plugins.status_code == 200
-    assert [p["slug"] for p in plugins.json()] == [
-        "engineering",
-        "support",
-        "communications",
-        "gtm",
-        "marketing",
-        "branding",
-        "media-buying",
-        "trackbooth",
-        "shopify",
-        "publishing",
-        "seo",
-        "core",
-        "utils",
-    ]
+    assert_builtin_plugin_catalog(plugins.json())
 
     compact_plugins = api.get("/api/v1/plugins", params={"compact": True})
     assert compact_plugins.status_code == 200

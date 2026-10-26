@@ -880,32 +880,6 @@ def test_output_persistence_failure_preserves_provider_execution_diagnosis(
     assert "sk-leak" not in json.dumps(call.response_json)
 
 
-def test_action_execute_rejects_explicit_file_path_for_file_backed_output(
-    session: Session,
-    project_id: int,
-    tmp_path: Path,
-) -> None:
-    _seed_action(session)
-    credential_ref = _credential_ref(session, project_id)
-    fake = _FakeConnector()
-    registry = ActionConnectorRegistry()
-    registry.register(fake)
-    repo = ActionRepository(session, connectors=registry, asset_dir=tmp_path)
-    requested_path = tmp_path / "requested" / "echo-response.json"
-
-    with pytest.raises(ValidationError, match="accepts only path"):
-        asyncio.run(
-            repo.execute(
-                project_id=project_id,
-                action_ref="test-actions.echo.run",
-                input_json={"name": "Ada"},
-                credential_ref=credential_ref,
-                output_policy_json={"mode": "always_file", "file_path": str(requested_path)},
-                default_external_file_output=True,
-            )
-        )
-
-
 def test_action_execute_file_backs_external_output_under_requested_directory_path(
     session: Session,
     project_id: int,
@@ -955,7 +929,7 @@ def test_action_execute_file_backs_external_output_under_requested_directory_pat
     assert call.response_json == out.output_json
 
 
-def test_action_execute_rejects_directory_path_aliases_for_file_backed_output(
+def test_action_execute_rejects_path_aliases_for_file_backed_output(
     session: Session,
     project_id: int,
     tmp_path: Path,
@@ -967,7 +941,13 @@ def test_action_execute_rejects_directory_path_aliases_for_file_backed_output(
     registry.register(fake)
     repo = ActionRepository(session, connectors=registry, asset_dir=tmp_path)
 
-    for alias in ("directory_path", "output_dir"):
+    # All three retired aliases reject through the same pre-dispatch policy check.
+    for alias in ("file_path", "directory_path", "output_dir"):
+        requested_path = (
+            tmp_path / "requested" / "echo-response.json"
+            if alias == "file_path"
+            else tmp_path / alias
+        )
         with pytest.raises(ValidationError, match="accepts only path"):
             asyncio.run(
                 repo.execute(
@@ -975,7 +955,7 @@ def test_action_execute_rejects_directory_path_aliases_for_file_backed_output(
                     action_ref="test-actions.echo.run",
                     input_json={"name": "Ada"},
                     credential_ref=credential_ref,
-                    output_policy_json={"mode": "always_file", alias: str(tmp_path / alias)},
+                    output_policy_json={"mode": "always_file", alias: str(requested_path)},
                     default_external_file_output=True,
                 )
             )
@@ -2369,6 +2349,7 @@ def test_ideogram_image_actions_reject_invalid_contract_controls(
     assert any(issue.path == "$.input_image_ref" for issue in traversal_validation.issues)
 
 
+@pytest.mark.usefixtures("integration_clock")
 def test_ideogram_image_generate_action_executes_and_registers_artifact(
     session: Session,
     project_id: int,
@@ -2462,6 +2443,7 @@ def test_ideogram_image_generate_action_executes_and_registers_artifact(
     assert path_2.read_bytes() == b"ideogram-image-2"
 
 
+@pytest.mark.usefixtures("integration_clock")
 def test_ideogram_image_remix_action_executes_and_registers_artifact(
     session: Session,
     project_id: int,
@@ -4208,6 +4190,7 @@ def test_dataforseo_keyword_and_serp_limits_match_live_contracts(
     )
 
 
+@pytest.mark.usefixtures("integration_clock")
 def test_dataforseo_paa_action_uses_explicit_action_contract(
     session: Session,
     project_id: int,

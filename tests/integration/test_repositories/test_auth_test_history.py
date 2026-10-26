@@ -16,6 +16,8 @@ from stackos_connectors.errors import IntegrationDownError
 from stackos.auth_providers import AuthRepository
 from stackos.db.models import Credential, CredentialUsageEvent
 
+pytestmark = pytest.mark.usefixtures("integration_clock")
+
 
 def test_account_inventory_keeps_latest_test_separate_from_connected_state(
     session: Session, project_id: int

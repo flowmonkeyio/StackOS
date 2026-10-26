@@ -8,6 +8,7 @@ import re
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import lru_cache
 from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
@@ -48,6 +49,17 @@ _WORKFLOW_KEY_RE = re.compile(r"^[a-z][a-z0-9_]*(?:[-.][a-z0-9_]+)*$")
 _EXTENSION_JSON_FIELD_DEFAULTS = workflow_extension_policy.EXTENSION_JSON_FIELD_DEFAULTS
 _EXTENSION_JSON_FIELDS = workflow_extension_policy.EXTENSION_JSON_FIELDS
 _EXTENSION_UPDATE_MODES = workflow_extension_policy.EXTENSION_UPDATE_MODES
+
+
+@lru_cache(maxsize=128)
+def _cached_workflow_template_yaml(text: str) -> WorkflowTemplateSpec:
+    """Cache parsing only; resolution copies specs before adding mutable context.
+
+    Read the source on every load and key by its exact content, so edits remain
+    visible even when timestamps and file sizes are unchanged. Project rows,
+    precedence, and extensions are resolved separately on every request.
+    """
+    return parse_workflow_template_yaml(text)
 
 
 def _utcnow() -> datetime:
@@ -204,8 +216,7 @@ class WorkflowTemplateLoader:
             repo_root=repo_root,
             plugin_slug=plugin_slug,
         )
-        resolved = self._resolve_candidates(candidates, include_shadowed=include_shadowed)
-        templates = [item.model_copy(deep=True) for item in resolved]
+        templates = self._resolve_candidates(candidates, include_shadowed=include_shadowed)
         if project_id is not None:
             self._attach_extension_summaries(templates, project_id=project_id)
         return WorkflowTemplateListOut(
@@ -230,7 +241,12 @@ class WorkflowTemplateLoader:
             repo_root=repo_root,
             plugin_slug=plugin_slug,
         )
-        resolved = self._resolve_candidates(candidates, include_shadowed=True)
+        # Load and validate every source as before, then copy only this key's
+        # candidates. Point lookups do not need owned copies of unrelated specs.
+        resolved = self._resolve_candidates(
+            [item for item in candidates if item.template.summary.key == key],
+            include_shadowed=True,
+        )
         matches = [
             item
             for item in resolved
@@ -242,7 +258,7 @@ class WorkflowTemplateLoader:
                 data={"key": key, "project_id": project_id, "plugin_slug": plugin_slug},
             )
         matches.sort(key=lambda item: item.summary.precedence, reverse=True)
-        loaded = matches[0].model_copy(deep=True)
+        loaded = matches[0]
         if project_id is not None and include_extension:
             self._attach_extension(loaded, project_id=project_id)
         return loaded
@@ -1027,11 +1043,14 @@ class WorkflowTemplateLoader:
         resolved: list[LoadedWorkflowTemplate] = []
         for candidate in candidates:
             winner = by_key[candidate.template.summary.key]
+            if candidate is not winner and not include_shadowed:
+                continue
+            # Source specs may belong to the parse cache or a session row.
+            # This is the ownership boundary before resolution annotations,
+            # extensions, or callers can mutate the loaded result.
             template = candidate.template.model_copy(deep=True)
             if candidate is not winner:
                 template.summary.shadowed_by = winner.template.summary.source
-                if not include_shadowed:
-                    continue
             resolved.append(template)
         resolved.sort(
             key=lambda item: (
@@ -1234,7 +1253,7 @@ class WorkflowTemplateLoader:
     def _loaded_from_file_path(self, path: Path, *, clone_root: Path) -> LoadedWorkflowTemplate:
         if path.stat().st_size > MAX_TEMPLATE_FILE_BYTES:
             raise ConflictError("workflow template file is too large", data={"path": str(path)})
-        spec = parse_workflow_template_yaml(path.read_text(encoding="utf-8"))
+        spec = _cached_workflow_template_yaml(path.read_text(encoding="utf-8"))
         plugin_slug = path.relative_to(clone_root).parts[0]
         return self._loaded(
             spec,
@@ -1250,7 +1269,7 @@ class WorkflowTemplateLoader:
         *,
         plugin_slug: str,
     ) -> LoadedWorkflowTemplate:
-        spec = parse_workflow_template_yaml(node.read_text(encoding="utf-8"))
+        spec = _cached_workflow_template_yaml(node.read_text(encoding="utf-8"))
         return self._loaded(
             spec,
             source="plugin",
@@ -1262,7 +1281,7 @@ class WorkflowTemplateLoader:
     def _loaded_from_repo_path(self, path: Path) -> LoadedWorkflowTemplate:
         if path.stat().st_size > MAX_TEMPLATE_FILE_BYTES:
             raise ConflictError("workflow template file is too large", data={"path": str(path)})
-        spec = parse_workflow_template_yaml(path.read_text(encoding="utf-8"))
+        spec = _cached_workflow_template_yaml(path.read_text(encoding="utf-8"))
         return self._loaded(
             spec,
             source="repo",
@@ -1298,7 +1317,12 @@ class WorkflowTemplateLoader:
         template_id: int | None = None,
         version_id: int | None = None,
     ) -> LoadedWorkflowTemplate:
-        return LoadedWorkflowTemplate(
+        # Every source adapter supplies a parsed/model-validated spec. Building
+        # the private envelope through normal nested validation would rerun the
+        # full cross-reference/secret guard for every cached candidate on every
+        # lookup. Validate the new summary here; resolution owns the deep copy
+        # before exposing a cached spec or applying project extensions.
+        return LoadedWorkflowTemplate.model_construct(
             summary=WorkflowTemplateSummaryOut(
                 key=spec.key,
                 name=spec.name,

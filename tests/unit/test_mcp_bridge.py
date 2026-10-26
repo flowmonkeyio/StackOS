@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
+import sys
 from typing import Any
 
 import pytest
@@ -44,6 +46,28 @@ from stackos.mcp.tool_registry import _to_tool
 from stackos.mcp.tools import register_all
 from stackos.operations.registry import build_operation_registry
 from stackos.operations.responses import shape_operation_response
+
+
+def test_standalone_bridge_import_does_not_load_daemon_server() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; import stackos.mcp.bridge; "
+            "assert 'stackos.mcp.server' not in sys.modules; "
+            "assert 'stackos.operations.registry' not in sys.modules; "
+            "assert 'stackos.plugins.manifest' not in sys.modules; "
+            "assert 'stackos.workflows.run_plan_schema' not in sys.modules; "
+            "from stackos.mcp import register_mcp; "
+            "from stackos.mcp.server import register_mcp as canonical; "
+            "assert register_mcp is canonical",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def _tool(

@@ -24,11 +24,11 @@ from packaging.utils import canonicalize_name
 
 @pytest.fixture(scope="module")
 def built_wheel(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Build the wheel into a tmp dist dir; return the .whl path."""
+    """Build with the locked dev backend, without provisioning another environment."""
     repo_root = Path(__file__).resolve().parents[3]
     dist_dir = tmp_path_factory.mktemp("dist")
     result = subprocess.run(
-        [sys.executable, "-m", "build", "--wheel", "--outdir", str(dist_dir)],
+        [sys.executable, "-m", "build", "--wheel", "--no-isolation", "--outdir", str(dist_dir)],
         cwd=str(repo_root),
         capture_output=True,
         text=True,
