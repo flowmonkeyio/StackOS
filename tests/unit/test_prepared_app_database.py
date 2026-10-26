@@ -30,6 +30,30 @@ def _settings(root: Path, name: str) -> Settings:
     )
 
 
+def _schema_contract(rows):
+    """Ignore reflected FK/UNIQUE declaration order, preserving every clause."""
+    contract = []
+    for kind, name, table, ddl in rows:
+        unchanged, constraints = [], []
+        if kind == "table" and ddl is not None:
+            # Alembic batch reflection reorders FK and UNIQUE declarations.
+            # Their order is immaterial; targets, names, actions and duplicate
+            # multiplicity are not. Preserve the complete declaration bodies
+            # and keep columns, PK/CHECK clauses and other schema objects exact.
+            for line in ddl.splitlines(keepends=True):
+                declaration = line.lstrip()
+                if declaration.startswith(("FOREIGN KEY(", "UNIQUE (")) or (
+                    declaration.startswith("CONSTRAINT ")
+                    and (" FOREIGN KEY(" in declaration or " UNIQUE (" in declaration)
+                ):
+                    constraints.append(line.rstrip().removesuffix(","))
+                else:
+                    unchanged.append(line)
+            ddl = "".join(unchanged)
+        contract.append((kind, name, table, ddl, tuple(sorted(constraints))))
+    return contract
+
+
 def test_prepared_database_matches_real_migrations_and_sync_without_private_state(tmp_path):
     prepared = _settings(tmp_path, "prepared")
     fresh = _settings(tmp_path, "fresh")
@@ -41,13 +65,15 @@ def test_prepared_database_matches_real_migrations_and_sync_without_private_stat
             PluginRepository(session).sync_builtin_plugins()
         with original_engine.connect() as original, copied_engine.connect() as copied:
             schema_query = "SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name"
-            assert (
-                copied.exec_driver_sql(schema_query).all()
-                == original.exec_driver_sql(schema_query).all()
-            ), "prepared app schema must come from real Alembic migrations"
+            original_schema = original.exec_driver_sql(schema_query).all()
+            copied_schema = copied.exec_driver_sql(schema_query).all()
+            assert _schema_contract(copied_schema) == _schema_contract(original_schema), (
+                "prepared app schema must match real Alembic migrations"
+            )
             tables = (
                 copied.exec_driver_sql(
-                    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+                    "SELECT name FROM sqlite_master "
+                    "WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
                 )
                 .scalars()
                 .all()

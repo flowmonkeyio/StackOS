@@ -114,6 +114,9 @@ and safe audit proof. Workflow lookup copies only the requested key's resolved
 candidates, after validating every source, with one ownership copy before
 extensions or caller mutation. Preset content validation parses each shipped
 bundle once while comparing its complete key set to public discovery.
+Known-provider account lookups now refresh only that provider's metadata;
+unfiltered listing and explicit synchronization still refresh the entire
+catalog. No credential, permission or auth-result cache is introduced.
 
 | Python suite | Cases | Serial time, including fixtures |
 | --- | ---: | ---: |
