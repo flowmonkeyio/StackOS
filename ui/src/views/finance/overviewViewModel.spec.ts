@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { describe, expect, it } from 'vitest'
 import { overviewCurrencies, drawingScale, exactChange } from './overviewViewModel'
 import { chartProjection, money, metric } from './overviewFixtures'

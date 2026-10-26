@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { describe, expect, it } from 'vitest'
 import { aiCategory, insightsModel } from './insightsViewModel'
 import { analysisContent, insightFixture } from './insightsFixtures'
