@@ -91,8 +91,11 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
 
     finance = repo.catalog(plugin_slug="finance").plugins[0]
     assert finance.plugin.slug == "finance"
-    assert finance.plugin.manifest_json["ui"] is None
-    assert {provider.key for provider in finance.providers} == {"stripe"}
+    assert finance.plugin.manifest_json["ui"]["nav"]["label"] == "Finance"
+    assert finance.plugin.manifest_json["ui"]["nav"]["items"] == [
+        {"label": "Finance", "to": "finance"}
+    ]
+    assert {provider.key for provider in finance.providers} == {"quickbooks-online", "stripe"}
     assert {action.key for action in finance.actions} >= {
         "stripe.customers.create",
         "stripe.invoices.create",

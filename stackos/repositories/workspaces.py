@@ -179,6 +179,7 @@ class AgentSessionOut(BaseModel):
     last_seen_at: datetime
     needs_connect: bool = False
     auto_bootstrap: bool = False
+    global_session: bool = False
     project_was_created: bool | None = None
     binding_was_created: bool | None = None
     candidate_workspaces: list[NamedWorkspaceCandidateOut] = Field(default_factory=list)
@@ -562,10 +563,6 @@ class WorkspaceRepository:
                 ),
             )
 
-        row.last_seen_at = _utcnow()
-        self._s.add(row)
-        self._s.commit()
-        self._s.refresh(row)
         out = _workspace_binding_out(row)
         return WorkspaceResolutionOut(
             binding=out,
@@ -628,8 +625,16 @@ class WorkspaceRepository:
         thread_id: str | None = None,
         client_session_id: str | None = None,
         auto_bootstrap: bool = True,
+        global_session: bool = False,
+        project_id: int | None = None,
     ) -> Envelope[AgentSessionOut]:
         """Register a plugin MCP bridge session and attach binding if known."""
+        if project_id is not None:
+            if not isinstance(project_id, int) or isinstance(project_id, bool) or project_id <= 0:
+                raise ValidationError("project_id must be a positive integer")
+            ProjectRepository(self._s).get(project_id)
+        if global_session and workspace_alias is not None:
+            raise ValidationError("global_session cannot select a workspace_alias; use project_id")
         resolution = self.resolve(
             repo_fingerprint=repo_fingerprint,
             git_remote_url=git_remote_url,
@@ -638,6 +643,85 @@ class WorkspaceRepository:
         )
         bootstrap: Envelope[WorkspaceBootstrapOut] | None = None
         normalized_cwd = _normalize_path(cwd)
+        effective_global = global_session or (
+            not _is_usable_workspace_root(normalized_cwd)
+            and workspace_alias is None
+            and resolution.binding is None
+        )
+        if effective_global:
+            # SQLite's writer reservation serializes this decision with every
+            # canonical binding writer. Re-read after acquiring it: preflight
+            # absence is not authority, and lookup errors must fail closed.
+            try:
+                self._s.connection().exec_driver_sql("BEGIN IMMEDIATE")
+                resolution = self.resolve(
+                    repo_fingerprint=repo_fingerprint,
+                    git_remote_url=git_remote_url,
+                    cwd=cwd,
+                    workspace_alias=workspace_alias,
+                )
+                if resolution.binding is not None:
+                    raise ValidationError(
+                        "workspace is already bound; global_session cannot replace its scope",
+                        data={"project_id": resolution.project_id, "global_session": False},
+                    )
+                if project_id is not None:
+                    ProjectRepository(self._s).get(project_id)
+                row = AgentSession(
+                    project_id=project_id,
+                    workspace_binding_id=None,
+                    runtime=runtime or "unknown",
+                    thread_id=thread_id,
+                    client_session_id=client_session_id,
+                )
+                self._s.add(row)
+                self._s.commit()
+            except Exception:
+                self._s.rollback()
+                raise
+            self._s.refresh(row)
+            selected = project_id is not None
+            return Envelope(
+                data=AgentSessionOut.model_validate(row).model_copy(
+                    update={
+                        "global_session": True,
+                        "needs_connect": not selected,
+                        "candidate_workspaces": resolution.candidate_workspaces,
+                        "candidate_projects": resolution.candidate_projects if not selected else [],
+                        "repo_hints": resolution.repo_hints,
+                        "ui_paths": _ui_paths(project_id),
+                        "setup_state": {
+                            "state": "global_project_selected"
+                            if selected
+                            else "project_selection_required",
+                            "workspace_bound": False,
+                            "project_scoped_tools_usable": selected,
+                            "auto_bootstrap": False,
+                        },
+                        "next_step": _connected_next_step(project_id)
+                        if project_id is not None
+                        else {
+                            "status": "project_selection_required",
+                            "why": (
+                                "Choose an explicit project for each task; "
+                                "no last-used project is selected."
+                            ),
+                            "recommended_tools": [
+                                "project.list",
+                                "workspace.startSession",
+                                "workspace.bootstrap",
+                            ],
+                        },
+                    }
+                ),
+                project_id=project_id,
+            )
+        if project_id is not None and project_id != resolution.project_id:
+            raise ValidationError(
+                "project_id must match the workspace binding; declare global_session=true "
+                "before selecting a project in an unbound global chat",
+                data={"project_id": resolution.project_id, "requested_project_id": project_id},
+            )
         has_derived_project_name = (
             _derive_project_name(
                 normalized_repo_name=None,

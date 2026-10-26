@@ -41,7 +41,6 @@ from stackos.actions.connectors import (
 )
 from stackos.actions.package_bridge import PackageActionConnector
 from stackos.actions.provider_utils import (
-    bearer_headers,
     credential_config,
     dict_field,
     int_range,
@@ -2261,8 +2260,6 @@ def _subscription_type_results(
 
 async def _resolved_contact_email(
     request: ActionConnectorRequest,
-    *,
-    headers: Mapping[str, str],
 ) -> tuple[Any, str]:
     refs, credential = _ref_context(request)
     contact = refs.resolve(
@@ -4120,7 +4117,6 @@ class HubSpotActionConnector:
             ) from exc
 
     async def _execute(self, request: ActionConnectorRequest, receipt) -> ActionConnectorResult:
-        headers = bearer_headers(request, "access_token")
         payload = request.input_json
         match request.operation:
             case "bulk.exports.create":
@@ -4775,7 +4771,6 @@ class HubSpotActionConnector:
                 custom_properties = _transactional_custom_properties(payload)
                 contact, contact_email = await _resolved_contact_email(
                     request,
-                    headers=headers,
                 )
                 status, body, response_headers = await _native_call(
                     request,
@@ -4831,7 +4826,6 @@ class HubSpotActionConnector:
             case "marketing.contact_preferences.get":
                 contact, contact_email = await _resolved_contact_email(
                     request,
-                    headers=headers,
                 )
                 status, body, response_headers = await _native_call(
                     request,
@@ -4851,7 +4845,6 @@ class HubSpotActionConnector:
             case "marketing.contact_preferences.update":
                 contact, contact_email = await _resolved_contact_email(
                     request,
-                    headers=headers,
                 )
                 subscription = _resolved_optional_ref(
                     request,

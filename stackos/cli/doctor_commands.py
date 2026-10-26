@@ -16,7 +16,7 @@ from stackos.browser.runtime import (
     BROWSER_PROVIDER,
     gstack_executable_path,
 )
-from stackos.config import Settings, get_settings
+from stackos.config import Settings, get_settings, get_state_dir
 from stackos.install import _codex_mcp_line_is_bridge as _install_codex_mcp_line_is_bridge
 from stackos.install import verify_gstack_runtime
 from stackos.integrations.telegram_tdlib.runtime import (
@@ -635,6 +635,13 @@ def _check_provider_readiness(
 @app.command()
 def doctor(
     json_output: Annotated[bool, typer.Option("--json", help="Emit JSON")] = False,
+    bridge_attempt: Annotated[
+        str | None,
+        typer.Option(
+            "--bridge-attempt",
+            help="Read retained evidence for one bridge attempt only; no health probes.",
+        ),
+    ] = None,
 ) -> None:
     """Diagnose the local StackOS install.
 
@@ -649,6 +656,30 @@ def doctor(
     The DB-not-yet-created case is a *warning*, not a failure — first install
     has no DB until `make migrate` runs.
     """
+    if bridge_attempt is not None:
+        from stackos.mcp.bridge.diagnostics import bridge_diagnostic_snapshot
+
+        try:
+            snapshot = bridge_diagnostic_snapshot(
+                get_state_dir() / "mcp-bridge.log", bridge_attempt
+            )
+        except ValueError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=2) from None
+        if json_output:
+            typer.echo(json.dumps({"info": {"bridge_diagnostics": snapshot}}))
+        else:
+            typer.echo(f"Bridge evidence: {snapshot['evidence_status']}")
+            typer.echo(f"Last confirmed stage: {snapshot['last_confirmed_stage'] or 'unavailable'}")
+            typer.echo(f"Awaiting evidence: {snapshot['awaiting_evidence']}")
+            typer.echo(
+                f"Milliseconds since observation: {snapshot['elapsed_since_observation_ms']}"
+            )
+            typer.echo(
+                "Host execution outcome unresolved; process termination unobserved. "
+                "Reconcile before retry."
+            )
+        return
     settings = get_settings()
 
     daemon_up = daemon_processes._tcp_can_connect(settings.host, settings.port)

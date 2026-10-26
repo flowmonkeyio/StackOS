@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
@@ -22,6 +22,14 @@ describe('SetupStatusTab (calm readiness)', () => {
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input)
       requestedUrls.push(url)
+
+      if (url === '/api/v1/operations/backup.status/call') {
+        return json({
+          configured: false, ready: false, enabled: false, interval_hours: 24,
+          keep_last: 30, destination: '/private/backups', targets: [], project_ids: [],
+          recipient_fingerprint: null, last_attempt: null, last_success: null, last_error: null,
+        })
+      }
 
       if (url === '/api/v1/health') {
         return json({
@@ -91,6 +99,7 @@ describe('SetupStatusTab (calm readiness)', () => {
     expect(wrapper.text()).toContain('Automation')
     expect(wrapper.text()).toContain('Spend')
     expect(wrapper.text()).toContain('Plugins')
+    expect(wrapper.get('[aria-label="Local backups"]').text()).toContain('Automatic backups are off')
     expect(wrapper.text()).toContain('StackOS version')
     expect(wrapper.text()).toContain('1.0.1')
     // No registry jargon, no raw credential refs.
@@ -100,6 +109,53 @@ describe('SetupStatusTab (calm readiness)', () => {
     expect(requestedUrls).toContain('/api/v1/health')
     expect(requestedUrls).toContain('/api/v1/projects/1/connections/accounts')
     expect(requestedUrls).toContain('/api/v1/operations/integration.list/call')
+    expect(requestedUrls).toContain('/api/v1/operations/backup.status/call')
+    wrapper.unmount()
+  })
+
+  it('keeps install-wide backup actions available while project readiness is loading', async () => {
+    const requests: Array<{ url: string; args: Record<string, unknown> }> = []
+    const status = {
+      configured: true, ready: true, enabled: false, interval_hours: 24,
+      keep_last: 30, destination: '/private/backups', targets: [], project_ids: [],
+      recipient_fingerprint: 'synthetic-public-key',
+      last_attempt: null, last_success: null, last_error: null,
+    }
+    globalThis.fetch = vi.fn(async (input, init) => {
+      const url = String(input)
+      if (init?.body) requests.push({ url, args: JSON.parse(String(init.body)).arguments })
+      if (url === '/api/v1/health') return new Promise<Response>(() => {})
+      if (url === '/api/v1/operations/backup.status/call') return json(status)
+      if (url === '/api/v1/operations/backup.configure/call') {
+        return json({ data: { ...status, enabled: true } })
+      }
+      return json({})
+    }) as typeof fetch
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/setup', component: SetupStatusTab }],
+    })
+    await router.push('/projects/7/setup')
+    await router.isReady()
+    const wrapper = mount(SetupStatusTab, { global: { plugins: [router] } })
+    await flushPromises()
+
+    const backups = wrapper.get('[aria-label="Local backups"]')
+    expect(backups.text()).toContain('This StackOS installation, project Finance data, and enrolled external folders.')
+    await backups.get('input[type="checkbox"]').setValue(true)
+    await backups.get('form').trigger('submit')
+    await flushPromises()
+    expect(backups.text()).toContain('Backup settings saved.')
+    await backups.findAll('button').find((button) => button.text() === 'Back up now')!.trigger('click')
+    await flushPromises()
+    expect(backups.text()).toContain('Encrypted backup created.')
+    expect(requests.filter(({ url }) => url.includes('/backup.'))).toEqual([
+      { url: '/api/v1/operations/backup.status/call', args: { response_mode: 'raw' } },
+      { url: '/api/v1/operations/backup.configure/call', args: { response_mode: 'raw', enabled: true } },
+      { url: '/api/v1/operations/backup.create/call', args: { response_mode: 'raw' } },
+      { url: '/api/v1/operations/backup.status/call', args: { response_mode: 'raw' } },
+    ])
+    wrapper.unmount()
   })
 })
 

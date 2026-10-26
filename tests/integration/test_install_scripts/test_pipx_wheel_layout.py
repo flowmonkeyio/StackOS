@@ -12,11 +12,14 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+import tomllib
 import zipfile
 from email.parser import Parser
 from pathlib import Path
 
 import pytest
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 
 
 @pytest.fixture(scope="module")
@@ -84,6 +87,13 @@ def test_wheel_includes_finance_plugin_assets(built_wheel: Path) -> None:
         "workflows/payment-request-followups.yaml",
         "workflows/cashflow-management.yaml",
         "workflows/tax-estimates.yaml",
+        "workflows/management-review.yaml",
+        "scripts/finance_workspace.py",
+        "scripts/finance_records.py",
+        "scripts/finance_views.py",
+        "scripts/finance_management.py",
+        "schemas/management-v1.schema.json",
+        "schemas/management-result-v1.schema.json",
         "references/approval-matrix.md",
         "references/backend-contract.md",
         "references/imap-host-handoff-contract.md",
@@ -102,6 +112,17 @@ def test_wheel_assets_path_namespace_is_under_stackos(built_wheel: Path) -> None
     # All `_assets/...` entries live inside `stackos/`.
     stray = [n for n in names if "_assets/" in n and not n.startswith("stackos/_assets/")]
     assert stray == [], f"stray _assets entries outside stackos/: {stray}"
+
+
+def test_wheel_management_origin_read_query_and_guarded_edit(
+    built_wheel: Path, tmp_path: Path
+) -> None:
+    from tests.unit.test_finance_management_package import run_packaged_smoke
+
+    package = tmp_path / "installed"
+    with zipfile.ZipFile(built_wheel) as wheel:
+        wheel.extractall(package)
+    run_packaged_smoke(package, tmp_path)
 
 
 def test_wheel_no_duplicate_entries(built_wheel: Path) -> None:
@@ -142,8 +163,28 @@ def test_wheel_keeps_s3_host_assets_and_uses_separate_connector_package(
     for dependency in ("boto3", "botocore", "s3transfer"):
         assert f"Requires-Dist: {dependency}" in metadata
     requirements = Parser().parsestr(metadata).get_all("Requires-Dist", [])
-    connector_requirements = [
-        value for value in requirements if value.startswith("stackos-connectors")
+
+    repo_root = Path(__file__).resolve().parents[3]
+    source = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
+    source_connectors = [
+        requirement
+        for value in source["project"]["dependencies"]
+        if canonicalize_name((requirement := Requirement(value)).name) == "stackos-connectors"
     ]
-    assert connector_requirements == ["stackos-connectors==0.1.1"]
+    assert len(source_connectors) == 1, "source must declare one connector dependency"
+    source_connector = source_connectors[0]
+    assert source_connector.url is None
+    assert source_connector.marker is None
+    assert not source_connector.extras
+    specifiers = list(source_connector.specifier)
+    assert len(specifiers) == 1
+    assert specifiers[0].operator == "==" and "*" not in specifiers[0].version, (
+        "source connector dependency must pin one exact version"
+    )
+    connector_requirements = [
+        requirement
+        for value in requirements
+        if canonicalize_name((requirement := Requirement(value)).name) == "stackos-connectors"
+    ]
+    assert connector_requirements == source_connectors
     assert all("file:" not in value and " @ " not in value for value in requirements)

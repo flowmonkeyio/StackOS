@@ -22,7 +22,6 @@ from stackos.actions.connectors import (
 from stackos.actions.provider_utils import (
     credential_config,
     credential_payload,
-    credential_value,
     issue,
     unknown_operation,
 )
@@ -143,13 +142,11 @@ def _smtp_settings(request: ActionConnectorRequest) -> dict[str, Any]:
         raise ValidationError("smtp credential tls_mode must be starttls, ssl, or none")
     if not _is_email(from_email):
         raise ValidationError("smtp credential from_email must be a valid email address")
-    password = credential_value(request, "password", "secret")
     return {
         "host": host,
         "port": port,
         "tls_mode": tls_mode,
         "username": username,
-        "password": password,
         "from_email": from_email,
         "from_name": _config_text(config, payload, "from_name", default=""),
         "reply_to": _config_text(config, payload, "reply_to", default=""),

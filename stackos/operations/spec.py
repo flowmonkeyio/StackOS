@@ -121,6 +121,7 @@ class OperationSpec:
     secret_policy: str = "no-secret-output"
     category: str | None = None
     response_policy: OperationResponsePolicy | None = None
+    idempotency_policy: Literal["dispatcher", "handler"] = "dispatcher"
 
     @property
     def read_only(self) -> bool:
@@ -153,6 +154,7 @@ class OperationSpec:
             grant_policy=self.grant_policy,
             secret_policy=self.secret_policy,
             response_policy=_response_policy_out(self.effective_response_policy),
+            idempotency_policy=self.idempotency_policy,
         )
 
     def describe_out(self) -> OperationDescribeOut:
@@ -207,6 +209,7 @@ class OperationSummaryOut(BaseModel):
     grant_policy: str
     secret_policy: str
     response_policy: OperationResponsePolicyOut
+    idempotency_policy: Literal["dispatcher", "handler"] = "dispatcher"
 
 
 class OperationDescribeOut(OperationSummaryOut):

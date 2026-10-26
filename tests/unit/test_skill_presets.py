@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import re
+import shutil
 import tomllib
 from pathlib import Path
 
+import stackos.agents.loader as agent_loader_module
 import stackos.skill_presets.loader as loader_module
+from stackos.agents import AgentPresetLoader
 from stackos.operations.skill_presets import resolve_skill_preset_requirements
 from stackos.skill_presets import SkillPresetLoader, parse_skill_preset_bundle_yaml
 from stackos.skill_presets.schema import validate_skill_preset_obj
@@ -290,7 +293,7 @@ def test_finance_orchestrator_keeps_financial_authority_external() -> None:
     ]
 
     assert loaded.summary.plugin_slug == "finance"
-    assert loaded.preset.version == "0.7.5"
+    assert loaded.preset.version == "0.8.1"
     assert loaded.preset.skill_type == "main-agent-orchestration"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
@@ -301,6 +304,7 @@ def test_finance_orchestrator_keeps_financial_authority_external() -> None:
         "finance.payment-request-followups",
         "finance.cashflow-management",
         "finance.tax-estimates",
+        "finance.management-review",
     }
     assert {
         "project instruction entrypoints and scoped guidance",
@@ -320,7 +324,7 @@ def test_finance_orchestrator_keeps_financial_authority_external() -> None:
         "communication.send",
         "communication.reply",
     }.isdisjoint(loaded.preset.recommended_tools)
-    assert "selected external backend" in contract_text
+    assert "selected project-local backend" in contract_text
     assert "prepared/unposted" in contract_text
     assert "selective dispatch" in contract_text
     assert "one high-reasoning owner" in contract_text
@@ -379,6 +383,44 @@ presets:
     assert [item.key for item in listing.presets] == ["stackos.sdlc.bundled-test"]
     assert listing.presets[0].plugin_slug == "engineering"
     assert listing.presets[0].source == "plugin"
+
+
+def test_branding_writing_reference_resolves_from_bundled_preset_origins(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    package_config = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
+    assert (
+        package_config["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"]["plugins"]
+        == "stackos/_assets/plugins"
+    )
+    bundled_root = tmp_path / "stackos" / "_assets" / "plugins"
+    shutil.copytree(repo_root / "plugins" / "branding", bundled_root / "branding")
+    for module in (loader_module, agent_loader_module):
+        monkeypatch.setattr(module, "_clone_plugins_root", lambda: None)
+        monkeypatch.setattr(module, "_bundled_plugins_root", lambda: bundled_root)
+
+    reference = "branding-plugin:references/natural-writing.md"
+    orchestrator = SkillPresetLoader().describe_preset(key="branding.brand-orchestrator")
+    assert reference not in {
+        item.ref for item in orchestrator.preset.project_adaptation.required_context_refs
+    }
+    assert reference in {
+        item.ref for item in orchestrator.preset.project_adaptation.conditional_context_refs
+    }
+    origins = [orchestrator.summary.origin_path]
+    for role in ("evidence-curator", "channel-strategist", "narrative-writer", "voice-reviewer"):
+        loaded = AgentPresetLoader().describe_preset(key=f"branding.{role}")
+        assert reference in loaded.preset.model_dump_json()
+        origins.append(loaded.summary.origin_path)
+    for origin_path in origins:
+        assert origin_path is not None
+        origin = Path(origin_path)
+        assert origin.is_relative_to(bundled_root)
+        resolved = (origin.parent / ".." / "references" / "natural-writing.md").resolve()
+        assert resolved == bundled_root / "branding" / "references" / "natural-writing.md"
+        assert resolved.read_text(encoding="utf-8").strip()
 
 
 def test_skill_preset_resolution_reports_optional_and_unresolved_refs() -> None:

@@ -15,80 +15,38 @@ capabilities:
 providers:
   - key: linear
     name: Linear
-    description: Linear GraphQL provider using daemon-owned OAuth or a personal API key. Credentials stay daemon-held and only curated issue-work actions are executable.
+    description: Linear GraphQL provider using daemon-owned OAuth or a personal API key. Credentials stay
+      daemon-held and only curated issue-work actions are executable.
+    auth_catalog_ref: linear
     auth_type: oauth-or-api-key
     auth_methods:
-      - key: oauth2_authorization_code
-        label: Connect with Linear
-        auth_type: oauth
-        description: Register a Linear OAuth application with the fixed StackOS callback. StackOS requests user-actor read and write access with PKCE.
-        interactive: true
-        permission_verification:
-          evidence_source: oauth_response
-          enforcement: local_required
-        payload_format: json
-        fields:
-          - key: client_id
-            label: OAuth Client ID
-            type: secret
-            secret: true
-            required: true
-          - key: client_secret
-            label: OAuth Client Secret
-            type: secret
-            secret: true
-            required: true
-      - key: personal_api_key
-        label: Personal API key
-        auth_type: api-key
-        description: Store a Linear personal API key for this operator. Linear enforces the key's workspace and action permissions at request time.
-        permission_verification:
-          evidence_source: unavailable
-          enforcement: provider_enforced
-        payload_format: raw
-        payload_field: api_key
-        fields:
-          - key: api_key
-            label: Personal API Key
-            type: secret
-            secret: true
-            required: true
+    - key: oauth2_authorization_code
+      permission_verification:
+        enforcement: local_required
+    - key: personal_api_key
+      permission_verification:
+        enforcement: provider_enforced
     config:
-      scopes:
-        - read
-        - write
       readiness_groups:
         issue-work:
           label: Issue Work
           required_scopes:
-            - read
-            - write
-      endpoint: https://api.linear.app/graphql
+          - read
+          - write
       connection_category: Project Management
-      setup_note: Create a Linear OAuth application using the StackOS callback URL, or store a personal API key created in Linear account settings. App actors, webhooks, and admin operations are outside this provider contract.
+      setup_note: Create a Linear OAuth application using the StackOS callback URL, or store a personal API
+        key created in Linear account settings. App actors, webhooks, and admin operations are outside this
+        provider contract.
       setup:
-        credential_label: Linear OAuth application or personal API key
-        setup_note: Create a Linear OAuth application and register the exact callback URL shown in StackOS, or create a personal API key in Linear account settings. Personal-key permissions are enforced by Linear at request time.
         local_setup_label: Connect Linear in StackOS
-        local_setup_note: Complete the user authorization, then run Test separately so StackOS can bind the safe workspace and account identity.
-        homepage_url: https://linear.app/
-        console_url: https://linear.app/settings/api/applications
-        credential_url: https://linear.app/settings/api
-        docs_url: https://linear.app/developers/oauth-2-0-authentication
-        support_url: https://linear.app/contact
+        local_setup_note: Complete the user authorization, then run Test separately so StackOS can bind the
+          safe workspace and account identity.
         callback_url: https://auth.stackos.flowmonkey.io/api/v1/auth/oauth/callback
-        callback_note: The public HTTPS relay forwards the unchanged OAuth callback to the local daemon and returns the browser to the generic StackOS Connections view.
-        repair_note: Reconnect OAuth if the authorization is expired or missing read or write scope. Replace or adjust a personal API key in Linear when a request is rejected, then run Test again to refresh the safe Linear workspace binding.
-        fallback_url: https://linear.app/developers/oauth-2-0-authentication
-        fallback_reason: OAuth application creation and callback registration require an authenticated Linear workspace administrator.
-        verified_at: "2026-07-23"
-        url_confidence:
-          homepage_url: verified
-          console_url: verified
-          credential_url: directional
-          docs_url: verified
-          support_url: verified
-          fallback_url: verified
+        callback_note: The public HTTPS relay forwards the unchanged OAuth callback to the local daemon and
+          returns the browser to the generic StackOS Connections view.
+        repair_note: Reconnect OAuth if the authorization is expired or missing read or write scope. Replace
+          or adjust a personal API key in Linear when a request is rejected, then run Test again to refresh
+          the safe Linear workspace binding.
 resources:
   - key: issue-work-action
     name: Linear Issue-Work Action

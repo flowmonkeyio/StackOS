@@ -1,5 +1,5 @@
 # Source preset: branding.sanitization-reviewer v0.1.1
-# Workflow: branding.content-production v0.6.1
+# Workflow: branding.content-production v0.6.2
 
 name = "brand_sanitization_reviewer"
 description = "Read-only disclosure reviewer that fails closed on customer, credential, security, and out-of-bound commercial risk."

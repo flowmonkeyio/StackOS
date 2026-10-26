@@ -172,18 +172,11 @@ async def test_account_probe_passes_only_resolved_execution_fields(
     ).one()
     calls = []
 
-    class Probe:
-        default_qps = 2.0
+    async def probe(connector, **kwargs):
+        calls.append({"connector": connector, **kwargs})
+        return {"ok": True, "metadata": {"verification": "native-fixture"}}
 
-        def __init__(self, **kwargs):
-            calls.append(kwargs)
-
-        async def test_credentials(self):
-            return {"ok": True, "metadata": {"verification": "native-fixture"}}
-
-    monkeypatch.setattr(
-        "stackos.auth_providers.repository.testing.integration_class_for", lambda key: Probe
-    )
+    monkeypatch.setattr("stackos_connectors.probe.probe_credentials", probe)
     result = (
         await AuthRepository(session).test(
             project_id=project_id, credential_ref=credential.credential_ref
@@ -191,8 +184,57 @@ async def test_account_probe_passes_only_resolved_execution_fields(
     ).data
     assert result.ok
     assert len(calls) == 1
-    assert json.loads(calls[0]["payload"]) == {"access_token": "resolved-access"}
-    assert set(calls[0]) == {"payload", "http", "probe_context", "rate_limiter"}
-    assert calls[0]["probe_context"].auth_method_key == "oauth2_access_token"
-    assert calls[0]["probe_context"].permission_verification is None
+    assert calls[0]["connector"] == "google-analytics"
+    assert calls[0]["auth"].fields == {"access_token": "resolved-access"}
+    assert calls[0]["auth"].config == {}
+    assert set(calls[0]) == {"connector", "auth", "options", "context"}
+    assert calls[0]["options"].http is not None
+    assert calls[0]["options"].rate_limiter is not None
+    assert calls[0]["context"].auth_method_key == "oauth2_access_token"
+    assert calls[0]["context"].permission_verification is None
     assert "acquisition" not in result.model_dump_json()
+
+
+@pytest.mark.asyncio
+async def test_imap_probe_keeps_mailbox_choice_host_owned(session, project_id, monkeypatch):
+    seed_test_account(
+        session,
+        project_id=project_id,
+        provider_key="imap",
+        secret_payload=json.dumps({"password": "synthetic-password"}).encode(),
+        config_json={
+            "auth_method_key": "imap-password",
+            "host": "imap.test",
+            "port": 993,
+            "username": "test-user",
+            "tls_mode": "ssl",
+            "default_mailbox": "Native mailbox",
+            "mailboxes": {"private-ref": "Private mailbox"},
+            "account_ref": "host-account",
+        },
+    )
+    credential = session.exec(select(Credential).where(Credential.provider_key == "imap")).one()
+    calls = []
+
+    async def probe(connector, **kwargs):
+        calls.append((connector, kwargs))
+        return {"ok": True}
+
+    monkeypatch.setattr("stackos_connectors.probe.probe_credentials", probe)
+    result = (
+        await AuthRepository(session).test(
+            project_id=project_id, credential_ref=credential.credential_ref
+        )
+    ).data
+    assert result.ok
+    connector, arguments = calls[0]
+    assert connector == "imap"
+    assert arguments["options"].provider_context == {"mailbox": "Native mailbox"}
+    assert arguments["auth"].config == {
+        "host": "imap.test",
+        "port": 993,
+        "username": "test-user",
+        "tls_mode": "ssl",
+    }
+    assert arguments["auth"].fields == {"password": "synthetic-password"}
+    assert "private-ref" not in repr(arguments["options"].provider_context)

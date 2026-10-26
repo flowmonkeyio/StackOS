@@ -8,9 +8,7 @@ Official docs verified:
 
 from __future__ import annotations
 
-import base64
 import hashlib
-import hmac
 import json
 import re
 import time
@@ -21,6 +19,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlmodel import Session, select
+from stackos_connectors.connectors.hubspot.signature import verify_signature_v3
 
 from stackos.api.deps import get_session
 from stackos.artifacts import redact_secret_text, redact_secrets
@@ -42,20 +41,6 @@ _MAX_BATCH_EVENTS = 100
 _REPLAY_WINDOW_MS = 5 * 60 * 1_000
 _PROFILE_KEY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$")
 _WORKFLOW_DEFINITION_RE = re.compile(r"^[1-9][0-9]{0,19}$")
-_V3_URI_DECODES = {
-    "%3A": ":",
-    "%2F": "/",
-    "%3F": "?",
-    "%40": "@",
-    "%21": "!",
-    "%24": "$",
-    "%27": "'",
-    "%28": "(",
-    "%29": ")",
-    "%2A": "*",
-    "%2C": ",",
-    "%3B": ";",
-}
 _SUBSCRIPTION_OBJECT_TYPES = {
     "contact": "contact",
     "company": "company",
@@ -334,27 +319,13 @@ def _verify_signature(
             _invalid_signature()
         if abs(int(time.time() * 1_000) - timestamp_ms) > _REPLAY_WINDOW_MS:
             _invalid_signature()
-        signed_uri = _decode_v3_uri(canonical_uri)
-        source = b"POST" + signed_uri.encode("utf-8") + raw_body + request_timestamp.encode("utf-8")
-        expected = base64.b64encode(
-            hmac.new(
-                profile.client_secret.encode("utf-8"),
-                source,
-                hashlib.sha256,
-            ).digest()
-        ).decode("ascii")
-        if not hmac.compare_digest(expected, signature_v3):
+        if not verify_signature_v3(
+            profile.client_secret, "POST", canonical_uri, request_timestamp, raw_body, signature_v3
+        ):
             _invalid_signature()
         return
     _invalid_signature()
     raise AssertionError("unreachable")
-
-
-def _decode_v3_uri(value: str) -> str:
-    decoded = value
-    for encoded, plain in _V3_URI_DECODES.items():
-        decoded = re.sub(encoded, plain, decoded, flags=re.I)
-    return decoded
 
 
 def _invalid_signature() -> NoReturn:

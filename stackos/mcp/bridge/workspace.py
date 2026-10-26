@@ -9,17 +9,6 @@ from .catalog import _bridge_tool_accepts_project_id
 from .constants import _AGENT_GLOBAL_DISCOVERY_TOOL_NAMES
 from .protocol import _bridge_as_int
 
-_PROJECT_SCOPE_INJECTION_EXCLUDED_TOOL_NAMES = {
-    "workspace.bootstrap",
-    "workspace.connect",
-}
-_PROJECT_SCOPE_IDENTITY_ARGUMENT_NAMES = {
-    "project_id",
-    "project_slug",
-    "project_name",
-    "workspace_alias",
-}
-
 
 def _bridge_scoped_arguments(
     *,
@@ -28,15 +17,7 @@ def _bridge_scoped_arguments(
     arguments: dict[str, Any],
     scoped_project_id: int | None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    has_explicit_project_or_workspace_identity = (
-        tool_name in _PROJECT_SCOPE_INJECTION_EXCLUDED_TOOL_NAMES
-        and any(arguments.get(name) is not None for name in _PROJECT_SCOPE_IDENTITY_ARGUMENT_NAMES)
-    )
-    if (
-        scoped_project_id is None
-        or has_explicit_project_or_workspace_identity
-        or not _bridge_tool_accepts_project_id(catalog, tool_name)
-    ):
+    if scoped_project_id is None or not _bridge_tool_accepts_project_id(catalog, tool_name):
         return dict(arguments), None
     current = arguments.get("project_id")
     if current is None:
@@ -204,15 +185,15 @@ def _bridge_scope_visibility_error(
     has_workspace_hints: bool,
     scoped_project_id: int | None,
     workspace_scope_error: str | None,
+    global_session: bool | None = None,
+    accepts_project_id: bool = False,
 ) -> dict[str, Any] | None:
-    if not has_workspace_hints:
-        return None
-    if workspace_scope_error is not None and tool_name not in {
-        "workspace.bootstrap",
-        "workspace.connect",
+    if tool_name in {
         "workspace.resolve",
         "workspace.startSession",
     }:
+        return None
+    if workspace_scope_error is not None:
         return {
             "tool": tool_name,
             "reason": "workspace_scope_failed",
@@ -220,12 +201,38 @@ def _bridge_scope_visibility_error(
         }
     if scoped_project_id is not None:
         return None
-    if tool_name in {"workspace.bootstrap", "workspace.connect"}:
+    if (
+        tool_name in _AGENT_GLOBAL_DISCOVERY_TOOL_NAMES
+        and arguments.get("project_id") is None
+        and tool_name not in {"workspace.bootstrap", "workspace.connect"}
+    ):
         return None
-    if tool_name in _AGENT_GLOBAL_DISCOVERY_TOOL_NAMES and arguments.get("project_id") is None:
+    if global_session is None:
+        return {
+            "tool": tool_name,
+            "reason": "session_required",
+            "hint": (
+                "Call workspace.startSession first; declare global_session=true for a global chat."
+            ),
+        }
+    if global_session is False and tool_name in {"workspace.bootstrap", "workspace.connect"}:
         return None
-    return {
-        "tool": tool_name,
-        "reason": "workspace_not_connected",
-        "hint": "Bind this repository with workspace.connect before using project-scoped tools.",
-    }
+    if global_session is False:
+        return {
+            "tool": tool_name,
+            "reason": "workspace_binding_required",
+            "hint": "Start or connect this workspace before using project-scoped tools.",
+        }
+    if tool_name == "workspace.bootstrap" and any(
+        arguments.get(key) for key in ("project_name", "project_slug", "workspace_alias")
+    ):
+        return None
+    if accepts_project_id:
+        value = arguments.get("project_id")
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            return {
+                "tool": tool_name,
+                "reason": "project_required",
+                "hint": "Pass a positive project_id explicitly for this global task call.",
+            }
+    return None

@@ -63,40 +63,25 @@ The 2026-10-26 audit removed these costs while retaining distinct failure checks
 | Real retry delays, shared rate buckets and no-op-sleep busy loops | Explicit virtual provider clocks retain real limiter/retry loops and scheduling; lifecycle/concurrency clocks remain unchanged. |
 | Repeated schema/YAML parsing, deep copies and nested validation | Bounded source caches and one ownership copy; changed sources, malformed references, secrets, adaptation rules and caller mutation remain checked. |
 | Full provider metadata scans for a known provider | Refresh the requested provider; full listing/sync still refreshes all providers. Credentials, permissions and auth results are not cached. |
-| Browser environments for pure UI tests | 36 source/data/state specs use Node; 65 browser/component specs retain jsdom. All test bodies and assertions remain. |
+| Browser environments for pure UI tests | 36 audited source/data/state specs use Node; browser/component specs and new files retain the jsdom default. All test bodies and assertions remain. |
 | Stale inventories and always-skipped retired skill checks | Current authoritative catalogs, precise rejection checks and mandatory packaged-skill validation replace obsolete expectations. |
 
-### Single-Worker Evidence
+### Historical Evidence And Serial Verification
 
-Complete serial signoff passed in **536.476s (8m 56s)**, down **60.3%** from
-the saved 1,350.936s (22m 31s) baseline. Make ran sequentially, pytest used
-`-n0`, and Vitest used one worker. The baseline's Python run was serial; its
-UI runner used the prior default settings.
+Before integrating `origin/main` at `7884de2`, serial signoff for the task
+branch based on `c76238b` passed in **536.476s (8m 56s)** against a saved
+1,350.936s (22m 31s) baseline. The verified code candidate, rewritten as
+`c1d0ccc`, passed 4,017 Python tests with no skips and 427 UI tests in 101 files,
+plus lint, formatting, mypy and the production build. Make ran sequentially,
+pytest used `-n0`, and Vitest used one worker. The baseline's Python run was
+serial; its UI runner used the prior default settings. A separate six-worker
+gate at `2d09580` passed in 120.395s. These historical timings and case counts
+do not establish results for the merged candidate.
 
-All **4,017 Python tests passed with zero failures, errors or skips** in
-483.717s (8m 04s). Every one of the 3,983 baseline case identities remains,
-with 34 additional regressions. All **427 UI tests in 101 files passed** in
-33.89s. Lint, formatting, mypy and the production build also passed; the
-generated UI bundle was unchanged.
-
-| Python suite | Before, serial | After, serial including fixtures |
-| --- | ---: | ---: |
-| Repositories | 710.809s | 156.890s |
-| MCP | 388.917s | 176.105s |
-| Unit | 89.579s | 57.461s |
-| REST routes | 68.631s | 29.279s |
-| Install scripts and packaging | 33.931s | 32.666s |
-| Database migrations/schema | 19.424s | 17.950s |
-| Connectors | 10.328s | 9.981s |
-| Application lifecycle | 1.725s | 1.707s |
-| Background jobs | 0.017s | 0.015s |
-
-Python collection/shared overhead adds 1.663s. Lint, types, dependency
-preparation, build and process startup account for the remaining 18.869s
-outside pytest and Vitest. Independent review accepted the implementation,
-assertion preservation and measurements.
-
-To reproduce the serial gate after relevant changes:
+The complete `tests/` gate also includes upstream's new backup recovery,
+Google Indexing, MCP ownership and run-repository checks without adding a
+second curated pytest invocation. Run the serial gate after integration and
+record its actual revision, case counts and elapsed time:
 
 ```bash
 PYTEST_ADDOPTS='-n0 --junitxml=/tmp/stackos-serial.xml' make -j1 signoff UI_TEST_ARGS='--maxWorkers=1 --minWorkers=1 --no-file-parallelism'
@@ -105,17 +90,9 @@ PYTEST_ADDOPTS='-n0 --junitxml=/tmp/stackos-serial.xml' make -j1 signoff UI_TEST
 Detailed measurements, case/file timings, profiles, logs and the history-rewrite
 map are saved outside Git at
 `/Users/sergeyrura/.local/share/tpf/stackos-test-audit-20261026/`.
-Use those saved results for analysis; do not rerun the broad suite merely to
-remeasure an unchanged candidate. Keep generated timing dumps out of repository
-history. The history cleanup removed only generated evidence; production and
-test contents are unchanged. The rewritten serial code candidate is `c1d0ccc`.
-
-The default gate at `2d09580` also passed in **120.395s (2m 00s)** with
-automatic pytest workers capped at six and normal UI settings: 4,017 Python
-tests (102.31s), 427 UI tests in 101 files (4.89s), lint, formatting, types and
-build all passed. The default and serial runs contain identical Python case
-identities. These measurements use the task branch based on `c76238b`; they
-do not establish results for later changes on remote `main`.
+Use saved results to analyze the historical candidate; changed code or gate
+scope requires new verification. Keep generated timing dumps out of repository
+history.
 
 ## Included Contract Coverage
 
@@ -141,6 +118,15 @@ Google resource access still requires an operator-configured Account. The
 while the local-admin REST setup can test a global Account.
 `test_mcp_auth_provider_wrappers.py` covers provider checks and safe failure
 diagnostics through that same project-scoped MCP path.
+
+Google Indexing coverage includes `test_google_indexing_actions.py` and
+`test_mcp_google_indexing.py`, plus the single and batch transport suites in
+`test_integrations`. Synthetic keys and mocked HTTP cover token-only setup,
+publish/metadata actions, batch limits and correlation, direct/granted execution,
+successful replay, complete response files and partial-error audit. Shared Google
+MIME regressions preserve Search Console behavior, including sitemap submission
+and safe Retry-After advice. These checks do not establish live Google site
+permissions, quota approval, indexing or removal.
 
 Telegram restoration coverage includes the native authorization, Account session
 operation, and app lifespan suites. These exercise failed startup restoration,
@@ -176,7 +162,8 @@ touches committed UI assets.
 | Account, OAuth, and Connection lifecycle | Global named Accounts, explicit multi-project attachments, fixed callback/state/PKCE, migration, renewal, scope gates, and sanitized failures stay aligned. | `uv run pytest tests/integration/test_repositories/test_oauth_lifecycle.py tests/integration/test_routes/test_auth_provider_routes.py tests/integration/test_repositories/test_auth_providers.py tests/integration/test_repositories/test_global_accounts.py tests/integration/test_schema.py::test_global_account_migration_preserves_and_reencrypts_legacy_credentials -q`<br>`pnpm --dir ui exec vitest run src/views/AccountsView.spec.ts src/views/ConnectionsView.accounts.spec.ts` |
 | Direct action execution | `action.describe/validate/run` and direct dry-runs use the same connector/auth/audit path. | `uv run pytest tests/integration/test_mcp/test_mcp_actions.py tests/integration/test_routes/test_cli_mock_provider.py -q` |
 | AIGNC model and media actions | Explicit model selection, opt-in grounding, managed audio/artifacts, daemon-held auth, response files and retry diagnostics use the shared execution path; pricing stays excluded. | `uv run pytest tests/unit/test_aignc_manifest.py tests/integration/test_integrations/test_aignc.py tests/integration/test_repositories/test_aignc_actions.py tests/integration/test_repositories/test_aignc_auth.py tests/integration/test_mcp/test_mcp_aignc_actions.py -q` |
-| Finance external-backend workflows | Six finance templates, five focused specialists plus an independent reviewer, main-agent skill/orchestrator guidance, safe reference outputs, technical approval gates, and external prepared bookkeeping/13-week cashflow/annual tax packets load and resolve without finance state in StackOS. | `uv run pytest tests/unit/test_finance_plugin.py tests/unit/test_finance_json_schema.py tests/unit/test_finance_workspace_contract.py tests/unit/test_finance_imap_handoff_contract.py tests/unit/test_agent_presets.py tests/unit/test_skill_presets.py tests/integration/test_repositories/test_finance_workflows.py tests/integration/test_mcp/test_mcp_agent_presets.py -q` plus the agent-executed rehearsal below |
+| Finance project-file workflows | Seven finance templates, five focused specialists plus an independent reviewer, main-agent skill/orchestrator guidance, safe reference outputs, technical approval gates, and external prepared bookkeeping/13-week cashflow/annual tax packets load and resolve without a financial ledger in the core database. | `uv run pytest tests/unit/test_finance_plugin.py tests/unit/test_finance_json_schema.py tests/unit/test_finance_workspace_contract.py tests/unit/test_finance_imap_handoff_contract.py tests/unit/test_agent_presets.py tests/unit/test_skill_presets.py tests/integration/test_repositories/test_finance_workflows.py tests/integration/test_mcp/test_mcp_agent_presets.py -q` plus the agent-executed rehearsal below |
+| Project Finance storage and recovery | Default initialization, retained migration, strict project identity, missing-original gaps, encrypted two-project round trip and inert adoption preserve source records and generations. | `uv run pytest tests/integration/test_routes/test_finance_project_storage.py tests/integration/test_routes/test_finance_backup_integration.py tests/unit/test_backup_project_files.py -q` plus Finance/Backup component tests and a local synthetic preview |
 | Stripe finance transport | Pinned API, daemon-held auth, explicit invoice currency, selected required/optional observations, typed reconciliation and unavailable-linkage recovery, fixed no-charge settlement/report forms, retry veto/idempotency conflict safety, test-only send status, separate gates and non-authoritative audit stay intact. | `uv run pytest tests/integration/test_integrations/test_stripe_transport.py tests/integration/test_repositories/test_stripe_actions.py tests/integration/test_mcp/test_mcp_stripe_actions.py tests/integration/test_mcp/test_mcp_finance_billing_workflow.py tests/integration/test_repositories/test_actions.py -q` |
 | Integrated finance billing | One billing role follows instructed/documented Stripe or SMTP routes; actual payment-request/follow-up templates execute through isolated MCP and mocked Stripe HTTP and mocked SMTP with external fixture records: two exact lines, distinct finalization/send gates, paid-before-send suppression, unknown-send recovery, and full/partial bank receipts with lost report or attachment responses. | `uv run pytest tests/integration/test_mcp/test_mcp_finance_billing_workflow.py tests/integration/test_mcp/test_mcp_finance_email_followups.py -q`; these tests simulate agent/owner judgment and provider responses, not real email delivery or production custody. |
 | IMAP finance evidence handoff | Verified TLS, UID-only read-only `BODY.PEEK[]` export, bounded MIME staging, host store-before-ack, epoch-qualified `mark_seen`, and transfer-id-only cleanup remain separate; raw evidence never becomes a StackOS record. | `uv run pytest tests/integration/test_repositories/test_imap_actions.py tests/unit/test_finance_imap_handoff_contract.py -q` |
@@ -232,6 +219,27 @@ the selected tests:
 uv run pytest -n0 tests/unit/test_operations_registry.py -q --durations=20
 ```
 
+Encrypted backup changes require service, CLI, operation-authority and
+assembled finance recovery proof with synthetic inputs:
+
+```bash
+uv run pytest tests/unit/test_backups.py tests/unit/test_backup_cli.py \
+  tests/unit/test_backup_operations.py tests/integration/test_backup_recovery.py \
+  tests/integration/test_jobs/test_backup_maintenance.py \
+  tests/integration/test_routes/test_backup_operations_routes.py \
+  tests/integration/test_mcp/test_mcp_backups_boundary.py \
+  tests/integration/test_app_lifespan.py -q
+pnpm --dir ui exec vitest run src/lib/backups.spec.ts src/components/backups/BackupPanel.spec.ts src/views/HomeView.spec.ts src/views/project-detail/SetupStatusTab.spec.ts
+```
+
+Prove default-off and persisted enable/disable, WAL and matching seed recovery,
+complete finance original/master custody, wrong-key/tamper/path rejection,
+busy/missing/changing sources, later key capture and public output denial.
+Verify the recovered policy is inert reference data. Use an isolated daemon
+and a Setup panel walkthrough, including Local setup with no projects; do not
+enable backups or read production financial content for source signoff. The
+full `make signoff` includes these backup authority and recovery checks.
+
 For a faster local check while iterating on action execution, run the mock
 provider and connector-contract slice directly:
 
@@ -260,6 +268,16 @@ uv run pytest \
 pnpm --dir ui exec vitest run src/views/AccountsView.spec.ts src/views/ConnectionsView.accounts.spec.ts
 npm --prefix workers/oauth-callback-relay test
 ```
+
+For the QuickBooks host slice, add the focused
+`test_repositories/test_quickbooks_oauth.py`,
+`test_routes/test_quickbooks_callback.py` and
+`test_mcp/test_mcp_quickbooks.py` files under `tests/integration/`. These cover
+company-bound consent, scope evidence, both methods and read execution through
+the normal host boundaries. Verify the published connector wheel and deployed
+public relay match the reviewed candidate; source-only relay changes do not
+establish interactive readiness. Synthetic checks do not establish live Intuit
+consent or financial-record completeness.
 
 For provider connector changes, `make signoff` includes the integration wrapper
 tests and provider action execution tests. Amazon S3 and FTP share an explicit

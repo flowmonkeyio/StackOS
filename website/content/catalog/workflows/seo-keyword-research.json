@@ -2,23 +2,23 @@
   "key": "seo.keyword-research",
   "slug": "seo-keyword-research",
   "name": "SEO Keyword Research",
-  "description": "A prioritized opportunity map that separates near-term article ideas, supporting clusters, evidence, and topics to avoid.",
+  "description": "A reviewed opportunity map choosing refresh, link, create, overlap investigation, deferral or rejection with existing-page evidence and a clear validation handoff.",
   "domain": "seo",
-  "audience": "SEO and content teams choosing what to write next",
+  "audience": "SEO and content teams choosing which existing pages to improve and which content gaps to fill",
   "color": "#79dfff",
   "featured": true,
   "problem": "Keyword research produces broad high-volume lists when it is not anchored to the business, audience, product proximity, and existing authority.",
-  "outcome": "A prioritized opportunity map that separates near-term article ideas, supporting clusters, evidence, and topics to avoid.",
+  "outcome": "A reviewed opportunity map choosing refresh, link, create, overlap investigation, deferral or rejection with existing-page evidence and a clear validation handoff.",
   "whyAi": "AI can connect keyword data, SERP patterns, competitor evidence, and project context while the operator owns positioning and priority.",
   "operatorPath": [
-    "State the business goal, audience, product proximity, markets, and topics to avoid.",
-    "Choose approved keyword and competitor data sources.",
-    "Review the opportunity map and select content priorities."
+    "Example request: “Use SEO Keyword Research for our time-tracking app. We sell to small UK agencies. Review our current pages and Search Console export. Recommend pages to improve or add, and topics to leave alone. Stop with the plan.”",
+    "Supply the website URL, audience and market. Name what the product does, topics to avoid, and the sources the agent may use.",
+    "Review the recommended action for each topic and its supporting evidence. Check whether an existing page already answers the question before assigning new content."
   ],
   "agentPath": [
-    "Translate the business brief into explicit opportunity criteria before collecting data.",
-    "Use approved keyword, SERP, and competitor sources and preserve provenance.",
-    "Cluster by intent and business fit, score with transparent tradeoffs, and propose concrete article angles."
+    "Read business goals and an existing-content inventory, including pages absent from Search Console.",
+    "Collect the smallest useful approved research, first-party or export evidence set.",
+    "Map intent and business fit to existing pages, independently review dispositions, and store one canonical opportunity map."
   ],
   "progressSignals": [
     "Opportunity criteria set",
@@ -39,19 +39,25 @@
       "workflowKey": "branding.content-production",
       "relationship": "conditional",
       "when": "A selected opportunity should become an evidence-backed branded article."
+    },
+    {
+      "workflowKey": "seo.content-refresh",
+      "relationship": "conditional",
+      "when": "Reviewed opportunities call for a bounded existing-page or internal-link improvement."
     }
   ],
-  "setup": "connection-required",
+  "setup": "mixed",
   "prerequisites": [
-    "A business goal, audience, market, and product-proximity boundary",
-    "Topics to include and avoid",
-    "Connected keyword and SERP data sources or approved exports"
+    "Your website, business goal, intended readers and target market",
+    "What the business can credibly help with, plus topics or competitors to exclude",
+    "Access to current pages and approved evidence, such as a Search Console export, keyword research or competitor pages; available connected tools can supply that evidence"
   ],
   "proof": [
-    "Source-linked keyword set",
-    "Intent and business-fit clusters",
-    "Transparent priority scoring",
-    "Concrete article angles and avoidance list"
+    "A map from reader questions to existing pages or genuine gaps, with sources, recommended actions, confidence and the next check.",
+    "Illustrative refresh entry: the pricing page covers billing rules, but readers have to search the FAQ to find them. Bring those rules beside the price and keep the existing URL.",
+    "Illustrative new-page entry: no checked page explains timesheet approval, and the product documentation can support a worked guide. Propose that guide and name the evidence the writer should use.",
+    "Illustrative defer entry: “best accounting software” asks about a different purchase from the time-tracking app. Leave it outside this plan.",
+    "One saved, reviewed opportunity map, including decisions to leave content alone. Writing and publication are separate jobs."
   ],
   "whenToUse": [
     "A project needs SEO opportunities from seed terms, competitors, or an agent-defined research angle."
@@ -59,28 +65,34 @@
   "stages": [
     {
       "id": "orient",
-      "title": "Orient From History",
-      "summary": "Read recent research, learnings, and the current project goal; if the user did not provide seed terms or competitors, ask a small number of…"
+      "title": "Orient And Map Existing Work",
+      "summary": "Define reader tasks, business fit, markets and current page coverage before selecting opportunities."
     },
     {
       "id": "collect_evidence",
-      "title": "Collect Evidence",
-      "summary": "Execute only the provider calls the run plan grants and the agent still needs; preserve returned response-file paths, use schema.get with schema_ref only…"
+      "title": "Collect Relevant Evidence",
+      "summary": "Gather bounded first-party, public, research or supplied-export evidence."
+    },
+    {
+      "id": "review_opportunities",
+      "title": "Review Intent And Page Dispositions",
+      "summary": "Make one reviewed choice for each opportunity, including deliberate no-change choices."
     },
     {
       "id": "store_opportunities",
-      "title": "Store Opportunities",
-      "summary": "Persist a useful list of keyword opportunities, not just one or two terms, with clusters, metrics, source refs, and a polished brief/CSV when the run…"
+      "title": "Store Reviewed Opportunities",
+      "summary": "Persist the canonical opportunity map with future-readable evidence and handoffs."
     },
     {
       "id": "capture_learning",
-      "title": "Capture Learning",
-      "summary": "Record reusable lessons or rejected patterns for future runs."
+      "title": "Capture Supported Learning",
+      "summary": "Keep reusable evidence-supported lessons separate from speculative heuristics."
     }
   ],
   "agentNames": [
     "SEO Keyword Research Agent",
-    "Planning Agent"
+    "Planning Agent",
+    "Review Agent"
   ],
   "agentRefs": [
     {
@@ -92,10 +104,19 @@
       "key": "stackos.sdlc.planning",
       "slug": "stackos-sdlc-planning",
       "name": "Planning Agent"
+    },
+    {
+      "key": "stackos.sdlc.delivery-reviewer",
+      "slug": "stackos-sdlc-delivery-reviewer",
+      "name": "Review Agent"
     }
   ],
   "integrations": [
     "Dataforseo",
-    "Ahrefs"
+    "Ahrefs",
+    "Utils Web Read",
+    "Utils Sitemap Fetch",
+    "Google Search Console",
+    "Google Analytics"
   ]
 }

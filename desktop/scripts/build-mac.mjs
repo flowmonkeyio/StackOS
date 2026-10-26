@@ -272,6 +272,11 @@ const signing = validateSigningEnv();
 const notarization = validateNotarizationEnv();
 const configIssues = unsignedDev ? [] : [...signing.issues, ...notarization.issues];
 
+if (process.env.TDLIB_INPUT_VARIANT === "stackos-2.1.38-packaged-local" &&
+    (!unsignedDev || releaseIntent || requireUpdateUrl || updateUrl)) {
+  configIssues.push("Packaged TDLib reuse is limited to unsigned local builds without an update URL");
+}
+
 if (unsignedDev && releaseIntent && !allowUnsignedRelease) {
   configIssues.push(
     "STACKOS_UNSIGNED_DEV release-intent builds require STACKOS_ALLOW_UNSIGNED_RELEASE=1"

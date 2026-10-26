@@ -50,6 +50,18 @@ Recording a decision does not invent authority or broaden what the operator
 approved. If a decision is missing or its scope is unclear, the gate stays
 unresolved.
 
+Approval `decision_json` may include the optional root fields `prior_tokens` and
+`cumulative_planning_exposure_tokens`. Each must be an integer from `0` through
+`9007199254740991` inclusive; booleans, floats, strings, null, containers, and
+secret-reference markers are rejected. Either field may be supplied alone, and
+no relationship between them is enforced. This bound preserves exact JSON/JavaScript
+integer representation; it does not authorize execution or define a token budget.
+Accepted numbers are preserved in raw update/get responses and new idempotent
+replays. Other keys, nested copies, spelling variants, and other run-plan payloads
+retain the existing secret checks. The complete update is validated before changing
+approval state or accompanying metadata, so rejected patches leave both unchanged.
+This write validation does not sanitize pre-existing rows or cached responses.
+
 This uses the existing approval writer and status transitions. A controller
 token scopes the mutation to its project before any write; direct daemon MCP
 calls without a token must supply `project_id`. No active step grant, new run,
@@ -59,7 +71,7 @@ normal grants, credentials, and audit boundaries still apply after approval.
 
 Run-plan execution has one canonical lifecycle. A started run plan is durable
 workflow state, not a five-minute daemon job. The stale-run reaper preserves
-live started run plans and refreshes the linked audit heartbeat so normal
+live started run plans and leaves the linked audit heartbeat unchanged so normal
 long-running agent work, browser checks, or local tests do not get aborted just
 because no run-plan operation was called for a few minutes. If a linked audit
 run is already terminal, StackOS reconciles the linked run plan, unfinished
@@ -69,9 +81,13 @@ not leave `run_plans.status='started'` while the run is `aborted`.
 and `runPlan.checkConsistency` returns the same diagnostics as a compact
 agent-facing check.
 
-`runPlan.claimStep` and `runPlan.recordStep` still refresh the linked audit run
-heartbeat, but agents do not need to keep calling `run.heartbeat` during normal
-workflow-backed delivery.
+`runPlan.claimStep`, `runPlan.recordStep`, and recovery refresh the linked audit
+run heartbeat, but agents do not need to keep calling `run.heartbeat` during
+normal workflow-backed delivery. Run detail shows this recorded audit activity;
+neither the heartbeat nor a recorded status verifies worker progress, success,
+termination, or settled effects. Preserving an old timestamp does not abort a
+resumable plan, and historical heartbeats refreshed by older maintenance sweeps
+cannot establish when actual work last occurred.
 
 ### Workflow contract changes on upgrade or resume
 
@@ -157,6 +173,27 @@ The daemon dispatcher requires:
 - exactly one running step
 - matching `project_id`
 - an explicit grant for the requested tool/action/resource/context fields
+
+### Canonical ownership grants
+
+Canonical ownership operations use the same frozen grant owner. Each
+`run.ownerAcquire`, `run.ownerCheckpoint`, `run.ownerStop`,
+`run.ownerReassign`, `run.ownerConsume`, or `run.ownerRecordAttempt` grant must
+declare exact `targets` such as `ticket:231`; an unscoped `step_tools` entry
+cannot grant these writes. The canonical ticket must already carry this plan
+and active step's IDs. A task fallback needs both IDs explicitly in its existing
+`source_json`; workflow parentage alone grants nothing. Existing templates and
+grant snapshots are unchanged by this source addition. New eligibility in the
+tool catalog is not an issued grant.
+
+```json
+{"step_id":"write","tool":"run.ownerCheckpoint","targets":["ticket:231"]}
+```
+
+This illustrates a future reviewed snapshot, not permission to change the
+current run. Ownership writes revalidate current grants and canonical continuity
+inside their transaction before audit/commit. Read-only `run.ownerResolve` and
+`run.ownerGet` require no started workflow and grant no execution.
 
 ## Validation Warnings
 

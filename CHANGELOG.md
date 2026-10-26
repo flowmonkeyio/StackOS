@@ -1,11 +1,131 @@
 # Changelog
 
+## 2.1.39 - 2026-10-26
+
+- Add a project-scoped Finance console for source-backed overviews, record
+  editing, correction history, invoice and receipt originals, and reviewed
+  reports with comparison graphs and category proposals. Store managed Finance
+  files with project data and include them in encrypted backup and recovery.
+- Add the Finance management-review workflow and align changed Finance
+  workflow, preset, and local adaptation versions with their shipped guidance.
+- Persist sanitized, private bridge diagnostics with lifecycle correlation,
+  bounded startup requests, JSON-RPC validation, and connection-only retries
+  for eligible initialize and ping requests. Add resumable internal diagnostics
+  and attempt-specific doctor evidence for incident handoffs.
+- Recheck current job controls, cancellation, deadline, and lease authority
+  immediately before durable connector entry, preserving prepared credentials
+  during that refresh. Keep audit heartbeat reporting separate from maintenance
+  activity; the final authority check and provider call remain non-atomic.
+- Validate approval evidence before mutating approval state, including bounded
+  token accounting. Define a pure advisory receipt contract without
+  granting execution authority.
+- Preserve the selected installation's state directory and encryption seed
+  context during credential migrations. Permit verified packaged TDLib reuse
+  for local desktop builds while retaining pinned public-release inputs.
+- Retain `stackos-connectors==0.2.8` and correct its setup documentation.
+
+Before upgrading or rolling back, create an encrypted backup that includes the
+database, matching seed and auth token, and managed project files, and keep the
+private recovery key separately. Existing runs retain their frozen workflow
+snapshots. Replacing the app alone does not undo database or project-file
+changes; validate recovery into a fresh, inert directory before adopting a
+matching recovered state. See [upgrade and rollback](docs/upgrade.md#rollback).
+
+## 2.1.38 - 2026-10-15
+
+- Persist canonical work-item ownership epochs with explicit reassignment,
+  revision checks, scoped grants, continuity preservation, and audit history.
+- Enforce canonical attempt and failure budgets when clearing stopped work,
+  and reject cached attempt receipts when the child's lifecycle or binding
+  has changed.
+- Move backup controls into Setup and add an always-visible Local setup page
+  so installation-wide settings remain reachable when no projects exist.
+- Retain the latest published `stackos-connectors==0.2.8` package in the desktop
+  runtime.
+
+## 2.1.37 - 2026-10-15
+
+- Encrypt all new backups with an independent recovery key, including the
+  database, matching credential seed, daemon token and explicitly enrolled
+  external finance folders with invoice originals and review evidence.
+- Add opt-in automatic backups, retention, coverage and failure status through
+  local CLI setup and installation-wide controls under Setup. Fresh and upgraded
+  installs remain disabled until configured and enabled.
+- Replace the restore placeholder with authenticated, verified recovery into
+  a fresh inert directory. Existing plaintext ZIP archives remain plaintext.
+- Reject canonically equivalent macOS paths at backup and recovery boundaries,
+  and allow automatic backups to be disabled when their setup needs repair.
+- Include the published `stackos-connectors==0.2.8` package in the desktop runtime.
+
+## 2.1.36 - 2026-10-09
+
+- Let global chats start without creating a project or folder binding. Agents
+  select an existing project explicitly on each project-scoped call, while
+  sessions opened in a chosen workspace retain their existing project scope.
+- Keep startup discovery read-only until the agent declares its session intent,
+  and reject missing or mismatched project scope before resolving run grants.
+- Prevent reuse of project IDs deleted after migration. Reconfirm saved
+  project IDs from before migration before relying on them.
+- Update agent guidance for global startup, named project setup, and explicit
+  project selection in recurring tasks.
+
+## 2.1.35 - 2026-10-06
+
+- Consolidated the current branding guidance, SEO workflows, website content,
+  article layouts, and downloadable examples into the release source.
+- Restored Search Console sitemap submission and HTTP batch actions alongside
+  the separate Google Indexing actions, preserving the selected Account access
+  mode and canonical connector authentication contracts.
+- Updated the packaged connector dependency to 0.2.4, retaining the Search Console
+  write-scope repair and restoring Google Indexing's service-account token contract.
+- Added QuickBooks Online company and invoice reads, generic Account setup and
+  testing, and company-bound OAuth callbacks. Fresh authorization now records
+  only returned permission evidence and clears stale grants when scopes are unknown.
+
+## 2.1.34 - 2026-10-06
+
+- Restore the Google Search Console read-only and sitemap-write access choices
+  in the canonical connector package. Preserve the selected scope when renewing
+  service-account tokens and keep read actions available with write access.
+- Clear cached authorization when the selected access scope changes, so the
+  next authorization uses the updated setting.
+- Pin `stackos-connectors==0.2.1` and publish a signed, notarized macOS build.
+
+## 2.1.33 - 2026-10-05
+
+- Delegate explicit provider OAuth/JWT grants, credential probes, Telegram auth
+  translation and Slack v0/HubSpot v3 signature mechanics to
+  `stackos-connectors==0.2.0`. StackOS retains Account custody, callback state,
+  refresh decisions and concurrency, permissions, ingress policy and audit.
+- Keep existing API-key execution and explicit OAuth/manual-token methods under
+  the same Account attachment, permission and audit boundaries. Authentication
+  uses declared method keys without legacy-method inference or migration.
+
 ## 2.1.32 - 2026-10-05
 
 - Consume the published `stackos-connectors==0.1.1` package from PyPI, including
   connector resources in desktop builds without a sibling source checkout.
 - Fix FTP actions using textual passive-mode values saved by the account
   selector, preserving explicit enabled and disabled choices.
+
+## 2.1.31 - 2026-09-29
+
+- Restored the previously tested Google Search Console sitemap submission
+  actions, including single and batch submission, in the desktop runtime.
+- Included Search Console HTTP batch reads and the separate Google Indexing
+  API connector with single and batch operations.
+- Consolidated the connector implementations, authentication contracts, action
+  manifests, tests, and documentation into the release source.
+
+## 2.1.30 - 2026-09-28
+
+- Added reusable writing guidance to the branding plugin, with primary research
+  sources and clear limits on what that research supports.
+- Updated branding workflows and reviewer guidance to preserve source context,
+  distinguish operator endorsement from review comments, and assess the whole
+  piece before sentence-level edits. Project voice remains project-owned.
+- Added packaged-reference checks so installed workflows can resolve the writing
+  guidance without a source checkout.
 
 ## 2.1.29 - 2026-09-23
 

@@ -49,7 +49,7 @@ provided separately by the host agent runtime.
 
 Use this path when working from this repository:
 
-The pinned dependency `stackos-connectors==0.1.1` is installed from PyPI by
+The pinned dependency `stackos-connectors==0.2.8` is installed from PyPI by
 `uv`. Its resolved distribution and hashes are recorded in `uv.lock`; a
 separate connectors checkout is not required.
 
@@ -307,18 +307,25 @@ database under `~/.local/share/stackos/` and daemon state under
 
 ## Backup
 
-Before serious upgrades or machine moves, export the minimal local state needed
-for operator-guided recovery:
+Before serious upgrades or machine moves, configure an independent recovery
+key using [backup setup](./backups.md). Managed project Finance files are covered
+automatically; enroll only additional external folders.
+Create an encrypted archive:
 
 ```bash
-stackos backup --output ~/Desktop/stackos-backup.zip
+stackos backup --output /private-backups/stackos/manual.sbak
 ```
 
-The backup contains `stackos.db`, `seed.bin`, `auth.token`, and
-`manifest.json`, and is written with mode `0600`. Automated restore is not
-implemented yet. It does not include TDLib's Account-owned native database;
-Telegram user Accounts need a new sign-in after restoring only this archive on
-another machine. An in-place upgrade preserves the native database.
+Every new backup encrypts `stackos.db`, its matching `seed.bin`, `auth.token`,
+the manifest and every enrolled external folder. Files are private (`0600`).
+Automatic backups require explicit opt-in and start disabled. Local setup,
+project Setup and `stackos backups status` show coverage and the last success
+or failure.
+`stackos restore` verifies recovery into a fresh inert folder; it requires the
+separately stored private recovery key. It does not include TDLib's
+Account-owned native database; Telegram user Accounts need a new sign-in after
+archive-only recovery on another machine. An in-place upgrade preserves that
+native database. Existing plaintext ZIP backups remain plaintext.
 
 ## First Run In The UI
 
@@ -367,21 +374,45 @@ the bridge attempts a loopback-only auto-start and logs to:
 ~/.local/state/stackos/mcp-bridge-autostart.log
 ```
 
+Sanitized bridge failures are also saved automatically to
+`~/.local/state/stackos/mcp-bridge.log` (10 MiB plus five rotated backups), even
+when the daemon is unavailable. A non-default state directory relocates both
+logs. Match the JSON-RPC error's `diagnostic_id` against the persistent log.
+Initialization and startup discovery default to a 15-second network inactivity
+timeout, adjustable with `STACKOS_BRIDGE_STARTUP_TIMEOUT_SECONDS` (positive,
+at most 300). Long-running tool response reads remain unlimited. See
+[bridge diagnostics](./bridge-failure-diagnostics.md) for retry boundaries,
+automatic persistence and lookup.
+
 Project context is directory-first and host-dependent. StackOS does not require
 a Git checkout to identify a workspace. The bridge accepts an explicit
 `--workspace-root` argument or `STACKOS_WORKSPACE_ROOT` environment value,
 prefers Claude Code's `CLAUDE_PROJECT_DIR` when present, and only then falls
 back to process cwd. Git remote detection is optional metadata for an existing
-directory binding. Claude Desktop uses global app config and may launch a server
-without repo context; a process cwd of `/` is treated as missing workspace
-context, not as a StackOS project. In that case the agent must connect an
-explicit project/workspace instead of silently creating or reusing a generic
-root binding.
+directory binding. Only the explicit StackOS flag/environment value establishes
+deliberate workspace selection; `CLAUDE_PROJECT_DIR` and cwd are ambient hints.
+Global hosts can supply generated directories, so neither runtime nor path
+shape identifies a global chat. `/` is treated as missing workspace context.
 
-Agents should first bind the working repository to a StackOS project. After the
-binding exists, the bridge resolves and injects `project_id` from the current
-repo and refuses cross-project StackOS calls. This binding is not a filesystem
-permission grant and does not let StackOS inspect the repo. Use `action.run`
+For a chosen working folder, call `workspace.startSession` normally; it creates
+or reuses the binding and the bridge injects `project_id`. Existing bindings
+and explicit StackOS roots stay protected. For known global intent, such as
+ChatGPT “Choose project / This computer” or Claude “Local / No folder”, make
+the first successful call `workspace.startSession` with
+`{"global_session":true,"project_id":42}` using the chosen existing ID, or
+omit the ID to discover projects. If intent is unclear, clarify before startup.
+Unbound ambient initialize/tools-list is read-only and leaves that choice
+pending; normal folder startup without an ID retains automatic setup.
+
+Global startup creates no project or directory binding. Pass a positive
+existing `project_id` on every scoped call; for `toolbox.call`, it goes inside
+`arguments`. Include it on direct browser calls and run-aware
+`toolbox.describe` too. Returned setup/resolve IDs never become defaults.
+An explicit ID with omitted/false global intent on an unbound directory is
+rejected before writes. Use explicit global intent or bind the intended folder.
+See [setup examples](agent-operating-model.md#setup-path) for named creation
+and saved-ID adoption. This selection is not a filesystem permission grant.
+Use `action.run`
 for one explicit direct action; use workflow templates, run plans, and
 step-granted `action.execute` for multi-step work. Provider-specific actions
 should be added as plugin action contracts, not as one-off MCP tools.
@@ -502,6 +533,7 @@ Default paths:
 | Auth token | `~/.local/state/stackos/auth.token` |
 | Credential seed | `~/.local/state/stackos/seed.bin` |
 | Daemon log | `~/.local/state/stackos/daemon.log` |
+| Persistent bridge diagnostics | `~/.local/state/stackos/mcp-bridge.log` |
 | PID file | `~/.local/state/stackos/daemon.pid` |
 | Codex skill mirror | `~/.codex/skills/stackos/SKILL.md` |
 | Claude Code skill mirror | `~/.claude/skills/stackos/SKILL.md` |
@@ -590,11 +622,11 @@ Claude Desktop registration writes
 restarting Claude Desktop before the app sees the updated MCP server. Legacy
 `~/.claude/mcp.json` entries are cleaned only when they belong to StackOS; they
 are not the primary registration source. Claude Desktop does not provide a
-per-repository workspace root through that global config, so Desktop sessions
-without a real workspace hint return setup/connect guidance before project
-scoped tools can run. When StackOS or an operator chooses a default local
-workspace folder for a global desktop host, registration can pass that folder
-with `stackos mcp-bridge --workspace-root /path/to/workspace`.
+per-repository workspace root through that global config. Such a session can
+start globally and pass explicit project IDs for each task through the same
+connection. When an operator deliberately wants a protected local workspace,
+registration can pass `stackos mcp-bridge --workspace-root /path/to/workspace`.
+That root prevents global startup; it is not needed for global project access.
 
 After token rotation or package upgrades, restart the daemon:
 

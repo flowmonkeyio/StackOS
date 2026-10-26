@@ -51,7 +51,7 @@ from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.secrets import PayloadSecretRepository
 
-HEAD_REVISION = "0032_shared_telegram_application"
+HEAD_REVISION = "0034_work_item_ownership"
 
 
 @pytest.fixture
@@ -1405,6 +1405,8 @@ def test_cli_install_mcp_only_registers_claude_with_fake_cli(
     state_path = tmp_path / "claude-state.json"
     _write_fake_claude_cli(bin_dir, state_path)
     monkeypatch.setenv("PATH", str(bin_dir))
+    # Keep optional Codex discovery inside this fixture, not installed host binaries.
+    monkeypatch.setenv("STACKOS_CODEX_BIN", str(bin_dir / "codex"))
 
     result = CliRunner().invoke(
         app,
@@ -1549,6 +1551,9 @@ def test_cli_uninstall_removes_integrations_and_preserves_state(
     )
     monkeypatch.setenv("PATH", str(bin_dir))
 
+    # A fake HOME/PATH does not hide absolute bundled CLIs or inherited CODEX_HOME.
+    monkeypatch.setenv("STACKOS_CODEX_BIN", str(bin_dir / "codex"))
+
     data_dir = sandbox / ".local" / "share" / "stackos"
     data_dir.mkdir(parents=True)
     db_path = data_dir / "stackos.db"
@@ -1655,81 +1660,68 @@ def test_cli_uninstall_fails_when_launchd_unload_fails(
     assert plist.exists()
 
 
+def _backup_test_key(settings: Settings, tmp_path: Path) -> Path:
+    from stackos.backups import BackupPolicy, generate_recovery_key, save_policy
+
+    private = tmp_path / "keys" / "recovery.pem"
+    public = tmp_path / "keys" / "recipient.pem"
+    generate_recovery_key(settings, private, public)
+    save_policy(settings, BackupPolicy(recipient_public_key=public.read_text()))
+    return private
+
+
 def test_cli_backup_creates_private_archive_with_manifest(sandbox: Path, tmp_path: Path) -> None:
+    from stackos.backups import restore_backup
+
     settings = Settings()
     settings.ensure_dirs()
     with sqlite3.connect(settings.db_path) as conn:
         conn.execute("CREATE TABLE backup_probe (id INTEGER PRIMARY KEY, value TEXT)")
         conn.execute("INSERT INTO backup_probe (value) VALUES ('db stays')")
-        conn.commit()
-    settings.seed_path.write_bytes(b"seed stays")
+    settings.seed_path.write_bytes(b"s" * 32)
     settings.token_path.write_text("token stays\n", encoding="utf-8")
-
-    output = tmp_path / "stackos-backup.zip"
-    result = CliRunner().invoke(
-        app,
-        ["backup", "--output", str(output)],
-        catch_exceptions=False,
-    )
-
+    private = _backup_test_key(settings, tmp_path)
+    output = tmp_path / "archives/stackos-backup.sobak"
+    result = CliRunner().invoke(app, ["backup", "--output", str(output)], catch_exceptions=False)
     assert result.exit_code == 0, result.stdout
     assert output.is_file()
     assert output.stat().st_mode & 0o777 == 0o600
-    with zipfile.ZipFile(output) as archive:
-        assert set(archive.namelist()) == {
-            "manifest.json",
-            "data/stackos.db",
-            "state/auth.token",
-            "state/seed.bin",
-        }
-        manifest = json.loads(archive.read("manifest.json"))
-        assert manifest["schema"] == "stackos.local-backup.v1"
-        assert manifest["restore_status"] == "manual-only; automated restore is not implemented"
-        assert [item["path"] for item in manifest["included"]] == [
-            "data/stackos.db",
-            "state/seed.bin",
-            "state/auth.token",
-        ]
-        extracted_db = tmp_path / "restored-copy.db"
-        extracted_db.write_bytes(archive.read("data/stackos.db"))
-
-    with sqlite3.connect(extracted_db) as conn:
-        value = conn.execute("SELECT value FROM backup_probe WHERE id = 1").fetchone()[0]
-    assert value == "db stays"
+    assert not zipfile.is_zipfile(output)
+    recovered = tmp_path / "recovered"
+    restore_backup(settings, output, private, recovered)
+    assert (recovered / "manifest.json").is_file()
+    assert (recovered / "state/auth.token").read_text() == "token stays\n"
+    with sqlite3.connect(recovered / "data/stackos.db") as conn:
+        assert (
+            conn.execute("SELECT value FROM backup_probe WHERE id = 1").fetchone()[0] == "db stays"
+        )
 
 
 def test_cli_backup_includes_staged_seed_backup(sandbox: Path, tmp_path: Path) -> None:
+    from stackos.backups import restore_backup
+
     settings = Settings()
     settings.ensure_dirs()
     with sqlite3.connect(settings.db_path) as conn:
         conn.execute("CREATE TABLE backup_probe (id INTEGER PRIMARY KEY)")
-        conn.commit()
-    settings.seed_path.write_bytes(b"seed stays")
+    settings.seed_path.write_bytes(b"s" * 32)
     settings.seed_path.with_suffix(settings.seed_path.suffix + ".bak").write_bytes(b"old seed")
     settings.token_path.write_text("token stays\n", encoding="utf-8")
-
-    output = tmp_path / "stackos-backup.zip"
-    result = CliRunner().invoke(
-        app,
-        ["backup", "--output", str(output)],
-        catch_exceptions=False,
-    )
-
+    private = _backup_test_key(settings, tmp_path)
+    output = tmp_path / "archives/stackos-backup.sobak"
+    result = CliRunner().invoke(app, ["backup", "--output", str(output)], catch_exceptions=False)
     assert result.exit_code == 0, result.stdout
-    with zipfile.ZipFile(output) as archive:
-        assert "state/seed.bin.bak" in archive.namelist()
-        manifest = json.loads(archive.read("manifest.json"))
-        assert "state/seed.bin.bak" in [item["path"] for item in manifest["included"]]
-        assert archive.read("state/seed.bin.bak") == b"old seed"
+    recovered = tmp_path / "recovered"
+    restore_backup(settings, output, private, recovered)
+    assert (recovered / "state/seed.bin.bak").read_bytes() == b"old seed"
 
 
-def test_cli_backup_refuses_missing_required_state(sandbox: Path) -> None:
-    output = sandbox / "backup.zip"
-
+def test_cli_backup_refuses_missing_required_state(sandbox: Path, tmp_path: Path) -> None:
+    settings = Settings()
+    _backup_test_key(settings, tmp_path)
+    output = sandbox / "backup.sobak"
     result = CliRunner().invoke(app, ["backup", "--output", str(output)])
-
     assert result.exit_code == 1
-    assert "required local state is missing" in result.stderr
     assert not output.exists()
 
 

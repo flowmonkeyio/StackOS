@@ -6,6 +6,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { createRequire } = require("node:module");
+const { spawnSync } = require("node:child_process");
 
 const desktopDir = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(desktopDir, "..");
@@ -32,6 +33,56 @@ assert.match(runtime, /TDLIB_SOURCE_ARCHIVE_SHA256/);
 assert.match(runtime, /TDLIB_RUNTIME_REPAIR/);
 assert.match(signer, /bundledMachOFiles/);
 assert.match(signer, /refreshTdlibLibraryDigest/);
+
+// Invalid inputs must fail before signing or loading any native code.
+const guardRoot = fs.mkdtempSync(path.join(os.tmpdir(), "stackos-tdlib-input-"));
+try {
+  const input = path.join(guardRoot, "input.dylib");
+  const touched = path.join(guardRoot, "native-command-ran");
+  fs.writeFileSync(input, "unapproved-library");
+  const before = fs.readFileSync(input);
+  for (const command of ["lipo", "otool", "codesign"]) {
+    fs.writeFileSync(path.join(guardRoot, command), `#!/bin/sh\ntouch '${touched}'\nexit 97\n`, { mode: 0o755 });
+  }
+  function runGuard(overrides = {}) {
+    return spawnSync("bash", [path.join(desktopDir, "scripts", "build-tdlib-runtime-mac.sh")], {
+      env: {
+        ...process.env,
+        PATH: guardRoot + path.delimiter + process.env.PATH,
+        TDLIB_INPUT_VARIANT: "stackos-2.1.38-packaged-local",
+        TDLIB_LIBRARY_PATH: input,
+        TDLIB_RUNTIME_ROOT: path.join(guardRoot, "runtime"),
+        STACKOS_UNSIGNED_DEV: "1",
+        STACKOS_REQUIRE_SIGNING: "",
+        STACKOS_REQUIRE_UPDATE_URL: "",
+        STACKOS_UPDATE_URL: "",
+        ...overrides
+      },
+      encoding: "utf8"
+    });
+  }
+  for (const overrides of [
+    { STACKOS_UNSIGNED_DEV: "" }, { TDLIB_LIBRARY_PATH: "" },
+    { STACKOS_REQUIRE_SIGNING: "1", STACKOS_ALLOW_UNSIGNED_RELEASE: "1" },
+    { STACKOS_REQUIRE_UPDATE_URL: "true", STACKOS_ALLOW_UNSIGNED_RELEASE: "1" },
+    { STACKOS_UPDATE_URL: "https://updates.example.com/stackos" },
+    { STACKOS_UPDATE_URL: "http://127.0.0.1:8765/stackos" },
+    { TDLIB_INPUT_VARIANT: "unknown" }
+  ]) {
+    const result = runGuard(overrides);
+    assert.notEqual(result.status, 0, JSON.stringify(overrides));
+    assert.match(result.stderr, /Packaged TDLib reuse|Unknown TDLIB_INPUT_VARIANT/);
+  }
+  for (const variant of ["original", "stackos-2.1.38-packaged-local"]) {
+    const result = runGuard({ TDLIB_INPUT_VARIANT: variant });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /did not match the pinned input artifact digest/);
+  }
+  assert.equal(fs.existsSync(touched), false, "unverified bytes must not reach native tooling");
+  assert.deepEqual(fs.readFileSync(input), before, "input must remain unchanged");
+} finally {
+  fs.rmSync(guardRoot, { recursive: true, force: true });
+}
 
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "stackos-tdlib-sign-manifest-"));
 try {

@@ -143,15 +143,35 @@ The agent-facing MCP bridge surface is intentionally small:
   artifact writes, memory writes, and run audit tools
 - memory: context, learnings, experiments, decisions
 
-The bridge derives the workspace-bound project from the repository that
-launched it. It injects that `project_id` into project-scoped calls and refuses
-explicit cross-project calls. It also injects current workspace hints and
-refuses calls that try to resolve, bootstrap, or connect another workspace.
-Safe project listing/creation and read-only binding diagnostics are available
-through `toolbox.call` during intentional setup, so an unbound agent can finish
-project bootstrap from MCP alone. Project switching, archiving, and broad admin
-mutations remain daemon/admin capabilities; they are not advertised to normal
-agent bridge clients.
+The bridge supports a protected workspace session or a global session with
+explicit projects per call. Normal `workspace.startSession` creates or reuses
+the chosen directory's binding; the bridge injects its `project_id` and refuses
+scope changes. A first startup with an existing `workspace_alias` establishes
+the same protection for a named workspace. Diagnostic resolve results never
+change established scope.
+
+For unbound ambient hints, initialize/tools-list only resolve read-only. The
+agent declares known global intent on its first successful startup with
+`global_session=true` and an optional selected `project_id`; no project or
+directory binding is created. Every subsequent global project-scoped call
+requires an explicit positive existing ID, including direct browser operations
+and run-aware `toolbox.describe`. Named bootstrap/connect remains available
+for intentional setup, but returned project IDs never become session defaults.
+An explicit StackOS root or existing binding cannot be downgraded to global.
+`CLAUDE_PROJECT_DIR` and cwd are ambient hints, not proof of folder selection.
+
+The bridge verifies project scope before refreshing run authority and discards
+usable cached authority after failed or mismatched refresh. Current controller,
+plan, and step grants govern workflow writes; direct read/audit target IDs keep
+their existing operation semantics. Provider JSON remains opaque. Project
+selection grants no filesystem access, credentials, or action permission.
+Broad admin mutations remain daemon/admin capabilities.
+
+Project IDs use SQLite AUTOINCREMENT from migration
+`0033_project_id_nonreuse`. A selection confirmed after migration cannot point
+to a future replacement after deletion. Older numeric-only references require
+explicit reselection: migration cannot repair an ID already reused before it
+ran. See [the setup path](agent-operating-model.md#setup-path) for agent calls.
 
 Bootstrap/setup calls are intentionally available before a run token exists so
 an agent can set up the current project and create the first run plan. They are
@@ -214,6 +234,53 @@ primary lanes. Plugin nav points to generic renderers with plugin/resource
 keys. New domains should not require bespoke top-level pages unless a
 specialized editor is clearly justified.
 
+### Project Finance files
+
+The Finance console is a bounded presentation decision for the operator's
+project-finance inspection and correction needs. Generic resource tables cannot
+show invoice-versus-payment evidence, exact-money period comparisons, or a
+revision-bound correction preview over the existing project file. Artifact
+previews can display a saved report but cannot provide that live inspection and
+correction flow. Moving the financial master into generic resource rows would
+introduce a competing ledger. Those alternatives do not meet this operator
+outcome, so the existing console presents the plugin's read models and explicit
+writer operations using shared UI primitives.
+
+This decision does not make a specialized page the default for a workflow or
+plugin. Future domains start with generic plugin/resource/artifact surfaces;
+another specialized presentation requires its own demonstrated gap, rejected
+native alternatives and explicit product decision. Finance method, financial
+query validation and analysis envelopes remain Finance-owned. The core owns
+project scope, generic human ingress, request persistence, dispatch, replay,
+permissions and audit. No domain presentation may add hidden business decisions
+or a second agent/model runtime. A general plugin-page extension framework is
+not needed to repair or justify this existing bounded surface.
+
+Finance contributes one registered local console, reachable at
+`/projects/:id/finance`, with Overview, Expenses & income and Reports. The plugin
+owns reporting method, typed metadata and external helpers; the existing operation
+registry/auth/dispatcher, generic request lifecycle and shared UI primitives own
+transport and authority. There is no financial database/resource ledger or
+arbitrary file connector. One plugin-owned `finance.json` and retained originals
+under `data/projects/<project-id>/finance/` remain authoritative. The permanent ID
+isolates projects; renames preserve the location. Safe project-local incarnation
+metadata fences stale requests, and generic encrypted backups cover the entire
+managed project subtree automatically.
+
+Bounded human corrections delegate to the canonical file writer under current
+project/root/generation authority, preview and revision/hash. Generic request
+creation does not execute a model: an actual available host runs the plugin's
+`finance.management-review` and independent report/result review. Findings and
+readable report bytes stay in that project's Finance files; StackOS retains safe completion
+refs/status. See [the finance contract](../plugins/finance/references/local-workspace-contract.md#local-management-console).
+
+Browser chat retains generic inbound-human identity and bounded-content guards.
+Its Finance analysis metadata is delegated to the registered Finance operation
+owner: operation calls and analysis intake share the same query-field contract,
+and the packaged helper validates periods and reporting scope. Nonempty private
+search text is rejected before request persistence. The same guard runs before
+generic replay, so an earlier successful key cannot bypass current validation.
+
 ## Delivery Invariants
 
 - A new domain starts as a plugin manifest plus templates and actions.
@@ -222,6 +289,8 @@ specialized editor is clearly justified.
 - A new callable operation starts as one operation spec with schemas, examples,
   surface policy, grant policy, and agent guidance.
 - A new workflow starts as a template and run-plan tests.
-- A new UI surface should render generic StackOS data.
+- UI surfaces use shared primitives and declared authority. Finance's local
+  console renders bounded project-file read models; the plugin's canonical file
+  writer owns the master. Other runtime views render generic StackOS data.
 - Removed flows must be deleted from routes, MCP registration, bridge exposure,
   tests, docs, install assets, and generated API types.

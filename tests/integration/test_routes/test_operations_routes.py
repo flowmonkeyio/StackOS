@@ -16,6 +16,19 @@ from stackos.repositories.run_plans import RunPlanRepository
 from tests.integration.test_repositories.test_telegram_actions import FakeTelegram
 
 
+def test_global_startup_uses_canonical_operation_contract(api: TestClient, project_id: int) -> None:
+    result = api.post(
+        "/api/v1/operations/workspace.startSession/call",
+        json={"arguments": {"global_session": True, "project_id": project_id}},
+    )
+    assert result.status_code == 200, result.text
+    data = result.json()["data"]
+    assert data["global_session"] is True
+    assert data["project_id"] == project_id
+    assert data["workspace_binding_id"] is None
+    assert data["setup_state"]["project_scoped_tools_usable"] is True
+
+
 def _sitemap_action_plan_json() -> dict:
     return {
         "schema_version": "stackos.run-plan.v1",
@@ -1300,6 +1313,43 @@ def test_operation_rest_idempotency_replay_can_expand_from_ack_to_raw(
         replay_body["data"]["agent_request"]["source_message_ref"]
         == ack_body["refs"]["message_ref"]
     )
+
+
+def test_handler_owned_idempotency_revalidates_every_attempt(
+    api: TestClient,
+    project_id: int,
+    monkeypatch,
+) -> None:
+    """External/config owners must see retries before any cached success."""
+    from stackos.operations.registry import build_operation_registry
+
+    registry = build_operation_registry()
+    spec = registry.get("localAgentChat.createMessage")
+    original = spec.handler
+    calls = []
+
+    async def checked_handler(inp, ctx, emitter):
+        calls.append(inp.message_key)
+        return await original(inp, ctx, emitter)
+
+    # Exercise the declared policy against the old dispatcher for a semantic red.
+    object.__setattr__(spec, "idempotency_policy", "handler")
+    object.__setattr__(spec, "handler", checked_handler)
+    monkeypatch.setattr("stackos.api.operations.build_operation_registry", lambda: registry)
+    arguments = {
+        "project_id": project_id,
+        "thread_key": "handler-replay",
+        "message_key": "same-message",
+        "sender_ref": "local-user:operator",
+        "text": "Synthetic bounded request",
+        "idempotency_key": "handler-policy",
+    }
+    for _ in range(2):
+        response = api.post(
+            "/api/v1/operations/localAgentChat.createMessage/call", json={"arguments": arguments}
+        )
+        assert response.status_code == 200, response.text
+    assert calls == ["same-message", "same-message"]
 
 
 def test_operation_rest_communication_setup_rejects_secret_like_fields(

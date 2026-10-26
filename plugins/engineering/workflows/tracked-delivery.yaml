@@ -8,19 +8,17 @@ owner:
   team: StackOS
 experience:
   problem: "Engineering requests fail when requirements, dependencies, verification, and review live only in chat or are compressed into implementation."
-  outcome: "A delivered change with an explicit flow, truthful tracker state, proportionate verification, independent review, and release evidence."
+  outcome: "A change checked against the original request, with test results, independent review and a recorded release status. The record shows what was completed and what still needs attention."
   why_ai: "AI can coordinate discovery, implementation, testing, and review across a long-running change while StackOS preserves dependencies and proof."
   operator_path:
     - "Describe the desired outcome, constraints, and authority boundary."
     - "Review material design choices or production-risk gates."
     - "Inspect verification, review findings, and residual risk before release."
   agent_path:
-    - "Define requirements and affected flows before planning tickets."
-    - "Discover the real code and system boundaries, then design the approach and proof plan."
-    - "Build executable dependency-linked tickets from the design and proof plan, then review delivery readiness."
-    - "Delegate independent tickets in parallel, verify each immediately, and accept integrated results before releasing dependents."
-    - "Prove the assembled outcome using current ticket evidence and remaining integration checks."
-    - "Audit tracker truth and close only when evidence matches the result."
+    - "Clarify the request, affected users and systems, constraints, and what will count as a successful result."
+    - "Inspect the existing code, choose an approach and checks, then plan tasks in dependency order. Review the plan before implementation."
+    - "Implement authorized tasks, running independent work in parallel when useful. Test and independently review each result before starting dependent work, then check that the pieces work together."
+    - "Compare the finished change with the original request, record test and review results, and state whether it was released or what remains. Close the work only when the evidence supports that status."
   progress_signals:
     - "Requirements defined"
     - "Impact discovered"

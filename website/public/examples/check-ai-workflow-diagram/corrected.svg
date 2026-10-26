@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="1136" viewBox="0 0 360 1136" role="img" aria-labelledby="diagram-title diagram-description">
+<title id="diagram-title">Announcement workflow: corrected diagram</title>
+<desc id="diagram-description">Fictional diagram prepared for comparison with the complete written process. The companion text lists all drawn relationships. The process ends at a queued confirmation.</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L8 4 L0 8 Z" fill="#314153"/></marker></defs>
+<rect width="360" height="1136" rx="14" fill="#f7f9fb"/>
+<g fill="none" stroke="#314153" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)">
+<path id="E1" data-from="N1" data-to="N2" d="M246 114 V162"/>
+<path id="E2" data-from="N2" data-to="N3" d="M148 230 H79 V322"/>
+<path id="E3" data-from="N3" data-to="N2" d="M79 422 V436 H8 V140 H246 V162"/>
+<path id="E4" data-from="N2" data-to="N4" d="M246 298 V450"/>
+<path id="E5" data-from="N4" data-to="N5" d="M246 536 V582"/>
+<path id="E6" data-from="N5" data-to="N6" d="M148 650 H79 V750"/>
+<path id="E7" data-from="N6" data-to="N2" d="M16 800 H8 V140 H246 V162"/>
+<path id="E8" data-from="N5" data-to="N7" d="M246 718 V900"/>
+<path id="E9" data-from="N7" data-to="N8" d="M246 986 V1040"/>
+</g>
+<g id="N1">
+<rect x="154" y="28" width="184" height="86" rx="10" fill="#ffffff" stroke="#9baabc" stroke-width="1.5"/>
+<text x="246" y="66" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="500" fill="#152437" text-anchor="middle">
+<tspan x="246" dy="0">Author submits</tspan>
+<tspan x="246" dy="24">saved draft</tspan>
+</text></g>
+<g id="N2">
+<path d="M246 162 L344 230 L246 298 L148 230 Z" fill="#eef4fc" stroke="#7590b0" stroke-width="1.5"/>
+<text x="246" y="213" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="500" fill="#152437" text-anchor="middle">
+<tspan x="246" dy="0">Assistant:</tspan>
+<tspan x="246" dy="24">references</tspan>
+<tspan x="246" dy="24">complete?</tspan>
+</text></g>
+<g id="N3">
+<rect x="16" y="322" width="126" height="100" rx="10" fill="#ffffff" stroke="#9baabc" stroke-width="1.5"/>
+<text x="79" y="355" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="500" fill="#152437" text-anchor="middle">
+<tspan x="79" dy="0">Author adds</tspan>
+<tspan x="79" dy="24">missing</tspan>
+<tspan x="79" dy="24">references</tspan>
+</text></g>
+<g id="N4">
+<rect x="154" y="450" width="184" height="86" rx="10" fill="#ffffff" stroke="#9baabc" stroke-width="1.5"/>
+<text x="246" y="488" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="500" fill="#152437" text-anchor="middle">
+<tspan x="246" dy="0">Assistant</tspan>
+<tspan x="246" dy="24">prepares packet</tspan>
+</text></g>
+<g id="N5">
+<path d="M246 582 L344 650 L246 718 L148 650 Z" fill="#eef4fc" stroke="#7590b0" stroke-width="1.5"/>
+<text x="246" y="645" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="500" fill="#152437" text-anchor="middle">
+<tspan x="246" dy="0">Human editor:</tspan>
+<tspan x="246" dy="24">approve?</tspan>
+</text></g>
+<g id="N6">
+<rect x="16" y="750" width="126" height="100" rx="10" fill="#ffffff" stroke="#9baabc" stroke-width="1.5"/>
+<text x="79" y="795" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="500" fill="#152437" text-anchor="middle">
+<tspan x="79" dy="0">Author</tspan>
+<tspan x="79" dy="24">revises draft</tspan>
+</text></g>
+<g id="N7">
+<rect x="154" y="900" width="184" height="86" rx="10" fill="#ffffff" stroke="#9baabc" stroke-width="1.5"/>
+<text x="246" y="938" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="500" fill="#152437" text-anchor="middle">
+<tspan x="246" dy="0">Worker queues</tspan>
+<tspan x="246" dy="24">approved revision</tspan>
+</text></g>
+<g id="N8">
+<rect x="154" y="1040" width="184" height="68" rx="30" fill="#e7f0ed" stroke="#9baabc" stroke-width="1.5"/>
+<text x="246" y="1069" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="500" fill="#152437" text-anchor="middle">
+<tspan x="246" dy="0">Queued</tspan>
+<tspan x="246" dy="24">confirmation</tspan>
+</text></g>
+<rect x="37.25" y="263" width="83.5" height="25" rx="4" fill="#f7f9fb"/>
+<text x="79" y="282" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="#314153" text-anchor="middle">Missing</text>
+<rect x="183.25" y="364" width="125.5" height="25" rx="4" fill="#f7f9fb"/>
+<text x="246" y="383" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="#314153" text-anchor="middle">All present</text>
+<rect x="37.25" y="686" width="83.5" height="25" rx="4" fill="#f7f9fb"/>
+<text x="79" y="705" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="#314153" text-anchor="middle">Changes</text>
+<rect x="15.25" y="565" width="83.5" height="25" rx="4" fill="#f7f9fb"/>
+<text x="57" y="584" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="#314153" text-anchor="middle">Recheck</text>
+<rect x="199" y="804" width="94" height="25" rx="4" fill="#f7f9fb"/>
+<text x="246" y="823" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="#314153" text-anchor="middle">Approved</text>
+</svg>

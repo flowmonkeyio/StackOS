@@ -263,6 +263,7 @@ outputs:
     support_listing_data = support_listing
     assert [item["key"] for item in support_listing_data["templates"]] == [
         "support.delivery-task-handoff",
+        "support.internal-diagnostics",
         "support.issue-investigation",
     ]
     support_described = _operation_data(

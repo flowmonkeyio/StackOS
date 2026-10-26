@@ -9,6 +9,7 @@ import json
 import time
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
@@ -28,6 +29,78 @@ _PORTAL_ID = "48807704"
 _PROFILE_KEY = "primary"
 _CLIENT_SECRET = "hubspot-app-client-secret"
 _PUBLIC_BASE_URL = "https://auth.stackos.example"
+
+
+@pytest.mark.parametrize(
+    "offset,accepted", [(-300_000, True), (300_000, True), (-300_001, False), (300_001, False)]
+)
+def test_hubspot_replay_window_stays_in_host_before_protocol_verification(
+    api: TestClient, project_id: int, monkeypatch, offset: int, accepted: bool
+) -> None:
+    from stackos.api import hubspot_ingress
+
+    credential_ref = _store_hubspot_ingress_profile(
+        api, project_id, event_allowlist=["contact.creation"]
+    )
+    now = 1_800_000_000
+    monkeypatch.setattr(hubspot_ingress.time, "time", lambda: now)
+    raw = json.dumps([_subscription_event(subscription_type="contact.creation")]).encode()
+    calls = []
+    verify = hubspot_ingress.verify_signature_v3
+
+    def checked(*args):
+        calls.append(args)
+        return verify(*args)
+
+    monkeypatch.setattr(hubspot_ingress, "verify_signature_v3", checked)
+    response = _post_without_bearer(
+        api,
+        project_id,
+        credential_ref=credential_ref,
+        raw_body=raw,
+        headers=_v3_headers(
+            raw,
+            project_id=project_id,
+            credential_ref=credential_ref,
+            timestamp_ms=now * 1_000 + offset,
+        ),
+    )
+    assert response.status_code == (200 if accepted else 403)
+    assert len(calls) == int(accepted)
+    if accepted:
+        assert calls[0][0:4] == (
+            _CLIENT_SECRET,
+            "POST",
+            _canonical_url(project_id, credential_ref),
+            str(now * 1_000 + offset),
+        )
+        assert calls[0][4] == raw
+    else:
+        state = _stored_state(api, project_id)
+        assert not state["events"] and not state["requests"] and not state["refs"]
+
+
+@pytest.mark.parametrize("timestamp", [None, "", "invalid"])
+def test_hubspot_invalid_timestamp_never_reaches_protocol_helper(
+    api: TestClient, project_id: int, monkeypatch, timestamp: str | None
+) -> None:
+    from stackos.api import hubspot_ingress
+
+    credential_ref = _store_hubspot_ingress_profile(api, project_id)
+
+    def forbidden(*args):
+        raise AssertionError("invalid timestamp must fail at the host boundary")
+
+    monkeypatch.setattr(hubspot_ingress, "verify_signature_v3", forbidden)
+    headers = {"X-HubSpot-Signature-V3": "invalid", "Content-Type": "application/json"}
+    if timestamp is not None:
+        headers["X-HubSpot-Request-Timestamp"] = timestamp
+    response = _post_without_bearer(
+        api, project_id, credential_ref=credential_ref, raw_body=b"[]", headers=headers
+    )
+    assert response.status_code == 403
+    state = _stored_state(api, project_id)
+    assert not state["events"] and not state["requests"] and not state["refs"]
 
 
 def _store_hubspot_ingress_profile(

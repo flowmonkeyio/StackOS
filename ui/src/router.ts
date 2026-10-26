@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 
 import HomeView from './views/HomeView.vue'
+import LocalSetupView from './views/LocalSetupView.vue'
 import AuthErrorView from './views/AuthErrorView.vue'
 import ProjectDetailView from './views/ProjectDetailView.vue'
 import HomeConsoleView from './views/HomeConsoleView.vue'
@@ -22,9 +23,11 @@ import ResourceExplorerView from './views/ResourceExplorerView.vue'
 import ActionCallsView from './views/ActionCallsView.vue'
 import AgentRequestsView from './views/AgentRequestsView.vue'
 import TaskTrackerView from './views/TaskTrackerView.vue'
+import FinanceView from './views/FinanceView.vue'
 
 const routes: RouteRecordRaw[] = [
   { path: '/', name: 'home', component: HomeView },
+  { path: '/setup', name: 'local-setup', component: LocalSetupView },
   { path: '/auth-error', name: 'auth-error', component: AuthErrorView },
   { path: '/accounts', name: 'accounts', component: AccountsView },
   { path: '/projects', redirect: '/' },
@@ -48,9 +51,18 @@ const routes: RouteRecordRaw[] = [
   { path: '/projects/:id/connections', name: 'project-connections', component: ConnectionsView },
   { path: '/projects/:id/operations', name: 'project-operations', component: OperationsView },
   { path: '/projects/:id/action-calls', name: 'project-action-calls', component: ActionCallsView },
-  { path: '/projects/:id/agent-requests', name: 'project-agent-requests', component: AgentRequestsView },
-  { path: '/projects/:id/agent-presets', name: 'project-agent-presets', component: AgentPresetsView },
+  {
+    path: '/projects/:id/agent-requests',
+    name: 'project-agent-requests',
+    component: AgentRequestsView,
+  },
+  {
+    path: '/projects/:id/agent-presets',
+    name: 'project-agent-presets',
+    component: AgentPresetsView,
+  },
   { path: '/projects/:id/tasks', name: 'project-tasks', component: TaskTrackerView },
+  { path: '/projects/:id/finance', name: 'project-finance', component: FinanceView },
   {
     path: '/projects/:id/workflow-templates',
     name: 'project-workflow-templates',

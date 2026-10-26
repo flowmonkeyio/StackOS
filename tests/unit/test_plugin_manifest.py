@@ -245,8 +245,19 @@ def test_google_actions_use_interactive_oauth_and_declared_scopes() -> None:
     }
     for plugin in BUILTIN_PLUGIN_MANIFESTS:
         for action in plugin.actions:
-            if action.provider in expected_provider_scopes:
+            if action.provider == "google-search-console" and action.key in {
+                "search-console.sitemaps.submit",
+                "search-console.sitemaps.submit.batch",
+            }:
+                assert action.config["required_scopes"] == [
+                    "https://www.googleapis.com/auth/webmasters"
+                ]
+            elif action.provider in expected_provider_scopes:
                 assert action.config["required_scopes"] == expected_provider_scopes[action.provider]
+            elif action.provider == "google-indexing":
+                assert action.config["required_scopes"] == [
+                    "https://www.googleapis.com/auth/indexing"
+                ]
             elif action.provider == "google-workspace":
                 assert (
                     action.config["required_scopes"] == workspace_scopes[action.config["operation"]]
@@ -372,6 +383,7 @@ def test_builtin_plugin_manifests_validate() -> None:
         "client_id",
         "client_secret",
         "refresh_token",
+        "access_mode",
         "default_site_url",
     ]
     assert _auth_field_keys(seo_providers["google-analytics"], "oauth2_refresh_token") == [
@@ -387,6 +399,40 @@ def test_builtin_plugin_manifests_validate() -> None:
         "default_account_ref",
     ]
     seo_actions = {action.key: action for action in seo.actions}
+    assert [method.key for method in seo_providers["google-indexing"].auth_methods] == [
+        "service-account"
+    ]
+    assert seo_actions["indexing.url-notifications.publish"].risk_level == "destructive"
+    assert seo_actions["indexing.url-notifications.metadata.get"].risk_level == "read"
+    assert seo_actions["indexing.batch.publish"].risk_level == "destructive"
+    assert seo_actions["indexing.batch.metadata.get"].risk_level == "read"
+    for key in ("indexing.batch.publish", "indexing.batch.metadata.get"):
+        urls = seo_actions[key].input_schema["properties"]["urls"]
+        assert urls["minItems"] == 1 and urls["maxItems"] == 100
+    assert seo_actions["indexing.url-notifications.publish"].input_schema["properties"]["type"][
+        "enum"
+    ] == ["URL_UPDATED", "URL_DELETED"]
+    submit = seo_actions["search-console.sitemaps.submit"]
+    assert submit.risk_level == "write"
+    assert submit.config["required_scopes"] == ["https://www.googleapis.com/auth/webmasters"]
+    assert submit.input_schema["required"] == ["site_url", "sitemap_url"]
+    assert submit.input_schema["additionalProperties"] is False
+    read_batch = seo_actions["search-console.batch.read"]
+    write_batch = seo_actions["search-console.sitemaps.submit.batch"]
+    assert read_batch.risk_level == "read"
+    assert write_batch.risk_level == "write"
+    for action in (read_batch, write_batch):
+        requests = action.input_schema["properties"]["requests"]
+        assert (requests["minItems"], requests["maxItems"]) == (1, 1000)
+        assert action.input_schema["additionalProperties"] is False
+    union = read_batch.input_schema["properties"]["requests"]["items"]["oneOf"]
+    assert {item["properties"]["operation"]["const"] for item in union} == {
+        "sites.list",
+        "search_analytics.query",
+        "sitemaps.list",
+        "url.inspect",
+    }
+    assert all(item["additionalProperties"] is False for item in union)
     assert seo_actions["search-console.search-analytics.query"].config == {
         "schema_version": "stackos.action.v1",
         "connector": "google-search-console",
@@ -936,8 +982,8 @@ def test_builtin_plugin_manifests_validate() -> None:
 def test_finance_stripe_manifest_is_transport_only_and_complete() -> None:
     finance = next(manifest for manifest in BUILTIN_PLUGIN_MANIFESTS if manifest.slug == "finance")
     assert finance.resources == []
-    assert {provider.key for provider in finance.providers} == {"stripe"}
-    stripe = finance.providers[0]
+    assert {provider.key for provider in finance.providers} == {"stripe", "quickbooks-online"}
+    stripe = next(provider for provider in finance.providers if provider.key == "stripe")
     assert stripe.auth_type == "api-key"
     assert [method.key for method in stripe.auth_methods] == ["api_key"]
     assert _auth_field_keys(stripe, "api_key") == ["api_key"]
@@ -945,7 +991,7 @@ def test_finance_stripe_manifest_is_transport_only_and_complete() -> None:
     assert stripe.auth_methods[0].permission_verification.evidence_source == "unavailable"
     assert stripe.auth_methods[0].permission_verification.enforcement == "provider_enforced"
 
-    actions = {action.key: action for action in finance.actions}
+    actions = {action.key: action for action in finance.actions if action.provider == "stripe"}
     assert set(actions) == {
         "stripe.products.list",
         "stripe.products.retrieve",
@@ -1044,7 +1090,7 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
         for provider in plugin.providers
     ]
 
-    assert len(providers) == 58
+    assert len(providers) == 60
     google_seo_providers = {
         "google-search-console",
         "google-analytics",
@@ -1058,7 +1104,9 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
             f"{plugin_slug}:{provider.key} missing setup note"
         )
         expected_verified_at = (
-            "2026-09-22"
+            None
+            if provider.key in {"quickbooks-online", "google-indexing"}
+            else "2026-09-22"
             if plugin_slug == "communications" and provider.key == "telegram"
             else "2026-09-12"
             if plugin_slug == "utils" and provider.key == "aignc"
@@ -1080,9 +1128,11 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
         )
         assert setup.get("verified_at") == expected_verified_at
         if provider.auth_type not in {"none", "local"}:
-            assert setup.get("credential_label"), (
-                f"{plugin_slug}:{provider.key} missing credential label"
-            )
+            assert setup.get("credential_label") or (
+                provider.key == "quickbooks-online"
+                and [method.label for method in provider.auth_methods]
+                == ["Connect with QuickBooks", "OAuth2 access token"]
+            ), f"{plugin_slug}:{provider.key} missing credential label"
             assert any(
                 setup.get(key)
                 for key in (

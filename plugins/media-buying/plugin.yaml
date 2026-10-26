@@ -28,215 +28,92 @@ capabilities:
 providers:
   - key: meta-ads
     name: Meta Ads
-    description: Meta Marketing API provider contract for ad accounts, campaigns, ad sets, ads, creatives, and insights.
+    description: Meta Marketing API provider contract for ad accounts, campaigns, ad sets, ads, creatives,
+      and insights.
+    auth_catalog_ref: meta-ads
     auth_type: oauth
     auth_methods:
-      - key: oauth2_authorization_code
-        label: Connect with Meta
-        auth_type: oauth
-        description: Authorize through Meta and record the permissions returned by the OAuth exchange.
-        interactive: true
-        permission_verification:
-          evidence_source: oauth_response
-          enforcement: local_required
-        payload_format: json
-        fields:
-        - key: client_id
-          label: Meta App ID
-          type: secret
-          secret: true
-          required: true
-        - key: client_secret
-          label: Meta App Secret
-          type: secret
-          secret: true
-          required: true
-        - key: business_ref
-          label: Business Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: business or portfolio reference
-        - key: api_version
-          label: API Version
-          type: text
-          secret: false
-          required: false
-          placeholder: v25.0
-      - key: oauth2_token
-        label: Existing OAuth access token
-        auth_type: oauth
-        description: Store an existing Meta user or system-user OAuth token. StackOS cannot verify its permissions locally, so scoped actions remain blocked until trusted grant evidence is available.
-        permission_verification:
-          evidence_source: unavailable
-          enforcement: local_required
-        payload_format: json
-        fields:
-        - key: access_token
-          label: Access Token
-          type: secret
-          secret: true
-          required: true
-        - key: business_ref
-          label: Business Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: business or portfolio reference
-        - key: api_version
-          label: API Version
-          type: text
-          secret: false
-          required: false
-          placeholder: v25.0
-    config:
-      scopes:
-        - ads_management
-        - ads_read
-        - business_management
-      setup:
-        credential_label: Meta Marketing API OAuth access token
-        setup_note: Create/select a Meta developer app and Business portfolio, register the fixed StackOS callback, grant the declared Marketing API permissions, then use Connect with Meta. StackOS exchanges the short-lived login token for a long-lived user token.
-        homepage_url: https://www.facebook.com/business/ads
-        signup_url: https://www.facebook.com/business/tools/ads-manager
-        console_url: https://developers.facebook.com/apps/
-        credential_url: https://developers.facebook.com/apps/
-        billing_url: https://business.facebook.com/billing_hub
-        docs_url: https://developers.facebook.com/docs/marketing-api
-        fallback_url: https://developers.facebook.com/docs/marketing-api
-        fallback_reason: Token generation is app/business/account specific; use the official developer app console.
-        verified_at: "2026-06-11"
-        url_confidence:
-          homepage_url: verified
-          signup_url: directional
-          console_url: verified
-          credential_url: directional
-          billing_url: directional
-          docs_url: verified
-          fallback_url: verified
+    - key: oauth2_authorization_code
+      fields:
+      - key: business_ref
+        label: Business Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: business or portfolio reference
+      permission_verification:
+        enforcement: local_required
+      field_order:
+      - client_id
+      - client_secret
+      - business_ref
+      - api_version
+    - key: oauth2_token
+      fields:
+      - key: business_ref
+        label: Business Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: business or portfolio reference
+      permission_verification:
+        enforcement: local_required
+      field_order:
+      - access_token
+      - business_ref
+      - api_version
   - key: google-ads
     name: Google Ads
-    description: Google Ads API provider contract for customers, budgets, campaigns, ad groups, assets, ads, reporting, and conversions.
+    description: Google Ads API provider contract for customers, budgets, campaigns, ad groups, assets, ads,
+      reporting, and conversions.
+    auth_catalog_ref: google-ads
     auth_type: oauth
     auth_methods:
-      - key: oauth2_authorization_code
-        label: Connect with Google
-        auth_type: oauth
-        interactive: true
-        payload_format: json
-        fields:
-        - key: developer_token
-          label: Developer Token
-          type: secret
-          secret: true
-          required: true
-        - key: client_id
-          label: OAuth Client ID
-          type: secret
-          secret: true
-          required: true
-        - key: client_secret
-          label: OAuth Client Secret
-          type: secret
-          secret: true
-          required: true
-        - key: manager_account_ref
-          label: Manager Account Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe manager account reference
-        - key: customer_ref
-          label: Customer Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe customer account reference
-      - key: oauth2_refresh_token
-        label: OAuth2 refresh token
-        auth_type: oauth
-        payload_format: json
-        fields:
-        - key: developer_token
-          label: Developer Token
-          type: secret
-          secret: true
-          required: true
-        - key: client_id
-          label: Client ID
-          type: secret
-          secret: true
-          required: true
-        - key: client_secret
-          label: Client Secret
-          type: secret
-          secret: true
-          required: true
-        - key: refresh_token
-          label: Refresh Token
-          type: secret
-          secret: true
-          required: true
-        - key: manager_account_ref
-          label: Manager Account Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe manager account reference
-        - key: customer_ref
-          label: Customer Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe customer account reference
-      - key: service-account
-        label: Service account
-        description: Use a Google service-account JSON key granted Google Ads account access, plus a developer token. No delegated user or consent redirect.
-        auth_type: oauth
-        interactive: false
-        payload_format: json
-        permission_verification:
-          evidence_source: oauth_response
-          enforcement: local_required
-        fields:
-        - key: service_account_json
-          label: Service-account JSON key
-          type: secret
-          secret: true
-          required: true
-        - key: developer_token
-          label: Developer Token
-          type: secret
-          secret: true
-          required: true
-        - key: manager_account_ref
-          label: Manager Account Ref
-          type: text
-          secret: false
-          required: false
-        - key: customer_ref
-          label: Customer Ref
-          type: text
-          secret: false
-          required: false
+    - key: oauth2_authorization_code
+      fields:
+      - key: manager_account_ref
+        label: Manager Account Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe manager account reference
+      - key: customer_ref
+        label: Customer Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe customer account reference
+    - key: oauth2_refresh_token
+      fields:
+      - key: manager_account_ref
+        label: Manager Account Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe manager account reference
+      - key: customer_ref
+        label: Customer Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe customer account reference
+    - key: service-account
+      fields:
+      - key: manager_account_ref
+        label: Manager Account Ref
+        type: text
+        secret: false
+        required: false
+      - key: customer_ref
+        label: Customer Ref
+        type: text
+        secret: false
+        required: false
+      permission_verification:
+        enforcement: local_required
     config:
       setup:
-        credential_label: Google Ads developer token and Google credential
-        setup_note: Enable Google Ads API and obtain a developer token. Choose OAuth or grant a service account access in Google Ads and enter its JSON key locally. Service accounts do not need a delegated user. Use Manager Account Ref for the login-customer-id header when accessing customers through a manager.
-        homepage_url: https://ads.google.com/home/
-        signup_url: https://ads.google.com/home/
-        console_url: https://ads.google.com/aw/apicenter
-        credential_url: https://ads.google.com/aw/apicenter
-        billing_url: https://ads.google.com/aw/billing/summary
-        docs_url: https://developers.google.com/google-ads/api/docs/start
-        verified_at: "2026-06-11"
-        url_confidence:
-          homepage_url: verified
-          signup_url: verified
-          console_url: verified
-          credential_url: verified
-          billing_url: verified
-          docs_url: verified
+        local_setup_note: Use Manager Account Ref for the login-customer-id header when accessing customers through a manager.
   - key: outbrain
     name: Outbrain
     description: Outbrain Amplify provider contract. OB-TOKEN-V1 generation, storage, expiry checks, and rotation stay daemon-side.
@@ -290,49 +167,19 @@ providers:
           fallback_url: verified
   - key: taboola
     name: Taboola
-    description: Taboola Backstage API provider contract for account-scoped campaigns, items, reports, and conversion rules.
+    description: Taboola Backstage API provider contract for account-scoped campaigns, items, reports, and
+      conversion rules.
+    auth_catalog_ref: taboola
     auth_type: oauth-client-credentials
     auth_methods:
-      - key: client_credentials
-        label: Client credentials
-        auth_type: oauth-client-credentials
-        payload_format: json
-        fields:
-        - key: client_id
-          label: Client ID
-          type: secret
-          secret: true
-          required: true
-        - key: client_secret
-          label: Client Secret
-          type: secret
-          secret: true
-          required: true
-        - key: account_ref
-          label: Account Ref
-          type: text
-          secret: false
-          required: false
-          placeholder: safe account reference
-    config:
-      setup:
-        credential_label: Taboola Backstage client credentials
-        setup_note: Register/sign in to Taboola Realize/Backstage, create client credentials for the account, then store client id, client secret, and safe account ref in StackOS.
-        homepage_url: https://www.taboola.com/
-        signup_url: https://signup.realize.com/
-        console_url: https://developers.taboola.com/backstage-api/reference/welcome
-        credential_url: https://developers.taboola.com/backstage-api/reference/welcome
-        docs_url: https://developers.taboola.com/backstage-api/reference/welcome
-        fallback_url: https://developers.taboola.com/backstage-api/reference/welcome
-        fallback_reason: Exact client-credential and billing pages can be account-gated; official Backstage docs are the closest public setup path.
-        verified_at: "2026-06-11"
-        url_confidence:
-          homepage_url: verified
-          signup_url: verified
-          console_url: verified
-          credential_url: directional
-          docs_url: verified
-          fallback_url: verified
+    - key: client_credentials
+      fields:
+      - key: account_ref
+        label: Account Ref
+        type: text
+        secret: false
+        required: false
+        placeholder: safe account reference
   - key: custom-media-tool
     name: Custom Media Tool
     description: Placeholder for project-local paid media tooling. Install a project plugin with concrete HTTP connector config before execution.

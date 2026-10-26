@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Body, Depends, Query, status
@@ -313,6 +313,9 @@ async def auth_oauth_callback(
     state_value: str | None = Query(default=None, alias="state", max_length=512),
     code: str | None = Query(default=None, max_length=4096),
     provider_error: str | None = Query(default=None, alias="error", max_length=200),
+    realm_ids: list[Annotated[str, Field(max_length=32)]] | None = Query(
+        default=None, alias="realmId", max_length=2
+    ),
     _error_description: str | None = Query(
         default=None,
         alias="error_description",
@@ -330,6 +333,7 @@ async def auth_oauth_callback(
                 state=state_value,
                 code=code,
                 provider_error=provider_error,
+                realm_ids=realm_ids,
                 settings=settings,
             )
         except RepositoryError:

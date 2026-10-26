@@ -204,7 +204,7 @@ def operation_specs() -> list[OperationSpec]:
         ),
         OperationSpec(
             name="workspace.startSession",
-            summary="Register one bridge session and ensure workspace project binding.",
+            summary="Start a workspace session or explicitly select a global task project.",
             input_model=WorkspaceStartSessionInput,
             output_model=WriteEnvelope[AgentSessionOut],
             handler=_workspace_start_session,
@@ -220,8 +220,10 @@ def operation_specs() -> list[OperationSpec]:
                 "Use this as the normal first call for an agent running from a repo or local "
                 "directory. It registers the session and, by default, creates or reuses one "
                 "daemon-owned project and binding for the current workspace when none exists. "
-                "Desktop/global hosts that provide no reliable workspace identity stay unbound "
-                "and receive project-selection guidance instead of a hidden default project."
+                "For a global chat, declare global_session=true before an unbound ambient "
+                "directory is bootstrapped. Pass project_id to select an existing project or "
+                "omit it for discovery. Global startup never creates a directory binding and "
+                "every later project-scoped call still needs its own explicit project_id."
             ),
             when_to_use=(
                 "An agent starts work and needs the workspace-bound project_id.",
@@ -230,7 +232,9 @@ def operation_specs() -> list[OperationSpec]:
             prerequisites=(
                 "Let the bridge inject cwd, repo_fingerprint, git_remote_url, runtime, and "
                 "client_session_id when possible.",
-                "Set auto_bootstrap=false only for diagnostics when no state should be created.",
+                "Existing workspace bindings and deliberate StackOS roots cannot become global.",
+                "auto_bootstrap=false skips folder bootstrap but still records the session; "
+                "workspace.resolve is read-only. Global startup ignores auto_bootstrap.",
             ),
             returns=(
                 "A write envelope with project_id, workspace binding status, repo hints, "
@@ -243,6 +247,10 @@ def operation_specs() -> list[OperationSpec]:
                 OperationExample(
                     title="Start current workspace session",
                     arguments={"cwd": "/Users/me/Sites/example"},
+                ),
+                OperationExample(
+                    title="Select an existing project for a global task",
+                    arguments={"global_session": True, "project_id": 1},
                 ),
             ),
             mutating=True,

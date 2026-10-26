@@ -1,0 +1,1774 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
+import { createMemoryHistory, createRouter } from 'vue-router'
+import FinanceView from './FinanceView.vue'
+import { insightFixture } from './finance/insightsFixtures'
+import { callOperation } from '@/lib/operations'
+import { ApiError } from '@/lib/client'
+
+vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
+vi.mock('chart.js', () => ({
+  Chart: class {
+    static register = vi.fn()
+    data: unknown
+    options: unknown
+    constructor(_canvas: unknown, configuration: { data: unknown; options: unknown }) {
+      this.data = configuration.data
+      this.options = configuration.options
+    }
+    update() {}
+    destroy() {}
+  },
+  BarController: {},
+  BarElement: {},
+  CategoryScale: {},
+  LinearScale: {},
+  LineController: {},
+  LineElement: {},
+  PointElement: {},
+  Tooltip: {},
+}))
+const snapshot = {
+  revision: 1,
+  sha256: 'a'.repeat(64),
+  read_at: '2026-10-13',
+  schema_version: 'local-json-v1',
+  custody_issues: [],
+}
+const access = {
+  project_id: 1,
+  access_id: 'access:one',
+  workspace_ref: 'finance:project:1',
+  generation: 1,
+  backend_key: 'local-json',
+  modes: ['read', 'correct', 'export'],
+  readiness: 'ready',
+  snapshot,
+}
+function projection(args: Record<string, unknown>, vendor = 'Synthetic vendor') {
+  const query = { ...args }
+  delete query.project_id
+  delete query.response_mode
+  return {
+    snapshot,
+    query,
+    rows: [
+      {
+        record_ref: 'receipt:one',
+        collection: 'receipts',
+        kind: 'receipt',
+        date: '2026-10-01',
+        amount: { minor: '9007199254740993', currency: 'USD', exponent: 2 },
+        counterparty: vendor,
+        needs_review: true,
+      },
+    ],
+    page: { total: 1, offset: 0, limit: 50, has_more: false },
+    metrics_by_currency: [
+      {
+        currency: 'USD',
+        exponent: 2,
+        spend: {
+          amount: { minor: '9007199254740993', currency: 'USD', exponent: 2 },
+          state: 'partial',
+          included_record_refs: ['receipt:one'],
+        },
+        revenue: { amount: null, state: 'unavailable', included_record_refs: [] },
+        profit: { amount: null, state: 'unavailable', included_record_refs: [] },
+      },
+    ],
+    breakdowns: { category: [], account: [], counterparty: [], project: [] },
+    trend: [],
+    review_items: [],
+    coverage: { state: 'partial', issues: ['missing_source_window'] },
+    exclusions: [],
+    undated_or_period_only: ['receipt:undated'],
+    warnings: ['prepared/unposted'],
+    comparison: null,
+  }
+}
+async function mounted(query = '') {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/projects/:id/finance', component: FinanceView }],
+  })
+  await router.push('/projects/1/finance' + query)
+  await router.isReady()
+  const wrapper = mount(
+    {
+      template:
+        '<RouterView v-slot="{ Component }"><component :is="Component" :key="$route.params.id" /></RouterView>',
+    },
+    {
+      attachTo: document.body,
+      global: {
+        plugins: [router, createPinia()],
+        stubs: {
+          ProjectPageHeader: {
+            template: '<header><h1>Finance</h1><slot name="actions" /></header>',
+          },
+          teleport: true,
+        },
+      },
+    },
+  )
+  await flushPromises()
+  return { wrapper, router }
+}
+beforeEach(() => {
+  vi.mocked(callOperation).mockImplementation(async (name, args) => {
+    if (name === 'finance.status')
+      return {
+        data: {
+          project_id: args.project_id,
+          readiness: 'ready',
+          access: [
+            {
+              ...access,
+              project_id: args.project_id,
+              workspace_ref: `finance:project:${args.project_id}`,
+            },
+          ],
+        },
+      }
+    if (name === 'finance.query') return { data: projection(args) }
+    if (name === 'agentRequest.list') return { items: [], next_cursor: null, total_estimate: 0 }
+    throw new Error(`Unexpected test operation ${name}`)
+  })
+})
+afterEach(() => {
+  vi.resetAllMocks()
+  vi.unstubAllGlobals()
+  vi.useRealTimers()
+  document.body.innerHTML = ''
+})
+describe('Finance management', () => {
+  it('loads the complete calendar year, applies shortcuts once and restores the default on project remount', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-14T12:00:00Z'))
+    const { wrapper, router } = await mounted()
+    const queries = () =>
+      vi.mocked(callOperation).mock.calls.filter((call) => call[0] === 'finance.query')
+    expect(queries()).toHaveLength(1)
+    expect(queries()[0]![1]).toMatchObject({
+      project_id: 1,
+      start: '2026-01-01',
+      end: '2026-12-31',
+      timezone: 'UTC',
+      offset: 0,
+    })
+    expect(wrapper.text()).toContain('Calendar year')
+    expect(wrapper.get('[data-test="finance-period-year"]').attributes('aria-pressed')).toBe('true')
+    await wrapper.get('[data-test="finance-search"]').setValue('invoice-17')
+    await wrapper.get('[data-test="finance-period-month"]').trigger('click')
+    await flushPromises()
+    expect(queries()).toHaveLength(2)
+    expect(queries().at(-1)![1]).toMatchObject({
+      start: '2026-10-01',
+      end: '2026-10-31',
+      q: 'invoice-17',
+      offset: 0,
+    })
+    await wrapper.get('[data-test="finance-period-year"]').trigger('click')
+    await flushPromises()
+    expect(queries()).toHaveLength(3)
+    expect(queries().at(-1)![1]).toMatchObject({
+      start: '2026-01-01',
+      end: '2026-12-31',
+      q: 'invoice-17',
+      offset: 0,
+    })
+    await router.push('/projects/2/finance')
+    await flushPromises()
+    expect(queries()).toHaveLength(4)
+    expect(queries().at(-1)![1]).toMatchObject({
+      project_id: 2,
+      start: '2026-01-01',
+      end: '2026-12-31',
+      timezone: 'UTC',
+      offset: 0,
+    })
+    expect(queries().at(-1)![1].q).toBeUndefined()
+    expect(wrapper.get('[data-test="finance-period-year"]').attributes('aria-pressed')).toBe('true')
+    wrapper.unmount()
+  })
+  it.each(['current', 'stale', 'legacy'])(
+    'presents %s AI categories separately from source categories through the existing reviewed reader',
+    async (state) => {
+      const basics = vi.mocked(callOperation).getMockImplementation()!
+      const fixture = insightFixture()
+      let currentQuery: Record<string, unknown> = {}
+      const request = () => ({
+        id: 7,
+        status: 'resolved',
+        metadata_json: {
+          metadata_json: {
+            workspace_ref: 'finance:project:1',
+            access_generation: 1,
+            source_snapshot: { revision: 1, sha256: snapshot.sha256 },
+            query: currentQuery,
+            record_refs: [],
+            source_refs: [],
+          },
+        },
+      })
+      vi.mocked(callOperation).mockImplementation(async (name, args) => {
+        if (name === 'finance.query') {
+          const selected = projection(args)
+          currentQuery = selected.query
+          return { data: { ...selected, rows: fixture.projection.rows } }
+        }
+        if (name === 'agentRequest.list') return { items: [request()] }
+        if (name === 'agentRequest.get') return request()
+        if (name === 'finance.report.render') {
+          const result: Record<string, unknown> = {
+            ...fixture.result,
+            source_snapshot: { revision: 1, sha256: snapshot.sha256 },
+            query: currentQuery,
+          }
+          if (state === 'legacy') {
+            delete result.taxonomy_proposal
+            delete result.category_proposals
+            delete result.proposal_coverage
+          }
+          return { state: state === 'stale' ? 'stale' : 'current', result, request_id: 7 }
+        }
+        if (name === 'finance.record.get')
+          return {
+            data: {
+              requested_ref: args.record_ref,
+              current_ref: args.record_ref,
+              collection: 'bookkeeping',
+              record: { date: '2026-09-01' },
+              original: {},
+              source_refs: [],
+              evidence: [],
+              editable_fields: [],
+              document_summary: null,
+              lineage: [],
+              provider_fields_editable: false,
+            },
+          }
+        return basics(name, args)
+      })
+      const { wrapper } = await mounted('?analysis=7')
+      const overview = wrapper.get('section[aria-label="AI categories and concerns"]').text()
+      expect(overview).toContain('Check the original purpose')
+      expect(overview).toContain('Attention: watch')
+      if (state === 'current') expect(overview).toContain('Software tools · proposed')
+      if (state === 'stale') expect(overview).toContain('do not bucket current records')
+      if (state === 'legacy') expect(overview).toContain('legacy review did not supply')
+      await wrapper
+        .findAll('button')
+        .find((button) => button.text() === 'Expenses & income')!
+        .trigger('click')
+      const table = wrapper.get('table[aria-label="Finance records"]')
+      expect(table.findAll('th').map((row) => row.text())).toContain('Source category')
+      expect(table.findAll('th').map((row) => row.text())).toContain('Proposed AI category')
+      const rows = table
+        .findAll('tbody tr')
+        .map((row) => row.findAll('td').map((cell) => cell.text()))
+      expect(rows[0]![4]).toBe('category:adopted')
+      expect(rows[0]![9]).toBe(
+        state === 'current'
+          ? 'Software tools · proposed'
+          : state === 'stale'
+            ? 'Historical review'
+            : 'Not supplied by this review',
+      )
+      expect(rows[0]![10]).toBe(state === 'current' ? 'medium' : 'Unavailable')
+      if (state === 'current') {
+        expect(rows[1]![9]).toBe('Unassigned by review')
+        expect(rows[2]![9]).toBe('Not considered')
+      }
+      expect(
+        vi
+          .mocked(callOperation)
+          .mock.calls.some(
+            ([name]) =>
+              name === 'finance.record.commit' ||
+              name === 'finance.record.preview' ||
+              name.startsWith('runPlan.'),
+          ),
+      ).toBe(false)
+      expect(
+        vi.mocked(callOperation).mock.calls.find(([name]) => name === 'finance.report.render')![1],
+      ).toMatchObject({ report_kind: 'analysis', analysis_request_id: 7 })
+      wrapper.unmount()
+    },
+  )
+  it('new Overview action reuses the existing opportunities request and keeps safe metadata', async () => {
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) =>
+      name === 'localAgentChat.createMessage'
+        ? {
+            data: {
+              agent_request: {
+                id: 77,
+                status: 'new',
+                metadata_json: { metadata_json: args.metadata_json },
+              },
+            },
+          }
+        : basics(name, args),
+    )
+    const { wrapper } = await mounted()
+    await wrapper.get('section[aria-label="AI categories and concerns"] button').trigger('click')
+    await flushPromises()
+    const requests = vi
+      .mocked(callOperation)
+      .mock.calls.filter(([name]) => name === 'localAgentChat.createMessage')
+    expect(requests).toHaveLength(1)
+    expect(requests[0]![1].metadata_json).toMatchObject({
+      analysis_kind: 'opportunities',
+      workspace_ref: 'finance:project:1',
+      access_generation: 1,
+      record_refs: [],
+      source_refs: [],
+    })
+    expect(requests[0]![1].metadata_json).not.toHaveProperty('category_proposals')
+    expect(wrapper.text()).toContain('Awaiting agent')
+    wrapper.unmount()
+  })
+  it.each([
+    ['period', '2026-09-01', '2026-09-30', '2026-08-02', '2026-08-31', null],
+    ['year', '2024-02-29', '2024-02-29', '2023-02-28', '2023-02-28', true],
+  ])(
+    'preserves selected filters and canonical %s comparison dates through Overview graphs',
+    async (mode, start, end, priorStart, priorEnd, clamped) => {
+      const basics = vi.mocked(callOperation).getMockImplementation()!
+      vi.mocked(callOperation).mockImplementation(async (name, args) => {
+        if (name !== 'finance.query') return basics(name, args)
+        const value = projection(args)
+        const comparison = args.comparison as {
+          start: string
+          end: string
+          clamped: boolean | null
+        } | null
+        return {
+          data: {
+            ...value,
+            comparison: comparison
+              ? {
+                  query: {
+                    ...value.query,
+                    start: comparison.start,
+                    end: comparison.end,
+                    comparison: null,
+                  },
+                  coverage: { state: 'partial' },
+                  metrics_by_currency: value.metrics_by_currency,
+                }
+              : null,
+          },
+        }
+      })
+      const { wrapper } = await mounted()
+      await wrapper.get('[data-test="filter-start"]').setValue(start)
+      await wrapper.get('[data-test="filter-end"]').setValue(end)
+      const compare = wrapper
+        .findAllComponents({ name: 'UiSelect' })
+        .find((component) =>
+          component
+            .props('options')
+            ?.some((option: { value: string }) => option.value === 'period'),
+        )!
+      compare.vm.$emit('update:modelValue', mode)
+      await flushPromises()
+      await wrapper.get('[data-test="apply-finance-filters"]').trigger('click')
+      await flushPromises()
+      const argumentsJson = vi
+        .mocked(callOperation)
+        .mock.calls.filter(([name]) => name === 'finance.query')
+        .at(-1)![1]
+      expect(argumentsJson).toMatchObject({
+        start,
+        end,
+        recognition_basis: 'cash',
+        date_basis: 'transaction',
+        timezone: 'UTC',
+        scope: 'business',
+        kind: 'all',
+        comparison: { start: priorStart, end: priorEnd, clamped },
+      })
+      const graphs = wrapper.get('section[aria-label="Overview finance graphs"]').text()
+      expect(graphs).toContain(`Current: ${start} through ${end}`)
+      expect(graphs).toContain(`Prior: ${priorStart} through ${priorEnd}`)
+      expect(graphs).toContain('USD 0.00')
+      if (clamped) expect(graphs).toContain('clamped')
+      wrapper.unmount()
+    },
+  )
+  it('shows graphs only in Overview and wires exact compared data without changing Reports', async () => {
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name !== 'finance.query') return basics(name, args)
+      const selected = projection(args)
+      return {
+        data: {
+          ...selected,
+          comparison: {
+            query: { ...selected.query, start: '2026-08-02', end: '2026-08-31' },
+            coverage: { state: 'partial' },
+            metrics_by_currency: [
+              {
+                currency: 'USD',
+                exponent: 2,
+                spend: {
+                  state: 'partial',
+                  amount: { minor: '9007199254740990', currency: 'USD', exponent: 2 },
+                },
+                revenue: { state: 'unavailable', amount: null },
+              },
+            ],
+          },
+        },
+      }
+    })
+    const { wrapper } = await mounted()
+    expect(wrapper.get('section[aria-label="Overview finance graphs"]').text()).toContain(
+      'USD 0.03',
+    )
+    expect(wrapper.text()).toContain('Prior: 2026-08-02 through 2026-08-31')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Reports')!
+      .trigger('click')
+    expect(wrapper.find('section[aria-label="Overview finance graphs"]').exists()).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Prepare CSV export')).toBe(
+      true,
+    )
+    expect(wrapper.get('section[aria-label="Agent finance analysis"]').text()).toContain(
+      'Queueing does not execute a model',
+    )
+    expect(
+      vi.mocked(callOperation).mock.calls.filter(([name]) => name === 'finance.query'),
+    ).toHaveLength(1)
+    wrapper.unmount()
+  })
+  it.each([
+    ['available', 'Available · 2'],
+    ['unavailable', 'Unavailable · 2'],
+    ['partial', 'Partial · 1/2 available'],
+    ['not_verified', 'Not verified · 2'],
+    ['not_linked', 'Not linked'],
+    ['unidentified', 'Needs identification'],
+    ['legacy', 'Not verified'],
+  ])(
+    'shows separate %s document columns and keeps exact sourced money',
+    async (state, expected) => {
+      const basics = vi.mocked(callOperation).getMockImplementation()!
+      const count = ['not_linked', 'unidentified'].includes(state) ? 0 : 2
+      const invoiceSummary = {
+        state,
+        document_count: count,
+        available_count: 1,
+        unavailable_count: 1,
+        not_verified_count: 0,
+      }
+      const receiptSummary = {
+        state: 'available',
+        document_count: 1,
+        available_count: 1,
+        unavailable_count: 0,
+        not_verified_count: 0,
+      }
+      vi.mocked(callOperation).mockImplementation(async (name, args) => {
+        if (name !== 'finance.query') return basics(name, args)
+        const result = projection(args)
+        return {
+          data: {
+            ...result,
+            rows: result.rows.map((row) => ({
+              ...row,
+              ...(state === 'legacy'
+                ? {}
+                : { document_summary: { invoice: invoiceSummary, receipt: receiptSummary } }),
+            })),
+          },
+        }
+      })
+      const { wrapper } = await mounted()
+      await wrapper
+        .findAll('button')
+        .find((button) => button.text() === 'Expenses & income')!
+        .trigger('click')
+      const table = wrapper.get('table[aria-label="Finance records"]')
+      expect(table.findAll('th').map((cell) => cell.text())).toContain('Invoice')
+      expect(table.findAll('th').map((cell) => cell.text())).toContain('Receipt')
+      const cells = table
+        .get('tbody tr')
+        .findAll('td')
+        .map((cell) => cell.text())
+      expect(cells[6]).toBe(expected)
+      expect(cells[7]).toBe(state === 'legacy' ? 'Not verified' : 'Available · 1')
+      expect(cells).toContain('USD 90,071,992,547,409.93')
+      expect(wrapper.text()).toContain('File availability alone does not confirm payment')
+      expect(
+        vi.mocked(callOperation).mock.calls.filter(([name]) => name === 'finance.query'),
+      ).toHaveLength(1)
+      wrapper.unmount()
+    },
+  )
+  it('opens document detail from a keyboard-selected record through the shared table', async () => {
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) =>
+      name === 'finance.record.get'
+        ? {
+            data: {
+              requested_ref: 'receipt:one',
+              current_ref: 'receipt:one',
+              collection: 'receipts',
+              record: { business_date: '2026-10-01' },
+              original: {},
+              source_refs: [],
+              evidence: [],
+              lineage: [],
+              editable_fields: [],
+              provider_fields_editable: false,
+              document_summary: null,
+            },
+          }
+        : basics(name, args),
+    )
+    const { wrapper } = await mounted()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Expenses & income')!
+      .trigger('click')
+    const row = wrapper.get('table[aria-label="Finance records"] tbody tr')
+    expect(row.attributes('tabindex')).toBe('0')
+    await row.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(
+      vi.mocked(callOperation).mock.calls.find(([name]) => name === 'finance.record.get')![1],
+    ).toMatchObject({
+      record_ref: 'receipt:one',
+      project_id: 1,
+      workspace_ref: 'finance:project:1',
+      access_generation: 1,
+      expected_snapshot: { revision: 1, sha256: snapshot.sha256 },
+    })
+    expect(wrapper.get('section[aria-label="Original documents"]').text()).toContain(
+      'Invoice · Not verified',
+    )
+    wrapper.unmount()
+  })
+  it('opens managed project Finance without a folder, authorization or selection step', async () => {
+    const { wrapper, router } = await mounted()
+    expect(vi.mocked(callOperation).mock.calls.map(([name]) => name)).toEqual([
+      'finance.status',
+      'finance.query',
+      'agentRequest.list',
+    ])
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    for (const label of [
+      'Workspace access',
+      'External finance folder',
+      'Workspace reference',
+      'Selected workspace',
+      'Allow sourced corrections',
+      'Allow private exports',
+      'Authorize existing workspace',
+      'Revoke current access',
+      'access generation',
+      'finance:project:',
+    ])
+      expect(wrapper.text()).not.toContain(label)
+    await router.push('/projects/2/finance')
+    await flushPromises()
+    expect(
+      vi
+        .mocked(callOperation)
+        .mock.calls.filter(([name]) => name === 'finance.query')
+        .map(([, args]) => [args.project_id, args.workspace_ref]),
+    ).toEqual([
+      [1, 'finance:project:1'],
+      [2, 'finance:project:2'],
+    ])
+    wrapper.unmount()
+  })
+  it('shows an empty managed project without requiring setup', async () => {
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name !== 'finance.query') return basics(name, args)
+      return {
+        data: { ...projection(args), rows: [], metrics_by_currency: [], page: { total: 0 } },
+      }
+    })
+    const { wrapper } = await mounted()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Expenses & income')!
+      .trigger('click')
+    expect(wrapper.text()).toContain('New expense or income')
+    expect(wrapper.text()).not.toContain('Select an existing')
+    expect(wrapper.text()).not.toContain('Workspace')
+    wrapper.unmount()
+  })
+  it.each(['response-project', 'store-project', 'multiple-stores'])(
+    'refuses %s status instead of loading another project or choosing a fallback',
+    async (mismatch) => {
+      vi.mocked(callOperation).mockResolvedValue({
+        data: {
+          project_id: mismatch === 'response-project' ? 2 : 1,
+          readiness: 'ready',
+          access:
+            mismatch === 'multiple-stores'
+              ? [access, { ...access, workspace_ref: 'unexpected-extra-source' }]
+              : [{ ...access, project_id: mismatch === 'store-project' ? 2 : 1 }],
+        },
+      })
+      const { wrapper } = await mounted()
+      expect(wrapper.get('[role="alert"]').text()).toContain(
+        'Project Finance data could not be verified for this project.',
+      )
+      expect(vi.mocked(callOperation).mock.calls.map(([name]) => name)).toEqual(['finance.status'])
+      expect(wrapper.find('form').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('unexpected-extra-source')
+      wrapper.unmount()
+    },
+  )
+  it('explains zero supported revenue contributions while expense-only totals stay unavailable', async () => {
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name !== 'finance.query') return basics(name, args)
+      const contribution = {
+        label: 'Unknown/unassigned',
+        currency: 'USD',
+        spend_minor: '9007199254740993',
+        revenue_minor: '0',
+        included_record_refs: ['book:expense'],
+      }
+      return {
+        data: {
+          ...projection(args),
+          breakdowns: {
+            category: [contribution],
+            account: [{ ...contribution, label: 'bank:one' }],
+            counterparty: [contribution],
+            project: [contribution],
+          },
+          trend: [{ ...contribution, date: '2026-10-01' }],
+        },
+      }
+    })
+    const { wrapper } = await mounted()
+    const metrics = wrapper.findAllComponents({ name: 'UiMetricCard' })
+    for (const label of ['Revenue', 'Operating profit']) {
+      const metric = metrics.find((card) => card.props('label') === label)!
+      expect(metric.props('value')).toBe('Unavailable')
+      expect(metric.props('hint')).toBe('unavailable')
+    }
+    for (const label of [
+      'category breakdown',
+      'account breakdown',
+      'counterparty breakdown',
+      'project breakdown',
+      'Finance trend',
+    ]) {
+      const table = wrapper.get(`table[aria-label="${label}"]`)
+      expect(table.findAll('th').map((header) => header.text())).toContain('Spend contribution')
+      expect(table.findAll('th').map((header) => header.text())).toContain('Revenue contribution')
+      expect(table.text()).toContain('USD 90,071,992,547,409.93')
+      expect(table.text()).toContain('USD 0.00')
+    }
+    const note = wrapper
+      .findAll('p')
+      .find((paragraph) => paragraph.text().startsWith('Breakdowns and trends show'))!
+      .text()
+    expect(note).toContain('selected supported records')
+    expect(note).toContain(
+      'A zero revenue contribution means no selected supported income contribution',
+    )
+    expect(note).toContain(
+      'for expense-only records without income coverage, total revenue and operating profit remain unavailable',
+    )
+    wrapper.unmount()
+  })
+  it.each([
+    ['not_configured', 'Project Finance data is missing.'],
+    ['unreadable', 'Project Finance data cannot be read.'],
+    ['corrupt_workspace', 'Project Finance data needs repair.'],
+    ['unsupported_version', 'Project Finance data uses an unsupported version.'],
+    ['denied', 'Project Finance data access was denied.'],
+    ['root_changed', 'Project Finance storage could not be safely verified.'],
+    [
+      'migration_required',
+      'Existing Finance data needs a one-time migration or repair before this project can open it.',
+    ],
+    ['unknown-private-diagnostic', 'Project Finance data is unavailable.'],
+  ])(
+    'explains %s readiness and clears prior private content without offering another store',
+    async (readiness, expected) => {
+      let failed = false
+      const revoke = vi.fn()
+      const OriginalURL = URL
+      vi.stubGlobal(
+        'URL',
+        class extends OriginalURL {
+          static override createObjectURL = vi.fn(() => 'blob:prior-finance-report')
+          static override revokeObjectURL = revoke
+        },
+      )
+      const basics = vi.mocked(callOperation).getMockImplementation()!
+      vi.mocked(callOperation).mockImplementation(async (name, args) => {
+        if (name === 'finance.status' && failed)
+          return {
+            data: {
+              project_id: args.project_id,
+              readiness,
+              access: [
+                {
+                  ...access,
+                  readiness,
+                  canonical_root: '/private/customer',
+                  diagnostic: 'private-token',
+                },
+              ],
+            },
+          }
+        if (name === 'finance.report.render')
+          return {
+            state: 'current',
+            snapshot,
+            content_base64: btoa('Prior private report'),
+            content_type: 'text/markdown',
+            filename: 'prior.md',
+          }
+        return basics(name, args)
+      })
+      const { wrapper } = await mounted()
+      expect(wrapper.text()).toContain('USD 90,071,992,547,409.93')
+      await wrapper
+        .findAll('button')
+        .find((button) => button.text() === 'Reports')!
+        .trigger('click')
+      await wrapper
+        .findAll('button')
+        .find((button) => button.text() === 'View period report')!
+        .trigger('click')
+      await flushPromises()
+      expect(wrapper.text()).toContain('Prior private report')
+      expect(wrapper.find('a[download="prior.md"]').exists()).toBe(true)
+      const priorQueries = vi
+        .mocked(callOperation)
+        .mock.calls.filter(([name]) => name === 'finance.query').length
+      failed = true
+      await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[role="alert"]').text()).toContain(expected)
+      await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[role="alert"]').text()).toContain(expected)
+      expect(wrapper.text()).not.toContain('Prior private report')
+      expect(wrapper.text()).not.toContain('USD 90,071,992,547,409.93')
+      expect(wrapper.text()).not.toContain('/private/customer')
+      expect(wrapper.text()).not.toContain('private-token')
+      expect(wrapper.text()).not.toContain('unknown-private-diagnostic')
+      expect(wrapper.find('a[download]').exists()).toBe(false)
+      expect(revoke).toHaveBeenCalledWith('blob:prior-finance-report')
+      expect(
+        vi.mocked(callOperation).mock.calls.filter(([name]) => name === 'finance.query'),
+      ).toHaveLength(priorQueries)
+      expect(
+        vi.mocked(callOperation).mock.calls.some(([name]) => name.startsWith('financeWorkspace.')),
+      ).toBe(false)
+      wrapper.unmount()
+    },
+  )
+  it('explains unavailable managed data without exposing a folder setup flow', async () => {
+    vi.mocked(callOperation).mockResolvedValue({
+      data: { project_id: 1, readiness: 'not_configured', access: [] },
+    })
+    const { wrapper } = await mounted()
+    expect(wrapper.get('[role="alert"]').text()).toContain('Project Finance data is missing.')
+    expect(wrapper.text()).not.toContain('Select an existing')
+    expect(wrapper.find('form').exists()).toBe(false)
+    expect(vi.mocked(callOperation).mock.calls.map(([name]) => name)).toEqual(['finance.status'])
+    wrapper.unmount()
+  })
+  it.each([
+    ['legacy_access_corrupt', 422, 'Existing Finance data needs a one-time migration or repair'],
+    [
+      'legacy_history_requires_recovery',
+      422,
+      'Existing Finance data needs a one-time migration or repair',
+    ],
+    [
+      'legacy_project_identity_ambiguous',
+      422,
+      'Existing Finance data needs a one-time migration or repair',
+    ],
+    ['legacy_root_changed', 422, 'Existing Finance data needs a one-time migration or repair'],
+    ['legacy_root_overlap', 422, 'Existing Finance data needs a one-time migration or repair'],
+    ['legacy_root_shared', 422, 'Existing Finance data needs a one-time migration or repair'],
+    ['legacy_mapping_changed', 409, 'Existing Finance data needs a one-time migration or repair'],
+    ['legacy_source_changed', 409, 'Existing Finance data needs a one-time migration or repair'],
+    ['migration_too_large', 422, 'Existing Finance data needs a one-time migration or repair'],
+    ['storage_missing', 422, 'Project Finance data is missing. Restore a verified backup'],
+    ['storage_metadata_missing', 422, 'Project Finance data is missing. Restore a verified backup'],
+    ['corrupt_workspace', 422, 'Project Finance data needs repair. Preserve the existing files'],
+    [
+      'storage_metadata_corrupt',
+      422,
+      'Project Finance data needs repair. Preserve the existing files',
+    ],
+    ['storage_identity_mismatch', 422, 'Project Finance storage could not be safely verified.'],
+    [
+      'storage_owner_mismatch',
+      422,
+      "These Finance files belong to another project. Restore this project's matching files from a verified backup",
+    ],
+    ['unsafe_or_changing_storage', 422, 'Project Finance storage could not be safely verified.'],
+    ['invalid_root', 403, 'Project Finance storage could not be safely read.'],
+    [
+      'plugin_not_enabled',
+      403,
+      'Finance is not enabled for this project. Enable Finance in Plugins',
+    ],
+    ['writer_busy', 409, 'Project Finance data is busy. Wait for the current write or backup'],
+    ['unknown-private-code', 422, 'Project Finance data is unavailable.'],
+    ['toString', 422, 'Project Finance data is unavailable.'],
+  ] as const)(
+    'maps REST finance_code %s to safe recovery guidance and clears prior private content',
+    async (code, status, expected) => {
+      let failed = false
+      const revoke = vi.fn()
+      const OriginalURL = URL
+      vi.stubGlobal(
+        'URL',
+        class extends OriginalURL {
+          static override createObjectURL = vi.fn(() => 'blob:before-finance-error')
+          static override revokeObjectURL = revoke
+        },
+      )
+      const basics = vi.mocked(callOperation).getMockImplementation()!
+      vi.mocked(callOperation).mockImplementation(async (name, args) => {
+        if (name === 'finance.status' && failed)
+          throw new ApiError(
+            'Private request failure',
+            status,
+            {
+              detail: 'Private source /private/customer/finance.json contains private-token',
+              code: status === 403 ? -32003 : -32602,
+              retryable: false,
+              data: {
+                finance_code: code,
+                canonical_root: '/private/customer',
+                next_action: 'private next action with private-token',
+              },
+              hint: 'private hint with private-token',
+            },
+            'private-request-id',
+          )
+        if (name === 'finance.report.render')
+          return {
+            state: 'current',
+            snapshot,
+            content_base64: btoa('Prior private report'),
+            content_type: 'text/markdown',
+            filename: 'prior-private.md',
+          }
+        return basics(name, args)
+      })
+      const { wrapper } = await mounted()
+      await wrapper
+        .findAll('button')
+        .find((button) => button.text() === 'Reports')!
+        .trigger('click')
+      await wrapper
+        .findAll('button')
+        .find((button) => button.text() === 'View period report')!
+        .trigger('click')
+      await flushPromises()
+      expect(wrapper.text()).toContain('Prior private report')
+      const before = vi.mocked(callOperation).mock.calls.length
+      failed = true
+      await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[role="alert"]').text()).toContain(expected)
+      if (code.startsWith('legacy_') || code === 'migration_too_large') {
+        expect(wrapper.get('[role="alert"]').text()).toContain('Ask an agent to inspect')
+        expect(wrapper.get('[role="alert"]').text()).toContain('No existing records were replaced.')
+      }
+      for (const hidden of [
+        'Prior private report',
+        'USD 90,071,992,547,409.93',
+        '/private/customer',
+        'private-token',
+        'private-request-id',
+        code,
+      ])
+        expect(wrapper.text()).not.toContain(hidden)
+      expect(wrapper.find('a[download]').exists()).toBe(false)
+      expect(revoke).toHaveBeenCalledWith('blob:before-finance-error')
+      expect(
+        vi
+          .mocked(callOperation)
+          .mock.calls.slice(before)
+          .map(([name]) => name),
+      ).toEqual(['finance.status'])
+      expect(wrapper.find('form').exists()).toBe(false)
+      wrapper.unmount()
+    },
+  )
+  it('keeps the newer selected request after queue reconciliation and a late original acknowledgement', async () => {
+    const queue = new Map<number, Record<string, unknown>>()
+    const attempts: Record<string, unknown>[] = []
+    let finishOriginal!: () => void
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name === 'agentRequest.list') return { items: [...queue.values()] }
+      if (name === 'agentRequest.get')
+        return { ...queue.get(Number(args.request_id)), status: 'run-created', run_plan_id: 3 }
+      if (name === 'finance.report.render') return { state: 'run-created' }
+      if (name !== 'localAgentChat.createMessage') return basics(name, args)
+      attempts.push(JSON.parse(JSON.stringify(args)))
+      const request = {
+        id: queue.size + 1,
+        request_key: `local-agent-chat:${args.thread_key}:${args.message_key}`,
+        status: 'new',
+        metadata_json: { metadata_json: args.metadata_json },
+      }
+      queue.set(request.id, request)
+      const response = { data: { agent_request: request } }
+      if (request.id === 1)
+        return new Promise((resolve) => {
+          finishOriginal = () => resolve(response)
+        })
+      return response
+    })
+    const { wrapper, router } = await mounted()
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === 'Request category and concern review')!
+      .trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Original analysis request 1 verified in Agent requests')
+    expect(wrapper.text()).toContain('Run prepared — awaiting execution')
+    expect(wrapper.find('a[href="/projects/1/agent-requests?request=1"]').exists()).toBe(true)
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === 'Request new category and concern review')!
+      .trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.analysis).toBe('2')
+    expect(wrapper.find('a[href="/projects/1/agent-requests?request=2"]').exists()).toBe(true)
+    finishOriginal()
+    await flushPromises()
+    expect(router.currentRoute.value.query.analysis).toBe('2')
+    expect(wrapper.find('a[href="/projects/1/agent-requests?request=2"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/projects/1/agent-requests?request=1"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Awaiting agent — a host must claim this request')
+    expect(attempts).toHaveLength(2)
+    expect(attempts[1]!.message_key).not.toBe(attempts[0]!.message_key)
+    expect(queue.size).toBe(2)
+    wrapper.unmount()
+  })
+  it('retries a persisted request after a lost response with the exact same intent and payload', async () => {
+    const queue = new Map<string, Record<string, unknown>>()
+    const attempts: Record<string, unknown>[] = []
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name !== 'localAgentChat.createMessage') return basics(name, args)
+      const payload = JSON.parse(JSON.stringify(args)) as Record<string, unknown>
+      attempts.push(payload)
+      const key = String(args.message_key)
+      if (!queue.has(key))
+        queue.set(key, {
+          id: queue.size + 1,
+          status: 'new',
+          metadata_json: { metadata_json: args.metadata_json },
+        })
+      if (attempts.length === 1) throw new Error('Lost response after persisted queue request')
+      return { data: { agent_request: queue.get(key) } }
+    })
+    const { wrapper } = await mounted()
+    const submit = () =>
+      wrapper
+        .findAll('button')
+        .find((b) =>
+          /^(Request (new )?category and concern review|Retry original analysis request)$/.test(
+            b.text(),
+          ),
+        )!
+        .trigger('click')
+    await submit()
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('Reviewed analysis · current source')
+    await submit()
+    await flushPromises()
+    expect(attempts).toHaveLength(2)
+    expect(attempts[1]).toEqual(attempts[0])
+    expect(queue.size).toBe(1)
+    expect(wrapper.text()).toContain('Request 1 ·')
+    expect(wrapper.text()).toContain('Awaiting agent — a host must claim this request')
+    await submit()
+    await flushPromises()
+    expect(attempts[2]!.message_key).not.toBe(attempts[0]!.message_key)
+    expect(queue.size).toBe(2)
+    wrapper.unmount()
+  })
+  it.each(['filters', 'source'])(
+    'retains the original safe request when %s changes before retry',
+    async (change) => {
+      const attempts: Record<string, unknown>[] = []
+      let currentSnapshot = snapshot
+      const basics = vi.mocked(callOperation).getMockImplementation()!
+      vi.mocked(callOperation).mockImplementation(async (name, args) => {
+        if (name === 'finance.query')
+          return { data: { ...projection(args), snapshot: currentSnapshot } }
+        if (name !== 'localAgentChat.createMessage') return basics(name, args)
+        attempts.push(JSON.parse(JSON.stringify(args)))
+        if (attempts.length === 1) throw new Error('Lost response after persisted queue request')
+        return {
+          data: {
+            agent_request: {
+              id: 7,
+              status: 'new',
+              metadata_json: { metadata_json: args.metadata_json },
+            },
+          },
+        }
+      })
+      const { wrapper } = await mounted()
+      const submit = () =>
+        wrapper
+          .findAll('button')
+          .find((b) =>
+            /^(Request (new )?category and concern review|Retry original analysis request)$/.test(
+              b.text(),
+            ),
+          )!
+          .trigger('click')
+      await submit()
+      await flushPromises()
+      if (change === 'filters') {
+        await wrapper.get('[data-test="finance-search"]').setValue('private-current-search')
+        await wrapper.get('[data-test="apply-finance-filters"]').trigger('click')
+        await flushPromises()
+        await wrapper
+          .findAll('[role="combobox"]')
+          .find((c) => c.text().includes('Categories and concerns'))!
+          .trigger('click')
+        await wrapper
+          .findAll('[role="option"]')
+          .find((o) => o.text() === 'Spending review')!
+          .trigger('click')
+      } else {
+        currentSnapshot = { ...snapshot, revision: 2, sha256: 'b'.repeat(64) }
+        await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+      }
+      await flushPromises()
+      await submit()
+      await flushPromises()
+      expect(attempts).toHaveLength(2)
+      expect(attempts[1]).toEqual(attempts[0])
+      expect(wrapper.text()).toContain('Request 7 ·')
+      expect(wrapper.text()).not.toContain('Reviewed analysis · current source')
+      if (change === 'source')
+        expect(wrapper.text()).toContain('Analysis request is historical — source changed')
+      wrapper.unmount()
+    },
+  )
+  it.each(['before', 'during'])(
+    'retains an uncertain submission lost %s project route remounts without sending into another project',
+    async (timing) => {
+      const attempts: Record<string, unknown>[] = []
+      let loseResponse!: () => void
+      const basics = vi.mocked(callOperation).getMockImplementation()!
+      vi.mocked(callOperation).mockImplementation(async (name, args) => {
+        if (name !== 'localAgentChat.createMessage') return basics(name, args)
+        attempts.push(JSON.parse(JSON.stringify(args)))
+        if (attempts.length === 1) {
+          if (timing === 'during')
+            return new Promise((_resolve, reject) => {
+              loseResponse = () => reject(new Error('Lost response after persisted queue request'))
+            })
+          throw new Error('Lost response after persisted queue request')
+        }
+        return {
+          data: {
+            agent_request: {
+              id: 7,
+              status: 'new',
+              metadata_json: { metadata_json: args.metadata_json },
+            },
+          },
+        }
+      })
+      const { wrapper, router } = await mounted()
+      const submit = () =>
+        wrapper
+          .findAll('button')
+          .find((b) =>
+            /^(Request (new )?category and concern review|Retry original analysis request)$/.test(
+              b.text(),
+            ),
+          )!
+          .trigger('click')
+      await submit()
+      await flushPromises()
+      await router.push('/projects/2/finance')
+      await flushPromises()
+      if (timing === 'during') {
+        loseResponse()
+        await flushPromises()
+      }
+      expect(attempts).toHaveLength(1)
+      expect(wrapper.text()).not.toContain('Analysis request submission is unverified')
+      await router.push('/projects/1/finance')
+      await flushPromises()
+      await submit()
+      await flushPromises()
+      expect(attempts).toHaveLength(2)
+      expect(attempts[1]).toEqual(attempts[0])
+      expect(wrapper.text()).toContain('Request 7 ·')
+      wrapper.unmount()
+    },
+  )
+  it('isolates uncertain analysis submissions between projects and retries only the original project', async () => {
+    const attempts: Record<string, unknown>[] = []
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name !== 'localAgentChat.createMessage') return basics(name, args)
+      attempts.push(JSON.parse(JSON.stringify(args)))
+      if (attempts.length === 1) throw new Error('Lost response after persisted queue request')
+      return {
+        data: {
+          agent_request: {
+            id: 7 + Number(args.project_id),
+            status: 'new',
+            metadata_json: { metadata_json: args.metadata_json },
+          },
+        },
+      }
+    })
+    const { wrapper, router } = await mounted()
+    const submit = () =>
+      wrapper
+        .findAll('button')
+        .find((button) => button.text() === 'Request category and concern review')!
+        .trigger('click')
+    await submit()
+    await flushPromises()
+    expect(wrapper.text()).toContain('Analysis request submission is unverified')
+    await router.push('/projects/2/finance')
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('Analysis request submission is unverified')
+    await submit()
+    await flushPromises()
+    expect(attempts[1]).toMatchObject({
+      project_id: 2,
+      metadata_json: { workspace_ref: 'finance:project:2' },
+    })
+    expect(attempts[1]!.message_key).not.toBe(attempts[0]!.message_key)
+    await router.push('/projects/1/finance')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Analysis request submission is unverified')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Retry original analysis request')!
+      .trigger('click')
+    await flushPromises()
+    expect(attempts).toHaveLength(3)
+    expect(attempts[2]).toEqual(attempts[0])
+    wrapper.unmount()
+  })
+  it.each(['exact', 'changed'])(
+    'reconciles only an %s persisted intent and never treats a receipt as reviewed completion',
+    async (metadataMatch) => {
+      const attempts: Record<string, unknown>[] = []
+      let queued: Record<string, unknown> | null = null
+      const basics = vi.mocked(callOperation).getMockImplementation()!
+      vi.mocked(callOperation).mockImplementation(async (name, args) => {
+        if (name === 'localAgentChat.createMessage') {
+          attempts.push(JSON.parse(JSON.stringify(args)))
+          queued = {
+            id: 7,
+            request_key: `local-agent-chat:${args.thread_key}:${args.message_key}`,
+            status: 'resolved',
+            metadata_json: {
+              metadata_json: {
+                ...(args.metadata_json as Record<string, unknown>),
+                ...(metadataMatch === 'changed' && attempts.length === 1
+                  ? { analysis_kind: 'spending' }
+                  : {}),
+              },
+            },
+          }
+          if (attempts.length === 1) throw new Error('Lost response after persisted queue request')
+          return { data: { agent_request: queued } }
+        }
+        if (name === 'agentRequest.list') return { items: queued ? [queued] : [] }
+        if (name === 'agentRequest.get') return queued
+        if (name === 'finance.report.render') return { state: 'result_unavailable' }
+        return basics(name, args)
+      })
+      const { wrapper } = await mounted()
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text() === 'Request category and concern review')!
+        .trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+      await flushPromises()
+      const retry = wrapper
+        .findAll('button')
+        .find((b) => b.text() === 'Retry original analysis request')
+      if (metadataMatch === 'exact') {
+        expect(retry).toBeUndefined()
+        expect(wrapper.text()).toContain('Original analysis request 7 verified in Agent requests')
+        expect(wrapper.text()).toContain('Reviewed result unavailable')
+        expect(attempts).toHaveLength(1)
+      } else {
+        expect(retry).toBeDefined()
+        expect(wrapper.text()).not.toContain('Original analysis request 7 verified')
+        await retry!.trigger('click')
+        await flushPromises()
+        expect(attempts[1]).toEqual(attempts[0])
+      }
+      expect(wrapper.text()).not.toContain('Reviewed analysis · current source')
+      wrapper.unmount()
+    },
+  )
+  it('reconciles a retained submission after authorization changes without replaying a stale generation', async () => {
+    let generation = 1
+    let exposeReceipt = false
+    let queued: Record<string, unknown> | null = null
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name === 'finance.status')
+        return { data: { project_id: 1, readiness: 'ready', access: [{ ...access, generation }] } }
+      if (name === 'localAgentChat.createMessage') {
+        queued = {
+          id: 7,
+          request_key: `local-agent-chat:${args.thread_key}:${args.message_key}`,
+          status: 'new',
+          metadata_json: { metadata_json: args.metadata_json },
+        }
+        throw new Error('Lost response after persisted queue request')
+      }
+      if (name === 'agentRequest.list') return { items: exposeReceipt && queued ? [queued] : [] }
+      if (name === 'agentRequest.get') return queued
+      if (name === 'finance.report.render') return { state: 'historical_access' }
+      return basics(name, args)
+    })
+    const { wrapper } = await mounted()
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === 'Request category and concern review')!
+      .trigger('click')
+    await flushPromises()
+    generation = 2
+    await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+    await flushPromises()
+    for (const label of [
+      'Request category and concern review',
+      'Retry original analysis request',
+    ]) {
+      const button = wrapper.findAll('button').find((b) => b.text() === label)!
+      expect(button.attributes('disabled')).toBeDefined()
+      await button.trigger('click')
+    }
+    exposeReceipt = true
+    await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Original analysis request 7 verified in Agent requests')
+    expect(wrapper.text()).toContain('Historical project Finance data')
+    expect(wrapper.text()).not.toContain('Reviewed analysis · current source')
+    expect(
+      vi
+        .mocked(callOperation)
+        .mock.calls.filter((call) => call[0] === 'localAgentChat.createMessage'),
+    ).toHaveLength(1)
+    wrapper.unmount()
+  })
+  it.each(['lost', 'saved'])(
+    'handles a %s submission response during source refresh without replacing its intent or leaving loading stuck',
+    async (outcome) => {
+      const attempts: Record<string, unknown>[] = []
+      let currentSnapshot = snapshot
+      let finish!: () => void
+      const basics = vi.mocked(callOperation).getMockImplementation()!
+      vi.mocked(callOperation).mockImplementation(async (name, args) => {
+        if (name === 'finance.query')
+          return { data: { ...projection(args), snapshot: currentSnapshot } }
+        if (name !== 'localAgentChat.createMessage') return basics(name, args)
+        attempts.push(JSON.parse(JSON.stringify(args)))
+        const response = {
+          data: {
+            agent_request: {
+              id: 7,
+              status: 'new',
+              metadata_json: { metadata_json: args.metadata_json },
+            },
+          },
+        }
+        if (attempts.length === 1)
+          return new Promise((resolve, reject) => {
+            finish = () =>
+              outcome === 'lost'
+                ? reject(new Error('Lost response after persisted queue request'))
+                : resolve(response)
+          })
+        return response
+      })
+      const { wrapper } = await mounted()
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text() === 'Request category and concern review')!
+        .trigger('click')
+      await flushPromises()
+      currentSnapshot = { ...snapshot, revision: 2, sha256: 'b'.repeat(64) }
+      await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+      await flushPromises()
+      expect(
+        wrapper
+          .findAll('button')
+          .find((b) => b.text() === 'Retry original analysis request')!
+          .attributes('disabled'),
+      ).toBeDefined()
+      expect(attempts).toHaveLength(1)
+      finish()
+      await flushPromises()
+      if (outcome === 'lost') {
+        await wrapper
+          .findAll('button')
+          .find((b) => b.text() === 'Retry original analysis request')!
+          .trigger('click')
+        await flushPromises()
+        expect(attempts[1]).toEqual(attempts[0])
+      } else expect(attempts).toHaveLength(1)
+      expect(wrapper.text()).toContain('Analysis request is historical — source changed')
+      expect(wrapper.text()).not.toContain('Reviewed analysis · current source')
+      expect(
+        wrapper
+          .findAll('button')
+          .find((b) => b.text() === 'Request new category and concern review')!
+          .attributes('disabled'),
+      ).toBeUndefined()
+      wrapper.unmount()
+    },
+  )
+  it.each([
+    ['run-created', 'Run prepared — awaiting execution'],
+    ['run-started', 'Running in the linked agent run'],
+    ['run-blocked', 'Agent run blocked — inspect the linked run'],
+    ['failed', 'Analysis failed'],
+    ['run-aborted', 'Agent run aborted — reviewed result not published'],
+    ['completed_unpublished', 'Run completed — reviewed result not published'],
+    ['run_unavailable', 'Linked run unavailable — inspect the agent request'],
+    ['historical_source', 'Analysis request is historical — source changed'],
+    ['historical_access', 'Historical project Finance data'],
+    ['source_unavailable', 'Request source unavailable — request new analysis'],
+    ['current', 'Reviewed analysis · current source'],
+  ])(
+    'renders canonical analysis state %s without adopting or changing scope',
+    async (state, label) => {
+      const basics = vi.mocked(callOperation).getMockImplementation()!
+      const metadata = {
+        workspace_ref: 'finance:project:1',
+        source_snapshot: snapshot,
+        query: { start: '2026-09-01', end: '2026-09-30' },
+      }
+      vi.mocked(callOperation).mockImplementation(async (name, args) => {
+        if (name === 'agentRequest.list')
+          return {
+            items: [
+              {
+                id: 7,
+                status: 'new',
+                run_plan_id: 3,
+                metadata_json: { metadata_json: metadata },
+              },
+            ],
+          }
+        if (name === 'agentRequest.get')
+          return {
+            id: 7,
+            status: state === 'current' ? 'resolved' : 'run-created',
+            run_plan_id: 3,
+            metadata_json: { metadata_json: metadata },
+          }
+        if (name === 'finance.report.render')
+          return { state, request_id: 7, next_action: 'inspect_agent_request' }
+        return basics(name, args)
+      })
+      const { wrapper } = await mounted('?analysis=7')
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text() === 'Reports')!
+        .trigger('click')
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text() === 'Refresh analysis status')!
+        .trigger('click')
+      await flushPromises()
+      expect(wrapper.text()).toContain(label)
+      expect(wrapper.text()).toContain(
+        `Request 7 · ${state === 'current' ? 'resolved' : 'run-created'}`,
+      )
+      expect(wrapper.text()).not.toContain('Request 7 · new')
+      if (state !== 'run-started')
+        expect(wrapper.text()).not.toContain('Running in the linked agent run')
+      expect(wrapper.text()).toContain('2026-09-01')
+      expect(wrapper.text()).toContain('2026-09-30')
+      const calls = vi.mocked(callOperation).mock.calls
+      expect(
+        calls.some((c) => c[0] === 'finance.record.commit' || c[0].startsWith('runPlan.')),
+      ).toBe(false)
+      expect(calls.find((c) => c[0] === 'finance.report.render')![1]).toMatchObject({
+        start: '2026-09-01',
+        end: '2026-09-30',
+        analysis_request_id: 7,
+      })
+      wrapper.unmount()
+    },
+  )
+  it.each(['markdown', 'csv', 'json'])(
+    'renders canonical current %s period bytes and private download',
+    async (format) => {
+      const revoke = vi.fn(),
+        create = vi.fn(() => 'blob:period')
+      const OriginalURL = URL
+      vi.stubGlobal(
+        'URL',
+        class extends OriginalURL {
+          static override createObjectURL = create
+          static override revokeObjectURL = revoke
+        },
+      )
+      const basics = vi.mocked(callOperation).getMockImplementation()!
+      vi.mocked(callOperation).mockImplementation(async (name, args) =>
+        name === 'finance.report.render'
+          ? {
+              state: 'current',
+              snapshot,
+              content_base64: btoa('Synthetic period content'),
+              content_type: format === 'markdown' ? 'text/markdown' : 'text/plain',
+              filename: `period.${format}`,
+            }
+          : basics(name, args),
+      )
+      const { wrapper } = await mounted()
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text() === 'Reports')!
+        .trigger('click')
+      const label = {
+        markdown: 'View period report',
+        csv: 'Prepare CSV export',
+        json: 'Prepare JSON export',
+      }[format]!
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text() === label)!
+        .trigger('click')
+      await flushPromises()
+      expect(wrapper.get(`a[download="period.${format}"]`).attributes('href')).toBe('blob:period')
+      if (format === 'markdown') expect(wrapper.text()).toContain('Synthetic period content')
+      const query = vi.mocked(callOperation).mock.calls.find((c) => c[0] === 'finance.query')![1]
+      expect(
+        vi.mocked(callOperation).mock.calls.find((c) => c[0] === 'finance.report.render')![1],
+      ).toMatchObject({
+        ...query,
+        format,
+        report_kind: 'period',
+        response_mode: 'raw',
+        expected_snapshot: { revision: 1, sha256: snapshot.sha256 },
+      })
+      wrapper.unmount()
+      expect(revoke).toHaveBeenCalledWith('blob:period')
+    },
+  )
+  it.each(['unavailable', 'error', 'late-scope'])(
+    'keeps %s period content unavailable',
+    async (outcome) => {
+      let resolve!: (v: unknown) => void
+      const basics = vi.mocked(callOperation).getMockImplementation()!
+      vi.mocked(callOperation).mockImplementation(async (name, args) => {
+        if (name !== 'finance.report.render') return basics(name, args)
+        if (outcome === 'error') throw new Error('Synthetic denial')
+        if (outcome === 'late-scope')
+          return new Promise((r) => {
+            resolve = r
+          })
+        return { state: 'unavailable', content_base64: btoa('Unavailable private content') }
+      })
+      const { wrapper, router } = await mounted()
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text() === 'Reports')!
+        .trigger('click')
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text() === 'View period report')!
+        .trigger('click')
+      await flushPromises()
+      if (outcome === 'late-scope') {
+        await router.push('/projects/2/finance')
+        await flushPromises()
+        resolve({
+          state: 'current',
+          content_base64: btoa('Old private report'),
+          content_type: 'text/markdown',
+          filename: 'old.md',
+        })
+        await flushPromises()
+        expect(wrapper.text()).not.toContain('Old private report')
+      } else expect(wrapper.text()).toContain('Report unavailable')
+      expect(wrapper.find('a[download]').exists()).toBe(false)
+      wrapper.unmount()
+    },
+  )
+  it.each(['invoice-0001', '   '])(
+    'refuses private-search %j analysis before queue and preserves scope until deliberate clear',
+    async (search) => {
+      let queued: Record<string, unknown> = {}
+      const basics = vi.mocked(callOperation).getMockImplementation()!
+      vi.mocked(callOperation).mockImplementation(async (name, args) => {
+        if (name !== 'localAgentChat.createMessage') return basics(name, args)
+        queued = (args.metadata_json as Record<string, unknown>).query as Record<string, unknown>
+        if ('q' in queued) throw new Error('Private filter forbidden by accepted intake')
+        return { data: { agent_request: { id: 7, status: 'new' } } }
+      })
+      const { wrapper } = await mounted()
+      await wrapper.get('[data-test="finance-search"]').setValue(search)
+      await wrapper.get('[data-test="apply-finance-filters"]').trigger('click')
+      await flushPromises()
+      const selected = vi
+        .mocked(callOperation)
+        .mock.calls.filter((c) => c[0] === 'finance.query')
+        .at(-1)![1]
+      const before = vi.mocked(callOperation).mock.calls.length
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text() === 'Request category and concern review')!
+        .trigger('click')
+      await flushPromises()
+      expect(vi.mocked(callOperation).mock.calls.slice(before)).toHaveLength(0)
+      expect(wrapper.text()).toContain('Clear search')
+      expect((wrapper.get('[data-test="finance-search"]').element as HTMLInputElement).value).toBe(
+        search,
+      )
+      await wrapper.get('[data-test="finance-search"]').setValue('')
+      await wrapper.get('[data-test="apply-finance-filters"]').trigger('click')
+      await flushPromises()
+      const cleared = vi
+        .mocked(callOperation)
+        .mock.calls.filter((c) => c[0] === 'finance.query')
+        .at(-1)![1]
+      const remaining = { ...selected }
+      delete remaining.q
+      delete remaining.project_id
+      delete remaining.response_mode
+      expect(cleared).toMatchObject(remaining)
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text() === 'Request category and concern review')!
+        .trigger('click')
+      await flushPromises()
+      expect(queued).toEqual(remaining)
+      expect(wrapper.text()).toContain('Awaiting agent')
+      wrapper.unmount()
+    },
+  )
+  it('queues safe selectors and renders bare reviewed results against the original window', async () => {
+    let metadata: Record<string, unknown> = {}
+    let state = 'run-started'
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name === 'finance.status')
+        return { data: { project_id: 1, readiness: 'ready', access: [access] } }
+      if (name === 'finance.query') return { data: projection(args) }
+      if (name === 'agentRequest.list') return { items: [] }
+      if (name === 'localAgentChat.createMessage') {
+        metadata = args.metadata_json as Record<string, unknown>
+        return {
+          data: {
+            agent_request: { id: 7, status: 'pending', metadata_json: { metadata_json: metadata } },
+          },
+        }
+      }
+      if (name === 'agentRequest.get')
+        return {
+          id: 7,
+          status: 'completed',
+          run_plan_id: null,
+          metadata_json: { metadata_json: metadata },
+        }
+      if (name === 'finance.report.render')
+        return { state, report: state === 'stale' ? 'Reviewed synthetic finding' : null }
+      throw new Error(`Unexpected operation ${name}`)
+    })
+    const { wrapper } = await mounted()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Reports')!
+      .trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Request category and concern review')!
+      .trigger('click')
+    await flushPromises()
+    expect(Object.keys(metadata).sort()).toEqual(
+      [
+        'access_generation',
+        'analysis_kind',
+        'intent_key',
+        'query',
+        'record_refs',
+        'source_refs',
+        'source_snapshot',
+        'workspace_ref',
+      ].sort(),
+    )
+    expect(wrapper.text()).toContain('Awaiting agent — a host must claim this request')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Refresh analysis status')!
+      .trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Awaiting a linked run')
+    expect(wrapper.text()).not.toContain('Running in the linked agent run')
+    state = 'stale'
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Refresh analysis status')!
+      .trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Historical result: source changed')
+    expect(wrapper.text()).toContain('Reviewed synthetic finding')
+    const original = metadata.query as Record<string, unknown>
+    expect(wrapper.text()).toContain(String(original.start))
+    expect(
+      vi
+        .mocked(callOperation)
+        .mock.calls.filter((c) => c[0] === 'finance.report.render')
+        .at(-1)![1],
+    ).toMatchObject({
+      ...original,
+      project_id: 1,
+      workspace_ref: 'finance:project:1',
+      access_generation: 1,
+      analysis_request_id: 7,
+      response_mode: 'raw',
+    })
+    expect(vi.mocked(callOperation).mock.calls.some((c) => c[0] === 'finance.record.commit')).toBe(
+      false,
+    )
+    wrapper.unmount()
+  })
+  it('shows exact partial amounts, unknown revenue and retained undated refs', async () => {
+    const { wrapper } = await mounted()
+    expect(wrapper.text()).toContain('USD 90,071,992,547,409.93')
+    expect(wrapper.text()).toContain('Unavailable')
+    expect(wrapper.text()).toContain('receipt:undated')
+    expect(wrapper.text()).toContain('Expenses & income')
+    wrapper.unmount()
+  })
+  it('keeps selected dates during search and preserves all-time for historical lookup', async () => {
+    const { wrapper } = await mounted()
+    const search = wrapper.get('[data-test="finance-search"]')
+    await search.setValue('invoice-0001')
+    await wrapper.get('[data-test="apply-finance-filters"]').trigger('click')
+    await flushPromises()
+    const calls = vi.mocked(callOperation).mock.calls.filter((c) => c[0] === 'finance.query')
+    expect(calls.at(-1)?.[1]).toMatchObject({
+      q: 'invoice-0001',
+      start: calls[0]?.[1].start,
+      end: calls[0]?.[1].end,
+    })
+    const timeframe = wrapper
+      .findAll('[role="combobox"]')
+      .find((c) => c.text().includes('Calendar year'))!
+    await timeframe.trigger('click')
+    await wrapper
+      .findAll('[role="option"]')
+      .find((o) => o.text() === 'All time')!
+      .trigger('click')
+    await wrapper.get('[data-test="apply-finance-filters"]').trigger('click')
+    await flushPromises()
+    expect(
+      vi
+        .mocked(callOperation)
+        .mock.calls.filter((c) => c[0] === 'finance.query')
+        .at(-1)?.[1],
+    ).toMatchObject({ start: '0001-01-01', end: '9999-12-31', q: 'invoice-0001', comparison: null })
+    wrapper.unmount()
+  })
+  it('rejects late query responses after a project scope change', async () => {
+    let resolve!: (v: unknown) => void
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name === 'finance.status')
+        return {
+          data: {
+            project_id: args.project_id,
+            readiness: 'ready',
+            access: [
+              {
+                ...access,
+                project_id: args.project_id,
+                workspace_ref: `finance:project:${args.project_id}`,
+              },
+            ],
+          },
+        }
+      if (name === 'finance.query' && args.project_id === 1)
+        return new Promise((r) => {
+          resolve = r
+        })
+      if (name === 'finance.query') return { data: projection(args, 'Second scope') }
+      return { items: [] }
+    })
+    const { wrapper, router } = await mounted()
+    await router.push('/projects/2/finance')
+    await flushPromises()
+    resolve({ data: projection({}, 'Old private vendor') })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('Old private vendor')
+    expect(
+      vi
+        .mocked(callOperation)
+        .mock.calls.some((c) => c[0] === 'finance.query' && c[1].project_id === 2),
+    ).toBe(true)
+    wrapper.unmount()
+  })
+  it('keeps failed loading explicit instead of showing stale totals', async () => {
+    const { wrapper } = await mounted()
+    vi.mocked(callOperation).mockRejectedValue(new Error('Synthetic denial'))
+    await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('unavailable')
+    expect(wrapper.text()).not.toContain('USD 90,071,992,547,409.93')
+    wrapper.unmount()
+  })
+  it('invalidates a pending query before refreshing managed project data', async () => {
+    let finishQuery!: (v: unknown) => void
+    let statuses = 0
+    vi.mocked(callOperation).mockImplementation(async (name) => {
+      if (name === 'finance.status') {
+        if (++statuses > 1) return new Promise(() => {})
+        return { data: { project_id: 1, readiness: 'ready', access: [access] } }
+      }
+      if (name === 'finance.query')
+        return new Promise((r) => {
+          finishQuery = r
+        })
+      return { items: [] }
+    })
+    const { wrapper } = await mounted()
+    await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+    const old = projection({})
+    old.metrics_by_currency[0]!.spend.amount.minor = '500000'
+    finishQuery({ data: old })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('USD 5,000.00')
+    wrapper.unmount()
+  })
+})

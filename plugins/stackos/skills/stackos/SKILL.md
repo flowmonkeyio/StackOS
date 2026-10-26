@@ -1,13 +1,13 @@
 ---
 name: stackos
-description: Use when working from any website repository to connect the repo to StackOS, resolve the current project, inspect workflow templates/run plans, and use daemon-managed resources/actions without writing setup files into the repo.
+description: Use from a repository or global chat to start a StackOS session, select project scope, inspect workflow templates/run plans, and use daemon-managed resources/actions without writing repository setup files.
 ---
 
 # StackOS Plugin Entrypoint
 
-Use the current repository as source context and the local StackOS daemon as
-durable state. The daemon owns projects, credentials, workflow templates, run
-plans, resources, actions, context, learnings, experiments, decisions, and audit
+Use the current repository as source context when one was chosen, and the local
+StackOS daemon as durable state. The daemon owns projects, credentials, workflow
+templates, run plans, resources, actions, context, learnings, experiments, decisions, and audit
 trails.
 
 Use StackOS tools for durable state, execution planning, and daemon-owned
@@ -22,7 +22,9 @@ call hidden daemon tools directly. Use `toolbox.describe` with exact
 `tool_names` to inspect only the tools needed for the current decision, then
 `toolbox.call` to invoke exactly one hidden tool by name. When working inside a
 run plan, pass `run_id` so the bridge can refresh step grants and inject the
-run token.
+run token. In a global session, also pass the selected `project_id` on each
+scoped call, including run-aware `toolbox.describe` and direct browser calls;
+for `toolbox.call`, put it inside `arguments`.
 
 ## Activate The Current Guidance
 
@@ -49,11 +51,16 @@ primitive.
 1. Do not create `.env`, `.mcp.json`, `AGENTS.md`, `CLAUDE.md`, or
    `.stackos/*` in the current repository unless the user explicitly asks
    for checked-in hints.
-2. Start with `workspace.startSession` using repo hints supplied by the plugin
-   MCP bridge. For a new repo/directory it creates or reuses the local StackOS
-   project and daemon-owned binding automatically.
-3. Treat the workspace-bound `project_id` as the source of truth. Do not use a
-   global active project concept.
+2. Choose startup intent first. For a chosen repo/directory, call
+   `workspace.startSession` normally to create or reuse its daemon-owned
+   project binding. For known global intent, make the first successful call
+   `workspace.startSession({"global_session":true,"project_id":42})` using the
+   selected existing ID, or omit `project_id` to discover projects. Global
+   startup creates no project or directory binding. Use a JSON boolean.
+3. Workspace sessions inject their bound ID and refuse scope changes. Global
+   sessions require an explicit positive existing ID on every scoped call;
+   startup, resolve, connect, and bootstrap results never become defaults.
+   Do not use a global active project or last-used project fallback.
 4. Use `toolbox.describe`/`toolbox.call` for hidden setup tools and the current
    run-plan step grants that are not in the direct list.
 5. Agent presets are contracts, not daemon-run local agents. A request to set
@@ -161,23 +168,51 @@ primitive.
 - Ongoing repo session: call `workspace.startSession`, use the workspace-bound
   project id, then call only the scoped tools needed for the current task. Do
   not request broad schemas or catalog dumps unless debugging.
-- Connect to a specific project: if the operator wants a known existing
-  project, call `toolbox.call` for `workspace.connect` with that project
-  identifier explicitly.
-- Bind desktop/global hosts to a project: if StackOS says project identity is
-  required, inspect `candidate_workspaces` and user intent. Reuse a known
-  `workspace_alias` or selected existing project with `workspace.connect`, or
-  ask for a business `project_name`/`project_slug` and call
-  `workspace.bootstrap` to create a new named workspace. Do not let app/runtime
-  folder names become projects, do not invent cwd/repo anchors, do not call
-  `project.create` as a substitute for binding, and do not use
-  last-used/global fallback binding.
+- Global chat or recurring task: declare `global_session=true` on the first
+  successful startup. Known ChatGPT “Choose project / This computer” and Claude
+  “Local / No folder” intent uses this path; if intent is unknown, clarify
+  before startup. Initialize/tools-list only resolve unbound ambient hints
+  read-only and leave startup pending. `CLAUDE_PROJECT_DIR` keeps priority over
+  cwd, but neither proves deliberate folder selection; do not classify intent
+  by runtime or path pattern. Only explicit `--workspace-root` /
+  `STACKOS_WORKSPACE_ROOT` selection and existing valid bindings protect
+  workspace scope from global downgrade, even after a lookup failure. `/` is
+  missing directory context.
+- Choose a project for global work: call `toolbox.call` for `project.list`,
+  inspect current metadata, then pass the chosen ID on every scoped call.
+  For example, `toolbox.call({"tool_name":"workflowTemplate.list",
+  "arguments":{"project_id":42}})` or
+  `browser.profile.list({"project_id":42})`. Include `project_id` alongside
+  `run_id`/`run_plan_id` in run-aware `toolbox.describe`; use each operation's
+  exact schema. A missing or invalid target stops the call without fallback.
+- Named creation/setup: after global startup, call `workspace.bootstrap`
+  through the toolbox with explicit business `project_name`, `project_slug`,
+  or `workspace_alias`, then use its returned ID explicitly. To connect a
+  selected existing project for named setup, call `workspace.connect` with
+  its explicit `project_id` and optional alias. These calls never pin global
+  scope and need no invented cwd/repo anchors. A first startup with an existing
+  `workspace_alias` instead establishes a protected named-workspace session;
+  later diagnostic alias reads do not move it and repeated startup retains it.
+- Startup repair: an explicit ID with omitted/false global intent on an
+  unbound directory is rejected before writes. Declare global intent or bind
+  the intended workspace. Normal folder startup without an ID retains
+  automatic bootstrap. Global setup can report
+  `project_scoped_tools_usable=true` with `workspace_bound=false`; binding is
+  not required for explicit global project calls. Project selection does not
+  grant filesystem access, provider credentials, or workflow permissions.
+- Saved recurring project: confirm current project metadata before saving its
+  numeric ID. After migration `0033_project_id_nonreuse`, deleted IDs are not
+  allocated to replacement projects. Pre-migration numeric-only references
+  require explicit reselection/confirmation: migration cannot detect an ID
+  already reused or reconstruct deleted history. A missing saved ID stops the
+  task. Do not substitute a same-named or last-used project, and do not claim
+  installed-host support from source/migration tests alone.
 - Set up a workflow project only after selecting one canonical intent mode:
   `setup_existing`, `customize_existing`, `author_project`, `publish_plugin`,
   `one_off_run`, or `execute`. Call `workflowTemplate.authoringGuide` for the
   structured mode boundaries and completion contract. A setup request does not
   authorize a new template, plugin change, or workflow execution.
-  Phase 1 is infrastructure setup: bind the authorized workspace, select and
+  Phase 1 is infrastructure setup: establish the authorized project scope, select and
   describe the effective workflow, inspect the existing extension, save only a
   reviewed non-empty overlay when needed, and re-describe after any overlay
   change. Call `agentPreset.resolveForWorkflow` once; it already includes
@@ -200,7 +235,7 @@ primitive.
   and materialize the deduplicated union of required and recommended roles.
   Persist each prerequisite through its declared owner, omit unresolved values
   instead of storing placeholders, and stop before recurring output.
-  Phase 3 is operation: bind the existing project, collect concrete run inputs,
+  Phase 3 is operation: select the existing project, collect concrete run inputs,
   require selected-route execution readiness, strictly validate before
   `runPlan.create`, then start/claim/record through step grants and approvals.
 - Set up support/engineering/local agents: choose the workflow first. Use
@@ -294,15 +329,15 @@ primitive.
   not invoke a workflow. Create dependencies, blockers, definition of done, and
   completion evidence there.
 - Record an operator decision already made: call `runPlan.update` through the
-  workspace-bound toolbox with the exact run plan, approval key and status.
+  project-scoped toolbox with the exact run plan, approval key and status.
   Use `decided_by` and `decision_json` for the operator identity, available safe
   evidence refs and original decision time. Explicit verbal approval in the
   current task is sufficient authority to record that decision; do not request
   it again merely because the stored gate is pending. Agents record the
   operator's decision and do not invent one or broaden its scope. Missing or
-  unclear decisions remain unresolved. The controller token or bound project
-  scopes the write; no active step grant, replacement run or REST handoff is
-  needed. Pending/rejected gates, grants and provider auth remain enforced.
+  unclear decisions remain unresolved. The selected project scopes the write;
+  global calls pass its ID explicitly. No active step grant, replacement run or
+  REST handoff is needed. Pending/rejected gates, grants and provider auth remain enforced.
 - Tracker lifecycle rules: use `tracker.updateTask(status=...)` only for
   independent tasks. If an independent task has tickets, prefer updating the
   tickets and let StackOS aggregate the parent task. Terminal tracker statuses

@@ -148,7 +148,7 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     foundation_outputs = {item.key: item for item in branding_foundation_described.spec.outputs}
     assert "out_of_scope" in foundation_outputs["voice_review_report"].schema_data["required"]
     assert branding_content_described.summary.plugin_slug == "branding"
-    assert branding_content_described.spec.version == "0.6.1"
+    assert branding_content_described.spec.version == "0.6.3"
     assert branding_content_described.spec.metadata_json["default_branding_workflow"] is True
     assert branding_content_described.spec.metadata_json["workflow_family"] == (
         "content-production"
@@ -374,6 +374,7 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
 
     assert [item.key for item in support_listing.templates] == [
         "support.delivery-task-handoff",
+        "support.internal-diagnostics",
         "support.issue-investigation",
     ]
     assert support_investigation_described.summary.plugin_slug == "support"

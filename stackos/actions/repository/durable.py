@@ -488,6 +488,68 @@ class DurableActionMixin:
             )
         return progress
 
+    def validate_durable_action_workflow(self, *, project_id: int, job_id: int) -> None:
+        """Re-read lifecycle eligibility, not original-owner or grant authority."""
+        job = self._job(project_id=project_id, job_id=job_id)
+        self._s.refresh(job)
+        self._check_run_scope(  # type: ignore[attr-defined]  # ActionRepository mixin
+            project_id=project_id,
+            run_id=job.run_id,
+            run_plan_id=job.run_plan_id,
+            run_plan_step_id=job.run_plan_step_id,
+            require_active_workflow=True,
+        )
+
+    def validate_durable_action_entry(
+        self,
+        *,
+        project_id: int,
+        job_id: int,
+        item_id: int,
+        attempt_ref: str,
+        now: datetime,
+    ) -> None:
+        """Check current controls and the exact claim after awaited preparation.
+
+        This is a local admission read, not an atomic fence or evidence about
+        an already-entered provider. Settlement still requires the same attempt.
+        """
+
+        current = _as_naive_utc(now)
+        # Refresh authority records without expiring prepared credentials that
+        # connectors consume after the preparation session closes.
+        job, item, attempt = self._active_attempt(
+            project_id=project_id, item_id=item_id, attempt_ref=attempt_ref, refresh=True
+        )
+        if job.id != job_id or attempt.ordinal != item.attempt_count or item.lease_ref is None:
+            raise ConflictError(
+                "durable action claim is no longer current",
+                data={"job_id": job_id, "item_id": item_id, "attempt_ref": attempt_ref},
+            )
+        if item.lease_expires_at is None or item.lease_expires_at <= current:
+            raise ConflictError(
+                "durable action lease missing or expired before connector entry",
+                data={"job_id": job_id, "item_id": item_id, "attempt_ref": attempt_ref},
+            )
+        if (
+            job.state
+            not in {
+                DurableActionJobStatus.RUNNING,
+                DurableActionJobStatus.SCHEDULED,
+            }
+            or job.cancelled_at is not None
+        ):
+            raise ConflictError(
+                "durable action job stopped before connector entry",
+                data={"job_id": job_id, "state": job.state.value},
+            )
+        if job.expires_at is not None and job.expires_at <= current:
+            raise ConflictError(
+                "durable action deadline passed before connector entry",
+                data={"job_id": job_id, "expires_at": job.expires_at.isoformat()},
+            )
+        self.validate_durable_action_workflow(project_id=project_id, job_id=job_id)
+
     def claim_durable_action_items(
         self,
         *,
@@ -508,12 +570,17 @@ class DurableActionMixin:
             raise ValidationError("durable action item lease_seconds must be positive")
         now = _as_naive_utc(now or utcnow())
         job = self._job(project_id=project_id, job_id=job_id)
+        self._s.refresh(job)
         if self._expire_durable_action_job(job, now=now):
             self._s.commit()
-        if job.state in {
-            DurableActionJobStatus.CANCELLED,
-            DurableActionJobStatus.UNKNOWN_HOLD,
-        }:
+        if (
+            job.state
+            in {
+                DurableActionJobStatus.CANCELLED,
+                DurableActionJobStatus.UNKNOWN_HOLD,
+            }
+            or job.cancelled_at is not None
+        ):
             return []
         if (
             job.state
@@ -524,6 +591,15 @@ class DurableActionMixin:
             }
             or job.due_at > now
         ):
+            return []
+        try:
+            self.validate_durable_action_workflow(project_id=project_id, job_id=job_id)
+        except (ConflictError, NotFoundError) as exc:
+            job.metadata_json = {
+                **(job.metadata_json or {}),
+                "delivery_pause": {"reason": str(exc), "at": now.isoformat()},
+            }
+            self.pause_durable_action_job(project_id=project_id, job_id=job_id, now=now)
             return []
         items = list(
             self._s.exec(
@@ -925,9 +1001,11 @@ class DurableActionMixin:
         self._s.commit()
         return self._item_out(item)
 
-    def pause_durable_action_job(self, *, project_id: int, job_id: int) -> DurableActionJobOut:
+    def pause_durable_action_job(
+        self, *, project_id: int, job_id: int, now: datetime | None = None
+    ) -> DurableActionJobOut:
         job = self._job(project_id=project_id, job_id=job_id)
-        now = utcnow()
+        now = _as_naive_utc(now or utcnow())
         if self._expire_durable_action_job(job, now=now):
             self._s.commit()
         if job.state in {
@@ -1458,11 +1536,12 @@ class DurableActionMixin:
         project_id: int,
         item_id: int,
         attempt_ref: str,
+        refresh: bool = False,
     ) -> tuple[DurableActionJob, DurableActionItem, DurableActionAttempt]:
-        item = self._s.get(DurableActionItem, item_id)
+        item = self._s.get(DurableActionItem, item_id, populate_existing=refresh)
         if item is None:
             raise NotFoundError(f"durable action item {item_id} not found")
-        job = self._s.get(DurableActionJob, item.job_id)
+        job = self._s.get(DurableActionJob, item.job_id, populate_existing=refresh)
         if job is None or job.project_id != project_id:
             raise NotFoundError(f"durable action item {item_id} not found for project {project_id}")
         if item.state != DurableActionItemStatus.LEASED:
@@ -1471,11 +1550,13 @@ class DurableActionMixin:
                 data={"item_id": item_id, "state": item.state.value},
             )
         attempt = self._s.exec(
-            select(DurableActionAttempt).where(
+            select(DurableActionAttempt)
+            .where(
                 col(DurableActionAttempt.item_id) == item_id,
                 col(DurableActionAttempt.attempt_ref) == attempt_ref,
                 col(DurableActionAttempt.state) == DurableActionAttemptStatus.LEASED,
             )
+            .execution_options(populate_existing=refresh)
         ).first()
         if attempt is None:
             raise ConflictError(

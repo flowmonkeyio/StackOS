@@ -1,0 +1,52 @@
+{
+  "kind": "illustrative-synthetic-exercise",
+  "observed_live_data": false,
+  "property": "sc-domain:example.com",
+  "window": {
+    "start_date": "2026-09-01",
+    "end_date": "2026-09-28",
+    "inclusive_days": 28,
+    "timezone": "America/Los_Angeles"
+  },
+  "search_type": "web",
+  "country_filter": "usa",
+  "device_filter": null,
+  "device_scope": "all devices combined",
+  "other_filters": [],
+  "data_state": "final",
+  "dimensions": ["query", "page"],
+  "aggregation_type_requested": "auto",
+  "row_order": "editorial: grouped by page, then stable row ID; not an API response sort order",
+  "ctr_unit": "fraction; multiply by 100 for percentage display",
+  "ctr_rounding": "At most 12 decimal places; Q07 is rounded from 1/12.",
+  "completeness": "Twelve invented rows selected to teach a decision. Neither a complete query export nor a record of an executed request. Missing rows say nothing about demand.",
+  "page_totals": "Not supplied. Do not add the query rows and label the result a page total.",
+  "fictional_business": {
+    "customer": "Operations managers at small SaaS companies",
+    "product": "Software for reviewing workflow runs, assigning a manual owner, and exporting an audit log",
+    "boundary": "No Python task-queue library or developer SDK is sold in this exercise.",
+    "inventory_assumption": "The four supplied snapshots are the exercise's complete guide inventory. They are authored fictional pages, not captured live pages."
+  },
+  "example_request_not_executed": {
+    "siteUrl": "sc-domain:example.com",
+    "body": {
+      "startDate": "2026-09-01",
+      "endDate": "2026-09-28",
+      "type": "web",
+      "dimensions": ["query", "page"],
+      "dimensionFilterGroups": [{
+        "groupType": "and",
+        "filters": [{"dimension": "country", "operator": "equals", "expression": "usa"}]
+      }],
+      "aggregationType": "auto",
+      "dataState": "final",
+      "rowLimit": 25000,
+      "startRow": 0
+    }
+  },
+  "field_reference": {
+    "url": "https://developers.google.com/webmaster-tools/v1/searchanalytics/query",
+    "checked_date": "2026-10-06",
+    "supports": ["request field names", "date range uses Pacific time", "country filter uses a three-letter code", "final dataState", "CTR is a fraction", "position is an average", "top-row limitation"]
+  }
+}

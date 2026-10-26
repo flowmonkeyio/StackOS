@@ -47,7 +47,7 @@ def _bridge_structured_content(response_text: str) -> dict[str, Any] | None:
     if not isinstance(envelope, dict):
         return None
     result = envelope.get("result")
-    if not isinstance(result, dict):
+    if not isinstance(result, dict) or result.get("isError") is True:
         return None
     structured = result.get("structuredContent")
     return structured if isinstance(structured, dict) else None
@@ -371,6 +371,7 @@ def _bridge_toolbox_describe(
     run_id: int | None,
     allowed_by_run: dict[int, set[str]],
     injected_fields: set[str] | frozenset[str] | None = None,
+    global_session: bool = False,
 ) -> str:
     allowed = _bridge_allowed_tool_names(run_id, allowed_by_run, catalog=catalog)
     requested_raw = arguments.get("tool_names")
@@ -384,7 +385,9 @@ def _bridge_toolbox_describe(
         requested = []
 
     described = [
-        _bridge_agent_tool_schema(catalog[name], injected_fields=set(injected_fields or ()))
+        _bridge_agent_tool_schema(
+            catalog[name], injected_fields=set(injected_fields or ()), global_session=global_session
+        )
         for name in requested
         if name in catalog and name in allowed
     ]

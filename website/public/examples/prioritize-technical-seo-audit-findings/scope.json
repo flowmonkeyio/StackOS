@@ -1,0 +1,44 @@
+{
+  "article_id": "A02",
+  "kind": "illustrative-synthetic-audit",
+  "observed_live_data": false,
+  "authored_date": "2026-10-06",
+  "release": "demo-release-a",
+  "site": "https://example.com/",
+  "template_families": ["product", "integration", "guide", "utility"],
+  "family_definition": "The inspected page's template; supporting target URLs are not additional template families.",
+  "priority_basis": "Operator-declared visitor journeys and demonstrated fixture symptoms; no traffic, revenue or ranking-impact estimates.",
+  "evidence": {
+    "E01": {"findings": ["F01"], "urls": ["https://example.com/pricing/"], "kind": "authored repeated HTTP response", "cause": "unknown upstream/route failure"},
+    "E02": {"findings": ["F02"], "urls": ["https://example.com/product/", "https://example.com/start/", "https://example.com/signup/"], "kind": "authored HTML and route manifest checks", "cause": "stale product CTA target"},
+    "E03": {"findings": ["F03"], "urls": ["https://example.com/product/"], "kind": "authored meta description and tool rule", "cause": "no demonstrated defect"},
+    "E04": {"findings": ["F04", "F05", "F06"], "urls": ["https://example.com/integrations/slack/", "https://example.com/integrations/google-drive/", "https://example.com/integrations/notion/"], "kind": "authored response/head and shared template source", "cause": "unconditional integration noindex copied from preview"},
+    "E05": {"findings": ["F07", "F08"], "urls": ["https://example.com/guides/approval-routing/", "https://example.com/guides/workflow-retries/", "https://example.com/guides/"], "kind": "authored canonical output and shared helper source", "cause": "guide metadata helper uses index constant"},
+    "E06": {"findings": ["F09"], "urls": ["https://example.com/guides/workflow-retries/"], "kind": "authored incomplete lab score", "cause": "not established"},
+    "E07": {"findings": ["F10"], "urls": ["https://example.com/contact/"], "kind": "authored three-replay lab and diagnostic comparison", "cause": "late widget expands an unreserved slot"},
+    "E08": {"findings": ["F11"], "urls": ["https://example.com/search/?q=retry"], "kind": "authored response and explicit public search policy", "cause": "intentional exclusion"},
+    "E09": {"findings": ["F12"], "urls": ["https://example.com/contact/"], "kind": "authored initial-navigation bundle warning", "cause": "not established"}
+  },
+  "tasks": [
+    {"id": "T1", "order": 1, "findings": ["F01"], "evidence": ["E01"], "cause_id": "C01"},
+    {"id": "T2", "order": 2, "findings": ["F02"], "evidence": ["E02"], "cause_id": "C02"},
+    {"id": "T3", "order": 3, "findings": ["F04", "F05", "F06"], "evidence": ["E04"], "cause_id": "C03"},
+    {"id": "T4", "order": 4, "findings": ["F07", "F08"], "evidence": ["E05"], "cause_id": "C04"},
+    {"id": "T5", "order": 5, "findings": ["F10"], "evidence": ["E07"], "cause_id": "C05"}
+  ],
+  "not_queued": ["F03", "F09", "F11", "F12"],
+  "sources_checked": [
+    "https://developers.google.com/search/docs/crawling-indexing/robots-meta-tag",
+    "https://developers.google.com/search/docs/crawling-indexing/consolidate-duplicate-urls",
+    "https://developers.google.com/search/docs/appearance/snippet",
+    "https://web.dev/articles/optimize-cls"
+  ],
+  "source_check_date": "2026-10-06",
+  "limitations": [
+    "No live site was queried or reproduced.",
+    "No executable demonstration website is included.",
+    "No Google selected canonical or index state is supplied.",
+    "No field performance, conversion or ranking outcome is supplied.",
+    "Developer checks are proposed acceptance work, not completed tests."
+  ]
+}

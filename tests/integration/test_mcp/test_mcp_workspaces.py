@@ -2,7 +2,35 @@
 
 from __future__ import annotations
 
+import pytest
+
 from .conftest import MCPClient
+
+
+@pytest.mark.parametrize("response_mode", ["compact", "raw"])
+@pytest.mark.parametrize("selected", [True, False])
+def test_global_startup_selected_or_discovery_contract(
+    mcp_client: MCPClient, seeded_project: dict, response_mode: str, selected: bool
+) -> None:
+    target = seeded_project["data"]["id"]
+    args = {"global_session": True, "cwd": "/tmp/chat-hi", "response_mode": response_mode}
+    if selected:
+        args["project_id"] = target
+    started = mcp_client.call_tool_structured("workspace.startSession", args)
+    assert started["project_id"] == (target if selected else None)
+    data = started["data"]
+    assert data["global_session"] is True
+    assert data["workspace_binding_id"] is None
+    assert data["auto_bootstrap"] is False
+    assert data["setup_state"]["workspace_bound"] is False
+    assert data["setup_state"]["project_scoped_tools_usable"] is selected
+    assert data["next_step"]
+    if not selected:
+        assert data["candidate_projects"][0]["id"] == target
+    bindings = mcp_client.call_tool_structured(
+        "workspace.listBindings", {"project_id": target, "response_mode": "raw"}
+    )
+    assert bindings["items"] == []
 
 
 def test_workspace_resolve_unknown_requests_connect(

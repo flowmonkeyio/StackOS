@@ -28,6 +28,25 @@ behavior. Operations define the callable contract around that behavior:
 - enabled surfaces
 - agent guidance, prerequisites, return notes, and examples
 
+## Local backup administration
+
+`backup.status`, `backup.configure` and `backup.create` share the generic
+encrypted local backup service. They are local-admin REST/CLI operations,
+with explicitly browser-safe controls under Local setup and project Setup. They
+are excluded from MCP, project/workflow grants and derived agent-token
+authority. Their exact registered REST paths enforce the local-admin boundary.
+
+Configuration stores a public recovery key, explicit external folder targets,
+destination and opt-in schedule. Partial configuration preserves omitted
+fields. Status and creation return safe coverage, time, path, size, checksum
+and failure metadata; no archive bytes, private recovery key, credential or
+financial contents are returned. Status includes covered managed project IDs,
+or null when coverage could not be verified. Creation includes all managed
+project files and enrolled targets and
+rejects unsafe destinations. Recovery private key generation and verified
+restore remain host-local CLI operations. See [backup and recovery](./backups.md)
+for setup, automatic project coverage and key custody.
+
 ## Agent Documentation
 
 Agents are the primary callers for workflow execution operations. Here, agent
@@ -89,6 +108,32 @@ instead of the full inventory. After that, call `toolbox.describe` with exact
 sessions, omit injected fields such as `project_id`; the bridge supplies the
 current workspace scope and refuses cross-project calls.
 
+In a global session, first call
+`workspace.startSession({"global_session":true,"project_id":42})` for the
+chosen existing project, or omit the ID to discover projects first. Startup
+creates no project/directory binding and never sets a default. Pass an explicit
+positive existing `project_id` on every scoped call, inside `arguments` for
+`toolbox.call`. Direct browser calls use their top-level `project_id`.
+Run-aware discovery also needs the project before the bridge refreshes grants:
+
+```javascript
+toolbox.describe({"project_id": 42, "run_id": 7, "tool_names": ["resource.upsert"]})
+toolbox.call({
+  "tool_name": "runPlan.get",
+  "arguments": {"project_id": 42, "run_plan_id": 3}
+})
+browser.profile.list({"project_id": 42})
+```
+
+Use IDs from the selected project/run, not these example numbers. A run or plan
+from another project, missing project scope, or failed authority refresh cannot
+reuse cached permission. Direct-read and direct-run-audit-write inner IDs remain
+operation targets, so historical `run.get` and ordinary run maintenance do not
+require an active workflow. An outer `toolbox.call.run_id` denotes execution
+context and is validated separately. Provider `*_json` payload IDs are opaque.
+For pending discovery, normal folder startup, named setup, and saved-ID adoption,
+see [the setup path](agent-operating-model.md#setup-path).
+
 For action discovery, `action.list` answers "what can I use now?" and hides
 disconnected, deferred, project-local, missing-connector, and otherwise
 non-executable external-provider actions by default. Pass
@@ -114,7 +159,7 @@ Each description includes:
 - examples
 
 `secret.set` is the narrow exception for write-only action payload ingress. It
-is available only through MCP/toolbox, is scoped to the bound project, and
+is available only through MCP/toolbox, is scoped to the selected project, and
 returns one opaque `secret_ref`. It is intentionally absent from REST and CLI
 and has no plaintext read/list operation. Put the ref into an action string
 field only as the exact marker `{"$secret_ref":"secret_..."}`. This is
@@ -221,6 +266,73 @@ and tokens are not exposed. Native output may contain requested page data.
 Agents preserve useful captures explicitly through generic artifacts. See
 [browser sessions](browser-automation.md) for usage and profile continuity.
 
+## Canonical ownership operations
+
+The `run.owner*` contracts use the existing tracker identity and run/event owner.
+Resolve external aliases first; mutations accept only one canonical `task:<id>`
+or `ticket:<id>`. Ambiguous aliases reject. These operations store integrity and
+audit; they launch no process, signal no cancellation and grant no publication.
+
+| Operation | Contract |
+| --- | --- |
+| `run.ownerResolve` | Read one native identity or existing opaque external alias |
+| `run.ownerGet` | Read stored fence/continuity plus current-source consistency and capture time |
+| `run.ownerAcquire` | Reserve once; duplicate assignment returns `acquired=false` or conflict |
+| `run.ownerCheckpoint` | CAS a reported checkpoint reference, preserving scope and counters |
+| `run.ownerStop` | Add a stop without clearing ownership, counts or original scope |
+| `run.ownerReassign` | Explicit replacement, or explicit `new_owner_ref=null` revocation, after backend-certified quiescence/effect disposition |
+| `run.ownerConsume` | Increase counts or reconcile authoritative floors; reject negative/reset/limit/ref changes |
+| `run.ownerRecordAttempt` | Annotate an existing bound child run's reported observation or terminal attempt reason |
+
+Writes require the current controller run, exactly one running step, an explicit
+tool grant with exact canonical `targets`, and the item's persisted plan/step
+binding. They recheck the shared grant owner and current canonical continuity
+inside the SQLite write transaction before audit/commit. System/local-admin
+traffic, arbitrary owner strings and evidence references cannot bypass this
+boundary. Controller tokens stay controller-held; `owner_ref` names an assignment.
+See [ownership grants](./run-plans.md#canonical-ownership-grants).
+
+Before first admission the canonical item's existing `metadata_json` holds
+`ownership_continuity`: scope digest, original budget/stop/history refs, known
+stopped/denied flags, cumulative attempts/failures and positive attempt/failure
+limits. Existing effect/deadline refs are retained. These are corroborated inputs
+from the work-item owner, not a caller's replacement policy. Unknown or changed
+authority blocks the affected write. Consumption preserves immutable refs and
+limits, takes the maximum stored/current counts and adds only nonnegative deltas.
+Late failures remain recorded after a stop; they cannot admit another attempt.
+Exhausted failures persist a stop. No operation clears stops or extends a budget.
+`authority_valid` in inspection describes continuity consistency, not permission.
+
+Observation annotations and terminal reasons stay on existing child `Run`
+metadata/status. The child must match controller parent, project, canonical item,
+owner, epoch and scope. Reported states are running, waiting, suspected stall,
+blocked, scope drift and review ready. Resuming blocked/drift observations needs
+recorded clearance, current unstopped authority, reconciled canonical counters,
+and remaining failure budget. Zero-delta `ownerConsume` reconciles externally
+advanced counters; exhausted failures persist a stop and cannot be cleared by an
+observation. Resuming an already charged attempt does not admit another attempt.
+Verified hang, host suspension and accepted completion are backend-only; their
+trusted producers remain separate.
+Terminal reasons map to existing run status: succeeded→success, failed→failed,
+cancelled/abandoned/superseded→aborted. Supersession needs current backend evidence.
+Terminal attempts cannot reactivate; succeeded never completes a tracker ticket.
+
+Compact/raw ownership receipts retain the complete canonical fence, checkpoint,
+continuity refs, request digest, actual controller `run_id` and replay status;
+ack is not supported. Idempotency matches exact operation/input/run/step before
+replay and revalidates current authority/fence. Acquisition replay always returns
+`acquired=false`. Attempt receipts also revalidate the child's identity, ownership
+binding/annotations and terminal lifecycle; heartbeat or unrelated metadata updates
+alone do not invalidate replay. A changed request or stale result conflicts. If
+commit precedes response/cache interruption, inspect `run.ownerGet`; an in-flight
+key is not permission to retry or dispatch. No quiescence certificate setter
+exists on MCP, REST or CLI. MYB-95 supplies genuine host/effect evidence; storage fixtures are
+not that proof.
+
+The generic operation catalog/REST/CLI and UI operation inspector consume these
+same schemas. This source contract does not upgrade a loaded daemon, alter an
+existing grant snapshot or activate the stopped evaluation.
+
 ## Generic REST Calls
 
 The generic REST adapter is command-shaped and meant for scripts, CLI, CI, and
@@ -249,6 +361,38 @@ UI-friendly resource routes still exist separately, for example
 `GET /api/v1/projects/{project_id}/action-calls`. The operation endpoint is the
 generic callable surface; resource routes remain the ergonomic query/read model
 for the UI.
+
+## Finance local console operations
+
+Finance registers these exact REST/CLI operations over one project-owned
+`local-json-v1` master. They are disabled on MCP; agents perform finance method
+through existing host/workflow contracts, not domain MCP primitives.
+
+| Operation | Behavior | Authority/response |
+| --- | --- | --- |
+| `finance.status` | Prepare the enabled project's default Finance store and inspect readiness/snapshot. Never replace missing or corrupt existing records. No caller-selected root. | `local-admin-console-write`; handler-owned retry validation; compact/raw safe receipt. |
+| `finance.query` / `finance.record.get` | Bounded filters, source coverage, current facts/history and undated record refs. | Current project/root/read mode; compact/raw. |
+| `finance.record.preview` | Validate a sourced draft against its source snapshot without writing. | Current correction mode; compact/raw. |
+| `finance.record.commit` | Guarded additive correction/create/proposal, exact preview and revision/hash, actual readback. | `local-admin-console-write`; handler-owned retry and under-lock authority recheck. |
+| `finance.evidence.read` / `finance.report.render` | Registered private original or derived period/independently reviewed analysis result. | Raw-only bounded content with exact hash/state; no ack/compact. |
+
+The generic endpoint is `/api/v1/operations/{name}/call`; CLI `ops call {name}`
+uses the same authenticated REST owner. Trusted local context requires the exact
+registered path, browser-safe surface, MCP-disabled spec and matching read/write
+policy. Headers, caller actor/admin fields and run tokens cannot widen it.
+`OperationSpec.idempotency_policy` defaults to `dispatcher`; finance writes opt
+into `handler` so every retry revalidates current root authority and original
+external intent. Descriptions expose that metadata. Existing dispatcher raw/ack
+replay remains unchanged for its default consumers.
+
+Private evidence/report responses are bare `FinanceContentOut` in raw mode;
+other default compact console calls return the normal `data` envelope.
+Exact minor-unit strings and source revision/hash survive shaping. Registry models
+generate UI contracts through `scripts/write-openapi.py`, without a second schema.
+Browser `localAgentChat.createMessage` is a separate bounded inbound human intent:
+safe refs/query/snapshot only, no actor/outbound spoofing, provider work or model
+execution. Clear private search text and apply filters before analysis; read
+[the actual host and result protocol](../plugins/finance/references/workflow-handoffs.md#management-review-request-and-result).
 
 ## CLI Calls
 
@@ -612,8 +756,8 @@ and still require the normal confirmation/idempotency protections.
 
 `action.run` is for one explicit action when no workflow state is needed:
 
-1. The current bridge workspace must resolve to a project, or scripts must pass
-   `project_id`.
+1. A workspace bridge supplies its bound project. Global bridge sessions and
+   scripts pass an explicit `project_id`.
 2. The caller must pass an explicit action ref or plugin/action pair.
 3. Non-read actions require `confirm_direct=true` and `intent_summary`.
    Callers may pass `intent_id` or `idempotency_key` for stable retries; when

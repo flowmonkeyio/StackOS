@@ -26,6 +26,8 @@ from stackos.db.models import (
     ActionCall,
     ActionCallStatus,
     Credential,
+    DurableActionAttempt,
+    DurableActionJob,
     IntegrationCredential,
     Plugin,
     PluginSource,
@@ -327,6 +329,40 @@ def _new_action_call(
     session.commit()
     assert call.id is not None
     return call.id
+
+
+@pytest.mark.parametrize("scheduled", [False, True])
+def test_claim_refreshes_cached_job_before_pause_eligibility(
+    tmp_path: Path, scheduled: bool
+) -> None:
+    engine, project_id, _, credential_ref, call_id = _database(tmp_path)
+    due = datetime(2099 if scheduled else 2026, 9, 22, 15)
+    with Session(engine) as session:
+        repo = ActionRepository(session)
+        job_id = repo.create_durable_action_job(
+            project_id=project_id,
+            action_call_id=call_id,
+            credential_ref=credential_ref,
+            action_ref="communications.telegram.message.send",
+            items=[{"destination_ref": "one", "input_json": {"text": "Hello"}}],
+            due_at=due,
+        ).id
+        cached = session.get(DurableActionJob, job_id)
+        assert cached is not None
+        assert cached.state == ("scheduled" if scheduled else "running")
+        with Session(engine) as control_session:
+            ActionRepository(control_session).pause_durable_action_job(
+                project_id=project_id, job_id=job_id, now=due
+            )
+        assert cached.state == ("scheduled" if scheduled else "running")
+        assert repo.claim_durable_action_items(project_id=project_id, job_id=job_id, now=due) == []
+        assert repo.get_durable_action_job(project_id=project_id, job_id=job_id).state == "paused"
+        assert (
+            repo.list_durable_action_items(project_id=project_id, job_id=job_id)[0].attempt_count
+            == 0
+        )
+        assert session.exec(select(DurableActionAttempt)).all() == []
+    engine.dispose()
 
 
 def test_durable_action_seals_items_leases_before_effect_and_aggregates_receipt(

@@ -32,12 +32,37 @@ The query “how to do keyword research for AI search” returned `null` for sea
 
 The July case was kept as a small ledger instead of compressed into a single volume judgment.
 
-| Record | What the July case established | Use in the decision |
-| --- | --- | --- |
-| Question origin | Public workflow jobs, decisions, handoffs, failure modes, and existing material produced 472 exact-new candidates across 15 clusters after deduplication against a 500-keyword baseline. | The query belonged to a documented problem-first research corpus. |
-| Measurement receipt | A 472-phrase request hit a phrase-length limit; a corrected 448-phrase request completed after 24 over-limit questions were excluded. | Provider task status and endpoint limits became part of the interpretation. |
-| Result snapshots | Eight selected US/en snapshots from July 12 each contained an AI Overview; the primary query was outside that sample. | The snapshots described related observations from that date. |
-| Evidence and ownership | The research ledger preserved the method and the July 25 article corpus was reviewed. | The question could be assessed as a separate reader job with a named evidence record. |
+::article-evidence-row{label="Question origin" record-heading="Record" evidence-label="What the July case established" decision-label="Use in the decision"}
+#evidence
+Public workflow jobs, decisions, handoffs, failure modes, and existing material produced 472 exact-new candidates across 15 clusters after deduplication against a 500-keyword baseline.
+
+#decision
+The query belonged to a documented problem-first research corpus.
+::
+
+::article-evidence-row{label="Measurement receipt" record-heading="Record" evidence-label="What the July case established" decision-label="Use in the decision"}
+#evidence
+A 472-phrase request hit a phrase-length limit; a corrected 448-phrase request completed after 24 over-limit questions were excluded.
+
+#decision
+Provider task status and endpoint limits became part of the interpretation.
+::
+
+::article-evidence-row{label="Result snapshots" record-heading="Record" evidence-label="What the July case established" decision-label="Use in the decision"}
+#evidence
+Eight selected US/en snapshots from July 12 each contained an AI Overview; the primary query was outside that sample.
+
+#decision
+The snapshots described related observations from that date.
+::
+
+::article-evidence-row{label="Evidence and ownership" record-heading="Record" evidence-label="What the July case established" decision-label="Use in the decision"}
+#evidence
+The research ledger preserved the method and the July 25 article corpus was reviewed.
+
+#decision
+The question could be assessed as a separate reader job with a named evidence record.
+::
 
 ## What the measurement instrument actually returned
 

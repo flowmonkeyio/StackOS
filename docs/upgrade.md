@@ -119,11 +119,12 @@ pipx install --force "stackos==<previous-version>"
 stackos install
 ```
 
-Before rollback, serious upgrades, or cross-machine moves, create a local
-backup archive:
+Before rollback, serious upgrades, or cross-machine moves, configure the
+public recovery key using
+[backup setup](./backups.md), then create an encrypted archive:
 
 ```bash
-stackos backup --output ~/Desktop/stackos-backup.zip
+stackos backup --output /private-backups/stackos/manual.sbak
 ```
 
 The archive contains:
@@ -132,15 +133,30 @@ The archive contains:
 - `~/.local/state/stackos/seed.bin`
 - `~/.local/state/stackos/auth.token`
 - `manifest.json`
+- All managed project files under `data/projects/<project-id>/`, including Finance
+  masters, safe incarnation metadata, invoices, receipts, schemas and reviews
+- Every explicitly enrolled additional external folder
 
-The archive is written with mode `0600` because it contains the daemon auth
-token and the seed required to decrypt local credentials. Automated restore is
-not implemented yet; keep the archive private and treat restore as an
-operator-guided recovery step. The archive does not contain TDLib's native
-Account database, so a Telegram user Account requires a new sign-in after an
-archive-only restore on another machine. In-place upgrades preserve it.
+The entire archive is encrypted with an independent recovery key and written
+with mode `0600`. Keep the private recovery key separately; it is never stored
+inside the backup. Automatic backups remain disabled until opted in, including
+after upgrading. Existing ZIP backups remain plaintext.
+
+`stackos restore ARCHIVE --private-key-file FILE --output-dir NEW_DIRECTORY`
+authenticates and validates recovery into an inert directory. It does not
+overwrite live state or activate the included policy. The archive does not
+contain TDLib's native Account database, so a Telegram user Account requires a
+new sign-in after archive-only recovery on another machine. In-place upgrades
+preserve it.
 
 ## Schema migrations
+
+Programmatic startup and CLI upgrades carry the selected `Settings` through
+Alembic, including the state directory used by credential migrations. An
+ambient `STACKOS_STATE_DIR` must not redirect the selected database to another
+installation's encryption seed. Standalone Alembic commands continue to use
+their environment configuration. This changes no seed, credential identity,
+or schema revision; existing encrypted records retain their matching seed.
 
 Migrations run automatically every time the daemon boots
 (`alembic upgrade head` is invoked from the lifespan). Operators do
@@ -154,13 +170,21 @@ notes call out manual operator steps.
 
 ## Cross-machine moves
 
-Migration of an install across machines requires copying:
+For a machine move, verify the encrypted backup into a fresh recovery folder
+with the separate private key. Stop the target daemon before adopting the
+matching recovered files together:
 
 - `~/.local/share/stackos/stackos.db` (the canonical DB)
 - `~/.local/state/stackos/seed.bin` (encryption seed)
 - `~/.local/state/stackos/auth.token` (bearer token)
 
-These files restore StackOS credential metadata and encrypted secrets, but not
+Adopt the recovered `data/projects/` tree with its matching database. Keep the
+permanent project-ID directories intact; never merge or reassign another project's
+files. Opening Finance verifies identity and custody before refreshing its storage
+generation. Recover additional enrolled folders from `external/<target-id>/` and
+explicitly reconfigure only that external coverage on the new machine.
+Recovery does not enable a saved schedule. These files restore StackOS
+credential metadata and encrypted secrets, but not
 Telegram's native TDLib authorization database. User Accounts need a new
 Telegram sign-in after a move that copies only these files; bots can connect
 with their saved token.

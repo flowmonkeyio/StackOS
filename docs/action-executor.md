@@ -70,8 +70,11 @@ The package returns provider facts and plain file descriptors. Host adapters
 resolve and project account-bound references, apply admission and budget rules,
 register artifacts or private transfers, redact public output and preserve
 receipts when a provider effect succeeds but local persistence fails. Account
-probes use the same native auth projection after host permission checks.
-Credential acquisition, renewal and storage remain in StackOS.
+probes use the same native auth projection after host permission checks. The
+host chooses when acquisition or renewal is needed and calls the package's
+explicit grant API; credential storage, callback/state custody, concurrency and
+permission decisions remain in StackOS. Probe construction and provider reason
+parsing are package-owned; test-history and repair wording remain host-owned.
 
 Native catalogs, action mappings, schemas, provider notes and icons live together
 under `StackOSConnectors/src/stackos_connectors/connectors/<provider>/`. The
@@ -81,13 +84,22 @@ retain their public action contracts, host references, permissions and workflow
 metadata. A host composition can call multiple native actions without becoming
 a workflow in the connector library.
 
+The Finance plugin's QuickBooks slice uses `PackageActionConnector` for exactly
+`finance.quickbooks-online.company-info.get` and
+`finance.quickbooks-online.invoices.list`. Both are reads with daemon-held
+Accounts, project attachment, normal grants/files/audit and no invented local
+scope requirement. Invoice `raw_json` retains exact source fragments. See the
+[QuickBooks contract](integration-contracts/quickbooks-online.md) for company
+binding, pagination and evidence limits.
+
 Before constructing `ResolvedCredential`, the shared action runtime asks the
 auth repository for a fresh usable credential and passes the manifest's
 `required_scopes`. For authorization-code credentials, the repository refreshes
 an expired access token when a refresh token is available. For declared
 client-credentials providers, it acquires an access token when one is absent or
-expired. This lifecycle belongs to core auth code, not to the provider
-connector.
+expired. Core auth owns this lifecycle and explicitly invokes the package's
+stateless token request. Action execution itself never acquires or refreshes
+credentials inside the package.
 
 Read actions without a caller-supplied replay key fetch current state on every
 direct or workflow execution. Automatically derived workflow keys do not replay
@@ -179,8 +191,38 @@ It persists attempts, progress and receipts. Unattempted items survive restart;
 an expired dispatched attempt is held as an unknown outcome until a provider
 receipt reconciles it. It is never automatically resent.
 
+All durable jobs refresh their persisted controls before claim eligibility. After
+credential preparation, immediately before connector entry with no intervening
+await, the dispatcher rechecks current job state, the cancellation marker, the
+job deadline at that boundary, and the exact active leased item/attempt. A mixed
+job can still be running after cancellation, so the cancellation marker also
+blocks entry. Lost or superseded attempts preserve their authoritative receipts.
+The item's lease deadline must be present and later than the final entry clock;
+a missing or expired lease refuses entry. This check applies only before entry:
+an already-entered provider's late receipt can still settle after lease expiry.
+The final read refreshes only admission authority records; prepared credential
+metadata remains loaded for connector use after the preparation session closes.
+
+Workflow-linked durable jobs also recheck their complete project/run/plan/step linkage
+and current lifecycle before claiming an item and immediately before connector
+entry, after credential preparation. The original run must be running, its plan
+started and its step running. A blocked, aborted or inconsistent controller
+pauses future work with a reason; refusal before claiming creates no attempt or
+rate lease. Refusal after claiming but before connector entry records a failed
+item with proof of no provider effect and pauses remaining items. Recovery uses
+the existing explicit resume/retry controls, which do not bypass the next
+lifecycle check. Direct jobs use the same job-control and attempt checks while
+retaining their existing permission gates.
+
+This is an admission check, not continuous cancellation or proof that the
+original owner and grants are unchanged. It does not recall an entered provider
+effect or replace its receipt with an inferred outcome. Unknown effects still
+require reconciliation before retry. The final local read is not an atomic
+cross-process fence: a concurrent control can still arrive after that read.
+
 Inspect a sealed job with `actionCall.items`; `actionCall.pause` and
-`actionCall.resume` control future claims, while `actionCall.cancel` cancels
+`actionCall.resume` control future claims; observed pause, cancellation and expiry
+also stop claimed work that has not entered its connector. `actionCall.cancel` cancels
 remaining pending or safely deferred items. An in-flight provider effect cannot be recalled by those
 controls. Item results preserve partial success, final provider IDs, deferral
 times and retry guidance. `due_at`, optional `expires_at`, and pacing are sealed
@@ -483,7 +525,22 @@ the connector package. The StackOS public action surface includes:
 - `ahrefs`: `seo.competitor.keywords`, `seo.backlink.research`
 - `google-search-console`: `seo.search-console.sites.list`,
   `seo.search-console.search-analytics.query`,
-  `seo.search-console.sitemaps.list`, `seo.search-console.url.inspect`
+  `seo.search-console.sitemaps.list`, `seo.search-console.sitemaps.submit`,
+  `seo.search-console.url.inspect`, `seo.search-console.batch.read`, and
+  `seo.search-console.sitemaps.submit.batch`. Batches accept 1–1000 typed items
+  with one Account and preserve every correlated result or failure. Partial
+  batches fail with a complete structured summary; no batch retries automatically.
+  Sitemap submission requires explicit Account
+  write access and returns a submission receipt; it does not edit XML or certify indexing.
+- `google-indexing`: `seo.indexing.url-notifications.publish` and
+  `seo.indexing.url-notifications.metadata.get`, plus `seo.indexing.batch.publish`
+  and `seo.indexing.batch.metadata.get`. Batches accept 1–100 URLs, validate each
+  encoded inner request against 1 MB, and preserve every item's outcome. Publish
+  uses one type per batch. No batch retries automatically. Publish has static destructive
+  risk for both URL_UPDATED and URL_DELETED, and returns notification receipt
+  only. Metadata returns notification history; neither action establishes
+  indexing status. Service-account-only setup and eligibility are covered by the
+  [Indexing contract](integration-contracts/google-indexing.md).
 - `google-analytics`: `seo.ga4.account_summaries.list`,
   `seo.ga4.properties.metadata.get`, `seo.ga4.properties.run_report`, and
   `seo.ga4.properties.run_realtime_report`

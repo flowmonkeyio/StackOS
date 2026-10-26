@@ -2,9 +2,9 @@
 
 ## Ownership
 
-The selected external backend owns financial facts, original evidence,
+The Finance plugin's project-local backend owns financial facts, original evidence,
 customer records, approvals, calculations and correction history. The initial
-backend is `local-json`: host-agent-managed `finance/finance.json` is the single
+backend is `local-json`: `data/projects/<project-id>/finance/finance.json` is the single
 authoritative local financial document; `FINANCE.md` is guidance/navigation,
 and `attachments/YYYY/MM/` holds immutable source evidence. CSV is import/export
 interchange, not another master. The colocated JSON Schema defines structure,
@@ -13,7 +13,8 @@ no other backend is implemented by this package.
 
 The JSON authority includes mutable business profiles, operating settings,
 account/customer mappings, policy selections, approvals, financial facts and
-corrections. StackOS stores only safe selectors/refs and generic control state.
+corrections. The core database stores only safe selectors/refs and generic control state.
+StackOS manages the private project directory and includes it in encrypted backups.
 Provider-owned state remains authoritative at the provider; JSON stores dated
 observations, never a claim that a local edit changes an invoice or bank balance.
 Markdown reports and CSV exports identify their source JSON revision and record
@@ -23,14 +24,29 @@ prefer a report or synchronize two masters.
 
 ## Business and project scope
 
-Run from a standalone business directory or an agency root using the existing
-finance workflows and one selected external financial master per business.
-Reuse that master across client engagements; do not create a finance.json in
-each project folder. Resolve its safe workspace selector from the effective
-finance extension and its actual settings from the external backend. A navigation
-pointer in agency context is not a second configuration owner. Host-file access
-and provider connections must be available in the bound finance-owning scope;
-neither an agency association nor a folder relationship supplies that authority.
+The authorized local Finance console delegates bounded read/correct/export
+access to the daemon over that same project master. The directory is derived
+from the permanent project ID, with no caller-selected root or separate Finance
+workspace. Project-local `finance-state.json` stores safe incarnation/migration
+metadata, not financial rows. Each call checks the actual database project identity,
+enabled plugin and current generation. Host-agent filesystem capability stays
+separate; descriptive associations and workflow tokens never widen access.
+The Finance directory's `.finance-owner.json` binds the physical files to the
+same project creation identity and storage incarnation; another project's files
+cannot be substituted during restore. Backup includes this marker and the safe
+project state, and refuses incomplete `.publication-pending` publications.
+The seven registered console operations are REST/CLI contracts with finance MCP
+visibility disabled, not a generic filesystem connector. See
+[the local console contract](local-workspace-contract.md#local-management-console).
+
+Use one automatically managed financial master per StackOS project under
+`data/projects/<project-id>/finance/`. Renames preserve that path; another project
+cannot select or inherit it. Do not copy records between projects or infer sharing
+from a customer name, agency relation or folder layout. Use a deliberately chosen
+business-owning project for company-wide work and keep other projects separate.
+Resolve the project-derived safe source identity and actual settings from that
+project's master. Provider connections and host-file capabilities must be available
+in the bound project scope.
 
 Finance is independently usable: an agency and its projects are optional
 context, not prerequisites or a second financial master. When supplied,
@@ -52,10 +68,11 @@ not a split allocation, project profitability engine, shared-cost allocation,
 or copied financial amount. Do not put it on receipts, billing lines,
 settlements, cashflow, tax packets, or provider observations.
 
-StackOS must not own finance-domain tables, repositories, resources,
-private evidence storage, a filesystem connector, financial ledger or tax
-engine. Existing workflows, grants, credentials, approvals and audit provide
-control. Workflow/tracker results contain safe external refs and bounded status,
+Core must not gain finance-domain tables, repositories, resources, a financial
+ledger or tax engine. The plugin owns its JSON and originals inside generic
+project storage; backup owns generic recovery. Existing workflows, grants,
+credentials, approvals and audit provide control. Workflow/tracker results
+contain safe refs and bounded status,
 never customer text, receipt bytes or financial calculations.
 
 The existing action executor persists sanitized transport request/response
@@ -89,6 +106,7 @@ from their external owner instead of repeatedly asking for reference strings.
 | Follow-ups | Current invoice/contact/reply history and operator-provided or documented sending instructions: Stripe resend or SMTP email, account, recipients and wording. IMAP is optional reply evidence. Settlement-only needs source/allocation, not send setup. |
 | Cashflow | Dated opening cash, expected receipts, commitments, horizon/scenario conventions and reserve source or explicit uncertainty. No complete tax packet prerequisite. |
 | Tax preparation | Relevant annual business/taxpayer inputs and current sources. Legal form is separate from federal/California tax treatment/effective dates; qualified review is required before adoption, not source gathering. |
+| Management review | Original request ID, selected workspace, source revision/hash and exact period/basis/query; capable host file access, sourced reporting metadata and independent result/report reviewer. No provider action or adoption. |
 
 A run supplies only its current choice: period, billing request, review window
 or as-of date. Optional safe overrides replace a selected setup default.
@@ -267,3 +285,10 @@ The host owns local writes. Follow
 [imap-host-handoff-contract.md](imap-host-handoff-contract.md).
 The operator owns backup, restore, retention, access permissions, encryption,
 deletion and disposal. No credentials belong in the workspace.
+
+Managed project Finance files and safe incarnation metadata are automatically
+included in encrypted manual and opted-in scheduled backups. No external target
+enrollment is needed. Backups lock all managed writers; recovery preserves each
+project-ID directory in an inert tree. Keep recovery keys separately and verify
+the recovered database, masters and originals before operator-controlled adoption.
+Other project-local backends retain their own export and recovery contracts.

@@ -1,0 +1,3 @@
+Enable review reminders for your article while it waits for your colleague’s review. Draft Pier sends the assigned reviewer an email at 9 a.m. on weekdays, using your workspace’s time zone, with a link to the draft. Each pending draft gets at most one reminder per weekday. Your colleague decides whether to approve the draft or request changes; a reminder does not approve or publish it. You can enable or disable reminders for each draft.
+
+Source note: Read `AGENTS.md`, `voice-guide.md`, and `facts.md`. Used voice guide revision 2.0 and product facts revision 1.0.

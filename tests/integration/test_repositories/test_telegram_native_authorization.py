@@ -487,6 +487,29 @@ async def test_conflicting_legacy_application_is_visible_and_cannot_connect(
     assert repo.get_telegram_session_status(credential_ref=credential_ref) == status
 
 
+@pytest.mark.parametrize("timeout,lifetime", [(60, 60), (900, 600), (0, 600)])
+def test_package_facts_leave_challenge_expiry_and_qr_disclosure_with_host(
+    session: Session, monkeypatch, timeout: int, lifetime: int
+) -> None:
+    from stackos.auth_providers.repository import telegram
+
+    now = utcnow()
+    monkeypatch.setattr(telegram, "utcnow", lambda: now)
+    state = {
+        "@type": "authorizationStateWaitOtherDeviceConfirmation",
+        "link": "tg://login?token=synthetic-sensitive-link",
+        "code_info": {"timeout": timeout, "type": {"@type": "authenticationCodeTypeSms"}},
+    }
+    repo = AuthRepository(session)
+    private = repo._authorization_projection(state, include_qr_link=False)
+    local = repo._authorization_projection(state, include_qr_link=True)
+    assert private["challenge"]["expires_at"] == now + timedelta(seconds=lifetime)
+    assert private["challenge"]["metadata"]["timeout_seconds"] == timeout
+    assert private["qr_link"] is None
+    assert local["qr_link"] == state["link"]
+    assert local["challenge"] == private["challenge"]
+
+
 def test_native_user_challenges_are_generation_fenced_and_never_persist_answers(
     session: Session,
     settings: Any,

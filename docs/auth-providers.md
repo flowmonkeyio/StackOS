@@ -7,6 +7,31 @@ credential references into granted tools. They must never
 receive API keys, OAuth tokens, refresh tokens, encrypted payloads, or local
 setup secrets.
 
+## Protocol And Lifecycle Owners
+
+The installed `stackos-connectors` package owns provider auth facts and explicit
+protocol calls: authorization URL construction, code exchange, refresh and
+client-credentials requests, Google service-account JWT validation/signing,
+probe adaptation, Telegram auth translation and Slack v0/HubSpot v3 signature
+mechanics. Provider catalogs and adjacent `docs/auth.md` files are the portable
+source of truth. Discovery, probes and actions never trigger library-managed
+authorization, refresh, storage or readiness decisions.
+
+StackOS decides when those calls happen. It owns encrypted Accounts, callback
+routing, one-use state and PKCE custody, expiry, refresh locks/CAS, project
+attachments, scope enforcement, readiness, local revocation and audit. Explicit
+grant calls receive application/key fields in-process; actions and probes receive
+only the selected method's resolved execution fields. Token results never cross
+the agent boundary.
+
+Affected provider manifests use `auth_catalog_ref` to expand canonical package
+methods/setup/protocol facts. Host additions retain local fields, callbacks,
+readiness groups and enforcement; they cannot override provider protocol facts.
+Both file-backed and Python-built manifests use the same normalization path.
+Authentication requires an explicitly declared saved method. This extraction
+adds no legacy-method inference or Account migration; existing API-key execution
+and supported explicit manual-token methods keep their shared host boundaries.
+
 ## Model
 
 The auth-provider layer uses:
@@ -430,8 +455,8 @@ under the StackOS data directory, not in a portable session string. StackOS
 stores the database encryption key with daemon-held Account secrets and keeps
 only safe connection state in its relational database; it does not retain
 sign-in codes or passwords. An in-place
-upgrade preserves the native database. The current minimal `stackos backup`
-archive excludes it, so restoring that archive on another machine requires a
+upgrade preserves the native database. The [encrypted `stackos backup` archive](backups.md)
+excludes the native database, so restoring that archive on another machine requires a
 user Account to sign in to Telegram again; a bot can authenticate from its
 saved token.
 
@@ -586,6 +611,18 @@ failure, rate limit, or provider 5xx during renewal leaves the stored credential
 retryable; only a terminal authorization failure such as `invalid_grant` moves
 it to `repair-required`.
 
+A successful fresh authorization-code exchange replaces scope evidence: an
+omitted scope result records `scope_status=unknown` and clears any old grants;
+an explicit returned scope tuple records only those grants. Requested scopes
+are not a fallback for a fresh grant. Ordinary renewal keeps its existing
+provider-declared scope rules.
+
+QuickBooks binds the intended numeric `realm_id` and `environment` inside the
+encrypted pending transaction. Its callback requires one matching `realmId`
+and unchanged Account configuration before token exchange. The public relay
+must be deployed with bounded `realmId` forwarding. See the
+[QuickBooks host contract](integration-contracts/quickbooks-online.md).
+
 Provider-declared manual OAuth-token methods use the same lifecycle. A manual Account
 with a refresh token uses the same core renewal path when the provider contract
 supports it. Replacing manual token material clears any grants recorded for the
@@ -609,7 +646,8 @@ that an imported token bypasses the known-scope gate.
 | --- | --- | --- | --- |
 | Google Ads | Interactive authorization code; manual refresh-token compatible | Shared Google endpoints; PKCE supported; offline consent | `adwords` |
 | Google Workspace | Interactive authorization code; manual token compatible | Shared Google endpoints; PKCE supported; offline consent | Gmail send and Calendar events |
-| Google Search Console | Interactive authorization code; manual access/refresh-token compatible | Shared Google endpoints; PKCE supported; offline consent | `webmasters.readonly` |
+| Google Search Console | Interactive authorization code, explicit service account; manual access/refresh-token compatible | Shared Google endpoints; PKCE supported; offline consent; per-Account `access_mode` defaults to `readonly` | `webmasters.readonly`, or explicitly selected `sitemap_write` requesting `webmasters` |
+| Google Indexing | Service account only; no delegated subject | Shared Google JWT bearer exchange; `account.test` acquires a token only and leaves API/site/resource access unverified. [Setup and eligibility](integration-contracts/google-indexing.md). | Fixed `https://www.googleapis.com/auth/indexing` |
 | Google Analytics | Interactive authorization code; manual access/refresh-token compatible | Shared Google endpoints; PKCE supported; offline consent | `analytics.readonly` |
 | Google Tag Manager | Interactive authorization code; manual access/refresh-token compatible | Shared Google endpoints; PKCE supported; offline consent | `tagmanager.readonly` |
 | Meta Ads | Interactive authorization code; existing user/system-user token compatible | Meta login exchange plus the required short-to-long-lived token exchange; imported-token permission evidence is unavailable | Interactive OAuth uses returned grants; imported tokens fail closed for scoped actions |
@@ -623,10 +661,12 @@ that an imported token bypasses the known-scope gate.
 | HubSpot | Interactive authorization code with capability-scoped optional consent; single-account private-app token | OAuth response owns OAuth grants; the documented private-app token-information probe returns authoritative scopes and account evidence | Both methods use the same per-action CRM Core, Sales, Marketing, Bulk, Automation, and Transactional local scope gates |
 | Linear | Interactive authorization code; personal API-key alternative | OAuth requires PKCE `S256`, fixed `actor=user`, renewal evidence, and returned `read,write`; both methods use the same safe viewer/organization probe | OAuth is locally gated by returned grants; personal-key permissions are provider-enforced |
 | X API | Manual OAuth token only | Provider actions are explicitly deferred | Not executable |
+| QuickBooks Online | Interactive authorization code; externally managed access-token alternative | Required explicit environment and company realm; callback binds the intended company before exchange; Account Test reads CompanyInfo without inferring grants | The two read actions have no declared local scope gate; provider-enforced |
 | LinkedIn | Manual OAuth token only | Provider actions are explicitly deferred | Not executable |
 
 Do not add a provider subclass merely to repeat the generic flow. Add a trusted
-contract row for protocol data, and add dedicated code only for a real variant
+package catalog contract for protocol data, and add provider-local package code
+only for a real variant
 such as Meta's second exchange or trusted provider-specific response metadata.
 
 Linear personal keys use the same Account and action catalog as OAuth but

@@ -26,7 +26,6 @@ from stackos.actions.connectors import (
 from stackos.actions.provider_utils import (
     credential_config,
     credential_payload,
-    credential_value,
     issue,
     unknown_operation,
 )
@@ -340,7 +339,6 @@ def _imap_settings(request: ActionConnectorRequest) -> dict[str, Any]:
         "tls_mode": tls_mode,
         "tls_ca_pem": config.get("tls_ca_pem"),
         "username": username,
-        "password": credential_value(request, "password", "secret"),
         "timeout_s": float(_config_int(config, payload, "timeout_s", default=30)),
         "default_mailbox": default_mailbox,
         "mailbox_refs": _mailbox_ref_map(config.get("mailbox_refs")),

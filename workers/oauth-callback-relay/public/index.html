@@ -9,7 +9,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'sha256-1vvUxTpynv4OLD9/FLg0VwklCpz+OV9Asr+9Y49IfNE='; style-src 'unsafe-inline'; base-uri 'none'; connect-src 'none'; form-action 'none'; img-src 'none'; object-src 'none'"
+      content="default-src 'none'; script-src 'sha256-fr3rmW440fPKC61xC13cSv6eD66MEUYAwcNKyIpx/2A='; style-src 'unsafe-inline'; base-uri 'none'; connect-src 'none'; form-action 'none'; img-src 'none'; object-src 'none'"
     >
     <title>Returning to StackOS</title>
     <style>
@@ -168,6 +168,7 @@
     state: 512,
     code: 4096,
     error: 200,
+    realmId: 32,
   });
 
   const page = document.documentElement;
@@ -221,6 +222,10 @@
     const state = readField(params, "state", true);
     const code = readField(params, "code");
     const providerError = readField(params, "error");
+    const realmId = readField(params, "realmId");
+    if (realmId !== null && !/^[0-9]{1,32}$/.test(realmId)) {
+      throw new Error("invalid company realm");
+    }
 
     if ((code === null) === (providerError === null)) {
       throw new Error("callback must contain exactly one outcome");
@@ -230,6 +235,9 @@
     destination.searchParams.set("state", state);
     if (code !== null) {
       destination.searchParams.set("code", code);
+      if (realmId !== null) {
+        destination.searchParams.set("realmId", realmId);
+      }
     } else {
       destination.searchParams.set("error", providerError);
     }

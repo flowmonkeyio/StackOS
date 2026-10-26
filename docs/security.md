@@ -8,8 +8,9 @@ explains *what* is loosened, *why*, and *what* still defends the surface.
 
 Google service-account JSON keys use the existing encrypted Account backing.
 Only the explicit saved `service-account` method on the five reviewed providers
-can select signing. The daemon validates service-account identity and RSA keys,
-signs in memory, and exchanges only at `https://oauth2.googleapis.com/token`
+can select signing. The daemon explicitly calls the installed connector package
+to validate service-account identity and RSA keys, sign in memory, and exchange
+only at `https://oauth2.googleapis.com/token`
 without redirects or ambient credentials. Key-provided certificate URLs and
 credential-source configuration never select network destinations.
 
@@ -47,6 +48,36 @@ Three middlewares form the request gauntlet, applied in this order
 3. **`BearerTokenMiddleware`** enforces the constant-time bearer check,
    minus an explicit whitelist (see below).
 
+## Agent project scope
+
+An established directory or named-workspace binding fixes the bridge session's
+project. Explicit cross-project calls, rebinding, and global downgrade are
+refused. An explicit `--workspace-root` or `STACKOS_WORKSPACE_ROOT` also protects
+workspace intent before binding, including after failed/malformed resolution.
+`CLAUDE_PROJECT_DIR` and cwd remain ambient hints; runtime names and generated
+paths do not prove intent. Unbound ambient discovery is read-only until the
+agent starts the session with known intent.
+
+A first `workspace.startSession(global_session=true)` accepts global work
+without creating a project or directory binding. The optional startup project
+is validated, but is never a default: every global scoped call requires a
+positive existing `project_id`. This includes direct browser calls and
+run-aware `toolbox.describe`. Nonboolean global intent is rejected before
+dispatch. An explicit project ID in unbound non-global directory startup is
+rejected before writes. Missing targets never use a last-used/name fallback.
+
+Project scope is checked before run authority is refreshed. Run, plan, token,
+and current step must belong together; failed or mismatched refresh discards
+usable cached authority. Ordinary direct read/audit operations retain their
+daemon-owned target checks. Selection supplies no filesystem access, provider
+credentials, or action grant, and provider JSON is not rewritten as scope data.
+
+Migration `0033_project_id_nonreuse` prevents future project-ID reuse after
+deletion. Recurring selections confirmed after migration can safely fail when
+their saved ID is missing. Older numeric-only references require explicit
+reselection/confirmation because an ID may already have been reused; the
+migration cannot reconstruct historical identity or perform automatic cleanup.
+
 ## Public auth exceptions
 
 `WHITELIST_PREFIXES` in `stackos/auth.py` lists paths that bypass
@@ -59,7 +90,7 @@ exact-path exception so no sibling route inherits it. Currently:
 | `/api/v1/auth/ui-token` | The Vue SPA cannot read the on-disk daemon token file from the browser, so it fetches a derived console bearer token at app boot via this endpoint. | **See below.** |
 | `GET /api/v1/auth/oauth/callback` (exact route) | OAuth providers cannot carry the daemon bearer token when redirecting the browser. The short-lived, one-time state transaction authorizes only this callback. | The request host must equal the configured callback host; state is digested, bound, expiring, and atomically consumed. The response is an immediate sanitized 303 redirect. |
 | `/api/v1/ingress/slack/*` | Slack Events API and Interactivity requests cannot carry the daemon bearer token. The route verifies `X-Slack-Signature` against the encrypted Slack signing secret using the raw body and timestamp before writing communication resources or agent requests. | A caller with the Slack signing secret can submit Slack-shaped events for that profile. This path also bypasses loopback-only Host checks so deployed/tunnel hosts work; all non-ingress API paths remain loopback-host guarded. |
-| `/api/v1/ingress/hubspot/*` | HubSpot webhook and custom workflow-action requests cannot carry the daemon bearer token. The route verifies the provider-documented v3 timestamped HMAC for webhook batches or v2 digest for workflow actions against the daemon-held app client secret and configured public HTTPS URI before parsing or writing. | A caller with the app client secret can submit HubSpot-shaped events for the one configured app/account profile. Exact portal/app checks and event/definition allowlists gate agent-request creation. This path bypasses loopback-only Host checks; the signed URI is derived from the configured ingress endpoint, never the incoming `Host` header. |
+| `/api/v1/ingress/hubspot/*` | HubSpot webhook and custom workflow-action requests cannot carry the daemon bearer token. The route verifies the provider-documented v3 timestamped HMAC against the daemon-held app client secret and configured public HTTPS URI before parsing or writing. v2 verification is unsupported. | A caller with the app client secret can submit HubSpot-shaped events for the one configured app/account profile. Exact portal/app checks and event/definition allowlists gate agent-request creation. This path bypasses loopback-only Host checks; the signed URI is derived from the configured ingress endpoint, never the incoming `Host` header. |
 
 ## Generated asset and IMAP staging boundary
 
@@ -85,6 +116,15 @@ storage service, finance evidence store, resource, or artifact path.
 Provider credentials are daemon-owned. Agents may inspect sanitized auth status
 and run daemon-side health probes, but they do not receive raw API keys, OAuth
 tokens, refresh tokens, encrypted payloads, or local setup secrets.
+
+The installed connector package performs explicit stateless provider protocol
+calls inside this boundary. StackOS retains secret/state/PKCE custody, renewal
+timing and locks, scope/readiness enforcement, persistence and audit. Package
+token results are sensitive in-process values even when their representations
+hide secrets. Pure Slack v0 and HubSpot v3 signature helpers receive exact raw
+bytes; StackOS validates timestamp windows, replay, app/account/project matching
+and trusted ingress routes before storage. Telegram translation helpers never
+open sessions or own challenge expiry/disclosure.
 
 `credentials` are global reusable Account records with opaque refs and safe
 lifecycle state. `project_credentials` authorizes an Account for a project.
@@ -204,7 +244,8 @@ create projects during local setup, and manage provider auth setup for a
 project (`account.start`, secret storage and edits, sanitized auth tests, and
 revoke). Provider-auth route definitions own method validity inside that
 namespace. Mutating operation calls are allowed only when the operation's REST
-surface declares `browser_safe=True` for explicit local setup. It cannot access
+surface declares `browser_safe=True` for explicit local setup or the bounded
+human finance console contract described below. It cannot access
 MCP, arbitrary mutating operation calls, tracker lifecycle writes, or general
 mutation routes. The
 installable MCP bridge keeps the daemon bearer inside the bridge process rather
@@ -229,6 +270,41 @@ arguments; template schema/secret checks and immutable version conflicts still
 apply. These operations do not create runs or grant actions, are not run-step
 tools, and remain unavailable to the browser console token. Their CLI path uses
 the ordinary authenticated operation route, not a caller-asserted admin bypass.
+
+### Private finance console
+
+The exact registered MCP-disabled Finance REST operations use
+`local-admin-console-read` or `local-admin-console-write` according to mutability.
+Only the authenticated exact-path policy establishes trusted REST context; an
+operation name prefix, run token, caller admin/actor field or CLI response header
+does not. Finance derives its private storage from the permanent project ID;
+callers cannot supply a root or associate another project's files. Each call checks
+the enabled plugin, project identity, canonical derived root and generation;
+writes recheck inside the existing Finance writer lock. Handler-owned replay validates current
+authority and intent instead of returning stale cached financial success.
+
+Financial originals remain in the owner-private project Finance directory. Registered
+attachment refs require containment, no-follow descriptor reads, size/hash checks
+and current snapshot. Console responses are no-store; active HTML/SVG is
+download-only, never a public generated asset. Private search text is refused in
+analysis intake until the operator clears it and applies filters. Browser local
+chat accepts only a bounded inbound human intent with safe query/snapshot refs;
+it cannot spoof an agent, send outbound content or run a model. Reviewed result
+reads bind original request/query/source and exact published result/report hashes.
+
+`finance.status` is an authenticated initialization write: it prepares one default
+store only for a never-provisioned enabled project. Missing or corrupt existing
+data never becomes an empty replacement. Legacy adoption accepts only an
+unambiguous, unshared source, preserves originals, and rejects unsafe aliases.
+Managed project files are automatically included in [encrypted backups](./backups.md).
+Recovery publishes an inert directory. After explicit adoption, Finance verifies
+the database project identity and file custody before refreshing its storage
+generation; restoring files never grants cross-project access or resumes old requests.
+The retained `finance/.finance-owner.json` marker binds the physical files to
+their project ID, creation identity and storage incarnation. A valid directory
+copied from another project cannot be adopted merely because it occupies the
+expected path. Known missing/disposed/quarantined originals remain inspectable
+availability gaps; unsafe links or altered retained evidence require repair.
 
 ## Daemon-Owned Browser Sessions
 
@@ -322,6 +398,32 @@ machines and want browser bootstrap removed can:
    `WHITELIST_PREFIXES`. This is intentionally a code change, not a runtime
    flag, to make sure any operator going down that path has read the
    implications.
+
+## Encrypted backup custody
+
+All newly created backups encrypt the complete database, matching seed, daemon
+token, manifest, managed project files and enrolled external folders with an independent X25519
+recovery key and authenticated AES-256-GCM encryption. The seed inside a backup
+cannot unlock its outer encryption. Creation and scheduling use only the
+public key; recovery private keys stay in operator-controlled files outside
+the sources and destination and never traverse REST, MCP or status responses.
+
+Backup setup is explicit local administration. Automatic execution starts
+disabled. Managed project files are included automatically under persistent
+initialization/writer locks. Only additional external folders need enrollment;
+project bindings and workflow references imply no agent-host filesystem permission.
+Missing, busy, unsafe or changing sources fail closed. Backup outputs cannot
+be placed in the publicly served generated-assets directory. Private key
+exclusions survive configuration changes and reject later enrollment or a
+copied matching recovery key.
+
+Private staging files are removed on normal completion or failure. Archive
+publication is exclusive and atomic; failed attempts preserve prior successful
+archives. Restore authenticates before inspecting plaintext and validates
+member paths, types, hashes and database integrity into a fresh inert folder.
+It neither replaces live state nor activates a saved policy. Old plaintext ZIP
+archives remain plaintext and are rejected by the new restore command.
+See [backup and recovery](./backups.md) for custody, exclusions and commands.
 
 ## Rate-Limit Posture
 

@@ -1,0 +1,51 @@
+objective:
+  task: Determine the outcome of the interrupted file update.
+  ownership: Return evidence to the coordinating agent, which owns the task.
+
+accepted_state:
+  approved_file_ref: LOCAL_FILE_VERSION
+  content_fingerprint_ref: APPROVED_CONTENT_FINGERPRINT
+  checks_ref: LOCAL_CHECK_RESULT
+  approval_ref: FILE_APPROVAL_RECORD
+  target_ref: SHARED_FILE_REF
+  attempted_request_ref: UPDATE_REQUEST_RECORD
+  request_lookup_id: REQUEST_IDENTIFIER
+  local_result: Timed out before receiving the response.
+  external_result: Unconfirmed.
+
+context:
+  file_requirements_ref: ACCEPTED_FILE_REQUIREMENTS
+  provider_read_instructions_ref: REQUEST_AND_FILE_READ_GUIDE
+  decision: The approved local content remains the intended update.
+
+authority:
+  allowed:
+    - Read the named local inputs and records.
+    - Look up the saved request identifier.
+    - Read the named remote file's version and contents.
+  prohibited:
+    - Send or retry a file update.
+    - Edit the approved content or act on another file.
+
+output:
+  required:
+    - Request status and its supporting record.
+    - Remote file version and content comparison, with readback evidence.
+    - Conclusion: applied, confirmed_no_effect, or unresolved.
+    - Any missing evidence or decision needed from the coordinating agent.
+
+acceptance:
+  - Each conclusion is supported by the retrieved records.
+  - Applied means the request completed and the target matches the approved content.
+  - Confirmed_no_effect requires a terminal record proving no change occurred.
+  - Missing, pending, partial, or conflicting evidence remains explicit.
+  - No new write was attempted.
+
+recovery:
+  unavailable_input: Return the missing reference and the check it prevents.
+  failed_read: Return the failed read and keep its conclusion unresolved.
+  pending_request: Report the pending state for a later check.
+  conflicting_results: Return both records and the exact conflict.
+
+destination: Coordinating agent.
+stop_when: The permitted checks are complete or a required check is blocked.

@@ -183,6 +183,7 @@ def test_mcp_bridge_workspace_hints_prefers_claude_project_dir(
 
     assert hints["cwd"] == str(project_dir.resolve())
     assert hints["repo_fingerprint"].startswith("path:")
+    assert hints["deliberate_workspace_root"] is False
 
 
 def test_mcp_bridge_workspace_hints_prefers_explicit_workspace_root(
@@ -203,6 +204,7 @@ def test_mcp_bridge_workspace_hints_prefers_explicit_workspace_root(
     )
 
     assert hints["cwd"] == str(explicit_root.resolve())
+    assert hints["deliberate_workspace_root"] is True
 
 
 def test_mcp_bridge_workspace_hints_uses_env_workspace_root(
@@ -217,6 +219,7 @@ def test_mcp_bridge_workspace_hints_uses_env_workspace_root(
     hints = daemon_cli._mcp_bridge_workspace_hints(Path("/"))
 
     assert hints["cwd"] == str(project_dir.resolve())
+    assert hints["deliberate_workspace_root"] is True
 
 
 def test_launchd_bootout_waits_until_job_is_unloaded(

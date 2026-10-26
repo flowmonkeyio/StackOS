@@ -7,6 +7,7 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
 import yaml
 
 import stackos.host_mcp.service as host_mcp_service
@@ -20,6 +21,12 @@ from stackos.host_mcp.service import (
     normalize_result,
     repair_all,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_default_host_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("STACKOS_DATA_DIR", raising=False)
+    monkeypatch.delenv("STACKOS_STATE_DIR", raising=False)
 
 
 def _write_token(home: Path) -> None:
@@ -97,6 +104,12 @@ def test_codex_adapter_finds_gui_app_and_node_manager_installs(tmp_path: Path, m
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("PATH", "/usr/bin:/bin")
     monkeypatch.delenv("SHELL", raising=False)
+    monkeypatch.delenv(codex.CODEX_BIN_ENV, raising=False)
+    monkeypatch.setattr(
+        codex,
+        "COMMON_CODEX_CLI_CANDIDATES",
+        tuple(path for path in codex.COMMON_CODEX_CLI_CANDIDATES if path.startswith("~")),
+    )
     monkeypatch.setattr(codex, "MACOS_CHATGPT_BUNDLE_CANDIDATES", ())
     monkeypatch.setattr(codex, "MACOS_CODEX_APP_BUNDLE_CANDIDATES", (str(app_cli),))
 
@@ -125,6 +138,12 @@ def test_codex_candidates_prefer_chatgpt_and_keep_standalone_fallbacks(
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("PATH", "/usr/bin:/bin")
     monkeypatch.delenv("SHELL", raising=False)
+    monkeypatch.delenv(codex.CODEX_BIN_ENV, raising=False)
+    monkeypatch.setattr(
+        codex,
+        "COMMON_CODEX_CLI_CANDIDATES",
+        tuple(path for path in codex.COMMON_CODEX_CLI_CANDIDATES if path.startswith("~")),
+    )
     monkeypatch.setattr(
         codex,
         "MACOS_CHATGPT_BUNDLE_CANDIDATES",

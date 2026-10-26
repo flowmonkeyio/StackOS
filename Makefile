@@ -178,11 +178,12 @@ uninstall: ## Remove installed skills/plugins/MCP entries; preserve DB + seed
 	@echo "==> Note: ~/.local/share/stackos/ (DB) and ~/.local/state/stackos/ (seed + token) preserved."
 	@echo "==> uninstall complete"
 
-backup: ## Export minimal local state backup zip (DB + seed + token)
+backup: ## Create encrypted backup of local state and enrolled external folders
 	$(PYTHON) -m stackos backup
 
-restore: ## Reserved restore command
-	@echo "Not yet implemented (backup/restore jobs)"
+restore: ## Verify encrypted archive into fresh folder (ARCHIVE= KEY= OUTPUT=)
+	@test -n "$(ARCHIVE)" -a -n "$(KEY)" -a -n "$(OUTPUT)" || { echo "Usage: make restore ARCHIVE=/path/archive.sbak KEY=/path/private.pem OUTPUT=/new/recovery"; exit 2; }
+	$(PYTHON) -m stackos restore "$(ARCHIVE)" --private-key-file "$(KEY)" --output-dir "$(OUTPUT)"
 
 rotate-seed: ## Re-encrypt all integration_credentials with a new seed
 	$(PYTHON) -m stackos rotate-seed --reencrypt

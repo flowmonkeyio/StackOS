@@ -47,18 +47,18 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def test_backend_contract_keeps_finance_records_outside_stackos() -> None:
+def test_backend_contract_keeps_project_finance_files_separate_from_core_ledger() -> None:
     contract = _read(BACKEND_CONTRACT)
 
     for required in (
         "`local-json`",
-        "host-agent-managed",
-        "must not own finance-domain",
+        "data/projects/<project-id>/finance/finance.json",
+        "must not gain finance-domain",
         "finance-domain tables",
         "repositories",
         "resources",
-        "private evidence storage",
-        "filesystem connector",
+        "generic\nproject storage",
+        "automatically managed financial master per StackOS project",
         "QuickBooks",
         "Google Sheets",
         "`external_project_ref`",
@@ -162,6 +162,7 @@ def test_finance_markdown_template_routes_to_canonical_collections_and_controls(
         "references/approval-matrix.md",
         "references/backend-contract.md",
         "references/imap-host-handoff-contract.md",
+        "references/workflow-handoffs.md",
     }
     preset = SkillPresetLoader().describe_preset(
         key="stackos.finance.department-orchestrator", plugin_slug="finance", source="plugin"

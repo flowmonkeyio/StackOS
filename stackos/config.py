@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _LOOPBACK_HOSTS: frozenset[str] = frozenset({"localhost", "127.0.0.1", "::1"})
@@ -37,8 +37,8 @@ def _default_state_dir() -> Path:
     return Path.home() / ".local" / "state" / "stackos"
 
 
-class Settings(BaseSettings):
-    """Top-level settings, env-prefixed with `STACKOS_`."""
+class _StateSettings(BaseSettings):
+    """Resolve the log location even when unrelated runtime settings are invalid."""
 
     model_config = SettingsConfigDict(
         env_prefix="STACKOS_",
@@ -47,18 +47,29 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    state_dir: Path = _default_state_dir()
+
+
+def get_state_dir() -> Path:
+    """Use the same env/dotenv path policy for startup failure logging."""
+    return _StateSettings().state_dir
+
+
+class Settings(_StateSettings):
+    """Top-level settings, env-prefixed with `STACKOS_`."""
+
     # Network
     host: str = "127.0.0.1"
     port: int = 5180
     oauth_callback_base_url: str | None = None
     oauth_state_ttl_seconds: int = 600
+    bridge_startup_timeout_seconds: float = Field(default=15.0, gt=0, le=300, allow_inf_nan=False)
 
     # Logging
     log_level: str = "INFO"
 
     # Paths (overridable via env for tests / non-default installs)
     data_dir: Path = _default_data_dir()
-    state_dir: Path = _default_state_dir()
 
     @field_validator("host")
     @classmethod
@@ -154,6 +165,11 @@ class Settings(BaseSettings):
     def log_path(self) -> Path:
         """Daemon log file — rotated by RotatingFileHandler at 10 MB x 5."""
         return self.state_dir / "daemon.log"
+
+    @property
+    def bridge_log_path(self) -> Path:
+        """Automatic sanitized bridge diagnostics, independent of daemon availability."""
+        return self.state_dir / "mcp-bridge.log"
 
     @property
     def generated_assets_dir(self) -> Path:

@@ -343,8 +343,8 @@ In this repository their main-agent adaptation is
 boundary. Finance remains independently usable without this package.
 
 From a standalone business directory or an agency root, the finance main agent
-uses one selected external financial master per business. Client engagements are
-descriptive context, not nested StackOS projects or inherited access. Optional
+uses one automatically managed Finance master per StackOS project. Client
+engagements are descriptive context, never shared storage or inherited access. Optional
 `external_project_ref` on billing versions and prepared bookkeeping records
 retains sourced attribution; receipt custody needs no project. Company-wide costs
 remain unassigned, and no allocation/profitability engine is implied. Provider
@@ -395,8 +395,9 @@ mutable setup. `FINANCE.md` is guidance/navigation, reports are derived explanat
 and CSV is import/export, not another master. Originals stay immutable evidence;
 providers own their actual state and JSON stores dated observations. Packet refs
 resolve to stable JSON record IDs and scoped immutable versions, not separate
-editable packet files. First-time setup uses a new workspace from the empty
-JSON/schema and guidance templates, without overwriting existing files.
+editable packet files. Authenticated `finance.status` provisions only an enabled
+project's never-initialized managed store. Missing/corrupt existing data requires
+repair; standalone helper initialization does not create its ownership metadata.
 
 There is one writer per materialization:
 specialists return packets, then the delegated sole writer compares actual
