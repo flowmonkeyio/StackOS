@@ -8,6 +8,7 @@ import re
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import lru_cache
 from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
@@ -48,6 +49,17 @@ _WORKFLOW_KEY_RE = re.compile(r"^[a-z][a-z0-9_]*(?:[-.][a-z0-9_]+)*$")
 _EXTENSION_JSON_FIELD_DEFAULTS = workflow_extension_policy.EXTENSION_JSON_FIELD_DEFAULTS
 _EXTENSION_JSON_FIELDS = workflow_extension_policy.EXTENSION_JSON_FIELDS
 _EXTENSION_UPDATE_MODES = workflow_extension_policy.EXTENSION_UPDATE_MODES
+
+
+@lru_cache(maxsize=128)
+def _cached_workflow_template_yaml(text: str) -> WorkflowTemplateSpec:
+    """Cache parsing only; callers copy the spec before adding mutable context.
+
+    Read the source on every load and key by its exact content, so edits remain
+    visible even when timestamps and file sizes are unchanged. Project rows,
+    precedence, and extensions are resolved separately on every request.
+    """
+    return parse_workflow_template_yaml(text)
 
 
 def _utcnow() -> datetime:
@@ -1234,7 +1246,9 @@ class WorkflowTemplateLoader:
     def _loaded_from_file_path(self, path: Path, *, clone_root: Path) -> LoadedWorkflowTemplate:
         if path.stat().st_size > MAX_TEMPLATE_FILE_BYTES:
             raise ConflictError("workflow template file is too large", data={"path": str(path)})
-        spec = parse_workflow_template_yaml(path.read_text(encoding="utf-8"))
+        spec = _cached_workflow_template_yaml(path.read_text(encoding="utf-8")).model_copy(
+            deep=True
+        )
         plugin_slug = path.relative_to(clone_root).parts[0]
         return self._loaded(
             spec,
@@ -1250,7 +1264,9 @@ class WorkflowTemplateLoader:
         *,
         plugin_slug: str,
     ) -> LoadedWorkflowTemplate:
-        spec = parse_workflow_template_yaml(node.read_text(encoding="utf-8"))
+        spec = _cached_workflow_template_yaml(node.read_text(encoding="utf-8")).model_copy(
+            deep=True
+        )
         return self._loaded(
             spec,
             source="plugin",
@@ -1262,7 +1278,9 @@ class WorkflowTemplateLoader:
     def _loaded_from_repo_path(self, path: Path) -> LoadedWorkflowTemplate:
         if path.stat().st_size > MAX_TEMPLATE_FILE_BYTES:
             raise ConflictError("workflow template file is too large", data={"path": str(path)})
-        spec = parse_workflow_template_yaml(path.read_text(encoding="utf-8"))
+        spec = _cached_workflow_template_yaml(path.read_text(encoding="utf-8")).model_copy(
+            deep=True
+        )
         return self._loaded(
             spec,
             source="repo",
