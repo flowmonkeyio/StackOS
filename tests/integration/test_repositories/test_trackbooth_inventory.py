@@ -32,6 +32,8 @@ from tests.integration.test_repositories.trackbooth_test_support import (
     _trackbooth_offers_findbyid_detail,
 )
 
+pytestmark = pytest.mark.fresh_catalog
+
 
 def test_trackbooth_full_catalog_sync_prunes_missing_runtime_actions(
     session: Session,

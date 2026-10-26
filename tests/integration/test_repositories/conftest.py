@@ -1,11 +1,13 @@
 """Shared fixtures for repository integration tests.
 
 Each repository test gets a fresh in-memory SQLite engine + Session
-copied from SQLModel's empty metadata schema (rather than running
+copied from SQLModel's metadata schema and the real built-in catalog (rather than running
 Alembic — these tests focus on the repository contract, not the
 migration flow which has its own coverage in ``test_schema.py``).
 
-The schema is created once per worker and copied into independent engines. A session-scoped
+The schema/catalog are initialized once per source generation and copied into
+independent engines. Tests of catalog initialization or mutation use the
+``fresh_catalog`` marker to start from empty metadata instead. A session-scoped
 fixture wires ``configure_seed_path`` to a temporary seed file so encrypted
 credential storage can be tested without leaking real secrets.
 """
@@ -40,9 +42,11 @@ def _crypto_seed(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
 
 
 @pytest.fixture
-def session() -> Iterator[Session]:
+def session(request: pytest.FixtureRequest) -> Iterator[Session]:
     """Yield a fresh ``Session`` bound to an in-memory SQLite engine."""
-    engine = make_test_memory_engine()
+    engine = make_test_memory_engine(
+        catalog=request.node.get_closest_marker("fresh_catalog") is None
+    )
     try:
         with Session(engine) as s:
             yield s

@@ -35,6 +35,8 @@ from tests.integration.test_repositories.trackbooth_test_support import (
     _trackbooth_reporting_list_metrics_detail,
 )
 
+pytestmark = pytest.mark.fresh_catalog
+
 
 def _trackbooth_account_create_detail() -> dict:
     return {

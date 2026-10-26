@@ -145,4 +145,5 @@ asyncio_mode = "auto"
 addopts = ["-ra", "--strict-markers", "-n", "auto", "--maxprocesses=6", "--dist=loadfile"]
 markers = [
     "benchmark: marks acceptance benchmarks (audit B-07 100x set_draft, etc.)",
+    "fresh_catalog: build an empty catalog for catalog bootstrap, synchronization, and manifest-mutation tests",
 ]
