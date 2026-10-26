@@ -41,131 +41,45 @@ Do not remove those assertions or skip slow tests to meet the runtime budget.
 
 ## Test Runtime And Maintenance
 
-The complete automated signoff should stay comfortably below ten minutes on a
-prepared development machine. Dependency downloads on a new machine and live
-provider/manual release proofs are separate setup and release activities. The
-six-worker cap is a throughput setting, not a substitute for fixing slow tests.
-Use `uv run pytest <files> -n0 --durations=20` to measure focused changes without
-parallelism hiding their cost.
+The complete automated signoff should stay below ten minutes on a prepared
+development machine. Dependency downloads and live-provider/manual release
+proofs are separate setup and release activities.
 
-The October 2026 audit identified these sources of repeated work:
+The default pytest configuration chooses workers automatically, capped at six,
+and keeps each test file on one worker:
 
-| Bottleneck or redundancy | Adjustment and retained proof |
-| --- | --- |
-| Mocked sleep returned immediately while token refill used real time, causing CPU spin | Advance a scoped test clock, yield to the event loop, and assert requested waits and token balances for both rate-limit implementations. |
-| Repository, connector, and job fixtures rebuilt identical schemas; two also duplicated the model's unique idempotency index | Copy immutable empty schema bytes into a fresh normal engine per test. Differential schema/PRAGMA, transaction, DDL, foreign-key, cascade, and uniqueness checks protect isolation. |
-| Six discovery tests repeated the same app startup and catalog request | Check names, namespaces, schemas, descriptions and streaming together. Keep legacy and modern wire protocols distinct, and compare exact names to the canonical registry instead of stale magic counts. |
-| Clean startup and empty-to-head migration assertions repeated identical setup | Combine assertions for each scenario; retain every recovery, failure, historical-data and downgrade/upgrade scenario. |
-| Every app rebuilt the same operation JSON schemas; workflow lookup reparsed unchanged YAML | Bounded caches preserve deep-copy isolation, rebuilt-model freshness, source edits, overrides, and current project extensions. |
-| Wheel tests provisioned another build environment from the network | Build the real wheel with the locked development backend and keep every packaged-asset assertion. |
-| The curated gate omitted stale plugin inventories and a retired SEO evidence fixture; four checks always skipped against the removed `skills/` tree | Keep one source-based transport inventory assertion, validate current durable artifact evidence with precise rejection paths, and check the actual packaged skill's frontmatter. Existing installer and permission tests retain runtime delivery and grants coverage. |
-
-Serial measurements on macOS / Python 3.13.11 (18 logical CPUs) distinguish
-actual work removed from worker concurrency:
-
-| Measured slice | Before | After |
-| --- | ---: | ---: |
-| Google Veo, BytePlus Seedance, Ahrefs and rate-limit tests | 32 tests, 21.50s | 35 tests, 0.21s; additional rate-limit cases |
-| 25 REST operation tests under the same profiler | 42.77s | 21.42s |
-| Five repeated workflow descriptions, including cold parsing | 2.592s | 0.897s |
-| Ten empty metadata-schema fixtures | 0.1090s | 0.00213s warm; 0.01049s one-time initialization |
-| Repeated discovery/startup/clean-schema scenarios | 11 setups, 3.69s, two stale-count failures | 3 setups, 1.48s, passing |
-
-Initial parallel validation on 2026-10-26, candidate `6e47e90`: `make signoff` completed
-successfully in **356.52 seconds (5m 57s)**. The complete Python suite passed
-**3,983 tests with zero skips** in 335.29 seconds; lint, mypy, UI unit tests and
-the UI production build also passed. This includes the previously omitted
-Python modules and the repaired stale checks. Timings are measurements on this
-machine, not a hardware-independent guarantee. No tests were excluded for speed.
-
-### Saved Single-Process Baseline
-
-The follow-up measurement at `6b114b6` disabled pytest workers with `-n0`.
-Python took **1,325.088 seconds (22m 05s)** for 3,983 passing tests with zero
-skips. The complete signoff took 1,350.936 seconds (22m 31s), with the existing
-UI runner settings. The six-worker result above does **not** meet the operator's
-serial runtime target.
-
-The [saved baseline](benchmarks/2026-10-26-serial-tests.json) contains the result,
-environment, every suite/file total, and all 3,983 case timings. Use this data
-for optimization; do not repeat the broad suite merely to remeasure the same
-candidate. Run the complete single-process verification after the optimization
-changes are finished.
-
-For a fully serial repeat, keep Make prerequisites sequential, disable pytest
-workers, and give Vitest one worker as well:
-
-```bash
-PYTEST_ADDOPTS='-n0 --junitxml=/tmp/stackos-serial.xml' make -j1 signoff UI_TEST_ARGS='--maxWorkers=1 --minWorkers=1 --no-file-parallelism'
+```toml
+addopts = ["-ra", "--strict-markers", "-n", "auto", "--maxprocesses=6", "--dist=loadfile"]
 ```
 
-The follow-up cleanup reuses immutable databases initialized by the real
-catalog synchronizer and (for MCP/REST) real migrations. Each consumer test
-still owns its database, engine, credentials, app lifecycle, grants and audit
-records. `fresh_catalog` keeps catalog bootstrap and source-mutation tests on
-an empty database; migration and app-lifecycle suites retain their original
-fresh starts. Snapshot regressions cover schema/data equivalence, source
-changes, isolation, PRAGMAs, failure recovery and refusal to overwrite a DB.
+Concurrency is a throughput setting, not a substitute for fixing repeated work.
+The 2026-10-26 audit removed these costs while retaining distinct failure checks:
 
-Stripe business-action tests now start with an already-discovered account
-identity, using real encrypted credential storage. A named success-probe test
-and the existing failure matrix retain account discovery, identity persistence
-and safe audit proof. Workflow lookup copies only the requested key's resolved
-candidates, after validating every source, with one ownership copy before
-extensions or caller mutation. Preset content validation parses each shipped
-bundle once while comparing its complete key set to public discovery.
-Known-provider account lookups now refresh only that provider's metadata;
-unfiltered listing and explicit synchronization still refresh the entire
-catalog. No credential, permission or auth-result cache is introduced.
+| Bottleneck or redundancy | Change and retained proof |
+| --- | --- |
+| Duplicate signoff slices, dependency setup and catalog/startup scenarios | One complete Python gate; combined repeated assertions; separate protocols, historical migrations and recovery paths remain. |
+| Rebuilding schemas and builtin catalogs for consumer tests | Clone immutable results of real initialization into independent databases; dedicated bootstrap tests still start empty. Isolation, constraints, PRAGMAs and source changes are checked. |
+| Repeated successful account probes in Stripe business tests | Real encrypted credentials with an acquired account identity; named success/failure probe tests retain identity and audit proof. |
+| Real retry delays, shared rate buckets and no-op-sleep busy loops | Explicit virtual provider clocks retain real limiter/retry loops and scheduling; lifecycle/concurrency clocks remain unchanged. |
+| Repeated schema/YAML parsing, deep copies and nested validation | Bounded source caches and one ownership copy; changed sources, malformed references, secrets, adaptation rules and caller mutation remain checked. |
+| Full provider metadata scans for a known provider | Refresh the requested provider; full listing/sync still refreshes all providers. Credentials, permissions and auth results are not cached. |
+| Browser environments for pure UI tests | 36 source/data/state specs use Node; 65 browser/component specs retain jsdom. All test bodies and assertions remain. |
+| Stale inventories and always-skipped retired skill checks | Current authoritative catalogs, precise rejection checks and mandatory packaged-skill validation replace obsolete expectations. |
 
-The first verification attempt exposed an old Google service-account fixture
-that replaced provider synchronization with a no-op. Its
-[partial result](benchmarks/2026-10-26-serial-tests-attempt1.json) is retained as
-failed, interrupted evidence, not a complete timing. The fixture now edits
-canonical provider source metadata and exercises real synchronization; its
-37 focused cases passed after repair.
+### Single-Worker Evidence
 
-A [single-case profile](benchmarks/2026-10-26-workflow-profile.json) then located
-another repeated cost: 32 workflow descriptions constructed 1,152 private
-wrappers, which reran the template's recursive reference/secret validator.
-Private wrappers now reuse specs already validated by their source parser or
-database adapter. Source changes, malformed references, secret fields, current
-database rows and caller isolation remain covered. Profile timings include
-instrumentation overhead and are not runtime claims.
-
-The wait audit also found two auth-history error cases spending seven seconds
-in real retry delays, and Linear/Stripe consumer cases sharing rate buckets
-across otherwise independent databases. Those modules explicitly reuse the
-deterministic connector clock, with bucket reset and clock restoration on both
-boundaries. Real limiter/retry code still runs, including Stripe's previously
-mocked acquire path. Positive sub-float-resolution waits advance time to avoid
-a refill spin. Application lifecycle and concurrency tests keep their clocks.
-
-The [complete serial checkpoint](benchmarks/2026-10-26-serial-tests-checkpoint.json)
-at `96a961b` passed 4,009 Python tests in 532.433s and all 427 UI tests in
-45.53s. The full gate took 598.880s. Its 1.12s margin below ten minutes was too
-small, so the saved result drove a final cleanup rather than another baseline
-run: pure UI tests use Node instead of jsdom, unchanged agent/skill source
-bundles reuse validated parsing with independent returned objects, and selected
-media/timeout tests use the same deterministic provider clock. Browser/component
-tests retain jsdom, and source freshness, adaptation rules and secret rejection
-remain covered. The checkpoint saves every Python case and UI file timing.
-
-### Final Single-Worker Verification
-
-The final code candidate `6396d5c` passed complete serial signoff on 2026-10-26
-in **536.476s (8m 56s)**, with Make sequential, pytest workers disabled and
-Vitest limited to one worker. That is **60.3% less wall time** than the saved
-22m 31s baseline. The default `-n auto --maxprocesses=6 --dist=loadfile`
-configuration was not used for this measurement. Pass `-n0` to repeat the
-single-process Python check.
+Complete serial signoff passed in **536.476s (8m 56s)**, down **60.3%** from
+the saved 1,350.936s (22m 31s) baseline. Make ran sequentially, pytest used
+`-n0`, and Vitest used one worker. The baseline's Python run was serial; its
+UI runner used the prior default settings.
 
 All **4,017 Python tests passed with zero failures, errors or skips** in
-483.717s (8m 04s), versus 1,325.088s for the baseline's 3,983 tests. All
-**427 UI tests in 101 files passed** in 33.89s. Lint, formatting, mypy and the
-production UI build passed as well. The generated UI bundle was unchanged.
+483.717s (8m 04s). Every one of the 3,983 baseline case identities remains,
+with 34 additional regressions. All **427 UI tests in 101 files passed** in
+33.89s. Lint, formatting, mypy and the production build also passed; the
+generated UI bundle was unchanged.
 
-| Python suite | Baseline serial | Final serial, including fixtures |
+| Python suite | Before, serial | After, serial including fixtures |
 | --- | ---: | ---: |
 | Repositories | 710.809s | 156.890s |
 | MCP | 388.917s | 176.105s |
@@ -177,42 +91,24 @@ production UI build passed as well. The generated UI bundle was unchanged.
 | Application lifecycle | 1.725s | 1.707s |
 | Background jobs | 0.017s | 0.015s |
 
-Python collection/shared overhead adds 1.663s. The remainder of the full gate
-outside pytest and Vitest is 18.869s for lint, types, dependency preparation,
-build and process startup. UI setup now uses jsdom for 65 browser/component
-specs and Node for 36 pure specs; no test bodies or assertions were removed by
-that change.
+Python collection/shared overhead adds 1.663s. Lint, types, dependency
+preparation, build and process startup account for the remaining 18.869s
+outside pytest and Vitest. Independent review accepted the implementation,
+assertion preservation and measurements.
 
-The [final timing artifact](benchmarks/2026-10-26-serial-tests-after.json)
-preserves every Python case, every UI file, suite/file totals, environment,
-candidate, commands and outcomes. Keep the baseline, interrupted attempt and
-checkpoint as dated evidence; use these saved measurements for later analysis
-instead of rerunning the suite merely to collect the same data. Independent
-review accepted the implementation, isolation/validation boundaries and
-assertion preservation. No tests were excluded to reach the budget.
+To reproduce the serial gate after relevant changes:
 
-| Python suite | Cases | Serial time, including fixtures |
-| --- | ---: | ---: |
-| Repositories | 1,724 | 710.809s |
-| MCP | 476 | 388.917s |
-| Unit | 1,245 | 89.579s |
-| REST routes | 134 | 68.631s |
-| Install scripts and packaging | 44 | 33.931s |
-| Database migrations/schema | 20 | 19.424s |
-| Connectors | 326 | 10.328s |
-| Application lifecycle | 6 | 1.725s |
-| Background jobs | 8 | 0.017s |
+```bash
+PYTEST_ADDOPTS='-n0 --junitxml=/tmp/stackos-serial.xml' make -j1 signoff UI_TEST_ARGS='--maxWorkers=1 --minWorkers=1 --no-file-parallelism'
+```
 
-Shared collection/runner overhead was 1.727s. Repository and MCP tests account
-for approximately 83% of the Python total. Changes must preserve distinct
-credential, permission, transport, audit, lifecycle and recovery obligations;
-the saved timings identify where to investigate, not which checks to remove.
-
-The audit found no identical substantive Python test bodies. Retain separate
-transport, repository, grant, audit and protocol checks when their failure
-modes differ. Consolidate repeated setup and identical scenarios, and repair
-stale expectations against their authoritative contract. Do not use fewer
-tests or a higher worker count as the quality or performance success metric.
+Detailed measurements, case/file timings, profiles, logs and the history-rewrite
+map are saved outside Git at
+`/Users/sergeyrura/.local/share/tpf/stackos-test-audit-20261026/`.
+Use those saved results for analysis; do not rerun the broad suite merely to
+remeasure an unchanged candidate. Keep generated timing dumps out of repository
+history. The history cleanup removed only generated evidence; production and
+test contents are unchanged. The rewritten serial code candidate is `c1d0ccc`.
 
 ## Included Contract Coverage
 
