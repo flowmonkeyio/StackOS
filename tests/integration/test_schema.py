@@ -22,6 +22,11 @@ from stackos.communication_surface_bindings import communication_surface_binding
 from stackos.config import Settings
 from stackos.db.connection import make_engine
 from stackos.db.migrate import alembic_config, upgrade_to_head
+from tests.helpers.sqlite_schema import (
+    SQLiteSnapshot,
+    capture_database_snapshot,
+    restore_database_snapshot,
+)
 
 
 @pytest.fixture(params=["standalone", "explicit-settings"])
@@ -195,7 +200,56 @@ def isolated_alembic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterato
     yield data_dir / "stackos.db"
 
 
-def _run_alembic(args: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+@pytest.fixture(scope="module")
+def empty_0025_schema(tmp_path_factory: pytest.TempPathFactory) -> SQLiteSnapshot:
+    """Run legacy setup once; no tested migration or seeded data is cached."""
+    root = tmp_path_factory.mktemp("empty-0025-schema")
+    settings = Settings(data_dir=root / "data", state_dir=root / "state")
+    _run_alembic(
+        ["upgrade", "0025_visible_chromium_profiles"],
+        env={
+            **os.environ,
+            "STACKOS_DATA_DIR": str(settings.data_dir),
+            "STACKOS_STATE_DIR": str(settings.state_dir),
+        },
+    )
+    with sqlite3.connect(settings.db_path) as connection:
+        assert connection.execute("SELECT version_num FROM alembic_version").fetchall() == [
+            ("0025_visible_chromium_profiles",)
+        ]
+        tables = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+        for (table,) in tables:
+            if table != "alembic_version":
+                quoted = table.replace('"', '""')
+                assert connection.execute(f'SELECT COUNT(*) FROM "{quoted}"').fetchone() == (0,)
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+    assert not settings.seed_path.exists()
+    engine = make_engine(settings.db_path)
+    try:
+        return capture_database_snapshot(engine)
+    finally:
+        engine.dispose()
+
+
+@pytest.fixture
+def legacy_0025_database(isolated_alembic: Path, empty_0025_schema: SQLiteSnapshot) -> None:
+    """Copy a pristine starting revision into this test's independent file."""
+    assert not isolated_alembic.exists()
+    settings = Settings()
+    assert settings.db_path == isolated_alembic
+    settings.ensure_dirs()
+    engine = make_engine(isolated_alembic)
+    try:
+        restore_database_snapshot(engine, empty_0025_schema)
+    finally:
+        engine.dispose()
+
+
+def _run_alembic(
+    args: list[str], cwd: Path | None = None, *, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     repo_root = Path(__file__).resolve().parents[2]
     return subprocess.run(
         [sys.executable, "-m", "alembic", *args],
@@ -203,7 +257,7 @@ def _run_alembic(args: list[str], cwd: Path | None = None) -> subprocess.Complet
         check=True,
         capture_output=True,
         text=True,
-        env=os.environ.copy(),
+        env=os.environ.copy() if env is None else env,
     )
 
 
@@ -293,6 +347,7 @@ def _table_columns(db_path: Path, table_name: str) -> set[str]:
         conn.close()
 
 
+@pytest.mark.usefixtures("legacy_0025_database")
 def test_global_account_migration_preserves_and_reencrypts_legacy_credentials(
     isolated_alembic: Path,
     migration_upgrade: Callable[[], None],
@@ -300,7 +355,6 @@ def test_global_account_migration_preserves_and_reencrypts_legacy_credentials(
     from stackos.crypto.aes_gcm import decrypt_account, encrypt
     from stackos.crypto.seed import ensure_seed_file
 
-    _run_alembic(["upgrade", "0025_visible_chromium_profiles"])
     seed_path = isolated_alembic.parent.parent / "state" / "seed.bin"
     seed = ensure_seed_file(seed_path)
     ciphertext, nonce = encrypt(
@@ -409,13 +463,13 @@ def test_global_account_migration_preserves_and_reencrypts_legacy_credentials(
         conn.close()
 
 
+@pytest.mark.usefixtures("legacy_0025_database")
 def test_global_account_migration_preserves_credential_foreign_key_children(
     isolated_alembic: Path,
 ) -> None:
     from stackos.crypto.aes_gcm import decrypt_account, encrypt
     from stackos.crypto.seed import ensure_seed_file
 
-    _run_alembic(["upgrade", "0025_visible_chromium_profiles"])
     seed = ensure_seed_file(isolated_alembic.parent.parent / "state" / "seed.bin")
     legacy_secret = b'{"api_key":"legacy-child-secret"}'
     ciphertext, nonce = encrypt(
@@ -561,6 +615,7 @@ def test_global_account_migration_preserves_credential_foreign_key_children(
         conn.close()
 
 
+@pytest.mark.usefixtures("legacy_0025_database")
 def test_global_account_backing_repair_is_a_healthy_noop(
     isolated_alembic: Path,
     migration_upgrade: Callable[[], None],
@@ -568,7 +623,6 @@ def test_global_account_backing_repair_is_a_healthy_noop(
     from stackos.crypto.aes_gcm import encrypt
     from stackos.crypto.seed import ensure_seed_file
 
-    _run_alembic(["upgrade", "0025_visible_chromium_profiles"])
     seed = ensure_seed_file(isolated_alembic.parent.parent / "state" / "seed.bin")
     ciphertext, nonce = encrypt(
         b'{"api_key":"healthy"}',
@@ -787,6 +841,7 @@ def test_telegram_application_migration_preserves_matching_sessions_and_flags_co
         engine.dispose()
 
 
+@pytest.mark.usefixtures("legacy_0025_database")
 def test_global_account_backing_repair_restores_only_the_missing_backing_link(
     isolated_alembic: Path,
     migration_upgrade: Callable[[], None],
@@ -794,7 +849,6 @@ def test_global_account_backing_repair_restores_only_the_missing_backing_link(
     from stackos.crypto.aes_gcm import decrypt_account, encrypt
     from stackos.crypto.seed import ensure_seed_file
 
-    _run_alembic(["upgrade", "0025_visible_chromium_profiles"])
     seed = ensure_seed_file(isolated_alembic.parent.parent / "state" / "seed.bin")
     legacy_secret = b'{"api_key":"repair-me"}'
     ciphertext, nonce = encrypt(
@@ -1197,6 +1251,7 @@ def test_communication_surface_binding_migration_scopes_legacy_surfaces_to_one_p
 
 
 @pytest.mark.parametrize("failure_mode", ["zero-match", "ambiguous-match"])
+@pytest.mark.usefixtures("legacy_0025_database")
 def test_global_account_backing_repair_fails_closed_without_partial_writes(
     isolated_alembic: Path,
     failure_mode: str,
@@ -1204,7 +1259,6 @@ def test_global_account_backing_repair_fails_closed_without_partial_writes(
     from stackos.crypto.aes_gcm import encrypt
     from stackos.crypto.seed import ensure_seed_file
 
-    _run_alembic(["upgrade", "0025_visible_chromium_profiles"])
     seed = ensure_seed_file(isolated_alembic.parent.parent / "state" / "seed.bin")
     first_ciphertext, first_nonce = encrypt(
         b'{"api_key":"uniquely-valid"}',
@@ -1298,13 +1352,13 @@ def test_global_account_backing_repair_fails_closed_without_partial_writes(
 
 
 @pytest.mark.parametrize("failure_mode", ["missing-seed", "corrupt-ciphertext"])
+@pytest.mark.usefixtures("legacy_0025_database")
 def test_global_account_migration_preflight_failure_leaves_0025_untouched(
     isolated_alembic: Path,
     failure_mode: str,
 ) -> None:
     from stackos.crypto.seed import ensure_seed_file
 
-    _run_alembic(["upgrade", "0025_visible_chromium_profiles"])
     seed_path = isolated_alembic.parent.parent / "state" / "seed.bin"
     if failure_mode == "corrupt-ciphertext":
         ensure_seed_file(seed_path)
@@ -1353,10 +1407,10 @@ def test_global_account_migration_preflight_failure_leaves_0025_untouched(
         conn.close()
 
 
+@pytest.mark.usefixtures("legacy_0025_database")
 def test_global_account_migration_rejects_active_orphan_without_mutation(
     isolated_alembic: Path,
 ) -> None:
-    _run_alembic(["upgrade", "0025_visible_chromium_profiles"])
     now = "2026-07-24 00:00:00"
     conn = sqlite3.connect(isolated_alembic)
     try:
@@ -1395,13 +1449,13 @@ def test_global_account_migration_rejects_active_orphan_without_mutation(
         conn.close()
 
 
+@pytest.mark.usefixtures("legacy_0025_database")
 def test_global_account_migration_resolves_name_collisions_and_preserves_attachments(
     isolated_alembic: Path,
 ) -> None:
     from stackos.crypto.aes_gcm import encrypt
     from stackos.crypto.seed import ensure_seed_file
 
-    _run_alembic(["upgrade", "0025_visible_chromium_profiles"])
     seed_path = isolated_alembic.parent.parent / "state" / "seed.bin"
     seed = ensure_seed_file(seed_path)
     now = "2026-07-24 00:00:00"
@@ -1447,13 +1501,13 @@ def test_global_account_migration_resolves_name_collisions_and_preserves_attachm
         conn.close()
 
 
+@pytest.mark.usefixtures("legacy_0025_database")
 def test_global_account_migration_refuses_data_collapsing_downgrade(
     isolated_alembic: Path,
 ) -> None:
     from stackos.crypto.aes_gcm import encrypt
     from stackos.crypto.seed import ensure_seed_file
 
-    _run_alembic(["upgrade", "0025_visible_chromium_profiles"])
     seed = ensure_seed_file(isolated_alembic.parent.parent / "state" / "seed.bin")
     ciphertext, nonce = encrypt(
         b'{"api_key":"legacy"}',
