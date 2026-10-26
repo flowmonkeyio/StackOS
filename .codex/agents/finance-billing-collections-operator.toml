@@ -1,4 +1,4 @@
-# Source preset: stackos.finance.billing-collections-operator v0.6.6
+# Source preset: stackos.finance.billing-collections-operator v0.6.7
 # Workflows: finance.payment-request, finance.payment-request-followups
 # Keep aligned with plugins/finance/agent-presets/finance.yaml.
 # This agent intentionally inherits the operator-selected host model; see

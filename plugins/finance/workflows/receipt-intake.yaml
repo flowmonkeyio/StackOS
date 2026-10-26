@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: finance.receipt-intake
 name: Finance Receipt Intake
-version: 0.3.2
+version: 0.3.3
 description: Safely retain one receipt candidate in the project's Finance files without acknowledging an IMAP message before the host verifies the write.
 domain: finance
 owner:

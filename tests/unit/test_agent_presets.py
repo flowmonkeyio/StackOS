@@ -382,11 +382,11 @@ def test_codex_local_finance_agents_track_finance_presets_without_model_override
         "finance_control_reviewer": "xhigh",
     }
     expected_versions = {
-        "finance_receipt_operator": "0.4.4",
+        "finance_receipt_operator": "0.4.5",
         "finance_bookkeeping_preparer": "0.5.6",
-        "finance_billing_collections_operator": "0.6.6",
+        "finance_billing_collections_operator": "0.6.7",
         "finance_cashflow_preparer": "0.4.5",
-        "finance_tax_preparer": "0.4.4",
+        "finance_tax_preparer": "0.4.5",
         "finance_control_reviewer": "0.6.7",
     }
     for agent_name, (config_file, preset_ref) in LOCAL_CODEX_FINANCE_AGENT_PRESETS.items():
