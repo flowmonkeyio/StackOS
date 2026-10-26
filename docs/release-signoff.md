@@ -118,6 +118,21 @@ Known-provider account lookups now refresh only that provider's metadata;
 unfiltered listing and explicit synchronization still refresh the entire
 catalog. No credential, permission or auth-result cache is introduced.
 
+The first verification attempt exposed an old Google service-account fixture
+that replaced provider synchronization with a no-op. Its
+[partial result](benchmarks/2026-10-26-serial-tests-attempt1.json) is retained as
+failed, interrupted evidence, not a complete timing. The fixture now edits
+canonical provider source metadata and exercises real synchronization; its
+37 focused cases passed after repair.
+
+A [single-case profile](benchmarks/2026-10-26-workflow-profile.json) then located
+another repeated cost: 32 workflow descriptions constructed 1,152 private
+wrappers, which reran the template's recursive reference/secret validator.
+Private wrappers now reuse specs already validated by their source parser or
+database adapter. Source changes, malformed references, secret fields, current
+database rows and caller isolation remain covered. Profile timings include
+instrumentation overhead and are not runtime claims.
+
 | Python suite | Cases | Serial time, including fixtures |
 | --- | ---: | ---: |
 | Repositories | 1,724 | 710.809s |

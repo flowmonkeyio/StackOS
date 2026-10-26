@@ -1317,7 +1317,12 @@ class WorkflowTemplateLoader:
         template_id: int | None = None,
         version_id: int | None = None,
     ) -> LoadedWorkflowTemplate:
-        return LoadedWorkflowTemplate(
+        # Every source adapter supplies a parsed/model-validated spec. Building
+        # the private envelope through normal nested validation would rerun the
+        # full cross-reference/secret guard for every cached candidate on every
+        # lookup. Validate the new summary here; resolution owns the deep copy
+        # before exposing a cached spec or applying project extensions.
+        return LoadedWorkflowTemplate.model_construct(
             summary=WorkflowTemplateSummaryOut(
                 key=spec.key,
                 name=spec.name,

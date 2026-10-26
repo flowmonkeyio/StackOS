@@ -7,10 +7,11 @@ from pathlib import Path
 
 import pytest
 import yaml
-from sqlmodel import Session, SQLModel
+from pydantic import ValidationError
+from sqlmodel import Session, SQLModel, select
 
 from stackos.db.connection import make_memory_engine
-from stackos.db.models import Project
+from stackos.db.models import Project, WorkflowTemplateVersion
 from stackos.workflows import template_loader
 from stackos.workflows.template_loader import WorkflowTemplateLoader
 
@@ -116,6 +117,65 @@ def test_invalid_changed_source_fails_and_repaired_source_loads(loader, parsed_s
     _write(path)
     assert loader.describe_template(key="sample.review").spec.name == "First"
     assert parsed_sources == [TEMPLATE, "key: ["]
+
+
+@pytest.mark.parametrize("source", ["plugin", "bundled", "repo"])
+@pytest.mark.parametrize("invalid_content", ["unknown-reference", "secret-field"])
+def test_cached_sources_still_run_semantic_validation_after_content_edits(
+    loader, tmp_path, monkeypatch, source, invalid_content
+):
+    if source == "repo":
+        path = tmp_path / ".stackos/workflows/review.yaml"
+    else:
+        root = tmp_path / source
+        path = root / "sample/workflows/review.yaml"
+        root_loader = "_bundled_plugins_root" if source == "bundled" else "_clone_plugins_root"
+        monkeypatch.setattr(template_loader, root_loader, lambda: root)
+    _write(path)
+    loader.describe_template(key="sample.review", repo_root=str(tmp_path))
+    invalid = yaml.safe_load(TEMPLATE)
+    if invalid_content == "unknown-reference":
+        invalid["steps"][0]["depends_on"] = ["missing-step"]
+        error = "depends_on references unknown item"
+    else:
+        invalid["metadata_json"] = {"api_key": "synthetic-test-value"}
+        error = "must not contain secrets or credential values"
+    _write(path, yaml.safe_dump(invalid))
+
+    with pytest.raises(ValidationError, match=error):
+        loader.describe_template(key="sample.review", repo_root=str(tmp_path))
+
+    _write(path)
+    repaired = loader.describe_template(key="sample.review", repo_root=str(tmp_path))
+    assert repaired.spec.name == "First"
+
+
+def test_project_row_is_revalidated_and_returned_spec_cannot_mutate_storage(loader):
+    project = Project(slug="row-owner", name="Row owner", domain="example.test", locale="en")
+    loader._s.add(project)
+    loader._s.commit()
+    saved = loader.save_project_template(
+        project_id=project.id,
+        spec=template_loader.parse_workflow_template_yaml(TEMPLATE),
+    )
+    saved.data.spec.steps[0].instructions.append("Caller mutation")
+    reread = loader.describe_template(project_id=project.id, key="sample.review")
+    assert reread.spec.steps[0].instructions == ["Read the evidence."]
+    version = loader._s.exec(select(WorkflowTemplateVersion)).one()
+    valid = version.spec_json
+    invalid = yaml.safe_load(TEMPLATE)
+    invalid["steps"][0]["depends_on"] = ["missing-step"]
+    version.spec_json = invalid
+    loader._s.add(version)
+    loader._s.commit()
+
+    with pytest.raises(ValidationError, match="depends_on references unknown item"):
+        loader.describe_template(project_id=project.id, key="sample.review")
+
+    version.spec_json = valid
+    loader._s.add(version)
+    loader._s.commit()
+    assert loader.describe_template(project_id=project.id, key="sample.review").spec.name == "First"
 
 
 def test_cached_plugin_does_not_shadow_new_or_changed_repo_override(loader, tmp_path):
