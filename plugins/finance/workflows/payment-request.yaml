@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: finance.payment-request
 name: Finance Payment Request
-version: 0.5.5
+version: 0.5.6
 description: Prepare, review, finalize, and either send or explicitly hand off one Stripe invoice for an approved external payment request without making StackOS the billing system of record.
 domain: finance
 owner:

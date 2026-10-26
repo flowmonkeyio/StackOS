@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: finance.payment-request-followups
 name: Finance Payment Request Follow-Ups
-version: 0.7.4
+version: 0.7.5
 description: Evaluate a bounded external invoice follow-up or received-payment settlement scope. Reconcile a payment already received without charging a customer, or use the operator-selected Stripe resend or authored SMTP email route after lifecycle and contact-history checks.
 domain: finance
 owner:

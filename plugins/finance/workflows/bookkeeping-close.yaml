@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: finance.bookkeeping-close
 name: Finance Bookkeeping Preparation and Reconciliation
-version: 0.4.2
+version: 0.4.3
 description: Prepare and reconcile a bounded bookkeeping close in the selected project-local backend without creating a StackOS ledger or claiming an authoritative posting.
 domain: finance
 owner:

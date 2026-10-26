@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: finance.tax-estimates
 name: Finance Tax Estimates
-version: 0.3.2
+version: 0.3.3
 description: Prepare a current-source US/California tax-estimate packet in the selected project-local backend, distinguish projected annual liability from the current installment, and require CPA/EA then owner approval before it is relied on.
 domain: finance
 owner:

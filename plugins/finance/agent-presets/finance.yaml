@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.finance.receipt-operator
     name: Finance Receipt Operator
-    version: 0.4.4
+    version: 0.4.5
     description: Mechanically stages receipt evidence into project Finance files and prepares an evidence packet without deciding accounting treatment.
     domain: finance
     agent_type: mcp-tool-consumer
@@ -157,7 +157,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.finance.billing-collections-operator
     name: Finance Billing and Collections Operator
-    version: 0.6.6
+    version: 0.6.7
     description: Handles Stripe billing, agent-authored email follow-ups and received-payment settlement from operator instructions or documented settings, with current-state and recovery checks.
     domain: finance
     agent_type: mcp-tool-consumer
@@ -261,7 +261,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.finance.tax-preparer
     name: Finance Tax Preparer
-    version: 0.4.4
+    version: 0.4.5
     description: Prepares a current-source tax-estimate packet and obligation matrix for review without giving advice, filing, paying, or remitting.
     domain: finance
     agent_type: mcp-tool-consumer

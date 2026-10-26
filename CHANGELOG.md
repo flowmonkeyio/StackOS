@@ -1,5 +1,36 @@
 # Changelog
 
+## 2.1.39 - 2026-10-26
+
+- Add a project-scoped Finance console for source-backed overviews, record
+  editing, correction history, invoice and receipt originals, and reviewed
+  reports with comparison graphs and category proposals. Store managed Finance
+  files with project data and include them in encrypted backup and recovery.
+- Add the Finance management-review workflow and align changed Finance
+  workflow, preset, and local adaptation versions with their shipped guidance.
+- Persist sanitized, private bridge diagnostics with lifecycle correlation,
+  bounded startup requests, JSON-RPC validation, and connection-only retries
+  for eligible initialize and ping requests. Add resumable internal diagnostics
+  and attempt-specific doctor evidence for incident handoffs.
+- Recheck current job controls, cancellation, deadline, and lease authority
+  immediately before durable connector entry, preserving prepared credentials
+  during that refresh. Keep audit heartbeat reporting separate from maintenance
+  activity; the final authority check and provider call remain non-atomic.
+- Validate approval evidence before mutating approval state, including bounded
+  token accounting. Define a pure advisory receipt contract without
+  granting execution authority.
+- Preserve the selected installation's state directory and encryption seed
+  context during credential migrations. Permit verified packaged TDLib reuse
+  for local desktop builds while retaining pinned public-release inputs.
+- Retain `stackos-connectors==0.2.8` and correct its setup documentation.
+
+Before upgrading or rolling back, create an encrypted backup that includes the
+database, matching seed and auth token, and managed project files, and keep the
+private recovery key separately. Existing runs retain their frozen workflow
+snapshots. Replacing the app alone does not undo database or project-file
+changes; validate recovery into a fresh, inert directory before adopting a
+matching recovered state. See [upgrade and rollback](docs/upgrade.md#rollback).
+
 ## 2.1.38 - 2026-10-15
 
 - Persist canonical work-item ownership epochs with explicit reassignment,

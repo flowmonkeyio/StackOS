@@ -594,7 +594,7 @@ def test_followup_authored_email_uses_selected_route_and_step_grant() -> None:
     auth = _by_key(followups["auth_requirements"])
     capabilities = _by_key(followups["capability_requirements"])
     steps = {item["id"]: item for item in followups["steps"]}
-    assert followups["version"] == "0.7.4"
+    assert followups["version"] == "0.7.5"
     assert "default" not in inputs["followup_route"]
     assert inputs["followup_route"]["schema"]["enum"] == ["stripe-resend", "smtp-email"]
     assert inputs["followup_route"]["required"] is False
@@ -1190,8 +1190,8 @@ def test_finance_records_existing_owner_approval_without_new_decision_ceremony()
     workflows = _workflows()
     payment = workflows["finance.payment-request"]
     followups = workflows["finance.payment-request-followups"]
-    assert payment["version"] == "0.5.5"
-    assert followups["version"] == "0.7.4"
+    assert payment["version"] == "0.5.6"
+    assert followups["version"] == "0.7.5"
     for workflow in (payment, followups):
         guidance = " ".join(
             instruction

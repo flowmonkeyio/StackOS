@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: finance.cashflow-management
 name: Finance Cashflow Management
-version: 0.3.2
+version: 0.3.3
 description: Prepare a dated exactly thirteen-week cashflow forecast in the selected project-local backend from bounded external and optional read-only Stripe evidence, without moving money or storing forecast contents in StackOS.
 domain: finance
 owner:

@@ -49,7 +49,7 @@ provided separately by the host agent runtime.
 
 Use this path when working from this repository:
 
-The pinned dependency `stackos-connectors==0.1.1` is installed from PyPI by
+The pinned dependency `stackos-connectors==0.2.8` is installed from PyPI by
 `uv`. Its resolved distribution and hashes are recorded in `uv.lock`; a
 separate connectors checkout is not required.
 
