@@ -63,8 +63,11 @@ The 2026-10-26 audit removed these costs while retaining distinct failure checks
 | Real retry delays, shared rate buckets and no-op-sleep busy loops | Explicit virtual provider clocks retain real limiter/retry loops and scheduling; lifecycle/concurrency clocks remain unchanged. |
 | Repeated schema/YAML parsing, deep copies and nested validation | Bounded source caches and one ownership copy; changed sources, malformed references, secrets, adaptation rules and caller mutation remain checked. |
 | Full provider metadata scans for a known provider | Refresh the requested provider; full listing/sync still refreshes all providers. Credentials, permissions and auth results are not cached. |
-| Browser environments for pure UI tests | 36 audited source/data/state specs use Node; browser/component specs and new files retain the jsdom default. All test bodies and assertions remain. |
+| Browser environments for pure UI tests | 40 audited source/data/state specs use Node; browser/component specs retain jsdom. All test bodies and assertions remain. |
 | Stale inventories and always-skipped retired skill checks | Current authoritative catalogs, precise rejection checks and mandatory packaged-skill validation replace obsolete expectations. |
+| Repeated MCP registration and discarded schemas | One operation registry per app; response-policy metadata uses the existing summary API. Tool contracts and app isolation remain checked. |
+| Repeated decoding of joined catalog parents | Load each plugin/provider once per action listing; preserve live state, visibility, ordering and availability, including concurrent parent deletion. |
+| Daemon imports during standalone bridge startup | Lazy package exports retain canonical objects and static types; real subprocess, cancellation and persistence tests remain. |
 
 ### Historical Evidence And Serial Verification
 
@@ -74,9 +77,9 @@ branch based on `c76238b` passed in **536.476s (8m 56s)** against a saved
 `c1d0ccc`, passed 4,017 Python tests with no skips and 427 UI tests in 101 files,
 plus lint, formatting, mypy and the production build. Make ran sequentially,
 pytest used `-n0`, and Vitest used one worker. The baseline's Python run was
-serial; its UI runner used the prior default settings. A separate six-worker
-gate at `2d09580` passed in 120.395s. These historical timings and case counts
-do not establish results for the merged candidate.
+serial; its UI runner used the prior default settings. A separate default-worker
+gate (automatic, capped at six) at `2d09580` passed in 120.395s. These timings
+and case counts do not establish results for the merged candidate.
 
 The complete `tests/` gate also includes upstream's new backup recovery,
 Google Indexing, MCP ownership and run-repository checks without adding a
