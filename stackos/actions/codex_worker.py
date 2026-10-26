@@ -201,10 +201,12 @@ class _CodexPipes:
     streams: dict[str, Any] = field(default_factory=dict)
     pending: bytes = field(default=b"", repr=False)
     stdout: bytes = field(default=b"", repr=False)
-    text: str = field(default="", repr=False)
+    text: str | None = field(default=None, repr=False)
     thread_id: str | None = None
     sequence: int = 0
     received: int = 0
+    completion_usage: tuple[int | None, int | None] | None = field(default=None, repr=False)
+    usage_ambiguous: bool = False
     eof: set[str] = field(default_factory=set)
     birth_unknown: bool = True
     failed_closes: set[str] = field(default_factory=set)
@@ -305,12 +307,28 @@ class CodexProcessTransport:
         elif kind == "turn.completed":
             if state.thread_id is None:
                 raise ValueError("completed turn lacks original correlation")
-            usage = event.get("usage", {})
-            if any(
-                type(usage.get(key)) is not int or usage[key] < 0
+            raw_usage = event.get("usage")
+            usage = raw_usage if isinstance(raw_usage, dict) else {}
+            validated = {
+                key: usage[key]
                 for key in ("input_tokens", "output_tokens")
-            ):
-                raise ValueError("completed usage is unknown")
+                if type(usage.get(key)) is int and usage[key] >= 0
+            }
+            if len(validated) == 2:
+                validated["total_tokens"] = validated["input_tokens"] + validated["output_tokens"]
+            snapshot = (validated.get("input_tokens"), validated.get("output_tokens"))
+            if state.completion_usage is None:
+                state.completion_usage = snapshot
+            elif state.completion_usage != snapshot:
+                state.usage_ambiguous = True
+            else:
+                validated = {}  # identical same-turn completion is idempotent
+            if state.usage_ambiguous:
+                # Never merge counters from incompatible completion snapshots.
+                # Keep the first snapshot on the original retained pipe state;
+                # conflicting accounting remains unknown for this command.
+                slot.usage.update(input_tokens=None, output_tokens=None, total_tokens=None)
+                validated = {}
             slot.observe(
                 state.sequence,
                 {
@@ -319,11 +337,7 @@ class CodexProcessTransport:
                         "turn_id": state.thread_id,
                         "text": state.text,
                     },
-                    "usage": {
-                        "input_tokens": usage["input_tokens"],
-                        "output_tokens": usage["output_tokens"],
-                        "total_tokens": usage["input_tokens"] + usage["output_tokens"],
-                    },
+                    "usage": validated,
                 },
             )
         elif kind in {"error", "turn.failed"}:
@@ -651,14 +665,31 @@ class CodexWorkerConnector:
             return self._unsupported(
                 "original preparation/current admission denied before acquisition"
             )
-        # Even a completed turn never converts unknown termination into success/retry.
+        output = {
+            **result,
+            "outcome_unknown": True,
+            "cost": {"actual_cents": None},
+        }
+        if (
+            slot.admitted
+            and slot.acquired
+            and slot.result.get("status") == "completed"
+            and isinstance(slot.result.get("turn_id"), str)
+            and slot.result["turn_id"]
+            and isinstance(slot.result.get("text"), str)
+            and slot.reaped
+            and slot.cli_exit == 0
+            and result["cleanup"]["status"] == "confirmed"
+            and slot.cancellation_at is None
+            and slot.failure is None
+        ):
+            # Result delivery succeeded; effects/termination/capacity stay unknown/held.
+            return ActionConnectorResult(output_json={"status": "completed", **output})
         raise ActionConnectorError(
             "Codex command requires custody/termination review",
             output_json={
                 "status": "held",
-                **result,
-                "outcome_unknown": True,
-                "cost": {"actual_cents": None},
+                **output,
             },
         )
 

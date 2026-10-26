@@ -315,7 +315,7 @@ def test_completed_result_survives_cleanup_deadline_and_late_duplicate_events():
             clock=clock,
         )
         assert result["result"] == {"status": "completed", "turn_id": "useful"}
-        assert result["usage"]["total_tokens"] == 21525
+        assert result["usage"]["total"] == 21525
         assert result["cleanup"]["status"] == "unknown"
         assert result["custody"]["acknowledged"] is True
         assert result["retry_safe"] is False
@@ -595,7 +595,7 @@ def test_connector_uses_private_fresh_session_and_keeps_completed_unknown_receip
         asyncio.run(connector.execute(replace(request(), session=caller_session)))
     result = error.value.output_json
     assert result["result"] == {"status": "completed", "turn_id": "gate0"}
-    assert result["usage"]["total_tokens"] == 21525
+    assert result["usage"]["total"] == 21525
     assert result["cleanup"]["status"] == "unknown"
     assert result["custody"]["acknowledged"] is True
     assert result["cli"] == {"exit_code": -15, "reaped": True}
@@ -840,6 +840,241 @@ async def run_production(case, authorize=lambda: None):
     )
 
 
+@pytest.mark.parametrize(
+    "usage, expected",
+    [
+        pytest.param("absent", (None, None, None), id="missing"),
+        pytest.param(None, (None, None, None), id="null"),
+        pytest.param([], (None, None, None), id="list"),
+        pytest.param("invalid", (None, None, None), id="string"),
+        pytest.param({"input_tokens": True, "output_tokens": 19}, (None, 19, None), id="boolean"),
+        pytest.param({"input_tokens": -1, "output_tokens": 19}, (None, 19, None), id="negative"),
+        pytest.param(
+            {"input_tokens": "257", "output_tokens": 19}, (None, 19, None), id="numeric-string"
+        ),
+        pytest.param({"input_tokens": 257}, (257, None, None), id="partial"),
+        pytest.param({"input_tokens": 257, "output_tokens": 19}, (257, 19, 276), id="valid"),
+        pytest.param({"input_tokens": 0, "output_tokens": 0}, (0, 0, 0), id="known-zero"),
+    ],
+)
+def test_correlated_completion_survives_unknown_usage(usage, expected):
+    completed = {"type": "turn.completed"}
+    if usage != "absent":
+        completed["usage"] = usage
+    frames = b"".join(
+        json.dumps(event).encode() + b"\n"
+        for event in (
+            {"type": "thread.started", "thread_id": "original-turn"},
+            {
+                "type": "item.completed",
+                "item": {"type": "agent_message", "text": "observed output"},
+            },
+            completed,
+        )
+    )
+    case = production_case(natural=True, frames=frames)
+    observed = asyncio.run(run_production(case))
+    assert observed["result"] == {
+        "status": "completed",
+        "turn_id": "original-turn",
+        "text": "observed output",
+    }
+    assert observed["failure"] is None
+    public = execution._redact_for_audit(execution._codex_usage_projection(observed))
+    assert tuple(public["usage"][key] for key in ("input", "output", "total")) == expected
+    assert public["usage"]["unit"] == "tokens" and public["usage"]["hard_cap"] is False
+    assert observed["termination"] == {"descendants": "unknown", "remote": "unknown"}
+    assert observed["retry_safe"] is False and observed["capacity_reusable"] is False
+
+
+@pytest.mark.parametrize(
+    "later, ambiguous",
+    [
+        pytest.param({"input_tokens": 300}, True, id="higher-partial"),
+        pytest.param({"input_tokens": 300, "output_tokens": False}, True, id="higher-malformed"),
+        pytest.param({"input_tokens": 257, "output_tokens": 19}, False, id="identical"),
+        pytest.param({"input_tokens": 300, "output_tokens": 5}, True, id="conflicting-pair"),
+        pytest.param(None, True, id="later-unknown"),
+    ],
+)
+def test_same_turn_duplicate_usage_never_mixes_snapshots(later, ambiguous):
+    frames = (
+        recorded_events() + json.dumps({"type": "turn.completed", "usage": later}).encode() + b"\n"
+    )
+    case = production_case(natural=True, frames=frames)
+    receipt = asyncio.run(run_production(case))
+    public = execution._redact_for_audit(execution._codex_usage_projection(receipt))
+    assert tuple(public["usage"][key] for key in ("input", "output", "total")) == (
+        (None, None, None) if ambiguous else (257, 19, 276)
+    )
+    assert receipt["result"] == {
+        "status": "completed",
+        "turn_id": "recorded-turn",
+        "text": "useful fake",
+    }
+    assert receipt["retry_safe"] is receipt["capacity_reusable"] is receipt["quiescent"] is False
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "natural",
+        "no-completion",
+        "missing-message",
+        "missing-correlation",
+        "nonzero",
+        "timeout",
+        "cancel",
+        "permission",
+        "protocol",
+        "close-failure",
+        "work-read-overrun",
+        "work-read-at-deadline",
+        "work-parse-overrun",
+        "work-reap-overrun",
+        "cleanup-close-overrun",
+        "cleanup-after-work-valid",
+    ],
+)
+def test_connector_natural_result_success_keeps_all_uncertainty_fences(monkeypatch, mode):
+    frames = recorded_events()
+    events = [json.loads(line) for line in frames.splitlines()]
+    if mode == "no-completion":
+        frames = b"".join(json.dumps(event).encode() + b"\n" for event in events[:-1])
+    elif mode == "missing-message":
+        frames = b"".join(json.dumps(event).encode() + b"\n" for event in (events[0], events[-1]))
+    elif mode == "missing-correlation":
+        frames = b"".join(json.dumps(event).encode() + b"\n" for event in events[1:])
+    elif mode in {"permission", "protocol"}:
+        frames += (
+            json.dumps(
+                {"type": "permission.required" if mode == "permission" else "unsupported.future"}
+            ).encode()
+            + b"\n"
+        )
+    if mode == "work-parse-overrun":
+        frames = frames.rstrip(b"\n")
+    case = production_case(
+        natural=mode not in {"timeout", "cancel"},
+        frames=frames,
+        close_failure="stdout" if mode == "close-failure" else None,
+    )
+    owner, clock, slot, process, io, calls, transport = case
+    if mode in {"work-read-overrun", "work-read-at-deadline"}:
+        read = io.read
+
+        def final_read(stream):
+            chunk = read(stream)
+            if stream.name == "stdout" and not chunk:
+                clock.value = slot.work_deadline + (0 if mode.endswith("at-deadline") else 0.01)
+            return chunk
+
+        monkeypatch.setattr(io, "read", final_read)
+    if mode == "work-parse-overrun":
+        loads = json.loads
+
+        def final_parse(raw):
+            value = loads(raw)
+            if value.get("type") == "turn.completed":
+                clock.value = slot.work_deadline + 0.01
+            return value
+
+        monkeypatch.setattr(codex, "json", SimpleNamespace(loads=final_parse))
+    if mode == "work-reap-overrun":
+        wait = process.wait
+
+        def final_reap(*, timeout):
+            value = wait(timeout=timeout)
+            if len(process.waits) == 2:
+                clock.value = slot.work_deadline + 0.01
+            return value
+
+        monkeypatch.setattr(process, "wait", final_reap)
+    if mode in {"cleanup-close-overrun", "cleanup-after-work-valid"}:
+        close = io.close
+
+        def final_close(stream):
+            close(stream)
+            if stream.name == "stderr":
+                clock.value = (
+                    slot.deadline + 0.01
+                    if mode == "cleanup-close-overrun"
+                    else slot.work_deadline + 1
+                )
+
+        monkeypatch.setattr(io, "close", final_close)
+    if mode == "nonzero":
+        process.returncode = 7
+    if mode == "cancel":
+        original_read = io.read
+
+        def cancel_after_original_frame(stream):
+            chunk = original_read(stream)
+            if stream.name == "stdout" and chunk:
+                asyncio.get_running_loop().call_soon(asyncio.current_task().cancel)
+            return chunk
+
+        monkeypatch.setattr(io, "read", cancel_after_original_frame)
+    bind = object()
+
+    class Session:
+        def __init__(self, engine):
+            assert engine is bind
+            self.info = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+    caller = SimpleNamespace(
+        info={"operation_services": {"background_action_tasks": owner}},
+        get_bind=lambda: bind,
+        get=lambda *_args, **_kwargs: SimpleNamespace(run_id=4, run_plan_id=5, run_plan_step_id=6),
+    )
+
+    def unit_admission(request, original, **_kwargs):
+        assert isinstance(request.session, Session) and request.session is not caller
+        assert original == binding()
+
+    monkeypatch.setattr(sqlmodel, "Session", Session)
+    monkeypatch.setattr(codex, "fresh_admission", unit_admission)
+    command = owner.command
+
+    async def with_clock(*args, **kwargs):
+        return await command(*args, **kwargs, clock=clock)
+
+    monkeypatch.setattr(owner, "command", with_clock)
+    connector = codex.CodexWorkerConnector(owner, profile=profile(), transport=transport)
+    if mode in {"natural", "cleanup-after-work-valid"}:
+        result = asyncio.run(connector.execute(replace(request(), session=caller)))
+        output = result.output_json
+        assert output["status"] == "completed"
+        assert output["cancellation"]["requested"] is False
+        assert output["cleanup"]["status"] == "confirmed"
+        assert output["cli"] == {"exit_code": 0, "reaped": True}
+    else:
+        with pytest.raises(ActionConnectorError) as failure:
+            asyncio.run(connector.execute(replace(request(), session=caller)))
+        output = failure.value.output_json
+        assert output["status"] == "held"
+    if mode not in {"no-completion", "missing-correlation"}:
+        assert output["result"]["status"] == "completed"
+    if mode == "missing-message":
+        assert output["result"]["text"] is None
+    if mode in {"timeout", "cancel"}:
+        assert output["cancellation"]["requested"] is True
+    if mode.startswith("work-") or mode == "cleanup-close-overrun":
+        assert output["failure"] is not None
+        assert output["cleanup"]["status"] == "confirmed"
+        assert slot.deadline == slot.started + 90 and slot.work_deadline == slot.started + 78
+    assert len(calls) == 1 and owner._commands[(2, 3)] is slot
+    assert output["outcome_unknown"] is True and output["effects"]["status"] == "unknown"
+    assert output["termination"] == {"descendants": "unknown", "remote": "unknown"}
+    assert output["retry_safe"] is output["capacity_reusable"] is output["quiescent"] is False
+
+
 @pytest.mark.parametrize("natural", [False, True])
 def test_production_transport_actual_logic_result_usage_pipe_reap_and_cancel(natural):
     case = production_case(natural=natural)
@@ -853,7 +1088,7 @@ def test_production_transport_actual_logic_result_usage_pipe_reap_and_cancel(nat
         "text": "useful fake",
     }
     # Production parser uses these event numbers, not historical21525.
-    assert result["usage"]["total_tokens"] == 276
+    assert result["usage"]["total"] == 276
     assert result["cli"] == {"exit_code": 0 if natural else -15, "reaped": True}
     assert result["cleanup"]["status"] == "confirmed"
     assert all(stream.closed for stream in (process.stdin, process.stdout, process.stderr))

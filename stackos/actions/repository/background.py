@@ -193,7 +193,16 @@ class BackgroundActionTasks:
                 "elapsed": clock() - slot.started,
                 "cleanup_reserve_seconds": 12,
             },
-            "usage": {**slot.usage, "allowance_tokens": 16000, "hard_cap": False},
+            # Safe public names preserve unknown nulls through canonical redaction.
+            # Internal observations remain monotone *_tokens counters.
+            "usage": {
+                "unit": "tokens",
+                "input": slot.usage.get("input_tokens"),
+                "output": slot.usage.get("output_tokens"),
+                "total": slot.usage.get("total_tokens"),
+                "allowance": 16000,
+                "hard_cap": False,
+            },
             "attempts_consumed": 1 if slot.admitted else 0,
             "failure": slot.failure,
             "next_action": "needs-operator" if slot.failure == "unsupported-permission" else None,
@@ -224,7 +233,10 @@ class BackgroundActionTasks:
             if task not in done:
                 return False
             task.result()
-            return True
+            # A synchronous read/parse/reap/close can finish after asyncio's
+            # timeout while returning in the same scheduling turn. Settlement
+            # uses the original stage boundary; completed facts are retained.
+            return clock() < until
 
         async def run() -> dict[str, Any]:
             try:

@@ -29,7 +29,7 @@ from stackos.repositories.base import ConflictError
 from stackos.server import _build_action_connectors
 
 ACTION = "engineering.codex.recorded-turn"
-REVISION = "5de90e673472370c020e4db460013ce78487e7fc"
+REVISION = "99e67022343fe937833fec9cc896f993461ba7cf"
 SCOPE = hashlib.sha256(b"isolated-canonical-no-model").hexdigest()
 APPROVAL = "codex-reviewed-profile"
 
@@ -66,7 +66,7 @@ class CanonicalRuntime:
             arguments.setdefault("project_id", self.project_id)
         if controlled:
             arguments["run_token"] = self.token
-        arguments["response_mode"] = "raw"
+        arguments.setdefault("response_mode", "raw")
         with Session(self.engine) as session:
             session.info["operation_services"] = self.services
             result = await self.dispatcher.dispatch(
@@ -319,9 +319,10 @@ class Process:
 
 
 class Pipes(CodexPipeIO):
-    def __init__(self):
+    def __init__(self, *, usage="valid"):
         self.sent = False
         self.after_pins = None
+        self.usage = usage
 
     def digest(self, path, limit, deadline, clock):
         result = super().digest(path, limit, deadline, clock)
@@ -345,6 +346,12 @@ class Pipes(CodexPipeIO):
             {"type": "item.completed", "item": {"type": "agent_message", "text": "fixture"}},
             {"type": "turn.completed", "usage": {"input_tokens": 257, "output_tokens": 19}},
         ]
+        if self.usage == "missing":
+            events[-1].pop("usage")
+        elif self.usage == "malformed":
+            events[-1]["usage"] = {"input_tokens": "unknown", "output_tokens": True}
+        elif self.usage == "conflicting":
+            events.append({"type": "turn.completed", "usage": {"input_tokens": 300}})
         return b"".join(json.dumps(event).encode() + b"\n" for event in events)
 
 
@@ -362,6 +369,9 @@ class Pipes(CodexPipeIO):
         "prior-unknown",
         "wrong-project",
         "inflight-selected-owner",
+        "completed-missing-usage",
+        "completed-malformed-usage",
+        "completed-conflicting-usage",
     ],
 )
 def test_canonical_codex_action_no_model(tmp_path, monkeypatch, mode):
@@ -385,7 +395,25 @@ def test_canonical_codex_action_no_model(tmp_path, monkeypatch, mode):
         births.append(argv)
         return process
 
-    pipes = Pipes()
+    pipes = Pipes(
+        usage=(
+            "missing"
+            if mode == "completed-missing-usage"
+            else "malformed"
+            if mode == "completed-malformed-usage"
+            else "conflicting"
+            if mode == "completed-conflicting-usage"
+            else "valid"
+        )
+    )
+    natural_completion = mode in {
+        "admitted",
+        "prior-unknown",
+        "inflight-selected-owner",
+        "completed-missing-usage",
+        "completed-malformed-usage",
+        "completed-conflicting-usage",
+    }
     observation_ready, observation_release = asyncio.Event(), asyncio.Event()
 
     async def observation_pause(delay):
@@ -483,14 +511,31 @@ def test_canonical_codex_action_no_model(tmp_path, monkeypatch, mode):
                 calls, owner = runtime.snapshot()
                 assert len(calls) == 1 and calls[0].id == started["action_call"]["id"]
                 call = calls[0]
-                assert call.status == ActionCallStatus.FAILED
+                assert call.status == (
+                    ActionCallStatus.SUCCESS if natural_completion else ActionCallStatus.FAILED
+                )
                 assert call.run_id == runtime.run_id and call.run_plan_step_id == runtime.step_id
                 assert call.request_json == runtime.input
                 assert call.metadata_json["execution_cost"] == {"state": "unknown"}
-                if mode in {"admitted", "prior-unknown", "inflight-selected-owner"}:
+                if natural_completion:
                     assert len(births) == 1 and owner.continuity_json["attempts_used"] == 1
                     assert call.response_json["result"]["status"] == "completed"
-                    assert call.response_json["usage"]["total"] == 276
+                    assert call.response_json["usage"]["total"] == (
+                        None
+                        if mode
+                        in {
+                            "completed-missing-usage",
+                            "completed-malformed-usage",
+                            "completed-conflicting-usage",
+                        }
+                        else 276
+                    )
+                    assert call.response_json["status"] == "completed"
+                    assert call.response_json["outcome_unknown"] is True
+                    assert call.response_json["effects"]["status"] == "unknown"
+                    assert call.response_json["retry_safe"] is False
+                    assert call.response_json["capacity_reusable"] is False
+                    assert call.response_json["quiescent"] is False
                     assert call.response_json["cleanup"]["status"] == "confirmed"
                     assert call.response_json["termination"] == {
                         "descendants": "unknown",
@@ -515,9 +560,19 @@ def test_canonical_codex_action_no_model(tmp_path, monkeypatch, mode):
                         .cost_cents
                         is None
                     )
-                if mode == "prior-unknown":
+                if mode in {"prior-unknown", "completed-conflicting-usage"}:
                     replay = await runtime.execute()
                     assert replay["action_call"]["id"] == call.id and len(births) == 1
+                    compact = await runtime.call(
+                        "action.execute",
+                        controlled=True,
+                        action_ref=ACTION,
+                        input_json=runtime.input,
+                        idempotency_key="one-original-action",
+                        response_mode="compact",
+                    )
+                    assert compact["action_call_id"] == call.id and compact["cost_cents"] is None
+                    assert runtime.snapshot()[1].continuity_json["attempts_used"] == 1
                     original_response = dict(call.response_json)
                     # Simulate loss of only process-local daemon state. Persisted
                     # original ActionCall and canonical authority remain unchanged.
@@ -574,7 +629,7 @@ def test_canonical_codex_action_no_model(tmp_path, monkeypatch, mode):
                     runtime.save_evidence(runtime.root / "proof.json", {"owners": dispositions})
             finally:
                 runtime.engine.dispose()
-            if completed and mode in {"admitted", "prior-unknown", "inflight-selected-owner"}:
+            if completed and natural_completion:
                 assert dispositions[0]["clean"] is False
                 assert all(pipe.closed for pipe in (process.stdin, process.stdout, process.stderr))
                 assert next(iter(owners[0]._commands.values())).resources["process"] is process

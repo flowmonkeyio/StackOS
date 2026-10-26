@@ -240,7 +240,7 @@ The first profile is exactly the recorded Gate0 argv (digest
 with only approved source cwd/private output-schema substitution and prompt
 on stdin. No public argv, executable, shell, hooks/MCP/tools, profiles or
 configuration overrides are accepted. The server registers the connector
-without native pins or transport, so it returns unsupported/needs-operator
+without reviewed native pins, so it returns unsupported/needs-operator
 before acquisition. The production transport is implemented and wired behind
 that closed deployment gate; source tests inject fake Popen/FD/clock/IO at its
 actual acquisition/observation/cleanup seams. It uses fixed argv, a sealed minimal
@@ -254,8 +254,34 @@ prose approval cannot bypass the existing ApprovalRequest/run-plan checks.
 
 Receipts separate useful result, effects, cancellation, immediate CLI exit/reap,
 local FD/process cleanup, actual live daemon custody ACK, descendants/remote
-termination, original deadline, usage and attempts. A completed turn survives
-later cleanup uncertainty. ACK requires that the live original owner actually
+termination, original deadline, usage and attempts. Correlated `turn.completed`
+evidence is retained independently of missing or malformed usage; validated
+nonnegative counters remain observed and unknown counters remain null. Missing
+result text is not replaced by invented output. A completed turn also survives
+later timeout, cancellation, protocol/permission failure or cleanup uncertainty.
+Same-turn usage snapshots are atomic: an identical completion duplicate is
+idempotent. Any differing partial, malformed or complete duplicate latches all
+public usage counters unknown/null for that command; it cannot merge components
+with a stale total or later restore apparent certainty. The first validated
+snapshot remains on the original retained pipe state, and completed output stays
+unchanged. These observations are not a fabricated monetary spend estimate.
+
+Normal connector return and `ActionCall.SUCCESS` mean result delivery only:
+correlated completion with observed result text, admitted acquisition, natural
+CLI exit0 and reap, confirmed local cleanup, and no failure or cancellation.
+Each stage rechecks its original monotonic boundary after synchronous settlement.
+A final read/parse/reap crossing work78 or close crossing command90 keeps observed
+result and physical cleanup facts but withholds SUCCESS. Legitimate cleanup after
+work78 is allowed while it settles before command90. These checks do not preempt
+blocked synchronous IO or claim a hard OS-level wall-clock bound.
+All other cases remain held; exit0 alone is insufficient. Even after that narrow
+success, `outcome_unknown=true` preserves unresolved effects/termination,
+`retry_safe`, `capacity_reusable` and `quiescent` remain false, and the persistent
+prior-call guard still blocks a fresh attempt after daemon restart. SUCCESS does
+not finish a workflow step, clear custody, authorize another dispatch or certify
+Gate0/remote quiescence.
+
+ACK requires that the live original owner actually
 retains resource objects; audit strings, task completion and PID reconstruction
 are insufficient. Shutdown finitely records each disposition on its original
 ActionCall before disposal; unknown custody withholds the clean log and retains
@@ -271,8 +297,9 @@ clearance is created. Original close errors latch cleanup unknown even when a
 stream reports closed, and neither polling nor shutdown retries that descriptor.
 Persisted numeric usage uses `unit=tokens` and `input`, `output`, `total`,
 `allowance` with the independent `hard_cap` boolean. Only known nonnegative
-integers get these names before canonical redaction; secret-shaped fields
-remain protected, and unknown usage is never converted to zero.
+integers or explicit unknown nulls get these names in the canonical command
+receipt before audit redaction. Invalid counters contribute no invented values;
+secret-shaped fields remain protected, and unknown usage is never converted to zero.
 
 Gate0 remains historical data: completed turn at75.832s; immediate CLI TERM/reap
 at78.013s, exit-15;19758 input+1767 output=21525 tokens above the non-hard16000
