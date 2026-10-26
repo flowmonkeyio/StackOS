@@ -16,8 +16,7 @@ from typing import Any, Protocol, cast
 
 from pydantic import ValidationError as ModelValidationError
 from sqlmodel import Session, col, select
-from stackos_connectors import CallOptions, ConnectorAuth, ConnectorClient
-from stackos_connectors.catalog import load_registry
+from stackos_connectors import CallOptions, ConnectorAuth, get_default_client
 from stackos_connectors.connectors.telegram.schema import METHOD_ACTIONS
 from stackos_connectors.connectors.telegram.tdlib.native import (
     TelegramTdlibClosedError,
@@ -228,9 +227,7 @@ class _AccountClient:
                 host_request.progress_callback(progress)
 
         try:
-            result = await ConnectorClient(
-                registry=load_registry("connectors/telegram/catalog.json")
-            ).execute(
+            result = await get_default_client().execute(
                 "telegram",
                 action,
                 {key: value for key, value in request.items() if key != "@type"},

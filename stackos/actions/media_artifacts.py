@@ -8,8 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from stackos_connectors import CallOptions, ConnectorClient
-from stackos_connectors.catalog import load_registry
+from stackos_connectors import CallOptions
 from stackos_connectors.shared.base import IntegrationCallResult
 
 from stackos.actions.connectors import ActionConnectorError, ActionConnectorRequest
@@ -41,13 +40,10 @@ async def execute_media_native(
         return value
 
     prepared = {key: plain(value) for key, value in data.items() if value is not None}
-    package_directory = connector.replace("-", "_")
     asset_root = (request.asset_dir or Settings().generated_assets_dir).resolve()
     output_dir = asset_root / output_subdir
-    client = ConnectorClient(registry=load_registry(f"connectors/{package_directory}/catalog.json"))
     bridge = PackageActionConnector(
         connector,
-        client=client,
         options=CallOptions(
             http=http,
             rate_limiter=get_bucket(project_id=request.project_id, kind=output_subdir, qps=qps),

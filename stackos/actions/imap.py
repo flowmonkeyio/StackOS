@@ -181,8 +181,7 @@ class ImapActionConnector:
         )
 
     async def _native(self, request: ActionConnectorRequest, *, output_dir=None):
-        from stackos_connectors import CallOptions, ConnectorClient
-        from stackos_connectors.catalog import load_registry
+        from stackos_connectors import CallOptions, get_default_client
 
         from stackos.actions.package_bridge import PackageActionConnector
 
@@ -202,7 +201,7 @@ class ImapActionConnector:
         if request.operation == "message.export":
             prepared["limits"] = _export_limits()
         if self._client is None:
-            self._client = ConnectorClient(registry=load_registry("connectors/imap/catalog.json"))
+            self._client = get_default_client()
         options = self._options or CallOptions()
         if output_dir is not None:
             options = replace(options, output_dir=output_dir)

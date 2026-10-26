@@ -80,8 +80,7 @@ class SmtpActionConnector:
     async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
         if request.operation != "email.send":
             raise ValidationError(f"unsupported SMTP operation {request.operation!r}")
-        from stackos_connectors import ConnectorClient
-        from stackos_connectors.catalog import load_registry
+        from stackos_connectors import get_default_client
 
         from stackos.actions.package_bridge import PackageActionConnector
 
@@ -102,7 +101,7 @@ class SmtpActionConnector:
         if recipients > _MAX_RECIPIENTS:
             raise ValidationError(f"SMTP email can target at most {_MAX_RECIPIENTS} recipients")
         if self._client is None:
-            self._client = ConnectorClient(registry=load_registry("connectors/smtp/catalog.json"))
+            self._client = get_default_client()
         result = await PackageActionConnector(
             "smtp", client=self._client, options=self._options
         ).execute(replace(request, input_json=prepared))

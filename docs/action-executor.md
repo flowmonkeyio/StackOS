@@ -84,6 +84,12 @@ retain their public action contracts, host references, permissions and workflow
 metadata. A host composition can call multiple native actions without becoming
 a workflow in the connector library.
 
+Builtin adapters reuse the connector package's `get_default_client()` instead
+of rebuilding and validating catalogs per request.
+Only the immutable catalog is shared: credentials, transport options, native
+implementations and execution context remain per call. Explicitly injected
+clients remain available for declared custom catalogs and isolated tests.
+
 The Finance plugin's QuickBooks slice uses `PackageActionConnector` for exactly
 `finance.quickbooks-online.company-info.get` and
 `finance.quickbooks-online.invoices.list`. Both are reads with daemon-held
