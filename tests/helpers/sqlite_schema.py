@@ -85,6 +85,11 @@ def _empty_schema() -> bytes:
         engine.dispose()
 
 
+def empty_schema_snapshot() -> SQLiteSnapshot:
+    """Return immutable metadata schema bytes without catalog or business rows."""
+    return SQLiteSnapshot(_empty_schema())
+
+
 def _assert_no_business_rows(engine: Engine) -> None:
     with engine.connect() as connection:
         tables = connection.exec_driver_sql(
@@ -144,7 +149,7 @@ def builtin_catalog_snapshot(schema_snapshot: SQLiteSnapshot | None = None) -> S
 
 def make_test_memory_engine(*, catalog: bool = False) -> Engine:
     """Return a fresh empty or initialized-catalog database with normal options."""
-    snapshot = builtin_catalog_snapshot() if catalog else SQLiteSnapshot(_empty_schema())
+    snapshot = builtin_catalog_snapshot() if catalog else empty_schema_snapshot()
     engine = make_memory_engine()
     try:
         restore_database_snapshot(engine, snapshot)

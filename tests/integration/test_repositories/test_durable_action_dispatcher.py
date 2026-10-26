@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import inspect
 from sqlalchemy.engine import Engine
-from sqlmodel import Session, SQLModel, select
+from sqlmodel import Session, select
 
 import stackos.actions.durable_dispatcher as durable_dispatcher_module
 from stackos.actions import (
@@ -50,6 +50,7 @@ from stackos.repositories.base import ValidationError
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.resources import ArtifactRepository
 from stackos.repositories.run_plans import RunPlanRepository
+from tests.helpers.sqlite_schema import empty_schema_snapshot, restore_database_snapshot
 
 
 class _DispatchConnector:
@@ -128,7 +129,7 @@ class _DispatchConnector:
 
 def _seed_database(tmp_path: Path) -> tuple[Engine, int, str, int]:
     engine = make_engine(tmp_path / "durable-dispatcher.sqlite")
-    SQLModel.metadata.create_all(engine)
+    restore_database_snapshot(engine, empty_schema_snapshot())
     with Session(engine) as session:
         project = (
             ProjectRepository(session)
