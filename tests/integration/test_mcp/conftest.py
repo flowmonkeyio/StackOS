@@ -228,9 +228,7 @@ def mcp_token(mcp_settings: Settings) -> str:
 
 
 @pytest.fixture
-def mcp_client(
-    mcp_app: Any, mcp_token: str, mcp_database: SQLiteSnapshot
-) -> Iterator[MCPClient]:
+def mcp_client(mcp_app: Any, mcp_token: str, mcp_database: SQLiteSnapshot) -> Iterator[MCPClient]:
     """JSON-RPC wrapper over a TestClient bound to the MCP app."""
     with TestClient(mcp_app, base_url="http://127.0.0.1:5180") as test_client:
         mark_snapshot_catalog(mcp_app.state.engine, mcp_database)

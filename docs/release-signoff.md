@@ -92,6 +92,29 @@ for optimization; do not repeat the broad suite merely to remeasure the same
 candidate. Run the complete single-process verification after the optimization
 changes are finished.
 
+For a fully serial repeat, keep Make prerequisites sequential, disable pytest
+workers, and give Vitest one worker as well:
+
+```bash
+PYTEST_ADDOPTS='-n0 --junitxml=/tmp/stackos-serial.xml' make -j1 signoff UI_TEST_ARGS='--maxWorkers=1 --minWorkers=1 --no-file-parallelism'
+```
+
+The follow-up cleanup reuses immutable databases initialized by the real
+catalog synchronizer and (for MCP/REST) real migrations. Each consumer test
+still owns its database, engine, credentials, app lifecycle, grants and audit
+records. `fresh_catalog` keeps catalog bootstrap and source-mutation tests on
+an empty database; migration and app-lifecycle suites retain their original
+fresh starts. Snapshot regressions cover schema/data equivalence, source
+changes, isolation, PRAGMAs, failure recovery and refusal to overwrite a DB.
+
+Stripe business-action tests now start with an already-discovered account
+identity, using real encrypted credential storage. A named success-probe test
+and the existing failure matrix retain account discovery, identity persistence
+and safe audit proof. Workflow lookup copies only the requested key's resolved
+candidates, after validating every source, with one ownership copy before
+extensions or caller mutation. Preset content validation parses each shipped
+bundle once while comparing its complete key set to public discovery.
+
 | Python suite | Cases | Serial time, including fixtures |
 | --- | ---: | ---: |
 | Repositories | 1,724 | 710.809s |

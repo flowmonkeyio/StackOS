@@ -5,6 +5,7 @@
 SHELL := /bin/bash
 PYTHON ?= uv run python
 UV ?= uv
+UI_TEST_ARGS ?=
 
 ifneq (,$(wildcard .env.local))
 include .env.local
@@ -109,7 +110,7 @@ test-python: ## Run every Python test once and report the slowest tests
 	$(UV) run pytest tests -q --durations=20
 
 test-ui-unit: ui-deps ## Run UI unit tests
-	@if [ -d ui ]; then cd ui && pnpm test; else echo "ui/ not available in this checkout"; exit 0; fi
+	@if [ -d ui ]; then cd ui && pnpm test $(UI_TEST_ARGS); else echo "ui/ not available in this checkout"; exit 0; fi
 
 test-ui-e2e: ui-deps ## Run UI E2E tests
 	@if [ -d ui ]; then cd ui && pnpm e2e; else echo "ui/ not available in this checkout"; exit 0; fi

@@ -41,12 +41,17 @@ def test_prepared_database_matches_real_migrations_and_sync_without_private_stat
             PluginRepository(session).sync_builtin_plugins()
         with original_engine.connect() as original, copied_engine.connect() as copied:
             schema_query = "SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name"
-            assert copied.exec_driver_sql(schema_query).all() == original.exec_driver_sql(
-                schema_query
-            ).all(), "prepared app schema must come from real Alembic migrations"
-            tables = copied.exec_driver_sql(
-                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
-            ).scalars().all()
+            assert (
+                copied.exec_driver_sql(schema_query).all()
+                == original.exec_driver_sql(schema_query).all()
+            ), "prepared app schema must come from real Alembic migrations"
+            tables = (
+                copied.exec_driver_sql(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+                )
+                .scalars()
+                .all()
+            )
             populated = set()
             for table in tables:
                 # Catalog timestamps describe the actual sync that built each
@@ -158,9 +163,12 @@ def test_prepared_apps_are_isolated_and_run_real_migration_recovery_and_shutdown
                 "mutable catalog leaked between tests"
             )
         with second_app.state.engine.connect() as connection:
-            assert connection.exec_driver_sql(
-                "SELECT name FROM sqlite_master WHERE name = 'test_local_state'"
-            ).first() is None, "DDL leaked from another test"
+            assert (
+                connection.exec_driver_sql(
+                    "SELECT name FROM sqlite_master WHERE name = 'test_local_state'"
+                ).first()
+                is None
+            ), "DDL leaked from another test"
     assert second_app.state.scheduler_running is False
     assert migration_calls == [first_settings.db_path, second_settings.db_path], (
         "each cloned database must still pass through the real startup migration entry point"
