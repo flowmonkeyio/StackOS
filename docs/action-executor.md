@@ -188,6 +188,67 @@ reconciliation marks an orphaned `RUNNING` call `FAILED` with
 `outcome_unknown=true` and `retry_safe=false` rather than reporting success or
 silently retrying it.
 
+### Fixed Codex command custody (source boundary)
+
+`engineering.codex.recorded-turn` uses the existing background ActionCall and
+daemon-owned `BACKGROUND_ACTION_TASKS`. Its private attempt-bound slot retains
+original process/FD/task objects independently of requester/task completion.
+Only this explicit command path opts into custody; other background connectors
+keep their existing progress and replay behavior. No durable-provider scan or
+new worker MCP operation launches it.
+
+One monotonic 90-second allowance is sealed before preparation/acquisition;
+work ends at the original 78-second boundary, leaving 12 seconds for cleanup.
+Replays and late events cannot extend either deadline. Fresh worker sessions
+carry canonical services; immediately before acquisition the existing current
+grant, scoped approval, owner/stop/budget and owner CAS are checked. This is
+process-local admission, not atomic cross-process execution fencing.
+
+The first profile is exactly the recorded Gate0 argv (digest
+`176d5eead142ae8d5e2b0876e240d40df320e53684c66acfe725569864b10e0e`),
+with only approved source cwd/private output-schema substitution and prompt
+on stdin. No public argv, executable, shell, hooks/MCP/tools, profiles or
+configuration overrides are accepted. The server registers the connector
+without native pins or transport, so it returns unsupported/needs-operator
+before acquisition. The production transport is implemented and wired behind
+that closed deployment gate; source tests inject fake Popen/FD/clock/IO at its
+actual acquisition/observation/cleanup seams. It uses fixed argv, a sealed minimal
+environment, current binary/config/capability digests, nonblocking bounded JSON
+capture, original immediate-child reaping, and finite TERM/KILL/pipe cleanup.
+Its stdout events supply actual turn correlation/result and token usage; recorded
+Gate0 values exist only in historical documentation/test data. Reviewed deployment
+pins and a separately admitted execution are prerequisites for any native call.
+Correlated in-flight permission requests remain unsupported and stop work;
+prose approval cannot bypass the existing ApprovalRequest/run-plan checks.
+
+Receipts separate useful result, effects, cancellation, immediate CLI exit/reap,
+local FD/process cleanup, actual live daemon custody ACK, descendants/remote
+termination, original deadline, usage and attempts. A completed turn survives
+later cleanup uncertainty. ACK requires that the live original owner actually
+retains resource objects; audit strings, task completion and PID reconstruction
+are insufficient. Shutdown finitely records each disposition on its original
+ActionCall before disposal; unknown custody withholds the clean log and retains
+the relevant engine/services. Process-local custody does not survive daemon
+death. Unknown descendants/remote termination never authorizes quiescence,
+replacement, capacity reuse or budget reset.
+Fresh admission also queries the existing ActionCall records for this project
+and canonical item before consuming another attempt. Prior orphaned/running,
+missing-receipt or terminal-but-unresolved Codex commands remain held across
+daemon restart; only a recorded unsupported denial with zero issued attempts
+is known not to have acquired a command. No new retry ledger or automatic
+clearance is created. Original close errors latch cleanup unknown even when a
+stream reports closed, and neither polling nor shutdown retries that descriptor.
+Persisted numeric usage uses `unit=tokens` and `input`, `output`, `total`,
+`allowance` with the independent `hard_cap` boolean. Only known nonnegative
+integers get these names before canonical redaction; secret-shaped fields
+remain protected, and unknown usage is never converted to zero.
+
+Gate0 remains historical data: completed turn at75.832s; immediate CLI TERM/reap
+at78.013s, exit-15;19758 input+1767 output=21525 tokens above the non-hard16000
+allowance. Descendant/remote termination remains unproven. Fake/source tests do
+not improve that result or admit real Codex/native execution; old MYB125 native
+plan30/run25 invocation1 remains failed/held.
+
 Actions with `config_json.durable_delivery` use the shared durable ActionRepository
 instead of process-live background execution. Acceptance seals immutable item
 payloads and destinations before any provider side effect. A daemon dispatcher

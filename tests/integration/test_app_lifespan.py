@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import stat
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -24,6 +25,117 @@ from stackos.db.migrate import upgrade_to_head
 from stackos.db.model_core import ActionCall, Project
 from stackos.db.model_enums import ActionCallStatus
 from stackos.server import create_app
+
+
+@pytest.mark.parametrize("clean", [True, False])
+def test_codex_custody_fake_lifespan_records_before_disposal(monkeypatch, clean):
+    """All services/Session/settings are fakes: no app, socket, DB or auth files."""
+    events = []
+    log = Mock()
+    engine = SimpleNamespace(dispose=lambda: events.append("dispose"))
+    receipt = {"binding": {"action_call_id": 1}, "cleanup": {"status": "unknown"}}
+
+    class Owner:
+        def activate(self):
+            events.append("owner-live")
+
+        async def shutdown(self):
+            events.append("owner-accounted")
+            return {"clean": clean, "commands": [receipt]}
+
+    class Session:
+        def __init__(self, _engine):
+            assert _engine is engine
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+    class Repository:
+        def __init__(self, _session):
+            pass
+
+        def reconcile_running_calls(self):
+            return 0
+
+        def reap_stale(self, **_kwargs):
+            return 0
+
+        def record_codex_custody(self, value):
+            assert value is receipt
+            events.append("original-audit")
+
+    class Runtime:
+        async def close_all(self):
+            events.append("runtime-stop")
+
+    class Dispatcher:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def start(self):
+            pass
+
+        async def stop(self):
+            events.append("dispatcher-stop")
+
+    class Scheduler:
+        running = False
+
+        def add_job(self, *_args, **_kwargs):
+            pass
+
+        def start(self):
+            self.running = True
+
+        def add_listener(self, callback, _event):
+            self.callback = callback
+
+        def shutdown(self, **_kwargs):
+            self.running = False
+            self.callback(None)
+
+    async def restore(*_args):
+        pass
+
+    for name in (
+        "configure_logging",
+        "_ensure_seed",
+        "configure_seed_path",
+        "cleanup_old_backup",
+        "upgrade_to_head",
+    ):
+        monkeypatch.setattr(server_module, name, lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(server_module, "ensure_token", lambda *_args: "fake-not-a-token")
+    monkeypatch.setattr(server_module, "derive_ui_token", lambda *_args: "fake-ui")
+    monkeypatch.setattr(server_module, "make_engine", lambda *_args: engine)
+    monkeypatch.setattr(server_module.SQLModel.metadata, "create_all", lambda *_args: None)
+    monkeypatch.setattr(server_module, "Session", Session)
+    monkeypatch.setattr(server_module, "ActionRepository", Repository)
+    monkeypatch.setattr(server_module, "RunRepository", Repository)
+    monkeypatch.setattr(server_module, "BACKGROUND_ACTION_TASKS", Owner())
+    monkeypatch.setattr(server_module, "build_telegram_runtime", lambda *_args: Runtime())
+    monkeypatch.setattr(server_module, "restore_telegram_accounts", restore)
+    monkeypatch.setattr(server_module, "DurableActionDispatcher", Dispatcher)
+    monkeypatch.setattr(server_module, "build_scheduler", lambda *_args: Scheduler())
+    monkeypatch.setattr(server_module, "get_logger", lambda *_args: log)
+    app = SimpleNamespace(state=SimpleNamespace())
+    settings = Mock()
+
+    async def lifecycle():
+        async with server_module._build_lifespan(settings)(app):
+            assert "codex-worker" in app.state.operation_services["action_connectors"].list_keys()
+
+    asyncio.run(lifecycle())
+    assert events.index("owner-accounted") < events.index("original-audit")
+    if clean:
+        assert events.index("original-audit") < events.index("dispose")
+        assert any(call.args == ("daemon.shutdown.clean",) for call in log.info.call_args_list)
+    else:
+        assert "dispose" not in events and app.state.held_command_engine is engine
+        assert not any(call.args == ("daemon.shutdown.clean",) for call in log.info.call_args_list)
 
 
 def _mode(p) -> int:  # type: ignore[no-untyped-def]

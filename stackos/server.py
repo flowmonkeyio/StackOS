@@ -30,7 +30,9 @@ from starlette.types import Scope
 
 from stackos import __milestone__, __version__
 from stackos.actions import DEFAULT_ACTION_CONNECTORS, ActionConnectorRegistry, ActionRepository
+from stackos.actions.codex_worker import CodexWorkerConnector
 from stackos.actions.durable_dispatcher import DurableActionDispatcher
+from stackos.actions.repository.background import BACKGROUND_ACTION_TASKS
 from stackos.actions.telegram import TelegramActionConnector
 from stackos.api import register_routers
 from stackos.auth import BearerTokenMiddleware, derive_ui_token, ensure_token
@@ -239,6 +241,14 @@ def _ensure_seed(seed_path: Path) -> None:
     os.chmod(seed_path, _REQUIRED_MODE)
 
 
+async def _shutdown_background_commands(owner, persist):
+    """Finite custody outcome recorded before any relevant service disposal."""
+    disposition = await owner.shutdown()
+    for receipt in disposition["commands"]:
+        persist(receipt)
+    return disposition
+
+
 def _build_lifespan(
     settings: Settings,
 ) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
@@ -278,6 +288,9 @@ def _build_lifespan(
         for key in DEFAULT_ACTION_CONNECTORS.list_keys():
             connectors.register(DEFAULT_ACTION_CONNECTORS.get(key))
         connectors.register(TelegramActionConnector(telegram_runtime))
+        BACKGROUND_ACTION_TASKS.activate()
+        # Production transport is wired, but no reviewed deployment pins are installed.
+        connectors.register(CodexWorkerConnector(BACKGROUND_ACTION_TASKS))
         delivery = DurableActionDispatcher(
             session_factory=lambda: Session(engine),
             connectors=connectors,
@@ -288,6 +301,7 @@ def _build_lifespan(
             "telegram_runtime": telegram_runtime,
             "action_connectors": connectors,
             "durable_dispatcher": delivery,
+            "background_action_tasks": BACKGROUND_ACTION_TASKS,
         }
 
         with Session(engine) as session:
@@ -364,28 +378,44 @@ def _build_lifespan(
             )
             yield
         finally:
-            log.info("daemon.shutdown.clean")
+            custody_clean = False
+
+            def persist_custody(receipt):
+                with Session(engine) as session:
+                    ActionRepository(session).record_codex_custody(receipt)
+
             try:
-                await delivery.stop()
+                disposition = await _shutdown_background_commands(
+                    BACKGROUND_ACTION_TASKS, persist_custody
+                )
+                app.state.command_custody_disposition = disposition
+                custody_clean = disposition["clean"]
             finally:
                 try:
-                    await telegram_runtime.close_all()
+                    await delivery.stop()
                 finally:
-                    # AsyncIOScheduler.shutdown queues a callback. Await its
-                    # completion event before disposing state; wait=True drains
-                    # the long executor's backup thread inside that callback.
-                    import contextlib as _ctx_lib
+                    try:
+                        await telegram_runtime.close_all()
+                    finally:
+                        # Existing scheduler semantics are unchanged by Codex custody.
+                        import contextlib as _ctx_lib
 
-                    with _ctx_lib.suppress(Exception):  # pragma: no cover — defensive
-                        if scheduler.running:
-                            stopped = asyncio.Event()
-                            scheduler.add_listener(
-                                lambda _event: stopped.set(), EVENT_SCHEDULER_SHUTDOWN
-                            )
-                            scheduler.shutdown(wait=True)
-                            await stopped.wait()
-                    app.state.scheduler_running = False
-                    engine.dispose()
+                        with _ctx_lib.suppress(Exception):  # pragma: no cover
+                            if scheduler.running:
+                                stopped = asyncio.Event()
+                                scheduler.add_listener(
+                                    lambda _event: stopped.set(), EVENT_SCHEDULER_SHUTDOWN
+                                )
+                                scheduler.shutdown(wait=True)
+                                await stopped.wait()
+                        app.state.scheduler_running = False
+                        if custody_clean:
+                            engine.dispose()
+                        else:
+                            app.state.held_command_engine = engine
+                            log.error("daemon.shutdown.custody_unknown")
+            if custody_clean:
+                log.info("daemon.shutdown.clean")
 
     return lifespan
 

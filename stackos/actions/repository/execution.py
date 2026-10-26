@@ -48,6 +48,29 @@ ACTION_OUTPUT_SCHEMA_VERSION = ACTION_OUTPUT_SCHEMA_REF
 MAX_TRANSIENT_OUTPUT_BYTES = 262_144
 
 
+def _codex_usage_projection(output: dict[str, Any]) -> dict[str, Any]:
+    """Numeric receipt facts get safe names BEFORE unchanged canonical redaction."""
+    usage = output.get("usage")
+    if not isinstance(usage, dict):
+        return output
+    projected = dict(usage)
+    mapped = False
+    for original, safe in (
+        ("input_tokens", "input"),
+        ("output_tokens", "output"),
+        ("total_tokens", "total"),
+        ("allowance_tokens", "allowance"),
+    ):
+        value = usage.get(original)
+        if type(value) is int and value >= 0:
+            projected.pop(original)
+            projected[safe] = value
+            mapped = True
+    if mapped:
+        projected["unit"] = "tokens"
+    return {**output, "usage": projected}
+
+
 @dataclass(frozen=True)
 class _PreparedActionExecution:
     project_id: int
@@ -68,6 +91,82 @@ class _PreparedActionExecution:
 
 class ActionExecutionMixin:
     """Execute explicit actions through the canonical connector boundary."""
+
+    def require_codex_prior_clear(
+        self,
+        *,
+        project_id: int,
+        canonical_item_id: str,
+        action_call_id: int,
+    ) -> None:
+        """Original ActionCalls survive loss of the daemon's private slots.
+
+        This fixed profile cannot prove descendant/remote termination. Only an
+        explicit pre-acquisition denial is known not to have issued a command;
+        terminal call status alone never clears prior uncertainty.
+        """
+        from sqlmodel import col, select
+
+        prior_calls = self._s.exec(
+            select(ActionCall).where(
+                col(ActionCall.project_id) == project_id,
+                col(ActionCall.operation) == "codex.recorded-turn",
+                col(ActionCall.id) != action_call_id,
+                col(ActionCall.dry_run).is_(False),
+                col(ActionCall.request_json)["canonical_item_id"].as_string() == canonical_item_id,
+            )
+        )
+        for prior in prior_calls:
+            output = prior.response_json if isinstance(prior.response_json, dict) else {}
+            if (
+                prior.status == ActionCallStatus.FAILED
+                and output.get("status") == "unsupported"
+                and output.get("provider_executed") is False
+                and type(output.get("attempts_consumed")) is int
+                and output.get("attempts_consumed") == 0
+            ):
+                continue
+            raise ConflictError(
+                "prior Codex command remains unresolved; operator adjudication required",
+                data={
+                    "action_call_id": prior.id,
+                    "canonical_item_id": canonical_item_id,
+                    "next_action": "needs-operator",
+                    "retry_safe": False,
+                },
+            )
+
+    def record_codex_custody(self, receipt: dict[str, Any]) -> None:
+        """CAS original audit metadata; never rewrite terminal effect/result truth."""
+        from sqlalchemy import update
+        from sqlmodel import col
+
+        binding = receipt["binding"]
+        row = self._s.get(ActionCall, binding["action_call_id"], populate_existing=True)
+        if row is None or (row.project_id, row.run_id, row.run_plan_id, row.run_plan_step_id) != (
+            binding["project_id"],
+            binding["controller_run_id"],
+            binding["run_plan_id"],
+            binding["run_plan_step_id"],
+        ):
+            raise ConflictError("original Codex audit binding changed")
+        metadata = {
+            **(row.metadata_json or {}),
+            "codex_custody": _redact_for_audit(_codex_usage_projection(receipt)),
+        }
+        changed = self._s.execute(
+            update(ActionCall)
+            .where(
+                col(ActionCall.id) == row.id,
+                col(ActionCall.metadata_json) == row.metadata_json,
+                col(ActionCall.status) == row.status,
+            )
+            .values(metadata_json=metadata)
+        )
+        if changed.rowcount != 1:
+            self._s.rollback()
+            raise ConflictError("original Codex audit changed during custody accounting")
+        self._s.commit()
 
     async def execute(
         self,
@@ -535,6 +634,7 @@ class ActionExecutionMixin:
                 repository_type = type(self)
                 connectors = self._connectors
                 asset_dir = self._asset_dir
+                operation_services = dict(self._s.info.get("operation_services", {}))
                 action_call_id = row.id
                 BACKGROUND_ACTION_TASKS.start(
                     action_call_id,
@@ -546,6 +646,7 @@ class ActionExecutionMixin:
                         prepared=prepared,
                         action_call_id=action_call_id,
                         progress_callback=report,
+                        operation_services=operation_services,
                     ),
                 )
             return Envelope(
@@ -645,6 +746,11 @@ class ActionExecutionMixin:
                 del request
                 del materialized_payload
         except ActionConnectorError as exc:
+            connector_output = (
+                _codex_usage_projection(exc.output_json)
+                if manifest.connector_key == "codex-worker"
+                else exc.output_json
+            )
             duration_ms = int((time.perf_counter() - started) * 1000)
             self._s.rollback()
             transient = effective_output_policy["mode"] == "transient"
@@ -685,7 +791,7 @@ class ActionExecutionMixin:
                     ),
                 }
                 if transient
-                else _redact_for_audit(redact_secret_values(exc.output_json, sensitive_values))
+                else _redact_for_audit(redact_secret_values(connector_output, sensitive_values))
             )
             connector_metadata = (
                 _redact_for_audit(redact_secret_values(exc.metadata_json, sensitive_values))
@@ -789,7 +895,12 @@ class ActionExecutionMixin:
             ) from exc
 
         duration_ms = int((time.perf_counter() - started) * 1000)
-        output_json = _redact_for_audit(redact_secret_values(result.output_json, sensitive_values))
+        connector_output = (
+            _codex_usage_projection(result.output_json)
+            if manifest.connector_key == "codex-worker"
+            else result.output_json
+        )
+        output_json = _redact_for_audit(redact_secret_values(connector_output, sensitive_values))
         result_metadata = (
             _redact_for_audit(redact_secret_values(result.metadata_json, sensitive_values))
             if result.metadata_json
@@ -1153,8 +1264,10 @@ async def _execute_background_action(
     prepared: _PreparedActionExecution,
     action_call_id: int,
     progress_callback: ActionProgressCallback,
+    operation_services: dict[str, Any] | None = None,
 ) -> None:
     with Session(bind) as session:
+        session.info["operation_services"] = dict(operation_services or {})
         repository = repository_type(session, connectors=connectors, asset_dir=asset_dir)
         try:
             await repository._execute_prepared(

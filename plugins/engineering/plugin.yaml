@@ -4,6 +4,36 @@ version: 0.2.0
 description: First-party StackOS domain package for SDLC workflow templates, engineering task state, and reusable delivery agent presets.
 display_order: 10
 source: builtin
+actions:
+  - key: codex.recorded-turn
+    name: Fixed Codex recorded-profile turn
+    description: Explicit one-command background boundary; needs reviewed daemon profile and transport pins before acquisition. No coding/tool profile or native admission is installed by this action.
+    capability: engineering-delivery
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [prompt, canonical_item_id, owner_ref, epoch, revision, scope_digest, source_revision, attempt_run_id]
+      properties:
+        prompt: {type: string, minLength: 1, maxLength: 65536}
+        canonical_item_id: {type: string, minLength: 3, maxLength: 160}
+        owner_ref: {type: string, minLength: 1, maxLength: 160}
+        epoch: {type: integer, minimum: 1}
+        revision: {type: integer, minimum: 1}
+        scope_digest: {type: string, minLength: 1, maxLength: 160}
+        source_revision: {type: string, pattern: '^[0-9a-f]{40}$'}
+        attempt_run_id: {type: integer, minimum: 1}
+    output_schema:
+      type: object
+      description: Independent result, effects, cancellation, CLI, cleanup, custody, termination, original clock and usage facts; held/unsupported never authorizes retry or quiescence.
+    config:
+      schema_version: stackos.action.v1
+      connector: codex-worker
+      operation: codex.recorded-turn
+      execution_mode: background
+      requires_credential: false
+      allows_credential: false
+      agent_guidance: Requires existing scoped action approval and owner-attempt admission; in-flight permission requests are unsupported/needs-operator. Missing reviewed binary/version/effective-config/capability pins denies before acquisition. No scheduling or automatic launch.
 capabilities:
   - key: engineering-delivery
     name: Engineering Delivery
