@@ -28,12 +28,27 @@ from stackos.server import create_app
 
 
 @pytest.mark.parametrize("clean", [True, False])
-def test_codex_custody_fake_lifespan_records_before_disposal(monkeypatch, clean):
+@pytest.mark.parametrize("admitted_dispatch", [False, True])
+def test_codex_custody_fake_lifespan_records_before_disposal(monkeypatch, clean, admitted_dispatch):
     """All services/Session/settings are fakes: no app, socket, DB or auth files."""
     events = []
     log = Mock()
     engine = SimpleNamespace(dispose=lambda: events.append("dispose"))
     receipt = {"binding": {"action_call_id": 1}, "cleanup": {"status": "unknown"}}
+    admitted_scope = object() if admitted_dispatch else None
+    profile, transport = Mock(), Mock()
+
+    class Selection:
+        def __init__(self, *, engine: object, settings: object, services: dict, scope: object):
+            assert scope is admitted_scope
+            assert services["background_action_tasks"] is server_module.BACKGROUND_ACTION_TASKS
+            assert "codex-worker" in services["action_connectors"].list_keys()
+
+        def start(self):
+            events.append("selection-start")
+
+        async def stop(self):
+            events.append("selection-stop")
 
     class Owner:
         def activate(self):
@@ -76,7 +91,7 @@ def test_codex_custody_fake_lifespan_records_before_disposal(monkeypatch, clean)
             pass
 
         async def start(self):
-            pass
+            events.append("dispatcher-start")
 
         async def stop(self):
             events.append("dispatcher-stop")
@@ -116,6 +131,7 @@ def test_codex_custody_fake_lifespan_records_before_disposal(monkeypatch, clean)
     monkeypatch.setattr(server_module, "ActionRepository", Repository)
     monkeypatch.setattr(server_module, "RunRepository", Repository)
     monkeypatch.setattr(server_module, "BACKGROUND_ACTION_TASKS", Owner())
+    monkeypatch.setattr(server_module, "AgentDispatchLoop", Selection)
     monkeypatch.setattr(server_module, "build_telegram_runtime", lambda *_args: Runtime())
     monkeypatch.setattr(server_module, "restore_telegram_accounts", restore)
     monkeypatch.setattr(server_module, "DurableActionDispatcher", Dispatcher)
@@ -125,10 +141,22 @@ def test_codex_custody_fake_lifespan_records_before_disposal(monkeypatch, clean)
     settings = Mock()
 
     async def lifecycle():
-        async with server_module._build_lifespan(settings)(app):
+        async with server_module._build_lifespan(
+            settings,
+            agent_dispatch_scope=admitted_scope,
+            codex_profile=profile if admitted_dispatch else None,
+            codex_transport=transport if admitted_dispatch else None,
+        )(app):
             assert "codex-worker" in app.state.operation_services["action_connectors"].list_keys()
+            assert (app.state.agent_dispatch is not None) is admitted_dispatch
 
     asyncio.run(lifecycle())
+    if admitted_dispatch:
+        assert events.index("owner-live") < events.index("selection-start")
+        assert events.index("dispatcher-start") < events.index("selection-start")
+        assert events.index("selection-stop") < events.index("owner-accounted")
+    else:
+        assert "selection-start" not in events and "selection-stop" not in events
     assert events.index("owner-accounted") < events.index("original-audit")
     if clean:
         assert events.index("original-audit") < events.index("dispose")

@@ -188,7 +188,7 @@ class CommunicationSendOut(BaseModel):
     output_json: dict[str, Any] = Field(default_factory=dict)
     metadata_json: dict[str, Any] | None = None
     credential_ref: str | None = None
-    cost_cents: int = 0
+    cost_cents: int | None = 0
     replayed: bool = False
     poll_operation: str | None = None
     poll_arguments: dict[str, Any] | None = None

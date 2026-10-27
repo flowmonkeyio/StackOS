@@ -46,6 +46,7 @@ from stackos.integrations.telegram_tdlib.daemon import (
     build_telegram_runtime,
     restore_telegram_accounts,
 )
+from stackos.jobs.agent_dispatch import AgentDispatchLoop, AgentDispatchScope
 from stackos.jobs.runs_reaper import (
     DEFAULT_STALE_AFTER_SECONDS,
     reap_orphaned_runs,
@@ -274,8 +275,14 @@ def _build_action_connectors(
 
 def _build_lifespan(
     settings: Settings,
+    *,
+    agent_dispatch_scope: AgentDispatchScope | None = None,
+    codex_profile: CodexProfile | None = None,
+    codex_transport: CodexTransport | None = None,
 ) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
     """Build a FastAPI lifespan for the given settings (closure binds settings)."""
+    if agent_dispatch_scope is not None and codex_profile is None:
+        raise ValueError("admitted agent dispatch requires an explicitly reviewed Codex profile")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -312,6 +319,8 @@ def _build_lifespan(
         connectors = _build_action_connectors(
             background_tasks=BACKGROUND_ACTION_TASKS,
             telegram_connector=TelegramActionConnector(telegram_runtime),
+            codex_profile=codex_profile,
+            codex_transport=codex_transport,
         )
         delivery = DurableActionDispatcher(
             session_factory=lambda: Session(engine),
@@ -325,6 +334,17 @@ def _build_lifespan(
             "durable_dispatcher": delivery,
             "background_action_tasks": BACKGROUND_ACTION_TASKS,
         }
+        agent_dispatch = (
+            AgentDispatchLoop(
+                engine=engine,
+                settings=settings,
+                services=app.state.operation_services,
+                scope=agent_dispatch_scope,
+            )
+            if agent_dispatch_scope is not None
+            else None
+        )
+        app.state.agent_dispatch = agent_dispatch
 
         with Session(engine) as session:
             reconciled_actions = ActionRepository(session).reconcile_running_calls()
@@ -388,6 +408,8 @@ def _build_lifespan(
 
             await restore_telegram_accounts(engine, settings, telegram_runtime)
             await delivery.start()
+            if agent_dispatch is not None:
+                agent_dispatch.start()
 
             log.info(
                 "daemon.started",
@@ -407,11 +429,15 @@ def _build_lifespan(
                     ActionRepository(session).record_codex_custody(receipt)
 
             try:
-                disposition = await _shutdown_background_commands(
-                    BACKGROUND_ACTION_TASKS, persist_custody
-                )
-                app.state.command_custody_disposition = disposition
-                custody_clean = disposition["clean"]
+                try:
+                    if agent_dispatch is not None:
+                        await agent_dispatch.stop()
+                finally:
+                    disposition = await _shutdown_background_commands(
+                        BACKGROUND_ACTION_TASKS, persist_custody
+                    )
+                    app.state.command_custody_disposition = disposition
+                    custody_clean = disposition["clean"]
             finally:
                 try:
                     await delivery.stop()
@@ -442,11 +468,19 @@ def _build_lifespan(
     return lifespan
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    *,
+    agent_dispatch_scope: AgentDispatchScope | None = None,
+    codex_profile: CodexProfile | None = None,
+    codex_transport: CodexTransport | None = None,
+) -> FastAPI:
     """Build a FastAPI app with middleware, lifespan, and routes wired.
 
     `settings` may be supplied for tests that want isolated paths; in
     production, callers pass `None` and we resolve the global Settings.
+    Agent selection is inert unless an explicit admitted scope and reviewed
+    profile are injected. This source seam is not installed activation/config.
     """
     settings = settings or get_settings()
     # Pre-flight ensure so the token exists before middleware reads it.
@@ -467,7 +501,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "plus Vue UI for projects, plugins, workflow templates, run plans, "
             "resources, actions, and auditable runs."
         ),
-        lifespan=_build_lifespan(settings),
+        lifespan=_build_lifespan(
+            settings,
+            agent_dispatch_scope=agent_dispatch_scope,
+            codex_profile=codex_profile,
+            codex_transport=codex_transport,
+        ),
         docs_url="/api/docs",
         redoc_url=None,
         openapi_url="/api/openapi.json",

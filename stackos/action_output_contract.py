@@ -103,7 +103,7 @@ ACTION_OUTPUT_SCHEMA: dict[str, Any] = {
             "properties": {
                 "output_json": {"type": "object", "additionalProperties": True},
                 "metadata_json": {"type": ["object", "null"], "additionalProperties": True},
-                "cost_cents": {"type": "integer"},
+                "cost_cents": {"type": ["integer", "null"]},
                 "duration_ms": {"type": ["integer", "null"]},
                 "dry_run": {"type": "boolean"},
             },

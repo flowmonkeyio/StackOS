@@ -4,16 +4,20 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
+from jsonschema import Draft202012Validator
 
+from stackos.action_output_contract import ACTION_OUTPUT_SCHEMA
 from stackos.actions.codex_worker import CodexWorkerConnector
 from stackos.actions.manifest import ExecutableActionManifest
 from stackos.actions.repository.audit import ActionAuditMixin, _cost_metadata, _public_cost_cents
 from stackos.actions.repository.execution import (
     ActionExecutionMixin,
+    _action_output_envelope,
     _require_unknown_cost_approval,
 )
 from stackos.actions.repository.validation import RuntimeActionContext
 from stackos.db.models import ActionCall, ActionCallStatus, ApprovalRequestStatus
+from stackos.operations.communication_delivery.schemas import CommunicationSendOut
 from stackos.operations.responses import _compact_action_execution
 from stackos.repositories.base import ConflictError
 
@@ -106,6 +110,56 @@ def test_writer_owns_posture_and_public_projection(amount):
     assert audit.model_dump(mode="json")["cost_cents"] == amount
     compact = _compact_action_execution({"cost_cents": amount, "action_call": audit.model_dump()})
     assert "cost_cents" in compact and compact["cost_cents"] == amount
+
+
+@pytest.mark.parametrize("amount", [None, 0, 17])
+def test_file_output_envelope_matches_registered_cost_schema(amount):
+    manifest = ExecutableActionManifest(
+        action_id=1,
+        action_key="inspect",
+        action_ref="engineering.inspect",
+        plugin_slug="engineering",
+        name="Inspect",
+        risk_level="read",
+        connector_key="codex-worker" if amount is None else "example",
+        operation="inspect",
+    )
+    row = ActionCall(
+        id=1,
+        project_id=1,
+        plugin_slug=manifest.plugin_slug,
+        action_key=manifest.action_key,
+        connector_key=manifest.connector_key,
+        operation=manifest.operation,
+        status=ActionCallStatus.SUCCESS,
+        cost_cents=amount if amount is not None else 0,
+        metadata_json=_cost_metadata({}, amount),
+    )
+    envelope = _action_output_envelope(
+        project_id=1,
+        manifest=manifest,
+        input_json={},
+        provider_context_json=None,
+        credential_ref=None,
+        runtime_context=RuntimeActionContext(credential_ref=None, provider_context_json={}),
+        row=row,
+        output_json={"result": "inspected"},
+    )
+    assert envelope["response"]["cost_cents"] == amount
+    Draft202012Validator(ACTION_OUTPUT_SCHEMA).validate(envelope)
+
+
+@pytest.mark.parametrize("amount", [None, 0, 17])
+def test_communication_response_preserves_forwarded_action_cost(amount):
+    response = CommunicationSendOut(
+        status="sent",
+        action_ref="example.send",
+        provider_key="example",
+        cost_cents=amount,
+    )
+    public = response.model_dump(mode="json")
+    assert public["cost_cents"] == amount
+    Draft202012Validator(CommunicationSendOut.model_json_schema()).validate(public)
 
 
 @pytest.mark.parametrize("amount", [0, 17])

@@ -6,6 +6,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from sqlalchemy import update
 from sqlmodel import col, select
 
 from stackos.artifacts import redact_secrets
@@ -15,6 +16,7 @@ from stackos.db.models import (
     RunPlan,
     RunPlanStatus,
     RunPlanStep,
+    RunPlanStepStatus,
     TaskTracker,
     TrackerItemStatus,
     TrackerRevision,
@@ -23,6 +25,7 @@ from stackos.db.models import (
     TrackerTicket,
     TrackerTicketDependency,
     TrackerTicketKind,
+    WorkItemOwnership,
 )
 from stackos.repositories.base import (
     ConflictError,
@@ -95,6 +98,8 @@ _TICKET_PATCH_FIELDS = frozenset(
         "add_dependency_keys",
         "remove_dependency_keys",
         "references_json",
+        "run_plan_id",
+        "run_plan_step_id",
     }
 )
 _WORKFLOW_MIRROR_OWNED_TICKET_FIELDS = frozenset(
@@ -686,6 +691,8 @@ class TrackerMutationMixin:
             raise NotFoundError("ticket task not found", data={"ticket_key": ticket_key})
         self._validate_ticket_patch_fields(patch_json)
         if dry_run:
+            if "run_plan_id" in patch_json or "run_plan_step_id" in patch_json:
+                raise ValidationError("draft ticket binding does not support dry_run")
             self._validate_workflow_ticket_patch_status(ticket, patch_json)
             dependency_preview = self._preview_dependency_patch(tracker, ticket, patch_json)
             warnings = dependency_preview.warnings if dependency_preview is not None else []
@@ -1120,6 +1127,8 @@ class TrackerMutationMixin:
     ) -> None:
         self._validate_ticket_patch_fields(patch_json)
         self._validate_workflow_mirror_ticket_patch_fields(ticket, patch_json)
+        if "run_plan_id" in patch_json or "run_plan_step_id" in patch_json:
+            self._bind_unstarted_ticket(ticket, patch_json)
         now = _utcnow()
         if "status" in patch_json:
             new_status = _status_value(str(patch_json["status"]))
@@ -1230,6 +1239,95 @@ class TrackerMutationMixin:
             ticket.lane_key = "done"
         ticket.updated_at = now
         self._s.add(ticket)
+
+    def _bind_unstarted_ticket(self, ticket: TrackerTicket, patch: dict[str, Any]) -> None:
+        """Resolve draft setup's ticket-ID/grant cycle without editing frozen grants.
+
+        A standalone two-field patch attaches an existing, never-started ticket
+        once. The SQL predicate fences concurrent plan start, ownership and a
+        second attachment. This creates no execution authority by itself.
+        """
+        if set(patch) != {"run_plan_id", "run_plan_step_id"} or any(
+            type(patch.get(key)) is not int or patch[key] <= 0
+            for key in ("run_plan_id", "run_plan_step_id")
+        ):
+            raise ValidationError("ticket binding requires only paired positive plan and step IDs")
+        plan = self._s.get(RunPlan, patch["run_plan_id"], populate_existing=True)
+        step = self._s.get(RunPlanStep, patch["run_plan_step_id"], populate_existing=True)
+        if (
+            plan is None
+            or step is None
+            or plan.project_id != ticket.project_id
+            or step.run_plan_id != plan.id
+            or plan.status != RunPlanStatus.DRAFT
+            or plan.run_id is not None
+            or step.status != RunPlanStepStatus.PENDING
+            or ticket.run_plan_id is not None
+            or ticket.run_plan_step_id is not None
+            or ticket.status != TrackerItemStatus.NOT_STARTED
+            or ticket.started_at is not None
+            or ticket.run_id is not None
+        ):
+            raise ConflictError(
+                "ticket binding requires an unbound ticket and unstarted draft plan/step"
+            )
+        item = f"ticket:{ticket.id}"
+        no_owner = (
+            ~select(WorkItemOwnership.id)
+            .where(
+                WorkItemOwnership.project_id == ticket.project_id,
+                WorkItemOwnership.canonical_item_id == item,
+            )
+            .exists()
+        )
+        no_attempt = (
+            ~select(Run.id)
+            .where(
+                Run.project_id == ticket.project_id,
+                col(Run.metadata_json)["ownership_binding"]["canonical_item_id"].as_string()
+                == item,
+            )
+            .exists()
+        )
+        draft = (
+            select(RunPlan.id)
+            .where(
+                RunPlan.id == plan.id,
+                RunPlan.project_id == ticket.project_id,
+                RunPlan.status == RunPlanStatus.DRAFT,
+                col(RunPlan.run_id).is_(None),
+            )
+            .exists()
+        )
+        pending = (
+            select(RunPlanStep.id)
+            .where(
+                RunPlanStep.id == step.id,
+                RunPlanStep.run_plan_id == plan.id,
+                RunPlanStep.status == RunPlanStepStatus.PENDING,
+            )
+            .exists()
+        )
+        changed = self._s.execute(
+            update(TrackerTicket)
+            .where(
+                col(TrackerTicket.id) == ticket.id,
+                col(TrackerTicket.run_plan_id).is_(None),
+                col(TrackerTicket.run_plan_step_id).is_(None),
+                col(TrackerTicket.run_id).is_(None),
+                col(TrackerTicket.started_at).is_(None),
+                col(TrackerTicket.status) == TrackerItemStatus.NOT_STARTED,
+                no_owner,
+                no_attempt,
+                draft,
+                pending,
+            )
+            .values(run_plan_id=plan.id, run_plan_step_id=step.id)
+            .execution_options(synchronize_session=False)
+        )
+        if changed.rowcount != 1:
+            raise ConflictError("ticket binding changed or execution history already exists")
+        self._s.refresh(ticket)
 
     def _validate_workflow_ticket_patch_status(
         self,

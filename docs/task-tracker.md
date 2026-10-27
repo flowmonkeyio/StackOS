@@ -119,6 +119,15 @@ ticket under the mirrored workflow step but does not add dependency edges.
 Agents must still add `dependency_keys` or `dependencies_json` so
 workflow-backed tickets are dependency-bridged into the workflow spine.
 
+For exact owner grants over existing manual tickets, create the tickets first,
+then create the draft plan with their canonical `ticket:<id>` targets. Bind each
+unstarted ticket once using `tracker.updateTicket` with a standalone
+`patch_json` containing the paired numeric `run_plan_id` and `run_plan_step_id`.
+The step must belong to that draft plan and the same project. Started plans,
+started tickets, existing bindings, ownership/attempt history, mixed patches and
+dry-run binding are rejected. This binding preserves frozen grants and does not
+grant authority, move parentage or add readiness dependencies.
+
 Dependency rows use two readiness meanings:
 
 - `activates`: the child is ready while its attached parent workflow step is

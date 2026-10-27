@@ -285,6 +285,7 @@ class TrackerQueryMixin:
         limit: int = 5,
         assignee: str | None = None,
         include_blocked: bool = True,
+        ticket_keys: frozenset[str] | None = None,
     ) -> TrackerNextOut:
         tracker = self._tracker_or_none(project_id=project_id)
         if tracker is None:
@@ -294,6 +295,10 @@ class TrackerQueryMixin:
                 explanation="No tracker work exists for this project yet.",
             )
         tickets = self._ticket_rows(tracker.id)
+        # Internal finite-scope consumers must filter before ranking/limiting;
+        # otherwise unrelated high-priority work can starve admitted tickets.
+        if ticket_keys is not None:
+            tickets = [ticket for ticket in tickets if ticket.key in ticket_keys]
         if assignee is not None:
             tickets = [ticket for ticket in tickets if ticket.assignee in {None, assignee}]
         ready = self._ready_ticket_rows(tracker.id, tickets=tickets)

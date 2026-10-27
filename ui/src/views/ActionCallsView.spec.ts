@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
+import type { SchemaActionCallAuditOut } from '@/api'
 import UiConfirmDialog from '@/components/ui/UiConfirmDialog.vue'
 
 import ActionCallsView from './ActionCallsView.vue'
@@ -13,7 +14,7 @@ const ORIG_FETCH = globalThis.fetch
 describe('ActionCallsView', () => {
   it.each([[null, 'Unknown cost'], [0, '0 cents']] as const)(
     'renders monetary cost %s truthfully', async (cost, label) => {
-      const row = { ...actionCall({ id: 1, status: 'success' }), cost_cents: cost }
+      const row = actionCall({ id: 1, status: 'success', costCents: cost })
       globalThis.fetch = vi.fn(async (input) => {
         const url = String(input)
         if (url.includes('/action-calls')) return json(page([row]))
@@ -359,10 +360,12 @@ function actionCall({
   id,
   status,
   error = null,
+  costCents = 2,
 }: {
   id: number
   status: 'running' | 'success' | 'failed'
   error?: string | null
+  costCents?: SchemaActionCallAuditOut['cost_cents']
 }) {
   return {
     id,
@@ -418,7 +421,7 @@ function actionCall({
         sha256: 'sha256-output',
       },
     },
-    cost_cents: 2,
+    cost_cents: costCents,
     duration_ms: 42,
     error,
     created_at: '2026-01-01T00:00:00Z',
