@@ -5,7 +5,10 @@ Status: layout contract for every routed desktop page.
 ## Shared contract
 
 `App.vue` owns the persistent navigation, project switcher, and scrollable main
-viewport. `UiPageShell` owns page rhythm only: it is always `width: 100%` and
+viewport. The project picker directly precedes the scrollable project links.
+Overview, Accounts, and Backups sit in a separate App footer above the theme
+control and remain available without a project. `UiPageShell` owns page rhythm
+only: it is always `width: 100%` and
 `min-width: 0`, with no centered maximum-width container. Each route has
 exactly one page-shell owner. Inner cards, tables, maps, and readable text may
 set their own useful widths, but a page may not silently reintroduce a global
@@ -21,7 +24,7 @@ not become narrower when its data or selected mode changes.
 | `/` | Overview | `HomeView` | full local service and host status, tickets by current status, project directory with tracked work and ticket counts |
 | `/auth-error` | Authentication recovery | `AuthErrorView` | centered recovery content within the full shell |
 | `/projects/:id` | Project Home | `HomeConsoleView` | tickets by current status, project connections and configured workflows, links to filtered Work |
-| `/projects/:id/setup` | Setup | `ProjectDetailView` | shared project-detail header and setup panel |
+| `/setup` | Backups | `LocalSetupView` | installation-wide backup settings and coverage |
 | `/projects/:id/schedules` | Automation | `ProjectDetailView` | shared project-detail header and schedules panel |
 | `/projects/:id/cost-budget` | Spend | `ProjectDetailView` | shared project-detail header and budget panel |
 | `/projects/:id/inbox` | Attention | `InboxView` | filters and human-action master/detail |
@@ -42,7 +45,7 @@ not become narrower when its data or selected mode changes.
 | `/projects/:id/resources` | Resources | `ResourceExplorerView` | resource explorer and selected resource detail |
 
 `/projects` and `/projects/:id/overview` are redirects and do not own shells.
-The three setup-family child components deliberately do not create a second
+The two configuration child components deliberately do not create a second
 shell; `ProjectDetailView` supplies it. Project Home is the exception inside
 that nested router because `HomeConsoleView` owns its complete page chrome.
 

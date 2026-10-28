@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import ProviderMark from '@/components/domain/ProviderMark.vue'
-import { UiBadge, UiCard, UiMedallion } from '@/components/ui'
+import { UiBadge, UiButton, UiCard, UiMedallion } from '@/components/ui'
 import { pluginSectionIcon } from '@/lib/stackos/nav'
 
 import type { PluginDirectoryItem } from './viewModel'
 
-defineProps<{ item: PluginDirectoryItem }>()
+defineProps<{ item: PluginDirectoryItem; availabilityLoading?: boolean; availabilityError?: boolean }>()
+defineEmits<{ showProviders: [] }>()
 </script>
 
 <template>
@@ -68,6 +69,19 @@ defineProps<{ item: PluginDirectoryItem }>()
       <p v-else class="mt-2 text-xs text-fg-subtle">No provider setup required.</p>
     </div>
 
+    <div class="space-y-1 text-xs text-fg-muted" aria-label="Plugin availability">
+      <p v-if="availabilityLoading">Checking availability…</p>
+      <p v-else-if="availabilityError">Availability unavailable</p>
+      <p v-else-if="item.integrations.length">
+        {{ item.integrations.reduce((sum, entry) => sum + entry.executable_action_count, 0) }} of
+        {{ item.integrations.reduce((sum, entry) => sum + entry.total_action_count, 0) }} actions executable
+      </p>
+      <p v-else>No integration availability reported.</p>
+      <UiButton v-if="item.providers.length" variant="link" size="sm" @click="$emit('showProviders')">
+        View provider availability
+      </UiButton>
+    </div>
+
     <template #footer>
       <dl class="flex w-full flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-muted">
         <div class="flex items-baseline gap-1.5">
@@ -96,7 +110,7 @@ defineProps<{ item: PluginDirectoryItem }>()
 <style scoped>
 .plugin-directory-card :deep(.ui-card__body) {
   display: grid;
-  grid-template-rows: 4.5rem 7rem;
+  grid-template-rows: 4.5rem 7rem auto;
   gap: 1rem;
 }
 

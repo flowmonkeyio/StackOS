@@ -66,12 +66,11 @@ export function coreNavSections(projectId: number): StackOsNavSection[] {
         { key: 'attention', label: 'Attention', to: `${base}/inbox`, icon: 'inbox' },
         { key: 'tasks', label: 'Work', to: `${base}/tasks`, matchPrefix: true, icon: 'tasks' },
         { key: 'activity', label: 'Activity', to: `${base}/activity`, icon: 'list' },
-        { key: 'setup', label: 'Setup', to: `${base}/setup`, icon: 'settings' },
       ],
     },
     {
-      key: 'setup-tools',
-      label: 'Setup tools',
+      key: 'configure',
+      label: 'Configure',
       items: [
         { key: 'connections', label: 'Connections', to: `${base}/connections`, icon: 'link' },
         { key: 'schedules', label: 'Automation', to: `${base}/schedules`, icon: 'calendar' },
@@ -135,9 +134,9 @@ export function projectNavSections(
   projectId: number,
   plugins: SchemaPluginOut[],
 ): StackOsNavSection[] {
-  const [operate, setupTools, execution, catalog, dataEvidence] = coreNavSections(projectId)
+  const [operate, configure, execution, catalog, dataEvidence] = coreNavSections(projectId)
   const pluginSections = pluginContributionSections(projectId, plugins)
-  return [operate, setupTools, execution, catalog, dataEvidence, ...pluginSections].filter(
+  return [operate, configure, execution, catalog, dataEvidence, ...pluginSections].filter(
     (section): section is StackOsNavSection => Boolean(section?.items.length),
   )
 }

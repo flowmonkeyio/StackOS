@@ -9,9 +9,9 @@ has its own private data directory; renames do not move it, and retained files
 from disabled or deleted projects remain covered without attaching to another project.
 
 Automatic backups are disabled on fresh and upgraded installations. Setup is
-local operator administration through the CLI or the Local backups panel in
-Local setup or a project's Setup page. Local setup is always available from the
-sidebar, including when no projects exist. The panel manages this StackOS
+local operator administration through the CLI or the Local backups panel on
+Backups (`/setup`). Backups is always available in the sidebar's App footer,
+including when no projects exist. The panel manages this StackOS
 installation and enrolled folders across projects, regardless of which page is
 open. These controls are unavailable to ordinary MCP agents. Backup creation
 needs only a public key; recovery requires the separate private key.
@@ -91,7 +91,7 @@ Scheduled history stores compact retention receipts, with at most 366 records
 destinations and files that cannot be pruned cannot grow this metadata without
 bound; archives whose receipts leave the history are preserved.
 
-The Setup panel and `backups status` report coverage, last attempt, last
+The Backups page and `backups status` report coverage, last attempt, last
 success and a repairable error. A failed attempt preserves the last successful
 archive and retries with backoff. Local archives protect against accidental
 changes; use a separate copy of the encrypted archives for device loss.

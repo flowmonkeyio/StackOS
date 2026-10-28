@@ -3,7 +3,19 @@ import type {
   SchemaCapabilityOut,
   SchemaPluginOut,
   SchemaProviderOut,
+  SchemaActionExposureNextActionOut,
 } from '@/api'
+
+/** The fields this view consumes from the canonical integration.list operation. */
+export interface IntegrationAvailability {
+  plugin_slug: string
+  provider_key: string
+  state: string
+  total_action_count: number
+  executable_action_count: number
+  hidden_action_count: number
+  next_action?: SchemaActionExposureNextActionOut | null
+}
 
 export interface PluginDirectoryItem {
   plugin: SchemaPluginOut
@@ -11,6 +23,7 @@ export interface PluginDirectoryItem {
   actions: SchemaActionOut[]
   capabilities: SchemaCapabilityOut[]
   searchText: string
+  integrations: IntegrationAvailability[]
 }
 
 export interface ProviderDirectoryItem {
@@ -19,6 +32,7 @@ export interface ProviderDirectoryItem {
   actions: SchemaActionOut[]
   capabilityNames: string[]
   searchText: string
+  availability?: IntegrationAvailability
 }
 
 export type CatalogSort = 'name' | 'actions'
@@ -28,6 +42,7 @@ export function buildPluginDirectory(
   providers: SchemaProviderOut[],
   actions: SchemaActionOut[],
   capabilities: SchemaCapabilityOut[],
+  integrations: IntegrationAvailability[] = [],
 ): PluginDirectoryItem[] {
   return plugins.map((plugin) => {
     const pluginProviders = providers.filter((provider) => provider.plugin_slug === plugin.slug)
@@ -40,6 +55,7 @@ export function buildPluginDirectory(
       providers: pluginProviders,
       actions: pluginActions,
       capabilities: pluginCapabilities,
+      integrations: integrations.filter((integration) => integration.plugin_slug === plugin.slug),
       searchText: searchableText([
         plugin.name,
         plugin.slug,
@@ -85,6 +101,9 @@ export function buildProviderDirectory(
         plugin: item.plugin,
         actions: providerActions,
         capabilityNames,
+        availability: item.integrations.find((integration) =>
+          integration.plugin_slug === provider.plugin_slug && integration.provider_key === provider.key,
+        ),
         searchText: searchableText([
           provider.name,
           provider.key,

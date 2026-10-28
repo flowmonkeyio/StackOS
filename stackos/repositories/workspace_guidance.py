@@ -16,7 +16,7 @@ def _ui_paths(project_id: int | None) -> dict[str, str]:
     if project_id is None:
         return {"projects": "/"}
     return {
-        "setup": f"/projects/{project_id}/setup",
+        "home": f"/projects/{project_id}",
         "connections": f"/projects/{project_id}/connections",
         "tasks": f"/projects/{project_id}/tasks",
         "workflow_templates": f"/projects/{project_id}/workflow-templates",

@@ -42,6 +42,7 @@ function directoryItem(providerCount: number): PluginDirectoryItem {
     })),
     actions: [],
     capabilities: [],
+    integrations: [],
     searchText: '',
   } as unknown as PluginDirectoryItem
 }

@@ -318,8 +318,8 @@ stackos backup --output /private-backups/stackos/manual.sbak
 
 Every new backup encrypts `stackos.db`, its matching `seed.bin`, `auth.token`,
 the manifest and every enrolled external folder. Files are private (`0600`).
-Automatic backups require explicit opt-in and start disabled. Local setup,
-project Setup and `stackos backups status` show coverage and the last success
+Automatic backups require explicit opt-in and start disabled. Backups in the
+App footer and `stackos backups status` show coverage and the last success
 or failure.
 `stackos restore` verifies recovery into a fresh inert folder; it requires the
 separately stored private recovery key. It does not include TDLib's
@@ -339,8 +339,9 @@ After the daemon is running, use the UI in this order:
    browser should not become a broad plugin-mutation console. Catalog mutation
    belongs in a deliberate admin path such as CLI, REST-admin, or an
    agent-owned setup operation that still writes the same project state.
-4. Open the project Setup page to review runtime, plugin, connection, template,
-   action, and run-plan readiness.
+4. Review runtime and agent-host status in App Overview. Project Home summarizes
+   connections and workflows; Plugins shows integration availability. Use
+   Configure to open Connections, Automation, Spend, or Plugins directly.
 5. Add connections for each provider account. A provider may allow multiple
    connections, for example multiple Meta ad accounts or several SMTP profiles.
 6. Review workflow templates available from enabled plugins.

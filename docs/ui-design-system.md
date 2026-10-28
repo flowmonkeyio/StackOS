@@ -47,11 +47,13 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 ## 4. Layout rules
 
 - Sidebar: 256px desktop rail.
-- Navigation is goal-oriented, not schema-shaped. **Operate** leads (Home,
-  Inbox, Work, Activity, Setup), then **Configure** (Connections, Automation,
-  Spend, Plugins), then plugin lanes, then a demoted **Developer** group holding
-  the raw audit/registry surfaces (Runs, Workflow Library, Agent Presets, Agent
-  Requests, Capabilities, Operations, Action Calls, Resources, Project Data).
+- The project picker directly precedes the scrollable project navigation.
+  **Operate** leads (Home, Attention, Work, Activity), then **Configure**
+  (Connections, Automation, Spend, Plugins), **Execution**, **Catalog**,
+  **Data & evidence**, and enabled plugin groups.
+- A separated **App** footer holds Overview, Accounts, and Backups outside the
+  project navigation scroll, above the theme control. All three are available
+  without a project. Backups retains the global `/setup` route.
   Domain-specific surfaces are plugin contributions or generic resource links,
   not new top-level product lanes. The root `/` is the project portfolio +
   local system status; `/projects/:id` is the operations console (Home). See

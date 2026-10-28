@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 import App from './App.vue'
 import appRouter from './router'
+import ProjectSwitcher from '@/components/ProjectSwitcher.vue'
 import { useProjectsStore, type Project } from '@/stores/projects'
 
 const ORIG_FETCH = globalThis.fetch
@@ -109,20 +110,35 @@ it.each([null, 7])(
     })
     await flushPromises()
     expect(wrapper.find('[aria-label="Local backups"]').exists()).toBe(false)
-    const localSetup = wrapper.get('a[href="/setup"]')
-    expect(localSetup.text()).toBe('Local setup')
+    const projectNav = wrapper.get('nav[aria-label="Project navigation"]')
+    const appNav = wrapper.get('nav[aria-label="App navigation"]')
+    expect(appNav.findAll('a').map((link) => [link.text(), link.attributes('href')])).toEqual([
+      ['Overview', '/'],
+      ['Accounts', '/accounts'],
+      ['Backups', '/setup'],
+    ])
+    expect(projectNav.element.nextElementSibling).toBe(appNav.element)
+    expect(projectNav.element.previousElementSibling).toBe(
+      wrapper.getComponent(ProjectSwitcher).element.parentElement,
+    )
+    expect(projectNav.find('a[href="/setup"]').exists()).toBe(false)
+    const backupsLink = appNav.get('a[href="/setup"]')
     if (projectId === null) {
       expect(wrapper.text()).toContain('Connect your first project to see its navigation here.')
     } else {
-      expect(wrapper.get(`a[href="/projects/${projectId}/setup"]`).text()).toBe('Setup')
+      expect(projectNav.find(`a[href="/projects/${projectId}/setup"]`).exists()).toBe(false)
+      expect(projectNav.text()).toContain('Configure')
+      for (const surface of ['connections', 'schedules', 'cost-budget', 'plugins']) {
+        expect(projectNav.find(`a[href="/projects/${projectId}/${surface}"]`).exists()).toBe(true)
+      }
     }
 
     const beforeNavigation = requests.length
-    await localSetup.trigger('click')
+    await backupsLink.trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/setup')
-    expect(wrapper.get('h1').text()).toBe('Local setup')
-    expect(localSetup.attributes('aria-current')).toBe('page')
+    expect(wrapper.get('h1').text()).toBe('Backups')
+    expect(backupsLink.attributes('aria-current')).toBe('page')
     const backups = wrapper.get('[aria-label="Local backups"]')
     expect(backups.text()).toContain(
       'This StackOS installation, project Finance data, and enrolled external folders.',
@@ -155,7 +171,7 @@ it.each([null, 7])(
       global: { plugins: [pinia, reloadRouter], stubs: { DesktopUpdatePrompt: true } },
     })
     await flushPromises()
-    expect(reloaded.get('h1').text()).toBe('Local setup')
+    expect(reloaded.get('h1').text()).toBe('Backups')
     expect(reloaded.get('[aria-label="Local backups"]').text()).toContain(
       'Automatic backups are off',
     )
@@ -165,6 +181,21 @@ it.each([null, 7])(
     reloaded.unmount()
   },
 )
+
+it('removes project Setup while retaining app and project configuration routes', () => {
+  const paths = appRouter.getRoutes().map((route) => route.path)
+  expect(paths).not.toContain('/projects/:id/setup')
+  expect(appRouter.hasRoute('project-detail-setup')).toBe(false)
+  expect(paths).toEqual(expect.arrayContaining([
+    '/setup',
+    '/accounts',
+    '/projects/:id',
+    '/projects/:id/connections',
+    '/projects/:id/schedules',
+    '/projects/:id/cost-budget',
+    '/projects/:id/plugins',
+  ]))
+})
 
 function json(body: unknown): Response {
   return new Response(JSON.stringify(body), {

@@ -49,11 +49,11 @@ describe('desktop page layout contract', () => {
     }
   })
 
-  it('delegates setup-family child routes to the project-detail shell', () => {
+  it('delegates configuration child routes to the project-detail shell', () => {
     const router = source('router.ts')
     const wrapper = source('views/ProjectDetailView.vue')
 
-    for (const child of ['SetupStatusTab', 'SchedulesTab', 'CostBudgetTab']) {
+    for (const child of ['SchedulesTab', 'CostBudgetTab']) {
       expect(router).toContain(`component: ${child}`)
       expect(source(`views/project-detail/${child}.vue`)).not.toContain('<UiPageShell')
     }

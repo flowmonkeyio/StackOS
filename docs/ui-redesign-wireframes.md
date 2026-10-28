@@ -48,20 +48,29 @@ project is bound. It does not ask what the user wants StackOS to do.
 │   Attention              3    │ │                                  │
 │   Work                       │ │                                  │
 │   Activity                   │ │                                  │
-│   Setup                  !    │ │                                  │
+│                               │ │                                  │
+│ CONFIGURE                     │ │                                  │
+│   Connections · Automation    │ │                                  │
+│   Spend · Plugins             │ │                                  │
 │                               │ │                                  │
 │ INSPECT                       │ │                                  │
 │   Execution                   │ │                                  │
 │   Catalog                     │ │                                  │
 │   Data & evidence             │ │                                  │
 │                               │ │                                  │
-│ [System] [Theme]              │ │                                  │
+├───────────────────────────────┤ │                                  │
+│ APP                           │ │                                  │
+│   Overview                    │ │                                  │
+│   Accounts                    │ │                                  │
+│   Backups                     │ │                                  │
+│ [Theme]                       │ │                                  │
 └───────────────────────────────┘ └──────────────────────────────────┘
 ```
 
-The five operate lanes are always visible. Inspect groups technical routes
-without breaking their existing deep links. Plugin routes appear under their
-relevant secondary group, not as a wall of primary navigation.
+The picker directly precedes the project links. Four Operate lanes lead the
+scrollable project navigation; Configure provides direct access to each owner.
+The App footer stays outside that scroll and remains available without a
+project. Inspection groups and plugin routes retain their secondary placement.
 
 ## 3. Home — “What matters now?”
 
@@ -140,21 +149,13 @@ agent-owned; any future operator override requires its own reviewed contract.
 Actor labels distinguish the agent, human, StackOS runtime, and provider. A
 runtime record never implies that StackOS chose the action.
 
-## 7. Setup — “What prevents safe agent use?”
+## 7. Configuration destinations
 
-```text
-┌ Setup ─ Project readiness 5/6 ──────────────────────────────────────┐
-│ Agent clients  Codex ready · Claude restart required       [Open]  │
-│ Project scope  Bound to /Acme/site                         [View]  │
-│ Connections    4 ready · Slack needs repair                [Fix]   │
-│ Plugins        7 enabled · 1 update                         [Open]  │
-│ Policy         Budget and approval rules configured         [Open]  │
-│ System         Daemon healthy · backup current               [Open]  │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-Setup uses plain language first and technical diagnostics on demand. It links a
-blocker to the exact repair surface and explains which agents/work are affected.
+There is no project Setup dashboard. Project Home summarizes connections and
+workflows; Configure opens Connections, Automation, Spend, and Plugins directly.
+Plugins includes integration availability. Attention links to the owner of
+each repair. App Overview shows runtime and host status, Accounts owns reusable
+credentials, and Backups (`/setup`) owns installation-wide backup settings.
 
 ## 8. Connections — provider readiness
 
@@ -225,14 +226,14 @@ thinking language, prompt fields, or claims that StackOS is doing user work.
 | Attention | “Nothing needs you” | Group by human job | Preserve failed decision context | `/projects/:id/inbox?item=…` |
 | Work | Explain agent-created work | Master/detail queue | Show blocker and repair owner | `/projects/:id/tasks?task=…` |
 | Activity | Explain future audit trail | Chronological actor-labelled events | Preserve partial/failed action state | `/projects/:id/activity?event=…` |
-| Setup | Guided readiness sequence | Per-area readiness | Exact diagnostic and recovery | `/projects/:id/setup?section=…` |
+| Backups | Explain recovery-key configuration | Show coverage and policy | Exact backup diagnostic and recovery | `/setup` |
 | Connections | Provider discovery | Ready/setup/repair filters | Preserve credential-safe diagnostics | `/projects/:id/connections?provider=…` |
 | Run detail | Not applicable | Step/evidence inspection | Failure, grant, and repair context | `/projects/:id/runs/:run_id` |
 
 ## Implementation invariants
 
 1. The shell never promotes Catalog/Explore above Home, Attention, Work,
-   Activity, or Setup.
+   or Activity.
 2. Home contains no agent-work creation control.
 3. All work rows name the originating actor/host when known.
 4. Human actions are limited to setup, explicit decisions, policy, and repair.

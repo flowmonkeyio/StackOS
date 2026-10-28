@@ -2,6 +2,10 @@
 
 Date: 2026-05-24
 
+Historical findings below describe the UI on this date. The project Setup
+route was subsequently removed; current configuration destinations and App
+navigation are specified in [the page layout map](./ui-page-layout-map.md).
+
 This audit covers the StackOS operator UI after the project pivot to an
 agent-first, plugin-oriented runtime. The UI is not the workflow engine. It is
 the human inspection and local-admin setup surface for projects, connections,
@@ -110,7 +114,7 @@ communications setup.
 | `/auth-error` | Recover daemon UI auth | This route is a repair state, not a product page. It should stay direct and avoid secondary navigation that implies project context exists. | Keep as a narrow recovery screen. |
 | `/projects` | Choose or inspect project bindings | The project table is sparse but acceptable for now. It should eventually include last activity and setup readiness so operators can choose a project without opening each one. | Add readiness/activity in a later pass. |
 | `/projects/:id/overview` | Project control-room snapshot | Overview currently has useful counts and recent rows. The risk is dashboard-first composition; recent runs/resources should stay visible in the first viewport. | Keep counts compact and make row/action labels specific. |
-| `/projects/:id/setup` | Readiness checklist | Setup is an inspection page. It should surface missing prerequisites and links to the exact setup surface, not workflow-specific actions. | Keep read-first; only refresh is needed. |
+| Project Setup (removed) | Former readiness checklist | The audit originally recommended a read-first checklist. This was superseded by direct configuration links and diagnostics at their existing owners. | See the current page layout map. |
 | `/projects/:id/schedules` | Scheduled daemon jobs | Schedules are read-only operational state. Empty states should explain whether no scheduler is configured or just no jobs exist. | No new workflow UI. |
 | `/projects/:id/cost-budget` | Budget/cost inspection | The dashboard style is acceptable because cost is inherently summarized, but tables/history should remain visible without deep scrolling. | Keep metrics compact; avoid mutation controls unless generic budget setup is added. |
 | `/projects/:id/plugins` | Installed plugin catalog | Inline action contracts made the page thousands of pixels tall and duplicated `Operations`. | Summarize plugins and link to Operations for action detail. |

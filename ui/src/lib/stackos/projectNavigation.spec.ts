@@ -19,7 +19,6 @@ describe('projectSwitchDestination', () => {
     '',
     'inbox',
     'activity',
-    'setup',
     'schedules',
     'cost-budget',
     'plugins',
@@ -134,11 +133,11 @@ describe('projectSwitchDestination', () => {
     ).toEqual({ path: '/projects/7' })
   })
 
-  it('keeps a global operating surface in place', () => {
+  it.each(['/accounts', '/setup'])('keeps the global %s surface in place', (path) => {
     expect(
       projectSwitchDestination(
         {
-          path: '/accounts',
+          path,
           query: { account: 'credential_123' },
           hash: '',
         },

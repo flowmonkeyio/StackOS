@@ -30,6 +30,7 @@ import {
   filterAndSortProviders,
   type CatalogSort,
 } from './plugins/viewModel'
+import { useIntegrationAvailability } from './plugins/useIntegrationAvailability'
 
 type CatalogView = 'plugins' | 'providers'
 
@@ -38,6 +39,9 @@ const { plugins, providers, actions, capabilities, loading, error } = storeToRef
 
 const { projectId } = useProjectRouteScope()
 const operationsHref = computed(() => `/projects/${projectId.value}/operations`)
+const connectionsHref = computed(() => `/projects/${projectId.value}/connections?section=services`)
+const inventory = useIntegrationAvailability()
+const { items: integrations, loading: availabilityLoading, error: availabilityError } = inventory
 const search = ref('')
 const view = ref<CatalogView>('plugins')
 const sort = ref<CatalogSort>('name')
@@ -52,7 +56,7 @@ const sortOptions = [
 ]
 
 const pluginItems = computed(() =>
-  buildPluginDirectory(plugins.value, providers.value, actions.value, capabilities.value),
+  buildPluginDirectory(plugins.value, providers.value, actions.value, capabilities.value, integrations.value),
 )
 const providerItems = computed(() => buildProviderDirectory(pluginItems.value))
 const visiblePlugins = computed(() =>
@@ -73,9 +77,15 @@ function setSort(value: string | number | null): void {
   if (value === 'name' || value === 'actions') sort.value = value
 }
 
-useProjectScopedLoader({
+function showProviders(pluginSlug: string): void {
+  view.value = 'providers'
+  search.value = pluginSlug
+}
+
+const { refresh } = useProjectScopedLoader({
   projectId,
-  load: ({ projectId }) => catalogStore.refresh(projectId),
+  load: ({ projectId }) => Promise.all([catalogStore.refresh(projectId), inventory.refresh(projectId)]),
+  onScopeExit: inventory.reset,
 })
 </script>
 
@@ -86,10 +96,18 @@ useProjectScopedLoader({
       title="Plugins"
       description="Capability packs and providers available to this project. Search by tool, action, or type of work."
       :breadcrumbs="[{ label: 'Plugins' }]"
-    />
+    >
+      <template #actions>
+        <UiButton variant="secondary" size="sm" icon-left="refresh" @click="refresh">Refresh</UiButton>
+      </template>
+    </ProjectPageHeader>
 
     <UiCallout v-if="error" tone="danger">
       {{ error }}
+    </UiCallout>
+
+    <UiCallout v-if="availabilityError" tone="warning">
+      Availability unavailable. The catalog is still available; refresh to retry the integration check.
     </UiCallout>
 
     <UiPanel
@@ -169,7 +187,14 @@ useProjectScopedLoader({
         v-if="view === 'plugins' && visiblePlugins.length"
         class="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
       >
-        <PluginDirectoryCard v-for="item in visiblePlugins" :key="item.plugin.slug" :item="item" />
+        <PluginDirectoryCard
+          v-for="item in visiblePlugins"
+          :key="item.plugin.slug"
+          :item="item"
+          :availability-loading="availabilityLoading"
+          :availability-error="availabilityError"
+          @show-providers="showProviders(item.plugin.slug)"
+        />
       </div>
 
       <div
@@ -180,6 +205,8 @@ useProjectScopedLoader({
           v-for="item in visibleProviders"
           :key="`${item.provider.plugin_slug}.${item.provider.key}`"
           :item="item"
+          :availability-loading="availabilityLoading"
+          :connections-href="connectionsHref"
         />
       </div>
 

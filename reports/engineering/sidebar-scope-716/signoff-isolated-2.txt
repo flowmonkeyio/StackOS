@@ -1,0 +1,30 @@
+[Vue Router warn]: No active route record was found when calling `onBeforeRouteUpdate()`. Make sure you call this function inside a component child of <router-view>. Maybe you called it inside of App.vue?
+
+[Vue Router warn]: No active route record was found when calling `onBeforeRouteUpdate()`. Make sure you call this function inside a component child of <router-view>. Maybe you called it inside of App.vue?
+
+[Vue Router warn]: No active route record was found when calling `onBeforeRouteUpdate()`. Make sure you call this function inside a component child of <router-view>. Maybe you called it inside of App.vue?
+
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+
+tests/integration/test_mcp/test_mcp_finance_management.py: 1 warning
+tests/integration/test_routes/test_workflow_templates_routes.py: 8 warnings
+tests/integration/test_mcp/test_mcp_host_status.py: 5 warnings
+tests/integration/test_routes/test_telegram_ingress_retirement.py: 1 warning
+tests/integration/test_mcp/test_mcp_sitemap.py: 2 warnings
+tests/integration/test_mcp/test_mcp_imap_custom_ca.py: 1 warning
+tests/integration/test_routes/test_cli_mock_provider.py: 1 warning
+tests/integration/test_mcp/test_mcp_finance_receipt_workflow.py: 1 warning
+tests/integration/test_routes/test_telegram_setup_to_action_routes.py: 1 warning
+tests/integration/test_mcp/test_mcp_internal_diagnostics.py: 1 warning
+tests/integration/test_mcp/test_mcp_finance_customer_identifiers.py: 1 warning
+  .venv/lib/python3.13/site-packages/alembic/config.py:612: DeprecationWarning: No path_separator found in configuration; falling back to legacy splitting on spaces, commas, and colons for prepend_sys_path.  Consider adding path_separator=os to Alembic config.
+tests/integration/test_mcp/test_mcp_ownership.py: 1 warning
+tests/integration/test_mcp/test_mcp_bridge_agent_path.py: 1 warning
+tests/integration/test_routes/test_finance_project_storage.py: 1 warning
+tests/integration/test_mcp/test_mcp_communications.py: 1 warning
+tests/integration/test_mcp/test_mcp_google_service_accounts.py: 1 warning
+tests/integration/test_schema.py: 5 warnings
+tests/integration/test_mcp/test_mcp_auth.py: 1 warning
+tests/integration/test_app_lifespan.py: 6 warnings
+✓ built in 2.29s
+... (31 total lines, showing first 10, sampled 10, last 9)

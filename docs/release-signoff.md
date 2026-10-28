@@ -263,14 +263,14 @@ uv run pytest tests/unit/test_backups.py tests/unit/test_backup_cli.py \
   tests/integration/test_routes/test_backup_operations_routes.py \
   tests/integration/test_mcp/test_mcp_backups_boundary.py \
   tests/integration/test_app_lifespan.py -q
-pnpm --dir ui exec vitest run src/lib/backups.spec.ts src/components/backups/BackupPanel.spec.ts src/views/HomeView.spec.ts src/views/project-detail/SetupStatusTab.spec.ts
+pnpm --dir ui exec vitest run src/lib/backups.spec.ts src/components/backups/BackupPanel.spec.ts src/views/HomeView.spec.ts src/App.local-setup.spec.ts
 ```
 
 Prove default-off and persisted enable/disable, WAL and matching seed recovery,
 complete finance original/master custody, wrong-key/tamper/path rejection,
 busy/missing/changing sources, later key capture and public output denial.
 Verify the recovered policy is inert reference data. Use an isolated daemon
-and a Setup panel walkthrough, including Local setup with no projects; do not
+and a Backups walkthrough, including the App footer with no projects; do not
 enable backups or read production financial content for source signoff. The
 full `make signoff` includes these backup authority and recovery checks.
 

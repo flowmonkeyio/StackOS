@@ -6,7 +6,7 @@ import { UiPageHeader, UiPageShell } from '@/components/ui'
 <template>
   <UiPageShell>
     <UiPageHeader
-      title="Local setup"
+      title="Backups"
       description="Backup settings and coverage for this StackOS installation across all projects."
     />
     <BackupPanel />

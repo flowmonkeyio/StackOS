@@ -26,6 +26,11 @@ import { apiFetch } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
 import { createProjectRequestGate } from '@/lib/stackos/projectRequestGate'
 import { newestFirst } from '@/lib/stackos/time'
+import {
+  accountRowNeedsAttention,
+  connectionAttentionTone,
+  credentialVerificationMessage,
+} from '@/views/connections/credentialPresentation'
 
 export type AttentionKind =
   | 'failed-run'
@@ -179,16 +184,20 @@ export const useAttentionStore = defineStore('attention', () => {
     const status = await (authStatus ??
       apiFetch<SchemaAuthStatusOut>(`/api/v1/projects/${id}/connections/accounts`))
     const attention = (status.accounts ?? []).filter(
-      (c) => c.revoked_at == null && c.status !== 'connected' && c.status !== 'used',
+      (c) => c.revoked_at == null && accountRowNeedsAttention(c),
     )
     return attention.slice(0, 6).map((c) => ({
       id: `connection:${c.credential_ref}`,
       kind: 'connection' as const,
-      tone: (c.status === 'expired' || c.status === 'failed' ? 'danger' : 'warning') as Tone,
+      tone: connectionAttentionTone(c),
       title: `${c.display_name || c.provider_key} needs attention`,
-      detail: `Connection ${c.status}.`,
+      detail: c.last_test?.ok === false
+        ? credentialVerificationMessage(c.last_test) || 'Account verification failed.'
+        : c.setup_required
+          ? 'Account setup is incomplete.'
+          : `Connection ${c.status}.`,
       when: c.last_tested_at ?? null,
-      to: `${base}/connections?section=services&provider_key=${encodeURIComponent(c.provider_key)}`,
+      to: `${base}/connections?section=services`,
       cta: 'Repair connection',
       impact: `Agent actions that require ${c.display_name || c.provider_key} may fail or remain unavailable.`,
       ownership: 'Connection setup is a human local-admin action. Credentials stay inside the StackOS daemon.',

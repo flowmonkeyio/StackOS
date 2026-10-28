@@ -79,6 +79,14 @@ describe('PluginsView directory', () => {
         ])
       }
       if (url === '/api/v1/resources?project_id=1') return json([])
+      if (url === '/api/v1/operations/integration.list/call') return json({
+        project_id: 1,
+        items: [{
+          plugin_slug: 'utils', provider_key: 'firecrawl', state: 'repair_required',
+          total_action_count: 9, executable_action_count: 2, hidden_action_count: 4,
+          next_action: { tool: 'auth.test', reason: 'Review the Account permissions.' },
+        }],
+      })
       return json({})
     }) as typeof fetch
 
@@ -97,6 +105,7 @@ describe('PluginsView directory', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('Utilities'))
     expect(wrapper.text()).toContain('Firecrawl')
     expect(wrapper.get('img').attributes('src')).toBe('/images/integrations/firecrawl-icon.png')
+    expect(wrapper.text()).toContain('2 of 9 actions executable')
 
     const search = wrapper.get<HTMLInputElement>(
       'input[placeholder="Search plugins, providers, capabilities, or actions…"]',
@@ -110,9 +119,50 @@ describe('PluginsView directory', () => {
     expect(providersTab).toBeDefined()
     await providersTab?.trigger('click')
     expect(wrapper.text()).toContain('Crawl and extract websites.')
+    expect(wrapper.text()).toContain('Account repair required')
+    expect(wrapper.text()).toContain('4 hidden from agent discovery')
+    expect(wrapper.text()).toContain('Review the Account permissions.')
+    expect(wrapper.findAll('a').find((link) => link.text() === 'Review connections')?.attributes('href'))
+      .toBe('/projects/1/connections?section=services')
 
     await search.setValue('no matching tool')
     expect(wrapper.text()).toContain('No matching catalog items')
+    wrapper.unmount()
+  })
+
+  it.each(['failed', 'empty'])('keeps catalog browsing usable when the inventory is %s', async (result) => {
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      if (url === '/api/v1/operations/integration.list/call') {
+        return result === 'failed' ? json({ detail: 'Unavailable' }, 503) : json({ project_id: 1, items: [] })
+      }
+      if (url === '/api/v1/plugins?project_id=1') return json([{
+        id: 1, slug: 'utils', name: 'Utilities', description: 'Tools',
+        enabled_for_project: true, source: 'builtin', version: '1.0.0',
+      }])
+      if (url === '/api/v1/providers?project_id=1') return json([{
+        id: 11, plugin_id: 1, plugin_slug: 'utils', key: 'firecrawl', name: 'Firecrawl',
+        description: 'Crawl websites.', auth_type: 'api-key',
+      }])
+      return json([])
+    }) as typeof fetch
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/plugins', component: PluginsView }],
+    })
+    await router.push('/projects/1/plugins')
+    await router.isReady()
+    const wrapper = mount(PluginsView, { global: { plugins: [router, createPinia()] } })
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Utilities'))
+    expect(wrapper.text()).toContain(result === 'failed'
+      ? 'Availability unavailable. The catalog is still available; refresh to retry the integration check.'
+      : 'No integration availability reported.')
+    const providerLink = wrapper.findAll('button').find((button) => button.text() === 'View provider availability')
+    await providerLink?.trigger('click')
+    expect(wrapper.text()).toContain('Crawl websites.')
+    expect(wrapper.text()).toContain('Availability unavailable')
+    expect(wrapper.text()).not.toContain('Account repair required')
+    wrapper.unmount()
   })
 })
 

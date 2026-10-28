@@ -1,0 +1,56 @@
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/stores/attention.spec.ts > attention supervision projection > merges human decisions and repair signals without creating execution controls
+AssertionError: expected '/projects/9/connections?section=servi…' not to contain 'provider_key'
+
+Expected: "provider_key"
+Received: "/projects/9/connections?section=services&provider_key=slack"
+
+ ❯ src/stores/attention.spec.ts:96:76
+     94|       'connections?section=services',
+     95|     )
+     96|     expect(store.items.find((item) => item.kind === 'connection')?.to)…
+       |                                                                            ^
+     97|   })
+     98|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  src/stores/attention.spec.ts > attention supervision projection > uses Account repair facts once per Account without optional or deliberately offline noise
+AssertionError: expected [ 'connection:cred_expired', …(2) ] to deeply equal [ 'connection:cred_expired', …(3) ]
+
+- Expected
++ Received
+
+  Array [
+    "connection:cred_expired",
+    "connection:cred_failed",
+-   "connection:cred_failed_test",
+-   "connection:cred_setup",
++   "connection:cred_offline",
+  ]
+
+ ❯ src/stores/attention.spec.ts:123:55
+    121|     await store.refresh(9)
+    122|
+    123|     expect(store.items.map((item) => item.id).sort()).toEqual([
+       |                                                       ^
+    124|       'connection:cred_expired', 'connection:cred_failed', 'connection…
+    125|     ])
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+ RUN  v2.1.9 ui
+
+ ❯ src/stores/attention.spec.ts (4 tests | 2 failed) 8ms
+   × attention supervision projection > merges human decisions and repair signals without creating execution controls 5ms
+     → expected '/projects/9/connections?section=servi…' not to contain 'provider_key'
+   × attention supervision projection > uses Account repair facts once per Account without optional or deliberately offline noise 1ms
+     → expected [ 'connection:cred_expired', …(2) ] to deeply equal [ 'connection:cred_expired', …(3) ]
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 2 passed (4)
+   Start at  22:11:14
+   Duration  174ms (transform 33ms, setup 9ms, collect 58ms, tests 8ms, environment 0ms, prepare 31ms)
+[full output: /Users/sergeyrura/.local/share/tpf/tee/20261027_221114_pnpm.log]
+[detail: tpf detail art_tee_1793164274680611000_3d85a7f1]

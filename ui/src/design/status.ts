@@ -88,6 +88,14 @@ export const projectState = defineStatuses({
 });
 
 export const integrationHealth = defineStatuses({
+  provider_disabled: { label: 'Provider disabled', tone: 'neutral', icon: 'circle' },
+  connected_blocked: { label: 'Connected · actions blocked', tone: 'warning', icon: 'alert-triangle' },
+  connected: { label: 'Connected', tone: 'success', icon: 'check-circle' },
+  repair_required: { label: 'Account repair required', tone: 'danger', icon: 'wrench' },
+  partially_available: { label: 'Partially available', tone: 'neutral', icon: 'circle-dashed' },
+  not_connected: { label: 'Not connected', tone: 'neutral', icon: 'plug' },
+  ready_no_connection_required: { label: 'Ready · no connection required', tone: 'success', icon: 'check-circle' },
+  available: { label: 'Available', tone: 'neutral', icon: 'circle' },
   healthy: { label: 'Healthy', tone: 'success', icon: 'check-circle' },
   degraded: { label: 'Degraded', tone: 'warning', icon: 'alert-triangle' },
   failing: { label: 'Failing', tone: 'danger', icon: 'x-circle' },

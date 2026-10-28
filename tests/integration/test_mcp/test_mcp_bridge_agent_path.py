@@ -1882,13 +1882,13 @@ def test_bridge_no_hint_start_session_lists_named_workspace_candidates(
             "project_slug": "flowmonkey",
             "project_name": "Flowmonkey",
             "ui_paths": {
-                "setup": f"/projects/{bootstrapped['project_id']}/setup",
+                "home": f"/projects/{bootstrapped['project_id']}",
                 "connections": f"/projects/{bootstrapped['project_id']}/connections",
                 "tasks": f"/projects/{bootstrapped['project_id']}/tasks",
                 "workflow_templates": f"/projects/{bootstrapped['project_id']}/workflow-templates",
             },
             "ui_urls": {
-                "setup": f"http://127.0.0.1:5180/projects/{bootstrapped['project_id']}/setup",
+                "home": f"http://127.0.0.1:5180/projects/{bootstrapped['project_id']}",
                 "connections": (
                     f"http://127.0.0.1:5180/projects/{bootstrapped['project_id']}/connections"
                 ),

@@ -55,6 +55,21 @@ describe('plugin directory view model', () => {
       providerDirectory.find((item) => item.provider.key === 'firecrawl')?.capabilityNames,
     ).toEqual(['Web crawling'])
   })
+
+  it('joins availability by plugin slug and provider key without merging same-key providers', () => {
+    const sharedProviders = [
+      provider(11, 1, 'utils', 'shared', 'Utility provider'),
+      provider(12, 2, 'seo', 'shared', 'SEO provider'),
+    ]
+    const inventory = [
+      { plugin_slug: 'utils', provider_key: 'shared', state: 'connected',
+        total_action_count: 5, executable_action_count: 3, hidden_action_count: 2 },
+      { plugin_slug: 'seo', provider_key: 'shared', state: 'not_connected',
+        total_action_count: 8, executable_action_count: 1, hidden_action_count: 6 },
+    ]
+    const directory = buildProviderDirectory(buildPluginDirectory(plugins, sharedProviders, [], [], inventory))
+    expect(directory.map((entry) => entry.availability)).toEqual(inventory)
+  })
 })
 
 function plugin(id: number, slug: string, name: string): SchemaPluginOut {

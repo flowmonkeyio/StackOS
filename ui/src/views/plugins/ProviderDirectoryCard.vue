@@ -4,8 +4,9 @@ import { UiBadge, UiCard } from '@/components/ui'
 import { formatAuthType } from '@/lib/stackos/providerPresentation'
 
 import type { ProviderDirectoryItem } from './viewModel'
+import IntegrationAvailability from './IntegrationAvailability.vue'
 
-defineProps<{ item: ProviderDirectoryItem }>()
+defineProps<{ item: ProviderDirectoryItem; availabilityLoading: boolean; connectionsHref: string }>()
 </script>
 
 <template>
@@ -44,6 +45,12 @@ defineProps<{ item: ProviderDirectoryItem }>()
         {{ capability }}
       </UiBadge>
     </div>
+
+    <IntegrationAvailability
+      :availability="item.availability"
+      :loading="availabilityLoading"
+      :connections-href="connectionsHref"
+    />
 
     <template #footer>
       <div class="flex w-full items-center justify-between gap-3 text-xs text-fg-muted">

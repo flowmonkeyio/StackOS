@@ -211,10 +211,12 @@ arguments, UI JSON, or MCP responses.
 
 The desktop UI is a calm, agent-first operations console: humans observe,
 approve, troubleshoot, and own setup; agents do the work. The primary surfaces
-are goal-oriented — a project Home console (readiness, attention, live agent
-activity, recent timeline), an Inbox (what needs a human), Work (the tracker),
-Activity (the project story), and Setup (readiness + connections/automation/
-spend/plugins). The root is a project portfolio plus local system status. See
+are goal-oriented — project Home (ticket state, connections, and workflows),
+Attention (what needs a human), Work (the tracker), and Activity (the project
+story). Configure links directly to Connections, Automation, Spend, and Plugins.
+The picker sits directly above project navigation. A separate App footer holds
+Overview (the root portfolio and local system status), Accounts, and Backups.
+The backup route remains `/setup`; there is no project Setup page. See
 [`ui-redesign-direction.md`](./ui-redesign-direction.md) for the direction.
 
 Underneath, those surfaces still render generic StackOS primitives:

@@ -91,8 +91,47 @@ describe('attention supervision projection', () => {
       '/projects/9/agent-requests?request=8&attention_status=unread',
     )
     expect(store.items.find((item) => item.kind === 'connection')?.to).toContain(
-      'connections?section=services&provider_key=slack',
+      'connections?section=services',
     )
+    expect(store.items.find((item) => item.kind === 'connection')?.to).not.toContain('provider_key')
+  })
+
+  it('uses Account repair facts once per Account without optional or deliberately offline noise', async () => {
+    mockedListAgentRequests.mockResolvedValue({ items: [], next_cursor: null, total_estimate: 0 })
+    mockedCallOperation.mockResolvedValue({ blocked_ticket_count: 0 })
+    mockedApiFetch.mockImplementation(async (url) => {
+      if (url.includes('/runs?status=failed')) return { items: [] }
+      if (url.endsWith('/connections/accounts')) return {
+        providers: [{ key: 'unused-provider' }],
+        accounts: [
+          account('cred_failed_test', { last_test: { ok: false, summary: 'Permission check failed.', next_action: 'Review the Account permissions.' } }),
+          account('cred_setup', { setup_required: true }),
+          account('cred_expired', { status: 'expired' }),
+          account('cred_failed', { status: 'failed' }),
+          account('cred_healthy'),
+          account('cred_revoked', { status: 'revoked', revoked_at: '2026-10-28' }),
+          account('cred_offline', { provider_key: 'telegram', status: 'disconnected', setup_required: false }),
+        ],
+      }
+      if (url.endsWith('/budgets')) return []
+      if (url.includes('/cost?month=')) return { by_integration: {} }
+      throw new Error(`unexpected URL ${url}`)
+    })
+    const store = useAttentionStore()
+    await store.refresh(9)
+
+    expect(store.items.map((item) => item.id).sort()).toEqual([
+      'connection:cred_expired', 'connection:cred_failed', 'connection:cred_failed_test', 'connection:cred_setup',
+    ])
+    expect(store.items.find((item) => item.id === 'connection:cred_failed_test')).toMatchObject({
+      tone: 'danger',
+      detail: 'Permission check failed. Review the Account permissions.',
+      to: '/projects/9/connections?section=services',
+    })
+    expect(store.items.find((item) => item.id === 'connection:cred_setup')).toMatchObject({
+      tone: 'warning', detail: 'Account setup is incomplete.',
+    })
+    expect(mockedCallOperation.mock.calls.every(([name]) => name !== 'integration.list')).toBe(true)
   })
 
   it('degrades one failed source without hiding the remaining attention state', async () => {
@@ -149,6 +188,14 @@ describe('attention supervision projection', () => {
     })
   })
 })
+
+function account(credential_ref: string, overrides: Record<string, unknown> = {}) {
+  return {
+    credential_ref, provider_key: 'slack', display_name: credential_ref,
+    status: 'connected', setup_required: false, revoked_at: null, last_tested_at: null,
+    ...overrides,
+  }
+}
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void

@@ -7,7 +7,6 @@ import ProjectDetailView from './views/ProjectDetailView.vue'
 import HomeConsoleView from './views/HomeConsoleView.vue'
 import InboxView from './views/InboxView.vue'
 import ActivityView from './views/ActivityView.vue'
-import SetupStatusTab from './views/project-detail/SetupStatusTab.vue'
 import SchedulesTab from './views/project-detail/SchedulesTab.vue'
 import CostBudgetTab from './views/project-detail/CostBudgetTab.vue'
 import RunsView from './views/RunsView.vue'
@@ -36,10 +35,9 @@ const routes: RouteRecordRaw[] = [
     component: ProjectDetailView,
     children: [
       // Home is the operations console; it owns its own page chrome, so
-      // ProjectDetailView renders it without the setup-tab header wrapper.
+      // ProjectDetailView renders it without the configuration header wrapper.
       { path: '', name: 'project-home', component: HomeConsoleView },
       { path: 'overview', redirect: (to) => ({ path: `/projects/${to.params.id}` }) },
-      { path: 'setup', name: 'project-detail-setup', component: SetupStatusTab },
       { path: 'schedules', name: 'project-detail-schedules', component: SchedulesTab },
       { path: 'cost-budget', name: 'project-detail-cost-budget', component: CostBudgetTab },
     ],

@@ -11,17 +11,16 @@ import {
 } from './nav'
 
 describe('StackOS nav contributions', () => {
-  it('leads with the five operator lanes and groups secondary inspection by job', () => {
+  it('leads with the four operator lanes and groups secondary inspection by job', () => {
     const core = coreNavSections(7)
     const labels = core.map((section) => section.label)
 
-    expect(labels).toEqual(['Operate', 'Setup tools', 'Execution', 'Catalog', 'Data & evidence'])
+    expect(labels).toEqual(['Operate', 'Configure', 'Execution', 'Catalog', 'Data & evidence'])
     expect(core[0].items.map((item) => item.label)).toEqual([
       'Home',
       'Attention',
       'Work',
       'Activity',
-      'Setup',
     ])
     // Home is the project index; Work is the tracker route.
     expect(core[0].items[0].to).toBe('/projects/7')
@@ -70,9 +69,9 @@ describe('StackOS nav contributions', () => {
     })
   })
 
-  it('keeps setup-owner surfaces in the Setup tools group', () => {
+  it('keeps project configuration surfaces in the Configure group', () => {
     const core = coreNavSections(12)
-    const configure = core.find((section) => section.label === 'Setup tools')
+    const configure = core.find((section) => section.label === 'Configure')
 
     expect(configure?.items.map((item) => item.to)).toEqual([
       '/projects/12/connections',
@@ -135,7 +134,7 @@ describe('StackOS nav contributions', () => {
     const sections = projectNavSections(7, [seo, communications, engineering])
 
     expect(sections[0].label).toBe('Operate')
-    expect(sections[1].label).toBe('Setup tools')
+    expect(sections[1].label).toBe('Configure')
     expect(sections[2].label).toBe('Execution')
     expect(sections[3].label).toBe('Catalog')
     expect(sections[4].label).toBe('Data & evidence')

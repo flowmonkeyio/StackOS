@@ -70,16 +70,6 @@ describe('desktop screen composition contract', () => {
     expect(text).toContain('Technical event details')
   })
 
-  it('explains Setup without a synthetic readiness percentage', () => {
-    const text = source('views/project-detail/SetupStatusTab.vue')
-
-    expect(text).toContain('Setup path')
-    expect(text).toContain('Required runtime state first')
-    expect(text).toContain('Optional setup items')
-    expect(text).toContain('Configure what this project actually needs')
-    expect(text).not.toContain('UiScoreMeter')
-  })
-
   it('opens Connections on services and groups messaging and diagnostics', () => {
     const text = source('views/ConnectionsView.vue')
     const connectivity = source('views/connections/ConnectivityPanel.vue')

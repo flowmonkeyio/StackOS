@@ -1,8 +1,8 @@
 <script setup lang="ts">
-// ProjectDetailView — shared project setup page chrome.
+// ProjectDetailView — shared project configuration page chrome.
 //
 // The sidebar owns navigation. This wrapper only gives each project-scoped
-// setup route a focused page title, project meta, and status context.
+// configuration route a focused page title, project meta, and status context.
 
 import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
@@ -22,7 +22,7 @@ const { projectId } = useProjectRouteScope(route)
 const project = computed(() => projects.getById(projectId.value))
 
 // The Home console (project-home) renders its own page chrome, so this shell
-// steps aside for it and only wraps the setup-group tabs.
+// steps aside for it and only wraps the configuration tabs.
 const isHome = computed<boolean>(() => route.name === 'project-home')
 
 const activeKey = computed<string>(() => {
@@ -31,15 +31,15 @@ const activeKey = computed<string>(() => {
   return match ? match[1] : 'overview'
 })
 
-type ProjectSetupKey = 'overview' | 'setup' | 'schedules' | 'cost-budget'
+type ProjectConfigurationKey = 'overview' | 'schedules' | 'cost-budget'
 
 interface PageCopy {
   title: string
   description: string
 }
 
-type ProjectSetupPageCopy = {
-  [Key in ProjectSetupKey]: PageCopy
+type ProjectConfigurationPageCopy = {
+  [Key in ProjectConfigurationKey]: PageCopy
 }
 
 const PAGE_COPY = {
@@ -47,10 +47,6 @@ const PAGE_COPY = {
     title: 'Overview',
     description:
       'Project state, enabled plugins, reusable templates, run plans, resources, and recent runs.',
-  },
-  setup: {
-    title: 'Setup',
-    description: 'Whether connected agents can use this project safely — and where to finish setup.',
   },
   schedules: {
     title: 'Schedules',
@@ -60,14 +56,14 @@ const PAGE_COPY = {
     title: 'Cost & Budget',
     description: 'Monthly spend, vendor caps, alerts, and request-rate controls.',
   },
-} satisfies ProjectSetupPageCopy
+} satisfies ProjectConfigurationPageCopy
 
-function isProjectSetupKey(key: string): key is ProjectSetupKey {
+function isProjectConfigurationKey(key: string): key is ProjectConfigurationKey {
   return key in PAGE_COPY
 }
 
 const pageCopy = computed(() =>
-  isProjectSetupKey(activeKey.value) ? PAGE_COPY[activeKey.value] : PAGE_COPY.overview,
+  isProjectConfigurationKey(activeKey.value) ? PAGE_COPY[activeKey.value] : PAGE_COPY.overview,
 )
 const pageBreadcrumbs = computed(() =>
   activeKey.value === 'overview' ? [] : [{ label: pageCopy.value.title }],

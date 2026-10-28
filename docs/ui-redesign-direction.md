@@ -432,7 +432,7 @@ project database and user-owned state unless destructive cleanup is explicit.
 
 ## 6. Information architecture
 
-The primary project navigation answers the five highest-frequency human
+The primary project navigation answers four high-frequency human
 questions:
 
 1. **Home** — What calls were recorded, what is configured, and what tracked
@@ -442,15 +442,15 @@ questions:
 3. **Work** — What work have agents created, what is active or blocked, and
    where are the results?
 4. **Activity** — What changed, in chronological and auditable order?
-5. **Setup** — Are the runtime, MCP clients, plugins, providers, policies, and
-   schedules ready?
 
-The root route is a lightweight portfolio and system/lifecycle surface. It is
-not a marketing landing page.
+The project picker sits immediately above project navigation. A separate App
+footer holds Overview, Accounts, and Backups outside the project navigation
+scroll. Overview opens the root portfolio and system/lifecycle surface;
+Backups retains `/setup` and works without a project.
 
 Secondary groups remain addressable and searchable:
 
-- **Setup:** Agent clients, Connections, Automation, Spend, Plugins, System.
+- **Configure:** Connections, Automation, Spend, Plugins.
 - **Execution inspection:** Runs, run plans, agent requests, action calls,
   approvals.
 - **Catalog:** Capabilities, Operations, workflow templates, agent presets.
@@ -459,11 +459,12 @@ Secondary groups remain addressable and searchable:
 
 “Inspect” may be a secondary entry or contextual action, but it is not a reason
 to hide important execution evidence. “Explore” is not a primary project lane;
-catalog discovery belongs in the secondary Catalog group and Setup readiness
-links.
+catalog discovery belongs in the secondary Catalog group. Runtime and host
+diagnostics belong to app Overview; integration availability belongs to Plugins.
 
-Deep links remain stable. Existing task, run, action-call, agent-request,
-resource, provider, and setup URLs must continue to resolve.
+Task, run, action-call, agent-request, resource, and provider deep links remain
+stable. The redundant project Setup route is removed without an alias;
+workspace guidance uses the `home` UI path/URL pointing to `/projects/{id}`.
 
 ## 7. Screen contracts
 
@@ -474,7 +475,7 @@ resource, provider, and setup URLs must continue to resolve.
 | Attention | What requires a human and why? | Approve/deny, answer, open setup, lifecycle repair |
 | Work | What agent-created work exists and what state is it in? | Inspect, filter, navigate; explicit operator override only if authorized |
 | Activity | What changed and where is the evidence? | Filter, search, inspect |
-| Setup | What prevents agents from using this project safely? | Local-admin setup and repair |
+| Backups | Is this installation and its enrolled data covered? | Inspect coverage and configure automatic backups through local-admin controls |
 | Connections | What providers can agents safely use? | Connect, test, revoke, repair |
 | Agent clients | Which MCP hosts are registered and healthy? | Repair StackOS-owned registration, explain restart |
 | Catalog | What contracts are available to agents? | Inspect, open setup, copy/open host request |
