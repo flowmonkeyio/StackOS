@@ -104,8 +104,23 @@ state looks inconsistent. If diagnostics show a system-recoverable lifecycle fai
 replacement plan. `tracker.rejectTask` is a rejection override for independent
 tasks or draft/started workflow plans that should first abort through
 `runPlan.abort`.
-`tracker.linkRunPlan` adds provenance only. It does not make a manual task's
-lifecycle follow the linked run plan.
+By default, `tracker.linkRunPlan` adds provenance only. For a manual task whose
+completion explicitly requires a StackOS flow, call it while the selected plan
+is still a draft, before `runPlan.start`, with
+`require_execution=true` and nonempty `required_step_ids` selected from the
+plan. This binds the exact plan ID and its input digest as an immutable
+requirement; another same-key plan or past completed plan cannot substitute for
+it. It does not transfer
+lifecycle ownership. Completion then needs that plan's run ID, a
+successful terminal plan/run, and claimed, recorded success for each selected
+step. Use `completion_evidence_json.stackos_flow` with `mode: "run"`,
+`run_plan_id`, and `run_id`. A manual fallback must instead record
+`mode: "manual_fallback"`, `failure_reason`, and `failure_ref` while setting
+the task to `failed`; it never counts as flow completion. Ordinary run-plan
+step results are agent-recorded evidence, not action receipts or independent
+review, so check external effects and artifacts separately where required.
+StackOS does not infer flow requirements from task prose or enforce status in
+external trackers.
 
 When an agent needs to create delivery tickets under a workflow step, it should
 call `tracker.createTicket` with `run_plan_id` and `step_id`. StackOS resolves

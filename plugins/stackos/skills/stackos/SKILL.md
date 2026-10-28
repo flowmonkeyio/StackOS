@@ -378,14 +378,29 @@ primitive.
   plan/run/task lifecycle as needed. `runPlan.abort` marks the workflow task and unfinished linked tickets
   `aborted`. Completed or failed workflow run plans cannot be rejected through
   tracker state.
-  `tracker.linkRunPlan` is provenance only; it does not transfer lifecycle
-  ownership from tracker to run plan.
+  `tracker.linkRunPlan` is provenance only by default and never transfers
+  lifecycle ownership. If an existing independent task explicitly requires a
+  StackOS flow, bind it to the selected plan before claiming completion with
+  `require_execution=true` and the required step IDs from `runPlan.get` while
+  that plan is still a draft, before `runPlan.start`. The
+  binding freezes that plan ID and its input digest. Completion must cite the
+  plan's actual run ID and recorded successful required steps; a second
+  same-key plan or manual fallback cannot substitute. Record a manual fallback
+  as a failed task with a reason and failure reference, and state immediately
+  that the requested flow did not execute. Agent-authored step results alone
+  do not prove provider effects or independent review.
 - Execute workflow work: use a workflow template when work should follow a
   reusable contract or when the operator explicitly asks to use a workflow,
   engineering workflow, StackOS workflow, "the workflow", to follow the SDLC,
   for release-grade delivery, or equivalent lifecycle enforcement. Create or resolve
   the workflow-backed run plan before creating tracker tasks or tickets, then
-  create discovery, design, delivery, verification, and closeout tickets under
+  use its `workflow-{run_plan_id}` mirror as canonical lifecycle state. If a
+  separate preexisting independent task tracks the same request, apply the
+  required-execution binding above as soon as the requirement is known, before
+  execution. Never mark that
+  independent task complete merely because manual work or a provenance link
+  exists. A blocked or missing run is reported as such; it is not flow success.
+  Create discovery, design, delivery, verification, and closeout tickets under
   the workflow task/run plan from the start. Check the attached workflow
   extension first when the project has route refs, default inputs, selected
   context, guardrails, or workflow-field overrides. `runPlan.create` applies

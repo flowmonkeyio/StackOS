@@ -660,8 +660,11 @@ workflow-backed tasks, rejection only applies to draft/started run plans and
 routes through `runPlan.abort` first. Completed or failed workflow run plans
 remain canonical; create follow-up tracker work instead of overriding their
 terminal lifecycle.
-`tracker.linkRunPlan` is a provenance link only and does not transfer lifecycle
-ownership from tracker to the run plan.
+`tracker.linkRunPlan` is a provenance link by default. Set
+`require_execution=true` with explicit `required_step_ids` to gate a manual
+task's completion on the exact linked draft plan, its frozen input digest, recorded
+successful run and selected steps. It does not transfer lifecycle ownership to
+the run plan or prove effects described only in agent-authored step results.
 
 Agent preset setup reuses the same operation infrastructure. Use
 `agentPreset.list` to discover generic role presets, `agentPreset.describe` to
