@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.1.40 - 2026-10-28
+
+- Separate app-wide setup, accounts and backups from project navigation in the
+  sidebar.
+- Set up backups through native folder and recovery-key dialogs, save a
+  protected convenience copy of the key, and create the first backup. Preserve
+  existing backup destinations, recipients and settings.
+- Export the latest encrypted backup and its recovery key from the Backups
+  page. Recover into a separate, inert folder without replacing the running
+  installation. Keep both files somewhere accessible if this device is lost.
+- Simplify the Backups page with a compact status area, separate file exports
+  and a Manage menu for settings and history. Keep controls and keyboard focus
+  stable through loading, refresh, success and failure states.
+
+Before upgrading or rolling back, create an encrypted backup that includes the
+database, matching seed and auth token, and managed project files. Keep the
+private recovery key separately. Existing runs retain their frozen workflow
+snapshots. Replacing the app does not roll back data; verify recovery into a
+fresh, inert folder before adopting recovered state. See
+[upgrade and rollback](docs/upgrade.md#rollback).
+
 ## 2.1.39 - 2026-10-26
 
 - Add a project-scoped Finance console for source-backed overviews, record

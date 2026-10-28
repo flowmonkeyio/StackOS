@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "reviewed_at_utc": "2026-10-28 16:32:51 UTC",
+  "reviewer": "/root/reviewer",
+  "review_type": "Bounded version-only release preparation",
+  "project_id": 1,
+  "run_plan_id": 718,
+  "run_id": 712,
+  "step": "release-closeout",
+  "assignment_attempt_id": "release-1",
+  "release": "2.1.40",
+  "verdict": "pass",
+  "recommendation": "Approve commit/push and isolated package preparation for this exact delta.",
+  "feature_commit": "9f005c0bdffbecf9f455c194732984290237626d",
+  "prior_approved_source_candidate": "72935f7792c9a4c8f43db9991a831cec114c2592e26c697ca418fbce5ebc2ad7",
+  "prior_independent_review_sha256": "ff39aa7d42f16aaabecacb5fc0ebc8360e2cbfa21dcbe31fe9440d519faca812",
+  "release_delta_sha256": "c8ed21d79bacfe959f520828f241b7050f085f0c3eb68e54af2fb278d10c22f6",
+  "release_delta_encoding": "SHA256 of UTF-8 json.dumps(release_delta, sort_keys=True, separators=(\",\", \":\")); five path-to-file-SHA256 strings, no trailing newline.",
+  "preparation_file": "preparation.json",
+  "preparation_sha256": "cf71100391a0782f6af3dcf2d550f7300cd34705dc3248edec35104a0243cfe5",
+  "inspected_file_hashes": {
+    "CHANGELOG.md": "bc827765b8406d0949976e6de1db0582a24091cb46ac2a0f8a1bad675cf59933",
+    "pyproject.toml": "fd743128240b29f49ffe6ede4e7d228b1d864790d10ba678dd5eef2cef76b8e3",
+    "stackos/__init__.py": "7c2a6927789c347d52f4ca702a90fd8bc76b7cd4a1a3abeb57bd477f3a549dd3",
+    "desktop/package.json": "3970f7d57c8a062c97ed42a73e792b213fd4b121f91dd9297af06220087aa0b4",
+    "uv.lock": "82f9fa4737d24920ed3e956d4c232a2d4d3b265b324d0ccd9cb648f9099bb4d8"
+  },
+  "checks": [
+    {
+      "name": "Candidate identity",
+      "result": "All five current file hashes match preparation.json; compact sorted JSON aggregate recomputes to c8ed21d7."
+    },
+    {
+      "name": "Version consistency",
+      "result": "Parsed project, runtime, desktop and local stackos lock package versions all equal2.1.40."
+    },
+    {
+      "name": "Version-only scope",
+      "result": "For pyproject.toml, stackos/__init__.py, desktop/package.json and uv.lock, each complete file equals its feature-commit content with exactly the first2.1.39 occurrence replaced by2.1.40. No dependency or behavior change in those files."
+    },
+    {
+      "name": "Release notes",
+      "result": "Changelog accurately describes previously approved sidebar and backup work, preserves existing setup, explains inert recovery and both recovery files, and links to an existing rollback section. No unsupported off-device custody or publication claim."
+    },
+    {
+      "name": "Source whitespace",
+      "result": "git diff --check for exactly the five release-delta paths exits0; immutable historical evidence whitespace is outside this check."
+    },
+    {
+      "name": "Existing focused receipt",
+      "result": "Read /tmp/stackos-release-20261028/version-check-direct.txt:1 passed. No source suite rerun by reviewer."
+    },
+    {
+      "name": "Desktop doctor receipt",
+      "result": "Read /tmp/stackos-release-20261028/desktop-doctor.txt: desktop doctor ok at2.1.40."
+    },
+    {
+      "name": "Strict configuration dry-run receipt",
+      "result": "Read /tmp/stackos-release-20261028/config-dry-run.txt: production HTTPS endpoint, requireUpdateUrl=true, releaseIntent=true, csc-name signing and keychain-profile notarization configuration. This does not prove credential availability or successful signing/notarization."
+    }
+  ],
+  "sources": [
+    "Root release-1 assignment and explicit operator authorization for commit/push, signed-notarized packaging, installed smoke and hosting",
+    "reports/releases/2026-10-28-streamlined-backups/evidence/review/independent-review.json",
+    "reports/releases/stackos-2.1.40/preparation.json",
+    "docs/release-signoff.md",
+    "docs/desktop-distribution.md",
+    "docs/upgrade.md#rollback",
+    "Actual five-file diff against feature commit9f005c0bdffbecf9f455c194732984290237626d"
+  ],
+  "independence": {
+    "implementation_or_acceptance_test_edits": false,
+    "workflow_or_git_mutations": false,
+    "reviewer_write_scope": "This review receipt only."
+  },
+  "required_repairs": [],
+  "remaining_release_gates": [
+    "Restore or provide valid notarization credentials/profile. Missing stackos-notary profile is an external release-input blocker; do not substitute signed-only or unsigned publication.",
+    "Complete the signed/notarized artifact build and final artifact signature, Gatekeeper, staple and packaged CLI checks.",
+    "Complete installed-app, launchd/restart and signed update/relaunch evidence while preserving existing backup settings and state.",
+    "Review candidate-bound artifact/index receipts before publication, then verify hosted metadata, artifacts and checksums after deployment."
+  ],
+  "scope_limits": [
+    "This verdict approves the version-only delta for commit/push and isolated package preparation; it is not publication readiness or proof of a built/installed artifact.",
+    "Prior full source and native verification is reused; no code-audit or source-suite repeat was performed.",
+    "Root retains staging, git, packaging, installation, publication, workflow and final-acceptance ownership. Unrelated dirty files remain excluded."
+  ]
+}

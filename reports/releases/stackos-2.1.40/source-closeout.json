@@ -1,0 +1,23 @@
+{
+  "lifecycle": "historical-source-closeout-preserved-before-release-resume",
+  "project_id": 1,
+  "run_plan_id": 718,
+  "run_id": 712,
+  "step_id": "release-closeout",
+  "completed_at": "2026-10-28T15:31:42.930059",
+  "decision": "ready",
+  "candidate_sha256": "72935f7792c9a4c8f43db9991a831cec114c2592e26c697ca418fbce5ebc2ad7",
+  "base": "1976d4bf96c8480652400e496534a7ed6b7e99d1",
+  "source_files": 27,
+  "bundle_files": 89,
+  "accepted_children": ["backup-guarded-local-commands", "backup-native-flow", "backup-streamlined-panel"],
+  "verification": "5459 Python tests reused on unchanged source; final752 UI tests/typecheck/build; real synthetic Electron/CLI setup/restart/export/restore;48 browser cases; independent source/design approval; protected/live backup hashes unchanged.",
+  "source_report": "../2026-10-28-streamlined-backups/verification.md",
+  "independent_review": "../2026-10-28-streamlined-backups/evidence/review/independent-review.json",
+  "review_sha256": "ff39aa7d42f16aaabecacb5fc0ebc8360e2cbfa21dcbe31fe9440d519faca812",
+  "deployment_at_closeout": {"committed": false, "pushed": false, "packaged": false, "installed": false, "daemon_restarted": false, "released": false},
+  "authority_at_closeout": "Source and UI bundle delivery only; no automatic commit/push/install/publication.",
+  "superseding_operator_instruction": "Proceed, following explicit explanation of commit/push, signed notarized build, packaged lifecycle checks and publication checks.",
+  "resume_scope": "Release preparation and execution only. Source acceptance and existing child receipts remain valid. Version-only changes require focused verification and independent release review; a material source repair reopens its affected gate.",
+  "recovery": "Preserve unrelated dirty work and existing live configuration; keep matching database, seed and token custody through installed-app checks. Portable backup/key files require off-device custody."
+}

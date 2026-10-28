@@ -1,0 +1,5 @@
+
+> stackos-desktop@2.1.40 doctor /Users/sergeyrura/Bin/content-stack/desktop
+> node scripts/doctor.mjs
+
+desktop doctor ok

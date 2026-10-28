@@ -1,0 +1,39 @@
+{
+  "release": "2.1.40",
+  "project_id": 1,
+  "run_plan_id": 718,
+  "run_id": 712,
+  "attempt": "release-1",
+  "feature_commit": "9f005c0bdffbecf9f455c194732984290237626d",
+  "accepted_source_candidate": "72935f7792c9a4c8f43db9991a831cec114c2592e26c697ca418fbce5ebc2ad7",
+  "release_delta": {
+    "CHANGELOG.md": "bc827765b8406d0949976e6de1db0582a24091cb46ac2a0f8a1bad675cf59933",
+    "pyproject.toml": "fd743128240b29f49ffe6ede4e7d228b1d864790d10ba678dd5eef2cef76b8e3",
+    "stackos/__init__.py": "7c2a6927789c347d52f4ca702a90fd8bc76b7cd4a1a3abeb57bd477f3a549dd3",
+    "desktop/package.json": "3970f7d57c8a062c97ed42a73e792b213fd4b121f91dd9297af06220087aa0b4",
+    "uv.lock": "82f9fa4737d24920ed3e956d4c232a2d4d3b265b324d0ccd9cb648f9099bb4d8"
+  },
+  "delta_sha256": "c8ed21d79bacfe959f520828f241b7050f085f0c3eb68e54af2fb278d10c22f6",
+  "checks": {
+    "version_alignment": "1 passed",
+    "desktop_doctor": "passed",
+    "strict_release_config_dry_run": "passed; configuration only, does not validate credentials",
+    "source_whitespace": "passed; immutable evidence log whitespace preserved"
+  },
+  "notarization": {
+    "status": "blocked",
+    "reason": "No Keychain password item found for stackos-notary on both current and Xcode toolchains"
+  },
+  "tdlib_input": {
+    "path": "/tmp/stackos-release-20261028/inputs/libtdjson.dylib",
+    "sha256": "c397db26e7596eaf4a37ffb6d9400f2a34d764a26f388e4f4b9bfd41b070d5af",
+    "bytes": 27848360
+  },
+  "published_version_before": "2.1.39",
+  "deployment": {
+    "packaged": false,
+    "installed": false,
+    "published": false
+  },
+  "checked_at": "2026-10-28T16:29:29.797373+00:00"
+}
