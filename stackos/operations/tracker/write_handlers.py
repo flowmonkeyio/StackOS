@@ -539,6 +539,8 @@ async def tracker_link_run_plan(
         project_id=inp.project_id,
         task_key=inp.task_key,
         run_plan_id=inp.run_plan_id,
+        require_execution=inp.require_execution,
+        required_step_ids=inp.required_step_ids,
         actor=inp.actor,
     )
     return WriteEnvelope[TrackerMutationOut](

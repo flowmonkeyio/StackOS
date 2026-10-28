@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from sqlmodel import select
+
 from stackos.artifacts import redact_secret_text
 from stackos.db.models import (
     AgentRequest,
@@ -18,6 +20,7 @@ from stackos.db.models import (
 from stackos.repositories.base import (
     Envelope,
     NotFoundError,
+    ValidationError,
 )
 from stackos.repositories.tracker.schema import TrackerMutationOut
 from stackos.repositories.tracker.utils import (
@@ -40,6 +43,8 @@ class TrackerMirrorMixin:
         project_id: int,
         task_key: str,
         run_plan_id: int,
+        require_execution: bool = False,
+        required_step_ids: list[str] | None = None,
         actor: str | None = None,
     ) -> Envelope[TrackerMutationOut]:
         tracker = self.ensure_tracker(project_id=project_id)
@@ -50,6 +55,36 @@ class TrackerMirrorMixin:
                 data={"project_id": project_id, "run_plan_id": run_plan_id},
             )
         task = self._task_by_key(tracker.id, task_key)
+        if require_execution:
+            if task.source_kind == TrackerSourceKind.WORKFLOW:
+                raise ValidationError("workflow mirror status is already controlled by runPlan.*")
+            if task.status in TERMINAL_TRACKER_STATUSES:
+                raise ValidationError("required StackOS flow must be bound before task completion")
+            steps = {
+                step.step_id
+                for step in self._s.exec(
+                    select(RunPlanStep).where(RunPlanStep.run_plan_id == run_plan_id)
+                )
+            }
+            if (
+                not required_step_ids
+                or len(set(required_step_ids)) != len(required_step_ids)
+                or not set(required_step_ids).issubset(steps)
+            ):
+                raise ValidationError("required StackOS flow needs explicit plan step IDs")
+            requirement = {
+                "flow_key": plan.template_key or plan.key,
+                "required_step_ids": required_step_ids,
+            }
+            self._required_stackos_flow({"required_stackos_flow": requirement})
+            existing = self._required_stackos_flow(task.source_json)
+            if existing is not None and existing != requirement:
+                raise ValidationError("required StackOS flow is immutable on an existing task")
+            task.source_json = {**(task.source_json or {}), "required_stackos_flow": requirement}
+            task.updated_at = _utcnow()
+            self._s.add(task)
+        elif required_step_ids is not None:
+            raise ValidationError("required_step_ids needs require_execution=true")
         self._add_link(
             tracker,
             task_id=task.id,

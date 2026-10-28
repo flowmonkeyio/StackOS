@@ -630,6 +630,8 @@ class TrackerLinkRunPlanInput(MCPInput):
     project_id: int
     task_key: str
     run_plan_id: int
+    require_execution: bool = False
+    required_step_ids: list[str] | None = None
     actor: str | None = None
 
 

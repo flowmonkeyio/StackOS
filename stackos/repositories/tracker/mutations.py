@@ -15,14 +15,18 @@ from stackos.db.models import (
     RunPlan,
     RunPlanStatus,
     RunPlanStep,
+    RunPlanStepStatus,
+    RunStatus,
     TaskTracker,
     TrackerItemStatus,
+    TrackerLinkKind,
     TrackerRevision,
     TrackerSourceKind,
     TrackerTask,
     TrackerTicket,
     TrackerTicketDependency,
     TrackerTicketKind,
+    TrackerTicketLink,
 )
 from stackos.repositories.base import (
     ConflictError,
@@ -143,6 +147,24 @@ class TrackerMutationMixin:
         key = _slug(key, fallback="task", max_length=180)
         if self._task_by_key(tracker.id, key, missing_ok=True) is not None:
             raise ConflictError("tracker task key already exists", data={"task_key": key})
+        required_flow = self._required_stackos_flow(source_json)
+        if required_flow is not None:
+            flow = (completion_evidence_json or {}).get("stackos_flow")
+            if (
+                isinstance(flow, dict)
+                and flow.get("mode") == "manual_fallback"
+                and status != TrackerItemStatus.FAILED
+            ):
+                raise ValidationError(
+                    "manual fallback must first leave the required flow task failed"
+                )
+            self._validate_stackos_flow_evidence(
+                project_id=project_id,
+                task_id=None,
+                requirement=required_flow,
+                evidence=completion_evidence_json,
+                status=status,
+            )
         now = _utcnow()
         row = TrackerTask(
             tracker_id=tracker.id,
@@ -1047,6 +1069,51 @@ class TrackerMutationMixin:
     def _apply_task_patch(self, task: TrackerTask, patch_json: dict[str, Any]) -> None:
         self._validate_task_patch_fields(patch_json)
         self._validate_workflow_task_patch(task, patch_json)
+        existing_flow = self._required_stackos_flow(task.source_json)
+        required_flow = self._required_stackos_flow(patch_json.get("source_json", task.source_json))
+        if existing_flow is not None and required_flow != existing_flow:
+            raise ValidationError("required StackOS flow is immutable on an existing task")
+        if required_flow is not None:
+            previous_flow = (
+                task.completion_evidence_json.get("stackos_flow")
+                if isinstance(task.completion_evidence_json, dict)
+                else None
+            )
+            next_evidence = patch_json.get(
+                "completion_evidence_json", task.completion_evidence_json
+            )
+            next_flow = (
+                next_evidence.get("stackos_flow") if isinstance(next_evidence, dict) else None
+            )
+            next_status = _status_value(str(patch_json.get("status", task.status)))
+            if (
+                isinstance(previous_flow, dict)
+                and previous_flow.get("mode") == "manual_fallback"
+                and next_evidence != task.completion_evidence_json
+                and not (
+                    isinstance(next_evidence, dict)
+                    and isinstance(next_evidence.get("stackos_flow"), dict)
+                    and next_evidence["stackos_flow"].get("mode") == "run"
+                    and next_status == TrackerItemStatus.COMPLETE
+                )
+            ):
+                raise ValidationError("recorded StackOS manual fallback cannot be erased")
+            if (
+                isinstance(next_flow, dict)
+                and next_flow.get("mode") == "manual_fallback"
+                and next_flow != previous_flow
+                and next_status != TrackerItemStatus.FAILED
+            ):
+                raise ValidationError(
+                    "manual fallback must first leave the required flow task failed"
+                )
+            self._validate_stackos_flow_evidence(
+                project_id=task.project_id,
+                task_id=task.id,
+                requirement=required_flow,
+                evidence=next_evidence,
+                status=next_status,
+            )
         now = _utcnow()
         if "status" in patch_json:
             new_status = _status_value(str(patch_json["status"]))
@@ -1111,6 +1178,110 @@ class TrackerMutationMixin:
                 "next_operations": ["runPlan.get", "runPlan.claimStep", "runPlan.recordStep"],
             },
         )
+
+    @staticmethod
+    def _required_stackos_flow(source_json: dict[str, Any] | None) -> dict[str, Any] | None:
+        """An explicit task requirement, not an inference from prose or a loose link."""
+        if not isinstance(source_json, dict) or "required_stackos_flow" not in source_json:
+            return None
+        requirement = source_json["required_stackos_flow"]
+        if not isinstance(requirement, dict) or set(requirement) != {
+            "flow_key",
+            "required_step_ids",
+        }:
+            raise ValidationError("required StackOS flow needs flow_key and required_step_ids")
+        flow_key = requirement["flow_key"]
+        steps = requirement["required_step_ids"]
+        if (
+            not isinstance(flow_key, str)
+            or not 1 <= len(flow_key.strip()) <= 200
+            or not isinstance(steps, list)
+            or not steps
+            or len(steps) > 50
+            or any(not isinstance(step, str) or not 1 <= len(step.strip()) <= 160 for step in steps)
+            or len(set(steps)) != len(steps)
+        ):
+            raise ValidationError("required StackOS flow has invalid key or required steps")
+        return requirement
+
+    def _validate_stackos_flow_evidence(
+        self,
+        *,
+        project_id: int,
+        task_id: int | None,
+        requirement: dict[str, Any],
+        evidence: dict[str, Any] | None,
+        status: TrackerItemStatus,
+    ) -> None:
+        flow = evidence.get("stackos_flow") if isinstance(evidence, dict) else None
+        if flow is not None and not isinstance(flow, dict):
+            raise ValidationError("StackOS flow evidence must be an object")
+        if isinstance(flow, dict) and flow.get("mode") == "manual_fallback":
+            if not all(
+                isinstance(flow.get(key), str) and flow[key].strip()
+                for key in ("failure_reason", "failure_ref")
+            ):
+                raise ValidationError("manual fallback requires failure_reason and failure_ref")
+            if status == TrackerItemStatus.COMPLETE:
+                raise ValidationError("manual fallback cannot complete a required flow task")
+            return
+        if status != TrackerItemStatus.COMPLETE:
+            if flow is not None and flow.get("mode") != "run":
+                raise ValidationError("StackOS flow evidence mode must be run or manual_fallback")
+            return
+        if not isinstance(flow, dict) or flow.get("mode") != "run":
+            raise ValidationError("StackOS flow completion requires recorded run evidence")
+        plan_id, run_id = flow.get("run_plan_id"), flow.get("run_id")
+        if any(type(value) is not int or value <= 0 for value in (plan_id, run_id)):
+            raise ValidationError("StackOS flow completion requires positive run plan and run IDs")
+        plan = self._s.get(RunPlan, plan_id, populate_existing=True)
+        run = self._s.get(Run, run_id, populate_existing=True)
+        if (
+            plan is None
+            or run is None
+            or plan.project_id != project_id
+            or run.project_id != project_id
+            or plan.run_id != run_id
+            or (plan.template_key or plan.key) != requirement["flow_key"]
+        ):
+            raise ValidationError(
+                "StackOS flow run plan and run must match the required project flow"
+            )
+        link = self._s.exec(
+            select(TrackerTicketLink.id).where(
+                TrackerTicketLink.project_id == project_id,
+                TrackerTicketLink.task_id == task_id,
+                TrackerTicketLink.link_kind == TrackerLinkKind.RUN_PLAN,
+                TrackerTicketLink.run_plan_id == plan_id,
+            )
+        ).first()
+        if link is None:
+            raise ValidationError("StackOS flow run plan must be linked to the task")
+        if plan.status != RunPlanStatus.COMPLETED or run.status != RunStatus.SUCCESS:
+            raise ValidationError("StackOS flow run plan and run must be completed successfully")
+        steps = {
+            step.step_id: step
+            for step in self._s.exec(select(RunPlanStep).where(RunPlanStep.run_plan_id == plan_id))
+        }
+        missing = [
+            step_id
+            for step_id in requirement["required_step_ids"]
+            if (
+                (step := steps.get(step_id)) is None
+                or step.status != RunPlanStepStatus.SUCCESS
+                or not step.claimed_by
+                or step.claimed_at is None
+                or step.started_at is None
+                or step.completed_at is None
+                or not isinstance(step.result_json, dict)
+                or not step.result_json
+            )
+        ]
+        if missing:
+            raise ValidationError(
+                "StackOS flow required steps lack executed success evidence",
+                data={"run_plan_id": plan_id, "step_ids": missing},
+            )
 
     def _apply_ticket_patch(
         self,
@@ -1465,6 +1636,15 @@ class TrackerMutationMixin:
             task.completed_at = task.completed_at if old == task.status else now
             task.lane_key = "done"
         elif all(ticket.status == TrackerItemStatus.COMPLETE for ticket in tickets):
+            required_flow = self._required_stackos_flow(task.source_json)
+            if required_flow is not None:
+                self._validate_stackos_flow_evidence(
+                    project_id=task.project_id,
+                    task_id=task.id,
+                    requirement=required_flow,
+                    evidence=task.completion_evidence_json,
+                    status=TrackerItemStatus.COMPLETE,
+                )
             task.status = TrackerItemStatus.COMPLETE
             task.completed_at = task.completed_at if old == task.status else now
             task.lane_key = "done"
@@ -1494,6 +1674,15 @@ class TrackerMutationMixin:
             elif any(ticket.status == TrackerItemStatus.SKIPPED for ticket in tickets):
                 task.status = TrackerItemStatus.SKIPPED
             else:
+                required_flow = self._required_stackos_flow(task.source_json)
+                if required_flow is not None:
+                    self._validate_stackos_flow_evidence(
+                        project_id=task.project_id,
+                        task_id=task.id,
+                        requirement=required_flow,
+                        evidence=task.completion_evidence_json,
+                        status=TrackerItemStatus.COMPLETE,
+                    )
                 task.status = TrackerItemStatus.COMPLETE
             task.completed_at = task.completed_at if old == task.status else now
             task.lane_key = "done"
@@ -1534,6 +1723,15 @@ class TrackerMutationMixin:
             task.started_at = task.started_at or now
             task.completed_at = None
         elif plan.status == RunPlanStatus.COMPLETED:
+            required_flow = self._required_stackos_flow(task.source_json)
+            if required_flow is not None:
+                self._validate_stackos_flow_evidence(
+                    project_id=task.project_id,
+                    task_id=task.id,
+                    requirement=required_flow,
+                    evidence=task.completion_evidence_json,
+                    status=TrackerItemStatus.COMPLETE,
+                )
             task.status = TrackerItemStatus.COMPLETE
             task.completed_at = task.completed_at if old == task.status else now
             task.lane_key = "done"
