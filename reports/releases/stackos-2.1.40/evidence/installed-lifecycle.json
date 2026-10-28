@@ -1,0 +1,100 @@
+{
+  "captured_at": "2026-10-28T17:22:15.038065+00:00",
+  "candidate": "958f554223a438b404e72c67a568d573f4653ae5",
+  "version": "2.1.40",
+  "payload": {
+    "name": "stackos",
+    "version": "2.1.40",
+    "buildId": "20261028T164835Z",
+    "builtAt": "2026-10-28T16:48:35Z"
+  },
+  "install_state": {
+    "version": "2.1.40",
+    "installKey": "2.1.40:2.1.40:20261028T164835Z:packaged:/Applications/StackOS.app/Contents/Resources/stackos/bin/stackos",
+    "payloadInfo": {
+      "name": "stackos",
+      "version": "2.1.40",
+      "buildId": "20261028T164835Z",
+      "builtAt": "2026-10-28T16:48:35Z"
+    },
+    "prepared": true,
+    "preparedAt": "2026-10-28T17:12:31.022Z"
+  },
+  "health": {
+    "daemon_uptime_s": 480.874,
+    "db_status": "ok",
+    "scheduler_running": true,
+    "version": "2.1.40",
+    "milestone": "M10"
+  },
+  "doctor": {
+    "ok": true,
+    "check_count": 27,
+    "failed_checks": []
+  },
+  "launchd": {
+    "loaded": true,
+    "running": true,
+    "installed_program": true
+  },
+  "app_pids": [
+    3771
+  ],
+  "temporary_ports_listening": {
+    "8765": false,
+    "9238": false
+  },
+  "command_exit_codes": {
+    "installed-repair": 0,
+    "installed-restart": 0,
+    "installed-final-doctor": 0,
+    "installed-final-signature": 0
+  },
+  "update_config": "provider: generic\nurl: https://stackos.flowmonkey.io/StackOS/\nupdaterCacheDirName: stackos-desktop-updater\n",
+  "state_preservation": {
+    "phase": "final",
+    "counts": {
+      "projects": 20,
+      "credentials": 26,
+      "account_links": 6,
+      "project_attachments": 32,
+      "encrypted_record_ids": 26
+    },
+    "identities_preserved": {
+      "projects": true,
+      "credentials": true,
+      "account_links": true,
+      "project_attachments": true,
+      "encrypted_record_ids": true
+    },
+    "files_unchanged": {
+      "seed.bin": true,
+      "auth.token": true,
+      "backup-policy.json": true,
+      "backup-key-exclusions.json": true
+    },
+    "passed": true
+  },
+  "normal_launch_receipt": "installed-normal-launch.json",
+  "native_ui_observation": {
+    "web_area_count": 1,
+    "observed_labels": [
+      "StackOS",
+      "Home",
+      "Attention",
+      "Work",
+      "Activity",
+      "APP",
+      "Overview",
+      "Accounts",
+      "Backups",
+      "Backups"
+    ],
+    "receipt": "installed-ui-observed.json",
+    "log": "installed-ui-observed.log",
+    "method": "Read actual native accessibility text after normal open; no update/debug overrides."
+  },
+  "negative_feed_evidence": "badfeed-after.json",
+  "negative_feed_screenshot": "badfeed-native-user.png",
+  "passed": true
+}

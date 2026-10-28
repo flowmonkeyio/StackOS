@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "reviewed_at_utc": "2026-10-28 17:41:15 UTC",
+  "reviewer": "/root/reviewer",
+  "assignment_attempt_id": "release-1",
+  "project_id": 1,
+  "parent_run_plan_id": 718,
+  "parent_run_id": 712,
+  "publication_run_plan_id": 721,
+  "publication_run_id": 715,
+  "scope": "Final independent public-release acceptance; reuse reviewed source, signed artifacts and installed lifecycle, reconcile publication receipts and durable evidence.",
+  "verdict": "pass",
+  "recommendation": "Accept StackOS2.1.40 public release and complete administrative closeout.",
+  "required_repairs": [],
+  "unresolved_release_gates": [],
+  "release": "2.1.40",
+  "source_commit": "958f554223a438b404e72c67a568d573f4653ae5",
+  "tag": "v2.1.40",
+  "remote_annotated_tag_object": "3029d2884183654ebd68b389935536232efc4df0",
+  "remote_tag_peels_to_source": true,
+  "approved_source_candidate": "72935f7792c9a4c8f43db9991a831cec114c2592e26c697ca418fbce5ebc2ad7",
+  "payload_buildId": "20261028T164835Z",
+  "published_endpoints": {
+    "feed": "https://stackos.flowmonkey.io/StackOS/latest-mac.yml",
+    "download": "https://stackos.flowmonkey.io/StackOS/stackos-latest-mac-arm64.dmg"
+  },
+  "accepted_public_hashes": {
+    "stackos-2.1.40-mac-arm64.zip": "9ea39558a289badc6e30e34e9f58b57ef3ca91609caee90631a54d0567b68551",
+    "stackos-2.1.40-mac-arm64.dmg": "9212fc6bb2138469cc6997bbf69b5e58887175799575d0ce5e6c8e6d88ac1778",
+    "stackos-2.1.40-mac-arm64.zip.blockmap": "b4113ac3b685d3c14e41ad8281cd0b0f3b36d23e58508bb23b634247b54e8998",
+    "stackos-2.1.40-mac-arm64.dmg.blockmap": "46c70949c904f346f57ad2194787af9ecffd27d96d8b95bfa1e89263fedf3f11",
+    "stackos-latest-mac-arm64.dmg": "9212fc6bb2138469cc6997bbf69b5e58887175799575d0ce5e6c8e6d88ac1778",
+    "latest-mac.yml": "81628f8811491baa78e628447f64a8d848f6ced578a502bef91ade7432b04dad"
+  },
+  "publication_checks": [
+    {
+      "check": "Public staged/versioned bodies",
+      "result": "All6 full HTTPS responses reportHTTP200 and independently reconcile by byte count/SHA256 to accepted artifact set; source verifier streams complete bodies with normal TLS verification."
+    },
+    {
+      "check": "Live channel",
+      "result": "Public-channel receipt captured2026-10-28T17:34:45.446516Z: feedHTTP200/513bytes/SHA81628f88 and stableDMGHTTP200/485528254bytes/SHA9212fc6b match accepted final artifacts."
+    },
+    {
+      "check": "Downloaded feed content",
+      "result": "Parsed durable public-channel-latest-mac.yml: version2.1.40, exact2.1.40 ZIP/DMG entries, matching sizes and base64 SHA512 values, primary path points to accepted ZIP."
+    },
+    {
+      "check": "Release tag",
+      "result": "Remote v2.1.40 annotated tag peels to958f554223a438b404e72c67a568d573f4653ae5, matching build source."
+    },
+    {
+      "check": "Publication sequencing",
+      "result": "Live old-feed precondition matches prior2.1.39 hash. Three uploads completed before full staged readback; alias promoted first, feed last; final live readback follows both promotions."
+    },
+    {
+      "check": "External action completion",
+      "result": "Action calls12960,12961,12962 upload;12963 alias rename;12964 feed rename. All terminal success in run715/plan721. Upload failed/skipped counts zero; no uncertain outcome remains."
+    },
+    {
+      "check": "Durable evidence",
+      "result": "All47 indexed files exist and match declared sizes/SHA256. Independently read every file from the Git index and confirmed the same47 identities, including five ignored safe logs explicitly force-staged by root."
+    },
+    {
+      "check": "Report accuracy",
+      "result": "verification.md matches delivered source, native/update proof, artifact trust, publication and known negative-feed limitation. Actual update-ready-settled.png inspected: ready-to-install prompt is visible; its real project capture remains local."
+    }
+  ],
+  "sequencing": {
+    "uploads": [
+      12960,
+      12961,
+      12962
+    ],
+    "staged_readback_at": "2026-10-28T17:31:47.730502+00:00",
+    "alias_promotion": {
+      "action_call_id": 12963,
+      "completed_at": "2026-10-28T17:33:08.810426"
+    },
+    "feed_promotion": {
+      "action_call_id": 12964,
+      "completed_at": "2026-10-28T17:33:28.259139"
+    },
+    "channel_readback_at": "2026-10-28T17:34:45.446516+00:00"
+  },
+  "reused_acceptance": {
+    "source": "Independent AC1–7 source approval bound to72935f, then exact version-only delta.",
+    "package": "All533 first-party StackOS files,89 UI files,101 plugin/skill assets and9 Electron src files match release commit.",
+    "trust": "Built app, extracted ZIP app, final DMG and read-only mounted DMG app passed applicable signature/Gatekeeper/staple checks.",
+    "installed": "Signed2.1.39-to2.1.40 update, build/installKey/health binding, repair/restart,27/27 Doctor, actual normal UI accessibility observation, cleanup and state preservation passed."
+  },
+  "resolved_closeout_findings": [
+    {
+      "id": "ignored-evidence-logs",
+      "status": "resolved",
+      "evidence": "Root force-staged exactly5 indexed safe logs without changing bytes. Independent git-show index verification confirms all47 indexed artifacts. Root staging receipt hash8b0c92e29abbad5422657914341221c01ef6839ba9e4206a21912c87f45ac6ce."
+    }
+  ],
+  "known_existing_limitations": [
+    "Deliberate missing-feed test shows readable error title with verbose upstream body. This presentation issue is not claimed fixed; synthetic state was preserved and normal app restored."
+  ],
+  "evidence_hashes": {
+    "verification.md": "3bcfe265fc8a31e1f1e25d9d443c029b3bc5598b4ca384bbcd6f2facf340e387",
+    "review-final-artifacts.json": "ff1374fbfaa24066b3e4b98bbc10c24512f3be41a07d4f1be661444b2ae8bf8a",
+    "review-app-zip.json": "d518f6036eb749bd6d84816bf95d4e555997881d319c7865655cdb26106951de",
+    "review-package-content.json": "57c678bf5e9004b6c3e299ed867fdd087081e9501da50dcdba56693edaa810dd",
+    "release-review-version.json": "6f442ab7c48850e884908cccd4218d109857b5e993913e0b5f36660f545a683b",
+    "evidence/index.json": "e755190fab813d587a2809de6b2f38d0612b0a252fda5eac1e773ffa70f90222",
+    "evidence/public-staged.json": "9277c5d86780d19598ebee370ad9a69dafb0dbd10fd29d592c8545cdc4f93349",
+    "evidence/public-channel.json": "b72b8b98f713ae9cbbb4b114207b937d92e90d0a55af4d25c9d26cb225e98c81",
+    "evidence/publication.json": "121bf5c6c59ac70d583c19009f2025a809ba7ba2f483258325b1821ba698fd90",
+    "evidence/tag.json": "a7709aee83a3a7e02d0df12b50962b88ab2630a68de95a5fd3630dc6a832a817",
+    "evidence/channel-precondition.json": "c1db464d22aea3da2b7f03e9347fd79e991cfcf376e6b2e855169c560dd2cfd7",
+    "evidence-staging-check.json": "8b0c92e29abbad5422657914341221c01ef6839ba9e4206a21912c87f45ac6ce"
+  },
+  "independence": {
+    "source_build_or_runtime_writer": false,
+    "provider_mutations": false,
+    "workflow_mutations": false,
+    "current_assignment_actions": "Read-only evidence and verifier inspection, feed parsing, candidate/hash reconciliation, Git-index checks; this scoped review receipt only.",
+    "download_reuse": "Reused fresh full-body root HTTPS proofs instead of repeating multi-gigabyte downloads. Raw publication response identities/statuses and verification implementation were independently inspected."
+  },
+  "final_disposition": "All material release gates are satisfied for exact2.1.40 source/artifacts and observed public channel. Root owns final receipt commit/push and workflow closeout."
+}

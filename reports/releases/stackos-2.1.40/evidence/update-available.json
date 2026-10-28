@@ -1,0 +1,22 @@
+{
+  "capturedAt": "2026-10-28T17:10:22.418Z",
+  "mode": "check",
+  "endpoint": "http://127.0.0.1:9238",
+  "targetId": "9B46D96CE11389FBDFC8C238256777B3",
+  "targetUrl": "http://127.0.0.1:5180/",
+  "result": {
+    "ok": true,
+    "state": {
+      "enabled": true,
+      "status": "available",
+      "updateUrl": "http://127.0.0.1:8765/",
+      "lastError": null,
+      "reason": null,
+      "updateInfo": {
+        "version": "2.1.40",
+        "releaseDate": "2026-10-28T17:06:12.708Z"
+      },
+      "progress": {}
+    }
+  }
+}

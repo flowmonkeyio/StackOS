@@ -1,0 +1,15 @@
+{
+  "path": "/private/tmp/stackos-release-20261028/recovery-preupgrade",
+  "verified": true,
+  "archive_sha256": "f6b3ee4f3745ae5b5437430df3246238dbcbf023be49e0d796fddec02309ca1c",
+  "created_at": "2026-10-28T16:49:11.832548+00:00",
+  "target_ids": [],
+  "project_ids": [],
+  "manifest_schema": "stackos.local-backup.v3",
+  "encryption": {
+    "format": "stackos.local-backup.v2",
+    "algorithm": "X25519-HKDF-SHA256-AES-256-GCM",
+    "recipient_fingerprint": "25f67a1a2fe3ef8e583456a53eebc2588a4605baefe8f6c1095ab2c53641fbe0"
+  },
+  "adoption_required": true
+}

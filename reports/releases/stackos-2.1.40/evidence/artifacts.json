@@ -1,0 +1,44 @@
+{
+  "checked_at": "2026-10-28T17:17:39.087004+00:00",
+  "version": "2.1.40",
+  "source_commit": "958f554223a438b404e72c67a568d573f4653ae5",
+  "metadata_hashes_match": true,
+  "stable_alias_identical": true,
+  "payload": {
+    "name": "stackos",
+    "version": "2.1.40",
+    "buildId": "20261028T164835Z",
+    "builtAt": "2026-10-28T16:48:35Z"
+  },
+  "update_config": {
+    "updateUrl": "https://stackos.flowmonkey.io/StackOS/"
+  },
+  "files": {
+    "stackos-2.1.40-mac-arm64.zip": {
+      "bytes": 490264828,
+      "sha512": "dVvw0EpkgBkNWAXEZX2NVI1eLpaM03zqbwdIxs7+n5O2z1aBXDuW4k9SCa8Am7fpp+JQhvd789sBsz2RgRSTbA==",
+      "sha256": "9ea39558a289badc6e30e34e9f58b57ef3ca91609caee90631a54d0567b68551"
+    },
+    "stackos-2.1.40-mac-arm64.dmg": {
+      "bytes": 485528254,
+      "sha512": "b4mRFeOoPlulRvNnhp1bf/eASGLlVQ4knEyY7s3Gwc3fofEyVJebTg3g7zyrfEVEaxTaFpiQnNoY6vXz15qolg==",
+      "sha256": "9212fc6bb2138469cc6997bbf69b5e58887175799575d0ce5e6c8e6d88ac1778"
+    },
+    "stackos-2.1.40-mac-arm64.zip.blockmap": {
+      "bytes": 505375,
+      "sha256": "b4113ac3b685d3c14e41ad8281cd0b0f3b36d23e58508bb23b634247b54e8998"
+    },
+    "stackos-2.1.40-mac-arm64.dmg.blockmap": {
+      "bytes": 504492,
+      "sha256": "46c70949c904f346f57ad2194787af9ecffd27d96d8b95bfa1e89263fedf3f11"
+    },
+    "stackos-latest-mac-arm64.dmg": {
+      "bytes": 485528254,
+      "sha256": "9212fc6bb2138469cc6997bbf69b5e58887175799575d0ce5e6c8e6d88ac1778"
+    },
+    "latest-mac.yml": {
+      "bytes": 513,
+      "sha256": "81628f8811491baa78e628447f64a8d848f6ced578a502bef91ade7432b04dad"
+    }
+  }
+}

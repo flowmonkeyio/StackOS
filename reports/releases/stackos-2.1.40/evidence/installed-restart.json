@@ -1,0 +1,12 @@
+{
+  "command": [
+    "/Applications/StackOS.app/Contents/Resources/stackos/bin/stackos",
+    "restart",
+    "--timeout",
+    "20"
+  ],
+  "captured_at": "2026-10-28T17:14:15.313481+00:00",
+  "seconds": 7.915,
+  "exit_code": 0,
+  "log": "/tmp/stackos-release-20261028/installed-restart.log"
+}

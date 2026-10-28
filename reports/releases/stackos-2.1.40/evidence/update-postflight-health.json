@@ -1,0 +1,14 @@
+{
+  "elapsed_seconds": 0.01,
+  "observed_versions": [
+    "2.1.40"
+  ],
+  "health": {
+    "daemon_uptime_s": 9.429,
+    "db_status": "ok",
+    "scheduler_running": true,
+    "version": "2.1.40",
+    "milestone": "M10"
+  },
+  "passed": true
+}

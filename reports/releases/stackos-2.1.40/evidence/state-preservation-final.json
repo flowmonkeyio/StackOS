@@ -1,0 +1,24 @@
+{
+  "phase": "final",
+  "counts": {
+    "projects": 20,
+    "credentials": 26,
+    "account_links": 6,
+    "project_attachments": 32,
+    "encrypted_record_ids": 26
+  },
+  "identities_preserved": {
+    "projects": true,
+    "credentials": true,
+    "account_links": true,
+    "project_attachments": true,
+    "encrypted_record_ids": true
+  },
+  "files_unchanged": {
+    "seed.bin": true,
+    "auth.token": true,
+    "backup-policy.json": true,
+    "backup-key-exclusions.json": true
+  },
+  "passed": true
+}

@@ -1,0 +1,189 @@
+{
+  "schema_version": 1,
+  "reviewed_at_utc": "2026-10-28 17:12:20 UTC",
+  "reviewer": "/root/reviewer",
+  "project_id": 1,
+  "run_plan_id": 718,
+  "run_id": 712,
+  "assignment_attempt_id": "release-1",
+  "scope": "Independent built-app and immutable signed ZIP verification for installed2.1.39-to2.1.40 smoke; no final DMG or publication verdict.",
+  "verdict": "pass_for_installed_update_smoke",
+  "required_repairs": [],
+  "release": "2.1.40",
+  "source_commit": "958f554223a438b404e72c67a568d573f4653ae5",
+  "feature_commit": "9f005c0bdffbecf9f455c194732984290237626d",
+  "approved_source_candidate": "72935f7792c9a4c8f43db9991a831cec114c2592e26c697ca418fbce5ebc2ad7",
+  "artifact": {
+    "file": "stackos-2.1.40-mac-arm64.zip",
+    "bytes": 490264828,
+    "sha256": "9ea39558a289badc6e30e34e9f58b57ef3ca91609caee90631a54d0567b68551",
+    "sha512_base64": "dVvw0EpkgBkNWAXEZX2NVI1eLpaM03zqbwdIxs7+n5O2z1aBXDuW4k9SCa8Am7fpp+JQhvd789sBsz2RgRSTbA==",
+    "blockmap": {
+      "file": "stackos-2.1.40-mac-arm64.zip.blockmap",
+      "bytes": 505375,
+      "sha256": "b4113ac3b685d3c14e41ad8281cd0b0f3b36d23e58508bb23b634247b54e8998"
+    }
+  },
+  "app_identity": {
+    "version": "2.1.40",
+    "bundle_identifier": "io.stackos.desktop",
+    "buildId": "20261028T164835Z",
+    "builtAt": "2026-10-28T16:48:35Z",
+    "asar_sha256": "b6115adb1ece903cf89615400923f6d93b5ed20179cb5bb97348b30febd9c07e",
+    "signing_authority": "Developer ID Application: SERGEY RURA (TSHN26FR48)",
+    "team_identifier": "TSHN26FR48",
+    "hardened_runtime": true,
+    "code_directory_hash": "91e74882d7847ff3d3f336f05a951908e205a232"
+  },
+  "checks": [
+    {
+      "name": "ZIP metadata",
+      "result": "Computed SHA256, base64 SHA512 and size match canonical ZIP feed entry, primary ZIP metadata fields and root update-feed-receipt.json. ZIP blockmap present and hashed."
+    },
+    {
+      "name": "Archive extraction",
+      "result": "25387 ZIP entries; no absolute or parent-traversal entry paths. Extracted with ditto into reviewer-only private temp directory."
+    },
+    {
+      "name": "Built app trust",
+      "result": "codesign --verify --deep --strict passes; spctl execute assessment accepts Notarized Developer ID; xcrun stapler validate passes; expected Developer ID and TeamIdentifier present."
+    },
+    {
+      "name": "Extracted ZIP app trust",
+      "result": "Independent codesign deep/strict, spctl execute and staple validation all exit0."
+    },
+    {
+      "name": "Content continuity",
+      "result": "Extracted app version/buildId and app.asar hash match preliminary package-content review. All533 tracked StackOS files match release commit; all89 packaged UI files match approved72935f manifest."
+    },
+    {
+      "name": "Update endpoint",
+      "result": "Extracted update-config.json retains https://stackos.flowmonkey.io/StackOS/."
+    },
+    {
+      "name": "Build evidence",
+      "result": "api-key-build-attempt-2.log records successful app notarization followed by final packaged CLI2.1.40 and browser-launcher smoke; separate DMG notarization follows. This review does not infer DMG completion."
+    }
+  ],
+  "commands": [
+    {
+      "label": "app_codesign",
+      "cmd": "TPF_LLM_TOOL=codex tpf codesign --verify --deep --strict --verbose=2 '/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app'",
+      "chunk_id": "f5b163",
+      "wall_time_seconds": 0.00000625,
+      "exit_code": 1,
+      "original_token_count": 40,
+      "output": "/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app: invalid signature (code or signature have been modified)\nIn architecture: arm64\n"
+    },
+    {
+      "label": "app_gatekeeper",
+      "cmd": "TPF_LLM_TOOL=codex tpf spctl --assess --type execute --verbose=4 '/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app'",
+      "chunk_id": "2770b1",
+      "wall_time_seconds": 0.000006167,
+      "exit_code": 1,
+      "original_token_count": 30,
+      "output": "/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app: internal error in Code Signing subsystem\n"
+    },
+    {
+      "label": "app_staple",
+      "cmd": "TPF_LLM_TOOL=codex tpf xcrun stapler validate '/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app'",
+      "chunk_id": "9fd7a6",
+      "wall_time_seconds": 0.0461645,
+      "exit_code": 66,
+      "original_token_count": 161,
+      "output": "[full output: /Users/sergeyrura/.local/share/tpf/tee/20261028_100858_xcrun.log]\n[detail: tpf detail art_tee_1793207338146894000_578d869e]\nFile /tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app does not exist. Error Domain=NSCocoaErrorDomain Code=256 \"The file “StackOS” couldn’t be opened.\" UserInfo={NSURL=file:///tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/, NSFilePath=/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app, NSUnderlyingError=0x799ec74060 {Error Domain=NSOSStatusErrorDomain Code=-10813 \"kLSDataUnavailableErr: E.g. no kind string\"}}\n"
+    },
+    {
+      "label": "app_identity",
+      "cmd": "TPF_LLM_TOOL=codex tpf codesign --display --verbose=4 '/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app'",
+      "chunk_id": "7e3536",
+      "wall_time_seconds": 0.035167208,
+      "exit_code": 0,
+      "original_token_count": 260,
+      "output": "Executable=/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/MacOS/StackOS\nIdentifier=io.stackos.desktop\nFormat=app bundle with Mach-O thin (arm64)\nCodeDirectory v=20500 size=446 flags=0x10000(runtime) hashes=3+7 location=embedded\nVersionPlatform=1\nVersionMin=786432\nVersionSDK=1703936\nHash type=sha256 size=32\nCandidateCDHash sha256=91e74882d7847ff3d3f336f05a951908e205a232\nCandidateCDHashFull sha256=91e74882d7847ff3d3f336f05a951908e205a232a6553e2550f69799c14d608a\nHash choices=sha256\nCMSDigest=91e74882d7847ff3d3f336f05a951908e205a232a6553e2550f69799c14d608a\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=16384\nExecutable Segment flags=0x1\nPage size=16384\nCDHash=91e74882d7847ff3d3f336f05a951908e205a232\nSignature size=8972\nAuthority=(unavailable)\nNotarization Ticket=stapled\nInfo.plist=not bound\nTeamIdentifier=TSHN26FR48\nRuntime Version=26.0.0\nSealed Resources version=2 rules=13 files=20967\nInternal requirements count=1 size=180\nTotal signatures=1\nChosen signature=1\n"
+    },
+    {
+      "label": "app_codesign_unsandboxed",
+      "cmd": "TPF_LLM_TOOL=codex tpf codesign --verify --deep --strict --verbose=2 '/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app'",
+      "chunk_id": "d6da6f",
+      "wall_time_seconds": 0.792415334,
+      "exit_code": 0,
+      "original_token_count": 757,
+      "output": "--prepared:/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/StackOS Helper (GPU).app\n--validated:/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/StackOS Helper (GPU).app\n--prepared:/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/StackOS Helper.app\n--validated:/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/StackOS Helper.app\n--prepared:/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/StackOS Helper (Renderer).app\n--validated:/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/StackOS Helper (Renderer).app\n--prepared:/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/ReactiveObjC.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/StackOS Helper (Plugin).app\n--validated:/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/ReactiveObjC.framework/Versions/Current/.\n--validated:/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/StackOS Helper (Plugin).app\n--prepared:/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/Squirrel.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/Mantle.framework/Versions/Current/.\n--validated:/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/Squirrel.framework/Versions/Current/.\n--validated:/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/Mantle.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/Helpers/chrome_crashpad_handler\n--validated:/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/Helpers/chrome_crashpad_handler\n--validated:/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/.\n/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app: valid on disk\n/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app: satisfies its Designated Requirement\n"
+    },
+    {
+      "label": "app_gatekeeper_unsandboxed",
+      "cmd": "TPF_LLM_TOOL=codex tpf spctl --assess --type execute --verbose=4 '/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app'",
+      "chunk_id": "9cfab7",
+      "wall_time_seconds": 0.691923,
+      "exit_code": 0,
+      "original_token_count": 32,
+      "output": "/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app: accepted\nsource=Notarized Developer ID\n"
+    },
+    {
+      "label": "app_staple_unsandboxed",
+      "cmd": "TPF_LLM_TOOL=codex tpf xcrun stapler validate '/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app'",
+      "chunk_id": "185f89",
+      "wall_time_seconds": 0.13449425,
+      "exit_code": 0,
+      "original_token_count": 32,
+      "output": "Processing: /private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app\nThe validate action worked!\n"
+    },
+    {
+      "label": "app_identity_unsandboxed",
+      "cmd": "TPF_LLM_TOOL=codex tpf codesign --display --verbose=4 '/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app'",
+      "chunk_id": "128da0",
+      "wall_time_seconds": 0.014443292,
+      "exit_code": 0,
+      "original_token_count": 297,
+      "output": "Executable=/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/MacOS/StackOS\nIdentifier=io.stackos.desktop\nFormat=app bundle with Mach-O thin (arm64)\nCodeDirectory v=20500 size=446 flags=0x10000(runtime) hashes=3+7 location=embedded\nVersionPlatform=1\nVersionMin=786432\nVersionSDK=1703936\nHash type=sha256 size=32\nCandidateCDHash sha256=91e74882d7847ff3d3f336f05a951908e205a232\nCandidateCDHashFull sha256=91e74882d7847ff3d3f336f05a951908e205a232a6553e2550f69799c14d608a\nHash choices=sha256\nCMSDigest=91e74882d7847ff3d3f336f05a951908e205a232a6553e2550f69799c14d608a\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=16384\nExecutable Segment flags=0x1\nPage size=16384\nCDHash=91e74882d7847ff3d3f336f05a951908e205a232\nSignature size=8972\nAuthority=Developer ID Application: SERGEY RURA (TSHN26FR48)\nAuthority=Developer ID Certification Authority\nAuthority=Apple Root CA\nTimestamp=Oct 28, 2026 at 9:54:46 AM\nNotarization Ticket=stapled\nInfo.plist entries=33\nTeamIdentifier=TSHN26FR48\nRuntime Version=26.0.0\nSealed Resources version=2 rules=13 files=20967\nInternal requirements count=1 size=180\nTotal signatures=1\nChosen signature=1\n"
+    },
+    {
+      "label": "zip_app_codesign",
+      "cmd": "TPF_LLM_TOOL=codex tpf codesign --verify --deep --strict --verbose=2 '/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app'",
+      "chunk_id": "b3da19",
+      "wall_time_seconds": 0.780389458,
+      "exit_code": 0,
+      "original_token_count": 662,
+      "output": "--prepared:/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app/Contents/Frameworks/StackOS Helper (GPU).app\n--validated:/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app/Contents/Frameworks/StackOS Helper (GPU).app\n--prepared:/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app/Contents/Frameworks/StackOS Helper.app\n--validated:/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app/Contents/Frameworks/StackOS Helper.app\n--prepared:/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app/Contents/Frameworks/StackOS Helper (Renderer).app\n--validated:/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app/Contents/Frameworks/StackOS Helper (Renderer).app\n--prepared:/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app/Contents/Frameworks/StackOS Helper (Plugin).app\n--validated:/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app/Contents/Frameworks/StackOS Helper (Plugin).app\n--prepared:/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app/Contents/Frameworks/Squirrel.framework/Versions/Current/.\n--validated:/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app/Contents/Frameworks/Squirrel.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app/Contents/Frameworks/ReactiveObjC.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app/Contents/Frameworks/Mantle.framework/Versions/Current/.\n--validated:/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app/Contents/Frameworks/ReactiveObjC.framework/Versions/Current/.\n--validated:/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app/Contents/Frameworks/Mantle.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/Helpers/chrome_crashpad_handler\n--validated:/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/Helpers/chrome_crashpad_handler\n--validated:/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/.\n/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app: valid on disk\n/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app: satisfies its Designated Requirement\n"
+    },
+    {
+      "label": "zip_app_gatekeeper",
+      "cmd": "TPF_LLM_TOOL=codex tpf spctl --assess --type execute --verbose=4 '/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app'",
+      "chunk_id": "71fbe3",
+      "wall_time_seconds": 0.686397916,
+      "exit_code": 0,
+      "original_token_count": 27,
+      "output": "/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app: accepted\nsource=Notarized Developer ID\n"
+    },
+    {
+      "label": "zip_app_staple",
+      "cmd": "TPF_LLM_TOOL=codex tpf xcrun stapler validate '/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app'",
+      "chunk_id": "5e1b00",
+      "wall_time_seconds": 0.131455667,
+      "exit_code": 0,
+      "original_token_count": 27,
+      "output": "Processing: /private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app\nThe validate action worked!\n"
+    }
+  ],
+  "environment_diagnostics": {
+    "initial_attempt": "Sandboxed macOS trust commands returned invalid-signature/security-subsystem/file-access errors and unavailable authority. These exact outputs are retained above.",
+    "resolution": "Read-only checks with macOS system security-service access and canonical /private/tmp paths all pass. App code-directory and ASAR identities are unchanged; no repair or resigning was performed by reviewer.",
+    "classification": "Historical verification-environment limitation, not an unresolved artifact finding."
+  },
+  "locations": {
+    "built_app": "/private/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app",
+    "zip": "/private/tmp/stackos-release-20261028/release-tree/desktop/dist/stackos-2.1.40-mac-arm64.zip",
+    "extracted_app": "/private/tmp/stackos-release-20261028/reviewer-zip-app/StackOS.app",
+    "root_smoke_receipt": "/tmp/stackos-release-20261028/update-feed-receipt.json",
+    "prior_content_review": "review-package-content.json"
+  },
+  "permitted_use": "Root may use copies matching this exact ZIP and blockmap for the authorized signed installed2.1.39-to2.1.40 smoke. Derive the local smoke feed from the unchanged ZIP entry only so separate DMG stapling/metadata refresh cannot race.",
+  "limits": [
+    "No installed app, daemon, user state, source or workflow was changed by reviewer.",
+    "Only private temporary ZIP extraction and this scoped review receipt were written.",
+    "No full source suite rerun or production backup mutation.",
+    "Final signed/stapled DMG, full feed/alias consistency, installed lifecycle results and public hosting require subsequent review."
+  ],
+  "next_disposition": "Proceed with the authorized installed smoke using the accepted immutable ZIP; retain final-publication hold until remaining gates pass."
+}

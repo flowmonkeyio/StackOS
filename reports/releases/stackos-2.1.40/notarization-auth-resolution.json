@@ -1,0 +1,24 @@
+{
+  "version": "2.1.40",
+  "status": "resolved",
+  "operator_correction": "Previously you were doing it without any password. Find that way.",
+  "working_method": "Existing App Store Connect API-key credentials loaded privately from .env.local, with the Developer ID signing identity already in the keychain.",
+  "new_credentials_required": false,
+  "superseded_setup_request": "The earlier request to restore stackos-notary was withdrawn after finding the already configured API-key route.",
+  "credentials_changed": false,
+  "notarization_bypassed": false,
+  "validation": {
+    "command": "STACKOS_PREFLIGHT_VALIDATE_NOTARY=1 pnpm --dir desktop run release:preflight",
+    "exit_code": 0,
+    "credential_validation": "ok",
+    "receipt": "/tmp/stackos-release-20261028/api-key-preflight.json",
+    "redacted_log": "/tmp/stackos-release-20261028/api-key-preflight.log"
+  },
+  "prior_evidence": {
+    "release": "2.1.39",
+    "preflight": "/private/tmp/stackos-pr-audit-20261026/review-evidence/prerelease-notary-validation.json",
+    "signed_notarized_build": "/private/tmp/stackos-pr-audit-20261026/review-evidence/release-2139-build.json"
+  },
+  "historical_diagnostic": "The missing stackos-notary profile described in preparation.json was a check of the wrong authentication method. Its receipt remains unchanged; the API-key validation supersedes that blocker.",
+  "process_learning": "Inspect the most recent successful release evidence and existing local configuration before requesting new signing or notarization setup. A keychain-profile example in documentation does not establish the configured authentication method."
+}

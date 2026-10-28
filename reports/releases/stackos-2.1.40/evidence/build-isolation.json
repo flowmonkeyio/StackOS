@@ -1,0 +1,15 @@
+{
+  "base_commit": "9f005c0bdffbecf9f455c194732984290237626d",
+  "release_delta": {
+    "CHANGELOG.md": "bc827765b8406d0949976e6de1db0582a24091cb46ac2a0f8a1bad675cf59933",
+    "pyproject.toml": "fd743128240b29f49ffe6ede4e7d228b1d864790d10ba678dd5eef2cef76b8e3",
+    "stackos/__init__.py": "7c2a6927789c347d52f4ca702a90fd8bc76b7cd4a1a3abeb57bd477f3a549dd3",
+    "desktop/package.json": "3970f7d57c8a062c97ed42a73e792b213fd4b121f91dd9297af06220087aa0b4",
+    "uv.lock": "82f9fa4737d24920ed3e956d4c232a2d4d3b265b324d0ccd9cb648f9099bb4d8"
+  },
+  "tree": "/tmp/stackos-release-20261028/release-tree",
+  "remapped_isolated_symlink": [
+    "website/dist"
+  ],
+  "reason": "Exact committed source plus reviewed version-only delta; unrelated dirty files excluded."
+}
