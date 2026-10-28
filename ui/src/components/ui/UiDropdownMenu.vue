@@ -78,18 +78,23 @@ function selectActive() {
   if (item) select(item)
 }
 
+function focusTrigger() {
+  root.value?.querySelector<HTMLElement>('[data-dropdown-trigger]')?.focus()
+}
+
 function select(item: DropdownItem) {
   if (item.disabled || item.as === 'separator' || item.as === 'header') return
   item.onSelect?.()
   emit('select', item)
   setOpen(false)
-  ;(root.value?.querySelector('[data-dropdown-trigger]') as HTMLElement | null)?.focus()
+  focusTrigger()
 }
 
 function onKey(ev: KeyboardEvent) {
   if (!open.value) return
   if (ev.key === 'Escape') {
     setOpen(false)
+    focusTrigger()
     ev.preventDefault()
   } else if (ev.key === 'ArrowDown') {
     move(1)

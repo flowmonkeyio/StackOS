@@ -1,0 +1,165 @@
+[viewport] Viewport set to 390x800
+
+[goto] Navigated to http://127.0.0.1:5197/backup-qa?state=configured (200)
+
+[js] true
+
+[js] Refresh backups
+
+[eval] {
+  "action": "Refresh backups",
+  "url": "http://127.0.0.1:5197/backup-qa?state=configured",
+  "viewport": 390,
+  "before": {
+    "Restore backup": {
+      "x": 16,
+      "y": 140,
+      "width": 123.09375,
+      "height": 32,
+      "disabled": false
+    },
+    "Back up now": {
+      "x": 32,
+      "y": 216,
+      "width": 128,
+      "height": 32,
+      "disabled": false
+    },
+    "Refresh backups": {
+      "x": 168,
+      "y": 216,
+      "width": 32,
+      "height": 32,
+      "disabled": false
+    },
+    "Export backup": {
+      "x": 235.703125,
+      "y": 469,
+      "width": 116.296875,
+      "height": 32,
+      "disabled": false
+    },
+    "Export key": {
+      "x": 240,
+      "y": 544,
+      "width": 112,
+      "height": 32,
+      "disabled": false
+    },
+    "Manage": {
+      "x": 255.953125,
+      "y": 682,
+      "width": 96.046875,
+      "height": 32,
+      "disabled": false
+    }
+  },
+  "during": {
+    "Restore backup": {
+      "x": 16,
+      "y": 140,
+      "width": 123.09375,
+      "height": 32,
+      "disabled": true
+    },
+    "Back up now": {
+      "x": 32,
+      "y": 216,
+      "width": 128,
+      "height": 32,
+      "disabled": true
+    },
+    "Refresh backups": {
+      "x": 168,
+      "y": 216,
+      "width": 32,
+      "height": 32,
+      "disabled": true
+    },
+    "Export backup": {
+      "x": 235.703125,
+      "y": 469,
+      "width": 116.296875,
+      "height": 32,
+      "disabled": true
+    },
+    "Export key": {
+      "x": 240,
+      "y": 544,
+      "width": 112,
+      "height": 32,
+      "disabled": true
+    },
+    "Manage": {
+      "x": 255.953125,
+      "y": 682,
+      "width": 96.046875,
+      "height": 32,
+      "disabled": true
+    }
+  },
+  "after": {
+    "Restore backup": {
+      "x": 16,
+      "y": 140,
+      "width": 123.09375,
+      "height": 32,
+      "disabled": false
+    },
+    "Back up now": {
+      "x": 32,
+      "y": 216,
+      "width": 128,
+      "height": 32,
+      "disabled": false
+    },
+    "Refresh backups": {
+      "x": 168,
+      "y": 216,
+      "width": 32,
+      "height": 32,
+      "disabled": false
+    },
+    "Export backup": {
+      "x": 235.703125,
+      "y": 469,
+      "width": 116.296875,
+      "height": 32,
+      "disabled": false
+    },
+    "Export key": {
+      "x": 240,
+      "y": 544,
+      "width": 112,
+      "height": 32,
+      "disabled": false
+    },
+    "Manage": {
+      "x": 255.953125,
+      "y": 682,
+      "width": 96.046875,
+      "height": 32,
+      "disabled": false
+    }
+  },
+  "shifts": [],
+  "frames": 161,
+  "calls": [
+    {
+      "name": "backup.status",
+      "args": {}
+    },
+    {
+      "name": "backup.status",
+      "args": {}
+    }
+  ],
+  "focus": "Refresh backups",
+  "overflow": {
+    "mainClient": 368,
+    "mainScroll": 368,
+    "documentClient": 390,
+    "documentScroll": 379
+  },
+  "feedback": []
+}

@@ -1,39 +1,53 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import {
   UiButton,
   UiCallout,
-  UiCard,
   UiCheckbox,
+  UiDropdownMenu,
   UiFormField,
+  UiIcon,
+  UiIconButton,
   UiInput,
-  UiSectionHeader,
+  UiPageHeader,
+  UiSidePanel,
   UiSkeleton,
-  UiTextarea,
 } from '@/components/ui'
-import { formatApiError } from '@/lib/client'
-import { configureBackups, createBackup, loadBackupStatus, type BackupStatus } from '@/lib/backups'
+import { desktop, type DesktopBackupAction, type DesktopBackupResult } from '@/lib/desktop'
 import { formatAbsoluteDateTime } from '@/lib/stackos/time'
 
+import { formatApiError } from '@/lib/client'
+import { configureBackups, createBackup, loadBackupStatus, type BackupStatus } from '@/lib/backups'
 const status = ref<BackupStatus | null>(null)
 const loading = ref(true)
-const saving = ref(false)
+const current = ref(false)
+const busy = ref<DesktopBackupAction | 'save' | 'backup' | null>(null)
 const error = ref('')
-const confirmation = ref('')
+const notice = ref<DesktopBackupResult | null>(null)
+const activePanel = ref<'settings' | 'history' | null>(null)
+const manageTrigger = ref<InstanceType<typeof UiButton> | null>(null)
 const enabled = ref(false)
-const interval = ref<string | number | null>(24)
-const keepLast = ref<string | number | null>(30)
-const publicKey = ref('')
-
+const interval = ref<string | number | null>(null)
+const keepLast = ref<string | number | null>(null)
+const disabled = computed(() => loading.value || busy.value !== null)
+const changed = computed(
+  () =>
+    status.value &&
+    (enabled.value !== status.value.enabled ||
+      Number(interval.value) !== status.value.interval_hours ||
+      Number(keepLast.value) !== status.value.keep_last),
+)
 function applyStatus(value: BackupStatus): void {
   status.value = value
   enabled.value = value.enabled
   interval.value = value.interval_hours
   keepLast.value = value.keep_last
+  current.value = true
 }
 
 async function refresh(): Promise<void> {
   loading.value = true
+  current.value = false
   error.value = ''
   try {
     applyStatus(await loadBackupStatus())
@@ -45,18 +59,9 @@ async function refresh(): Promise<void> {
 }
 
 async function save(): Promise<void> {
+  if (disabled.value || !current.value || !status.value || !changed.value) return
   error.value = ''
-  confirmation.value = ''
-  if (
-    publicKey.value.trim() &&
-    !/^-----BEGIN PUBLIC KEY-----\r?\n[A-Za-z0-9+/=\r\n]+\r?\n-----END PUBLIC KEY-----$/.test(
-      publicKey.value.trim(),
-    )
-  ) {
-    error.value =
-      'Use only an X25519 PUBLIC KEY PEM. Keep the recovery private key in its local file.'
-    return
-  }
+  notice.value = null
   if (
     !Number.isInteger(Number(interval.value)) ||
     Number(interval.value) < 1 ||
@@ -69,187 +74,603 @@ async function save(): Promise<void> {
       'Use an interval of 1–168 hours and retention of 1–365 successful automatic backups.'
     return
   }
-  saving.value = true
+  busy.value = 'save'
   try {
     applyStatus(
       await configureBackups({
-        enabled: enabled.value,
-        ...(Number(interval.value) !== status.value?.interval_hours
+        ...(enabled.value !== status.value.enabled ? { enabled: enabled.value } : {}),
+        ...(Number(interval.value) !== status.value.interval_hours
           ? { interval_hours: Number(interval.value) }
           : {}),
-        ...(Number(keepLast.value) !== status.value?.keep_last
+        ...(Number(keepLast.value) !== status.value.keep_last
           ? { keep_last: Number(keepLast.value) }
           : {}),
-        ...(publicKey.value.trim() ? { recipient_public_key: publicKey.value.trim() } : {}),
       }),
     )
-    publicKey.value = ''
-    confirmation.value = 'Backup settings saved.'
+    notice.value = { ok: true, status: 'completed', message: 'Backup settings saved.' }
   } catch (err) {
     error.value = formatApiError(err, 'Could not save backup settings.')
   } finally {
-    saving.value = false
+    busy.value = null
   }
 }
 
 async function backupNow(): Promise<void> {
-  saving.value = true
+  if (disabled.value || !current.value || !status.value?.ready) return
+  busy.value = 'backup'
   error.value = ''
-  confirmation.value = ''
+  notice.value = null
   try {
     await createBackup()
-    applyStatus(await loadBackupStatus())
-    confirmation.value = 'Encrypted backup created.'
+    notice.value = { ok: true, status: 'completed', message: 'Encrypted backup created.' }
   } catch (err) {
-    error.value = formatApiError(err, 'Backup failed.')
-    // Preserve the previous successful outcome; the service also records failures.
-    try {
-      applyStatus(await loadBackupStatus())
-    } catch {
-      /* Keep current metadata. */
-    }
+    notice.value = { ok: false, status: 'failed', message: formatApiError(err, 'Backup failed.') }
   } finally {
-    saving.value = false
+    await refresh()
+    busy.value = null
+  }
+}
+
+async function runNative(action: DesktopBackupAction): Promise<void> {
+  if (disabled.value || !desktop.hasBackupAction(action)) return
+  if (action === 'setupBackups' && (!current.value || status.value?.configured)) return
+  busy.value = action
+  try {
+    const result = await desktop[action]()
+    if (result?.status === 'cancelled') return
+    error.value = ''
+    notice.value = result ?? {
+      ok: false,
+      status: 'failed',
+      message: 'The desktop action did not finish. Check the desktop app and try again.',
+    }
+    // Setup can succeed even when its first backup fails. Reload the policy so
+    // retry uses ordinary backup creation and never generates another key.
+    if (action === 'setupBackups') await refresh()
+  } finally {
+    busy.value = null
   }
 }
 
 onMounted(refresh)
+
+const heading = computed(() => {
+  if (!status.value) return loading.value ? 'Loading backups' : 'Backup status unavailable'
+  if (!status.value.configured) return 'Set up backups'
+  return status.value.enabled ? 'Automatic backups on' : 'Automatic backups paused'
+})
+const lastBackup = computed(() =>
+  !status.value
+    ? loading.value
+      ? 'Checking backup history…'
+      : 'Backup history unavailable'
+    : status.value.last_success?.created_at
+      ? formatAbsoluteDateTime(status.value.last_success.created_at)
+      : 'No successful backup yet',
+)
+const cadence = computed(() =>
+  status.value
+    ? `Every ${status.value.interval_hours} ${status.value.interval_hours === 1 ? 'hour' : 'hours'} · Keep ${status.value.keep_last} backups`
+    : 'Your existing settings will be preserved.',
+)
+const nativeAvailable = (
+  [
+    'setupBackups',
+    'openBackupFolder',
+    'exportLatestBackup',
+    'exportRecoveryKey',
+    'restoreBackup',
+  ] as const
+).every((action) => desktop.hasBackupAction(action))
+const nativeGuidance = desktop.isShell()
+  ? 'Update the StackOS desktop app to set up backups, export files, or restore.'
+  : 'Open the StackOS desktop app to set up backups, export files, or restore.'
+const manageItems = computed(() => [
+  {
+    key: 'folder',
+    label: 'Open backup folder',
+    icon: 'folder',
+    disabled: disabled.value || !desktop.hasBackupAction('openBackupFolder'),
+  },
+  {
+    key: 'settings',
+    label: 'Backup settings',
+    icon: 'settings',
+    disabled: disabled.value || !current.value,
+  },
+  {
+    key: 'history',
+    label: 'Included data and history',
+    icon: 'file-text',
+    disabled: disabled.value,
+  },
+])
+async function manage(item: { key: string }): Promise<void> {
+  if (item.key === 'folder') {
+    const trigger = manageTrigger.value?.$el
+    if (trigger instanceof HTMLElement)
+      await withActionFocus(trigger, () => runNative('openBackupFolder'))
+  } else if (item.key === 'settings' || item.key === 'history') {
+    if (item.key === 'settings') {
+      error.value = ''
+      notice.value = null
+    }
+    activePanel.value = item.key
+  }
+}
+
+async function withActionFocus(
+  event: Event | HTMLElement,
+  action: () => Promise<void>,
+): Promise<void> {
+  const source =
+    event instanceof HTMLElement
+      ? event
+      : event.type === 'submit'
+        ? ((event as SubmitEvent).submitter ?? document.activeElement)
+        : event.currentTarget
+  const control = source instanceof HTMLElement ? source : null
+  try {
+    await action()
+  } finally {
+    await nextTick()
+    if (
+      control?.isConnected &&
+      (document.activeElement === document.body || document.activeElement === control)
+    ) {
+      // A successful save disables its unchanged form action. Keep keyboard
+      // focus on an enabled setting instead of leaving it outside the panel.
+      const target = control.matches(':disabled')
+        ? control.closest('form')?.querySelector<HTMLElement>('input:not(:disabled)')
+        : control
+      target?.focus()
+    }
+  }
+}
 </script>
 
 <template>
-  <UiCard section aria-label="Local backups">
-    <UiSectionHeader
-      title="Local backups"
-      description="This StackOS installation, project Finance data, and enrolled external folders."
+  <section
+    aria-label="Local backups"
+    :aria-busy="disabled"
+    class="space-y-5"
+  >
+    <UiPageHeader
+      title="Backups"
+      description="Automatic backups for this installation."
     >
       <template #actions>
-        <UiButton variant="ghost" size="sm" :loading="loading" :disabled="saving" @click="refresh">
-          Refresh backups
+        <UiSkeleton
+          v-if="!status && loading"
+          shape="block"
+          width="8rem"
+          height="2rem"
+        />
+        <UiButton
+          v-else
+          :loading="busy === 'restoreBackup'"
+          :disabled="disabled || !desktop.hasBackupAction('restoreBackup')"
+          @click="withActionFocus($event, () => runNative('restoreBackup'))"
+        >
+          Restore backup
         </UiButton>
       </template>
-    </UiSectionHeader>
-    <UiCallout v-if="error" tone="danger" class="mt-3" role="alert">
-      {{ error }}
-    </UiCallout>
-    <p v-if="confirmation" role="status" class="mt-3 text-sm text-fg-muted">
-      {{ confirmation }}
+    </UiPageHeader>
+
+    <section
+      aria-label="Backup status"
+      class="grid grid-cols-1 gap-3 rounded-lg px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto]"
+      :class="
+        status?.configured && status.enabled && status.ready
+          ? 'bg-accent-subtle'
+          : 'bg-bg-surface-alt'
+      "
+    >
+      <div class="order-2 flex min-w-0 items-start gap-3 sm:order-1">
+        <UiIcon
+          :name="
+            !status
+              ? 'circle-dashed'
+              : !status.configured
+                ? 'archive'
+                : status.enabled
+                  ? 'circle-check'
+                  : 'pause'
+          "
+          class="mt-0.5 h-4 w-4 shrink-0"
+          :class="
+            status?.configured && status.enabled && status.ready ? 'text-accent' : 'text-fg-muted'
+          "
+        />
+        <div class="min-w-0 space-y-1">
+          <h2 class="t-h3 truncate text-fg-strong">
+            {{ heading }}
+          </h2>
+          <p
+            class="truncate text-sm text-fg-default"
+            :title="status?.configured ? lastBackup : undefined"
+          >
+            {{
+              status?.configured
+                ? 'Last backup: ' + lastBackup
+                : status
+                  ? 'Choose a backup folder.'
+                  : loading
+                    ? 'Checking backup status…'
+                    : 'Refresh to check backup status.'
+            }}
+          </p>
+          <p
+            class="truncate text-xs text-fg-muted"
+            :title="status?.configured ? cadence : undefined"
+          >
+            {{
+              status?.configured
+                ? cadence
+                : status
+                  ? 'Then save your recovery key.'
+                  : 'Your existing settings will be preserved.'
+            }}
+          </p>
+        </div>
+      </div>
+      <div class="order-1 space-y-2 self-start sm:order-2">
+        <div class="flex items-center gap-2">
+          <UiSkeleton
+            v-if="!status && loading"
+            shape="block"
+            width="8rem"
+            height="2rem"
+          />
+          <span
+            v-else-if="!status"
+            class="h-8 w-32"
+            aria-hidden="true"
+          />
+          <UiButton
+            v-else
+            class="min-w-32"
+            variant="primary"
+            :loading="busy === 'setupBackups' || busy === 'backup'"
+            :disabled="
+              disabled ||
+                !current ||
+                (status.configured ? !status.ready : !desktop.hasBackupAction('setupBackups'))
+            "
+            @click="
+              withActionFocus(
+                $event,
+                status.configured ? backupNow : () => runNative('setupBackups'),
+              )
+            "
+          >
+            {{ status.configured ? 'Back up now' : 'Enable backups' }}
+          </UiButton>
+          <UiIconButton
+            aria-label="Refresh backups"
+            :loading="loading"
+            :disabled="disabled"
+            @click="withActionFocus($event, refresh)"
+          >
+            <UiIcon name="refresh" />
+          </UiIconButton>
+        </div>
+        <p class="text-xs text-fg-muted">
+          {{
+            loading
+              ? 'Checking backup status…'
+              : busy
+                ? 'Working…'
+                : !current
+                  ? 'Status unavailable'
+                  : !status?.configured
+                    ? 'Set up in the desktop app'
+                    : status.ready
+                      ? 'Ready for the next backup'
+                      : 'Backup needs attention'
+          }}
+        </p>
+      </div>
+    </section>
+
+    <section aria-label="Recovery files">
+      <h2 class="t-h3 text-fg-strong">
+        Keep these two files safe
+      </h2>
+      <p class="mt-1 text-sm text-fg-muted">
+        You need both to recover on another device.
+      </p>
+      <div class="mt-3 divide-y divide-border-subtle">
+        <div class="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-4">
+          <UiIcon
+            name="file-text"
+            class="h-5 w-5 text-fg-muted"
+          />
+          <div class="min-w-0">
+            <h3 class="truncate text-sm font-medium text-fg-strong">
+              Latest backup
+            </h3>
+            <p
+              class="mt-1 truncate text-xs text-fg-muted"
+              :title="lastBackup"
+            >
+              {{ lastBackup }}
+            </p>
+          </div>
+          <UiButton
+            class="min-w-28"
+            :loading="busy === 'exportLatestBackup'"
+            :disabled="
+              disabled ||
+                !status?.configured ||
+                !status.last_success ||
+                !desktop.hasBackupAction('exportLatestBackup')
+            "
+            @click="withActionFocus($event, () => runNative('exportLatestBackup'))"
+          >
+            Export backup
+          </UiButton>
+        </div>
+        <div class="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-4">
+          <UiIcon
+            name="key"
+            class="h-5 w-5 text-fg-muted"
+          />
+          <div class="min-w-0">
+            <h3 class="truncate text-sm font-medium text-fg-strong">
+              Recovery key
+            </h3>
+            <p
+              class="mt-1 truncate text-xs text-fg-muted"
+              title="Required to open your encrypted backup."
+            >
+              Required to open your encrypted backup.
+            </p>
+          </div>
+          <UiButton
+            class="min-w-28"
+            :loading="busy === 'exportRecoveryKey'"
+            :disabled="
+              disabled || !status?.configured || !desktop.hasBackupAction('exportRecoveryKey')
+            "
+            @click="withActionFocus($event, () => runNative('exportRecoveryKey'))"
+          >
+            Export key
+          </UiButton>
+        </div>
+      </div>
+      <p class="mt-3 text-xs text-fg-muted">
+        Keep a backup and your recovery key somewhere you can access if this device is lost.
+      </p>
+    </section>
+
+    <div class="flex items-start justify-between gap-3 border-t border-subtle pt-4">
+      <div class="flex min-w-0 items-start gap-3">
+        <UiIcon
+          name="folder"
+          class="mt-0.5 h-5 w-5 shrink-0 text-fg-muted"
+        />
+        <p class="break-all text-sm text-fg-default">
+          {{
+            !status
+              ? loading
+                ? 'Checking backup folder…'
+                : 'Backup folder unavailable'
+              : status.configured
+                ? status.destination
+                : 'Choose a backup folder during setup.'
+          }}
+        </p>
+      </div>
+      <UiDropdownMenu
+        :items="manageItems"
+        placement="top-end"
+        aria-label="Manage backups"
+        @select="manage"
+      >
+        <template #trigger="{ toggle, open }">
+          <UiButton
+            ref="manageTrigger"
+            data-dropdown-trigger
+            icon-right="chevron-down"
+            aria-haspopup="menu"
+            :aria-expanded="open"
+            :disabled="disabled || !status?.configured"
+            @click="toggle"
+          >
+            Manage
+          </UiButton>
+        </template>
+      </UiDropdownMenu>
+    </div>
+    <p
+      v-if="!nativeAvailable"
+      class="text-sm text-fg-muted"
+    >
+      {{ nativeGuidance }}
     </p>
-    <UiSkeleton v-if="loading && !status" shape="block" height="8rem" class="mt-3" />
-    <template v-else-if="status">
-      <UiCallout v-if="status.last_error" tone="warning" class="mt-3">
-        Backup needs attention: {{ status.last_error.message }} {{ status.last_error.next_action }}
-      </UiCallout>
-      <p class="mt-3 text-sm text-fg-muted">
-        Automatic backups are {{ status.enabled ? 'enabled' : 'off' }}.
-        <span v-if="!status.configured"
-          >Set up a public recipient key before creating backups.</span
-        >
-        <span v-else-if="!status.ready"
-          >The current configuration needs attention before a backup can run.</span
-        >
-      </p>
-      <p class="mt-2 text-xs text-fg-muted">
-        Destination: <span class="break-all">{{ status.destination }}</span>
-      </p>
-      <p class="mt-2 text-xs text-fg-muted">
-        Last successful backup:
+    <div
+      class="min-h-10"
+      data-test="backup-feedback"
+    >
+      <p
+        v-if="busy || (loading && status)"
+        role="status"
+        class="text-sm text-fg-muted"
+      >
         {{
-          status.last_success?.created_at
-            ? formatAbsoluteDateTime(status.last_success.created_at)
-            : 'None recorded'
+          busy === 'save'
+            ? 'Saving backup settings…'
+            : busy === 'backup'
+              ? 'Creating encrypted backup…'
+              : busy
+                ? 'Follow the prompts in the desktop window…'
+                : 'Refreshing backup status…'
         }}
       </p>
-      <p v-if="status.last_attempt?.started_at" class="mt-1 text-xs text-fg-muted">
-        Last attempt: {{ formatAbsoluteDateTime(status.last_attempt.started_at) }}
-        <span v-if="status.last_attempt.status"> · {{ status.last_attempt.status }}</span>
-      </p>
-      <p v-if="status.last_success?.path" class="mt-1 break-all text-xs text-fg-muted">
-        {{ status.last_success.path }}
-      </p>
-      <p v-if="status.recipient_fingerprint" class="mt-2 break-all text-2xs text-fg-subtle">
-        Recipient fingerprint: {{ status.recipient_fingerprint }}
-      </p>
-      <div class="mt-4 border-t border-subtle pt-3">
-        <p class="text-sm font-medium text-fg-strong">Project data</p>
-        <p class="mt-2 text-xs text-fg-muted">
-          Project Finance records, invoices, receipts and reports are included automatically. Each
-          project is stored and recovered separately.
-          <span v-if="status.project_ids?.length">
-            Covered project IDs: {{ status.project_ids.join(', ') }}.
-          </span>
-          <span v-else-if="status.project_ids">No managed project files are present yet.</span>
-          <span v-else
-            >Project coverage could not be verified. Resolve the backup error before relying on
-            coverage.</span
-          >
-        </p>
-        <p class="text-sm font-medium text-fg-strong">Included external folders</p>
-        <ul v-if="status.targets.length" class="mt-2 space-y-2 text-xs text-fg-muted">
-          <li v-for="target in status.targets" :key="target.id">
-            <span class="font-medium">{{ target.label }}</span> ·
-            <span class="break-all">{{ target.path }}</span>
-            <p v-if="target.lock_file" class="break-all text-2xs">
-              Writer lock: {{ target.lock_file }}
-            </p>
-          </li>
-        </ul>
-        <UiCallout v-else tone="info" class="mt-2">
-          No additional external folders are enrolled.
-        </UiCallout>
-        <p class="mt-2 text-xs text-fg-muted">
-          Enroll a folder with the local CLI. Existing folders remain included when settings are
-          saved here.
-        </p>
-        <pre class="mt-2 overflow-x-auto rounded-sm bg-bg-sunken p-2 text-2xs">
-stackos backups configure --target-id finance --target-path /absolute/finance --target-lock /absolute/finance/.writer.lock</pre
+      <UiCallout
+        v-else-if="error"
+        tone="danger"
+        role="alert"
+      >
+        {{ error }}
+      </UiCallout>
+      <UiCallout
+        v-else-if="notice && notice.status !== 'cancelled'"
+        :tone="
+          notice.status === 'failed'
+            ? 'danger'
+            : notice.status === 'partial'
+              ? 'warning'
+              : 'success'
+        "
+        :role="notice.status === 'failed' ? 'alert' : 'status'"
+      >
+        {{ notice.message }}
+        <p
+          v-if="notice.outputPath"
+          class="mt-1 break-all text-xs"
         >
-      </div>
-      <form class="mt-4 space-y-4 border-t border-subtle pt-3" @submit.prevent="save">
-        <UiFormField
-          label="Recipient public key"
-          help="Paste only the X25519 PUBLIC KEY PEM. Keep the independent recovery private file separately and off-device."
-        >
-          <UiTextarea
-            v-model="publicKey"
-            :rows="3"
-            :disabled="saving"
-            placeholder="-----BEGIN PUBLIC KEY-----"
-          />
-        </UiFormField>
-        <p class="text-xs text-fg-muted">
-          Generate the key pair locally:
-          <code
-            >stackos backups keygen --private-key-file /separate/recovery.pem --public-key-file
-            /separate/recipient.pem</code
-          >
+          {{ notice.outputPath }}
         </p>
+      </UiCallout>
+      <UiCallout
+        v-else-if="status?.last_error"
+        tone="warning"
+      >
+        {{ status.last_error.message }} {{ status.last_error.next_action }}
+      </UiCallout>
+      <p
+        v-else-if="status?.configured && !status.ready"
+        class="text-sm text-fg-muted"
+      >
+        The current configuration needs attention before a backup can run.
+      </p>
+      <p
+        v-if="!loading && !busy && !current && !error"
+        class="mt-2 text-sm text-fg-muted"
+      >
+        Current backup status is unavailable. Refresh to check it.
+      </p>
+    </div>
+
+    <UiSidePanel
+      :model-value="activePanel === 'settings'"
+      title="Backup settings"
+      @update:model-value="activePanel = $event ? 'settings' : null"
+    >
+      <form
+        v-if="status"
+        class="space-y-4"
+        @submit.prevent="withActionFocus($event, save)"
+      >
         <UiCheckbox
           v-model="enabled"
-          :disabled="saving"
+          :disabled="disabled || !current"
           label="Enable automatic encrypted backups"
-          description="Opt in explicitly, then save. New installations start with this off."
+          description="Changes take effect when you save."
         />
-        <div class="grid gap-3 sm:grid-cols-2">
-          <UiFormField label="Backup interval (hours)">
-            <UiInput v-model="interval" type="number" min="1" max="168" :disabled="saving" />
-          </UiFormField>
-          <UiFormField label="Successful automatic backups to keep">
-            <UiInput v-model="keepLast" type="number" min="1" max="365" :disabled="saving" />
-          </UiFormField>
-        </div>
-        <div class="flex flex-wrap gap-2">
-          <UiButton type="submit" :loading="saving" :disabled="loading">
-            Save backup settings
-          </UiButton>
-          <UiButton
-            variant="secondary"
-            :disabled="!status.ready || saving || loading"
-            @click="backupNow"
-          >
-            Back up now
-          </UiButton>
-        </div>
+        <UiFormField label="Backup interval (hours)">
+          <UiInput
+            v-model="interval"
+            type="number"
+            min="1"
+            max="168"
+            :disabled="disabled || !current"
+          />
+        </UiFormField>
+        <UiFormField label="Successful automatic backups to keep">
+          <UiInput
+            v-model="keepLast"
+            type="number"
+            min="1"
+            max="365"
+            :disabled="disabled || !current"
+          />
+        </UiFormField>
+        <UiButton
+          type="submit"
+          :loading="busy === 'save'"
+          :disabled="disabled || !current || !changed"
+        >
+          Save backup settings
+        </UiButton>
+        <UiCallout
+          v-if="error"
+          tone="danger"
+          role="alert"
+        >
+          {{ error }}
+        </UiCallout>
+        <p
+          v-else-if="notice"
+          role="status"
+          class="text-sm text-fg-muted"
+        >
+          {{ notice.message }}
+        </p>
       </form>
-    </template>
-  </UiCard>
+    </UiSidePanel>
+    <UiSidePanel
+      :model-value="activePanel === 'history'"
+      title="Included data and history"
+      description="Restore recovers into a separate folder and leaves this installation unchanged."
+      @update:model-value="activePanel = $event ? 'history' : null"
+    >
+      <div
+        v-if="status"
+        class="space-y-4"
+      >
+        <p class="text-sm text-fg-muted">
+          Project Finance records, invoices, receipts and reports are included automatically. Each
+          project is stored and recovered separately.
+          <span v-if="status.project_ids?.length">Covered project IDs: {{ status.project_ids.join(', ') }}.</span>
+          <span v-else-if="status.project_ids">No managed project files are present yet.</span>
+          <span v-else>Project coverage could not be verified. Resolve the backup error before relying on
+            coverage.</span>
+        </p>
+        <div>
+          <h3 class="t-h3 text-fg-strong">
+            Included external folders
+          </h3>
+          <ul
+            v-if="status.targets.length"
+            class="mt-2 space-y-2 text-sm text-fg-muted"
+          >
+            <li
+              v-for="target in status.targets"
+              :key="target.id"
+            >
+              {{ target.label }} · <span class="break-all">{{ target.path }}</span>
+            </li>
+          </ul>
+          <p
+            v-else
+            class="mt-2 text-sm text-fg-muted"
+          >
+            No additional external folders are enrolled.
+          </p>
+        </div>
+        <p
+          v-if="status.last_attempt?.started_at"
+          class="text-sm text-fg-muted"
+        >
+          Last attempt: {{ formatAbsoluteDateTime(status.last_attempt.started_at) }}
+          <span v-if="status.last_attempt.status"> · {{ status.last_attempt.status }}</span>
+        </p>
+        <p
+          v-if="status.last_success?.path"
+          class="break-all text-sm text-fg-muted"
+        >
+          {{ status.last_success.path }}
+        </p>
+        <p
+          v-if="status.recipient_fingerprint"
+          class="break-all text-xs text-fg-subtle"
+        >
+          Recovery key fingerprint: {{ status.recipient_fingerprint }}
+        </p>
+      </div>
+    </UiSidePanel>
+  </section>
 </template>

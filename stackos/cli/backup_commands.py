@@ -10,6 +10,7 @@ import typer
 from pydantic import ValidationError
 
 from stackos import backups
+from stackos.backups import service
 from stackos.config import get_settings
 
 from .app import app, backups_app
@@ -62,10 +63,115 @@ def backup(
 def keygen(
     private_key_file: Annotated[Path, typer.Option(help="New independent private PEM path.")],
     public_key_file: Annotated[Path, typer.Option(help="New recipient public PEM path.")],
+    first_time: Annotated[
+        bool, typer.Option(help="Refuse any existing recovery recipient.")
+    ] = False,
+    destination: Annotated[Path | None, typer.Option(help="Planned backup destination.")] = None,
+    protected_path: Annotated[
+        list[Path] | None,
+        typer.Option(help="Reserve additional native key storage before writing."),
+    ] = None,
 ) -> None:
     """Generate a recovery key pair; store the private file separately/off-device."""
     try:
-        _emit(backups.generate_recovery_key(get_settings(), private_key_file, public_key_file))
+        _emit(
+            backups.generate_recovery_key(
+                get_settings(),
+                private_key_file,
+                public_key_file,
+                first_time=first_time,
+                destination=destination,
+                protected_paths=protected_path or [],
+            )
+        )
+    except (backups.BackupError, OSError, ValueError) as exc:
+        _fail(exc)
+
+
+@backups_app.command("custody")
+def custody(
+    protected_path: Annotated[
+        list[Path], typer.Option(help="Private key file or native custody directory.")
+    ],
+    reserve: Annotated[
+        bool, typer.Option(help="Persist exclusions before native key storage writes.")
+    ] = False,
+    first_time: Annotated[
+        bool, typer.Option(help="Refuse any existing recovery recipient.")
+    ] = False,
+    destination: Annotated[Path | None, typer.Option()] = None,
+    expected_recipient: Annotated[
+        str | None, typer.Option(help="Expected recipient fingerprint.")
+    ] = None,
+) -> None:
+    """Check custody without writes, or reserve it durably with --reserve."""
+    try:
+        _emit(
+            service.recovery_key_custody(
+                get_settings(),
+                protected_path,
+                reserve=reserve,
+                first_time=first_time,
+                destination=destination,
+                expected_recipient=expected_recipient,
+            )
+        )
+    except (backups.BackupError, OSError, ValueError) as exc:
+        _fail(exc)
+
+
+@backups_app.command("initialize")
+def initialize(
+    public_key_file: Annotated[Path, typer.Option(help="Generated recipient public PEM.")],
+    private_key_file: Annotated[Path, typer.Option(help="Saved portable recovery PEM.")],
+    protected_key_file: Annotated[
+        Path, typer.Option(help="Durable native protected recovery copy.")
+    ],
+    destination: Annotated[Path | None, typer.Option()] = None,
+) -> None:
+    """Enable a first-time setup while preserving existing targets and schedule choices."""
+    try:
+        settings = get_settings()
+        service.initialize_backups(
+            settings,
+            _public_key(public_key_file),
+            private_key_path=private_key_file,
+            protected_key_path=protected_key_file,
+            destination=destination,
+        )
+        _emit(backups.backup_status(settings))
+    except (backups.BackupError, OSError, ValueError) as exc:
+        _fail(exc)
+
+
+@backups_app.command("export")
+def export_archive(
+    output: Annotated[Path, typer.Option(help="New copy of the last verified archive.")],
+) -> None:
+    """Export the latest successful backup after verifying its saved checksum and size."""
+    try:
+        _emit(service.export_latest_backup(get_settings(), output))
+    except (backups.BackupError, OSError, ValueError) as exc:
+        _fail(exc)
+
+
+@backups_app.command("export-key")
+def export_key(
+    private_key_file: Annotated[
+        Path, typer.Option(help="Existing matching recovery PEM on this host.")
+    ],
+    output: Annotated[Path, typer.Option(help="New portable recovery PEM copy.")],
+    expected_recipient: Annotated[
+        str | None, typer.Option(help="Expected recipient fingerprint.")
+    ] = None,
+) -> None:
+    """Export the configured recovery key without regenerating or rotating it."""
+    try:
+        _emit(
+            service.export_recovery_key(
+                get_settings(), private_key_file, output, expected_recipient=expected_recipient
+            )
+        )
     except (backups.BackupError, OSError, ValueError) as exc:
         _fail(exc)
 

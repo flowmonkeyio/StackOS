@@ -417,6 +417,29 @@ be placed in the publicly served generated-assets directory. Private key
 exclusions survive configuration changes and reject later enrollment or a
 copied matching recovery key.
 
+Desktop setup uses the same guarded local CLI and existing backup lock. Before
+native ciphertext or plaintext staging writes, it reserves the entire private
+custody directory in the existing exclusion metadata. Exclusions remain after
+failures and crashes, and initialization rechecks the current recipient under
+the lock. Any existing recipient refuses first-time setup. The native app saves
+a portable recovery key chosen by the operator and a separate `safeStorage`
+encrypted convenience copy before enabling backups. Ciphertext is scoped by
+installation and recipient under desktop user data, with private directory/file
+permissions. Unavailable secure storage stops setup; Linux `basic_text` and
+unknown storage backends are not accepted as protected storage.
+
+Only five no-argument backup methods cross the desktop preload bridge. The
+handlers verify the main window, its top frame and the trusted UI origin, and
+serialize backup actions. Native dialogs own all selected paths. Private bytes
+stay in main-process memory or local files and never enter renderer responses,
+REST, MCP, stdout or logs. Cached exports use exclusive plaintext staging only
+inside reserved custody and remove it afterward; exclusions protect staging
+left by a process crash. Missing or undecryptable app copies require the original
+matching key, never automatic key rotation. A portable export can still use the
+original key when OS protected storage is unavailable; no plaintext convenience
+copy is saved. Restore always chooses the key for the selected archive and
+publishes only into a fresh inert folder.
+
 Private staging files are removed on normal completion or failure. Archive
 publication is exclusive and atomic; failed attempts preserve prior successful
 archives. Restore authenticates before inspecting plaintext and validates

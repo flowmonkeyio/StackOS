@@ -1,0 +1,172 @@
+TAP version 13
+# Subtest: setup cancellation 0 leaves no key or configuration
+ok 1 - setup cancellation 0 leaves no key or configuration
+  ---
+  duration_ms: 1.667584
+  type: 'test'
+  ...
+# Subtest: setup cancellation 1 leaves no key or configuration
+ok 2 - setup cancellation 1 leaves no key or configuration
+  ---
+  duration_ms: 0.43925
+  type: 'test'
+  ...
+# Subtest: existing setup never generates or changes a recovery key
+ok 3 - existing setup never generates or changes a recovery key
+  ---
+  duration_ms: 0.3345
+  type: 'test'
+  ...
+# Subtest: setup saves a protected copy before initialization and exports after restart
+ok 4 - setup saves a protected copy before initialization and exports after restart
+  ---
+  duration_ms: 16.333584
+  type: 'test'
+  ...
+# Subtest: missing legacy cache selects original without rotation and caches matching export
+ok 5 - missing legacy cache selects original without rotation and caches matching export
+  ---
+  duration_ms: 10.959167
+  type: 'test'
+  ...
+# Subtest: setup requires OS protected storage {"available":false}
+ok 6 - setup requires OS protected storage {"available":false}
+  ---
+  duration_ms: 0.382583
+  type: 'test'
+  ...
+# Subtest: setup requires OS protected storage {"platform":"linux","backend":"basic_text"}
+ok 7 - setup requires OS protected storage {"platform":"linux","backend":"basic_text"}
+  ---
+  duration_ms: 0.315916
+  type: 'test'
+  ...
+# Subtest: setup requires OS protected storage {"platform":"linux","backend":"unknown"}
+ok 8 - setup requires OS protected storage {"platform":"linux","backend":"unknown"}
+  ---
+  duration_ms: 0.219125
+  type: 'test'
+  ...
+# Subtest: encryption failure keeps the portable key and never enables setup
+ok 9 - encryption failure keeps the portable key and never enables setup
+  ---
+  duration_ms: 1.680958
+  type: 'test'
+  ...
+# Subtest: initialization conflict leaves existing setup and user recovery file intact
+ok 10 - initialization conflict leaves existing setup and user recovery file intact
+  ---
+  duration_ms: 4.997875
+  type: 'test'
+  ...
+# Subtest: first backup failure is partial and never triggers replacement key generation
+ok 11 - first backup failure is partial and never triggers replacement key generation
+  ---
+  duration_ms: 5.0845
+  type: 'test'
+  ...
+# Subtest: corrupt cache requests original and never overwrites an existing cache
+ok 12 - corrupt cache requests original and never overwrites an existing cache
+  ---
+  duration_ms: 5.548708
+  type: 'test'
+  ...
+# Subtest: wrong original key is rejected before caching and no error exposes bytes
+ok 13 - wrong original key is rejected before caching and no error exposes bytes
+  ---
+  duration_ms: 0.483959
+  type: 'test'
+  ...
+# Subtest: failed reservation stops cached plaintext staging
+ok 14 - failed reservation stops cached plaintext staging
+  ---
+  duration_ms: 5.138666
+  type: 'test'
+  ...
+# Subtest: exportLatestBackup cancellation does not write
+ok 15 - exportLatestBackup cancellation does not write
+  ---
+  duration_ms: 0.226542
+  type: 'test'
+  ...
+# Subtest: exportRecoveryKey cancellation does not write
+ok 16 - exportRecoveryKey cancellation does not write
+  ---
+  duration_ms: 0.260292
+  type: 'test'
+  ...
+# Subtest: legacy original-key cancellation does not write
+ok 17 - legacy original-key cancellation does not write
+  ---
+  duration_ms: 0.387209
+  type: 'test'
+  ...
+# Subtest: restore cancellation 0 does not invoke CLI
+ok 18 - restore cancellation 0 does not invoke CLI
+  ---
+  duration_ms: 0.207459
+  type: 'test'
+  ...
+# Subtest: restore cancellation 1 does not invoke CLI
+ok 19 - restore cancellation 1 does not invoke CLI
+  ---
+  duration_ms: 0.176375
+  type: 'test'
+  ...
+# Subtest: restore cancellation 2 does not invoke CLI
+ok 20 - restore cancellation 2 does not invoke CLI
+  ---
+  duration_ms: 0.18875
+  type: 'test'
+  ...
+# Subtest: restore selects a fresh output path and keeps live setup unchanged
+ok 21 - restore selects a fresh output path and keeps live setup unchanged
+  ---
+  duration_ms: 0.39625
+  type: 'test'
+  ...
+# Subtest: all actions share a busy fence
+ok 22 - all actions share a busy fence
+  ---
+  duration_ms: 0.215875
+  type: 'test'
+  ...
+# Subtest: exports do not overwrite a selected existing output
+ok 23 - exports do not overwrite a selected existing output
+  ---
+  duration_ms: 0.398125
+  type: 'test'
+  ...
+# Subtest: truncated CLI JSON and raw errors become bounded user messages
+ok 24 - truncated CLI JSON and raw errors become bounded user messages
+  ---
+  duration_ms: 0.172541
+  type: 'test'
+  ...
+# Subtest: IPC rejects foreign windows, subframes, origins and arguments
+ok 25 - IPC rejects foreign windows, subframes, origins and arguments
+  ---
+  duration_ms: 0.611916
+  type: 'test'
+  ...
+# Subtest: preload exposes five argument-free backup methods
+ok 26 - preload exposes five argument-free backup methods
+  ---
+  duration_ms: 0.492458
+  type: 'test'
+  ...
+# Subtest: runStackos output limit preserves default and clamps optional structured output
+ok 27 - runStackos output limit preserves default and clamps optional structured output
+  ---
+  duration_ms: 204.409334
+  type: 'test'
+  ...
+1..27
+# tests 27
+# suites 0
+# pass 27
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 264.724667

@@ -1,0 +1,772 @@
+{
+  "scope": "browser",
+  "prepared_at": "2026-10-28T15:22:32.474421+00:00",
+  "project_id": 1,
+  "run_plan_id": 718,
+  "run_id": 712,
+  "integrated_candidate_sha256": "72935f7792c9a4c8f43db9991a831cec114c2592e26c697ca418fbce5ebc2ad7",
+  "ui_attempt_id": "ui-2",
+  "ui_contract_revision": 4,
+  "visual_design_revision": 3,
+  "technical_design_revision": 2,
+  "ui_repair_revision": 2,
+  "ui_candidate_id": "sha256:7aa28032f098fc13280d12fabb40de22e7e63a54c7042b5223a91bda47166bfe",
+  "source_to_durable_mapping": [
+    {
+      "file": "browser-1280-dark.png",
+      "source": "/tmp/stackos-workflow-718/option3-qa/browser-1280-dark.png",
+      "sha256": "e6dd59a9aa1aa24c32f04d88d0d0ca088c3b82723c88b6e7354afec79aa0c736",
+      "bytes": 91519,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "browser-1280-dark.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/browser-1280-dark.txt",
+      "sha256": "d163b0cbfa671737104c8a418dc9d0a8190b196a0d0f27719568d5e3229b1f89",
+      "bytes": 301,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "browser-preflight.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/browser-preflight.txt",
+      "sha256": "2642ea7020dc5464bcd4b16ca35d71e0a5bfb2e5e72118857301b9884abcffdf",
+      "bytes": 43611,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "browser-summary.json",
+      "source": "/tmp/stackos-workflow-718/option3-qa/browser-summary.json",
+      "sha256": "24000866145198124c8cc58f8fc16954e21b031e529b3de332736c42ced80277",
+      "bytes": 8814,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "comparison-capture.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/comparison-capture.txt",
+      "sha256": "63b304325ae3d2255cd89f4c9e1359b87008576b430f3470a1618461afe0deb1",
+      "bytes": 786,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "comparison-content.png",
+      "source": "/tmp/stackos-workflow-718/option3-qa/comparison-content.png",
+      "sha256": "440e0d7932da9522ba3e409f15d3c312df02dbce71a936853edd5e0fcaeedcb0",
+      "bytes": 510713,
+      "disposition": "secondary content crop; right edges clipped; use comparison-full.png for full comparison"
+    },
+    {
+      "file": "comparison-full.png",
+      "source": "/tmp/stackos-workflow-718/option3-qa/comparison-full.png",
+      "sha256": "b483b8757978a2e2c8b126f12d9101e8421ca408ccada576ec31294902276a86",
+      "bytes": 640876,
+      "disposition": "primary full side-by-side comparison inspected by root and evidence preparer"
+    },
+    {
+      "file": "configured-1280-dark.png",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-1280-dark.png",
+      "sha256": "2219b6ce0cd863efd6e38ac768c692c7698fc02203d45a5c47d42e5cc8013b2d",
+      "bytes": 90937,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-1280-dark.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-1280-dark.txt",
+      "sha256": "3f95e739f24fbdc25514a7a3f25ebe27efda468cb56357fd0fd3669bef866240",
+      "bytes": 307,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-1280-light.png",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-1280-light.png",
+      "sha256": "ec16c4fc6eeecb70efd7094fa6f159e9b79b777fcaf603ace0b6534d0d84c25f",
+      "bytes": 91004,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-1280-light.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-1280-light.txt",
+      "sha256": "6043ca93016c60ecb406ffbab90084f085bf4d677ca501beca17695fd1776f68",
+      "bytes": 309,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-320-dark.png",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-320-dark.png",
+      "sha256": "ca9ef686683a0b3b9a4e6cb7f0e46788c3376e38f70181168f1431cd643053b0",
+      "bytes": 53979,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-320-dark.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-320-dark.txt",
+      "sha256": "c9677acada6c80fa9f7c3dba269f6536ebb4b2d094108e86d16f6c9b8d619a7e",
+      "bytes": 302,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-390-dark.png",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-390-dark.png",
+      "sha256": "5527cd68a9d9a3c76ec15777334572e23e70f6a3dc62952a725812eb18a01c09",
+      "bytes": 55653,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-390-dark.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-390-dark.txt",
+      "sha256": "f0f0382c1d7b0daca7d698d3dc39489c5fa7ce2290698b275a883ab0e3135077",
+      "bytes": 302,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-639-dark.png",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-639-dark.png",
+      "sha256": "2096617e2abd9e317a22f6d783a22a76e886899a772ad5c6b1f864f9b0918db8",
+      "bytes": 58781,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-639-dark.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-639-dark.txt",
+      "sha256": "2bac64c336c09243c07674dd9a4f9a0860992c47a73e8316b95d6acf0ad62f0e",
+      "bytes": 302,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-640-dark.png",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-640-dark.png",
+      "sha256": "0d217682e780a64ef0c6175d6cb98958e7275bdb3a1ff4353ed587d3de0c4c37",
+      "bytes": 58303,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-640-dark.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-640-dark.txt",
+      "sha256": "2b9a6ef8156a395dee4bed7cbf9aa63f2973c61ecc9555e0a71476dc8a68cf8f",
+      "bytes": 302,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-archive-1280.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-archive-1280.txt",
+      "sha256": "29c5fceebf631a377c4d87ce1afc43e0801d8a0e186a3c8a0e1a3d65fb8cfc93",
+      "bytes": 3058,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-archive-320.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-archive-320.txt",
+      "sha256": "f5d4e5a141f167408102b04217a3541f2d13b8edcc1f112b37416786318dc906",
+      "bytes": 3013,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-archive-390.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-archive-390.txt",
+      "sha256": "23114ee952c94c1696796a65174cea5c13ba4ee5310aeef43701e9b42de7c984",
+      "bytes": 3013,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-backup-1280.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-backup-1280.txt",
+      "sha256": "1d716c26c85a483cd869f33f1b93abc3a9e0b668c344a8a645248321bc60c22c",
+      "bytes": 3113,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-backup-320.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-backup-320.txt",
+      "sha256": "f23b0cbd79d054f2dadc93b4e024ce5f09aaa34362a6c541b929d39164faffb7",
+      "bytes": 3068,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-backup-390.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-backup-390.txt",
+      "sha256": "dfb1154b3adf2d89a78ddf21f6b08c700ac4d652b6111f5781f05e4991755c17",
+      "bytes": 3068,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-key-1280.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-key-1280.txt",
+      "sha256": "443216f59f1a9ab5e1055d42a14efb8f1cb39ca49bb30dd14cd8951d933ca009",
+      "bytes": 3048,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-key-320.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-key-320.txt",
+      "sha256": "3a0659d19caeaa1d44bd6525580d7d3352757b7dab6f7e45004262a655d0dea7",
+      "bytes": 3003,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-key-390.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-key-390.txt",
+      "sha256": "f2b8122ab53c26fae7eb71015e6e98fa21c1a652ac548c561e25b6a8103ded39",
+      "bytes": 3003,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-refresh-1280.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-refresh-1280.txt",
+      "sha256": "3de205b03d3e5dde7a05483e69253106b25071937de836370a4815651449b4ea",
+      "bytes": 3029,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-refresh-320.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-refresh-320.txt",
+      "sha256": "6cdbf8c9726f969e1e4f0864ff083afa394ac641e82099f2d0d4df9f24260032",
+      "bytes": 2984,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-refresh-390.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-refresh-390.txt",
+      "sha256": "1fbf37c8874e9f64f83afddc1a40c843d9cc2e60206a3a53fb9f627d5e686cbc",
+      "bytes": 2984,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-restore-1280.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-restore-1280.txt",
+      "sha256": "6f6ce5a99a7da2b79204a06d1c45781d2a60ceaa9fa293110fbaee757a2353c8",
+      "bytes": 3056,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-restore-320.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-restore-320.txt",
+      "sha256": "ce463789d568ea58d47ec387ee39c2c3b0b14095e1562584ae65fa02ed72b82e",
+      "bytes": 3011,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "configured-restore-390.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/configured-restore-390.txt",
+      "sha256": "38a913edcb47f151bb8d1b49eac0220b006aab00b6df0493d69ba3b31fc0ec68",
+      "bytes": 3011,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "console-current.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/console-current.txt",
+      "sha256": "9a2b08cff3677d6864afd15323f143f02e922f5dafc0f90cab31e609b77a6314",
+      "bytes": 370,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "console-history.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/console-history.txt",
+      "sha256": "a5368367be1c7507fbf17f3510a8790e87ab3bfc41495e8aa11ccc579f46a9a6",
+      "bytes": 4992,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "exploratory-setup.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/exploratory-setup.txt",
+      "sha256": "6ee6327b39ae6269d2035d0c73869d99bc15dfae70484b7991c9dfd5663da6c0",
+      "bytes": 3107,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "failure-error-Back.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/failure-error-Back.txt",
+      "sha256": "609aedce6f084af00041900b258321e980554e6325829e739ed3c64f5c9375ec",
+      "bytes": 3102,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "failure-error-Export.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/failure-error-Export.txt",
+      "sha256": "28004ba59af985a4b5b864503521f13e4c84beef67cfefd725dabbd9aa9c4039",
+      "bytes": 3038,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "failure-refresh-error-Refresh.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/failure-refresh-error-Refresh.txt",
+      "sha256": "683a6376e871e649e1a93c05f9ff40c37c0604817f835bd02df0640efae122f0",
+      "bytes": 3069,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "final-desktop.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/final-desktop.txt",
+      "sha256": "02eb83e55be1d03e82d584f0c3a088e2392e3b20ff73e7fd76ef90bbd0704f3c",
+      "bytes": 1945,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "fixture-inspect.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/fixture-inspect.txt",
+      "sha256": "e1ab2d8bba33ae0c37b7e8fff658173968127faac3108546cc23f27490923e1f",
+      "bytes": 4850,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "fresh-1280-dark.png",
+      "source": "/tmp/stackos-workflow-718/option3-qa/fresh-1280-dark.png",
+      "sha256": "63c74e7cdae196ad95370a0b662c91120e0fc09596c7b180bb5de9d30cfeefb3",
+      "bytes": 86718,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "fresh-1280-dark.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/fresh-1280-dark.txt",
+      "sha256": "94a4b68644883dc758a9038bf913817dce5f65edbc80aef602c50a08a1017968",
+      "bytes": 297,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "gutter-repair-smoke.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/gutter-repair-smoke.txt",
+      "sha256": "47d8000b1e1a624efc3b7e1ea865df2b40a52557af32f58ef06ffb0d8f6bdb6e",
+      "bytes": 3031,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "initial-configured-1280.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/initial-configured-1280.txt",
+      "sha256": "5b07d9fc93be52b1ae4d68ea246d5c661c977142957ac89ea9de60d37c45adc0",
+      "bytes": 155034,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "initial-configured-320.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/initial-configured-320.txt",
+      "sha256": "ab470b95176a880f04dbfde3ff6b90d86901b9c6ca7bf3a5a71f4691583c6af9",
+      "bytes": 154496,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "initial-configured-390.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/initial-configured-390.txt",
+      "sha256": "cba4bfd68ce041d026080723b390c6b4abcf0f0860ba82eb0db243e287e0c887",
+      "bytes": 156044,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "initial-error-1280-dark.png",
+      "source": "/tmp/stackos-workflow-718/option3-qa/initial-error-1280-dark.png",
+      "sha256": "40d9e0d99f1a8f3d3f125f0c3eb24a8abbb6fd5ce463480408d7a2e690c9d18f",
+      "bytes": 89861,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "initial-error-1280-dark.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/initial-error-1280-dark.txt",
+      "sha256": "35377cd8146b17604e4cbda40e300d3608f604b71d7f23a25e04d069075767d8",
+      "bytes": 313,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "initial-fresh-1280.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/initial-fresh-1280.txt",
+      "sha256": "ba7ae70aa7bdbaea1e00be92215eb461808acfe743439ae23ee3c53b2c5b80f4",
+      "bytes": 154648,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "initial-fresh-320.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/initial-fresh-320.txt",
+      "sha256": "386b846c3727cb92214b8a7fb4bb5ed00a05a81867448f22554d5a216c1cde8c",
+      "bytes": 155144,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "initial-fresh-390.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/initial-fresh-390.txt",
+      "sha256": "565d550ca41ff090ca4bef8c3ac637c9e2730e299f4916eb65ea779f4852b3ab",
+      "bytes": 154876,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "initial-initial-error-1280.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/initial-initial-error-1280.txt",
+      "sha256": "edbe8f56532f5ad6d0907dbbe72a7c66193a725331e27ce1aa473ad1706b6eef",
+      "bytes": 147087,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "initial-initial-error-320.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/initial-initial-error-320.txt",
+      "sha256": "1dd6e2c3c462af282bbe07961e069f1f5fa9db0978907ba02a26f7d3181faa65",
+      "bytes": 146263,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "initial-initial-error-390.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/initial-initial-error-390.txt",
+      "sha256": "3efa82c8dacc0ebd38e87ff7bda955576e1f9ec1dba52614b509b3537929974a",
+      "bytes": 147051,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "legacy-shell-1280-dark.png",
+      "source": "/tmp/stackos-workflow-718/option3-qa/legacy-shell-1280-dark.png",
+      "sha256": "c8557295e6b6b31a9cbef363b0ea03379116349b64f50d1a9de40fd8d20f456c",
+      "bytes": 95312,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "legacy-shell-1280-dark.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/legacy-shell-1280-dark.txt",
+      "sha256": "f6a43a10ecbd3aad110139a1dae1e70b597bf5cf997a4d4fb13ce9d55c5537cb",
+      "bytes": 311,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "menu-escape-1280.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/menu-escape-1280.txt",
+      "sha256": "7bad20a49cc79ba9c88acbc15a07199527e40cfcb8464f47e56baa65d74cabce",
+      "bytes": 3884,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "menu-escape-320.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/menu-escape-320.txt",
+      "sha256": "fe9ceca3136910444f5f562a9d944c839321da1cdcf308459839a5f546181caa",
+      "bytes": 3834,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "menu-escape-390.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/menu-escape-390.txt",
+      "sha256": "c91257fa64a6aa91023eb5e5192f14fed578d822201afca1ba32c8efd7848a44",
+      "bytes": 3840,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "menu-folder-1280.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/menu-folder-1280.txt",
+      "sha256": "a2cf7a1b88b68d5826256af5b3339ef81c16839c4f7151368519d5793c40a193",
+      "bytes": 1608,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "menu-folder-320.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/menu-folder-320.txt",
+      "sha256": "a5751121e76e7e1cebaf3e27f7289cd87817d25cb5a92baea3725818a26222c9",
+      "bytes": 1582,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "menu-folder-390.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/menu-folder-390.txt",
+      "sha256": "404a9553d5ed8c2a7f6096a23d8b133e61c23e572776bd6d5c302b1c350d3bd7",
+      "bytes": 1582,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "menu-history-1280.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/menu-history-1280.txt",
+      "sha256": "ea305a1d3ac3f4e3cf6ea3c72e6aa69a72533cd2ee49c2399173fdf01ac6316e",
+      "bytes": 3135,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "menu-history-320.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/menu-history-320.txt",
+      "sha256": "f815a375f7f08374beaf64e69adc464d627ebcce075b51b3b429f23b9dcaae16",
+      "bytes": 3083,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "menu-history-390.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/menu-history-390.txt",
+      "sha256": "ab5328fa27e2926d6d4c07b32161d662b129409b251f79763e2a1533da9d7cb6",
+      "bytes": 3083,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "menu-open.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/menu-open.txt",
+      "sha256": "0656d1e91d810060782160ababeaf6bccb3f0a91e361e55380089a77dd24e410",
+      "bytes": 3391,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "menu-settings-1280.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/menu-settings-1280.txt",
+      "sha256": "878c286ad563c1f8abda8829d524a0783093fdd1eb5c4a38db6cdf1aaba12a03",
+      "bytes": 3201,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "menu-settings-320.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/menu-settings-320.txt",
+      "sha256": "c1d1d88fe2e7af9f6a49a4e5041e8a7db0c011d4f2090a113bdd541e40ce02a2",
+      "bytes": 3148,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "menu-settings-390.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/menu-settings-390.txt",
+      "sha256": "8bd4f0594a12e4f3e0db9d8b4a91651f83147790ae253dd3a30223e9a348a9ef",
+      "bytes": 3148,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "menu-settings.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/menu-settings.txt",
+      "sha256": "d9a94c42fea1c13ccffa0e76dba94e77cfcaeccef0bf7633da7c2328eac6b614",
+      "bytes": 4453,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "menu-start-1280.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/menu-start-1280.txt",
+      "sha256": "bf9a402e936fcf12b9536a8021c7253b22cc9d5c5ee59c7dfd8a160a848ad40b",
+      "bytes": 1616,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "menu-start-320.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/menu-start-320.txt",
+      "sha256": "dc58cc9550d1144556ac4f6af5562258c91340e144d313054cb93e47f9d5a7f3",
+      "bytes": 1589,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "menu-start-390.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/menu-start-390.txt",
+      "sha256": "84fd81d946080cf8c58597bd720c460f527ed0379617b4963518e509cf87a638",
+      "bytes": 1589,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "menu-summary.json",
+      "source": "/tmp/stackos-workflow-718/option3-qa/menu-summary.json",
+      "sha256": "c8bc1e005d9987c86cba40ceb46659df70ab6f5a614fab312f7622f99030700c",
+      "bytes": 2298,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "no-project-1280.png",
+      "source": "/tmp/stackos-workflow-718/option3-qa/no-project-1280.png",
+      "sha256": "85ae717ef531ea966a718f332bc55bed6159ec5c8be0893862082b1946038cdf",
+      "bytes": 77139,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "paused-1280-dark.png",
+      "source": "/tmp/stackos-workflow-718/option3-qa/paused-1280-dark.png",
+      "sha256": "8220b3b69f048a358a22a016abf19dc3d9ec9f2dcd686849938e074559b09df8",
+      "bytes": 90700,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "paused-1280-dark.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/paused-1280-dark.txt",
+      "sha256": "5110c9d801e20b817d9d715fb5f2623b63893a189181a70fc8194e3af7127af6",
+      "bytes": 299,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "settings-390.png",
+      "source": "/tmp/stackos-workflow-718/option3-qa/settings-390.png",
+      "sha256": "b1d86a74834576360cd221f05500e3386a27573bba05205779e2887aa0f04500",
+      "bytes": 25042,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "settings-final-1280.png",
+      "source": "/tmp/stackos-workflow-718/option3-qa/settings-final-1280.png",
+      "sha256": "bd9fb03ea2f55363b931e7761759793a0d655f4fe612bfe662080348962d3286",
+      "bytes": 94650,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "settings-final-320.png",
+      "source": "/tmp/stackos-workflow-718/option3-qa/settings-final-320.png",
+      "sha256": "3fc795d97731f07c03823d414df090219e674051ce2ebaadc644440708903ba0",
+      "bytes": 24100,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "settings-final-390.png",
+      "source": "/tmp/stackos-workflow-718/option3-qa/settings-final-390.png",
+      "sha256": "675d5c4d14fce2adb3faec859983d1855b9ab56dc7e02865e68e3753ec94de92",
+      "bytes": 23011,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "settings-save.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/settings-save.txt",
+      "sha256": "6bb8855ed8654d4badc975a1c9f26b519c229df2342d5b8bd4db23e8cd5d0e26",
+      "bytes": 1355,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "setup-cancel-1280.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/setup-cancel-1280.txt",
+      "sha256": "cf4394eeae49b605e5764cd1598ed9a936ffdc0f101ece13ad5b0f7c3471ca1f",
+      "bytes": 3004,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "setup-cancel-320.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/setup-cancel-320.txt",
+      "sha256": "d871d82ecf83ac9df566eef60a8b6e70342869457607f11a5c910b6252d65396",
+      "bytes": 2959,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "setup-cancel-390.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/setup-cancel-390.txt",
+      "sha256": "48a357ffc32d98a1d8219dd88d8a9f387d92457b9441f7806cb0da3f462feefb",
+      "bytes": 2959,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "setup-fresh-1280.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/setup-fresh-1280.txt",
+      "sha256": "3e6dc9498927201823c0134294088f55334ef768f1908600058ce2561f5a3ab5",
+      "bytes": 3152,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "setup-fresh-320.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/setup-fresh-320.txt",
+      "sha256": "79b53e0f03dc0702a9b8db19e1d1021d8e2615a2d1fabb0de1319e689af703fa",
+      "bytes": 3107,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "setup-fresh-390.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/setup-fresh-390.txt",
+      "sha256": "827f4406a83743f033700e11f7d2b290fc796de6d79e6fb08f230588cb3e58ea",
+      "bytes": 3107,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "setup-partial-1280.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/setup-partial-1280.txt",
+      "sha256": "3afbb2a746905e00f5f271fa141d6c72a16f2e7598d2cf7cda70b4e8ffa5cac9",
+      "bytes": 3134,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "setup-partial-320.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/setup-partial-320.txt",
+      "sha256": "1fe0bbe9e0110cb9ae150acbbe41ed23796d4b5e06490a44b170be3d334f3af1",
+      "bytes": 3089,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "setup-partial-390.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/setup-partial-390.txt",
+      "sha256": "71dfb054b50c5441b1bd848f81a62a8c82a1bed5054affbf2dfeb238742eb689",
+      "bytes": 3089,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "shell-baseline.png",
+      "source": "/tmp/stackos-workflow-718/option3-qa/shell-baseline.png",
+      "sha256": "a40cc4c28845284c1d4938befd7c668d669f97e28571f91cddb8e18808ea88ef",
+      "bytes": 63025,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "shell-baseline.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/shell-baseline.txt",
+      "sha256": "e5dc98b295e00cc860f74b875f65bdc3e21c95aa5713611351dd21e254dd4104",
+      "bytes": 2391,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "work-in-progress.png",
+      "source": "/tmp/stackos-workflow-718/option3-qa/work-in-progress.png",
+      "sha256": "516248c0da4591e37e7707925e2f0934916d9220250491eecb090e2b794c5a38",
+      "bytes": 90600,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "work-in-progress.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/work-in-progress.txt",
+      "sha256": "c7521e78b419cda61d98ee2cd91ac9e7c08e2ae80aa0af3c87742845264c057c",
+      "bytes": 1905,
+      "disposition": "synthetic browser evidence; candidate scope described in index"
+    },
+    {
+      "file": "harness-browser_suite.py.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/browser_suite.py",
+      "sha256": "069db77f8ff72e2054d414a1be503f4d91702979108e7dfbe30104036849c159",
+      "bytes": 5673,
+      "disposition": "source harness for reproducibility; copy only, not executed"
+    },
+    {
+      "file": "harness-menu_suite.py.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/menu_suite.py",
+      "sha256": "84053d61ec3241a184e9f16d65db0f0be6243258432b34597b132bf40fd5e4c3",
+      "bytes": 3580,
+      "disposition": "source harness for reproducibility; copy only, not executed"
+    },
+    {
+      "file": "harness-measure-action.js.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/measure-action.js",
+      "sha256": "a3380b85cfa23b6fd1f331713f088cd6e675d2277da0a812a437956e4e5c42d6",
+      "bytes": 2325,
+      "disposition": "source harness for reproducibility; copy only, not executed"
+    },
+    {
+      "file": "historical-initial-attempt/browser-summary.json",
+      "source": "/tmp/stackos-workflow-718/option3-qa/initial-attempt/browser-summary.json",
+      "sha256": "56551c7430ec2d37282a1284c450bd1007b702ff51902ba14769fd12c4eefa57",
+      "bytes": 8553,
+      "disposition": "historical initial attempt; failed 390px control geometry; superseded by successful browser-summary.json"
+    },
+    {
+      "file": "historical-initial-attempt/configured-archive-390.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/initial-attempt/configured-archive-390.txt",
+      "sha256": "92ca0440ed4ebff079c250c11d08d151b84cd0627da646bd624c64bd1a0616f2",
+      "bytes": 77433,
+      "disposition": "historical initial attempt; failed 390px control geometry; superseded by successful browser-summary.json"
+    },
+    {
+      "file": "historical-initial-attempt/configured-key-390.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/initial-attempt/configured-key-390.txt",
+      "sha256": "ed19d836b70b20b7bce7a33519de84c56d561d1aff9efeb3e0b86bbaec4be667",
+      "bytes": 78127,
+      "disposition": "historical initial attempt; failed 390px control geometry; superseded by successful browser-summary.json"
+    },
+    {
+      "file": "historical-initial-attempt/configured-restore-390.txt",
+      "source": "/tmp/stackos-workflow-718/option3-qa/initial-attempt/configured-restore-390.txt",
+      "sha256": "c7baf8597162a0c0d2fd118fafb51abaef2bf985959d5c298340109b6d0d853c",
+      "bytes": 78138,
+      "disposition": "historical initial attempt; failed 390px control geometry; superseded by successful browser-summary.json"
+    }
+  ],
+  "safety": "Allowlisted text/JSON/PNG and three text-only harness copies. No fixture trees, native keys, ciphertext, archives, database, seed, token or cache files. No tests rerun or source/workflow writes.",
+  "freshness": "Integrated candidate matched all27 source hashes and89 bundle hashes at evidence preparation. Artifact timestamps and their original candidate scopes are preserved; copying does not imply rerunning.",
+  "overall_acceptance_owner": "root",
+  "proof_scope": {
+    "reused_browser_candidate": "b68ad4cea09a37a03004fad398aa94233d224aeb20a826d084e7c8aff813879f",
+    "action_cases_passed": 27,
+    "initial_load_cases_passed": 9,
+    "reuse_reason": "Final change only moves footer Manage menu to top-end; prior closed-control geometry proof remains scoped to b68 candidate.",
+    "final_menu_candidate": "72935f7792c9a4c8f43db9991a831cec114c2592e26c697ca418fbce5ebc2ad7",
+    "menu_cases_rerun_passed": 12,
+    "widths": [
+      1280,
+      390,
+      320
+    ],
+    "final_menu_outcome": "stable controls, Manage focus restored, scrollY0, mainScroll0, no settings writes",
+    "screenshots": "Top-level captured files preserved with names and hashes; final-desktop/comparison-full and settings-final captures cover final state. Earlier/baseline/work-in-progress captures are supporting history, not additional current passing claims.",
+    "primary_comparison": "comparison-full.png",
+    "secondary_comparison": "comparison-content.png (right edges clipped)"
+  },
+  "metadata_locations": {
+    "integrated-candidate.json": "../integration/integrated-candidate.json",
+    "source-manifest.json": "../integration/source-manifest.json",
+    "gate-delta.json": "../integration/gate-delta.json",
+    "preservation.json": "../integration/preservation.json",
+    "historical-integrated-b68ad4cea09a.json": "../integration/historical-integrated-b68ad4cea09a.json",
+    "candidate-before-option3.json": "../integration/candidate-before-option3.json"
+  }
+}

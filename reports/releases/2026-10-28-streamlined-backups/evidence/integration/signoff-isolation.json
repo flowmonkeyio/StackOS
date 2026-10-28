@@ -1,0 +1,37 @@
+{
+  "base": "1976d4bf96c8480652400e496534a7ed6b7e99d1",
+  "overlay_files": {
+    "stackos/backups/service.py": "1d01c4cc3e374857041dd14b6f401414a5269ea99ce8c29a72a33f1f1acd6c77",
+    "stackos/backups/filesystem.py": "1fbab88a89ceaedbefd5e152e598165dbe340b27ad6e1fe7da3993f260afef68",
+    "stackos/cli/backup_commands.py": "069478cae4163243c34131b7a8800fdfb3aa8659ab19aae498e596f9d916063b",
+    "tests/unit/test_backups.py": "0bf0ce69d61b98cae1fb0c324010d80c82088b0edd5332ab3797935c8ab8524a",
+    "tests/unit/test_backup_cli.py": "d1e501f09a2df682dbf1ee32a475cd401c993d82bf166e0c9a5d4dfb9afb4838",
+    "docs/backups.md": "200c2422cdebd7d68d19b0f18598d0c18d52b4d7436af46001a130ec80061032",
+    "desktop/src/backups.js": "4a2b99c0fb86d5f04dc56a68f9414cdfbdc2e8a979240a6710c9ac7075d37901",
+    "desktop/src/main.js": "7d9ad7ece4934db7093ece76adda436ec86e0fcf0a93e0be87294a9a3ecf481c",
+    "desktop/src/preload.js": "12a9c94009df1a431edf34f77a1880a2a801a8eba859e0a28620f34d1b3d5d0a",
+    "desktop/src/service.js": "b142ffb59bc35eaf2f949723a18a5558aca277e24c58e720a34ad0724a3a512c",
+    "desktop/scripts/test-backups.cjs": "3473f584cbe1333a9a5f87ee2501325bdcd62688012da85c37fa76716cedfaaa",
+    "desktop/package.json": "29cdc0558e40f3a230646c38ae37a7bc4bc67f2b8f9abde135fa0537cf23ec33",
+    "docs/security.md": "15907fbf302dae88ffd11df1bd4cfa35fe813deaaa620427e5406fa66936a3cc",
+    "docs/release-signoff.md": "00c6bcece8561fe854be3e451cb2ed61894bad74487002d18eb812d60244a596",
+    "docs/setup.md": "c6d16cf5f50b863abee634f8623f18abb41569f70e81b6c21dafd40d4d0e97cf",
+    "docs/ui-design-system.md": "7dc622e46b5969aecdd25e85e7327fcb3ca5fd03607de76b0ef0567c98af8f01",
+    "ui/src/App.local-setup.spec.ts": "1054b41578979ad39d8d214e14a098b90c66cde45d5b5d5a40c71cbd65d49762",
+    "ui/src/components/backups/BackupPanel.vue": "3debc2a9d915440bfbe50f8d4bddb94a84435e0601bbbdef63f06fe6ffbd0033",
+    "ui/src/components/backups/BackupPanel.spec.ts": "1c81ee0f566827c7a21ac8cb3224d94d9ff509a036a7207c23f1084cd8536ca3",
+    "ui/src/components/ui/UiButton.vue": "7ea110155896e5270ea4176149450961d1282c902ffc849ea89aaf054b071ebc",
+    "ui/src/components/ui/UiButton.spec.ts": "ec30563e95913e7cddcaaf96167053163cd2dd9768cbc08c5feae45a79325207",
+    "ui/src/lib/desktop.ts": "b1941ea0d3930d7ba89dd1e7d80d7ba3704b6e7bfaafd53d7536021957b94db9",
+    "ui/src/lib/desktop.spec.ts": "450f6b86811e75d6478bcfcc9c36f0f7d32595a45e2d6d810b6de18640ab4cce",
+    "ui/src/views/LocalSetupView.vue": "84fc39b83e70adc0a913c87e83c19c7016e090ba987d8d4551f57b93ed74955a"
+  },
+  "candidate": "/tmp/stackos-workflow-718/signoff-candidate",
+  "rewritten_absolute_artifact_symlinks": [
+    {
+      "path": "website/dist",
+      "isolated_target": ".output/public"
+    }
+  ],
+  "reason": "Unrelated pre-existing untracked report scripts fail repository-wide lint. Isolated tracked baseline plus exact reviewed source overlay; original dirty files remain untouched."
+}

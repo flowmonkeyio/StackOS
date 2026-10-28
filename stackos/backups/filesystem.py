@@ -249,3 +249,52 @@ def digest_file(path: Path) -> str:
         while chunk := stream.read(CHUNK):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def copy_verified_file(source: Path, output: Path, *, sha256: str, size: int) -> None:
+    """Verify the bytes copied from one no-follow descriptor before exclusive publication."""
+    fd = open_regular(source)
+    temporary: Path | None = None
+    try:
+        before = os.fstat(fd)
+        if before.st_nlink != 1 or before.st_size != size:
+            raise BackupError(
+                "archive_changed", "The saved backup archive no longer matches its receipt."
+            )
+        private_directory(output.parent)
+        output_fd, name = tempfile.mkstemp(prefix=".backup-export-", dir=output.parent)
+        temporary = Path(name)
+        digest, copied = hashlib.sha256(), 0
+        with (
+            os.fdopen(output_fd, "wb") as destination,
+            os.fdopen(fd, "rb", closefd=False) as origin,
+        ):
+            while chunk := origin.read(CHUNK):
+                copied += len(chunk)
+                if copied > size:
+                    raise BackupError(
+                        "archive_changed", "The backup archive changed during export."
+                    )
+                destination.write(chunk)
+                digest.update(chunk)
+            destination.flush()
+            os.fsync(destination.fileno())
+        if (
+            copied != size
+            or digest.hexdigest() != sha256
+            or identity(os.fstat(fd)) != identity(before)
+            or identity(source.lstat()) != identity(before)
+        ):
+            raise BackupError(
+                "archive_changed", "The saved backup archive no longer matches its receipt."
+            )
+        os.link(temporary, output, follow_symlinks=False)
+        fsync_directory(output.parent)
+    except FileExistsError as exc:
+        raise BackupError(
+            "output_exists", "Backup export will not overwrite an existing file."
+        ) from exc
+    finally:
+        os.close(fd)
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)

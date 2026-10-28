@@ -189,6 +189,373 @@ def test_fresh_policy_defaults_off_without_creating_archive(tmp_path):
     assert not (settings.state_dir / "backups").exists()
 
 
+def test_initialize_preserves_partial_policy_and_requires_durable_custody(tmp_path):
+    settings = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
+    target = tmp_path / "business"
+    target.mkdir()
+    destination = tmp_path / "archives"
+    saved = save_policy(
+        settings,
+        BackupPolicy(
+            destination=destination,
+            interval_hours=7,
+            keep_last=17,
+            targets=[BackupTarget(id="business", label="Existing", path=target)],
+        ),
+    )
+    private, public = tmp_path / "keys/private.pem", tmp_path / "keys/public.pem"
+    custody = tmp_path / "desktop-custody"
+    generate_recovery_key(
+        settings,
+        private,
+        public,
+        first_time=True,
+        protected_paths=[custody],
+        destination=destination,
+    )
+    custody.mkdir()
+    cache = custody / "key.enc"
+    cache.write_bytes(b"synthetic OS protected ciphertext")
+    policy = service.initialize_backups(
+        settings,
+        public.read_text(),
+        private_key_path=private,
+        protected_key_path=cache,
+        destination=destination,
+    )
+    assert policy.enabled
+    assert policy.interval_hours == saved.interval_hours
+    assert policy.keep_last == saved.keep_last
+    assert policy.targets == saved.targets
+    assert policy.destination == saved.destination
+    before = (settings.state_dir / service.POLICY_FILE).read_bytes()
+    with pytest.raises(BackupError) as caught:
+        service.initialize_backups(
+            settings,
+            public.read_text(),
+            private_key_path=private,
+            protected_key_path=cache,
+            destination=destination,
+        )
+    assert caught.value.code == "already_configured"
+    assert (settings.state_dir / service.POLICY_FILE).read_bytes() == before
+
+
+@pytest.mark.parametrize("selected_destination", [False, True])
+def test_initialize_fresh_defaults_without_existing_settings(tmp_path, selected_destination):
+    settings = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
+    private, public = tmp_path / "keys/private", tmp_path / "keys/public"
+    cache = tmp_path / "native/cache"
+    destination = tmp_path / "archives" if selected_destination else None
+    generate_recovery_key(
+        settings,
+        private,
+        public,
+        first_time=True,
+        protected_paths=[cache.parent],
+        destination=destination,
+    )
+    cache.parent.mkdir()
+    cache.write_bytes(b"synthetic protected copy")
+    policy = service.initialize_backups(
+        settings,
+        public.read_text(),
+        private_key_path=private,
+        protected_key_path=cache,
+        destination=destination,
+    )
+    assert policy.enabled and policy.recipient_public_key == public.read_text()
+    assert policy.interval_hours == 24 and policy.keep_last == 30
+    assert policy.destination == (destination or settings.state_dir / "backups")
+
+
+def test_custody_preflight_is_read_only_and_reservation_survives_abandoned_setup(tmp_path):
+    settings = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
+    custody = tmp_path / "desktop-custody"
+    service.recovery_key_custody(settings, [custody], first_time=True)
+    assert not settings.state_dir.exists()
+    service.recovery_key_custody(settings, [custody], first_time=True, reserve=True)
+    # Simulate a process crash before writing any files or initializing policy.
+    assert load_policy(settings).recipient_public_key is None
+    assert not custody.exists()
+    for target in (custody, custody / "nested", custody.parent):
+        with pytest.raises(BackupError):
+            update_policy(
+                settings, {}, upsert_target=BackupTarget(id="custody", label="Unsafe", path=target)
+            )
+    with pytest.raises(BackupError):
+        update_policy(settings, {"destination": custody / "archives"})
+    assert str(custody) in (settings.state_dir / service.KEY_EXCLUSIONS_FILE).read_text()
+
+
+def test_first_time_reservation_and_initialize_reject_configure_race(workspace, tmp_path):
+    settings, _, _, _, policy, _ = workspace
+    before = (settings.state_dir / service.POLICY_FILE).read_bytes()
+    excluded = (settings.state_dir / service.KEY_EXCLUSIONS_FILE).read_bytes()
+    new_private, new_public = tmp_path / "new/private.pem", tmp_path / "new/public.pem"
+    with pytest.raises(BackupError) as caught:
+        generate_recovery_key(
+            settings,
+            new_private,
+            new_public,
+            first_time=True,
+            protected_paths=[tmp_path / "native"],
+        )
+    assert caught.value.code == "already_configured"
+    assert not new_private.exists() and not new_public.exists()
+    assert (settings.state_dir / service.KEY_EXCLUSIONS_FILE).read_bytes() == excluded
+    assert (settings.state_dir / service.POLICY_FILE).read_bytes() == before
+    with pytest.raises(BackupError) as caught:
+        service.recovery_key_custody(settings, [tmp_path / "native"], first_time=True, reserve=True)
+    assert caught.value.code == "already_configured"
+
+    # Another configuration wins after key generation; initialization must reread it.
+    save_policy(settings, BackupPolicy())
+    generate_recovery_key(
+        settings, new_private, new_public, first_time=True, protected_paths=[tmp_path / "native"]
+    )
+    cache = tmp_path / "native/cache"
+    cache.parent.mkdir()
+    cache.write_bytes(b"synthetic ciphertext")
+    save_policy(settings, policy)
+    with pytest.raises(BackupError) as caught:
+        service.initialize_backups(
+            settings, new_public.read_text(), private_key_path=new_private, protected_key_path=cache
+        )
+    assert caught.value.code == "already_configured"
+    assert load_policy(settings) == policy
+
+
+def test_custody_reservation_blocks_concurrent_enrollment_before_native_write(
+    tmp_path, monkeypatch
+):
+    settings = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
+    custody = tmp_path / "native"
+    atomic = service.atomic_json
+    attempted = []
+
+    def racing_write(path, data):
+        if path.name == service.KEY_EXCLUSIONS_FILE:
+            with pytest.raises(BackupError) as caught:
+                update_policy(
+                    settings, {}, upsert_target=BackupTarget(id="race", label="Race", path=custody)
+                )
+            attempted.append(caught.value.code)
+        return atomic(path, data)
+
+    monkeypatch.setattr(service, "atomic_json", racing_write)
+    service.recovery_key_custody(settings, [custody], first_time=True, reserve=True)
+    assert attempted == ["backup_busy"]
+    with pytest.raises(BackupError) as caught:
+        update_policy(
+            settings, {}, upsert_target=BackupTarget(id="race", label="Race", path=custody)
+        )
+    assert caught.value.code == "recovery_key_capture"
+
+
+def test_first_time_destination_conflict_preserves_partial_setup(tmp_path):
+    settings = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
+    save_policy(settings, BackupPolicy(destination=tmp_path / "custom", keep_last=4))
+    before = (settings.state_dir / service.POLICY_FILE).read_bytes()
+    with pytest.raises(BackupError) as caught:
+        generate_recovery_key(
+            settings,
+            tmp_path / "keys/private",
+            tmp_path / "keys/public",
+            first_time=True,
+            destination=tmp_path / "different",
+        )
+    assert caught.value.code == "setup_conflict"
+    assert (settings.state_dir / service.POLICY_FILE).read_bytes() == before
+    assert not (tmp_path / "keys").exists()
+
+
+def test_latest_export_validates_receipt_and_publishes_exclusively(workspace, tmp_path):
+    settings = workspace[0]
+    receipt = create_backup(settings)
+    before = (settings.state_dir / service.OUTCOME_FILE).read_bytes()
+    output = tmp_path / "off-device/archive.sbak"
+    exported = service.export_latest_backup(settings, output)
+    assert exported["sha256"] == receipt["sha256"]
+    assert exported["bytes"] == receipt["bytes"]
+    assert output.read_bytes() == Path(receipt["path"]).read_bytes()
+    assert stat.S_IMODE(output.stat().st_mode) == 0o600
+    with pytest.raises(BackupError) as caught:
+        service.export_latest_backup(settings, output)
+    assert caught.value.code == "output_exists"
+    assert (settings.state_dir / service.OUTCOME_FILE).read_bytes() == before
+
+
+@pytest.mark.parametrize("damage", ["content", "size", "symlink", "receipt"])
+def test_latest_export_rejects_altered_or_unsafe_archive(workspace, tmp_path, damage):
+    settings = workspace[0]
+    receipt = create_backup(settings)
+    source = Path(receipt["path"])
+    if damage == "content":
+        raw = bytearray(source.read_bytes())
+        raw[-1] ^= 1
+        source.write_bytes(raw)
+    elif damage == "size":
+        source.write_bytes(source.read_bytes()[:-1])
+    elif damage == "symlink":
+        moved = source.with_suffix(".moved")
+        source.rename(moved)
+        source.symlink_to(moved)
+    else:
+        outcome = service._load_outcome(settings)
+        del outcome["last_success"]["sha256"]
+        service._save_outcome(settings, outcome)
+    output = tmp_path / "export/archive.sbak"
+    with pytest.raises(BackupError):
+        service.export_latest_backup(settings, output)
+    assert not output.exists()
+    assert not list(output.parent.glob(".backup-export-*"))
+
+
+def test_matching_key_export_is_safe_excluded_and_never_rotates(workspace, tmp_path):
+    settings, _, private, _, _, _ = workspace
+    before = (settings.state_dir / service.POLICY_FILE).read_bytes()
+    output = tmp_path / "portable/key.pem"
+    result = service.export_recovery_key(
+        settings,
+        private,
+        output,
+        expected_recipient=backup_status(settings)["recipient_fingerprint"],
+    )
+    assert output.read_bytes() == private.read_bytes()
+    assert "PRIVATE KEY" not in json.dumps(result)
+    assert stat.S_IMODE(output.stat().st_mode) == 0o600
+    with pytest.raises(BackupError):
+        update_policy(
+            settings, {}, upsert_target=BackupTarget(id="key", label="Key", path=output.parent)
+        )
+    with pytest.raises(BackupError) as caught:
+        service.export_recovery_key(settings, private, output)
+    assert caught.value.code == "output_exists"
+    wrong_private, wrong_public = tmp_path / "wrong/private", tmp_path / "wrong/public"
+    generate_recovery_key(settings, wrong_private, wrong_public)
+    with pytest.raises(BackupError) as caught:
+        service.export_recovery_key(settings, wrong_private, tmp_path / "portable/wrong.pem")
+    assert caught.value.code == "key_mismatch"
+    assert not (tmp_path / "portable/wrong.pem").exists()
+    assert (settings.state_dir / service.POLICY_FILE).read_bytes() == before
+
+
+@pytest.mark.parametrize("kind", ["data", "state", "source", "archives", "symlink"])
+def test_key_export_rejects_unsafe_outputs(workspace, tmp_path, kind):
+    settings, finance, private, _, policy, _ = workspace
+    parents = {
+        "data": settings.data_dir,
+        "state": settings.state_dir,
+        "source": finance,
+        "archives": policy.destination,
+    }
+    if kind == "symlink":
+        output = tmp_path / "linked.pem"
+        output.symlink_to(tmp_path / "missing.pem")
+    else:
+        output = parents[kind] / "key.pem"
+    with pytest.raises(BackupError):
+        service.export_recovery_key(settings, private, output)
+    assert not output.exists()
+
+
+def test_read_only_preflight_cannot_authorize_writes_after_enrollment(tmp_path):
+    settings = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
+    custody = tmp_path / "native"
+    service.recovery_key_custody(settings, [custody], first_time=True)
+    update_policy(settings, {}, upsert_target=BackupTarget(id="late", label="Late", path=custody))
+    with pytest.raises(BackupError) as caught:
+        generate_recovery_key(
+            settings,
+            tmp_path / "portable/key",
+            tmp_path / "portable/public",
+            first_time=True,
+            protected_paths=[custody],
+        )
+    assert caught.value.code == "recovery_key_capture"
+    assert not (tmp_path / "portable").exists()
+
+
+def test_failed_key_write_keeps_reserved_native_custody(tmp_path, monkeypatch):
+    settings = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
+    private, public = tmp_path / "keys/private", tmp_path / "keys/public"
+    custody = tmp_path / "native"
+    original = os.open
+
+    def fail_private(path, *args, **kwargs):
+        if path == private:
+            raise OSError("synthetic write failure")
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(service.os, "open", fail_private)
+    with pytest.raises(BackupError) as caught:
+        generate_recovery_key(settings, private, public, first_time=True, protected_paths=[custody])
+    assert caught.value.code == "key_write_failed"
+    assert not private.exists() and not public.exists()
+    assert not (settings.state_dir / service.POLICY_FILE).exists()
+    assert str(custody) in (settings.state_dir / service.KEY_EXCLUSIONS_FILE).read_text()
+
+
+def test_initialize_needs_reserved_matching_key_and_durable_copy(workspace, tmp_path):
+    settings, _, private, public, _, _ = workspace
+    save_policy(settings, BackupPolicy())
+    before = (settings.state_dir / service.POLICY_FILE).read_bytes()
+    cache = tmp_path / "native/cache"
+    cache.parent.mkdir()
+    cache.write_bytes(b"synthetic protected copy")
+    with pytest.raises(BackupError) as caught:
+        service.initialize_backups(
+            settings, public.read_text(), private_key_path=private, protected_key_path=cache
+        )
+    assert caught.value.code == "custody_not_reserved"
+    service.recovery_key_custody(settings, [cache.parent], first_time=True, reserve=True)
+    cache.write_bytes(b"")
+    with pytest.raises(BackupError) as caught:
+        service.initialize_backups(
+            settings, public.read_text(), private_key_path=private, protected_key_path=cache
+        )
+    assert caught.value.code == "protected_key_required"
+    assert (settings.state_dir / service.POLICY_FILE).read_bytes() == before
+
+
+@pytest.mark.parametrize("kind", ["archive", "key"])
+def test_export_publication_race_never_clobbers_existing_file(
+    workspace, tmp_path, monkeypatch, kind
+):
+    settings, _, private, _, _, _ = workspace
+    create_backup(settings)
+    output = tmp_path / "portable" / ("archive.sbak" if kind == "archive" else "key.pem")
+    link = os.link
+
+    def racing_link(source, destination, **kwargs):
+        if destination == output:
+            destination.write_bytes(b"existing user file")
+        return link(source, destination, **kwargs)
+
+    monkeypatch.setattr(service.os, "link", racing_link)
+    with pytest.raises(BackupError) as caught:
+        if kind == "archive":
+            service.export_latest_backup(settings, output)
+        else:
+            service.export_recovery_key(settings, private, output)
+    assert caught.value.code == "output_exists"
+    assert output.read_bytes() == b"existing user file"
+    assert not list(output.parent.glob(".backup-export-*"))
+    assert not list(output.parent.glob(".recovery-key-*"))
+
+
+def test_native_staging_reservation_rejects_stale_recipient(workspace, tmp_path):
+    settings = workspace[0]
+    before = (settings.state_dir / service.KEY_EXCLUSIONS_FILE).read_bytes()
+    with pytest.raises(BackupError) as caught:
+        service.recovery_key_custody(
+            settings, [tmp_path / "native"], reserve=True, expected_recipient="stale-fingerprint"
+        )
+    assert caught.value.code == "recipient_changed"
+    assert (settings.state_dir / service.KEY_EXCLUSIONS_FILE).read_bytes() == before
+
+
 def test_no_key_never_writes_plain_archive(workspace, tmp_path):
     settings = workspace[0]
     save_policy(settings, BackupPolicy())

@@ -1,0 +1,111 @@
+{
+  "scope": "backend",
+  "prepared_at": "2026-10-28T07:45:30.515367+00:00",
+  "project_id": 1,
+  "run_plan_id": 718,
+  "run_id": 712,
+  "source_assignment_attempt": "backend-1",
+  "contract_revision": 1,
+  "design_revision": 2,
+  "ticket_id": 14668,
+  "accepted_candidate_sha256": "81c9fe3d48cffc22d43d5c224d0d3e5c664a611571d2a49fbd3bebf086be9cbc",
+  "accepted_base": "1976d4bf96c8480652400e496534a7ed6b7e99d1",
+  "authority": "Root delegated evidence-copy assignment; no workflow or production source mutation.",
+  "acceptance_provenance": "tracker.brief 14668 completion_evidence_json: reviewer approve, root accepted unchanged candidate",
+  "artifacts": [
+    {
+      "file": "accepted-candidate.json",
+      "source": "/tmp/stackos-workflow-718/backend-candidate.json",
+      "sha256": "8e801f397141402a5d3b8ed8e8d95beb7c6222c9736036cb74ef8a3434534a92",
+      "bytes": 2238,
+      "disposition": "accepted candidate manifest"
+    },
+    {
+      "file": "focused-tests.txt",
+      "source": "/tmp/stackos-workflow-718/backend-focused-2.log",
+      "sha256": "15bb7f22b388db57a6f6b5e842bb9058bd65ee00262bff3aff633a5140cfc520",
+      "bytes": 3257,
+      "disposition": "passed: 130 tests; 10 warnings"
+    },
+    {
+      "file": "red-green-final.txt",
+      "source": "/tmp/stackos-workflow-718/backend-green-final.log",
+      "sha256": "0368b41f09e0a2b04821321c42db410e0d618281ac45bc50835c59fbc886bf6d",
+      "bytes": 114,
+      "disposition": "passed: 16 original red/green cases"
+    },
+    {
+      "file": "lint.txt",
+      "source": "/tmp/stackos-workflow-718/backend-lint-2.log",
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+      "bytes": 19,
+      "disposition": "passed: focused Ruff lint"
+    },
+    {
+      "file": "format-check.txt",
+      "source": "/tmp/stackos-workflow-718/backend-format-check.log",
+      "sha256": "f114d83b30c5c657ee43a847a45bafccaea255d82673feb87c26d252c61e29c1",
+      "bytes": 26,
+      "disposition": "passed: five Python files formatted"
+    }
+  ],
+  "source_freshness": {
+    "stackos/backups/service.py": {
+      "accepted_sha256": "1d01c4cc3e374857041dd14b6f401414a5269ea99ce8c29a72a33f1f1acd6c77",
+      "current_sha256": "1d01c4cc3e374857041dd14b6f401414a5269ea99ce8c29a72a33f1f1acd6c77",
+      "matches": true
+    },
+    "stackos/backups/filesystem.py": {
+      "accepted_sha256": "1fbab88a89ceaedbefd5e152e598165dbe340b27ad6e1fe7da3993f260afef68",
+      "current_sha256": "1fbab88a89ceaedbefd5e152e598165dbe340b27ad6e1fe7da3993f260afef68",
+      "matches": true
+    },
+    "stackos/cli/backup_commands.py": {
+      "accepted_sha256": "069478cae4163243c34131b7a8800fdfb3aa8659ab19aae498e596f9d916063b",
+      "current_sha256": "069478cae4163243c34131b7a8800fdfb3aa8659ab19aae498e596f9d916063b",
+      "matches": true
+    },
+    "tests/unit/test_backups.py": {
+      "accepted_sha256": "0bf0ce69d61b98cae1fb0c324010d80c82088b0edd5332ab3797935c8ab8524a",
+      "current_sha256": "0bf0ce69d61b98cae1fb0c324010d80c82088b0edd5332ab3797935c8ab8524a",
+      "matches": true
+    },
+    "tests/unit/test_backup_cli.py": {
+      "accepted_sha256": "d1e501f09a2df682dbf1ee32a475cd401c993d82bf166e0c9a5d4dfb9afb4838",
+      "current_sha256": "d1e501f09a2df682dbf1ee32a475cd401c993d82bf166e0c9a5d4dfb9afb4838",
+      "matches": true
+    },
+    "docs/backups.md": {
+      "accepted_sha256": "3aa784c9f9d563b6ff17b47431acb64819dc92f9d8f5aaa9702ca8aa52ffde75",
+      "current_sha256": "200c2422cdebd7d68d19b0f18598d0c18d52b4d7436af46001a130ec80061032",
+      "matches": false
+    }
+  },
+  "checks": {
+    "focused_tests_passed": 130,
+    "warnings": 10,
+    "original_red_green_passed": 16,
+    "lint": "passed",
+    "format": "passed"
+  },
+  "safety": {
+    "inspection": "All copied contents inspected before allowlisted copying; UTF-8 text or JSON only.",
+    "excluded": "No private keys, encrypted key copies, archives, databases, seeds, tokens, fixture trees or UI evidence copied.",
+    "public_metadata": "Paths, SHA-256 hashes, recipient fingerprints, statuses, test names and warnings are retained.",
+    "copy_integrity": "Exact byte copies; historical filenames and this index label superseded failures."
+  },
+  "freshness_note": "source_freshness is a historical snapshot at prepared_at. All five backend runtime/test files remain unchanged. The docs/backups.md snapshot current_sha256 of 200c2422 reflects the accepted native documentation extension, not the final document. A later root-owned wording-only Export backup/Export key correction produced 95911dd9; the final integrated manifest owns that current document. The accepted backend manifest and snapshot remain preserved as history.",
+  "freshness_snapshot_status": "historical_at_prepared_at",
+  "current_document_supersession": {
+    "path": "docs/backups.md",
+    "snapshot_sha256": "200c2422cdebd7d68d19b0f18598d0c18d52b4d7436af46001a130ec80061032",
+    "current_sha256": "95911dd929478d94003d418fc441d0cc6ccc90bdaf0493b748b110446c247bce",
+    "reason": "Root-owned wording-only Export backup/Export key label correction after the accepted native documentation extension.",
+    "current_authority": "../integration/integrated-candidate.json"
+  },
+  "history": [
+    "The original 16 focused cases failed before runtime implementation and later passed; original red receipt hash remains in the accepted manifest.",
+    "The initial full slice had one fixture destination conflict; the fixture was corrected without weakening preservation. Final slice: 130 passed.",
+    "Initial lint found two unused test bindings, repaired before the final lint pass."
+  ]
+}

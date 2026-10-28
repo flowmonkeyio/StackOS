@@ -1,0 +1,21 @@
+{
+  "command": [
+    "pnpm",
+    "--dir",
+    "ui",
+    "exec",
+    "eslint",
+    "--max-warnings",
+    "0",
+    "src/components/backups/BackupPanel.vue",
+    "src/components/backups/BackupPanel.spec.ts",
+    "src/components/ui/UiDropdownMenu.vue",
+    "src/components/ui/UiDropdownMenu.spec.ts",
+    "src/views/LocalSetupView.vue",
+    "src/App.local-setup.spec.ts"
+  ],
+  "started_at": "2026-10-28T14:51:54.074115+00:00",
+  "exit_code": 0,
+  "log": "/tmp/stackos-workflow-718/ui-ui2-repair1-lint-final.log",
+  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

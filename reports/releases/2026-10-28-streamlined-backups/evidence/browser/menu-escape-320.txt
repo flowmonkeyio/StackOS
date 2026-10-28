@@ -1,0 +1,219 @@
+[press] Pressed Enter
+
+[js] {
+  "rects": {
+    "Restore backup": {
+      "x": 16,
+      "y": 140,
+      "width": 123.09375,
+      "height": 32
+    },
+    "Back up now": {
+      "x": 32,
+      "y": 216,
+      "width": 128,
+      "height": 32
+    },
+    "Refresh backups": {
+      "x": 168,
+      "y": 216,
+      "width": 32,
+      "height": 32
+    },
+    "Export backup": {
+      "x": 165.703125,
+      "y": 489,
+      "width": 116.296875,
+      "height": 32
+    },
+    "Export key": {
+      "x": 170,
+      "y": 564,
+      "width": 112,
+      "height": 32
+    },
+    "Manage": {
+      "x": 185.953125,
+      "y": 720,
+      "width": 96.046875,
+      "height": 32
+    },
+    "Open backup folder": {
+      "x": 83.2074966430664,
+      "y": 615.9600219726562,
+      "width": 191.83499145507812,
+      "height": 31.3599853515625
+    },
+    "Backup settings": {
+      "x": 83.2074966430664,
+      "y": 647.3200073242188,
+      "width": 191.83499145507812,
+      "height": 31.3599853515625
+    },
+    "Included data and history": {
+      "x": 83.2074966430664,
+      "y": 678.6799926757812,
+      "width": 191.83499145507812,
+      "height": 31.3599853515625
+    }
+  },
+  "baseline": {
+    "Restore backup": {
+      "x": 16,
+      "y": 140,
+      "width": 123.09375,
+      "height": 32
+    },
+    "Back up now": {
+      "x": 32,
+      "y": 216,
+      "width": 128,
+      "height": 32
+    },
+    "Refresh backups": {
+      "x": 168,
+      "y": 216,
+      "width": 32,
+      "height": 32
+    },
+    "Export backup": {
+      "x": 165.703125,
+      "y": 489,
+      "width": 116.296875,
+      "height": 32
+    },
+    "Export key": {
+      "x": 170,
+      "y": 564,
+      "width": 112,
+      "height": 32
+    },
+    "Manage": {
+      "x": 185.953125,
+      "y": 720,
+      "width": 96.046875,
+      "height": 32
+    }
+  },
+  "scrollY": 0,
+  "mainScroll": 0,
+  "focus": "Manage backups",
+  "dialog": false,
+  "calls": [
+    {
+      "name": "backup.status",
+      "args": {}
+    }
+  ],
+  "menu": [
+    {
+      "name": "Open backup folder",
+      "y": 615.9600219726562,
+      "bottom": 647.3200073242188
+    },
+    {
+      "name": "Backup settings",
+      "y": 647.3200073242188,
+      "bottom": 678.6799926757812
+    },
+    {
+      "name": "Included data and history",
+      "y": 678.6799926757812,
+      "bottom": 710.0399780273438
+    }
+  ]
+}
+
+[press] Pressed Escape
+
+[js] true
+
+[js] {
+  "rects": {
+    "Restore backup": {
+      "x": 16,
+      "y": 140,
+      "width": 123.09375,
+      "height": 32
+    },
+    "Back up now": {
+      "x": 32,
+      "y": 216,
+      "width": 128,
+      "height": 32
+    },
+    "Refresh backups": {
+      "x": 168,
+      "y": 216,
+      "width": 32,
+      "height": 32
+    },
+    "Export backup": {
+      "x": 165.703125,
+      "y": 489,
+      "width": 116.296875,
+      "height": 32
+    },
+    "Export key": {
+      "x": 170,
+      "y": 564,
+      "width": 112,
+      "height": 32
+    },
+    "Manage": {
+      "x": 185.953125,
+      "y": 720,
+      "width": 96.046875,
+      "height": 32
+    }
+  },
+  "baseline": {
+    "Restore backup": {
+      "x": 16,
+      "y": 140,
+      "width": 123.09375,
+      "height": 32
+    },
+    "Back up now": {
+      "x": 32,
+      "y": 216,
+      "width": 128,
+      "height": 32
+    },
+    "Refresh backups": {
+      "x": 168,
+      "y": 216,
+      "width": 32,
+      "height": 32
+    },
+    "Export backup": {
+      "x": 165.703125,
+      "y": 489,
+      "width": 116.296875,
+      "height": 32
+    },
+    "Export key": {
+      "x": 170,
+      "y": 564,
+      "width": 112,
+      "height": 32
+    },
+    "Manage": {
+      "x": 185.953125,
+      "y": 720,
+      "width": 96.046875,
+      "height": 32
+    }
+  },
+  "scrollY": 0,
+  "mainScroll": 0,
+  "focus": "Manage",
+  "dialog": false,
+  "calls": [
+    {
+      "name": "backup.status",
+      "args": {}
+    }
+  ],
+  "menu": []
+}

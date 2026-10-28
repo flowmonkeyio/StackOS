@@ -1,0 +1,38 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.11, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Users/sergeyrura/Bin/content-stack
+configfile: pyproject.toml
+plugins: xdist-3.8.0, asyncio-1.3.0, httpx-0.36.2, anyio-4.13.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 130 items
+
+tests/unit/test_backups.py ............................................. [ 34%]
+.....................................................................    [ 87%]
+tests/unit/test_backup_cli.py .....                                      [ 91%]
+tests/unit/test_backup_operations.py ...                                 [ 93%]
+tests/integration/test_backup_recovery.py .                              [ 94%]
+tests/integration/test_mcp/test_mcp_backups_boundary.py ....             [ 97%]
+tests/integration/test_routes/test_backup_operations_routes.py ...       [100%]
+
+=============================== warnings summary ===============================
+tests/unit/test_backups.py::test_authenticated_malicious_zip_rejected_without_partial_output[duplicate]
+  /Users/sergeyrura/.local/share/uv/python/cpython-3.13.11-macos-aarch64-none/lib/python3.13/zipfile/__init__.py:1655: UserWarning: Duplicate name: 'manifest.json'
+    return self._open_to_write(zinfo, force_zip64=force_zip64)
+
+tests/integration/test_mcp/test_mcp_backups_boundary.py::test_backup_operations_are_absent_from_agent_discovery
+tests/integration/test_mcp/test_mcp_backups_boundary.py::test_backup_operations_are_absent_from_agent_discovery
+tests/integration/test_mcp/test_mcp_backups_boundary.py::test_backup_operations_cannot_be_called_through_mcp[backup.status]
+tests/integration/test_mcp/test_mcp_backups_boundary.py::test_backup_operations_cannot_be_called_through_mcp[backup.configure]
+tests/integration/test_mcp/test_mcp_backups_boundary.py::test_backup_operations_cannot_be_called_through_mcp[backup.create]
+tests/integration/test_routes/test_backup_operations_routes.py::test_local_console_configuration_preserves_enrolled_targets
+tests/integration/test_routes/test_backup_operations_routes.py::test_backup_controls_reject_absent_forged_run_and_secret_inputs
+tests/integration/test_routes/test_backup_operations_routes.py::test_public_mount_output_and_private_recovery_key_are_rejected
+  /Users/sergeyrura/Bin/content-stack/.venv/lib/python3.13/site-packages/alembic/config.py:612: DeprecationWarning: No path_separator found in configuration; falling back to legacy splitting on spaces, commas, and colons for prepend_sys_path.  Consider adding path_separator=os to Alembic config.
+    util.warn_deprecated(
+
+tests/integration/test_mcp/test_mcp_backups_boundary.py::test_backup_operations_are_absent_from_agent_discovery
+  /Users/sergeyrura/Bin/content-stack/.venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py:952: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute(statement, parameters)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 130 passed, 10 warnings in 3.70s =======================

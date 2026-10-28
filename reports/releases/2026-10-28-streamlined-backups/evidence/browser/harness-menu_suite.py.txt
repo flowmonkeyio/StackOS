@@ -1,0 +1,44 @@
+from datetime import datetime, timezone
+import json
+from pathlib import Path
+import subprocess
+
+root = Path('/tmp/stackos-workflow-718/option3-qa')
+prefix = ['stackos.browser','--session','browser-session:project-1:backup-simplification-qa:workflow-718']
+def run(name, steps):
+    result = subprocess.run(prefix + ['chain',json.dumps(steps),'--tab-id','1'],capture_output=True,text=True,timeout=40)
+    (root/(name+'.txt')).write_text(result.stdout+result.stderr)
+    assert result.returncode == 0 and 'ERROR:' not in result.stdout, name
+    return result.stdout
+
+setup = '''(() => {
+ const name=e=>e.getAttribute('aria-label')||e.textContent.trim().replace(/\\s+/g,' ');
+ window.qaMenuMeasure=()=>Object.fromEntries([...document.querySelectorAll('#cs-main button')].filter(e=>e.getBoundingClientRect().width).map(e=>{const r=e.getBoundingClientRect();return[name(e),{x:r.x,y:r.y,width:r.width,height:r.height}]}));
+ window.qaMenuBaseline=window.qaMenuMeasure();
+ window.qaMenuInspect=()=>({rects:window.qaMenuMeasure(),baseline:window.qaMenuBaseline,scrollY,mainScroll:document.querySelector('#cs-main').scrollTop,focus:name(document.activeElement),dialog:!!document.querySelector('[role=dialog]'),calls:window.qaCalls,menu:[...document.querySelectorAll('[role=menuitem]')].map(e=>({name:name(e),y:e.getBoundingClientRect().y,bottom:e.getBoundingClientRect().bottom}))});
+ [...document.querySelectorAll('#cs-main button')].find(e=>name(e)==='Manage').focus();
+ return window.qaMenuInspect();
+})()'''
+results=[]
+for width in [1280,390,320]:
+    run(f'menu-start-{width}',[['viewport',f'{width}x800'],['goto','http://127.0.0.1:5197/backup-qa?state=configured'],['js','new Promise(r=>setTimeout(()=>r(true),450))'],['js',setup]])
+    for scenario,steps in [
+        ('escape',[['press','Enter'],['js','window.qaMenuInspect()'],['press','Escape']]),
+        ('settings',[['press','Enter'],['press','ArrowDown'],['press','Enter'],['js','new Promise(r=>setTimeout(()=>r(true),250))'],['js','window.qaMenuInspect()'],['screenshot',str(root/f'settings-final-{width}.png')],['press','Escape']]),
+        ('history',[['press','Enter'],['press','ArrowDown'],['press','ArrowDown'],['press','Enter'],['js','new Promise(r=>setTimeout(()=>r(true),250))'],['js','window.qaMenuInspect()'],['press','Escape']]),
+        ('folder',[['press','Enter'],['press','Enter'],['js','new Promise(r=>setTimeout(()=>r(true),700))']]),
+    ]:
+        output=run(f'menu-{scenario}-{width}',steps+[['js','new Promise(r=>setTimeout(()=>r(true),200))'],['js','window.qaMenuInspect()']])
+        data=json.loads(output.rsplit('[js]',1)[1].strip())
+        drifts=[]
+        for name,before in data['baseline'].items():
+            after=data['rects'].get(name)
+            if not after or any(abs(before[k]-after[k])>.25 for k in ['x','y','width','height']):drifts.append(name)
+        assert not drifts,(width,scenario,drifts)
+        assert data['focus']=='Manage' and not data['dialog'],(width,scenario,data['focus'])
+        assert not any(c.get('name')=='backup.configure' for c in data['calls']),(width,scenario,'unexpected write')
+        if scenario=='folder':assert any(c.get('native')=='openBackupFolder' for c in data['calls'])
+        row={'width':width,'scenario':scenario,'stable':True,'focus':'Manage','no_settings_write':True,'scrollY':data['scrollY'],'mainScroll':data['mainScroll']}
+        results.append(row)
+        print(json.dumps(row),flush=True)
+(root/'menu-summary.json').write_text(json.dumps({'checked_at':datetime.now(timezone.utc).isoformat(),'passed':True,'cases':results},indent=2))

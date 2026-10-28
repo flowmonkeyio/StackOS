@@ -1,0 +1,13 @@
+{
+  "command": [
+    "pnpm",
+    "--dir",
+    "ui",
+    "run",
+    "type-check"
+  ],
+  "started_at": "2026-10-28T14:51:21.952069+00:00",
+  "exit_code": 0,
+  "log": "/tmp/stackos-workflow-718/ui-ui2-repair1-typecheck.log",
+  "sha256": "f622fd540ab37d931c3ab525b5f77db0a6be09e66e6fc976ad7cc6d42d2c39c6"
+}

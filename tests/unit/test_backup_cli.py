@@ -1,5 +1,6 @@
 """Local backup CLI regression and recovery proof, using synthetic records."""
 
+import json
 import sqlite3
 
 from typer.testing import CliRunner
@@ -176,3 +177,145 @@ def test_cli_target_registration_upserts_without_replacing_other_folders(tmp_pat
         )
         assert result.exit_code == 0, result.output
     assert {item.id for item in backups.load_policy(Settings()).targets} == {"first", "second"}
+
+
+def test_guarded_local_cli_setup_exports_and_inert_restore(tmp_path, monkeypatch):
+    monkeypatch.setenv("STACKOS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("STACKOS_STATE_DIR", str(tmp_path / "state"))
+    settings = Settings()
+    settings.ensure_dirs()
+    with sqlite3.connect(settings.db_path) as connection:
+        connection.execute("CREATE TABLE probe (value TEXT)")
+        connection.execute("INSERT INTO probe VALUES ('synthetic local setup')")
+    settings.seed_path.write_bytes(b"s" * 32)
+    settings.token_path.write_text("synthetic-token")
+    runner = CliRunner()
+    private, public = tmp_path / "portable/key.pem", tmp_path / "native/public.pem"
+    cache, destination = tmp_path / "native/key.enc", tmp_path / "archives"
+
+    def invoke(*args):
+        result = runner.invoke(app, [str(arg) for arg in args])
+        assert result.exit_code == 0, result.output
+        assert "PRIVATE KEY" not in result.output
+        assert "synthetic-token" not in result.output
+        return json.loads(result.output)
+
+    invoke(
+        "backups",
+        "configure",
+        "--interval-hours",
+        8,
+        "--keep-last",
+        19,
+        "--destination",
+        destination,
+    )
+    before = (settings.state_dir / "backup-policy.json").read_bytes()
+    result = invoke(
+        "backups",
+        "custody",
+        "--first-time",
+        "--protected-path",
+        cache.parent,
+        "--destination",
+        destination,
+    )
+    assert result["reserved"] is False
+    assert not (settings.state_dir / "backup-key-exclusions.json").exists()
+    result = invoke(
+        "backups",
+        "keygen",
+        "--first-time",
+        "--private-key-file",
+        private,
+        "--public-key-file",
+        public,
+        "--protected-path",
+        cache.parent,
+        "--destination",
+        destination,
+    )
+    recipient = result["recipient_fingerprint"]
+    # The native owner writes OS-encrypted bytes only after this durable reservation.
+    cache.write_bytes(b"synthetic protected copy")
+    assert (settings.state_dir / "backup-policy.json").read_bytes() == before
+    result = invoke(
+        "backups",
+        "initialize",
+        "--public-key-file",
+        public,
+        "--private-key-file",
+        private,
+        "--protected-key-file",
+        cache,
+        "--destination",
+        destination,
+    )
+    assert result["configured"] and result["enabled"]
+    assert result["interval_hours"] == 8 and result["keep_last"] == 19
+    policy_bytes = (settings.state_dir / "backup-policy.json").read_bytes()
+    rejected = runner.invoke(
+        app,
+        [
+            "backups",
+            "initialize",
+            "--public-key-file",
+            str(public),
+            "--private-key-file",
+            str(private),
+            "--protected-key-file",
+            str(cache),
+        ],
+    )
+    assert rejected.exit_code == 1 and "already_configured" in rejected.output
+    assert (settings.state_dir / "backup-policy.json").read_bytes() == policy_bytes
+    invoke("backup")
+    exported = tmp_path / "off-device/archive.sbak"
+    invoke("backups", "export", "--output", exported)
+    recovery_copy = tmp_path / "separate-key/key.pem"
+    invoke(
+        "backups",
+        "export-key",
+        "--private-key-file",
+        private,
+        "--output",
+        recovery_copy,
+        "--expected-recipient",
+        recipient,
+    )
+    assert recovery_copy.read_bytes() == private.read_bytes()
+    invoke(
+        "restore",
+        exported,
+        "--private-key-file",
+        recovery_copy,
+        "--output-dir",
+        tmp_path / "restored",
+    )
+    assert (tmp_path / "restored/state/seed.bin").read_bytes() == b"s" * 32
+    assert (settings.state_dir / "backup-policy.json").read_bytes() == policy_bytes
+    assert not (tmp_path / "restored/state/backup-policy.json").exists()
+
+
+def test_private_export_cli_never_outputs_key_bytes_on_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("STACKOS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("STACKOS_STATE_DIR", str(tmp_path / "state"))
+    private, public = tmp_path / "keys/private.pem", tmp_path / "keys/public.pem"
+    backups.generate_recovery_key(Settings(), private, public)
+    backups.update_policy(Settings(), {"recipient_public_key": public.read_text()})
+    private.write_text("synthetic-private-data-that-must-not-leak")
+    result = CliRunner().invoke(
+        app,
+        [
+            "backups",
+            "export-key",
+            "--private-key-file",
+            str(private),
+            "--output",
+            str(tmp_path / "copy.pem"),
+        ],
+    )
+    assert result.exit_code == 1
+    assert "invalid_private_key" in result.output
+    assert "synthetic-private-data" not in result.output
+    assert not (tmp_path / "copy.pem").exists()

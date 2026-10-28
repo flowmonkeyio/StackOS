@@ -1,0 +1,24 @@
+{
+  "command": [
+    "git",
+    "diff",
+    "--check",
+    "--",
+    "docs/setup.md",
+    "docs/ui-design-system.md",
+    "ui/src/App.local-setup.spec.ts",
+    "ui/src/components/backups/BackupPanel.vue",
+    "ui/src/components/backups/BackupPanel.spec.ts",
+    "ui/src/components/ui/UiButton.vue",
+    "ui/src/components/ui/UiButton.spec.ts",
+    "ui/src/lib/desktop.ts",
+    "ui/src/lib/desktop.spec.ts",
+    "ui/src/views/LocalSetupView.vue",
+    "ui/src/components/ui/UiDropdownMenu.vue",
+    "ui/src/components/ui/UiDropdownMenu.spec.ts"
+  ],
+  "started_at": "2026-10-28T14:51:54.064168+00:00",
+  "exit_code": 0,
+  "log": "/tmp/stackos-workflow-718/ui-ui2-repair1-diff-check.log",
+  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

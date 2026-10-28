@@ -17,10 +17,11 @@ routes.
 
 ## 2. Visual language
 
-- Neutral grayscale base; one blue accent.
+- Neutral grayscale base; one lime interaction accent from the semantic tokens.
 - Status tones used semantically only: emerald (success), amber (warning), red (danger), blue (info), and neutral gray.
 - Subtle borders > heavy shadows.
-- 8px max radius. 4px on controls, 6px on cards, 8px on dialogs.
+- Radius scale: xs 4px, sm 6px, md/lg 8px, xl 10px. Controls use sm,
+  cards use lg, and dialogs use xl.
 - Dark mode flips the semantic layer; component CSS does not branch.
 
 ## 3. Tokens
@@ -35,7 +36,7 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 | Color · accent | `accent.primary`, `accent.primaryHover`, `accent.primarySubtle`, `accent.primaryFg` |
 | Color · status | `success.*`, `warning.*`, `danger.*`, `info.*`, `neutral.*` |
 | Spacing | `0–24` (4px grid) |
-| Radius | `xs:2`, `sm:4`, `md:6`, `lg:8`, `full` |
+| Radius | `xs:4`, `sm:6`, `md:8`, `lg:8`, `xl:10`, `full` |
 | Shadow | `xs`, `sm`, `md`, `lg`, `xl` |
 | Z-index | `dropdown:1000`, `sticky:1100`, `popover:1200`, `tooltip:1300`, `modal:1400`, `toast:1500` |
 | Typography | `display.lg`, `display.md`, `h1`, `h2`, `h3`, `body.lg`, `body`, `body.sm`, `overline`, `mono` |

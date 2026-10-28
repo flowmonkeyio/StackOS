@@ -105,7 +105,7 @@ it.each([null, 7])(
     const wrapper = mount(App, {
       global: {
         plugins: [pinia, router],
-        stubs: { DesktopUpdatePrompt: true, TicketStatusChart: true },
+        stubs: { DesktopUpdatePrompt: true, TicketStatusChart: true, teleport: true },
       },
     })
     await flushPromises()
@@ -140,15 +140,19 @@ it.each([null, 7])(
     expect(wrapper.get('h1').text()).toBe('Backups')
     expect(backupsLink.attributes('aria-current')).toBe('page')
     const backups = wrapper.get('[aria-label="Local backups"]')
-    expect(backups.text()).toContain(
-      'This StackOS installation, project Finance data, and enrolled external folders.',
-    )
-    expect(backups.text()).toContain('Automatic backups are enabled.')
+    expect(wrapper.text()).toContain('Automatic backups for this installation.')
+    expect(backups.text()).toContain('Automatic backups on')
+    await backups.get('[data-dropdown-trigger]').trigger('click')
+    await backups
+      .findAll('[role="menuitem"]')
+      .find((item) => item.text() === 'Backup settings')!
+      .trigger('click')
+    await flushPromises()
     await backups.get('input[type="checkbox"]').setValue(false)
     await backups.get('form').trigger('submit')
     await flushPromises()
     expect(backups.text()).toContain('Backup settings saved.')
-    expect(backups.text()).toContain('Automatic backups are off')
+    expect(backups.text()).toContain('Automatic backups paused')
     expect(requests.slice(beforeNavigation)).toEqual([
       { url: '/api/v1/operations/backup.status/call', args: { response_mode: 'raw' } },
       {
@@ -173,7 +177,7 @@ it.each([null, 7])(
     await flushPromises()
     expect(reloaded.get('h1').text()).toBe('Backups')
     expect(reloaded.get('[aria-label="Local backups"]').text()).toContain(
-      'Automatic backups are off',
+      'Automatic backups paused',
     )
     expect(requests.slice(beforeReload)).toEqual([
       { url: '/api/v1/operations/backup.status/call', args: { response_mode: 'raw' } },

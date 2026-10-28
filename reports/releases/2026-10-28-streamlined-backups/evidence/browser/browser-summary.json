@@ -1,0 +1,347 @@
+{
+  "checked_at": "2026-10-28T14:58:58.659951+00:00",
+  "passed": true,
+  "cases": [
+    {
+      "case": "setup-fresh-1280",
+      "action": "Enable backups",
+      "frames": 160,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Back up now",
+      "issues": [],
+      "evidence": "setup-fresh-1280.txt"
+    },
+    {
+      "case": "setup-partial-1280",
+      "action": "Enable backups",
+      "frames": 160,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Back up now",
+      "issues": [],
+      "evidence": "setup-partial-1280.txt"
+    },
+    {
+      "case": "setup-cancel-1280",
+      "action": "Enable backups",
+      "frames": 160,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Enable backups",
+      "issues": [],
+      "evidence": "setup-cancel-1280.txt"
+    },
+    {
+      "case": "configured-backup-1280",
+      "action": "Back up now",
+      "frames": 160,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Back up now",
+      "issues": [],
+      "evidence": "configured-backup-1280.txt"
+    },
+    {
+      "case": "configured-archive-1280",
+      "action": "Export backup",
+      "frames": 160,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Export backup",
+      "issues": [],
+      "evidence": "configured-archive-1280.txt"
+    },
+    {
+      "case": "configured-key-1280",
+      "action": "Export key",
+      "frames": 160,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Export key",
+      "issues": [],
+      "evidence": "configured-key-1280.txt"
+    },
+    {
+      "case": "configured-restore-1280",
+      "action": "Restore backup",
+      "frames": 160,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Restore backup",
+      "issues": [],
+      "evidence": "configured-restore-1280.txt"
+    },
+    {
+      "case": "configured-refresh-1280",
+      "action": "Refresh backups",
+      "frames": 160,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Refresh backups",
+      "issues": [],
+      "evidence": "configured-refresh-1280.txt"
+    },
+    {
+      "case": "setup-fresh-390",
+      "action": "Enable backups",
+      "frames": 160,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Back up now",
+      "issues": [],
+      "evidence": "setup-fresh-390.txt"
+    },
+    {
+      "case": "setup-partial-390",
+      "action": "Enable backups",
+      "frames": 161,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Back up now",
+      "issues": [],
+      "evidence": "setup-partial-390.txt"
+    },
+    {
+      "case": "setup-cancel-390",
+      "action": "Enable backups",
+      "frames": 160,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Enable backups",
+      "issues": [],
+      "evidence": "setup-cancel-390.txt"
+    },
+    {
+      "case": "configured-backup-390",
+      "action": "Back up now",
+      "frames": 160,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Back up now",
+      "issues": [],
+      "evidence": "configured-backup-390.txt"
+    },
+    {
+      "case": "configured-archive-390",
+      "action": "Export backup",
+      "frames": 160,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Export backup",
+      "issues": [],
+      "evidence": "configured-archive-390.txt"
+    },
+    {
+      "case": "configured-key-390",
+      "action": "Export key",
+      "frames": 161,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Export key",
+      "issues": [],
+      "evidence": "configured-key-390.txt"
+    },
+    {
+      "case": "configured-restore-390",
+      "action": "Restore backup",
+      "frames": 160,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Restore backup",
+      "issues": [],
+      "evidence": "configured-restore-390.txt"
+    },
+    {
+      "case": "configured-refresh-390",
+      "action": "Refresh backups",
+      "frames": 161,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Refresh backups",
+      "issues": [],
+      "evidence": "configured-refresh-390.txt"
+    },
+    {
+      "case": "setup-fresh-320",
+      "action": "Enable backups",
+      "frames": 160,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Back up now",
+      "issues": [],
+      "evidence": "setup-fresh-320.txt"
+    },
+    {
+      "case": "setup-partial-320",
+      "action": "Enable backups",
+      "frames": 160,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Back up now",
+      "issues": [],
+      "evidence": "setup-partial-320.txt"
+    },
+    {
+      "case": "setup-cancel-320",
+      "action": "Enable backups",
+      "frames": 160,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Enable backups",
+      "issues": [],
+      "evidence": "setup-cancel-320.txt"
+    },
+    {
+      "case": "configured-backup-320",
+      "action": "Back up now",
+      "frames": 160,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Back up now",
+      "issues": [],
+      "evidence": "configured-backup-320.txt"
+    },
+    {
+      "case": "configured-archive-320",
+      "action": "Export backup",
+      "frames": 161,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Export backup",
+      "issues": [],
+      "evidence": "configured-archive-320.txt"
+    },
+    {
+      "case": "configured-key-320",
+      "action": "Export key",
+      "frames": 160,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Export key",
+      "issues": [],
+      "evidence": "configured-key-320.txt"
+    },
+    {
+      "case": "configured-restore-320",
+      "action": "Restore backup",
+      "frames": 160,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Restore backup",
+      "issues": [],
+      "evidence": "configured-restore-320.txt"
+    },
+    {
+      "case": "configured-refresh-320",
+      "action": "Refresh backups",
+      "frames": 160,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Refresh backups",
+      "issues": [],
+      "evidence": "configured-refresh-320.txt"
+    },
+    {
+      "case": "failure-error-Back",
+      "action": "Back up now",
+      "frames": 160,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Back up now",
+      "issues": [],
+      "evidence": "failure-error-Back.txt"
+    },
+    {
+      "case": "failure-error-Export",
+      "action": "Export key",
+      "frames": 160,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Export key",
+      "issues": [],
+      "evidence": "failure-error-Export.txt"
+    },
+    {
+      "case": "failure-refresh-error-Refresh",
+      "action": "Refresh backups",
+      "frames": 160,
+      "retained_controls": 6,
+      "shift_count": 0,
+      "focus": "Refresh backups",
+      "issues": [],
+      "evidence": "failure-refresh-error-Refresh.txt"
+    }
+  ],
+  "initial_cases": [
+    {
+      "case": "initial-fresh-1280",
+      "frames": 141,
+      "shifts": [],
+      "evidence": "initial-fresh-1280.txt"
+    },
+    {
+      "case": "initial-configured-1280",
+      "frames": 141,
+      "shifts": [],
+      "evidence": "initial-configured-1280.txt"
+    },
+    {
+      "case": "initial-initial-error-1280",
+      "frames": 142,
+      "shifts": [],
+      "evidence": "initial-initial-error-1280.txt"
+    },
+    {
+      "case": "initial-fresh-390",
+      "frames": 141,
+      "shifts": [],
+      "evidence": "initial-fresh-390.txt"
+    },
+    {
+      "case": "initial-configured-390",
+      "frames": 142,
+      "shifts": [],
+      "evidence": "initial-configured-390.txt"
+    },
+    {
+      "case": "initial-initial-error-390",
+      "frames": 142,
+      "shifts": [],
+      "evidence": "initial-initial-error-390.txt"
+    },
+    {
+      "case": "initial-fresh-320",
+      "frames": 141,
+      "shifts": [],
+      "evidence": "initial-fresh-320.txt"
+    },
+    {
+      "case": "initial-configured-320",
+      "frames": 141,
+      "shifts": [],
+      "evidence": "initial-configured-320.txt"
+    },
+    {
+      "case": "initial-initial-error-320",
+      "frames": 141,
+      "shifts": [],
+      "evidence": "initial-initial-error-320.txt"
+    }
+  ],
+  "failures": [],
+  "captures": [
+    "configured-1280-dark.png",
+    "configured-1280-light.png",
+    "fresh-1280-dark.png",
+    "paused-1280-dark.png",
+    "browser-1280-dark.png",
+    "legacy-shell-1280-dark.png",
+    "initial-error-1280-dark.png",
+    "configured-390-dark.png",
+    "configured-320-dark.png",
+    "configured-639-dark.png",
+    "configured-640-dark.png"
+  ],
+  "scope": "Actual App and backup components with isolated synthetic operations/native dialogs; each retained main-area control measured frame-by-frame; live API forbidden."
+}

@@ -1,0 +1,1397 @@
+uv run ruff check .
+E501 Line too long (110 > 100)
+  --> reports/design/2026-10-05-template-review/implementation/verify-preservation.py:20:101
+   |
+18 |     old, new = (baseline / path).read_text(), (root / path).read_text()
+19 |     table = re.search(r"(?m)^\|[^\n]+\n\| *---[^\n]+\n(?:\|[^\n]+\n)+", old)
+20 |     cells = [[cell.strip() for cell in line.strip("|").split("|")] for line in table[0].rstrip().splitlines()]
+   |                                                                                                     ^^^^^^^^^^
+21 |     rows = list(re.finditer(r"::article-evidence-row\{([^\n]+)\}\n#evidence\n([\s\S]*?)\n\n#decision\n([\s\S]*?)\n::", new))
+22 |     assert len(rows) == len(cells) - 2, slug
+   |
+
+E501 Line too long (124 > 100)
+  --> reports/design/2026-10-05-template-review/implementation/verify-preservation.py:21:101
+   |
+19 |     table = re.search(r"(?m)^\|[^\n]+\n\| *---[^\n]+\n(?:\|[^\n]+\n)+", old)
+20 |     cells = [[cell.strip() for cell in line.strip("|").split("|")] for line in table[0].rstrip().splitlines()]
+21 |     rows = list(re.finditer(r"::article-evidence-row\{([^\n]+)\}\n#evidence\n([\s\S]*?)\n\n#decision\n([\s\S]*?)\n::", new))
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^
+22 |     assert len(rows) == len(cells) - 2, slug
+23 |     for row, expected in zip(rows, cells[2:]):
+   |
+
+B905 `zip()` without an explicit `strict=` parameter
+  --> reports/design/2026-10-05-template-review/implementation/verify-preservation.py:23:26
+   |
+21 |     rows = list(re.finditer(r"::article-evidence-row\{([^\n]+)\}\n#evidence\n([\s\S]*?)\n\n#decision\n([\s\S]*?)\n::", new))
+22 |     assert len(rows) == len(cells) - 2, slug
+23 |     for row, expected in zip(rows, cells[2:]):
+   |                          ^^^^^^^^^^^^^^^^^^^^
+24 |         attrs = dict(re.findall(r'([\w-]+)="([^"]*)"', row[1]))
+25 |         assert [attrs["label"], row[2], row[3]] == expected, (slug, expected)
+   |
+help: Add explicit value for parameter `strict=`
+
+E501 Line too long (108 > 100)
+  --> reports/design/2026-10-05-template-review/implementation/verify-preservation.py:26:101
+   |
+24 |         attrs = dict(re.findall(r'([\w-]+)="([^"]*)"', row[1]))
+25 |         assert [attrs["label"], row[2], row[3]] == expected, (slug, expected)
+26 |         assert [attrs["record-heading"], attrs["evidence-label"], attrs["decision-label"]] == cells[0], slug
+   |                                                                                                     ^^^^^^^^
+27 |     restored = new[:rows[0].start()] + table[0].rstrip() + new[rows[-1].end():]
+28 |     assert restored == old, f"Copy/frontmatter/links outside first table changed: {slug}"
+   |
+
+E501 Line too long (114 > 100)
+  --> reports/design/2026-10-05-template-review/implementation/verify-preservation.py:29:101
+   |
+27 |     restored = new[:rows[0].start()] + table[0].rstrip() + new[rows[-1].end():]
+28 |     assert restored == old, f"Copy/frontmatter/links outside first table changed: {slug}"
+29 |     results.append({"article": slug, "exact_rows_preserved": len(rows), "all_other_source_bytes_preserved": True})
+   |                                                                                                     ^^^^^^^^^^^^^^
+30 |
+31 | for path in packet["write_ownership"]:
+   |
+
+E501 Line too long (197 > 100)
+  --> reports/design/2026-10-05-template-review/implementation/verify-preservation.py:35:101
+   |
+33 | …
+34 | …
+35 | … (r'<(?:header|section) class="(?:article|detail|integration-detail)-hero"[\s\S]*?</(?:header|section)>', "hero")]:
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+36 | …bel)
+   |
+
+E501 Line too long (172 > 100)
+  --> reports/design/2026-10-05-template-review/implementation/verify-preservation.py:38:101
+   |
+36 | …], (path, label)
+37 | …
+38 | …s/LibraryFrame.vue", "website/app/components/SiteHeader.vue", "website/app/pages/getting-started.vue"]
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+39 | …
+40 | …), path
+   |
+
+E501 Line too long (134 > 100)
+  --> reports/design/2026-10-05-template-review/implementation/verify-preservation.py:43:101
+   |
+42 | before_build = json.loads((report / "before-build-hashes.json").read_text())
+43 | changed_by_build = [path for path, digest in before_build.items() if hashlib.sha256((root / path).read_bytes()).hexdigest() != digest]
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+44 | assert not changed_by_build, changed_by_build
+45 | candidate = []
+   |
+
+E501 Line too long (318 > 100)
+  --> reports/design/2026-10-05-template-review/implementation/verify-preservation.py:52:101
+   |
+50 | …})
+51 | …
+52 | …], "contract_revision": packet["constraint_revision"], "candidate_sha256": identity, "changed_files": candidate, "articles": results, "shell_files_preserved": preserved, "source_files_unchanged_by_build": len(before_build)}
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+53 | …
+54 | …
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+ --> reports/design/2026-10-05-template-review/publication/retain.py:2:1
+  |
+1 |   """Retain final publication evidence and hashes; no external actions."""
+2 | / import json
+3 | | from pathlib import Path
+4 | | from stage import HERE, ROOT, sha, write
+  | |________________________________________^
+5 |
+6 |   refs = [
+  |
+help: Organize imports
+
+F401 [*] `pathlib.Path` imported but unused
+ --> reports/design/2026-10-05-template-review/publication/retain.py:3:21
+  |
+1 | """Retain final publication evidence and hashes; no external actions."""
+2 | import json
+3 | from pathlib import Path
+  |                     ^^^^
+4 | from stage import HERE, ROOT, sha, write
+  |
+help: Remove unused import: `pathlib.Path`
+
+E501 Line too long (111 > 100)
+  --> reports/design/2026-10-05-template-review/publication/retain.py:22:101
+   |
+20 |     'candidate_sha256': '97dc66f058dcac100801455a8e78071c8f2b5a15e19467d905e5f4ce7ed3b21b',
+21 |     'upload': {'action_call_id': 11646, 'files': 460, 'bytes': 10601476, 'failed': 0, 'skipped': 0},
+22 |     'production_verification': {'unique_urls': 475, 'attempts': 477, 'final_failures': 0, 'browser': 'passed'},
+   |                                                                                                     ^^^^^^^^^^^
+23 |     'preservation': {'desktop_entries_unchanged': 112, 'ownership_bytes_unchanged': True, 'desktop_feed_bytes_unchanged': True, 'insta…
+24 |     'independent_review': {
+   |
+
+E501 Line too long (194 > 100)
+  --> reports/design/2026-10-05-template-review/publication/retain.py:23:101
+   |
+21 | …: 0, 'skipped': 0},
+22 | …res': 0, 'browser': 'passed'},
+23 | …': True, 'desktop_feed_bytes_unchanged': True, 'installer_head_identity_unchanged': True, 'recovery_files': 382},
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+24 | …
+25 | …s': [],
+   |
+
+E501 Line too long (162 > 100)
+  --> reports/design/2026-10-05-template-review/publication/retain.py:26:101
+   |
+24 | …
+25 | …ccept', 'findings': [],
+26 | …er receipts and public hashes, recovery completeness, desktop preservation and bounded retries.',
+   |                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+27 | …ews; main separately viewed all four production browser screenshots and checked final console.',
+28 | … hashes and protected baseline match.',
+   |
+
+E501 Line too long (161 > 100)
+  --> reports/design/2026-10-05-template-review/publication/retain.py:27:101
+   |
+25 | …accept', 'findings': [],
+26 | …fer receipts and public hashes, recovery completeness, desktop preservation and bounded retries.',
+27 | …iews; main separately viewed all four production browser screenshots and checked final console.',
+   |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+28 | …t hashes and protected baseline match.',
+29 | …anifest existed at design acceptance. Current output was independently pinned after verifying recorded hashes and timestamps.',
+   |
+
+E501 Line too long (104 > 100)
+  --> reports/design/2026-10-05-template-review/publication/retain.py:28:101
+   |
+26 |         'scope': 'Candidate freshness, staged delta, exact transfer receipts and public hashes, recovery completeness, desktop preserv…
+27 |         'main_adjudication': 'Accepted all three independent reviews; main separately viewed all four production browser screenshots a…
+28 |         'source_checks': '12 accepted file hashes,119 build-input hashes and protected baseline match.',
+   |                                                                                                     ^^^^
+29 |         'artifact_identity_limit': 'No historical whole-output manifest existed at design acceptance. Current output was independently…
+30 |     },
+   |
+
+E501 Line too long (191 > 100)
+  --> reports/design/2026-10-05-template-review/publication/retain.py:29:101
+   |
+27 | …rately viewed all four production browser screenshots and checked final console.',
+28 | …otected baseline match.',
+29 | … at design acceptance. Current output was independently pinned after verifying recorded hashes and timestamps.',
+   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+30 | …
+31 | …
+   |
+
+E501 Line too long (118 > 100)
+  --> reports/design/2026-10-05-template-review/publication/retain.py:40:101
+   |
+38 |     'limits': [
+39 |         'Google processing pending; no claim about recrawl, page indexing or ranking.',
+40 |         'No Hostinger cache purge performed. Ordinary public URLs and StackOS browser served the verified candidate.',
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^
+41 |         'Two TLS verification timeouts were each retried once; original evidence retained.',
+42 |         'No desktop release, signing, install or daemon lifecycle mutation.',
+   |
+
+E501 Line too long (137 > 100)
+  --> reports/design/2026-10-05-template-review/publication/retain.py:44:101
+   |
+42 | …mon lifecycle mutation.',
+43 | …
+44 | …(ROOT)), 'sha256': sha(HERE / p), 'bytes': (HERE / p).stat().st_size} for p in refs],
+   |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+45 | …
+46 | …
+   |
+
+E501 Line too long (201 > 100)
+  --> reports/design/2026-10-05-template-review/publication/retain.py:47:101
+   |
+45 | …
+46 | …
+47 | … 'publication-proof.json'), 'bytes': (HERE / 'publication-proof.json').stat().st_size, 'evidence_files': len(refs)}))
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> reports/design/2026-10-05-template-review/publication/retry-public.py:2:1
+   |
+ 1 |   """Retry the two recorded transport failures once; preserve original evidence."""
+ 2 | / import copy
+ 3 | | import hashlib
+ 4 | | import json
+ 5 | | from pathlib import Path
+ 6 | | import urllib.error
+ 7 | | import urllib.request
+ 8 | | from stage import ROOT, HERE, sha, read, write
+   | |______________________________________________^
+ 9 |
+10 |   original_path = HERE / 'public-after/result.json'
+   |
+help: Organize imports
+
+F401 [*] `pathlib.Path` imported but unused
+ --> reports/design/2026-10-05-template-review/publication/retry-public.py:5:21
+  |
+3 | import hashlib
+4 | import json
+5 | from pathlib import Path
+  |                     ^^^^
+6 | import urllib.error
+7 | import urllib.request
+  |
+help: Remove unused import: `pathlib.Path`
+
+E501 Line too long (106 > 100)
+  --> reports/design/2026-10-05-template-review/publication/retry-public.py:23:101
+   |
+21 | retries = []
+22 | for prior in failed:
+23 |     row = {k: v for k, v in prior.items() if k in ('url', 'method', 'expected_sha256', 'expected_status')}
+   |                                                                                                     ^^^^^^
+24 |     request = urllib.request.Request(row['url'], headers={'Accept-Encoding': 'identity', 'Cache-Control': 'no-cache'})
+25 |     try:
+   |
+
+E501 Line too long (118 > 100)
+  --> reports/design/2026-10-05-template-review/publication/retry-public.py:24:101
+   |
+22 | for prior in failed:
+23 |     row = {k: v for k, v in prior.items() if k in ('url', 'method', 'expected_sha256', 'expected_status')}
+24 |     request = urllib.request.Request(row['url'], headers={'Accept-Encoding': 'identity', 'Cache-Control': 'no-cache'})
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^
+25 |     try:
+26 |         response = urllib.request.urlopen(request, timeout=25)
+   |
+
+E501 Line too long (161 > 100)
+  --> reports/design/2026-10-05-template-review/publication/retry-public.py:32:101
+   |
+30 | …
+31 | …
+32 | …turl(), headers={k.lower(): v for k, v in response.headers.items() if k.lower() != 'set-cookie'})
+   |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+33 | …)[:24] + '.body')
+34 | …
+   |
+
+E501 Line too long (131 > 100)
+  --> reports/design/2026-10-05-template-review/publication/retry-public.py:37:101
+   |
+35 |     row.update(body_path=str(body.relative_to(ROOT)), bytes=len(data), sha256=sha(body))
+36 |     expected = row['expected_sha256'] or sha(HERE / 'frozen/404.html')
+37 |     row['pass'] = row['status'] == row.get('expected_status', 200) and row['final_url'] == row['url'] and row['sha256'] == expected
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+38 |     retries.append(row)
+39 | report = copy.deepcopy(original)
+   |
+
+E501 Line too long (230 > 100)
+  --> reports/design/2026-10-05-template-review/publication/retry-public.py:44:101
+   |
+42 | …
+43 | …
+44 | …256': sha(original_path), 'original_failures': failed, 'retry_captures': retries, 'retry_request_count': 2, 'total_request_count': 477}
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+45 | …
+46 | …quests': 477, 'failures': report['failures']}))
+   |
+
+E501 Line too long (142 > 100)
+  --> reports/design/2026-10-05-template-review/publication/retry-public.py:46:101
+   |
+44 | …l_path.relative_to(ROOT)), 'original_sha256': sha(original_path), 'original_failures': failed, 'retry_captures': retries, 'retry_requ…
+45 | …
+46 | …rls': len(report['captures']), 'total_requests': 477, 'failures': report['failures']}))
+   |                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+47 | …
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+ --> reports/design/2026-10-05-template-review/publication/stage.py:2:1
+  |
+1 |   """Freeze the accepted existing export and stage website deltas. No build/network."""
+2 | / from pathlib import Path
+3 | | import hashlib
+4 | | import json
+5 | | import shutil
+  | |_____________^
+6 |
+7 |   HERE = Path(__file__).resolve().parent
+  |
+help: Organize imports
+
+E501 Line too long (114 > 100)
+  --> reports/design/2026-10-05-template-review/publication/stage.py:25:101
+   |
+24 | def phase(name):
+25 |     return 'feeds' if name in ('sitemap.xml', 'feed.xml') else 'documents' if name.endswith('.html') else 'assets'
+   |                                                                                                     ^^^^^^^^^^^^^^
+26 |
+27 | def inventory(folder):
+   |
+
+E501 Line too long (103 > 100)
+  --> reports/design/2026-10-05-template-review/publication/stage.py:33:101
+   |
+32 | def identity(rows):
+33 |     return hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+   |                                                                                                     ^^^
+34 |
+35 | def main():
+   |
+
+E501 Line too long (139 > 100)
+  --> reports/design/2026-10-05-template-review/publication/stage.py:37:101
+   |
+35 | …
+36 | …
+37 | …ndidate_sha256'] == '97dc66f058dcac100801455a8e78071c8f2b5a15e19467d905e5f4ce7ed3b21b'
+   |                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+38 | …
+39 | …
+   |
+
+E501 Line too long (121 > 100)
+  --> reports/design/2026-10-05-template-review/publication/stage.py:42:101
+   |
+40 |         assert sha(ROOT / row['path']) == row['sha256'], row['path']
+41 |     rows = inventory(BUILD)
+42 |     assert identity(rows) == 'ebf26e1d0ff132febae6797d2d304201144cf32f630e84db190c1dc440d4a8bd', 'Accepted output drift.'
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+43 |     old_manifest = PRIOR / 'build-stage-v2/output-manifest.json'
+44 |     old_upload = PRIOR / 'build-stage-v2/upload-manifest.json'
+   |
+
+E501 Line too long (112 > 100)
+  --> reports/design/2026-10-05-template-review/publication/stage.py:50:101
+   |
+48 |     assert read(old_upload)['build_manifest_sha256'] == sha(old_manifest)
+49 |     old = {r['path']: r for r in read(old_manifest)}
+50 |     excluded = [r for r in rows if Path(r['path']).name == '.DS_Store' or Path(r['path']).name.startswith('._')]
+   |                                                                                                     ^^^^^^^^^^^^
+51 |     files = [r for r in rows if r not in excluded]
+52 |     assert not any(r['path'].split('/')[0] == 'StackOS' or r['path'].startswith('google') and r['path'].endswith('.html') for r in fil…
+   |
+
+RUF021 [*] Parenthesize `a and b` expressions when chaining `and` and `or` together, to make the precedence clear
+  --> reports/design/2026-10-05-template-review/publication/stage.py:52:60
+   |
+50 |     excluded = [r for r in rows if Path(r['path']).name == '.DS_Store' or Path(r['path']).name.startswith('._')]
+51 |     files = [r for r in rows if r not in excluded]
+52 |     assert not any(r['path'].split('/')[0] == 'StackOS' or r['path'].startswith('google') and r['path'].endswith('.html') for r in fil…
+   |                                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+53 |     assert {r['path'] for r in files if r['path'].endswith('/index.html') or r['path'] == 'index.html'} == {n for n in old if n.endswi…
+54 |     for name in ('.htaccess', 'robots.txt', 'feed.xml', 'getting-started.md', '1a9b7d83c6b1250e4023904947fa6660.txt'):
+   |
+help: Parenthesize the `and` subexpression
+
+E501 Line too long (137 > 100)
+  --> reports/design/2026-10-05-template-review/publication/stage.py:52:101
+   |
+50 | …ame == '.DS_Store' or Path(r['path']).name.startswith('._')]
+51 | …
+52 | …OS' or r['path'].startswith('google') and r['path'].endswith('.html') for r in files)
+   |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+53 | …dswith('/index.html') or r['path'] == 'index.html'} == {n for n in old if n.endswith('/index.html') or n == 'index.html'}, 'Unexpecte…
+54 | …l', 'getting-started.md', '1a9b7d83c6b1250e4023904947fa6660.txt'):
+   |
+
+E501 Line too long (205 > 100)
+  --> reports/design/2026-10-05-template-review/publication/stage.py:53:101
+   |
+51 | …
+52 | …e') and r['path'].endswith('.html') for r in files)
+53 | … == 'index.html'} == {n for n in old if n.endswith('/index.html') or n == 'index.html'}, 'Unexpected route-set change.'
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+54 | …3c6b1250e4023904947fa6660.txt'):
+55 | …tatic-control change: ' + name
+   |
+
+E501 Line too long (118 > 100)
+  --> reports/design/2026-10-05-template-review/publication/stage.py:54:101
+   |
+52 |     assert not any(r['path'].split('/')[0] == 'StackOS' or r['path'].startswith('google') and r['path'].endswith('.html') for r in fil…
+53 |     assert {r['path'] for r in files if r['path'].endswith('/index.html') or r['path'] == 'index.html'} == {n for n in old if n.endswi…
+54 |     for name in ('.htaccess', 'robots.txt', 'feed.xml', 'getting-started.md', '1a9b7d83c6b1250e4023904947fa6660.txt'):
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^
+55 |         assert name in old and sha(BUILD / name) == old[name]['sha256'], 'Unexpected static-control change: ' + name
+56 |     changed = [dict(r) for r in files if r['path'] not in old or r['sha256'] != old[r['path']]['sha256']]
+   |
+
+E501 Line too long (116 > 100)
+  --> reports/design/2026-10-05-template-review/publication/stage.py:55:101
+   |
+53 |     assert {r['path'] for r in files if r['path'].endswith('/index.html') or r['path'] == 'index.html'} == {n for n in old if n.endswi…
+54 |     for name in ('.htaccess', 'robots.txt', 'feed.xml', 'getting-started.md', '1a9b7d83c6b1250e4023904947fa6660.txt'):
+55 |         assert name in old and sha(BUILD / name) == old[name]['sha256'], 'Unexpected static-control change: ' + name
+   |                                                                                                     ^^^^^^^^^^^^^^^^
+56 |     changed = [dict(r) for r in files if r['path'] not in old or r['sha256'] != old[r['path']]['sha256']]
+57 |     for row in changed:
+   |
+
+E501 Line too long (105 > 100)
+  --> reports/design/2026-10-05-template-review/publication/stage.py:56:101
+   |
+54 |     for name in ('.htaccess', 'robots.txt', 'feed.xml', 'getting-started.md', '1a9b7d83c6b1250e4023904947fa6660.txt'):
+55 |         assert name in old and sha(BUILD / name) == old[name]['sha256'], 'Unexpected static-control change: ' + name
+56 |     changed = [dict(r) for r in files if r['path'] not in old or r['sha256'] != old[r['path']]['sha256']]
+   |                                                                                                     ^^^^^
+57 |     for row in changed:
+58 |         row['phase'] = phase(row['path'])
+   |
+
+E501 Line too long (159 > 100)
+  --> reports/design/2026-10-05-template-review/publication/stage.py:63:101
+   |
+61 | …reeze differs.'
+62 | …
+63 | …'path'], 'sha256': r['sha256'], 'bytes': r['bytes']} for r in changed], key=lambda r: r['path'])
+   |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+64 | …')} == {r['path']: r for r in expected_stage}, 'Existing staging differs.'
+65 | …
+   |
+
+E501 Line too long (137 > 100)
+  --> reports/design/2026-10-05-template-review/publication/stage.py:64:101
+   |
+62 | …
+63 | … + '/' + r['path'], 'sha256': r['sha256'], 'bytes': r['bytes']} for r in changed], key=lambda r: r['path'])
+64 | … / 'staging')} == {r['path']: r for r in expected_stage}, 'Existing staging differs.'
+   |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+65 | …
+66 | …
+   |
+
+E501 Line too long (221 > 100)
+  --> reports/design/2026-10-05-template-review/publication/stage.py:77:101
+   |
+75 | …
+76 | …
+77 | …n PHASES if (HERE / 'staging' / p).exists()], 'conflict_policy': 'overwrite', 'error_policy': 'stop', 'follow_symlinks': False}
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+78 | …
+79 | …
+   |
+
+E501 Line too long (180 > 100)
+  --> reports/design/2026-10-05-template-review/publication/stage.py:80:101
+   |
+78 | …
+79 | …
+80 | …256': accepted['candidate_sha256'], 'source_manifest_sha256': sha(ACCEPTED), 'review_sha256': sha(REVIEW),
+   |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+81 | …: sha(HERE / 'output-manifest.json'),
+82 | …ifest.json'), 'prior_publication': 'run-plan:551',
+   |
+
+E501 Line too long (111 > 100)
+  --> reports/design/2026-10-05-template-review/publication/stage.py:81:101
+   |
+79 |     write(HERE / 'upload-manifest.json', {
+80 |         'run_plan_id': 556, 'execution_run_id': 551, 'source_candidate_sha256': accepted['candidate_sha256'], 'source_manifest_sha256'…
+81 |         'output_identity_sha256': identity(rows), 'output_manifest_sha256': sha(HERE / 'output-manifest.json'),
+   |                                                                                                     ^^^^^^^^^^^
+82 |         'previous_output_manifest_sha256': sha(HERE / 'previous-output-manifest.json'), 'prior_publication': 'run-plan:551',
+83 |         'prior_public_pass_sha256': sha(old_public), 'file_count': len(changed), 'bytes': sum(r['bytes'] for r in changed),
+   |
+
+E501 Line too long (124 > 100)
+  --> reports/design/2026-10-05-template-review/publication/stage.py:82:101
+   |
+80 | …     'run_plan_id': 556, 'execution_run_id': 551, 'source_candidate_sha256': accepted['candidate_sha256'], 'source_manifest_sha256': …
+81 | …     'output_identity_sha256': identity(rows), 'output_manifest_sha256': sha(HERE / 'output-manifest.json'),
+82 | …     'previous_output_manifest_sha256': sha(HERE / 'previous-output-manifest.json'), 'prior_publication': 'run-plan:551',
+   |                                                                                                   ^^^^^^^^^^^^^^^^^^^^^^^^
+83 | …     'prior_public_pass_sha256': sha(old_public), 'file_count': len(changed), 'bytes': sum(r['bytes'] for r in changed),
+84 | …     'files': sorted(changed, key=lambda r: (PHASES.index(r['phase']), r['path'])), 'files_identity_sha256': identity(sorted(changed,…
+   |
+
+E501 Line too long (123 > 100)
+  --> reports/design/2026-10-05-template-review/publication/stage.py:83:101
+   |
+81 | …     'output_identity_sha256': identity(rows), 'output_manifest_sha256': sha(HERE / 'output-manifest.json'),
+82 | …     'previous_output_manifest_sha256': sha(HERE / 'previous-output-manifest.json'), 'prior_publication': 'run-plan:551',
+83 | …     'prior_public_pass_sha256': sha(old_public), 'file_count': len(changed), 'bytes': sum(r['bytes'] for r in changed),
+   |                                                                                                   ^^^^^^^^^^^^^^^^^^^^^^^
+84 | …     'files': sorted(changed, key=lambda r: (PHASES.index(r['phase']), r['path'])), 'files_identity_sha256': identity(sorted(changed,…
+85 | …     'upload_input_sha256': sha(HERE / 'upload-input.json'), 'phase_order': list(PHASES), 'excluded': excluded,
+   |
+
+E501 Line too long (163 > 100)
+  --> reports/design/2026-10-05-template-review/publication/stage.py:84:101
+   |
+82 | …utput-manifest.json'), 'prior_publication': 'run-plan:551',
+83 | …: len(changed), 'bytes': sum(r['bytes'] for r in changed),
+84 | …hase']), r['path'])), 'files_identity_sha256': identity(sorted(changed, key=lambda r: r['path'])),
+   |                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+85 | …phase_order': list(PHASES), 'excluded': excluded,
+86 | …ved': ['.htaccess', 'robots.txt', 'feed.xml', 'getting-started.md', '1a9b7d83c6b1250e4023904947fa6660.txt'],
+   |
+
+E501 Line too long (114 > 100)
+  --> reports/design/2026-10-05-template-review/publication/stage.py:85:101
+   |
+83 | …     'prior_public_pass_sha256': sha(old_public), 'file_count': len(changed), 'bytes': sum(r['bytes'] for r in changed),
+84 | …     'files': sorted(changed, key=lambda r: (PHASES.index(r['phase']), r['path'])), 'files_identity_sha256': identity(sorted(changed,…
+85 | …     'upload_input_sha256': sha(HERE / 'upload-input.json'), 'phase_order': list(PHASES), 'excluded': excluded,
+   |                                                                                                   ^^^^^^^^^^^^^^
+86 | …     'remote_deletions': [], 'unchanged_static_controls_preserved': ['.htaccess', 'robots.txt', 'feed.xml', 'getting-started.md', '1a…
+87 | …     'protected_remote_only': ['/StackOS/', '/google1e7f2e5eaf4f6048.html'],
+   |
+
+E501 Line too long (173 > 100)
+  --> reports/design/2026-10-05-template-review/publication/stage.py:86:101
+   |
+84 | …]), r['path'])), 'files_identity_sha256': identity(sorted(changed, key=lambda r: r['path'])),
+85 | …_order': list(PHASES), 'excluded': excluded,
+86 | … ['.htaccess', 'robots.txt', 'feed.xml', 'getting-started.md', '1a9b7d83c6b1250e4023904947fa6660.txt'],
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+87 | …8.html'],
+88 | …tion551 evidence; live preflight must verify overwritten prior bytes before upload.', 'Desktop binaries and remote-only ownership are…
+   |
+
+E501 Line too long (254 > 100)
+  --> reports/design/2026-10-05-template-review/publication/stage.py:88:101
+   |
+86 | …t', 'feed.xml', 'getting-started.md', '1a9b7d83c6b1250e4023904947fa6660.txt'],
+87 | …
+88 | …eflight must verify overwritten prior bytes before upload.', 'Desktop binaries and remote-only ownership are excluded. Obsolete remote assets are retained.']})
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+89 | …] for r in changed), 'phases': {p: sum(r['phase'] == p for r in changed) for p in PHASES}, 'network_requests': 0}))
+   |
+
+E501 Line too long (210 > 100)
+  --> reports/design/2026-10-05-template-review/publication/stage.py:89:101
+   |
+87 | …
+88 | …ive preflight must verify overwritten prior bytes before upload.', 'Desktop binaries and remote-only ownership are excluded. Obsolete…
+89 | …bytes'] for r in changed), 'phases': {p: sum(r['phase'] == p for r in changed) for p in PHASES}, 'network_requests': 0}))
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+90 | …
+91 | …
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> reports/design/2026-10-05-template-review/publication/verify-public.py:7:1
+   |
+ 5 |   successful transfer receipts and checks every staged file over public HTTPS.
+ 6 |   """
+ 7 | / import argparse
+ 8 | | from concurrent.futures import ThreadPoolExecutor, as_completed
+ 9 | | from html.parser import HTMLParser
+10 | | from pathlib import Path
+11 | | from datetime import datetime, timezone
+12 | | import hashlib
+13 | | import re
+14 | | import shutil
+15 | | import urllib.error
+16 | | import urllib.parse
+17 | | import urllib.request
+18 | | from stage import HERE, ROOT, PHASES, ACCEPTED, sha, read, write, inventory
+   | |___________________________________________________________________________^
+19 |
+20 |   ORIGIN = 'https://stackos.flowmonkey.io'
+   |
+help: Organize imports
+
+E501 Line too long (108 > 100)
+  --> reports/design/2026-10-05-template-review/publication/verify-public.py:30:101
+   |
+29 | def route(name):
+30 |     return '/' if name == 'index.html' else '/' + name[:-10] if name.endswith('/index.html') else '/' + name
+   |                                                                                                     ^^^^^^^^
+31 |
+32 | class NoRedirect(urllib.request.HTTPRedirectHandler):
+   |
+
+E501 Line too long (101 > 100)
+  --> reports/design/2026-10-05-template-review/publication/verify-public.py:46:101
+   |
+44 |             self.canonicals.append(a.get('href'))
+45 |         if tag == 'meta':
+46 |             self.meta.setdefault(a.get('name') or a.get('property'), []).append(a.get('content', ''))
+   |                                                                                                     ^
+47 |
+48 | def listing(path, remote):
+   |
+
+E501 Line too long (106 > 100)
+  --> reports/design/2026-10-05-template-review/publication/verify-public.py:70:101
+   |
+68 |     args = parser.parse_args()
+69 |     out = args.output_dir.resolve()
+70 |     assert out.is_relative_to(HERE) and not out.exists(), 'Use a new publication-local capture directory.'
+   |                                                                                                     ^^^^^^
+71 |     manifest = read(HERE / 'upload-manifest.json')
+72 |     manifest_sha = sha(HERE / 'upload-manifest.json')
+   |
+
+E501 Line too long (115 > 100)
+  --> reports/design/2026-10-05-template-review/publication/verify-public.py:78:101
+   |
+76 |         assert sha(ROOT / row['path']) == row['sha256'], 'Source drift: ' + row['path']
+77 |     assert sha(HERE / 'output-manifest.json') == manifest['output_manifest_sha256']
+78 |     assert inventory(ROOT / 'website/.output/public') == read(HERE / 'output-manifest.json'), 'Build output drift.'
+   |                                                                                                     ^^^^^^^^^^^^^^^
+79 |     assert sha(HERE / 'upload-input.json') == manifest['upload_input_sha256']
+80 |     files = manifest['files']
+   |
+
+E501 Line too long (104 > 100)
+  --> reports/design/2026-10-05-template-review/publication/verify-public.py:82:101
+   |
+80 |     files = manifest['files']
+81 |     expected_stage = {r['phase'] + '/' + r['path']: (r['sha256'], r['bytes']) for r in files}
+82 |     assert {r['path']: (r['sha256'], r['bytes']) for r in inventory(HERE / 'staging')} == expected_stage
+   |                                                                                                     ^^^^
+83 |     before_entries = listing(args.release_before, '/StackOS')
+84 |     root_entries = listing(args.root_before, '/')
+   |
+
+E501 Line too long (130 > 100)
+  --> reports/design/2026-10-05-template-review/publication/verify-public.py:96:101
+   |
+94 |         for row in files:
+95 |             if row['before_sha256']:
+96 |                 add(route(row['path']), expected_sha=row['before_sha256'], recovery_path=row['path'], recovery_phase=row['phase'])
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+97 |         for name in protected:
+98 |             if name != '.htaccess':
+   |
+
+E501 Line too long (110 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:109:101
+    |
+107 |         assert preflight['upload_manifest_sha256'] == manifest_sha
+108 |         assert preflight['release_before_sha256'] == sha(args.release_before)
+109 |         assert before_entries == listing(args.release_after, '/StackOS'), 'Desktop release inventory changed.'
+    |                                                                                                     ^^^^^^^^^^
+110 |         transferred = set()
+111 |         for path in args.upload_receipt:
+    |
+
+E501 Line too long (120 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:116:101
+    |
+114 |             assert receipt['action_call']['status'] == result['status'] == 'success'
+115 |             assert result['provider'] == 'ftp' and result['operation'] == 'file.upload'
+116 |             assert not result.get('failed_count') and not result.get('failed_paths') and not result.get('skipped_count')
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^
+117 |             assert result['completed_count'] == len(result['completed_paths'])
+118 |             transferred.update(n.lstrip('/') for n in result['completed_paths'])
+    |
+
+E501 Line too long (121 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:119:101
+    |
+117 |             assert result['completed_count'] == len(result['completed_paths'])
+118 |             transferred.update(n.lstrip('/') for n in result['completed_paths'])
+119 |             receipt_refs.append({'path': str(path), 'sha256': sha(path), 'action_call_id': receipt['action_call']['id']})
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+120 |         assert transferred == {r['path'] for r in files}, 'Actual transfer set differs from frozen stage.'
+121 |         for row in files:
+    |
+
+E501 Line too long (106 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:120:101
+    |
+118 |             transferred.update(n.lstrip('/') for n in result['completed_paths'])
+119 |             receipt_refs.append({'path': str(path), 'sha256': sha(path), 'action_call_id': receipt['action_call']['id']})
+120 |         assert transferred == {r['path'] for r in files}, 'Actual transfer set differs from frozen stage.'
+    |                                                                                                     ^^^^^^
+121 |         for row in files:
+122 |             add(route(row['path']), expected_sha=row['sha256'])
+    |
+
+E501 Line too long (127 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:130:101
+    |
+128 |                 assert sha(ROOT / row['body_path']) == row['sha256']
+129 |                 add(path, expected_sha=row['sha256'])
+130 |     for slug, target in [('core', 'local-daemon'), ('linear', 'linear'), ('shopify', 'shopify'), ('trackbooth', 'trackbooth')]:
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+131 |         add('/library/integrations/plugins/' + slug + '/', expected_status=301, location=ORIGIN + '/library/integrations/' + target +…
+132 |     for path in ('/getting-started', '/library'):
+    |
+
+E501 Line too long (138 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:131:101
+    |
+129 | …
+130 | …linear', 'linear'), ('shopify', 'shopify'), ('trackbooth', 'trackbooth')]:
+131 | … '/', expected_status=301, location=ORIGIN + '/library/integrations/' + target + '/')
+    |                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+132 | …
+133 | …N + path + '/')
+    |
+
+E501 Line too long (140 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:134:101
+    |
+132 | …
+133 | … + path + '/')
+134 | …od': 'GET', 'expected_sha256': None, 'expected_status': 301, 'location': ORIGIN + '/'}
+    |                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+135 | …expected_status=404)
+136 | …
+    |
+
+E501 Line too long (143 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:137:101
+    |
+135 | …pected_status=404)
+136 | …
+137 | …s-pass', 'mode': args.mode, 'planned_requests': len(requests), 'network_requests': 0}))
+    |                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+138 | …
+139 | …
+    |
+
+E501 Line too long (195 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:145:101
+    |
+143 | …
+144 | …
+145 | …User-Agent': 'StackOS-website-556-verification/1.0', 'Accept-Encoding': 'identity', 'Cache-Control': 'no-cache'})
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+146 | …
+147 | … timeout=25)
+    |
+
+E501 Line too long (169 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:151:101
+    |
+149 | …
+150 | …
+151 | ….geturl(), headers={k.lower(): v for k, v in response.headers.items() if k.lower() != 'set-cookie'})
+    |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+152 | …
+153 | …
+    |
+
+E501 Line too long (131 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:157:101
+    |
+155 |         except (urllib.error.URLError, OSError, TimeoutError, AssertionError) as error:
+156 |             row['error'] = str(error)
+157 |         row['pass'] = row.get('status') == row.get('expected_status', 200) and row.get('final_url') == url and not row.get('error')
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+158 |         if row['method'] == 'GET':
+159 |             body = out / (hashlib.sha256(url.encode()).hexdigest()[:24] + '.body')
+    |
+
+E501 Line too long (123 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:162:101
+    |
+160 |             body.write_bytes(data)
+161 |             row.update(body_path=str(body.relative_to(ROOT)), bytes=len(data), sha256=sha(body))
+162 |             row['pass'] = bool(row['pass'] and (row['expected_sha256'] is None or row['sha256'] == row['expected_sha256']))
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+163 |         else:
+164 |             row['pass'] = bool(row['pass'] and all(row.get('headers', {}).get(k) for k in HEADERS))
+    |
+
+E501 Line too long (127 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:166:101
+    |
+164 | …         row['pass'] = bool(row['pass'] and all(row.get('headers', {}).get(k) for k in HEADERS))
+165 | …         if row.get('expected_headers'):
+166 | …             row['pass'] = bool(row['pass'] and all(row['headers'].get(k) == v for k, v in row['expected_headers'].items()))
+    |                                                                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+167 | …         row['pass'] = bool(row['pass'] and row.get('headers', {}).get('content-type', '').startswith('application/x-apple-diskimage…
+168 | …     headers = row.get('headers', {})
+    |
+
+E501 Line too long (138 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:167:101
+    |
+165 | …
+166 | …l(row['headers'].get(k) == v for k, v in row['expected_headers'].items()))
+167 | …t('headers', {}).get('content-type', '').startswith('application/x-apple-diskimage'))
+    |                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+168 | …
+169 | …
+    |
+
+E501 Line too long (121 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:170:101
+    |
+168 |         headers = row.get('headers', {})
+169 |         if row.get('location'):
+170 |             row['pass'] = bool(row['pass'] and urllib.parse.urljoin(url, headers.get('location', '')) == row['location'])
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+171 |         elif url.endswith('/') and row.get('expected_status', 200) == 200:
+172 |             page = Page(data.decode('utf-8', errors='replace'))
+    |
+
+E501 Line too long (135 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:173:101
+    |
+171 | …_status', 200) == 200:
+172 | …'replace'))
+173 | …ots', []) + page.meta.get('googlebot', [])) + ' ' + headers.get('x-robots-tag', '')
+    |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+174 | …canonicals == [url], 'social_url': page.meta.get('og:url') == [url],
+175 | …(noindex|nofollow|none)\b', directives.lower())),
+    |
+
+E501 Line too long (120 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:174:101
+    |
+172 | …     page = Page(data.decode('utf-8', errors='replace'))
+173 | …     directives = ' '.join(page.meta.get('robots', []) + page.meta.get('googlebot', [])) + ' ' + headers.get('x-robots-tag', '')
+174 | …     row['page_checks'] = {'canonical': page.canonicals == [url], 'social_url': page.meta.get('og:url') == [url],
+    |                                                                                               ^^^^^^^^^^^^^^^^^^^^
+175 | …         'indexable': not bool(re.search(r'\b(noindex|nofollow|none)\b', directives.lower())),
+176 | …         'html_content_type': headers.get('content-type', '').startswith('text/html'),
+    |
+
+E501 Line too long (101 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:175:101
+    |
+173 | …     directives = ' '.join(page.meta.get('robots', []) + page.meta.get('googlebot', [])) + ' ' + headers.get('x-robots-tag', '')
+174 | …     row['page_checks'] = {'canonical': page.canonicals == [url], 'social_url': page.meta.get('og:url') == [url],
+175 | …         'indexable': not bool(re.search(r'\b(noindex|nofollow|none)\b', directives.lower())),
+    |                                                                                               ^
+176 | …         'html_content_type': headers.get('content-type', '').startswith('text/html'),
+177 | …         'security_headers': headers.get('x-content-type-options') == 'nosniff' and headers.get('x-frame-options') == 'DENY'
+    |
+
+E501 Line too long (131 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:177:101
+    |
+175 | …     'indexable': not bool(re.search(r'\b(noindex|nofollow|none)\b', directives.lower())),
+176 | …     'html_content_type': headers.get('content-type', '').startswith('text/html'),
+177 | …     'security_headers': headers.get('x-content-type-options') == 'nosniff' and headers.get('x-frame-options') == 'DENY'
+    |                                                                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+178 | …         and headers.get('referrer-policy') == 'strict-origin-when-cross-origin' and 'max-age=' in headers.get('strict-transport-sec…
+179 | …         and 'preload' not in headers.get('strict-transport-security', '') and bool(headers.get('permissions-policy'))}
+    |
+
+E501 Line too long (154 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:178:101
+    |
+176 | …e', '').startswith('text/html'),
+177 | …pe-options') == 'nosniff' and headers.get('x-frame-options') == 'DENY'
+178 | …rict-origin-when-cross-origin' and 'max-age=' in headers.get('strict-transport-security', '')
+    |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+179 | …transport-security', '') and bool(headers.get('permissions-policy'))}
+180 | …checks'].values()))
+    |
+
+E501 Line too long (130 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:179:101
+    |
+177 | …             'security_headers': headers.get('x-content-type-options') == 'nosniff' and headers.get('x-frame-options') == 'DENY'
+178 | …                 and headers.get('referrer-policy') == 'strict-origin-when-cross-origin' and 'max-age=' in headers.get('strict-trans…
+179 | …                 and 'preload' not in headers.get('strict-transport-security', '') and bool(headers.get('permissions-policy'))}
+    |                                                                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+180 | …         row['pass'] = bool(row['pass'] and all(row['page_checks'].values()))
+181 | …     if url.endswith('/feed.xml') or url.endswith('/getting-started.md'):
+    |
+
+E501 Line too long (167 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:184:101
+    |
+182 | …get('x-robots-tag', ''))
+183 | …
+184 | …type', '').startswith('text/markdown') and ORIGIN + '/getting-started/' in headers.get('link', ''))
+    |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+185 | …
+186 | …
+    |
+
+E501 Line too long (114 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:191:101
+    |
+189 |             captures.append(future.result())
+190 |             if len(captures) % 50 == 0:
+191 |                 print(__import__('json').dumps({'captured': len(captures), 'planned': len(requests)}), flush=True)
+    |                                                                                                     ^^^^^^^^^^^^^^
+192 |     failures = [r for r in captures if not r['pass']]
+193 |     if args.mode == 'preflight' and not failures:
+    |
+
+E501 Line too long (258 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:199:101
+    |
+197 | …
+198 | …
+199 | …' / p), 'remote_path': '/'} for p in PHASES if (out / 'recovery' / p).exists()], 'conflict_policy': 'overwrite', 'error_policy': 'stop', 'follow_symlinks': False})
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+200 | …
+201 | …time.now(timezone.utc).isoformat(),
+    |
+
+E501 Line too long (130 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:201:101
+    |
+199 | … {'items': [{'local_path': str(out / 'recovery' / p), 'remote_path': '/'} for p in PHASES if (out / 'recovery' / p).exists()], 'conf…
+200 | …entory(out / 'recovery'))
+201 | … 'pass', 'mode': args.mode, 'checked_at': datetime.now(timezone.utc).isoformat(),
+    |                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+202 | …51, 'upload_manifest_sha256': manifest_sha,
+203 | …_before), 'root_before_sha256': sha(args.root_before),
+    |
+
+UP017 [*] Use `datetime.UTC` alias
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:201:105
+    |
+199 |         write(out / 'recovery-upload-input.json', {'items': [{'local_path': str(out / 'recovery' / p), 'remote_path': '/'} for p in P…
+200 |         write(out / 'recovery-manifest.json', inventory(out / 'recovery'))
+201 |     report = {'status': 'repair' if failures else 'pass', 'mode': args.mode, 'checked_at': datetime.now(timezone.utc).isoformat(),
+    |                                                                                                         ^^^^^^^^^^^^
+202 |         'run_plan_id': 556, 'execution_run_id': 551, 'upload_manifest_sha256': manifest_sha,
+203 |         'release_before_sha256': sha(args.release_before), 'root_before_sha256': sha(args.root_before),
+    |
+help: Convert to `datetime.UTC` alias
+
+E501 Line too long (103 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:203:101
+    |
+201 |     report = {'status': 'repair' if failures else 'pass', 'mode': args.mode, 'checked_at': datetime.now(timezone.utc).isoformat(),
+202 |         'run_plan_id': 556, 'execution_run_id': 551, 'upload_manifest_sha256': manifest_sha,
+203 |         'release_before_sha256': sha(args.release_before), 'root_before_sha256': sha(args.root_before),
+    |                                                                                                     ^^^
+204 |         'release_after_sha256': sha(args.release_after) if args.release_after else None,
+205 |         'preflight_result_sha256': sha(args.preflight_result) if args.preflight_result else None,
+    |
+
+E501 Line too long (116 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:206:101
+    |
+204 |         'release_after_sha256': sha(args.release_after) if args.release_after else None,
+205 |         'preflight_result_sha256': sha(args.preflight_result) if args.preflight_result else None,
+206 |         'upload_receipts': receipt_refs, 'captures': sorted(captures, key=lambda r: r['url']), 'failures': failures,
+    |                                                                                                     ^^^^^^^^^^^^^^^^
+207 |         'limits': ['One bounded public request per URL; no upload or automatic retry.', 'Recovery restores overwritten existing websi…
+208 |     write(out / 'result.json', report)
+    |
+
+E501 Line too long (436 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:207:101
+    |
+205 | …e,
+206 | …'failures': failures,
+207 | …ry restores overwritten existing website bytes; new hashed assets may remain harmlessly remote.', 'Desktop release inventory/feed bytes/installer HEAD identity only; no binary download or signing claim.', '.htaccess unchanged and not staged; observed security/redirect checks verify its deployed behavior.', 'No indexing or ranking claim.']}
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+208 | …
+209 | …lures': len(failures), 'result': str(out / 'result.json')}))
+    |
+
+E501 Line too long (155 > 100)
+   --> reports/design/2026-10-05-template-review/publication/verify-public.py:209:101
+    |
+207 | …oad or automatic retry.', 'Recovery restores overwritten existing website bytes; new hashed assets may remain harmlessly remote.', '…
+208 | …
+209 | …, 'requests': len(captures), 'failures': len(failures), 'result': str(out / 'result.json')}))
+    |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+210 | …
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> reports/releases/stackos-2.1.34/evidence/final-artifact-review.py:2:1
+   |
+ 1 |   """Independent, read-only final-app binding and offline contract check."""
+ 2 | / import argparse
+ 3 | | import datetime
+ 4 | | import hashlib
+ 5 | | import json
+ 6 | | from pathlib import Path
+ 7 | | import subprocess
+ 8 | | import tempfile
+   | |_______________^
+ 9 |
+10 |   EXPECTED_HOST_COMMIT = "de7c87c92d085ec221a2de4f32dbf481f7269bcd"
+   |
+help: Organize imports
+
+E501 Line too long (105 > 100)
+  --> reports/releases/stackos-2.1.34/evidence/final-artifact-review.py:63:101
+   |
+61 | READ = "https://www.googleapis.com/auth/webmasters.readonly"
+62 | WRITE = "https://www.googleapis.com/auth/webmasters"
+63 | methods = ("oauth2_authorization_code", "oauth2_access_token", "oauth2_refresh_token", "service-account")
+   |                                                                                                     ^^^^^
+64 | contracts = []
+65 | for method in methods:
+   |
+
+E501 Line too long (112 > 100)
+  --> reports/releases/stackos-2.1.34/evidence/final-artifact-review.py:67:101
+   |
+65 | for method in methods:
+66 |     default = get_auth_contract("google-search-console", method=method)
+67 |     explicit_read = get_auth_contract("google-search-console", method=method, config={"access_mode":"readonly"})
+   |                                                                                                     ^^^^^^^^^^^^
+68 |     write = get_auth_contract("google-search-console", method=method, config={"access_mode":"sitemap_write"})
+69 |     assert default.scopes == explicit_read.scopes == (READ,)
+   |
+
+E501 Line too long (109 > 100)
+  --> reports/releases/stackos-2.1.34/evidence/final-artifact-review.py:68:101
+   |
+66 |     default = get_auth_contract("google-search-console", method=method)
+67 |     explicit_read = get_auth_contract("google-search-console", method=method, config={"access_mode":"readonly"})
+68 |     write = get_auth_contract("google-search-console", method=method, config={"access_mode":"sitemap_write"})
+   |                                                                                                     ^^^^^^^^^
+69 |     assert default.scopes == explicit_read.scopes == (READ,)
+70 |     assert write.scopes == (WRITE,)
+   |
+
+E501 Line too long (130 > 100)
+  --> reports/releases/stackos-2.1.34/evidence/final-artifact-review.py:75:101
+   |
+73 | …", WRITE, {READ})
+74 | …AD, {WRITE})
+75 | …"stackos"),"stackos-connectors":importlib.metadata.version("stackos-connectors")}
+   |                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+76 | …onnectors":"0.2.1"}, versions
+77 | …:contracts,"scope_compatibility":"pass","loaded_sources":{"stackos":str(Path(stackos.__file__).resolve()),"stackos_connectors":str(Pa…
+   |
+
+UP017 [*] Use `datetime.UTC` alias
+  --> reports/releases/stackos-2.1.34/evidence/final-artifact-review.py:94:44
+   |
+92 |         "run_plan_id":572,"execution_id":567,"attempt":1,"contract_revision":1,
+93 |         "source_host_commit":EXPECTED_HOST_COMMIT,"source_package_commit":EXPECTED_PACKAGE_COMMIT,
+94 |         "checked_at":datetime.datetime.now(datetime.timezone.utc).isoformat(),
+   |                                            ^^^^^^^^^^^^^^^^^^^^^
+95 |         "app":str(app),"accepted_manifest_hashes":EXPECTED_MANIFESTS,
+96 |         "packaged_files":checks,"offline_bundled_python":offline,"build_info":build_info,
+   |
+help: Convert to `datetime.UTC` alias
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> reports/releases/stackos-2.1.34/recover_notarized_release.py:9:1
+   |
+ 7 |             update metadata, and create the stable alias. No install or upload.
+ 8 |   """
+ 9 | / import argparse
+10 | | from datetime import UTC, datetime
+11 | | import hashlib
+12 | | import json
+13 | | import os
+14 | | from pathlib import Path
+15 | | import subprocess
+16 | | import sys
+   | |__________^
+17 |
+18 |   ROOT = Path(__file__).resolve().parent
+   |
+help: Organize imports
+
+E501 Line too long (109 > 100)
+  --> reports/releases/stackos-2.1.34/recover_notarized_release.py:44:101
+   |
+42 | parser.add_argument('phase', choices=['continue', 'finish'])
+43 | parser.add_argument('host_commit', help='Exact accepted clean host commit')
+44 | parser.add_argument('--attempt', default='1', help='Distinct receipt label for a later status-check attempt')
+   |                                                                                                     ^^^^^^^^^
+45 | args = parser.parse_args()
+46 | assert args.attempt and all(c.isalnum() or c in '-_' for c in args.attempt)
+   |
+
+E501 Line too long (130 > 100)
+  --> reports/releases/stackos-2.1.34/recover_notarized_release.py:51:101
+   |
+49 | head = subprocess.check_output(['git', '-C', str(HOST), 'rev-parse', 'HEAD'], text=True).strip()
+50 | assert head == args.host_commit and len(head) == 40, 'Host commit mismatch'
+51 | assert not subprocess.check_output(['git', '-C', str(HOST), 'status', '--porcelain=v1'], text=True).strip(), 'Dirty host checkout'
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+52 | assert json.loads((DESKTOP / 'package.json').read_text())['version'] == '2.1.34'
+53 | config = json.loads(CONFIG.read_bytes())
+   |
+
+E501 Line too long (132 > 100)
+  --> reports/releases/stackos-2.1.34/recover_notarized_release.py:59:101
+   |
+57 | …e-config.json').read_bytes()) == {'updateUrl': 'https://stackos.flowmonkey.io/StackOS/'}
+58 | …
+59 | …CKOS_SKIP_NOTARIZATION', 'STACKOS_UNSIGNED_DEV', 'STACKOS_DESKTOP_BUILD_DRY_RUN'):
+   |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+60 | …
+61 | …PLE_KEYCHAIN_PROFILE=PROFILE,
+   |
+
+E501 Line too long (102 > 100)
+  --> reports/releases/stackos-2.1.34/recover_notarized_release.py:65:101
+   |
+63 |            STACKOS_REQUIRE_SIGNING='1', STACKOS_REQUIRE_UPDATE_URL='1')
+64 | receipt = dict(phase=args.phase, status='running', host_commit=head, host_version='2.1.34',
+65 |                connector_version='0.2.1', app_submission_id=APP_SUBMISSION, config_sha256=sha(CONFIG),
+   |                                                                                                     ^^
+66 |                started_at=datetime.now(UTC).isoformat(), steps=[], local_activation=False)
+67 | write_json(receipt_path, receipt)
+   |
+
+E501 Line too long (101 > 100)
+  --> reports/releases/stackos-2.1.34/recover_notarized_release.py:72:101
+   |
+70 | def step(name, command, check=True):
+71 |     log = ROOT / f'recovery-{args.phase}-{args.attempt}-{len(receipt["steps"]):02d}-{name}.log'
+72 |     record = dict(name=name, command=command, started_at=datetime.now(UTC).isoformat(), log=str(log))
+   |                                                                                                     ^
+73 |     receipt['steps'].append(record)
+74 |     write_json(receipt_path, receipt)
+   |
+
+E501 Line too long (103 > 100)
+  --> reports/releases/stackos-2.1.34/recover_notarized_release.py:76:101
+   |
+74 |     write_json(receipt_path, receipt)
+75 |     with log.open('x') as output:
+76 |         result = subprocess.run(command, cwd=DESKTOP, env=env, stdout=output, stderr=subprocess.STDOUT)
+   |                                                                                                     ^^^
+77 |     record.update(exit_code=result.returncode, finished_at=datetime.now(UTC).isoformat(), log_sha256=sha(log))
+78 |     write_json(receipt_path, receipt)
+   |
+
+E501 Line too long (110 > 100)
+  --> reports/releases/stackos-2.1.34/recover_notarized_release.py:77:101
+   |
+75 |     with log.open('x') as output:
+76 |         result = subprocess.run(command, cwd=DESKTOP, env=env, stdout=output, stderr=subprocess.STDOUT)
+77 |     record.update(exit_code=result.returncode, finished_at=datetime.now(UTC).isoformat(), log_sha256=sha(log))
+   |                                                                                                     ^^^^^^^^^^
+78 |     write_json(receipt_path, receipt)
+79 |     if check and result.returncode:
+   |
+
+E501 Line too long (129 > 100)
+  --> reports/releases/stackos-2.1.34/recover_notarized_release.py:85:101
+   |
+84 | def require_accepted(name, submission_id):
+85 |     _, log = step(name, ['xcrun', 'notarytool', 'info', submission_id, '--keychain-profile', PROFILE, '--output-format', 'json'])
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+86 |     data = json.loads(log.read_text())
+87 |     assert data['id'] == submission_id and data['status'] == 'Accepted', f'{submission_id} is not Accepted; preserve the existing subm…
+   |
+
+E501 Line too long (153 > 100)
+  --> reports/releases/stackos-2.1.34/recover_notarized_release.py:87:101
+   |
+85 | …ission_id, '--keychain-profile', PROFILE, '--output-format', 'json'])
+86 | …
+87 | … 'Accepted', f'{submission_id} is not Accepted; preserve the existing submission and poll it'
+   |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+88 | …
+   |
+
+E501 Line too long (139 > 100)
+  --> reports/releases/stackos-2.1.34/recover_notarized_release.py:93:101
+   |
+91 | …
+92 | …
+93 | …sion attempt exists; use finish or inspect its saved ID, never resubmit automatically'
+   |                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+94 | …ix('.zip').exists(), 'Existing distributables require inspection before packaging again'
+95 | …SSION)
+   |
+
+E501 Line too long (141 > 100)
+  --> reports/releases/stackos-2.1.34/recover_notarized_release.py:94:101
+   |
+92 | …
+93 | …ion attempt exists; use finish or inspect its saved ID, never resubmit automatically'
+94 | …x('.zip').exists(), 'Existing distributables require inspection before packaging again'
+   |                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+95 | …SION)
+96 | … '--deep', '--strict', '--verbose=2', str(APP)])
+   |
+
+E501 Line too long (102 > 100)
+  --> reports/releases/stackos-2.1.34/recover_notarized_release.py:96:101
+   |
+94 | …     assert not DMG.exists() and not DMG.with_suffix('.zip').exists(), 'Existing distributables require inspection before packaging a…
+95 | …     require_accepted('app-notary-info', APP_SUBMISSION)
+96 | …     step('app-signature', ['codesign', '--verify', '--deep', '--strict', '--verbose=2', str(APP)])
+   |                                                                                                   ^^
+97 | …     step('app-staple', ['xcrun', 'stapler', 'staple', str(APP)])
+98 | …     step('app-staple-validate', ['xcrun', 'stapler', 'validate', str(APP)])
+   |
+
+E501 Line too long (159 > 100)
+   --> reports/releases/stackos-2.1.34/recover_notarized_release.py:102:101
+    |
+100 | …deResources')
+101 | …
+102 | … '--mac', '--arm64', '--prepackaged', str(APP), '--config', str(CONFIG), '--publish', 'never'])
+    |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+103 | …) == sealed_resources, 'App signature resources changed while packaging'
+104 | …i.cjs', str(APP / 'Contents/Resources/stackos/bin/stackos'), '2.1.34'])
+    |
+
+E501 Line too long (136 > 100)
+   --> reports/releases/stackos-2.1.34/recover_notarized_release.py:103:101
+    |
+101 | …d_resources
+102 | …on-builder', '--mac', '--arm64', '--prepackaged', str(APP), '--config', str(CONFIG), '--publish', 'never'])
+103 | …deResources') == sealed_resources, 'App signature resources changed while packaging'
+    |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+104 | …y-stackos-cli.cjs', str(APP / 'Contents/Resources/stackos/bin/stackos'), '2.1.34'])
+105 | …ts/verify-stackos-browser-cli.cjs', str(APP / 'Contents/Resources/stackos/bin/stackos.browser')])
+    |
+
+E501 Line too long (135 > 100)
+   --> reports/releases/stackos-2.1.34/recover_notarized_release.py:104:101
+    |
+102 | …on-builder', '--mac', '--arm64', '--prepackaged', str(APP), '--config', str(CONFIG), '--publish', 'never'])
+103 | …deResources') == sealed_resources, 'App signature resources changed while packaging'
+104 | …y-stackos-cli.cjs', str(APP / 'Contents/Resources/stackos/bin/stackos'), '2.1.34'])
+    |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+105 | …ts/verify-stackos-browser-cli.cjs', str(APP / 'Contents/Resources/stackos/bin/stackos.browser')])
+106 | …', '--deep', '--strict', '--verbose=2', str(DMG)])
+    |
+
+E501 Line too long (149 > 100)
+   --> reports/releases/stackos-2.1.34/recover_notarized_release.py:105:101
+    |
+103 | …rces') == sealed_resources, 'App signature resources changed while packaging'
+104 | …os-cli.cjs', str(APP / 'Contents/Resources/stackos/bin/stackos'), '2.1.34'])
+105 | …fy-stackos-browser-cli.cjs', str(APP / 'Contents/Resources/stackos/bin/stackos.browser')])
+    |                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+106 | …eep', '--strict', '--verbose=2', str(DMG)])
+107 | …fact=str(DMG), artifact_sha256=sha(DMG),
+    |
+
+E501 Line too long (102 > 100)
+   --> reports/releases/stackos-2.1.34/recover_notarized_release.py:106:101
+    |
+104 | …     step('packaged-cli', ['node', 'scripts/verify-stackos-cli.cjs', str(APP / 'Contents/Resources/stackos/bin/stackos'), '2.1.34'])
+105 | …     step('packaged-browser-cli', ['node', 'scripts/verify-stackos-browser-cli.cjs', str(APP / 'Contents/Resources/stackos/bin/stack…
+106 | …     step('dmg-signature', ['codesign', '--verify', '--deep', '--strict', '--verbose=2', str(DMG)])
+    |                                                                                                   ^^
+107 | …     submission = dict(status='submission_started', artifact=str(DMG), artifact_sha256=sha(DMG),
+108 | …                       artifact_bytes=DMG.stat().st_size, host_commit=head,
+    |
+
+E501 Line too long (107 > 100)
+   --> reports/releases/stackos-2.1.34/recover_notarized_release.py:109:101
+    |
+107 | …     submission = dict(status='submission_started', artifact=str(DMG), artifact_sha256=sha(DMG),
+108 | …                       artifact_bytes=DMG.stat().st_size, host_commit=head,
+109 | …                       started_at=datetime.now(UTC).isoformat(), continuation_receipt=str(receipt_path))
+    |                                                                                                   ^^^^^^^
+110 | …     write_json(SUBMISSION, submission)
+111 | …     code, log = step('dmg-submit', ['xcrun', 'notarytool', 'submit', str(DMG), '--keychain-profile', PROFILE, '--output-format', 'j…
+    |
+
+E501 Line too long (154 > 100)
+   --> reports/releases/stackos-2.1.34/recover_notarized_release.py:111:101
+    |
+109 | …mat(), continuation_receipt=str(receipt_path))
+110 | …
+111 | …, 'submit', str(DMG), '--keychain-profile', PROFILE, '--output-format', 'json'], check=False)
+    |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+112 | …g), response_log_sha256=sha(log))
+113 | …
+    |
+
+E501 Line too long (146 > 100)
+   --> reports/releases/stackos-2.1.34/recover_notarized_release.py:121:101
+    |
+119 | …
+120 | …
+121 | …ission returned no ID; inspect Apple history before any further action. Do not resubmit.'
+    |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+122 | …ptance', dmg_submission_id=submission['submission_id'])
+123 | …
+    |
+
+E501 Line too long (112 > 100)
+   --> reports/releases/stackos-2.1.34/recover_notarized_release.py:122:101
+    |
+120 |         write_json(SUBMISSION, submission)
+121 |         assert submission.get('submission_id'), 'DMG submission returned no ID; inspect Apple history before any further action. Do n…
+122 |         receipt.update(status='dmg_submitted_pending_acceptance', dmg_submission_id=submission['submission_id'])
+    |                                                                                                     ^^^^^^^^^^^^
+123 |     else:
+124 |         submission = json.loads(SUBMISSION.read_bytes())
+    |
+
+E501 Line too long (108 > 100)
+   --> reports/releases/stackos-2.1.34/recover_notarized_release.py:125:101
+    |
+123 |     else:
+124 |         submission = json.loads(SUBMISSION.read_bytes())
+125 |         assert submission.get('submission_id'), 'No saved DMG submission ID; inspect the submission attempt'
+    |                                                                                                     ^^^^^^^^
+126 |         assert submission['host_commit'] == head
+127 |         assert sha(DMG) == submission['artifact_sha256'], 'DMG bytes differ from the submitted artifact'
+    |
+
+E501 Line too long (104 > 100)
+   --> reports/releases/stackos-2.1.34/recover_notarized_release.py:127:101
+    |
+125 |         assert submission.get('submission_id'), 'No saved DMG submission ID; inspect the submission attempt'
+126 |         assert submission['host_commit'] == head
+127 |         assert sha(DMG) == submission['artifact_sha256'], 'DMG bytes differ from the submitted artifact'
+    |                                                                                                     ^^^^
+128 |         require_accepted('dmg-notary-info', submission['submission_id'])
+129 |         step('dmg-staple', ['xcrun', 'stapler', 'staple', str(DMG)])
+    |
+
+E501 Line too long (138 > 100)
+   --> reports/releases/stackos-2.1.34/recover_notarized_release.py:131:101
+    |
+129 | …le', str(DMG)])
+130 | …r', 'validate', str(DMG)])
+131 | …'--type', 'open', '--context', 'context:primary-signature', '--verbose=2', str(DMG)])
+    |                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+132 | …ipts/refresh-notarized-update-metadata.cjs', str(DMG), str(DESKTOP / 'dist/latest-mac.yml')])
+133 | …t {createLatestDmgAliases}=require("./scripts/release-artifacts.cjs"); console.log(JSON.stringify(createLatestDmgAliases([process.ar…
+    |
+
+E501 Line too long (146 > 100)
+   --> reports/releases/stackos-2.1.34/recover_notarized_release.py:132:101
+    |
+130 | …'validate', str(DMG)])
+131 | …ype', 'open', '--context', 'context:primary-signature', '--verbose=2', str(DMG)])
+132 | …/refresh-notarized-update-metadata.cjs', str(DMG), str(DESKTOP / 'dist/latest-mac.yml')])
+    |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+133 | …reateLatestDmgAliases}=require("./scripts/release-artifacts.cjs"); console.log(JSON.stringify(createLatestDmgAliases([process.argv[1…
+134 | …_complete', dmg_submission_id=submission['submission_id'], final_dmg_sha256=sha(DMG))
+    |
+
+E501 Line too long (208 > 100)
+   --> reports/releases/stackos-2.1.34/recover_notarized_release.py:133:101
+    |
+131 | …text:primary-signature', '--verbose=2', str(DMG)])
+132 | …ata.cjs', str(DMG), str(DESKTOP / 'dist/latest-mac.yml')])
+133 | …"./scripts/release-artifacts.cjs"); console.log(JSON.stringify(createLatestDmgAliases([process.argv[1]])));', str(DMG)])
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+134 | …ubmission['submission_id'], final_dmg_sha256=sha(DMG))
+135 | …
+    |
+
+E501 Line too long (142 > 100)
+   --> reports/releases/stackos-2.1.34/recover_notarized_release.py:134:101
+    |
+132 | …ts/refresh-notarized-update-metadata.cjs', str(DMG), str(DESKTOP / 'dist/latest-mac.yml')])
+133 | …{createLatestDmgAliases}=require("./scripts/release-artifacts.cjs"); console.log(JSON.stringify(createLatestDmgAliases([process.argv…
+134 | …ng_complete', dmg_submission_id=submission['submission_id'], final_dmg_sha256=sha(DMG))
+    |                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+135 | …
+136 | …r).__name__}: {error}')
+    |
+
+E501 Line too long (103 > 100)
+   --> reports/releases/stackos-2.1.34/recover_notarized_release.py:141:101
+    |
+139 |     write_json(receipt_path, receipt)
+140 | print(json.dumps(dict(status=receipt['status'], receipt=str(receipt_path), sha256=sha(receipt_path),
+141 |                       dmg_submission_id=receipt.get('dmg_submission_id'), error=receipt.get('error'))))
+    |                                                                                                     ^^^
+142 | sys.exit(1 if receipt['status'] == 'stopped' else 0)
+    |
+
+Found 124 errors.
+[*] 11 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).
+make: *** [lint] Error 1

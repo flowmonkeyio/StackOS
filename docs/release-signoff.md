@@ -274,6 +274,20 @@ and a Backups walkthrough, including the App footer with no projects; do not
 enable backups or read production financial content for source signoff. The
 full `make signoff` includes these backup authority and recovery checks.
 
+Native backup changes also require `pnpm --dir desktop check`, including the
+dialog/controller and IPC tests in `desktop/scripts/test-backups.cjs`. Prove
+cancellation before mutation, existing-recipient preservation, reservation
+before staging, unavailable protected storage, legacy original-key selection,
+exclusive outputs, sanitized failures and first-backup partial success. The
+integrated proof must use isolated synthetic data/state and desktop user data:
+run setup with real Electron `safeStorage` and the canonical CLI, restart the
+native process, export the key and archive, then verify an inert restore. Keep
+the portable setup key unavailable during the cached-export step to prove the
+protected copy is usable after restart. Compare existing setup and live-state
+hashes before and after rejected setup and restore attempts. Mock tests alone
+do not establish OS keychain or real CLI integration. Do not mutate production
+backup settings or install a package to obtain this source-level proof.
+
 For a faster local check while iterating on action execution, run the mock
 provider and connector-contract slice directly:
 

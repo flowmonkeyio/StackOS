@@ -1,0 +1,13 @@
+[viewport] Viewport set to 1280x800
+
+[goto] Navigated to http://127.0.0.1:5197/backup-qa?state=legacy-shell&theme=dark (200)
+
+[js] true
+
+[screenshot] Screenshot saved: /tmp/stackos-workflow-718/option3-qa/legacy-shell-1280-dark.png
+
+[js] {
+  "mainClient": 1010,
+  "mainScroll": 1010,
+  "documentScroll": 1269
+}

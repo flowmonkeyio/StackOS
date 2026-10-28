@@ -1,6 +1,6 @@
 "use strict";
 
-const { app, BrowserWindow, dialog, ipcMain, Menu, Notification, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu, Notification, safeStorage, shell } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const service = require("./service");
@@ -8,6 +8,7 @@ const { resolveStackosDeepLink } = require("./deep-links");
 const { buildApplicationMenuTemplate } = require("./menu-template");
 const { createNotificationController } = require("./notifications");
 const { createUpdateController } = require("./updates");
+const { createBackupController, registerBackupIpc } = require("./backups");
 
 const GETTING_STARTED_URL = "https://stackos.flowmonkey.io/getting-started";
 
@@ -689,6 +690,16 @@ function createMenu() {
 }
 
 function registerIpc() {
+  registerBackupIpc({
+    ipcMain,
+    controller: createBackupController({
+      dialog, safeStorage, service, shell,
+      getWindow: () => mainWindow,
+      userData: app.getPath("userData")
+    }),
+    getWindow: () => mainWindow,
+    trustedUrl: service.DAEMON_URL
+  });
   ipcMain.handle("stackos:status", async () => ({
     health: await service.checkHealth(),
     command: service.resolveStackosCommand(),

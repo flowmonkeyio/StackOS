@@ -307,20 +307,35 @@ database under `~/.local/share/stackos/` and daemon state under
 
 ## Backup
 
-Before serious upgrades or machine moves, configure an independent recovery
-key using [backup setup](./backups.md). Managed project Finance files are covered
-automatically; enroll only additional external folders.
-Create an encrypted archive:
+In the desktop app, open **Backups** in the App footer and choose **Enable
+backups**. Choose a backup folder, then save the recovery key using the native
+file dialog. StackOS enables automatic backups and creates the first encrypted
+archive. If that first backup fails, the setup remains in place; use **Back up
+now** to retry.
 
-```bash
-stackos backup --output /private-backups/stackos/manual.sbak
-```
+An existing setup opens with its current key, destination, schedule, retention
+and enrolled folders intact. Opening the page does not change configuration.
+Use **Manage → Backup settings** to change the schedule or pause automatic
+backups, then save the changes. **Manage → Included data and history** shows
+coverage and previous backup details.
+
+Use **Export backup** and **Export key** to save your recovery materials, or
+**Manage → Open backup folder** to view the backup folder. Keep an archive and
+the recovery key somewhere accessible if this device is lost. Exporting a key
+for an older setup may ask you to select the original recovery key; it does not
+generate a replacement.
+
+**Restore backup** asks for the archive, recovery key, and a new output folder.
+It verifies recovery into that separate folder and leaves the live installation
+in place. Native setup, export and restore require the current desktop app.
+The browser console can inspect status, create a backup, and edit an existing
+schedule. See [backup and recovery](./backups.md) for advanced folder enrollment
+and local commands.
 
 Every new backup encrypts `stackos.db`, its matching `seed.bin`, `auth.token`,
 the manifest and every enrolled external folder. Files are private (`0600`).
-Automatic backups require explicit opt-in and start disabled. Backups in the
-App footer and `stackos backups status` show coverage and the last success
-or failure.
+Automatic backups require explicit opt-in and start disabled. The Backups page
+and `stackos backups status` show coverage and the last success or failure.
 `stackos restore` verifies recovery into a fresh inert folder; it requires the
 separately stored private recovery key. It does not include TDLib's
 Account-owned native database; Telegram user Accounts need a new sign-in after

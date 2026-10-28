@@ -1,0 +1,12 @@
+{
+  "checked_at": "2026-10-28T15:21:09.590374+00:00",
+  "protected_files": 2706,
+  "changed_protected_paths": [],
+  "live_backup_files_unchanged": {
+    "backup-policy.json": true,
+    "backup-outcome.json": true,
+    "backup-key-exclusions.json": true
+  },
+  "passed": true,
+  "scope": "Hashes only; no live backup content read into logs and no live configuration mutation."
+}

@@ -1,0 +1,58 @@
+[console] --- BEGIN UNTRUSTED EXTERNAL CONTENT (source: http://127.0.0.1:5197/backup-qa?state=configured) ---
+[2026-10-28T06:00:14.678Z] [error] Failed to load resource: the server responded with a status of 401 (Unauthorized)
+[2026-10-28T06:12:38.364Z] [error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[2026-10-28T06:16:06.099Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T06:16:07.111Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T06:16:08.115Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T06:16:09.119Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T06:16:10.124Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T06:16:11.130Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T06:16:12.140Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T06:16:13.146Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T06:16:14.149Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T06:16:15.155Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T06:16:16.162Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T06:16:17.170Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T06:16:18.175Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T06:16:19.181Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T06:16:20.191Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T06:16:21.201Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T06:16:22.211Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T06:16:23.213Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T06:16:24.216Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T06:16:25.221Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T06:16:26.225Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:42:10.044Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:42:11.055Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:42:12.062Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:42:13.063Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:42:14.072Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:42:15.074Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:42:16.083Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:42:17.084Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:42:18.088Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:42:19.091Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:42:20.095Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:42:21.164Z] [error] Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+[2026-10-28T07:43:40.456Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:43:41.460Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:43:42.466Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:43:43.469Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:43:44.470Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:43:45.473Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:43:46.476Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:43:47.481Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:43:48.489Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:43:49.495Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:43:50.499Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:43:51.500Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:43:52.505Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:43:53.520Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:43:54.521Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:43:55.533Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-10-28T07:43:56.541Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+--- END UNTRUSTED EXTERNAL CONTENT ---
+
+[console] --- BEGIN UNTRUSTED EXTERNAL CONTENT (source: http://127.0.0.1:5197/backup-qa?state=configured) ---
+Console buffer cleared.
+--- END UNTRUSTED EXTERNAL CONTENT ---

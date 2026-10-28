@@ -1,0 +1,193 @@
+[press] Pressed Enter
+
+[press] Pressed ArrowDown
+
+[press] Pressed ArrowDown
+
+[press] Pressed Enter
+
+[js] true
+
+[js] {
+  "rects": {
+    "Restore backup": {
+      "x": 1102.90625,
+      "y": 26,
+      "width": 123.09375,
+      "height": 32
+    },
+    "Back up now": {
+      "x": 1042,
+      "y": 120,
+      "width": 128,
+      "height": 32
+    },
+    "Refresh backups": {
+      "x": 1178,
+      "y": 120,
+      "width": 32,
+      "height": 32
+    },
+    "Export backup": {
+      "x": 1109.703125,
+      "y": 303,
+      "width": 116.296875,
+      "height": 32
+    },
+    "Export key": {
+      "x": 1114,
+      "y": 378,
+      "width": 112,
+      "height": 32
+    },
+    "Manage": {
+      "x": 1129.953125,
+      "y": 498,
+      "width": 96.046875,
+      "height": 32
+    }
+  },
+  "baseline": {
+    "Restore backup": {
+      "x": 1102.90625,
+      "y": 26,
+      "width": 123.09375,
+      "height": 32
+    },
+    "Back up now": {
+      "x": 1042,
+      "y": 120,
+      "width": 128,
+      "height": 32
+    },
+    "Refresh backups": {
+      "x": 1178,
+      "y": 120,
+      "width": 32,
+      "height": 32
+    },
+    "Export backup": {
+      "x": 1109.703125,
+      "y": 303,
+      "width": 116.296875,
+      "height": 32
+    },
+    "Export key": {
+      "x": 1114,
+      "y": 378,
+      "width": 112,
+      "height": 32
+    },
+    "Manage": {
+      "x": 1129.953125,
+      "y": 498,
+      "width": 96.046875,
+      "height": 32
+    }
+  },
+  "scrollY": 0,
+  "mainScroll": 0,
+  "focus": "Close panel",
+  "dialog": true,
+  "calls": [
+    {
+      "name": "backup.status",
+      "args": {}
+    }
+  ],
+  "menu": []
+}
+
+[press] Pressed Escape
+
+[js] true
+
+[js] {
+  "rects": {
+    "Restore backup": {
+      "x": 1102.90625,
+      "y": 26,
+      "width": 123.09375,
+      "height": 32
+    },
+    "Back up now": {
+      "x": 1042,
+      "y": 120,
+      "width": 128,
+      "height": 32
+    },
+    "Refresh backups": {
+      "x": 1178,
+      "y": 120,
+      "width": 32,
+      "height": 32
+    },
+    "Export backup": {
+      "x": 1109.703125,
+      "y": 303,
+      "width": 116.296875,
+      "height": 32
+    },
+    "Export key": {
+      "x": 1114,
+      "y": 378,
+      "width": 112,
+      "height": 32
+    },
+    "Manage": {
+      "x": 1129.953125,
+      "y": 498,
+      "width": 96.046875,
+      "height": 32
+    }
+  },
+  "baseline": {
+    "Restore backup": {
+      "x": 1102.90625,
+      "y": 26,
+      "width": 123.09375,
+      "height": 32
+    },
+    "Back up now": {
+      "x": 1042,
+      "y": 120,
+      "width": 128,
+      "height": 32
+    },
+    "Refresh backups": {
+      "x": 1178,
+      "y": 120,
+      "width": 32,
+      "height": 32
+    },
+    "Export backup": {
+      "x": 1109.703125,
+      "y": 303,
+      "width": 116.296875,
+      "height": 32
+    },
+    "Export key": {
+      "x": 1114,
+      "y": 378,
+      "width": 112,
+      "height": 32
+    },
+    "Manage": {
+      "x": 1129.953125,
+      "y": 498,
+      "width": 96.046875,
+      "height": 32
+    }
+  },
+  "scrollY": 0,
+  "mainScroll": 0,
+  "focus": "Manage",
+  "dialog": false,
+  "calls": [
+    {
+      "name": "backup.status",
+      "args": {}
+    }
+  ],
+  "menu": []
+}

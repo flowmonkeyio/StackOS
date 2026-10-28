@@ -1,0 +1,10 @@
+
+ RUN  v2.1.9 /Users/sergeyrura/Bin/content-stack/ui
+
+ ✓ src/components/backups/BackupPanel.spec.ts (46 tests) 365ms
+
+ Test Files  1 passed (1)
+      Tests  46 passed (46)
+   Start at  08:03:19
+   Duration  1.50s (transform 419ms, setup 11ms, collect 575ms, tests 365ms, environment 278ms, prepare 32ms)
+

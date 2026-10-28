@@ -1,0 +1,40 @@
+{
+  "ticket": 14670,
+  "attempt_id": "native-1",
+  "contract_revision": 1,
+  "design_revision": 2,
+  "project_id": 1,
+  "run_plan_id": 718,
+  "run_id": 712,
+  "step": "deliver-tickets",
+  "base": "1976d4bf96c8480652400e496534a7ed6b7e99d1",
+  "accepted_dependency": "81c9fe3d48cffc22d43d5c224d0d3e5c664a611571d2a49fbd3bebf086be9cbc",
+  "frozen_backend_files": {
+    "stackos/backups/service.py": "1d01c4cc3e374857041dd14b6f401414a5269ea99ce8c29a72a33f1f1acd6c77",
+    "stackos/backups/filesystem.py": "1fbab88a89ceaedbefd5e152e598165dbe340b27ad6e1fe7da3993f260afef68",
+    "stackos/cli/backup_commands.py": "069478cae4163243c34131b7a8800fdfb3aa8659ab19aae498e596f9d916063b",
+    "tests/unit/test_backups.py": "0bf0ce69d61b98cae1fb0c324010d80c82088b0edd5332ab3797935c8ab8524a",
+    "tests/unit/test_backup_cli.py": "d1e501f09a2df682dbf1ee32a475cd401c993d82bf166e0c9a5d4dfb9afb4838"
+  },
+  "files": {
+    "desktop/src/backups.js": "4a2b99c0fb86d5f04dc56a68f9414cdfbdc2e8a979240a6710c9ac7075d37901",
+    "desktop/src/main.js": "7d9ad7ece4934db7093ece76adda436ec86e0fcf0a93e0be87294a9a3ecf481c",
+    "desktop/src/preload.js": "12a9c94009df1a431edf34f77a1880a2a801a8eba859e0a28620f34d1b3d5d0a",
+    "desktop/src/service.js": "b142ffb59bc35eaf2f949723a18a5558aca277e24c58e720a34ad0724a3a512c",
+    "desktop/scripts/test-backups.cjs": "3473f584cbe1333a9a5f87ee2501325bdcd62688012da85c37fa76716cedfaaa",
+    "desktop/package.json": "29cdc0558e40f3a230646c38ae37a7bc4bc67f2b8f9abde135fa0537cf23ec33",
+    "docs/backups.md": "200c2422cdebd7d68d19b0f18598d0c18d52b4d7436af46001a130ec80061032",
+    "docs/security.md": "15907fbf302dae88ffd11df1bd4cfa35fe813deaaa620427e5406fa66936a3cc",
+    "docs/release-signoff.md": "00c6bcece8561fe854be3e451cb2ed61894bad74487002d18eb812d60244a596"
+  },
+  "candidate_sha256": "c661fb35f5f6ef46e6fa16f0bd47f940e3bea35d468c4a5556c99bdbc791dda1",
+  "diff_sha256": "5196748273a8c51e0b9680ba7503b913c280fe8753a9719da549e7ebeda41e80",
+  "environment": "darwin; Node22.23.1; fake native dialogs and protected storage; synthetic filesystem/CLI output fixtures; real Electron integration is root-owned",
+  "checks": {
+    "backend-native-desktop-check.log": "86a8c6aede9efb214e2ca3bf45bdc4f232963123cf7b16d1cf9a23b17c7e9f89",
+    "backend-native-focused-final.log": "540a74a1d701b83f13dea410d55ddc9e49746b763982335737236de0c82a7b0e",
+    "backend-native-focused.log": "500ec6d17776fd59da8454b6320da4204673a3e98a34853d5f58b5a4fbedec6f",
+    "backend-native-green.log": "4ccdc1ebc7e1fae7a5f8e7d42b58baee6bd976f679ad6b110d25fdbfe7971db2",
+    "backend-native-red.log": "027260925e04f9a05665e4d56c7b2ecaac21e533bc0dfcfe01b683b70f74370a"
+  }
+}

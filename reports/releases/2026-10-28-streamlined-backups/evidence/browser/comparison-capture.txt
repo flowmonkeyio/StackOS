@@ -1,0 +1,25 @@
+[viewport] Viewport set to 2608x850
+
+[goto] Navigated to http://127.0.0.1:5197/@fs/tmp/stackos-workflow-718/browser-qa/comparison.html (200)
+
+[js] true
+
+[screenshot] Screenshot saved: /tmp/stackos-workflow-718/option3-qa/comparison-full.png
+
+[viewport] Viewport set to 1968x650
+
+[goto] Navigated to http://127.0.0.1:5197/@fs/tmp/stackos-workflow-718/browser-qa/comparison-focus.html (200)
+
+[js] true
+
+[screenshot] Screenshot saved: /tmp/stackos-workflow-718/option3-qa/comparison-content.png
+
+[viewport] Viewport set to 1280x800
+
+[goto] Navigated to http://127.0.0.1:5197/backup-qa?state=configured (200)
+
+[js] true
+
+[console] --- BEGIN UNTRUSTED EXTERNAL CONTENT (source: http://127.0.0.1:5197/backup-qa?state=configured) ---
+(no console errors)
+--- END UNTRUSTED EXTERNAL CONTENT ---

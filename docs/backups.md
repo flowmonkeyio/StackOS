@@ -16,7 +16,46 @@ installation and enrolled folders across projects, regardless of which page is
 open. These controls are unavailable to ordinary MCP agents. Backup creation
 needs only a public key; recovery requires the separate private key.
 
-## Set up the recovery key
+## Set up in the desktop app
+
+Open **Backups** in the App footer and choose **Enable backups**. Select a backup
+folder, then save your portable recovery key in a separate location. StackOS
+generates the key, saves an OS-encrypted convenience copy for future exports,
+enables the schedule, and creates the first encrypted backup. New setups use
+daily backups and keep 30 successful scheduled archives. Existing custom
+settings and enrolled folders are preserved.
+
+Keep the portable recovery key and a copy of your encrypted archives off this
+device, in separate secure locations. The app's protected copy is a convenience;
+it cannot recover your backups after this computer and its keychain are lost.
+
+Cancel either chooser to leave setup unchanged. If protected storage is
+unavailable, setup stops. If setup fails after saving your recovery file, the
+file is kept and the app reports whether backups were enabled. A failed first
+backup keeps the configured key and schedule; use **Back up now** to retry.
+Existing setups never receive a new key automatically.
+
+The desktop also provides:
+
+- **Open backup folder** to view saved archives.
+- **Export backup** to save a verified archive copy under a new filename.
+- **Export key** to save a portable copy separately from the archives.
+  When the app copy is missing or cannot be decrypted, select the original key
+  for the current setup. The key is checked before export. When possible, a
+  protected app copy is saved for later exports; existing copies are not
+  overwritten, including damaged copies. If it cannot save that copy, the app
+  still reports the successful portable export and asks you to keep the original.
+- **Restore from backup** to select an archive, its recovery key and a new
+  recovery folder name. Recovery verifies the archive into that fresh folder;
+  it does not replace the current installation.
+
+File and folder selection happens in native dialogs. These controls require the
+desktop app; the browser console retains status, settings and **Back up now**.
+No private key or archive contents are sent to the page. Existing output files
+and recovery folders are never overwritten, even after a chooser's overwrite
+confirmation. Choose a new name instead.
+
+## Set up the recovery key with the CLI
 
 Choose a private key location outside StackOS data/state, enrolled folders and
 the backup destination. Keep a separate secure copy of that key, preferably
@@ -61,6 +100,78 @@ of that key's parent folder is rejected, and copying the matching private key
 into a source folder is also rejected. The backup destination and explicit
 outputs cannot be inside sources or the daemon's public generated-assets
 directory.
+
+### Guarded local setup and export commands
+
+The desktop uses the same host-local CLI for setup and export. These commands
+are not REST or MCP operations and return paths, fingerprints and receipts only.
+They never print private keys or archive contents.
+
+`keygen --first-time` refuses any configured recipient, even when automatic
+backups are disabled. Its optional `--destination` validates the planned
+destination, and repeatable `--protected-path` reserves native key storage:
+
+```bash
+stackos backups keygen --first-time \
+  --private-key-file /secure-recovery/stackos-private.pem \
+  --public-key-file /private-desktop-custody/public.pem \
+  --protected-path /private-desktop-custody \
+  --destination /private-backups/stackos
+```
+
+Before writing any private key, this call records the portable key path and
+protected paths under the backup lock. A protected directory covers its entire
+subtree. Later folder enrollment, backup destinations and archive output paths
+cannot overlap that custody. Reservations survive failure or an interrupted
+setup; they are deliberately not removed when temporary files are cleaned up.
+
+For a separate diagnostic, `backups custody --protected-path PATH` checks the
+same boundaries without writing anything. Add `--reserve` to persist the
+exclusion before native ciphertext or plaintext staging writes. Use
+`--first-time --destination PATH` during setup, or `--expected-recipient
+FINGERPRINT` when staging an existing key. Read-only preflight does not authorize
+later writes: a successful lock-held reservation is required first.
+
+After the portable key is saved and the native app has durably encrypted its
+convenience copy with OS protected storage, activate the new setup:
+
+```bash
+stackos backups initialize \
+  --public-key-file /private-desktop-custody/public.pem \
+  --private-key-file /secure-recovery/stackos-private.pem \
+  --protected-key-file /private-desktop-custody/key.enc \
+  --destination /private-backups/stackos
+stackos backup
+```
+
+Initialization rechecks the saved policy under the lock, rejects any existing
+recipient, verifies the matching portable key and the reserved, nonempty
+protected copy, and preserves existing targets, cadence and retention. A saved
+destination is also preserved; a different requested destination returns
+`setup_conflict`. New settings use the existing daily/30-archive defaults.
+The native owner is responsible for OS encryption; Python checks the local
+copy's presence and custody, without decrypting it. Initialization does not
+create an archive. If the separate first backup fails, keep the saved setup and
+retry `stackos backup`; do not generate another key.
+
+Export the latest successful archive or an existing matching recovery key to
+new files:
+
+```bash
+stackos backups export --output /off-device-backups/stackos.sbak
+stackos backups export-key \
+  --private-key-file /secure-recovery/stackos-private.pem \
+  --output /separate-key-storage/stackos-private.pem
+```
+
+Archive export checks the last-success receipt's size and SHA-256 while copying
+from a regular, non-symlink file, then publishes exclusively. Key export checks
+the current recipient, records exclusions before plaintext staging, and never
+generates a replacement. `export-key --expected-recipient FINGERPRINT` also
+rejects a configuration change since the caller read status. Both exports refuse
+existing outputs and use private files; failed exports do not change backup
+policy or successful-backup history. Restore continues to use the existing
+`stackos restore` command below.
 
 ## Opt in to automatic backups
 

@@ -1,0 +1,2 @@
+sandbox_extension_issue_file_to_process failed for /Users/sergeyrura/Bin/content-stack/desktop/node_modules/electron/dist/Electron.app: 1 (Operation not permitted)
+{"phase":"setup","passed":true,"electron":"39.8.10","platform":"darwin","evidence":"/private/tmp/stackos-workflow-718/native-roundtrip-2/native-results.json"}

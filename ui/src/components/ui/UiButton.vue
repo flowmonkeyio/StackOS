@@ -97,12 +97,11 @@ const sizeClass = computed(
     :aria-busy="loading || undefined"
     :aria-label="ariaLabel"
     :class="[
-      'ui-button focus-ring inline-flex items-center justify-center font-medium rounded-sm transition-colors duration-fast ease-standard select-none whitespace-nowrap',
+      'ui-button focus-ring relative inline-flex items-center justify-center font-medium rounded-sm transition-colors duration-fast ease-standard select-none whitespace-nowrap',
       variantClass,
       sizeClass,
       block && 'w-full',
       isDisabled && 'cursor-not-allowed',
-      loading && 'relative',
     ]"
     @click="(ev: MouseEvent) => !isDisabled && $emit('click', ev)"
   >
@@ -116,10 +115,7 @@ const sizeClass = computed(
         class="ui-button__icon animate-spin"
       />
     </span>
-    <slot
-      v-else
-      name="iconLeft"
-    >
+    <slot name="iconLeft">
       <UiIcon
         v-if="hasIcon(iconLeft)"
         :name="iconLeft"
@@ -143,7 +139,7 @@ const sizeClass = computed(
       />
     </slot>
     <span
-      v-if="iconOnly && !loading"
+      v-if="iconOnly"
       class="ui-button__icon"
     >
       <slot />
@@ -162,6 +158,15 @@ const sizeClass = computed(
   stroke-width: 1.8;
 }
 .ui-button__spinner {
+  position: absolute;
+  inset: 0;
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+/* Keep content mounted and measurable, including its accessible name. */
+.ui-button[aria-busy='true'] > :not(.ui-button__spinner) {
+  opacity: 0;
 }
 </style>
