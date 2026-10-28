@@ -9,6 +9,7 @@ from stackos.artifacts import redact_secret_text
 from stackos.db.models import (
     AgentRequest,
     RunPlan,
+    RunPlanStatus,
     RunPlanStep,
     RunPlanStepStatus,
     TrackerItemStatus,
@@ -75,11 +76,18 @@ class TrackerMirrorMixin:
             requirement = {
                 "flow_key": plan.template_key or plan.key,
                 "required_step_ids": required_step_ids,
+                "run_plan_id": run_plan_id,
+                "inputs_digest": self._run_plan_inputs_digest(plan),
             }
             self._required_stackos_flow({"required_stackos_flow": requirement})
             existing = self._required_stackos_flow(task.source_json)
-            if existing is not None and existing != requirement:
+            pending = {key: requirement[key] for key in ("flow_key", "required_step_ids")}
+            if existing is not None and existing not in (pending, requirement):
                 raise ValidationError("required StackOS flow is immutable on an existing task")
+            if existing != requirement and (
+                plan.status != RunPlanStatus.DRAFT or plan.run_id is not None
+            ):
+                raise ValidationError("required StackOS flow must bind an unstarted run plan")
             task.source_json = {**(task.source_json or {}), "required_stackos_flow": requirement}
             task.updated_at = _utcnow()
             self._s.add(task)

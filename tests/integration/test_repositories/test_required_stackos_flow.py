@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlmodel import Session
 
-from stackos.db.models import RunPlanStepStatus, TrackerItemStatus
+from stackos.db.models import Run, RunPlan, RunPlanStepStatus, TrackerItemStatus
 from stackos.repositories.base import ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
@@ -24,7 +24,23 @@ def _task(session: Session, project_id: int, key: str = "postgres-migration") ->
     return repo
 
 
-def _plan(session: Session, project_id: int):
+def _plan(
+    session: Session,
+    project_id: int,
+    *,
+    target: str = "requested",
+    include_review: bool = False,
+):
+    steps = [{"id": "prepare", "title": "Prepare", "success_criteria": ["Evidence"]}]
+    if include_review:
+        steps.append(
+            {
+                "id": "review",
+                "title": "Independent Review",
+                "depends_on": ["prepare"],
+                "success_criteria": ["Review recorded"],
+            }
+        )
     return (
         RunPlanRepository(session)
         .create(
@@ -33,7 +49,8 @@ def _plan(session: Session, project_id: int):
                 "schema_version": "stackos.run-plan.v1",
                 "key": "postgres.revised",
                 "title": "Revised Postgres migration",
-                "steps": [{"id": "prepare", "title": "Prepare", "success_criteria": ["Evidence"]}],
+                "inputs_json": {"target": target},
+                "steps": steps,
             },
         )
         .data
@@ -81,15 +98,24 @@ def test_required_flow_requires_linked_completed_run_and_executed_step(
 ) -> None:
     repo = _task(session, project_id)
     plan = _plan(session, project_id)
-    started = RunPlanRepository(session).start(plan.id, project_id=project_id).data
-    evidence = _evidence(plan.id, started.run_id)
-    with pytest.raises(ValidationError, match="linked"):
+    with pytest.raises(ValidationError, match="bound required run plan"):
         repo.update_task(
             project_id=project_id,
             task_key="postgres-migration",
-            patch_json={"status": "complete", "completion_evidence_json": evidence},
+            patch_json={
+                "status": "complete",
+                "completion_evidence_json": _evidence(plan.id, 999999),
+            },
         )
-    repo.link_run_plan(project_id=project_id, task_key="postgres-migration", run_plan_id=plan.id)
+    repo.link_run_plan(
+        project_id=project_id,
+        task_key="postgres-migration",
+        run_plan_id=plan.id,
+        require_execution=True,
+        required_step_ids=["prepare"],
+    )
+    started = RunPlanRepository(session).start(plan.id, project_id=project_id).data
+    evidence = _evidence(plan.id, started.run_id)
     with pytest.raises(ValidationError, match="completed"):
         repo.update_task(
             project_id=project_id,
@@ -206,7 +232,11 @@ def test_link_run_plan_can_atomically_require_selected_steps(
         require_execution=True,
         required_step_ids=["prepare"],
     ).data.task
-    assert linked.source_json == {"required_stackos_flow": FLOW}
+    requirement = linked.source_json["required_stackos_flow"]
+    assert requirement["flow_key"] == FLOW["flow_key"]
+    assert requirement["required_step_ids"] == FLOW["required_step_ids"]
+    assert requirement["run_plan_id"] == plan.id
+    assert requirement["inputs_digest"].startswith("sha256:")
     with pytest.raises(ValidationError, match="StackOS flow"):
         repo.update_task(
             project_id=project_id,
@@ -239,6 +269,229 @@ def test_link_run_plan_can_atomically_require_selected_steps(
     assert completed.status == TrackerItemStatus.COMPLETE
 
 
+def test_required_flow_cannot_be_bound_after_execution_or_forged_at_task_creation(
+    session: Session, project_id: int
+) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="postgres-migration", title="Migration")
+    plan = _plan(session, project_id)
+    with pytest.raises(ValidationError, match=r"tracker\.linkRunPlan"):
+        repo.create_task(
+            project_id=project_id,
+            key="forged-binding",
+            title="Forged binding",
+            source_json={
+                "required_stackos_flow": {
+                    **FLOW,
+                    "run_plan_id": plan.id,
+                    "inputs_digest": "sha256:" + "0" * 64,
+                }
+            },
+        )
+    with pytest.raises(ValidationError, match=r"tracker\.linkRunPlan"):
+        repo.update_task(
+            project_id=project_id,
+            task_key="postgres-migration",
+            patch_json={
+                "source_json": {
+                    "required_stackos_flow": {
+                        **FLOW,
+                        "run_plan_id": plan.id,
+                        "inputs_digest": "sha256:" + "0" * 64,
+                    }
+                }
+            },
+        )
+    runs = RunPlanRepository(session)
+    started = runs.start(plan.id, project_id=project_id).data
+    with pytest.raises(ValidationError, match="unstarted run plan"):
+        repo.link_run_plan(
+            project_id=project_id,
+            task_key="postgres-migration",
+            run_plan_id=plan.id,
+            require_execution=True,
+            required_step_ids=["prepare"],
+        )
+    runs.claim_step(
+        run_plan_id=plan.id, run_id=started.run_id, step_id="prepare", claimed_by="author"
+    )
+    runs.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="prepare",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json={"summary": "Past work"},
+    )
+    with pytest.raises(ValidationError, match="unstarted run plan"):
+        repo.link_run_plan(
+            project_id=project_id,
+            task_key="postgres-migration",
+            run_plan_id=plan.id,
+            require_execution=True,
+            required_step_ids=["prepare"],
+        )
+
+
+def test_unrelated_same_key_completed_plan_cannot_replace_required_plan(
+    session: Session, project_id: int
+) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="postgres-migration", title="Migration")
+    required = _plan(session, project_id, target="requested-database")
+    repo.link_run_plan(
+        project_id=project_id,
+        task_key="postgres-migration",
+        run_plan_id=required.id,
+        require_execution=True,
+        required_step_ids=["prepare"],
+    )
+    runs = RunPlanRepository(session)
+    required_run = runs.start(required.id, project_id=project_id).data
+    unrelated = _plan(session, project_id, target="other-database")
+    unrelated_run = runs.start(unrelated.id, project_id=project_id).data
+    runs.claim_step(
+        run_plan_id=unrelated.id,
+        run_id=unrelated_run.run_id,
+        step_id="prepare",
+        claimed_by="other-agent",
+    )
+    runs.record_step(
+        run_plan_id=unrelated.id,
+        run_id=unrelated_run.run_id,
+        step_id="prepare",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json={"summary": "Unrelated plan finished"},
+    )
+    with pytest.raises(ValidationError, match="immutable"):
+        repo.link_run_plan(
+            project_id=project_id,
+            task_key="postgres-migration",
+            run_plan_id=unrelated.id,
+            require_execution=True,
+            required_step_ids=["prepare"],
+        )
+    repo.link_run_plan(
+        project_id=project_id, task_key="postgres-migration", run_plan_id=unrelated.id
+    )
+    with pytest.raises(ValidationError, match="required run plan"):
+        repo.update_task(
+            project_id=project_id,
+            task_key="postgres-migration",
+            patch_json={
+                "status": "complete",
+                "completion_evidence_json": _evidence(unrelated.id, unrelated_run.run_id),
+            },
+        )
+    assert runs.get(required.id, project_id=project_id).run_id == required_run.run_id
+    assert (
+        repo.get(project_id=project_id, task_key="postgres-migration").tasks[0].status != "complete"
+    )
+
+
+def test_bound_plan_input_provenance_must_still_match_at_completion(
+    session: Session, project_id: int
+) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="postgres-migration", title="Migration")
+    plan = _plan(session, project_id, target="requested-database")
+    repo.link_run_plan(
+        project_id=project_id,
+        task_key="postgres-migration",
+        run_plan_id=plan.id,
+        require_execution=True,
+        required_step_ids=["prepare"],
+    )
+    runs = RunPlanRepository(session)
+    started = runs.start(plan.id, project_id=project_id).data
+    runs.claim_step(
+        run_plan_id=plan.id, run_id=started.run_id, step_id="prepare", claimed_by="codex"
+    )
+    runs.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="prepare",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json={"summary": "Recorded preparation"},
+    )
+    # Simulate corruption outside the supported run-plan update API.
+    row = session.get(RunPlan, plan.id)
+    assert row is not None
+    row.inputs_json = {"target": "changed-database"}
+    session.add(row)
+    session.commit()
+    with pytest.raises(ValidationError, match="inputs changed"):
+        repo.update_task(
+            project_id=project_id,
+            task_key="postgres-migration",
+            patch_json={
+                "status": "complete",
+                "completion_evidence_json": _evidence(plan.id, started.run_id),
+            },
+        )
+    row.inputs_json = {"target": "requested-database"}
+    run = session.get(Run, started.run_id)
+    assert run is not None
+    run.metadata_json = {"stackos_type": "run-plan", "run_plan_id": plan.id + 1}
+    session.add(row)
+    session.add(run)
+    session.commit()
+    with pytest.raises(ValidationError, match="match the required project flow"):
+        repo.update_task(
+            project_id=project_id,
+            task_key="postgres-migration",
+            patch_json={
+                "status": "complete",
+                "completion_evidence_json": _evidence(plan.id, started.run_id),
+            },
+        )
+
+
+def test_required_review_step_cannot_be_skipped_for_task_completion(
+    session: Session, project_id: int
+) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="postgres-migration", title="Migration")
+    plan = _plan(session, project_id, include_review=True)
+    repo.link_run_plan(
+        project_id=project_id,
+        task_key="postgres-migration",
+        run_plan_id=plan.id,
+        require_execution=True,
+        required_step_ids=["prepare", "review"],
+    )
+    runs = RunPlanRepository(session)
+    started = runs.start(plan.id, project_id=project_id).data
+    runs.claim_step(
+        run_plan_id=plan.id, run_id=started.run_id, step_id="prepare", claimed_by="author"
+    )
+    runs.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="prepare",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json={"summary": "Prepared"},
+    )
+    runs.claim_step(
+        run_plan_id=plan.id, run_id=started.run_id, step_id="review", claimed_by="author"
+    )
+    runs.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="review",
+        status=RunPlanStepStatus.SKIPPED,
+        result_json={"reason": "No reviewer available"},
+    )
+    with pytest.raises(ValidationError, match="required steps"):
+        repo.update_task(
+            project_id=project_id,
+            task_key="postgres-migration",
+            patch_json={
+                "status": "complete",
+                "completion_evidence_json": _evidence(plan.id, started.run_id),
+            },
+        )
+
+
 @pytest.mark.parametrize(
     "step_status, result_json",
     [
@@ -254,7 +507,13 @@ def test_missing_step_evidence_or_failed_run_cannot_complete(
 ) -> None:
     repo = _task(session, project_id)
     plan = _plan(session, project_id)
-    repo.link_run_plan(project_id=project_id, task_key="postgres-migration", run_plan_id=plan.id)
+    repo.link_run_plan(
+        project_id=project_id,
+        task_key="postgres-migration",
+        run_plan_id=plan.id,
+        require_execution=True,
+        required_step_ids=["prepare"],
+    )
     runs = RunPlanRepository(session)
     started = runs.start(plan.id, project_id=project_id).data
     runs.claim_step(

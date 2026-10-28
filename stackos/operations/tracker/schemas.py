@@ -623,7 +623,13 @@ class TrackerLinkRunPlanInput(MCPInput):
     model_config = ConfigDict(
         extra="forbid",
         json_schema_extra={
-            "example": {"project_id": 1, "task_key": "manual-review", "run_plan_id": 12}
+            "example": {
+                "project_id": 1,
+                "task_key": "manual-review",
+                "run_plan_id": 12,
+                "require_execution": True,
+                "required_step_ids": ["review-delivery"],
+            }
         },
     )
 

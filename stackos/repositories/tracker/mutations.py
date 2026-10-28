@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import re
 from datetime import datetime
 from typing import Any
 
@@ -12,6 +15,7 @@ from stackos.artifacts import redact_secrets
 from stackos.db.models import (
     TRACKER_ITEM_STATUS_TRANSITIONS,
     Run,
+    RunKind,
     RunPlan,
     RunPlanStatus,
     RunPlanStep,
@@ -149,6 +153,8 @@ class TrackerMutationMixin:
             raise ConflictError("tracker task key already exists", data={"task_key": key})
         required_flow = self._required_stackos_flow(source_json)
         if required_flow is not None:
+            if "run_plan_id" in required_flow:
+                raise ValidationError("required StackOS flow plan binding uses tracker.linkRunPlan")
             flow = (completion_evidence_json or {}).get("stackos_flow")
             if (
                 isinstance(flow, dict)
@@ -1073,6 +1079,8 @@ class TrackerMutationMixin:
         required_flow = self._required_stackos_flow(patch_json.get("source_json", task.source_json))
         if existing_flow is not None and required_flow != existing_flow:
             raise ValidationError("required StackOS flow is immutable on an existing task")
+        if existing_flow is None and required_flow is not None and "run_plan_id" in required_flow:
+            raise ValidationError("required StackOS flow plan binding uses tracker.linkRunPlan")
         if required_flow is not None:
             previous_flow = (
                 task.completion_evidence_json.get("stackos_flow")
@@ -1185,10 +1193,12 @@ class TrackerMutationMixin:
         if not isinstance(source_json, dict) or "required_stackos_flow" not in source_json:
             return None
         requirement = source_json["required_stackos_flow"]
-        if not isinstance(requirement, dict) or set(requirement) != {
-            "flow_key",
-            "required_step_ids",
-        }:
+        pending_keys = {"flow_key", "required_step_ids"}
+        bound_keys = pending_keys | {"run_plan_id", "inputs_digest"}
+        if not isinstance(requirement, dict) or set(requirement) not in (
+            pending_keys,
+            bound_keys,
+        ):
             raise ValidationError("required StackOS flow needs flow_key and required_step_ids")
         flow_key = requirement["flow_key"]
         steps = requirement["required_step_ids"]
@@ -1202,7 +1212,21 @@ class TrackerMutationMixin:
             or len(set(steps)) != len(steps)
         ):
             raise ValidationError("required StackOS flow has invalid key or required steps")
+        if set(requirement) == bound_keys and (
+            type(requirement["run_plan_id"]) is not int
+            or requirement["run_plan_id"] <= 0
+            or not isinstance(requirement["inputs_digest"], str)
+            or re.fullmatch(r"sha256:[0-9a-f]{64}", requirement["inputs_digest"]) is None
+        ):
+            raise ValidationError("required StackOS flow has invalid plan or input provenance")
         return requirement
+
+    @staticmethod
+    def _run_plan_inputs_digest(plan: RunPlan) -> str:
+        payload = json.dumps(
+            plan.inputs_json, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
+        return "sha256:" + hashlib.sha256(payload).hexdigest()
 
     def _validate_stackos_flow_evidence(
         self,
@@ -1234,6 +1258,8 @@ class TrackerMutationMixin:
         plan_id, run_id = flow.get("run_plan_id"), flow.get("run_id")
         if any(type(value) is not int or value <= 0 for value in (plan_id, run_id)):
             raise ValidationError("StackOS flow completion requires positive run plan and run IDs")
+        if plan_id != requirement.get("run_plan_id"):
+            raise ValidationError("StackOS flow completion requires the bound required run plan")
         plan = self._s.get(RunPlan, plan_id, populate_existing=True)
         run = self._s.get(Run, run_id, populate_existing=True)
         if (
@@ -1242,11 +1268,16 @@ class TrackerMutationMixin:
             or plan.project_id != project_id
             or run.project_id != project_id
             or plan.run_id != run_id
+            or run.kind != RunKind.RUN_PLAN
+            or not isinstance(run.metadata_json, dict)
+            or run.metadata_json.get("run_plan_id") != plan_id
             or (plan.template_key or plan.key) != requirement["flow_key"]
         ):
             raise ValidationError(
                 "StackOS flow run plan and run must match the required project flow"
             )
+        if self._run_plan_inputs_digest(plan) != requirement.get("inputs_digest"):
+            raise ValidationError("StackOS flow required run plan inputs changed after binding")
         link = self._s.exec(
             select(TrackerTicketLink.id).where(
                 TrackerTicketLink.project_id == project_id,
