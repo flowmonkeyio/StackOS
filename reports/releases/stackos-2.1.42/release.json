@@ -14,19 +14,26 @@
   ],
   "signoff": "Independent source, scope/simplicity, version and artifact reviews approved; no unresolved required repairs or agent/API contract changes.",
   "installation": {
-    "captured_at": "2026-10-29T06:16:24.111372+00:00",
-    "operator_instruction": "Do not replace; deploy only. Operator will install and report back.",
-    "installation_status": "operator_owned",
-    "earlier_replacement_attempt": "failed with OS permission denied before app modification",
-    "existing_version": "2.1.41",
-    "service_restore": "canonical restart succeeded; HTTP health returned2.1.41",
-    "administrator_prompt_attempted": false,
-    "installed_release_claimed": false,
-    "existing_app_signature_verified": true
+    "status": "operator_installed_verified",
+    "installed_by": "operator",
+    "version": "2.1.42",
+    "build_id": "20261029T054523Z",
+    "verification_ref": "evidence/post-install-verification.json",
+    "agent_verification": "Read-only; no further installation, replacement or restart.",
+    "prior_disposition": {
+      "captured_at": "2026-10-29T06:16:24.111372+00:00",
+      "operator_instruction": "Do not replace; deploy only. Operator will install and report back.",
+      "installation_status": "operator_owned",
+      "earlier_replacement_attempt": "failed with OS permission denied before app modification",
+      "existing_version": "2.1.41",
+      "service_restore": "canonical restart succeeded; HTTP health returned2.1.41",
+      "administrator_prompt_attempted": false,
+      "installed_release_claimed": false,
+      "existing_app_signature_verified": true
+    }
   },
   "residuals": [
-    "Earlier website QA runs may have forwarded synthetic analytics events; final runs blocked direct and proxied collection.",
-    "Operator will install the release and report back; no 2.1.42 installed-app verification is claimed."
+    "Earlier website QA runs may have forwarded synthetic analytics events; final runs blocked direct and proxied collection."
   ],
   "evidence_directory": "evidence",
   "captured_at": "2026-10-29T06:23:56.869202+00:00"

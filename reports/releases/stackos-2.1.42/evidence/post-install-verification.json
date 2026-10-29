@@ -1,0 +1,93 @@
+{
+  "version": "2.1.42",
+  "verified_at": "2026-10-29T06:28:36.164982+00:00",
+  "installed_by": "operator",
+  "agent_actions": "Read-only verification; no install, replacement or restart.",
+  "build_matches_published_artifact": true,
+  "payload": {
+    "name": "stackos",
+    "version": "2.1.42",
+    "buildId": "20261029T054523Z",
+    "builtAt": "2026-10-29T05:45:23Z"
+  },
+  "health": {
+    "daemon_uptime_s": 142.985,
+    "db_status": "ok",
+    "scheduler_running": true,
+    "version": "2.1.42",
+    "milestone": "M10"
+  },
+  "checks": [
+    {
+      "check": "version",
+      "exit_code": 0
+    },
+    {
+      "check": "doctor",
+      "exit_code": 0
+    },
+    {
+      "check": "autostart",
+      "exit_code": 0
+    },
+    {
+      "check": "signature",
+      "exit_code": 0
+    }
+  ],
+  "passed": true,
+  "doctor_checks": {
+    "daemon_up": true,
+    "seed_file_present": true,
+    "seed_file_mode_0600": true,
+    "auth_token_present": true,
+    "auth_token_mode_0600": true,
+    "db_file_present": true,
+    "credentials_decrypt": true,
+    "alembic_at_head": true,
+    "scheduler_jobs_healthy": true,
+    "browser_runtime_ready": true,
+    "telegram_tdlib_runtime_ready": true,
+    "browser_launcher_ready": true,
+    "codex_mcp_registered": true,
+    "claude_mcp_registered": true,
+    "mcp_registration_ready": true,
+    "mcp_host_codex_ready": true,
+    "mcp_host_claude_code_ready": true,
+    "mcp_host_claude_desktop_ready": true,
+    "mcp_host_gemini_cli_ready": true,
+    "mcp_host_hermes_ready": true,
+    "launchd_plist_present": true,
+    "provider_readiness_available": true,
+    "codex_skills_installed": true,
+    "claude_skills_installed": true,
+    "plugins_installed": true,
+    "plugin_marketplace_registered": true,
+    "stackos_plugin_skill_current": true
+  },
+  "autostart": {
+    "launchd_loaded": true,
+    "plist_present": true,
+    "installed_payload_used": true
+  },
+  "browser_runtime": {
+    "provider": "gstack",
+    "package_version": "1.91.242.0",
+    "package_installed": true,
+    "browser_downloaded": true,
+    "browser_path_present": true
+  },
+  "state_preservation": {
+    "counts": {
+      "projects": 20,
+      "credentials": 26,
+      "account_links": 6,
+      "project_attachments": 32,
+      "encrypted_record_ids": 26
+    },
+    "identities_unchanged": true,
+    "custody_files_unchanged": true,
+    "schema_unchanged": true
+  },
+  "completed_at": "2026-10-29T06:32:08.270233+00:00"
+}
