@@ -10,6 +10,8 @@ from stackos.operations.spec import (
     OperationExample,
     OperationResponsePolicy,
     OperationSpec,
+    OperationSurface,
+    OperationSurfaces,
 )
 from stackos.operations.tracker.read_handlers import (
     tracker_blockers,
@@ -44,6 +46,7 @@ from stackos.operations.tracker.schemas import (
     TrackerTicketCountsAllInput,
     TrackerTicketCountsInput,
     TrackerTicketInput,
+    TrackerUpdateTaskContentInput,
     TrackerUpdateTaskInput,
     TrackerUpdateTicketInput,
 )
@@ -61,6 +64,7 @@ from stackos.operations.tracker.write_handlers import (
     tracker_release,
     tracker_reopen,
     tracker_update_task,
+    tracker_update_task_content,
     tracker_update_ticket,
 )
 from stackos.repositories.base import Page
@@ -73,6 +77,7 @@ from stackos.repositories.tracker import (
     TrackerSearchOut,
     TrackerSnapshotOut,
     TrackerStatusOut,
+    TrackerTaskContentOut,
     TrackerTicketCountsOut,
     TrackerVerifyOut,
 )
@@ -400,6 +405,54 @@ def operation_specs() -> list[OperationSpec]:
                             "status": "in-progress",
                             "lane_key": "review",
                         },
+                    },
+                ),
+            ),
+        ),
+        OperationSpec(
+            name="tracker.updateTaskContent",
+            summary="Save a task description or append operator input without changing execution.",
+            input_model=TrackerUpdateTaskContentInput,
+            output_model=WriteEnvelope[TrackerTaskContentOut],
+            handler=tracker_update_task_content,
+            surfaces=OperationSurfaces(
+                mcp=OperationSurface(enabled=False),
+                rest=OperationSurface(
+                    enabled=True,
+                    browser_safe=True,
+                    path="/api/v1/operations/tracker.updateTaskContent/call",
+                ),
+                cli=OperationSurface(enabled=True, command="ops call tracker.updateTaskContent"),
+            ),
+            mutating=True,
+            grant_policy="local-admin-console-write",
+            idempotency_policy="handler",
+            response_policy=OperationResponsePolicy(
+                default_mode="raw",
+                allowed_modes=("raw",),
+                ack_safe=False,
+                raw_only_reason="Preserve saved content, input receipt and concurrency timestamp.",
+            ),
+            purpose=(
+                "Human task-description correction and append-only additional input. "
+                "This never changes lifecycle, workflow fields, tickets, dependencies or execution."
+            ),
+            prerequisites=(
+                "Read the task with tracker.get response_mode=raw and use its updated_at.",
+                "Use one stable idempotency_key per submission; refresh after a conflict.",
+            ),
+            returns=(
+                "Saved task, tracker revision, appended input and intent-bound retry receipt.",
+            ),
+            examples=(
+                OperationExample(
+                    title="Add operator context to an existing task",
+                    arguments={
+                        "project_id": 1,
+                        "task_key": "workflow-42",
+                        "expected_updated_at": "2026-10-28T12:00:00",
+                        "idempotency_key": "work-input-42-1",
+                        "additional_input": "Also verify the narrow layout.",
                     },
                 ),
             ),

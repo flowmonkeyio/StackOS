@@ -140,7 +140,7 @@ const sizeClass = computed(
     </slot>
     <span
       v-if="iconOnly"
-      class="ui-button__icon"
+      class="ui-button__icon inline-flex items-center justify-center"
     >
       <slot />
     </span>

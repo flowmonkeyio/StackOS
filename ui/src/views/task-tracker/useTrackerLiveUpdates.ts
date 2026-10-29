@@ -24,13 +24,13 @@ export function useTrackerLiveUpdates(options: UseTrackerLiveUpdatesOptions) {
 
   function restart(): void {
     stop()
-    if (!validProjectId(projectId.value) || !activeTaskKey.value) return
+    if (!validProjectId(projectId.value)) return
     const taskKey = activeTaskKey.value
     const cursorKey = projectTaskCursorKey(projectId.value, taskKey)
     liveError.value = null
     statusStream = openTrackerStatusStream({
       projectId: projectId.value,
-      taskKey,
+      taskKey: taskKey || undefined,
       afterId: streamCursorByProjectTask.get(cursorKey) ?? null,
       onEvent,
       onError(cause) {
@@ -45,10 +45,8 @@ export function useTrackerLiveUpdates(options: UseTrackerLiveUpdatesOptions) {
   }
 
   function onEvent(event: ProjectTimelineEvent): void {
-    const metadata = eventMetadata(event)
-    const taskKey = typeof metadata.task_key === 'string' ? metadata.task_key : activeTaskKey.value
-    if (taskKey && validProjectId(projectId.value)) {
-      streamCursorByProjectTask.set(projectTaskCursorKey(projectId.value, taskKey), event.id)
+    if (validProjectId(projectId.value)) {
+      streamCursorByProjectTask.set(projectTaskCursorKey(projectId.value, activeTaskKey.value), event.id)
     }
     const touchedNodes = touchedGraphNodeIds(event)
     markRecentNodes(touchedNodes)

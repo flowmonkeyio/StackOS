@@ -424,7 +424,7 @@ function dagreDependencyLayout(
     graph.setGraph({
       rankdir: 'LR',
       nodesep: 62,
-      ranksep: 132,
+      ranksep: graphNodes.length <= 12 ? 64 : 132,
       edgesep: 16,
       marginx: 40,
       marginy: 40,

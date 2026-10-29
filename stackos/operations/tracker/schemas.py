@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import (
     Any,
     Literal,
@@ -11,6 +12,8 @@ from pydantic import (
     ConfigDict,
     Field,
     StrictBool,
+    StrictInt,
+    StrictStr,
     model_validator,
 )
 
@@ -404,6 +407,33 @@ class TrackerUpdateTaskInput(MCPInput):
     actor: str | None = None
 
 
+class TrackerUpdateTaskContentInput(MCPInput):
+    """Human content edits cannot supply tracker or workflow execution state."""
+
+    project_id: StrictInt = Field(gt=0)
+    task_key: StrictStr = Field(min_length=1, max_length=200)
+    expected_updated_at: datetime
+    idempotency_key: StrictStr = Field(
+        min_length=1, max_length=120, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+    )
+    description: StrictStr | None = Field(default=None, max_length=20_000)
+    additional_input: StrictStr | None = Field(default=None, max_length=20_000)
+    run_token: None = None
+    expected_etag: None = None
+    response_mode: Literal["raw", "standard", "verbose"] = "raw"
+
+    @model_validator(mode="after")
+    def validate_content(self) -> TrackerUpdateTaskContentInput:
+        fields = self.model_fields_set & {"description", "additional_input"}
+        if not fields:
+            raise ValueError("description or additional_input is required")
+        if any(getattr(self, field) is None for field in fields):
+            raise ValueError("content fields cannot be null; use an empty description to clear it")
+        if self.additional_input is not None and not self.additional_input.strip():
+            raise ValueError("additional_input must contain text")
+        return self
+
+
 class TrackerRejectTaskInput(MCPInput):
     model_config = ConfigDict(
         extra="forbid",
@@ -650,6 +680,7 @@ __all__ = [
     "TrackerResponseMode",
     "TrackerSearchInput",
     "TrackerTicketInput",
+    "TrackerUpdateTaskContentInput",
     "TrackerUpdateTaskInput",
     "TrackerUpdateTicketInput",
 ]

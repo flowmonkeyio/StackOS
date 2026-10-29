@@ -1,6 +1,6 @@
 import type { TrackerStatus, TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
 
-export type ViewMode = 'stories' | 'graph' | 'tickets'
+export type ViewMode = 'board' | 'graph'
 export type StatusFilter = 'all' | TrackerStatus
 export type GraphBlockFilter = 'blocked' | 'open'
 export type SelectMetaTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'accent'
@@ -35,15 +35,4 @@ export interface TrackerTaskSelectOption {
 export interface TrackerSelectOption {
   value: string
   label: string
-}
-
-export interface TrackerStatusOption {
-  key: StatusFilter
-  label: string
-}
-
-export interface TrackerViewOption {
-  key: ViewMode
-  label: string
-  icon: string
 }

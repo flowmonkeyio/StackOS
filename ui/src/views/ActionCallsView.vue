@@ -652,21 +652,17 @@ onBeforeRouteUpdate((to) => {
       @durable-control="requestDurableControl"
     />
 
-    <Teleport to="body">
-      <div class="relative z-modal">
-        <UiConfirmDialog
-          :model-value="durableControlConfirmOpen"
-          :title="durableControlConfirmation.title"
-          :description="durableControlConfirmation.description"
-          :confirm-label="durableControlConfirmation.confirmLabel"
-          :cancel-label="durableControlConfirmation.cancelLabel"
-          :tone="durableControlConfirmation.tone"
-          :loading="durableDeliveryControl === pendingDurableControl?.action"
-          @update:model-value="(open) => { if (!open) pendingDurableControl = null }"
-          @confirm="confirmDurableControl"
-          @cancel="pendingDurableControl = null"
-        />
-      </div>
-    </Teleport>
+    <UiConfirmDialog
+      :model-value="durableControlConfirmOpen"
+      :title="durableControlConfirmation.title"
+      :description="durableControlConfirmation.description"
+      :confirm-label="durableControlConfirmation.confirmLabel"
+      :cancel-label="durableControlConfirmation.cancelLabel"
+      :tone="durableControlConfirmation.tone"
+      :loading="durableDeliveryControl === pendingDurableControl?.action"
+      @update:model-value="(open) => { if (!open) pendingDurableControl = null }"
+      @confirm="confirmDurableControl"
+      @cancel="pendingDurableControl = null"
+    />
   </UiPageShell>
 </template>

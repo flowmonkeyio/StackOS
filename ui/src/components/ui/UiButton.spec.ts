@@ -85,6 +85,7 @@ describe('UiButton', () => {
       slots: { default: () => h(UiIcon, { name: 'refresh' }) },
     })
     const icon = wrapper.get('span.ui-button__icon').element
+    expect(wrapper.get('span.ui-button__icon').classes()).toEqual(expect.arrayContaining(['inline-flex', 'items-center', 'justify-center']))
     await wrapper.setProps({ loading: true })
     expect(wrapper.get('span.ui-button__icon').element).toBe(icon)
     expect(wrapper.get('button').attributes('aria-label')).toBe('Refresh backups')

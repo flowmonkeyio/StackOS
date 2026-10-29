@@ -23,7 +23,7 @@ export interface SseMessage {
 
 export interface TrackerStatusStreamOptions {
   projectId: number
-  taskKey: string
+  taskKey?: string
   afterId?: number | null
   onEvent: (event: ProjectTimelineEvent) => void
   onError?: (error: unknown) => void
@@ -92,12 +92,7 @@ export function openTrackerStatusStream(options: TrackerStatusStreamOptions): Tr
   }
 
   async function readStream(afterId: number | null): Promise<void> {
-    const query = new URLSearchParams({
-      task_key: options.taskKey,
-      limit: '50',
-    })
-    if (afterId !== null) query.set('after', String(afterId))
-    const response = await apiStream(trackerStatusStreamPath(options.projectId, query), {
+    const response = await apiStream(trackerStatusStreamPath(options.projectId, { taskKey: options.taskKey, afterId }), {
       signal: controller.signal,
     })
     const reader = response.body?.getReader()
@@ -143,15 +138,16 @@ export function openTrackerStatusStream(options: TrackerStatusStreamOptions): Tr
 
 export function trackerStatusStreamPath(
   projectId: number,
-  query: URLSearchParams | { taskKey: string; afterId?: number | null },
+  query: URLSearchParams | { taskKey?: string; afterId?: number | null },
 ): string {
   const params =
     query instanceof URLSearchParams
       ? query
-      : new URLSearchParams({
-          task_key: query.taskKey,
-          limit: '50',
-        })
+      : new URLSearchParams()
+  if (!(query instanceof URLSearchParams)) {
+    if (query.taskKey) params.set('task_key', query.taskKey)
+    params.set('limit', '50')
+  }
   if (!(query instanceof URLSearchParams) && query.afterId !== null && query.afterId !== undefined) {
     params.set('after', String(query.afterId))
   }

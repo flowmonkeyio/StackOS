@@ -29,7 +29,7 @@ not become narrower when its data or selected mode changes.
 | `/projects/:id/cost-budget` | Spend | `ProjectDetailView` | shared project-detail header and budget panel |
 | `/projects/:id/inbox` | Attention | `InboxView` | filters and human-action master/detail |
 | `/projects/:id/activity` | Activity | `ActivityView` | grouped outcomes master/detail with audit disclosure |
-| `/projects/:id/tasks` | Work | `TaskTrackerView` | one shared command surface; map, stories, and tickets swap below it |
+| `/projects/:id/tasks` | Work | `TaskTrackerView` | inline Board / Graph command surface; default seven-column Board; map-only task picker and explicit side inspector; one persistent task/ticket detail dialog |
 | `/projects/:id/runs` | Runs | `RunsView` | run inventory |
 | `/projects/:id/runs/:run_id` | Run detail | `RunsView` | selected run journey and evidence |
 | `/projects/:id/plugins` | Plugins | `PluginsView` | plugin catalog/cards |
@@ -55,13 +55,13 @@ Work uses one wrapper for all three views:
 
 ```text
 Project page header
-  -> task selector + Dependency map / Stories / Tickets
+  -> task selector + Graph / Stories / Tickets
   -> shared filters and task totals
   -> mode content (only this region changes)
 ```
 
 Changing project preserves the current operating route. Changing Work mode
 does not move the selector, view control, filters, or page boundaries. The
-Dependency map is the default because it exposes sequence, parallel work, and
+Graph is the default because it exposes sequence, parallel work, and
 blockers fastest; Stories translates the same state into goals/outcomes, and
 Tickets provides exact inventory.

@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.1.41 - 2026-10-28
+
+- Present Work in seven fixed, read-only status columns with inline Board and
+  Graph navigation, remembered map selection, and explicit ticket inspection.
+- Keep task and ticket details in one stable, reusable dialog with bounded
+  ticket lists and preserved drafts, scroll position and keyboard focus.
+- Let humans edit task descriptions and add input from the detail dialog,
+  with conflict checks, safe retries, draft protection and visible save feedback.
+- Improve Board readability with wider columns, status icons, owner initials,
+  source labels, creation times and counts of successfully completed tickets.
+
 ## 2.1.40 - 2026-10-28
 
 - Separate app-wide setup, accounts and backups from project navigation in the

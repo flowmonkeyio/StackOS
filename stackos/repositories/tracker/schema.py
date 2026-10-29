@@ -338,6 +338,24 @@ class TrackerListItemResultOut(BaseModel):
     error: str | None = None
 
 
+class TrackerTaskInputOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    text: str
+    created_at: datetime
+    actor: str
+
+
+class TrackerTaskContentOut(BaseModel):
+    task: TrackerTaskOut
+    rev: int
+    input: TrackerTaskInputOut | None = None
+    idempotency_key: str
+    request_sha256: str
+    replayed: bool = False
+
+
 class TrackerMutationOut(BaseModel):
     tracker: TrackerSummaryOut
     task: TrackerTaskOut | None = None
@@ -388,6 +406,8 @@ __all__ = [
     "TrackerSnapshotOut",
     "TrackerStatusOut",
     "TrackerSummaryOut",
+    "TrackerTaskContentOut",
+    "TrackerTaskInputOut",
     "TrackerTaskOut",
     "TrackerTaskTicketSummaryOut",
     "TrackerTicketOut",

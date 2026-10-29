@@ -77,15 +77,19 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 
 ## 5. Component usage rules
 
-**UiButton.** Default `secondary`. Reserve `primary` for the main permitted action on the surface: navigation, a local utility, or an explicitly registered setup/human-decision operation. `danger` is reserved for explicit local-admin revocation/destructive controls.
+**UiButton.** Default `secondary`. Reserve `primary` for the main permitted action on the surface: navigation, a local utility, or an explicitly registered setup/human-decision operation. `danger` is reserved for explicit local-admin revocation/destructive controls. Icon-only slots center the supplied icon in both axes; the button owns the hit target and the icon keeps its declared dimensions.
 
 **UiCard.** For real things such as projects, plugins, runs, resources, and integrations. **Never nested.** When you want a card inside a card, you want a `UiPanel` or a `UiSectionHeader` + plain divider.
 
 **UiSectionHeader.** Use for section titles inside a page, panel, or card. Keep actions in the action slot; they align right on desktop and wrap below the heading copy on narrow screens so titles and descriptions never squeeze into one-word columns.
 
-**UiDialog.** Header / body / footer. Footer right-aligned, ghost cancel + primary confirm. Trap focus. `Esc` closes unless `dirty`.
+**UiDialog.** Header / body / footer. Footer right-aligned, ghost cancel + primary confirm. Trap focus. `Esc` requests close; the owning flow protects unsaved or in-flight work. The backdrop teleports to `body` and covers the viewport independently of page spacing, scrolling or transformed ancestors. The canonical close control is a nonshrinking `UiIconButton` at `md` (32 × 32px), with a centered 16 × 16px registry close icon aligned to the first header row.
+
+Use `layout="detail"` for stable reading/editing dialogs. This opt-in preset has height `min(880px, 100dvh - 48px)`, fixed header/footer regions and one flexible, vertically scrolling body with `min-height: 0`. Width still follows `size` (`lg` is 672px) and the viewport clamp. Long headings wrap to two lines with their full text available as the title; the body wraps long content and prevents horizontal overflow. The default content-sized dialog remains unchanged. A detail flow keeps one shell mounted while switching its internal content; the flow owns identity, retained reading/draft state and intentional focus, never the primitive.
 
 **UiSidePanel.** Right edge, 480px default, 720px for editors. Same H/B/F structure as dialog.
+
+Dialogs and side panels share `overlayStack.ts`: opening order owns layering and keyboard handling, only the top overlay handles Escape/Tab, and the body remains locked until the final overlay closes. Closing restores the opener; removing a lower overlay preserves the surviving overlay's final return target. Do not add local stacking wrappers around these primitives.
 
 **UiToast.** Top-right, 320px, auto-dismiss after 5s except `danger` (sticky). One queue, max 3 visible. Live region.
 

@@ -13,6 +13,8 @@ export interface TrackerControlFilters {
   status: StatusFilter
   workflow: string
   assignee: string
+  ticketStatus?: StatusFilter
+  blocked?: boolean
 }
 
 export interface TrackerGraphFilters {
@@ -57,6 +59,7 @@ export function buildAssigneeOptions(
   tickets: TrackerTicket[],
 ): Array<{ value: string; label: string }> {
   const values = new Set([
+    ...tasks.flatMap((task) => task.owner ? [task.owner] : []),
     ...tickets.flatMap((ticket) => (ticket.assignee ? [ticket.assignee] : [])),
     ...tasks.flatMap((task) => task.ticket_summary?.assignees ?? []),
   ])
@@ -122,22 +125,6 @@ export function buildTaskProgressRows(
     })
 }
 
-export function ticketMatchesControls(
-  ticket: TrackerTicket,
-  task: TrackerTask,
-  filters: TrackerControlFilters,
-): boolean {
-  const query = normalizedSearch(filters.search)
-  if (filters.status !== 'all' && ticket.status !== filters.status) return false
-  if (filters.assignee && ticket.assignee !== filters.assignee) return false
-  if (!taskMatchesWorkflow(task, filters.workflow)) return false
-  if (!query) return true
-  return includesSearch(
-    [ticket.key, ticket.title, ticket.goal, ticket.outcome ?? '', ticket.assignee ?? ''],
-    query,
-  )
-}
-
 export function taskRowMatchesControls(
   row: TaskProgressRow,
   filters: TrackerControlFilters,
@@ -145,16 +132,18 @@ export function taskRowMatchesControls(
   const { task, tickets } = row
   const summary = tickets.length > 0 ? null : task.ticket_summary
   const query = normalizedSearch(filters.search)
+  if (filters.status !== 'all' && task.status !== filters.status) return false
+  if (filters.blocked && row.blockedCount === 0) return false
   if (
-    filters.status !== 'all' &&
-    task.status !== filters.status &&
-    !tickets.some((ticket) => ticket.status === filters.status) &&
-    !summary?.status_counts[filters.status]
+    filters.ticketStatus && filters.ticketStatus !== 'all' &&
+    !tickets.some((ticket) => ticket.status === filters.ticketStatus) &&
+    !summary?.status_counts[filters.ticketStatus]
   ) {
     return false
   }
   if (
     filters.assignee &&
+    task.owner !== filters.assignee &&
     !tickets.some((ticket) => ticket.assignee === filters.assignee) &&
     !summary?.assignees.includes(filters.assignee)
   ) {

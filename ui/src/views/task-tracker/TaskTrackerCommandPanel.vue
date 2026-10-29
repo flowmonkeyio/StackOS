@@ -1,194 +1,128 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { UiButton, UiIcon, UiInput, UiSegmentedControl, UiSelect, UiToolbar } from '@/components/ui'
+import type { TrackerSelectOption, TrackerTaskSelectOption, ViewMode } from './viewTypes'
 
-import {
-  UiButton,
-  UiFormField,
-  UiInput,
-  UiSegmentedControl,
-  UiSelect,
-  UiToolbar,
-} from '@/components/ui'
-
-import type {
-  StatusFilter,
-  TrackerSelectOption,
-  TrackerStatusOption,
-  TrackerTaskSelectOption,
-  TrackerViewOption,
-  ViewMode,
-} from './viewTypes'
-
-const props = defineProps<{
+defineProps<{
+  viewMode: ViewMode
   activeTaskKey: string
   taskOptions: TrackerTaskSelectOption[]
-  viewMode: ViewMode
-  viewOptions: TrackerViewOption[]
-  filtersExpanded: boolean
-  filterLabel: string
-  filtersActive: boolean
   search: string
-  statusFilter: StatusFilter
-  statusOptions: TrackerStatusOption[]
   workflowFilter: string
   workflowOptions: TrackerSelectOption[]
   assigneeFilter: string
   assigneeOptions: TrackerSelectOption[]
   taskRowsCount: number
   tasksCount: number
-  filteredTicketCount: number | null
-  ticketsCount: number
-  activeTerminalCount: number | null
-  activeTotalCount: number | null
-  blockedCount: number
-  workflowCount: number
+  filtersActive: boolean
+  taskAvailable: boolean
+  graphSummary: string
 }>()
-
 defineEmits<{
   (e: 'taskSelect', value: string | number | null): void
   (e: 'update:viewMode', value: ViewMode): void
-  (e: 'update:filtersExpanded', value: boolean): void
   (e: 'update:search', value: string): void
-  (e: 'update:statusFilter', value: StatusFilter): void
   (e: 'update:workflowFilter', value: string): void
   (e: 'update:assigneeFilter', value: string): void
+  (e: 'openTaskDetail'): void
   (e: 'clear'): void
 }>()
-
-const statusSelectOptions = computed(() =>
-  props.statusOptions.map((option) => ({
-    value: option.key,
-    label: option.label,
-  })),
-)
+const viewOptions = [{ key: 'board', label: 'Board' }, { key: 'graph', label: 'Graph' }]
 </script>
 
 <template>
   <UiToolbar
-    aria-label="Task tracker controls"
-    class="tracker-command-panel !flex-col !items-stretch"
+    aria-label="Work view controls"
+    class="tracker-command-panel"
   >
-    <div class="flex w-full flex-wrap items-center gap-2">
-      <div class="min-w-0 grow basis-72">
+    <UiSegmentedControl
+      class="tracker-command-panel__views"
+      :model-value="viewMode"
+      label="Work view"
+      :options="viewOptions"
+      @select="$emit('update:viewMode', String($event) as ViewMode)"
+    />
+    <template v-if="viewMode === 'board'">
+      <div class="tracker-command-panel__search">
+        <UiInput
+          :model-value="search"
+          type="search"
+          placeholder="Search tasks"
+          aria-label="Search tasks"
+          @update:model-value="$emit('update:search', String($event ?? ''))"
+        >
+          <template #prefix>
+            <UiIcon
+              name="search"
+              class="h-4 w-4"
+            />
+          </template>
+        </UiInput>
+      </div>
+      <div class="tracker-command-panel__filter">
+        <UiSelect
+          :model-value="workflowFilter"
+          :options="workflowOptions"
+          aria-label="Workflow filter"
+          @change="$emit('update:workflowFilter', String($event ?? ''))"
+        />
+      </div>
+      <div class="tracker-command-panel__filter tracker-command-panel__assignee">
+        <UiSelect
+          :model-value="assigneeFilter"
+          :options="assigneeOptions"
+          aria-label="Assignee filter"
+          @change="$emit('update:assigneeFilter', String($event ?? ''))"
+        />
+      </div>
+      <UiButton
+        v-if="filtersActive"
+        variant="ghost"
+        size="sm"
+        @click="$emit('clear')"
+      >
+        Clear
+      </UiButton>
+      <span class="tracker-command-panel__count text-xs text-fg-muted">
+        {{ filtersActive ? `${taskRowsCount} / ${tasksCount}` : tasksCount }} tasks
+      </span>
+    </template>
+    <template v-else>
+      <div class="tracker-command-panel__task">
         <UiSelect
           :model-value="activeTaskKey"
           :options="taskOptions"
-          placeholder="Select task"
+          searchable
+          search-placeholder="Find a task"
+          placeholder="Select a task"
           aria-label="Selected task"
           @change="$emit('taskSelect', $event)"
         />
       </div>
-
-      <UiSegmentedControl
-        :model-value="viewMode"
-        label="Task tracker view"
-        :options="viewOptions"
-        @select="$emit('update:viewMode', String($event) as ViewMode)"
-      />
-
-      <div class="ml-auto flex items-center gap-2">
-        <UiButton
-          variant="secondary"
-          size="sm"
-          icon-left="filter"
-          :aria-expanded="filtersExpanded"
-          @click="$emit('update:filtersExpanded', !filtersExpanded)"
-        >
-          {{ filterLabel }}
-        </UiButton>
-        <UiButton
-          v-if="filtersActive"
-          variant="ghost"
-          size="sm"
-          @click="$emit('clear')"
-        >
-          Clear
-        </UiButton>
-      </div>
-    </div>
-
-    <div
-      v-if="filtersExpanded"
-      class="grid w-full gap-3 border-t border-subtle pt-3 sm:grid-cols-2 xl:grid-cols-4"
-    >
-      <UiFormField label="Search">
-        <UiInput
-          :model-value="search"
-          placeholder="Task, ticket, owner, assignee"
-          @update:model-value="$emit('update:search', String($event ?? ''))"
-        />
-      </UiFormField>
-
-      <UiFormField label="Status">
-        <UiSelect
-          :model-value="statusFilter"
-          :options="statusSelectOptions"
-          @change="$emit('update:statusFilter', String($event ?? 'all') as StatusFilter)"
-        />
-      </UiFormField>
-
-      <UiFormField label="Workflow">
-        <UiSelect
-          :model-value="workflowFilter"
-          :options="workflowOptions"
-          @change="$emit('update:workflowFilter', String($event ?? ''))"
-        />
-      </UiFormField>
-
-      <UiFormField label="Assignee">
-        <UiSelect
-          :model-value="assigneeFilter"
-          :options="assigneeOptions"
-          @change="$emit('update:assigneeFilter', String($event ?? ''))"
-        />
-      </UiFormField>
-    </div>
-
-    <p class="tracker-command-panel__meta w-full border-t border-subtle pt-2 text-xs text-fg-muted">
-      <span>
-        <span class="font-medium tabular-nums text-fg-default">{{ taskRowsCount }}/{{ tasksCount }}</span>
-        tasks
-      </span>
-      <span v-if="filteredTicketCount !== null">
-        <span class="font-medium tabular-nums text-fg-default">{{ filteredTicketCount }}/{{ ticketsCount }}</span>
-        tickets
-      </span>
-      <span v-else>
-        <span class="font-medium tabular-nums text-fg-default">{{ ticketsCount }}</span>
-        indexed tickets
-      </span>
-      <span v-if="activeTerminalCount !== null && activeTotalCount !== null">
-        <span class="font-medium tabular-nums text-fg-default">{{ activeTerminalCount }}/{{ activeTotalCount }}</span>
-        terminal
-      </span>
-      <span>
-        <span class="font-medium tabular-nums text-fg-default">{{ blockedCount }}</span>
-        blocked
-      </span>
-      <span>
-        <span class="font-medium tabular-nums text-fg-default">{{ workflowCount }}</span>
-        workflows
-      </span>
-    </p>
+      <span class="tracker-command-panel__count text-xs text-fg-muted">{{ graphSummary }}</span>
+      <UiButton
+        variant="secondary"
+        size="sm"
+        icon-left="file-text"
+        :disabled="!taskAvailable"
+        @click="$emit('openTaskDetail')"
+      >
+        Task details
+      </UiButton>
+    </template>
   </UiToolbar>
 </template>
 
 <style scoped>
-.tracker-command-panel {
-  flex: none;
+.tracker-command-panel { flex: none; flex-wrap: nowrap; min-width: 0; gap: 8px; }
+.tracker-command-panel__views { flex: none; flex-wrap: nowrap; white-space: nowrap; }
+.tracker-command-panel__search { flex: 0 1 280px; min-width: 120px; }
+.tracker-command-panel__filter { flex: 0 1 180px; min-width: 110px; }
+.tracker-command-panel__assignee { flex-basis: 160px; }
+.tracker-command-panel__task { flex: 1 1 480px; max-width: 640px; min-width: 160px; }
+.tracker-command-panel__count { margin-left: auto; flex: none; white-space: nowrap; }
+@media (max-width: 1100px) {
+  .tracker-command-panel__count { display: none; }
+  .tracker-command-panel__filter { flex-basis: 120px; min-width: 95px; }
 }
-
-.tracker-command-panel__meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  column-gap: 8px;
-  row-gap: 4px;
-}
-
-.tracker-command-panel__meta > span + span::before {
-  content: '·';
-  margin-right: 8px;
-  color: var(--color-fg-subtle);
-}
+@media (max-width: 800px) { .tracker-command-panel { overflow-x: auto; } }
 </style>

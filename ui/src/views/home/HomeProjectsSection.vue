@@ -157,11 +157,11 @@ function changeSort(value: string | number | null): void {
       <template #cell:latest_task="{ row }">
         <UiButton
           v-if="row.latest_task"
-          :href="`/projects/${row.id}/tasks?task=${encodeURIComponent(row.latest_task.key)}`"
+          :href="`/projects/${row.id}/tasks?detail=${encodeURIComponent(row.latest_task.key)}`"
           variant="ghost"
           size="sm"
           @click.stop.prevent="
-            router.push(`/projects/${row.id}/tasks?task=${encodeURIComponent(row.latest_task.key)}`)
+            router.push(`/projects/${row.id}/tasks?detail=${encodeURIComponent(row.latest_task.key)}`)
           "
         >
           {{ row.latest_task.title }}

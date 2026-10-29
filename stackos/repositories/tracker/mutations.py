@@ -3,14 +3,19 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+import hashlib
+import json
+from copy import deepcopy
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from pydantic import ValidationError as PydanticValidationError
 from sqlmodel import col, select
 
 from stackos.artifacts import redact_secrets
 from stackos.db.models import (
     TRACKER_ITEM_STATUS_TRANSITIONS,
+    IdempotencyKey,
     Run,
     RunPlan,
     RunPlanStatus,
@@ -36,6 +41,8 @@ from stackos.repositories.tracker.schema import (
     TrackerListItemResultOut,
     TrackerMutationOut,
     TrackerReopenOut,
+    TrackerTaskContentOut,
+    TrackerTaskInputOut,
 )
 from stackos.repositories.tracker.utils import (
     TERMINAL_TRACKER_STATUSES,
@@ -380,6 +387,157 @@ class TrackerMutationMixin:
             ),
             project_id=project_id,
         )
+
+    def update_task_content(
+        self,
+        *,
+        project_id: int,
+        task_key: str,
+        expected_updated_at: datetime,
+        idempotency_key: str,
+        description: str | None = None,
+        additional_input: str | None = None,
+    ) -> Envelope[TrackerTaskContentOut]:
+        """Atomically save human content and its intent-bound retry receipt.
+
+        This entry point owns its transaction. It deliberately avoids the broad
+        task patcher, whose terminal-state normalization can also change lanes.
+        """
+        if description is None and additional_input is None:
+            raise ValidationError("description or additional_input is required")
+        for value in (description, additional_input):
+            if value is not None and (not isinstance(value, str) or len(value) > 20_000):
+                raise ValidationError("task content must be a string of at most 20000 characters")
+        if additional_input is not None and not additional_input.strip():
+            raise ValidationError("additional_input must contain text")
+        if self._s.new or self._s.dirty or self._s.deleted:
+            raise ValidationError("task content save requires a clean repository transaction")
+        expected = (
+            expected_updated_at.astimezone(UTC).replace(tzinfo=None)
+            if expected_updated_at.tzinfo is not None
+            else expected_updated_at
+        )
+        fingerprint = hashlib.sha256(
+            json.dumps(
+                {
+                    "project_id": project_id,
+                    "task_key": task_key,
+                    "expected_updated_at": expected.isoformat(),
+                    "description": description,
+                    "additional_input": additional_input,
+                },
+                sort_keys=True,
+                ensure_ascii=False,
+            ).encode()
+        ).hexdigest()
+        operation = "tracker.updateTaskContent"
+        try:
+            # Reserve the SQLite writer before reading the task, revision or
+            # receipt. Concurrent callers cannot append from the same snapshot.
+            self._s.connection().exec_driver_sql("BEGIN IMMEDIATE")
+            self._s.expire_all()
+            tracker = self._tracker_or_none(project_id=project_id)
+            if tracker is None:
+                raise NotFoundError("tracker task not found", data={"task_key": task_key})
+            task = self._task_by_key(tracker.id, task_key)
+            prior = self._s.exec(
+                select(IdempotencyKey).where(
+                    IdempotencyKey.project_id == project_id,
+                    IdempotencyKey.tool_name == operation,
+                    IdempotencyKey.idempotency_key == idempotency_key,
+                )
+            ).first()
+            if prior is not None:
+                saved = prior.response_json or {}
+                receipt = saved.get("data", {})
+                if receipt.get("request_sha256") != fingerprint:
+                    raise ConflictError(
+                        "idempotency key belongs to a different task content submission",
+                        data={"task_key": task_key, "idempotency_key": idempotency_key},
+                    )
+                replay = Envelope[TrackerTaskContentOut].model_validate(saved)
+                replay.data.replayed = True
+                self._s.commit()
+                return replay
+            if task.updated_at != expected:
+                raise ConflictError(
+                    "task changed; refresh its details before saving again",
+                    data={
+                        "task_key": task.key,
+                        "expected_updated_at": expected.isoformat(),
+                        "current_updated_at": task.updated_at.isoformat(),
+                        "next_operations": ["tracker.get"],
+                    },
+                )
+            before = self._task_snapshot(task)
+            now = max(_utcnow(), task.updated_at + timedelta(microseconds=1))
+            appended = None
+            patch: dict[str, Any] = {}
+            if additional_input is not None:
+                context = deepcopy(task.context_json or {})
+                existing = context.get("operator_inputs", [])
+                try:
+                    if not isinstance(existing, list):
+                        raise ValueError("operator_inputs is not a list")
+                    for item in existing:
+                        TrackerTaskInputOut.model_validate(item)
+                except (ValueError, PydanticValidationError) as exc:
+                    raise ValidationError(
+                        "task operator inputs need repair before another input can be added",
+                        data={"task_key": task.key, "field": "context_json.operator_inputs"},
+                    ) from exc
+                if any(item["id"] == idempotency_key for item in existing):
+                    raise ConflictError("input id already exists; refresh before retrying")
+                appended = TrackerTaskInputOut(
+                    id=idempotency_key,
+                    text=_clean_text(additional_input),
+                    created_at=now,
+                    actor="local-user:operator",
+                )
+                context["operator_inputs"] = [*existing, appended.model_dump(mode="json")]
+                task.context_json = context
+                patch["additional_input"] = appended.model_dump(mode="json")
+            if description is not None:
+                task.description = _clean_text(description)
+                patch["description"] = task.description
+            task.updated_at = now
+            self._s.add(task)
+            self._record_revision(
+                tracker,
+                actor="local-user:operator",
+                change_kind="content",
+                entity_kind="task",
+                entity_id=task.id,
+                entity_key=task.key,
+                summary=f"Updated task content {task.key}.",
+                before_json=before,
+                after_json=self._task_snapshot(task),
+                patch_json=patch,
+                metadata_json={"operation": operation, "idempotency_key": idempotency_key},
+            )
+            result = Envelope(
+                data=TrackerTaskContentOut(
+                    task=self._task_out(task),
+                    rev=tracker.rev,
+                    input=appended,
+                    idempotency_key=idempotency_key,
+                    request_sha256=fingerprint,
+                ),
+                project_id=project_id,
+            )
+            self._s.add(
+                IdempotencyKey(
+                    project_id=project_id,
+                    tool_name=operation,
+                    idempotency_key=idempotency_key,
+                    response_json=result.model_dump(mode="json"),
+                )
+            )
+            self._s.commit()
+            return result
+        except Exception:
+            self._s.rollback()
+            raise
 
     def reopen_task(
         self,

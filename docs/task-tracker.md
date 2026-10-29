@@ -315,6 +315,7 @@ Agent write operations:
 - `tracker.createTask`
 - `tracker.createTicket`
 - `tracker.updateTask`
+- `tracker.updateTaskContent` (human console REST/CLI only)
 - `tracker.updateTicket`
 - `tracker.patch`
 - `tracker.rejectTask`
@@ -548,42 +549,100 @@ blocking for tracker audit or release closeout when they hide required work.
 
 ## UI
 
-The Tasks UI is a generic project work map. It renders:
+The Work UI provides two views, Board and Graph. It renders:
 
-- metrics for tasks, tickets, in-progress work, and blockers
-- filters by workflow, status, assignee, and search text
-- a task index where each task row shows status, source/workflow, priority,
-  done/total ticket count, completion percent, and current detail
-- a complete task selector on first load; terminal tasks remain discoverable
-  while the selected task graph is still loaded on demand
-- one focused Vue Flow graph at a time so large task graphs remain readable
-- dependency-tree graph as the primary visualization, with ticket nodes laid out
-  left-to-right by prerequisite/dependent relationships
-- optional nested task-box view for compact containment inspection
-- dependency edges between tickets, kept visually quiet at large scale
+- Board by default, with seven fixed columns for the current task statuses:
+  `not-started`, `in-progress`, `complete`, `deferred`, `aborted`, `failed`,
+  and `skipped`. Cards cannot be dragged between columns or change status.
+- an inline Board / Graph switch in the same desktop toolbar as the
+  current view's controls. There are no separate Stories or Tickets views.
+- project-wide task cards with title, owner, workflow, blockers, and completed
+  ticket count. Only `complete` tickets count as complete; other terminal
+  statuses do not. Search, workflow and assignee filters narrow the Board.
+  Task-status filters apply to tasks; `ticket_status` links explicitly filter
+  tasks containing tickets with that status.
+- a task selector only in Graph, independent of Board filters and
+  including terminal tasks. After the project index loads, an explicit URL
+  selection takes precedence over the last valid selection remembered for
+  that project, then the first task in the unfiltered picker (newest creation
+  first, descending task ID for ties). The automatic selection replaces the
+  current URL entry. Invalid explicit selections remain unavailable; loading,
+  failed and empty indexes do not invent a selection.
+- one focused Vue Flow dependency graph loaded on demand, with ticket nodes
+  laid out left-to-right by prerequisite/dependent relationships and
+  dependency edges kept visually quiet at large scale.
 - graph-local status and block filters. Status filters select tickets by
   lifecycle status. Block filters use unresolved dependency state, with open
   `blocker_reason` treated as blocked; terminal notes are not counted as active
   blockers. The blocked view keeps the immediate blocking
   ticket visible so the dependency edge still explains why work is blocked. The
-  graph header reports the visible ticket and edge counts when filters are
+  map toolbar reports the visible ticket and dependency counts when filters are
   active, not the full task totals.
 - edge click highlighting for the selected dependency chain. Unrelated nodes
   and edges dim while upstream and downstream dependencies remain readable.
+- node click or keyboard activation selects and highlights work within the map
+  and shows its selection card. Only the card's Details action opens the
+  existing ticket side inspector. Selecting a node or edge, clearing selection,
+  or clicking the canvas closes that inspector. These interactions do not
+  change the Board popup URL or open a centered popup.
 - a minimap and controls for navigating large task graphs
-- active task graphs refocus on the selected or in-progress ticket plus a
-  bounded two-hop dependency neighborhood, not the full project graph. Refresh
-  and first load must not fall back to the static default viewport.
+- small graphs initially fit all nodes. Large graphs focus on the selected or
+  in-progress ticket and its dependency context. Refresh preserves the user's
+  viewport, and switching back to Board preserves its filters and scroll.
 - ticket nodes show lifecycle status as text plus color, and active or recently
   updated nodes may animate. Motion must respect reduced-motion preferences.
-- selected-task live updates come from the task-scoped timeline stream. A live
-  status event refreshes only the selected task graph and marks the touched node
-  as recently updated without changing unrelated tabs.
-- ticket table for dense scanning
-- detail panel for selected task/ticket context
+- project-wide status events refresh the Board without requiring a task
+  selection. Graph uses the selected task's timeline stream to
+  refresh its graph and mark touched nodes as recently updated.
+- one centered, persistent task/ticket detail popup using the shared
+  `UiDialog layout="detail"` preset. Its viewport-bounded frame stays the same
+  through loading, errors, editing and disclosure changes; the body scrolls
+  while header and footer remain visible. The ticket list shows at most six
+  40px rows in a 240px scrolling region, with every record reachable.
+  Board task cards and the map's explicit Task details action open a task
+  popup independently of the map selection. Ticket details inside it offer
+  Back to task; View graph opens the map for that exact task. URL
+  history preserves these identities, and unavailable tasks are explicit.
+  Task-to-ticket inspection starts at the ticket heading; Back restores the
+  task's body/list scroll, expanded sections, editor draft and originating row
+  focus. Choosing another task resets that reading state. Final close restores
+  the popup opener.
 
-The UI is for humans to navigate and inspect. Agents should use tracker
-operations directly for writes.
+The UI is for humans to navigate and inspect. Agents use tracker operations
+directly for lifecycle writes. The Work detail popup also permits a bounded
+human content correction through `tracker.updateTaskContent`: edit the task's
+description or append additional input. Title, goal, status, ownership,
+dependencies, run bindings, constraints and evidence remain read-only there.
+The popup shows input history, preserves drafts on errors or conflicts, and
+protects unsaved text when closing, changing task or navigating away. Those
+actions are blocked while a save is in flight. Inspecting a ticket and returning
+within the same task retains the draft without discarding it. After saving, it fetches current details and Board
+summaries rather than treating a mutation receipt as current display state.
+Save progress, success, errors and conflict-repair actions appear in the pinned
+footer beside the content actions, so long input histories cannot hide them.
+After a save or latest-content refresh, focus stays on that feedback when the
+same task pane is active; finishing a save does not move focus out of ticket
+inspection. Labels distinguish editing a description, adding input and saving
+both together without splitting the atomic submission.
+
+The content operation takes `project_id`, `task_key`, the task's current
+`expected_updated_at`, a stable `idempotency_key`, and `description` and/or
+`additional_input`. An empty description clears it; additional input must be
+nonblank. Both strings are limited to 20,000 characters and use the existing
+secret-text redaction. Inputs are appended under `context_json.operator_inputs`
+with server-owned `id`, `text`, `created_at` and `actor` fields while preserving
+the task's other context. The existing tracker revision history records the
+before/after state. No new task store or schema migration is required.
+
+This is an exact-path browser-safe, MCP-disabled local console operation, not
+permission to expose the broader `tracker.updateTask` patch surface. It accepts
+no actor, run token, arbitrary JSON or execution fields. A serialized transaction
+checks the task timestamp and saves content, revision and the canonical raw
+retry receipt together. A stale timestamp returns a conflict with the current
+timestamp; the UI keeps the draft for review after refresh. Identical retries
+return the original receipt with `replayed=true`; a reused key with different
+intent fails. Content editing never resumes work or changes lifecycle, and
+workflow mirroring preserves these description/input additions.
 
 ## Graph Projection
 

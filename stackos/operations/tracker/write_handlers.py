@@ -20,6 +20,7 @@ from stackos.operations.tracker.schemas import (
     TrackerRejectTaskInput,
     TrackerReleaseInput,
     TrackerReopenInput,
+    TrackerUpdateTaskContentInput,
     TrackerUpdateTaskInput,
     TrackerUpdateTicketInput,
 )
@@ -29,6 +30,7 @@ from stackos.repositories.tracker import (
     TrackerMutationOut,
     TrackerReopenOut,
     TrackerRepository,
+    TrackerTaskContentOut,
 )
 
 
@@ -289,6 +291,24 @@ async def tracker_update_task(
         run_id=ctx.run_id,
         project_id=env.project_id,
     )
+
+
+async def tracker_update_task_content(
+    inp: TrackerUpdateTaskContentInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[TrackerTaskContentOut]:
+    if ctx.extras.get("surface") != "rest" or ctx.extras.get("trusted_local_admin") is not True:
+        raise ValidationError("task content edits require the authenticated local console")
+    env = TrackerRepository(ctx.session).update_task_content(
+        project_id=inp.project_id,
+        task_key=inp.task_key,
+        expected_updated_at=inp.expected_updated_at,
+        idempotency_key=inp.idempotency_key,
+        description=inp.description,
+        additional_input=inp.additional_input,
+    )
+    return WriteEnvelope[TrackerTaskContentOut](data=env.data, project_id=env.project_id)
 
 
 async def tracker_reject_task(
@@ -558,5 +578,6 @@ __all__ = [
     "tracker_release",
     "tracker_reopen",
     "tracker_update_task",
+    "tracker_update_task_content",
     "tracker_update_ticket",
 ]

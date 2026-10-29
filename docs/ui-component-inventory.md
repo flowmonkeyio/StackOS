@@ -19,7 +19,7 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 | `UiRange` | tick marks optional |
 | `UiSecretInput` | reveal + copy |
 | `UiFormField` | label + control + help/error/dirty |
-| `UiDialog` | trap focus; H/B/F |
+| `UiDialog` | viewport portal; shared dialog/drawer stack; focus trap; H/B/F; optional `layout="detail"` with bounded 880px frame and scrolling body; centered 32px close target / 16px icon |
 | `UiConfirmDialog` | builds on Dialog |
 | `UiSidePanel` | left/right; 480/720 |
 | `UiDropdownMenu` | keyboard arrows; sections |
@@ -164,7 +164,7 @@ test for cross-feature wiring, loading, and error-state truthfulness.
 | `views/accounts/TelegramProxySetupSection.vue` | Conditional disclosure of Telegram's manifest-backed proxy fields. | Keep proxy validation and normalization in the daemon's Account proxy contract. |
 | `views/ConnectionsView.vue` | Route/query synchronization, Account attachment, section composition, and project-bound communication/ingress dispatch remain. | Keep Account secret lifecycle in the reusable Accounts panel; do not fold it back into the project page. |
 | `views/connections/useConnectionCredentials.ts` | Lists attached Accounts, filters reusable unattached Accounts, and owns attach/detach confirmation state. | Keep global Account mutation and project communication topology out. |
-| `views/TaskTrackerView.vue` | Route/query synchronization, page-level snapshot loading, and cross-feature dispatch remain. `useTrackerExecutionContexts` owns context/artifact pagination; `useTrackerGraphSession` composes focused graph loading and selection with dedicated viewport and live-update lifecycles. Pure projections and filters remain in `task-tracker/viewModel.ts`. | Keep new graph interaction state inside the graph session. Extract command/filter orchestration only if it gains an independent async lifecycle; do not move route/query access into a feature composable. |
+| `views/TaskTrackerView.vue` | Owns Board/map route history, independent map-task and popup identities, task-index loading and focused detail dispatch. `TrackerBoardPanel` renders seven fixed status columns; `TaskTrackerCommandPanel` keeps the view switch inline with view-specific controls. `TrackerTaskDetailDialog` owns one persistent `UiDialog layout="detail"` for task/ticket inspection and a six-row scrolling ticket list. `TrackerTicketDetailContent` is shared with the map's `TrackerTicketDetailPanel` side inspector. `useTrackerExecutionContexts` owns context/artifact pagination; `useTrackerGraphSession` composes focused graph loading, viewport and the existing project/task event stream. Pure projections and filters remain in `task-tracker/viewModel.ts`. | Keep Board filters independent from map selection. Task state and ticket-status containment filters have separate meanings. Preserve task drafts, disclosure state and scroll during ticket inspection. No standalone Stories or Tickets modes. |
 | `views/connections/credentialPresentation.ts` | Provider/auth grouping, labels, connection status, and account presentation. | Keep provider catalog knowledge here; do not mix in communication topology facets. |
 | `views/connections/formatters.ts` | Communication profile, route, surface, Slack, ingress, and shared Account presentation exports. | Split another provider-specific facet only when it gains a distinct contract or test lifecycle. |
 | `views/AgentRequestsView.vue` | One cohesive queue/master-detail flow. | Extract the request detail region only if it gains independent mutation/loading state. |

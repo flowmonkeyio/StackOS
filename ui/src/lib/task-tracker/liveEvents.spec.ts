@@ -152,6 +152,9 @@ describe('openTrackerStatusStream', () => {
 })
 
 describe('trackerStatusStreamPath', () => {
+  it('opens project-wide Board updates without a task filter', () => {
+    expect(trackerStatusStreamPath(7, {})).toBe('/api/v1/projects/7/context/timeline/stream?limit=50')
+  })
   it('omits after for a fresh selected task and includes it for same-task reconnects', () => {
     expect(trackerStatusStreamPath(7, { taskKey: 'task-b', afterId: null })).toBe(
       '/api/v1/projects/7/context/timeline/stream?task_key=task-b&limit=50',

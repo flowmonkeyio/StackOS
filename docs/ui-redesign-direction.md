@@ -155,7 +155,7 @@ itself permission for a product view to mutate agent-owned state.
 
 ### Audited implementation boundary
 
-The July 2026 UI audit classifies the current write surfaces as follows:
+The current UI write surfaces are classified as follows:
 
 | Surface | Owner | Decision |
 | --- | --- | --- |
@@ -164,12 +164,16 @@ The July 2026 UI audit classifies the current write surfaces as follows:
 | Communication profile upsert | Local administrator | Keep as static communication setup |
 | Ingress configure, refresh, and sync | Local administrator | Keep as connectivity setup and repair |
 | Tracker task status mutation | Agent or run-plan controller | Removed from the task drawer |
+| Task description and additional input | Human operator | `tracker.updateTaskContent` only: description edit and appended input, with revision and conflict protection |
 | Tracker, run, request, catalog, and execution-context reads | Observer | Keep read-only |
 
 `ui/src/read-only-ui.spec.ts` keeps raw writes centralized in the project/auth
 stores and generic operation client. The daemon then authorizes operation calls
-from the operation registry: reads follow `read_only`, while the four reviewed
-local-setup writes must declare `browser_safe=True` on their REST surfaces.
+from the operation registry: reads follow `read_only`, while reviewed
+local-setup and bounded human-content writes declare `browser_safe=True` on
+their REST surfaces. Task content is a narrow exception: title, goal, lifecycle,
+ownership, dependencies, run bindings and evidence remain read-only. It neither
+starts work nor signals that the agent has consumed the input.
 
 ## 4. People and their management jobs
 

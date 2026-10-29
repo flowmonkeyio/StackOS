@@ -5,16 +5,13 @@
 -->
 <script lang="ts">
 let sidePanelIdSeed = 0;
-let sidePanelStackSeed = 0;
-const openSidePanelStack: number[] = [];
-let previousBodyOverflow: string | null = null;
-const SIDEPANEL_Z_INDEX_BASE = 1100;
 </script>
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue';
 import UiIcon from './UiIcon.vue';
 import UiIconButton from './UiIconButton.vue';
+import { closeOverlay, isTopOverlay, openOverlay, type OverlayEntry } from './overlayStack';
 
 export interface UiSidePanelProps {
   modelValue: boolean;
@@ -44,8 +41,7 @@ const emit = defineEmits<{
 const sidePanelId = ++sidePanelIdSeed;
 const panelRef = ref<HTMLElement | null>(null);
 const overlayRef = ref<HTMLElement | null>(null);
-let previousFocus: HTMLElement | null = null;
-let stackIndex: number | null = null;
+let overlayEntry: OverlayEntry | null = null;
 
 function close() {
   emit('update:modelValue', false);
@@ -53,18 +49,12 @@ function close() {
 }
 
 function removeFromStack() {
-  if (stackIndex === null) return;
-  const idx = openSidePanelStack.indexOf(stackIndex);
-  if (idx >= 0) openSidePanelStack.splice(idx, 1);
-  stackIndex = null;
-  if (openSidePanelStack.length === 0) {
-    document.body.style.overflow = previousBodyOverflow ?? '';
-    previousBodyOverflow = null;
-  }
+  closeOverlay(overlayEntry);
+  overlayEntry = null;
 }
 
 function onKey(ev: KeyboardEvent) {
-  if (!props.modelValue || !isTopSidePanel()) return;
+  if (!props.modelValue || !isTopOverlay(overlayEntry)) return;
   if (ev.key === 'Escape') {
     ev.preventDefault();
     close();
@@ -98,18 +88,13 @@ function trapFocus(ev: KeyboardEvent) {
 }
 
 function onPanelOpening() {
-  previousFocus = document.activeElement as HTMLElement;
-  stackIndex = ++sidePanelStackSeed;
-  openSidePanelStack.push(stackIndex);
-  if (openSidePanelStack.length === 1) {
-    previousBodyOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-  }
+  overlayEntry ??= openOverlay(() => panelRef.value);
   window.addEventListener('keydown', onKey);
 }
 
 async function onPanelOpened() {
   await nextTick();
+  if (!isTopOverlay(overlayEntry)) return;
   applyStackStyles();
   const target = panelRef.value?.querySelector<HTMLElement>('[data-autofocus]')
     ?? panelRef.value?.querySelector<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
@@ -120,8 +105,6 @@ async function onPanelOpened() {
 function onPanelClosed() {
   removeFromStack();
   window.removeEventListener('keydown', onKey);
-  previousFocus?.focus?.();
-  previousFocus = null;
 }
 
 onBeforeUnmount(() => {
@@ -130,14 +113,10 @@ onBeforeUnmount(() => {
 });
 
 function applyStackStyles() {
-  if (stackIndex === null) return;
-  const overlayZIndex = SIDEPANEL_Z_INDEX_BASE + stackIndex * 2;
+  if (!overlayEntry) return;
+  const overlayZIndex = overlayEntry.layer;
   if (overlayRef.value) overlayRef.value.style.zIndex = String(overlayZIndex);
   if (panelRef.value) panelRef.value.style.zIndex = String(overlayZIndex + 1);
-}
-
-function isTopSidePanel(): boolean {
-  return stackIndex !== null && openSidePanelStack.at(-1) === stackIndex;
 }
 
 const sizePx = computed(() => ({

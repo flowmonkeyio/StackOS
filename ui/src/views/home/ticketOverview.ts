@@ -47,9 +47,9 @@ export interface ConfiguredWorkflow {
 }
 
 export function ticketWorkUrl(projectId: number, status?: TrackerStatus): string {
-  const params = new URLSearchParams({ view: 'tickets' })
-  if (status) params.set('status', status)
-  return `/projects/${projectId}/tasks?${params.toString()}`
+  const params = new URLSearchParams()
+  if (status) params.set('ticket_status', status)
+  return `/projects/${projectId}/tasks${params.size ? `?${params.toString()}` : ''}`
 }
 
 export function configuredWorkflows(

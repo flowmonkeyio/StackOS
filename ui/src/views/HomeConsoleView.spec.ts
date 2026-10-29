@@ -107,7 +107,7 @@ describe('project ticket overview', () => {
     wrapper.findComponent({ name: 'TicketStatusChart' }).vm.$emit('select', 'failed')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/projects/1/tasks')
-    expect(router.currentRoute.value.query).toEqual({ view: 'tickets', status: 'failed' })
+    expect(router.currentRoute.value.query).toEqual({ ticket_status: 'failed' })
     wrapper.unmount()
   })
 
