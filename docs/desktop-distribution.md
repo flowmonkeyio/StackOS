@@ -447,14 +447,16 @@ installs those exact dependencies followed by the wheel without re-resolving
 them, writes `build-info.json`, and writes a small `bin/stackos` wrapper that
 the packaged Electron app can run. A stale lock or dependency conflict fails
 the payload build. The payload vendors a standalone CPython runtime under
-`.venv`, including the standard library, `lib-dynload`, `site-packages`,
+`.venv` (CPython `3.12.16` by default, overridable with
+`STACKOS_DESKTOP_PYTHON`), including the standard library, `lib-dynload`, `site-packages`,
 `bin/python`, and `libpython*.dylib`. Desktop payload builds use the same
 gstack installer helper as normal installs and include `browser-runtime` with
 the pinned upstream source, compiled CLI, Bun, locked dependencies, browser
 assets, licenses, and notices. After compilation and asset preparation, that
-shared installer removes the pinned Anthropic development SDK packages and
-ONNX Linux/Windows binaries from the ARM64 macOS payload. Darwin ONNX and
-Transformers remain for the native security classifier. The manifest's
+shared installer removes Claude Agent SDK development packages and ONNX
+Linux/Windows binaries from the ARM64 macOS payload. The upstream frozen
+production dependencies include the Anthropic SDK; it remains alongside Darwin
+ONNX and Transformers for browser features and the native security classifier. The manifest's
 packaging revision invalidates older managed layouts during install/repair.
 Native browser launch and persistent-profile
 continuity are release verification evidence rather than installer-time actions.

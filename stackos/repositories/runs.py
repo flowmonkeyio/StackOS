@@ -1242,6 +1242,7 @@ class RunStepCallRepository:
     ) -> Envelope[RunStepCallOut]:
         """Insert a per-MCP-tool call row."""
         step, run = self._fetch_step_and_run(run_step_id, project_id=project_id)
+        assert step.id is not None
         row = RunStepCall(
             run_step_id=step.id,
             mcp_tool=mcp_tool,

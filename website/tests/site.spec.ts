@@ -302,7 +302,7 @@ test('library exposes workflows, articles, cross-links, and production metadata'
 
   await expect(page.getByRole('heading', { level: 1 })).toContainText('See how AI work')
   await expect(page.getByRole('link', { name: /Engineering Tracked Delivery/ })).toBeVisible()
-  await expect(page.getByRole('heading', { level: 2, name: /Three parts.*One complete job/ })).toBeVisible()
+  await expect(page.getByRole('heading', { level: 2, name: 'What do you want to do next?' })).toBeVisible()
 
   const canonical = page.locator('link[rel="canonical"]')
   await expect(canonical).toHaveAttribute('href', 'https://stackos.flowmonkey.io/library/')
@@ -743,6 +743,33 @@ test('Linear plugin URL permanently consolidates to its provider page', async ({
     'href',
     'https://stackos.flowmonkey.io/library/integrations/linear/',
   )
+})
+
+test('integration action controls wait for hydration before accepting input', async ({ page }) => {
+  let releaseScripts!: () => void
+  const scriptsReady = new Promise<void>((resolve) => { releaseScripts = resolve })
+  await page.route('**/_nuxt/**', async (route) => {
+    if (route.request().resourceType() === 'script') await scriptsReady
+    await route.continue()
+  })
+
+  await page.goto('/library/integrations/hubspot/', { waitUntil: 'commit' })
+  const rows = page.locator('.integration-action-grid article')
+  const showMore = page.getByRole('button', { name: /Show 36 more/ })
+  const search = page.getByRole('searchbox', { name: 'Search HubSpot actions' })
+  try {
+    await expect(rows).toHaveCount(36)
+    await expect(search).toBeDisabled()
+    await expect(page.locator('.integration-action-tools__filters button').first()).toBeDisabled()
+    await expect(showMore).toBeDisabled()
+  } finally {
+    releaseScripts()
+  }
+
+  await expect(search).toBeEnabled()
+  await expect(showMore).toBeEnabled()
+  await showMore.click()
+  await expect(rows).toHaveCount(72)
 })
 
 test('integration detail uses a readable logo, complete action rows, and a server-rendered route path', async ({ page }) => {

@@ -12,6 +12,8 @@ if (!provider) throw createError({ statusCode: 404, statusMessage: 'Integration 
 const actionSearch = ref('')
 const selectedCapability = ref('all')
 const visibleLimit = ref(36)
+const interactiveReady = ref(false)
+onMounted(() => { interactiveReady.value = true })
 const actionQuery = computed(() => actionSearch.value.trim().toLowerCase())
 const filteredActions = computed(() => provider.actions.filter((action) => {
   if (selectedCapability.value !== 'all' && action.capability !== selectedCapability.value) return false
@@ -163,10 +165,10 @@ useHead({ script: [
         </div>
 
         <div v-if="provider.actions.length" class="integration-action-tools">
-          <label for="action-query"><span>Search {{ provider.name }} actions</span><input id="action-query" v-model="actionSearch" type="search" :placeholder="`Search ${provider.actionCount} actions…`" autocomplete="off"></label>
+          <label for="action-query"><span>Search {{ provider.name }} actions</span><input id="action-query" v-model="actionSearch" type="search" :placeholder="`Search ${provider.actionCount} actions…`" autocomplete="off" :disabled="!interactiveReady"></label>
           <div v-if="capabilityOptions.length > 1" class="integration-action-tools__filters">
-            <button :class="{ 'is-active': selectedCapability === 'all' }" type="button" @click="selectedCapability = 'all'">All <span>{{ provider.actionCount }}</span></button>
-            <button v-for="capability in capabilityOptions" :key="capability.key" :class="{ 'is-active': selectedCapability === capability.key }" type="button" @click="selectedCapability = capability.key">{{ capability.name }} <span>{{ capability.count }}</span></button>
+            <button :class="{ 'is-active': selectedCapability === 'all' }" type="button" :disabled="!interactiveReady" @click="selectedCapability = 'all'">All <span>{{ provider.actionCount }}</span></button>
+            <button v-for="capability in capabilityOptions" :key="capability.key" :class="{ 'is-active': selectedCapability === capability.key }" type="button" :disabled="!interactiveReady" @click="selectedCapability = capability.key">{{ capability.name }} <span>{{ capability.count }}</span></button>
           </div>
           <p>{{ countLabel(filteredActions.length, 'matching action') }}</p>
         </div>
@@ -181,7 +183,7 @@ useHead({ script: [
         <div v-else-if="provider.actions.length" class="integration-action-empty">No actions match that search.</div>
         <div v-else class="integration-action-empty">This provider is available to the plugin, but it does not publish callable actions yet.</div>
 
-        <button v-if="visibleActions.length < filteredActions.length" class="integration-load-more" type="button" @click="visibleLimit += 36">
+        <button v-if="visibleActions.length < filteredActions.length" class="integration-load-more" type="button" :disabled="!interactiveReady" @click="visibleLimit += 36">
           Show 36 more <span>({{ filteredActions.length - visibleActions.length }} remaining)</span>
         </button>
       </div>

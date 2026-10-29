@@ -164,6 +164,7 @@ test.describe('Connections — reusable Account lifecycle', () => {
     )
     await expect(panel.getByText('Reconnect guidance', { exact: true })).toBeVisible()
     await expect(panel.getByRole('button', { name: 'Reconnect' })).toBeVisible()
+    await expect(page.locator('.ui-sidepanel__overlay')).toHaveCSS('opacity', '1')
 
     const axe = await new AxeBuilder({ page })
       .include('[role="dialog"]')
@@ -279,6 +280,7 @@ test.describe('Connections — reusable Account lifecycle', () => {
     await expect(panel).toContainText('revoke the old Account')
     expect(await page.content()).not.toContain(secretCanary)
 
+    await expect(page.locator('.ui-sidepanel__overlay')).toHaveCSS('opacity', '1')
     const axe = await new AxeBuilder({ page })
       .include('[role="dialog"]')
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])

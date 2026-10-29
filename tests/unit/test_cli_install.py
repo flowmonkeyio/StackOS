@@ -368,7 +368,6 @@ def test_verify_gstack_runtime_rejects_legacy_packaging(tmp_path: Path) -> None:
     [
         "@anthropic-ai/claude-agent-sdk",
         "@anthropic-ai/claude-agent-sdk-darwin-arm64",
-        "@anthropic-ai/sdk",
         "onnxruntime-node/bin/napi-v6/linux",
         "onnxruntime-node/bin/napi-v6/win32",
     ],
@@ -397,11 +396,12 @@ def test_build_gstack_runtime_prunes_only_unused_dependencies_after_build(
     excluded = [
         "@anthropic-ai/claude-agent-sdk",
         "@anthropic-ai/claude-agent-sdk-darwin-arm64",
-        "@anthropic-ai/sdk",
         "onnxruntime-node/bin/napi-v6/linux",
         "onnxruntime-node/bin/napi-v6/win32",
     ]
     retained = [
+        "node_modules/@anthropic-ai/sdk/package.json",
+        "node_modules/.bin/anthropic-ai-sdk",
         "node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64/onnxruntime_binding.node",
         "node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64/libonnxruntime.1.24.3.dylib",
         "node_modules/@huggingface/transformers/package.json",
@@ -420,10 +420,11 @@ def test_build_gstack_runtime_prunes_only_unused_dependencies_after_build(
     (outside / "keep").write_text("outside staging")
     stages: list[str] = []
 
-    def run_build(_argv: list[str], *, stage: str, **_kwargs: object) -> None:
+    def run_build(argv: list[str], *, stage: str, **_kwargs: object) -> None:
         stages.append(stage)
         modules = candidate / "gstack" / "node_modules"
         if stage == "gstack dependency installation":
+            assert argv[1:] == ["install", "--production", "--frozen-lockfile"]
             for item in excluded:
                 path = modules / item
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -435,6 +436,10 @@ def test_build_gstack_runtime_prunes_only_unused_dependencies_after_build(
         else:
             # Compilation and vendoring still have the complete locked install.
             assert all((modules / item).is_dir() for item in excluded)
+        if stage == "gstack CLI compilation":
+            assert "--no-compile-autoload-dotenv" in argv
+            assert "--no-compile-autoload-bunfig" in argv
+            (candidate / "gstack" / "browse" / "dist").mkdir(parents=True)
         if stage == "gstack browser asset installation":
             _write_gstack_runtime(candidate)
             for item in retained:
@@ -459,7 +464,7 @@ def test_build_gstack_runtime_prunes_only_unused_dependencies_after_build(
 
     installer._build_gstack_runtime(candidate, timeout_seconds=1)
 
-    assert len(stages) == 5
+    assert len(stages) == 4
     for item in excluded:
         path = candidate / "gstack" / "node_modules" / item
         assert not path.exists() and not path.is_symlink()
@@ -467,7 +472,10 @@ def test_build_gstack_runtime_prunes_only_unused_dependencies_after_build(
         assert (candidate / "gstack" / item).read_text() == item
     assert (outside / "keep").read_text() == "outside staging"
     assert installer._verify_gstack_runtime_root(candidate)[0] is True
-    assert json.loads((candidate / "manifest.json").read_text())["packaging_revision"] == 2
+    assert json.loads((candidate / "manifest.json").read_text())["packaging_revision"] == 3
+    assert (candidate / "gstack" / "browse" / "dist" / ".version").read_text() == (
+        installer.GSTACK_REVISION + "\n"
+    )
 
 
 def test_verify_gstack_runtime_rejects_missing_native_cli_without_repairing(
@@ -557,10 +565,10 @@ def test_ensure_gstack_runtime_installs_pinned_distribution_atomically(
     assert root.is_dir()
     assert (root / "manifest.json").is_file()
     assert installer.GSTACK_SOURCE_ARCHIVE_SHA256 == (
-        "4740bfb9efb35fb407679496d890210bfc7c193bc8331f70cbf7d64bbf75cfb8"
+        "151b4c651b56beb3059ce2a3e9a9dcdf7ea3981380d104e62030f2e953432b69"
     )
     assert installer.BUN_ARCHIVE_SHA256 == (
-        "672a0a9a7b744d085a1d2219ca907e3e26f5579fca9e783a9510a4f98a36212f"
+        "c240d7f0ccb90c263a849fcdb09b7ee62630d921348ed6aafda86b9d577bc510"
     )
 
 
@@ -681,7 +689,7 @@ def test_extract_gstack_source_rejects_path_traversal(tmp_path: Path) -> None:
 def test_extract_gstack_source_preserves_internal_connect_chrome_symlink(tmp_path: Path) -> None:
     """The pinned upstream source links connect-chrome to its sibling launcher."""
     archive = tmp_path / "gstack.tar.gz"
-    root = "gstack-71f6048e8ada25180e61438abc1d98cb151fe9a7"
+    root = "gstack-6c3cf1baac93a794d37065da8b95340e14305126"
     with tarfile.open(archive, "w:gz") as output:
         directory = tarfile.TarInfo(root)
         directory.type = tarfile.DIRTYPE

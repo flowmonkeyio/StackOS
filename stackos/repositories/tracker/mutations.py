@@ -1092,9 +1092,9 @@ class TrackerMutationMixin:
             allow_workflow_status_from_run_plan=allow_workflow_status_from_run_plan,
         )
         row = TrackerTicket(
-            tracker_id=tracker.id,
+            tracker_id=_required_id(tracker.id, "tracker"),
             project_id=tracker.project_id,
-            task_id=task.id,
+            task_id=_required_id(task.id, "task"),
             parent_ticket_id=parent_ticket_id,
             run_plan_id=run_plan_id,
             run_plan_step_id=run_plan_step_id,
@@ -1759,7 +1759,7 @@ class TrackerMutationMixin:
         self._s.add(tracker)
         self._s.add(
             TrackerRevision(
-                tracker_id=tracker.id,
+                tracker_id=_required_id(tracker.id, "tracker"),
                 project_id=tracker.project_id,
                 rev=tracker.rev,
                 actor=actor,

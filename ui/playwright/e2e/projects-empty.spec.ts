@@ -15,8 +15,8 @@ test.describe('projects view — empty state', () => {
   test('shows the portfolio empty state without creation controls', async ({ page }) => {
     const errors = trackConsoleErrors(page)
     await page.goto('/projects')
-    await expect(page.getByRole('heading', { level: 1, name: 'StackOS' })).toBeVisible()
-    await expect(page.getByText('No projects yet')).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible()
+    await expect(page.getByText('Ready for your first project')).toBeVisible()
     await expect(page.getByRole('button', { name: 'New project' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Create project' })).toHaveCount(0)
 

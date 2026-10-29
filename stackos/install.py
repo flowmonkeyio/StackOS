@@ -59,26 +59,23 @@ InstallMode = Literal["clone", "pipx"]
 MCP_SERVER_NAME = "stackos"
 BROWSER_LAUNCHER_NAME = "stackos.browser"
 BROWSER_LAUNCHER_MANAGED_HEADER = "# StackOS managed browser launcher v1\n"
-GSTACK_VERSION = "1.84.1.0"
-GSTACK_REVISION = "71f6048e8ada25180e61438abc1d98cb151fe9a7"
+GSTACK_VERSION = "1.91.242.0"
+GSTACK_REVISION = "6c3cf1baac93a794d37065da8b95340e14305126"
 GSTACK_SOURCE_ARCHIVE_URL = f"https://github.com/garrytan/gstack/archive/{GSTACK_REVISION}.tar.gz"
-GSTACK_SOURCE_ARCHIVE_SHA256 = "4740bfb9efb35fb407679496d890210bfc7c193bc8331f70cbf7d64bbf75cfb8"
-BUN_VERSION = "1.3.8"
+GSTACK_SOURCE_ARCHIVE_SHA256 = "151b4c651b56beb3059ce2a3e9a9dcdf7ea3981380d104e62030f2e953432b69"
+BUN_VERSION = "1.4.4"
 BUN_ARCHIVE_URL = (
     f"https://github.com/oven-sh/bun/releases/download/bun-v{BUN_VERSION}/bun-darwin-aarch64.zip"
 )
-BUN_ARCHIVE_SHA256 = "672a0a9a7b744d085a1d2219ca907e3e26f5579fca9e783a9510a4f98a36212f"
+BUN_ARCHIVE_SHA256 = "c240d7f0ccb90c263a849fcdb09b7ee62630d921348ed6aafda86b9d577bc510"
 GSTACK_PLAYWRIGHT_VERSION = "1.62.1"
 GSTACK_RUNTIME_MANIFEST_SCHEMA = 1
-GSTACK_PACKAGING_REVISION = 2
+GSTACK_PACKAGING_REVISION = 3
 # These pinned dev/test packages and foreign ONNX binaries are not used by
 # gstack's darwin/arm64 runtime. Keep Darwin ONNX, Transformers and sidebar assets.
 _GSTACK_EXCLUDED_DEPENDENCIES = (
     "@anthropic-ai/claude-agent-sdk",
     "@anthropic-ai/claude-agent-sdk-darwin-arm64",
-    "@anthropic-ai/sdk",
-    # Bun's SDK command link would otherwise point into the removed package.
-    ".bin/anthropic-ai-sdk",
     "onnxruntime-node/bin/napi-v6/linux",
     "onnxruntime-node/bin/napi-v6/win32",
 )
@@ -679,14 +676,23 @@ def _build_gstack_runtime(candidate: Path, *, timeout_seconds: int) -> None:
     env["PLAYWRIGHT_BROWSERS_PATH"] = str(browsers)
     gstack_dir = candidate / "gstack"
     _run_gstack_build(
-        [str(bun), "install", "--frozen-lockfile"],
+        [str(bun), "install", "--production", "--frozen-lockfile"],
         stage="gstack dependency installation",
         cwd=gstack_dir,
         env=env,
         timeout_seconds=timeout_seconds,
     )
     _run_gstack_build(
-        [str(bun), "build", "--compile", "browse/src/cli.ts", "--outfile", "browse/dist/browse"],
+        [
+            str(bun),
+            "build",
+            "--compile",
+            "--no-compile-autoload-dotenv",
+            "--no-compile-autoload-bunfig",
+            "browse/src/cli.ts",
+            "--outfile",
+            "browse/dist/browse",
+        ],
         stage="gstack CLI compilation",
         cwd=gstack_dir,
         env=env,
@@ -699,12 +705,10 @@ def _build_gstack_runtime(candidate: Path, *, timeout_seconds: int) -> None:
         env=env,
         timeout_seconds=timeout_seconds,
     )
-    _run_gstack_build(
-        ["bash", "scripts/write-version-files.sh", "browse/dist/.version"],
-        stage="gstack version metadata preparation",
-        cwd=gstack_dir,
-        env=env,
-        timeout_seconds=timeout_seconds,
+    # The verified archive has no .git directory. Upstream's version script
+    # would write an empty marker; record the authenticated source revision.
+    (gstack_dir / "browse" / "dist" / ".version").write_text(
+        GSTACK_REVISION + "\n", encoding="utf-8"
     )
     _run_gstack_build(
         [str(bun), "node_modules/playwright/cli.js", "install", "--no-shell", "chromium"],

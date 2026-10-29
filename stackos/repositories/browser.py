@@ -243,7 +243,7 @@ class BrowserRepository:
             if state is None:
                 continue
             next_status: str | None = None
-            ended_at: datetime | None | object = row.ended_at
+            ended_at: datetime | object | None = row.ended_at
             if state.owned:
                 next_status = state.status
                 ended_at = None

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "stackos"
-version = "2.1.41"
+version = "2.1.42"
 description = "Local StackOS daemon (FastAPI + SQLite/WAL + MCP Streamable HTTP) plus Vue UI for project-scoped tools, plugins, workflow templates, and run plans."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -26,19 +26,19 @@ dependencies = [
     "stackos-connectors==0.2.8",
     "fastapi[standard]>=0.115",
     "uvicorn[standard]>=0.32",
-    "sqlmodel>=0.0.22",
+    "sqlmodel>=0.0.22,<0.0.45",
     "alembic>=1.14",
     "mcp>=2.0,<3",
     "jsonschema>=4.23",
     "httpx>=0.27",
-    "cryptography>=43",
+    "cryptography>=43,<49",
     "apscheduler>=3.10",
     "pydantic-settings>=2.6",
     "structlog>=24.4",
     "typer>=0.13",
     "python-dotenv>=1.0",
     "PyYAML>=6.0",
-    "anthropic>=0.39",
+    "anthropic>=0.39,<0.101",
     "boto3>=1.43.51,<1.44",
     "botocore>=1.43.51,<1.44",
     "s3transfer>=0.19.1,<0.20",
@@ -63,7 +63,7 @@ dev = [
     # M9 distribution: PEP 517 build front-end used by the pipx wheel
     # layout test (`tests/integration/test_install_scripts/test_pipx_wheel_layout.py`).
     "build>=1.2",
-    "graphql-core>=3.2,<3.4",
+    "graphql-core>=3.2,<3.3",
     "pytest-xdist>=3.6",
     "hatchling>=1.32.4",
 ]

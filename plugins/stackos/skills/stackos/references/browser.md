@@ -1,9 +1,9 @@
 # Native browser cookbook
 
 Use this reference for page work after selecting a StackOS browser session.
-These recipes target bundled gstack `1.84.1.0`, revision
-`71f6048e8ada25180e61438abc1d98cb151fe9a7`. Native `--help` and the
-[pinned command reference](https://github.com/garrytan/gstack/blob/71f6048e8ada25180e61438abc1d98cb151fe9a7/browse/sections/command-list.md)
+These recipes target bundled gstack `1.91.242.0`, revision
+`6c3cf1baac93a794d37065da8b95340e14305126`. Native `--help` and the
+[pinned command reference](https://github.com/garrytan/gstack/blob/6c3cf1baac93a794d37065da8b95340e14305126/browse/sections/command-list.md)
 cover the full vocabulary. Check the installed version's help when it differs.
 
 ## Keep the session and tab explicit
@@ -143,3 +143,9 @@ On failure, retain the exact command, elapsed time, exit status, stdout/stderr,
 and any host-tool error. Use a bounded host command deadline. Inspect session,
 tab, and page state before retrying; do not restart an authenticated browser
 merely because the page is still rendering.
+
+An unresponsive active tab does not imply a dead browser. Session health uses
+browser liveness; the upstream health response reports tab responsiveness
+separately. Use `tabs` to inspect available pages, `tab <id>` to switch, or
+`closetab <id>` to close the affected tab when authorized. A healthy browser
+keeps its existing process and persistent profile while a tab is busy.

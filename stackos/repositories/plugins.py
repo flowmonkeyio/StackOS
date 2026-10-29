@@ -224,7 +224,7 @@ class PluginRepository:
         if row is None:
             row = ProjectPlugin(
                 project_id=project_id,
-                plugin_id=plugin.id,
+                plugin_id=_required_id(plugin.id),
                 enabled=True,
                 config_json=config_json,
                 enabled_at=now,
