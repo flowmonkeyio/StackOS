@@ -2140,7 +2140,7 @@ wheels = [
 
 [[package]]
 name = "stackos"
-version = "2.1.43"
+version = "2.1.44"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -2160,6 +2160,7 @@ dependencies = [
     { name = "sqlmodel" },
     { name = "stackos-connectors" },
     { name = "structlog" },
+    { name = "tomlkit" },
     { name = "typer" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -2197,6 +2198,7 @@ requires-dist = [
     { name = "sqlmodel", specifier = ">=0.0.22,<0.0.45" },
     { name = "stackos-connectors", specifier = "==0.2.8" },
     { name = "structlog", specifier = ">=24.4" },
+    { name = "tomlkit", specifier = ">=0.15.2,<1" },
     { name = "typer", specifier = ">=0.13" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]

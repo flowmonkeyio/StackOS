@@ -123,6 +123,11 @@ StackOS plugin/MCP mechanics. Hermes support is an explicit existing-profile
 connection that adds neutral MCP connectivity and the canonical StackOS
 mechanics skill only; it does not create a Hermes profile, choose its
 model/provider, or install agents, personality, or workflow behavior.
+Grok Build uses the same neutral connectivity boundary and a native mirror of
+the canonical mechanics skill. Its native `AGENTS.md` support loads existing
+root guidance; registration creates no parallel root instruction file. A named
+workflow setup can adapt the resolved presets into `.grok/agents/` using Grok's
+host-local format, with the same source provenance and project scope.
 
 Workflow infrastructure setup is not workflow execution. Select
 `setup_existing` from `workflowTemplate.authoringGuide`, resolve the effective

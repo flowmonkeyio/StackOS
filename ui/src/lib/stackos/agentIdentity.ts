@@ -5,6 +5,7 @@ const AGENT_HOST_LOGOS = new Map([
   ['claude-desktop', '/images/claude.webp'],
   ['gemini-cli', '/images/gemini.webp'],
   ['hermes', '/images/hermes.webp'],
+  ['grok', '/images/grok.png'],
 ])
 
 const OWNER_HOST_KEYS = new Map([
@@ -20,6 +21,11 @@ const OWNER_HOST_KEYS = new Map([
   ['gemini cli', 'gemini-cli'],
   ['gemini-cli', 'gemini-cli'],
   ['hermes', 'hermes'],
+  ['grok', 'grok'],
+  ['grok cli', 'grok'],
+  ['grok-cli', 'grok'],
+  ['grok build', 'grok'],
+  ['grok-build', 'grok'],
 ])
 
 /** Host keys are canonical; an unknown host keeps the caller's own fallback. */

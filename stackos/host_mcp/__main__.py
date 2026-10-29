@@ -13,7 +13,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Manage StackOS host MCP registration.")
     parser.add_argument(
         "host",
-        choices=["codex", "claude-code", "claude-desktop", "gemini-cli", "hermes"],
+        choices=["codex", "claude-code", "claude-desktop", "gemini-cli", "hermes", "grok"],
     )
     parser.add_argument("action", choices=["inspect", "register", "remove"])
     parser.add_argument("--home", type=Path, default=None)

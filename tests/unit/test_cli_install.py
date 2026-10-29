@@ -1431,9 +1431,12 @@ def test_cli_install_mcp_only_registers_claude_with_fake_cli(
     assert not (sandbox / ".claude" / "mcp.json").exists()
 
 
-def test_cli_install_targets_one_existing_hermes_profile(
+@pytest.mark.parametrize(("host", "profile"), [("hermes", "work"), ("grok", None)])
+def test_cli_install_targets_one_host(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
+    host: str,
+    profile: str | None,
 ) -> None:
     calls: list[tuple[str, Path, str | None]] = []
 
@@ -1465,16 +1468,15 @@ def test_cli_install_targets_one_existing_hermes_profile(
             "install",
             "--mcp-only",
             "--mcp-host",
-            "hermes",
-            "--mcp-profile",
-            "work",
+            host,
+            *(["--mcp-profile", profile] if profile else []),
             "--skip-doctor",
         ],
         catch_exceptions=False,
     )
 
     assert result.exit_code == 0, result.stdout
-    assert calls == [("hermes", sandbox, "work")]
+    assert calls == [(host, sandbox, profile)]
     assert "Hermes profile work connected." in result.stdout
 
 

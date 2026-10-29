@@ -179,6 +179,15 @@ view-local map. Website and desktop UI keep separate Vue mark components, while
 the website catalog sync validates both public asset trees against that shared
 manifest.
 
+Agent host marks have their own existing owner in
+`ui/src/lib/stackos/agentIdentity.ts`, shared by Overview connection cards and
+Work board owners. `HomeAgentHostStatus` renders the backend's host list and
+uses three columns on standard desktops and six on wide desktops. The Grok
+mark in `ui/public/images/grok.png` is the unchanged 192px icon published by
+[grok.com](https://grok.com/images/android-chrome-192x192.png), retrieved
+2026-10-29 (SHA-256
+`768cbbf7a7528d6e7b3af8112d7cde43eb6c9c8989ad9b06be8047dae1227463`).
+
 Removed action-oriented demo components. They were removed from `ui/src`
 because they exposed or demonstrated domain mutations that now belong to the
 agent/MCP path.

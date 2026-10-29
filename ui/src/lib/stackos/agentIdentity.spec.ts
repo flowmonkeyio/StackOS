@@ -10,6 +10,7 @@ describe('shared agent identity marks', () => {
     ['claude-desktop', '/images/claude.webp'],
     ['gemini-cli', '/images/gemini.webp'],
     ['hermes', '/images/hermes.webp'],
+    ['grok', '/images/grok.png'],
   ])('uses the same %s asset for canonical hosts and task owners', (hostKey, logo) => {
     expect(resolveAgentHostLogo(hostKey)).toBe(logo)
     expect(resolveAgentOwnerLogo(hostKey)).toBe(logo)
@@ -39,6 +40,13 @@ describe('shared agent identity marks', () => {
     ['Gemini', '/images/gemini.webp'],
     ['Gemini CLI', '/images/gemini.webp'],
     ['Hermes', '/images/hermes.webp'],
+    [' Grok ', '/images/grok.png'],
+    ['grok-cli', '/images/grok.png'],
+    ['Grok CLI', '/images/grok.png'],
+    ['GROK   BUILD', '/images/grok.png'],
+    ['grok-build', '/images/grok.png'],
+    ['grok-build-main-agent', '/images/grok.png'],
+    ['grok.reviewer', '/images/grok.png'],
   ])('recognizes owner %s', (owner, logo) => {
     expect(resolveAgentOwnerLogo(owner)).toBe(logo)
   })
@@ -47,6 +55,7 @@ describe('shared agent identity marks', () => {
     null, undefined, '', '   ', 'Sergey Rura', 'Claude Monet', 'Claude.Monet',
     'delivery.agent', 'not-codex', 'codexx', 'Claude Code Team', 'codex-', 'codex:',
     'codex Alice', 'codex- Alice', 'codex@example.com', 'constructor', '__proto__',
+    'Grok Smith', 'Grok.Smith', 'not-grok', 'grokk', 'grok-build-team', 'xai',
   ])('keeps the initials fallback for %s', (owner) => {
     expect(resolveAgentOwnerLogo(owner)).toBeNull()
   })

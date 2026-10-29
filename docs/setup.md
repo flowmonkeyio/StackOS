@@ -179,7 +179,7 @@ Restart, Run doctor, and Install or repair remain native desktop controls;
 the browser shows them disabled with a desktop-only explanation.
 
 This reports the canonical connection state for ChatGPT / Codex, Claude Code,
-Claude Desktop, Gemini CLI, and Hermes. **Repair needed** means a selected,
+Claude Desktop, Gemini CLI, Hermes, and Grok. **Repair needed** means a selected,
 StackOS-owned entry is stale and safely repairable. Unselected detected hosts
 are **Available**, arbitrary same-name entries are **Review required**, and
 absent optional hosts are **Not detected** and nonblocking. The Vue UI renders
@@ -553,6 +553,7 @@ Default paths:
 | PID file | `~/.local/state/stackos/daemon.pid` |
 | Codex skill mirror | `~/.codex/skills/stackos/SKILL.md` |
 | Claude Code skill mirror | `~/.claude/skills/stackos/SKILL.md` |
+| Grok Build MCP config | `$GROK_HOME/config.toml`, default `~/.grok/config.toml` |
 | Codex plugin | `~/.codex/plugins/stackos` |
 | Codex plugin runtime cache | `~/.codex/plugins/cache/local-stackos/stackos/*` |
 | Plugin marketplace | `~/.agents/plugins/marketplace.json` |
@@ -608,6 +609,60 @@ label. Only selected StackOS-owned stale entries are repaired; unmanaged
 same-name entries fail closed. Hosts installed after StackOS are picked up by
 rerunning `stackos install --mcp-only`, desktop Repair, or the next desktop
 launch.
+
+Grok uses the official [Grok Build CLI](https://docs.x.ai/build/overview).
+Connect or repair only Grok with:
+
+```bash
+stackos install --mcp-only --mcp-host grok
+```
+
+StackOS registers through `grok mcp add --scope user`. Uninstall removes the
+owned native user entry directly, so cleanup also works after Grok is removed
+or its CLI becomes incompatible. The TOML update preserves unrelated settings,
+comments, file permissions, and intentional config-file symlinks; changed or
+unowned entries are left untouched.
+It inspects the native user entry in `$GROK_HOME/config.toml` (default
+`~/.grok/config.toml`) and verifies the saved command after registration.
+The generated entry has this shape; the actual launcher is resolved from the
+current StackOS installation and retains non-default daemon context:
+
+```toml
+[mcp_servers.stackos]
+command = "/absolute/path/to/stackos"
+args = ["mcp-bridge", "--runtime", "grok"]
+enabled = true
+```
+
+Grok's CLI preserves unrelated settings and sibling servers, but may reformat
+TOML and remove comments. StackOS leaves unrelated same-name entries for review
+and does not read Grok authentication files. Native user configuration is the
+registration authority: imported Claude settings do not count as a Grok
+registration. A project `.grok/config.toml` can override the user server;
+`grok inspect` shows its origin. StackOS does not change those project files.
+
+Grok also reads `AGENTS.md` project instructions. Registration mirrors the
+canonical StackOS mechanics skill into `$GROK_HOME/skills/stackos/` (default
+`~/.grok/skills/stackos/`) using the same package-owned helper as Hermes.
+Installation records the skill's directory identity and managed file paths in
+`$GROK_HOME/skills/.stackos-ownership.json` before copying. That receipt sits
+outside the skill tree and survives partial installation or removal. Repair
+restores the canonical files, while cleanup removes recorded files even if they
+were modified, partially deleted, or the MCP entry and Grok executable are gone.
+Unlisted user files and sibling skills are preserved; the receipt is removed
+after its owned files are cleaned. Exact legacy mirrors and copies backed by an
+owned MCP entry can be adopted during repair or cleanup. A replaced directory,
+invalid ownership record, or unrelated unowned content is never claimed merely
+because it is named `stackos`.
+
+Grok setup does not generate root instructions,
+install workflow-specific agents globally, or copy provider credentials. Named
+workflow setup still resolves and adapts the existing presets into the host's
+project-local format. See Grok's official
+[MCP](https://docs.x.ai/build/features/mcp-servers),
+[settings](https://docs.x.ai/build/settings),
+[project rules](https://docs.x.ai/build/features/project-rules), and
+[skills](https://docs.x.ai/build/features/skills-plugins-marketplaces) contracts.
 
 Hermes is explicit and profile-scoped. StackOS never installs Hermes or creates
 a profile. Connect an existing named profile with:

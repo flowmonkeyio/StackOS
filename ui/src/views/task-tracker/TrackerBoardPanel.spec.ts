@@ -64,6 +64,8 @@ describe('Work board presentation', () => {
     ['Claude Code', '/images/claude-code.webp'],
     ['Gemini', '/images/gemini.webp'],
     ['Hermes', '/images/hermes.webp'],
+    ['Grok', '/images/grok.png'],
+    ['Grok Build', '/images/grok.png'],
   ])('uses the shared Overview logo for %s owners', (owner, logo) => {
     const record = { ...task('in-progress'), owner }
     const rows = buildTaskProgressRows([record], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })

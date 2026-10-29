@@ -79,7 +79,7 @@ function presentation(host: DesktopMcpHostStatus) {
     </UiCallout>
     <ul
       v-if="state.items.length"
-      class="m-0 grid grid-cols-5 list-none gap-2 p-0"
+      class="m-0 grid grid-cols-1 list-none gap-2 p-0 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6"
     >
       <li
         v-for="host in state.items"

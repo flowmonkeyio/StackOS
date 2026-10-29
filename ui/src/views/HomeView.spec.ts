@@ -166,6 +166,15 @@ describe('HomeView', () => {
           ok: true,
           available: false,
         }),
+        host({
+          host_key: 'grok',
+          display_name: 'Grok',
+          status: 'available_unregistered',
+          connection_state: 'available',
+          status_label: 'Available',
+          ok: true,
+          available: true,
+        }),
       ],
     }))
     const installOrRepair = vi.fn()
@@ -191,19 +200,24 @@ describe('HomeView', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('AI tool connections'))
     expect(hostStatuses).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).toContain(
-      '1 connected · 1 available · 1 needs attention · 2 not detected',
+      '1 connected · 2 available · 1 needs attention · 2 not detected',
     )
     expect(wrapper.text()).toContain('Connected')
     expect(wrapper.text()).toContain('Not detected')
     expect(wrapper.text()).toContain('Restart needed')
     expect(wrapper.text()).toContain('Available')
-    expect(wrapper.findAll('ul.grid-cols-5 > li')).toHaveLength(5)
+    const connections = wrapper.get('[aria-label="AI tool connections"]')
+    expect(connections.findAll('ul > li')).toHaveLength(6)
+    expect(connections.findAll('img').map(image => image.attributes('alt'))).toEqual([
+      'ChatGPT / Codex', 'Claude Code', 'Claude Desktop', 'Gemini CLI', 'Hermes', 'Grok',
+    ])
     expect(wrapper.get('img[alt="ChatGPT / Codex"]').attributes('src')).toBe('/images/openai.webp')
     expect(wrapper.get('img[alt="Claude Code"]').attributes('src')).toBe('/images/claude-code.webp')
     expect(wrapper.get('img[alt="Claude Desktop"]').attributes('src')).toBe('/images/claude.webp')
     expect(wrapper.get('img[alt="Gemini CLI"]').attributes('src')).toBe('/images/gemini.webp')
     expect(wrapper.get('img[alt="Hermes"]').attributes('src')).toBe('/images/hermes.webp')
-    expect(wrapper.findAll('p[title] > span.truncate')).toHaveLength(5)
+    expect(wrapper.get('img[alt="Grok"]').attributes('src')).toBe('/images/grok.png')
+    expect(wrapper.findAll('p[title] > span.truncate')).toHaveLength(6)
     const service = wrapper.get('[aria-label="System status"]')
     expect(service.findAll('button').map((button) => button.text())).toEqual([
       'Restart',
@@ -251,6 +265,7 @@ function defaultFetch(url: string): Response {
         host({ host_key: 'claude-desktop', display_name: 'Claude Desktop' }),
         host({ host_key: 'gemini-cli', display_name: 'Gemini CLI' }),
         host({ host_key: 'hermes', display_name: 'Hermes' }),
+        host({ host_key: 'grok', display_name: 'Grok' }),
       ],
     })
   }
